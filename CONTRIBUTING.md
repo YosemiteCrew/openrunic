@@ -22,7 +22,9 @@ needs a local PostgreSQL instance.
 ```bash
 corepack enable
 pnpm install
-cp .env.example .env   # then adjust values for your machine
+# Database work only - Prisma reads the package-local .env:
+cp packages/database/.env.example packages/database/.env
+# The api reads PORT/NODE_ENV from the shell environment (PORT defaults to 4000).
 ```
 
 Common commands:
@@ -41,7 +43,7 @@ Prefer scoped commands while iterating; they are much faster:
 ```bash
 pnpm --filter web dev              # one workspace's dev server
 pnpm --filter api test             # one workspace's tests
-pnpm turbo run lint --filter=fhir  # one workspace via turbo
+pnpm turbo run lint --filter=@openrunic/fhir  # one workspace via turbo (full package name)
 ```
 
 ## Repository structure

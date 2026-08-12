@@ -65,8 +65,8 @@ database work.
 corepack enable
 pnpm install
 
-# Copy the environment template and adjust for your local setup
-cp .env.example .env
+# Database work only: copy the environment template where Prisma reads it
+cp packages/database/.env.example packages/database/.env
 
 # Run everything in dev mode
 pnpm dev

@@ -40,10 +40,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # SonarCloud decorates PRs through its GitHub App, not this workflow's
+    # token; no step consumes GITHUB_TOKEN, so nothing beyond read is granted.
     permissions:
       contents: read
-      checks: write
-      pull-requests: write
     strategy:
       fail-fast: false
       matrix:

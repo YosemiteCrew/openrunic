@@ -242,10 +242,12 @@ jobs:
             security/sbom/openrunic.cdx.json \
             --clobber --repo "$REPO"
 
-  # The one check to mark required on the branch ruleset. Required checks
+  # Aggregate for THIS workflow (same fail-closed pattern as ci.yaml's
+  # CI Required). Per ADR-0003, "CI Required" is the only ruleset-required
+  # status check today; promoting this aggregate to required is a deliberate
+  # follow-up once the supply-chain gate has a track record. Required checks
   # treat a skipped job as satisfied, so a failed SBOM stage silently passing
-  # its dependents is exactly what this aggregate exists to prevent (same
-  # pattern as ci.yaml's CI Required).
+  # its dependents is exactly what this aggregate exists to prevent.
   supply-chain-required:
     name: Supply Chain Required
     if: always() && github.event_name != 'release'

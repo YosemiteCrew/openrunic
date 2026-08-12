@@ -14,19 +14,29 @@ export interface DomainPatient {
   gender?: 'male' | 'female' | 'other' | 'unknown';
 }
 
-/** Maps a {@link DomainPatient} to a FHIR R4 `Patient` resource. */
+/**
+ * Maps a {@link DomainPatient} to a FHIR R4 `Patient` resource.
+ *
+ * FHIR JSON forbids empty arrays and empty-string property values, so empty
+ * domain fields are omitted rather than serialized - a sparse domain patient
+ * still produces a valid resource.
+ */
 export function toFhirPatient(input: DomainPatient): fhir4.Patient {
-  const patient: fhir4.Patient = {
-    resourceType: 'Patient',
-    id: input.id,
-    name: [
-      {
-        family: input.familyName,
-        given: [...input.givenNames],
-      },
-    ],
-  };
-  if (input.birthDate !== undefined) {
+  const patient: fhir4.Patient = { resourceType: 'Patient' };
+  if (input.id !== '') {
+    patient.id = input.id;
+  }
+  const name: fhir4.HumanName = {};
+  if (input.familyName !== '') {
+    name.family = input.familyName;
+  }
+  if (input.givenNames.length > 0) {
+    name.given = [...input.givenNames];
+  }
+  if (Object.keys(name).length > 0) {
+    patient.name = [name];
+  }
+  if (input.birthDate !== undefined && input.birthDate !== '') {
     patient.birthDate = input.birthDate;
   }
   if (input.gender !== undefined) {

@@ -69,4 +69,28 @@ describe('patient mapping', () => {
       givenNames: [],
     });
   });
+
+  it('never emits FHIR-invalid empty arrays or empty strings', () => {
+    const empty: DomainPatient = { id: '', familyName: '', givenNames: [] };
+    expect(toFhirPatient(empty)).toStrictEqual({ resourceType: 'Patient' });
+
+    const familyOnly = toFhirPatient({ id: '', familyName: 'Solo', givenNames: [] });
+    expect(familyOnly).toStrictEqual({ resourceType: 'Patient', name: [{ family: 'Solo' }] });
+
+    const givenOnly = toFhirPatient({ id: '', familyName: '', givenNames: ['Ada'] });
+    expect(givenOnly).toStrictEqual({ resourceType: 'Patient', name: [{ given: ['Ada'] }] });
+
+    const blankBirthDate = toFhirPatient({
+      id: 'x-1',
+      familyName: 'Blank',
+      givenNames: [],
+      birthDate: '',
+    });
+    expect(blankBirthDate).not.toHaveProperty('birthDate');
+  });
+
+  it('round-trips a fully empty domain patient through a valid resource', () => {
+    const empty: DomainPatient = { id: '', familyName: '', givenNames: [] };
+    expect(fromFhirPatient(toFhirPatient(empty))).toStrictEqual(empty);
+  });
 });

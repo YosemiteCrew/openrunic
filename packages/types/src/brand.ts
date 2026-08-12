@@ -28,14 +28,21 @@ export function isUuid(value: string): value is UUID {
 const ISO_DATE_TIME_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+// Proleptic Gregorian, matching ISO 8601. Pure arithmetic instead of Date.UTC:
+// Date maps two-digit years 0-99 to 1900-1999, so year 0000 (a leap year)
+// would be validated against non-leap 1900.
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
 function isValidCalendarDate(year: number, month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1) {
     return false;
   }
-  // Date.UTC months are 0-indexed, so `month` here is the next month; day 0
-  // rolls back to the last day of the month we are validating.
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return day <= daysInMonth;
+  const max = month === 2 && isLeapYear(year) ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0);
+  return day <= max;
 }
 
 /**

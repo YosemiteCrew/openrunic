@@ -46,6 +46,8 @@ describe('isIsoDateTime', () => {
     '2026-01-01T12:00:00+05:30',
     '2026-12-31T23:59:59-08:00',
     '2024-02-29T00:00:00Z', // leap day in a leap year
+    '2000-02-29T00:00:00Z', // century leap year (divisible by 400)
+    '0000-02-29T00:00:00Z', // proleptic Gregorian year 0 is a leap year
   ])('accepts %s', (value) => {
     expect(isIsoDateTime(value)).toBe(true);
   });
@@ -61,6 +63,7 @@ describe('isIsoDateTime', () => {
     '2026-00-15T12:00:00Z', // month 0
     '2026-02-30T12:00:00Z', // February 30th
     '2023-02-29T12:00:00Z', // leap day outside a leap year
+    '1900-02-29T12:00:00Z', // century non-leap year (divisible by 100, not 400)
     '2026-01-00T12:00:00Z', // day 0
     '2026-01-01T25:00:00Z', // hour 25
     '2026-01-01T12:60:00Z', // minute 60

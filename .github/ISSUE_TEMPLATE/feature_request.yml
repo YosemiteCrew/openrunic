@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose a new feature or improvement
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Problem / motivation
+      description: >-
+        What problem does this solve? Who hits it, and how painful is it today? If it relates to
+        a clinical workflow, describe the workflow (with synthetic examples only).
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you think this should work. Rough is fine; sketches and API shapes welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included in a first version of this feature.
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: What is explicitly NOT included, to keep the first version shippable.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Bullet list of verifiable statements that would make this feature "done".
+      placeholder: |
+        - A user can ...
+        - The API returns ...
+        - Audit events are recorded for ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you considered and why you prefer the proposal.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, prior art (e.g. how OpenEMR or other EMRs handle this), mockups.
+    validations:
+      required: false

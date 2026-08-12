@@ -1,0 +1,9 @@
+# Default owners for everything in the repo.
+* @YosemiteCrew
+
+# Governance-sensitive paths (explicit, so ownership survives future
+# narrowing of the default rule).
+/.github/ @YosemiteCrew
+/SECURITY.md @YosemiteCrew
+/CONTRIBUTING.md @YosemiteCrew
+/docs/adr/ @YosemiteCrew

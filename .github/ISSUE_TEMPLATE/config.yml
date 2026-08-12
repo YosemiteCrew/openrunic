@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/YosemiteCrew/openrunic/security/policy
+    about: >-
+      Please do not report security vulnerabilities in public issues. Use private vulnerability
+      reporting as described in our security policy.

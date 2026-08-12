@@ -1,9 +1,15 @@
 import { fileURLToPath } from 'node:url';
-import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  plugins: [react()],
+  // No @vitejs/plugin-react here on purpose: its second transform pass
+  // double-instruments files under istanbul coverage (halving reported
+  // coverage). Tests only need the automatic JSX runtime, which esbuild
+  // provides directly; the plugin's fast-refresh is a dev-server concern.
+  esbuild: {
+    jsx: 'automatic',
+    jsxDev: false,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

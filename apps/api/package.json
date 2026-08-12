@@ -1,0 +1,32 @@
+{
+  "name": "api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "openrunic API — the FHIR R4 boundary of the EMR",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@openrunic/fhir": "workspace:*",
+    "hono": "^4.9.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^22.17.0",
+    "@vitest/coverage-istanbul": "^3.2.4",
+    "eslint": "^9.32.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.39.0",
+    "vitest": "^3.2.4"
+  }
+}

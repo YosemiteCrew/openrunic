@@ -12,11 +12,11 @@ config; formatting is Prettier (repo config).
 ## Layout
 
 ```text
-apps/web            Next.js 15 (hospital and patient web)
+apps/web            Next.js 16 (hospital and patient web)
 apps/api            Hono (FHIR R4 API boundary)
 packages/types      Shared TypeScript types
 packages/fhir       FHIR R4 types + domain<->FHIR mappers; every mapper needs round-trip tests
-packages/database   Prisma 6 + Postgres; relational source of truth
+packages/database   Prisma 7 + Postgres; relational source of truth
 docs/adr            Architecture decisions; read 0002 before touching FHIR or schema code
 ```
 

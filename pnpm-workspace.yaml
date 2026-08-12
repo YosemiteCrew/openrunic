@@ -5,3 +5,12 @@ packages:
 # Supply-chain guard: refuse to install any package version published less
 # than 3 days ago, giving the ecosystem time to catch malicious releases.
 minimumReleaseAge: 4320
+
+# pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+  - esbuild
+  - sharp
+  - unrs-resolver

@@ -6,6 +6,15 @@ packages:
 # than 3 days ago, giving the ecosystem time to catch malicious releases.
 minimumReleaseAge: 4320
 
+# Security overrides for transitive pins we cannot update in-range. Exact
+# versions on purpose - range keys silently stop matching when the parent
+# changes its pin. Re-check on every Next.js major (it pins both packages).
+overrides:
+  # GHSA fixes: postcss < 8.5.23 (Next pins 8.4.31 exactly).
+  postcss: 8.5.26
+  # GHSA fix: sharp < 0.35.0 (Next optional dep allows only 0.34.x).
+  sharp: 0.35.1
+
 # pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
 onlyBuiltDependencies:
   - '@prisma/client'

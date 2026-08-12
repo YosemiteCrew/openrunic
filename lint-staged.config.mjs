@@ -3,6 +3,6 @@ export default {
   // Wide net for secret scanning — includes config and env-shaped files that
   // prettier never touches.
   '**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml,sh,env,toml,properties,xml,gradle,plist}': [
-    'secretlint --maskSecrets',
+    'secretlint --no-gitignore --maskSecrets',
   ],
 };

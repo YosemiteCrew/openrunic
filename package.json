@@ -1,0 +1,35 @@
+{
+  "name": "openrunic",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source operating system for human health",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "type-check": "turbo run type-check",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
+    "check:secrets": "secretlint \"**/*\"",
+    "verify": "pnpm run lint && pnpm run type-check && pnpm run test && pnpm run build"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.0",
+    "prettier": "^3.6.0",
+    "secretlint": "^11.2.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.2.0",
+    "@secretlint/secretlint-rule-no-dotenv": "^11.2.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/types" },
+    { "path": "packages/fhir" },
+    { "path": "packages/database" },
+    { "path": "apps/api" },
+    { "path": "apps/web" }
+  ]
+}

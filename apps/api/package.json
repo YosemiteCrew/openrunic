@@ -14,7 +14,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.0",
+    "@hono/node-server": "^2.0.10",
     "@openrunic/fhir": "workspace:*",
     "hono": "^4.9.0",
     "zod": "^4.1.0"

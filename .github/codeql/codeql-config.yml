@@ -1,0 +1,4 @@
+# CodeQL scan scope. No exclusions yet: nothing in this repository is
+# generated or vendored. Add paths-ignore entries here as generated asset
+# trees appear, rather than letting their findings drown the real ones.
+paths-ignore: []

@@ -1,0 +1,264 @@
+name: Supply Chain
+
+# Supply-chain security gates: SBOM generation, vulnerability scanning, and
+# AGPL license compliance. The syft/grype/grant steps are inlined here (with
+# pinned versions and verified checksums) rather than delegated to a repo
+# script, so the workflow is the single place the tool versions live; run the
+# same commands locally with the versions documented on each install step.
+#
+# The tag/release triggers are kept even though nothing publishes releases yet:
+# releases published by workflows using GITHUB_TOKEN do NOT emit a release
+# event this workflow can see, so the user's tag push is the trigger that
+# covers those paths - it produces the SBOM artifacts and runs the gates for
+# the released ref.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+    tags:
+      - '**'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Attach SBOMs to an existing release with this tag (for releases
+          published via GITHUB_TOKEN that emit no release event). Run the
+          dispatch from the tag ref so the SBOM is built from the released
+          code.
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: supply-chain-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # License metadata lives in the installed packages, not the lockfile;
+      # the SBOM needs a real node_modules.
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install syft (pinned, checksum-verified)
+        env:
+          SYFT_VERSION: 1.51.0
+          # sha256 of syft_1.51.0_linux_amd64.tar.gz from the release's
+          # published checksums. Verified before extraction so a tampered or
+          # swapped release binary fails the job instead of running on a runner
+          # with the repository checked out.
+          SYFT_SHA256: 2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/syft.tar.gz"
+          echo "${SYFT_SHA256}  ${RUNNER_TEMP}/syft.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/syft" version
+
+      - name: Generate SPDX and CycloneDX SBOMs
+        run: |
+          set -euo pipefail
+          mkdir -p security/sbom
+          syft scan dir:. \
+            -o spdx-json=security/sbom/openrunic.spdx.json \
+            -o cyclonedx-json=security/sbom/openrunic.cdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: security/sbom/
+          retention-days: 90
+
+  vulnerabilities:
+    name: Vulnerability scan (grype)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: sbom
+    permissions:
+      contents: read
+      # Surfacing the SARIF in the Security tab needs this; the job still
+      # gates the PR through its own exit code either way.
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: security/sbom/
+
+      - name: Install grype (pinned, checksum-verified)
+        env:
+          GRYPE_VERSION: 0.117.0
+          # sha256 of grype_0.117.0_linux_amd64.tar.gz from the release's
+          # published checksums.
+          GRYPE_SHA256: 38525dab1e06f162ebaa02f94d82d1f807076b011a44180cf2777edf1a7b9c26
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/grype.tar.gz"
+          echo "${GRYPE_SHA256}  ${RUNNER_TEMP}/grype.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/grype" version
+
+      # Accepted findings live in .grype.yaml (auto-discovered at the repo
+      # root), each with a reason, an owner and a re-review date - see the
+      # exception process documented there.
+      - name: Scan the SBOM, fail on critical
+        run: |
+          set -euo pipefail
+          mkdir -p security/reports
+          grype sbom:security/sbom/openrunic.spdx.json \
+            --fail-on critical \
+            -o table \
+            -o sarif=security/reports/grype.sarif
+
+      - name: Upload scan report artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grype-report
+          path: security/reports/grype.sarif
+          retention-days: 90
+
+      - name: Upload SARIF to code scanning
+        # Dependabot-actor runs cannot write security events; the gate above
+        # still applies to them through the job's exit code.
+        if: always() && github.actor != 'dependabot[bot]'
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: security/reports/grype.sarif
+          category: supply-chain
+
+  licenses:
+    name: License compliance (grant)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: sbom
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: security/sbom/
+
+      - name: Install grant (pinned, checksum-verified)
+        env:
+          GRANT_VERSION: 0.6.8
+          # sha256 of grant_0.6.8_linux_amd64.tar.gz from the release's
+          # published checksums.
+          GRANT_SHA256: 6500f8bbf0f20fb993de8084686e199f0ba1eb494769ff75454286d5ef63f919
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/anchore/grant/releases/download/v${GRANT_VERSION}/grant_${GRANT_VERSION}_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/grant.tar.gz"
+          echo "${GRANT_SHA256}  ${RUNNER_TEMP}/grant.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grant.tar.gz" -C "$RUNNER_TEMP" grant
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/grant" --version
+
+      # grant denies anything not on the allow list in .grant.yaml
+      # (deny-by-default); the policy and its exception process live there.
+      - name: Check licenses against the AGPL policy
+        run: grant check security/sbom/openrunic.spdx.json --config .grant.yaml
+
+  publish-release-sboms:
+    name: Attach SBOMs to the release
+    # The release event carries the target tag itself. Releases published by
+    # workflows using GITHUB_TOKEN emit no release event, so those are covered
+    # by a workflow_dispatch run with release_tag set - dispatched FROM THE TAG
+    # REF, so the sbom job above builds from the released code and the assets
+    # match the release.
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [sbom]
+    permissions:
+      contents: write
+    steps:
+      - name: Ensure the dispatched ref is the release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF: ${{ github.ref }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          # The sbom job builds from the DISPATCHED ref while TAG names an
+          # existing release, and `gh release upload --clobber` replaces that
+          # release's assets - so a dispatch from any other ref would swap the
+          # release's SBOMs for ones built from different code. Fail closed.
+          if [ "${REF}" != "refs/tags/${TAG}" ]; then
+            echo "dispatch ref ${REF} does not match refs/tags/${TAG} - run this workflow FROM the release tag so the uploaded SBOMs describe the released code" >&2
+            exit 1
+          fi
+
+      - name: Download the gated SBOM artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: security/sbom/
+
+      - name: Upload SBOMs as release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$TAG" \
+            security/sbom/openrunic.spdx.json \
+            security/sbom/openrunic.cdx.json \
+            --clobber --repo "$REPO"
+
+  # The one check to mark required on the branch ruleset. Required checks
+  # treat a skipped job as satisfied, so a failed SBOM stage silently passing
+  # its dependents is exactly what this aggregate exists to prevent (same
+  # pattern as ci.yaml's CI Required).
+  supply-chain-required:
+    name: Supply Chain Required
+    if: always() && github.event_name != 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [sbom, vulnerabilities, licenses]
+    steps:
+      - name: Fail on any failed or skipped stage
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -qE '"result": *"(failure|cancelled|skipped)"'; then
+            echo "Supply Chain Required: at least one stage failed, was cancelled, or was skipped"
+            exit 1
+          fi

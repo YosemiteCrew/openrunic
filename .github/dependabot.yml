@@ -1,0 +1,90 @@
+# NOTE: dependabot reads this file from the DEFAULT branch (main), not from dev -
+# target-branch below only aims the PRs at dev. Any change here must land on
+# main to take effect, so keep the copies on dev and main byte-identical, or a
+# config change sits silently inert until the next promotion.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: 'UTC'
+    target-branch: dev
+    open-pull-requests-limit: 10
+    # Only labels that exist in the repo. Dependabot cannot create labels, so an
+    # unknown name makes it post a config error on every PR it opens instead of
+    # applying the label.
+    labels:
+      - dependencies
+    # Use a conventional type(scope) the PR-title gate accepts. A bare 'chore'
+    # with include:scope yields 'chore(deps): …', and 'deps' is not an allowed
+    # scope, so those PRs would fail pr-governance. 'repo' is the catch-all scope.
+    commit-message:
+      prefix: 'chore(repo)'
+    groups:
+      # Every group is minor-and-patch only, including the named ones below. A
+      # named group without `update-types` silently swallows MAJORS too, which
+      # is how breaking major bumps end up inside an unreviewable group PR
+      # instead of the individual PR a breaking major needs. Majors always get
+      # their own PR and their own review.
+      typescript-eslint:
+        patterns:
+          - 'typescript'
+          - '@types/*'
+          - 'eslint*'
+          - '@typescript-eslint/*'
+        update-types:
+          - minor
+          - patch
+      testing:
+        patterns:
+          - 'vitest*'
+          - '@vitest/*'
+          - '@testing-library/*'
+        update-types:
+          - minor
+          - patch
+      build-tooling:
+        patterns:
+          - 'turbo'
+          - 'prettier'
+          - 'husky'
+          - 'lint-staged'
+        update-types:
+          - minor
+          - patch
+      # Catch-all. Must stay LAST: a dependency joins the first group it
+      # matches, so an earlier '*' would swallow the named groups above.
+      # Minor and patch only, so major bumps still get an individual PR
+      # and an individual review.
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:30'
+      timezone: 'UTC'
+    target-branch: dev
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: 'ci(repo)'
+    labels:
+      - dependencies
+      - github_actions
+    groups:
+      # Action majors are routinely breaking, so keep them out of the group
+      # and let each land on its own.
+      actions:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch

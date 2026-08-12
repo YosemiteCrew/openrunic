@@ -1,0 +1,47 @@
+# License-compliance policy for the supply-chain gate.
+# .github/workflows/supply-chain.yml runs grant over the repository SBOM with
+# this policy; grant denies anything not on the allow list below.
+#
+# The repository is pure AGPL-3.0 (LICENSE is AGPL-3.0-only, no combining
+# exceptions), so the list is the project's own license family plus the
+# permissive, AGPL-compatible set. Deny-by-default otherwise: additions need
+# the same review as a code change - include the FSF/SPDX compatibility
+# rationale in the PR. In particular, GPL/LGPL dependencies are NOT
+# pre-approved here; the first one to appear should be added deliberately,
+# with its one-way-compatibility argument written down.
+allow:
+  # The project license family.
+  - AGPL-3.0-only
+  - AGPL-3.0-or-later
+  - AGPL-3.0
+  # Permissive, AGPL-compatible.
+  - MIT
+  - ISC
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - Apache-2.0
+  - 0BSD
+  - BlueOak-1.0.0
+  - CC0-1.0
+  - CC-BY-4.0
+  - Unlicense
+  - Python-2.0
+  # Weak copyleft, compatible per FSF; file-level obligations only.
+  - MPL-2.0
+
+# Packages with no machine-readable license in their package.json (mostly
+# store-internal artifacts and packages with nonstandard license fields) would
+# otherwise fail the gate on missing metadata rather than on an actual license
+# conflict. Flipping this to true is the documented follow-up hardening once
+# that tail is triaged.
+require-license: false
+
+# Package-level exceptions. Every entry MUST carry: the verified reason, an
+# owner, and a re-review date. Verified means the LICENSE file in the
+# installed package was read - not the package.json field. Example:
+#
+# ignore-packages:
+#   # package.json says "bsd" (nonstandard spelling); the LICENSE file is
+#   # plain BSD-3-Clause. Owner: ankit-yc. Re-review by: YYYY-MM-DD.
+#   - some-package
+ignore-packages: []

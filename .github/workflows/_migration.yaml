@@ -1,0 +1,143 @@
+name: Migration
+
+# Reusable migration stage: prove that every Prisma migration applies cleanly to
+# a real Postgres, that the schema is valid, and that schema.prisma and the
+# migration history have not drifted apart.
+#
+# This stage exists so migration SQL is executed by CI from day one. Without it,
+# a schema change merges green and first runs when an operator applies it by
+# hand against a live database - the worst possible place to find out. The
+# drift check is the part that earns its keep: it catches a schema.prisma
+# change that never got a migration, and a migration that never made it into
+# the schema, before either reaches an environment.
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Prisma migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        # 17-alpine rather than 16: this is a fresh repository with no live
+        # environment to mirror yet, so CI starts on the current major. Once a
+        # production database exists, pin this to the SAME major it runs -
+        # migration SQL proven against a newer server than production is not
+        # proof.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          # Not a secret: this database is a service container created for this
+          # job and destroyed with it, reachable only on the runner's localhost.
+          # Derived from the run id so no credential literal sits in the repo.
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+          POSTGRES_DB: openrunic_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:${{ github.run_id }}@localhost:5432/openrunic_ci?schema=public
+      DIRECT_URL: postgresql://postgres:${{ github.run_id }}@localhost:5432/openrunic_ci?schema=public
+      SHADOW_DATABASE_URL: postgresql://postgres:${{ github.run_id }}@localhost:5432/openrunic_shadow?schema=public
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          # Needed to diff this branch against its base for the immutability
+          # check below.
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # Prisma stores a checksum of every migration it has applied. Editing a
+      # migration that is already deployed therefore does not fail here - it
+      # fails later, in `migrate deploy` against the environment that already
+      # ran it, which is the worst possible place to find out. Applied
+      # migrations are immutable: fix a mistake with a new migration.
+      - name: Check applied migrations were not edited
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          # Only additions are allowed under prisma/migrations. Renames count as
+          # a delete plus an add, so -M is disabled to catch a migration being
+          # moved rather than added.
+          changed=$(git diff --no-renames --name-status "$BASE_SHA...HEAD" \
+            -- packages/database/prisma/migrations \
+            | grep -Ev '^A' || true)
+
+          if [ -n "$changed" ]; then
+            echo "::error::An existing migration was modified or deleted."
+            echo "Migrations that have been applied anywhere are immutable - Prisma"
+            echo "checksums them, so an edit here surfaces as a failed deploy against"
+            echo "an environment that already ran it. Add a new migration instead."
+            echo "--- disallowed changes ---"
+            echo "$changed"
+            exit 1
+          fi
+
+          echo "No existing migration was modified."
+
+      # `migrate diff --from-migrations` replays the whole history into a
+      # throwaway database, so it needs one that is not the target.
+      - name: Create shadow database
+        env:
+          PGPASSWORD: ${{ github.run_id }}
+        run: psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE openrunic_shadow;'
+
+      - name: Validate schema
+        run: pnpm --filter @openrunic/database exec prisma validate
+
+      # The core gate: prove the migration history applies, in order, to an
+      # empty database.
+      - name: Apply migrations
+        run: pnpm --filter @openrunic/database exec prisma migrate deploy
+
+      - name: Check schema and migrations have not drifted
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pnpm --filter @openrunic/database exec prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --script > drift.sql
+
+          # Drop SQL comments and blank lines. Anything still standing is real
+          # drift: either schema.prisma changed without a migration, or a
+          # migration changed without the schema.
+          #
+          # The grep is guarded with `|| true`: grep exits 1 when it prints
+          # nothing, and "prints nothing" is the healthy outcome here, so
+          # without the guard `set -e` would fail the step precisely when there
+          # is no drift.
+          remaining=$(grep -Ev '^[[:space:]]*(--|$)' drift.sql || true)
+
+          if [ -n "$remaining" ]; then
+            echo "::error::schema.prisma and prisma/migrations have drifted apart."
+            echo "Generate a migration for the schema change, or reconcile the schema with the migration."
+            echo "--- unaccounted-for drift ---"
+            echo "$remaining"
+            exit 1
+          fi
+
+          echo "No drift: schema.prisma matches the migration history."

@@ -1,0 +1,82 @@
+name: PR Governance
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-governance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pr-title:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Single source of truth: derive the allowed types/scopes from
+      # commitlint.config.cjs so the PR-title gate can never drift from the
+      # commit-message gate (the commit-messages job below runs the same
+      # config). The runner's system Node is enough to require a CJS config, so
+      # this job skips the toolchain setup entirely.
+      - name: Read allowed types and scopes from commitlint config
+        id: enums
+        run: |
+          node -e '
+            const c = require("./commitlint.config.cjs");
+            const r = c.rules || {};
+            const list = (rule) => (rule && rule[2] ? rule[2] : []).join("\n");
+            const fs = require("fs");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `types<<EOF\n${list(r["type-enum"])}\nEOF\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `scopes<<EOF\n${list(r["scope-enum"])}\nEOF\n`);
+          '
+
+      - name: Check semantic PR title
+        uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: ${{ steps.enums.outputs.types }}
+          scopes: ${{ steps.enums.outputs.scopes }}
+          requireScope: true
+
+  commit-messages:
+    name: Validate commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Promotion PRs (dev -> main) replay already-merged dev history into main.
+    # Keep title validation active, but do not re-lint historical commits in
+    # that path.
+    #
+    # Dependabot writes long changelog and release-note lines into its commit
+    # bodies, which trip config-conventional's body/footer-max-line-length and
+    # fail this job on every bot PR. The PR-title gate above still runs, so the
+    # conventional type(scope) contract is enforced on the squash-merge subject;
+    # only the generated body lines are exempt.
+    if: ${{ !(github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'dev') && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Lint commit messages in PR range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose

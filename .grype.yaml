@@ -1,0 +1,20 @@
+# Vulnerability-scan configuration for the supply-chain gate.
+# .github/workflows/supply-chain.yml runs grype over the repository SBOM with
+# --fail-on critical; grype auto-discovers this file at the repo root, so a
+# local run of the same command applies the same policy.
+#
+# EXCEPTION PROCESS - accepted findings go under `ignore:` below. Every entry
+# MUST carry a comment with: the reason it is acceptable, an owner, and an
+# expiry date at which it must be re-reviewed. Example:
+#
+# ignore:
+#   # GHSA-xxxx-xxxx-xxxx in foo@1.2.3: not reachable - the vulnerable code
+#   # path needs server-side rendering we never enable. Owner: ankit-yc.
+#   # Re-review by: YYYY-MM-DD. (a real date here - the placeholder is
+#   # deliberate so this example never trips the expiry guard)
+#   - vulnerability: GHSA-xxxx-xxxx-xxxx
+#     package:
+#       name: foo
+#       version: 1.2.3
+
+ignore: []

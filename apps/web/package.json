@@ -12,28 +12,21 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "next": "^15.5.23",
+    "next": "^16.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
-    "@next/eslint-plugin-next": "^15.5.23",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@typescript-eslint/eslint-plugin": "^8.66.0",
-    "@typescript-eslint/parser": "^8.66.0",
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-istanbul": "^3.2.7",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^15.5.23",
-    "eslint-plugin-import": "^2.32.0",
-    "eslint-plugin-jsx-a11y": "^6.10.2",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-config-next": "^16.3.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

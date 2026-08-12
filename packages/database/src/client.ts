@@ -1,4 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+
+import { PrismaClient } from './generated/prisma/client.js';
 
 export interface CreatePrismaClientOptions {
   /** Overrides `DATABASE_URL` from the environment. */
@@ -16,14 +18,15 @@ export interface CreatePrismaClientOptions {
  * instance — each client owns a connection pool.
  */
 export function createPrismaClient(options: CreatePrismaClientOptions = {}): PrismaClient {
-  const datasourceUrl = options.datasourceUrl ?? process.env.DATABASE_URL;
-  if (!datasourceUrl) {
+  const connectionString = options.datasourceUrl ?? process.env.DATABASE_URL;
+  if (!connectionString) {
     throw new Error(
       '@openrunic/database: DATABASE_URL is not set. Copy .env.example to .env and fill it in, or pass { datasourceUrl }.'
     );
   }
+  const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({
-    datasourceUrl,
+    adapter,
     ...(options.log ? { log: options.log } : {}),
   });
 }

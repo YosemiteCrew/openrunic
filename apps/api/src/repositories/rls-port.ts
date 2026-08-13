@@ -74,6 +74,39 @@ export function createRlsDbPortFactory(client: PrismaClient): DbPortFactory {
   );
 }
 
+/**
+ * Refuses an `updateMany` that carries no filter.
+ *
+ * Prisma reads a missing `where` as "every row", so a forgotten filter and a
+ * deliberate mass update are the same call. Row-level security bounds the
+ * damage to one tenant - the difference between a catastrophe and an incident -
+ * but "every patient in this practice" is still not something any caller here
+ * intends, and nothing else in the stack would notice.
+ *
+ * It runs before the session opens, so a refused call never reaches Postgres,
+ * and the method stays `async` so the refusal arrives as a rejected promise
+ * rather than a synchronous throw from an interface that promises one.
+ *
+ * This is the right layer for the check precisely because this wrapper forwards
+ * an `args` it did not build: the repository above it always passes an identity
+ * filter, and the guarantee that it did has to be made where the two meet.
+ */
+function withFilter<A extends { readonly where?: unknown }>(args: A, operation: string): A {
+  const { where } = args;
+  const filtered =
+    typeof where === 'object' && where !== null && !Array.isArray(where)
+      ? Object.keys(where).length > 0
+      : false;
+
+  if (!filtered) {
+    throw new TypeError(
+      `${operation}: refusing an update with no filter. An unfiltered updateMany rewrites every row the session can see.`
+    );
+  }
+
+  return args;
+}
+
 /** The wiring, with the session mechanism left as a parameter. */
 export function createSessionBoundPortFactory(runSession: TenantSessionRunner): DbPortFactory {
   return (tenantId: string): DbPort => {
@@ -86,14 +119,20 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
         count: (args) => inSession((tx) => tx.patient.count(args)),
         findFirst: (args) => inSession((tx) => tx.patient.findFirst(args)),
         create: (args) => inSession((tx) => tx.patient.create(args)),
-        updateMany: (args) => inSession((tx) => tx.patient.updateMany(args)),
+        updateMany: async (args) => {
+          withFilter(args, 'patient.updateMany');
+          return inSession((tx) => tx.patient.updateMany(args));
+        },
       },
       appointment: {
         findMany: (args) => inSession((tx) => tx.appointment.findMany(args)),
         count: (args) => inSession((tx) => tx.appointment.count(args)),
         findFirst: (args) => inSession((tx) => tx.appointment.findFirst(args)),
         create: (args) => inSession((tx) => tx.appointment.create(args)),
-        updateMany: (args) => inSession((tx) => tx.appointment.updateMany(args)),
+        updateMany: async (args) => {
+          withFilter(args, 'appointment.updateMany');
+          return inSession((tx) => tx.appointment.updateMany(args));
+        },
       },
       auditEvent: {
         create: (args) => inSession((tx) => tx.auditEvent.create(args)),

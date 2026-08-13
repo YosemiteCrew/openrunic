@@ -126,7 +126,12 @@ const SURFACE: { model: string; operation: string; call: (port: DbPort) => Promi
   { model: 'patient', operation: 'count', call: (p) => p.patient.count({}) },
   { model: 'patient', operation: 'findFirst', call: (p) => p.patient.findFirst({}) },
   { model: 'patient', operation: 'create', call: (p) => p.patient.create(PATIENT_CREATE) },
-  { model: 'patient', operation: 'updateMany', call: (p) => p.patient.updateMany({ data: {} }) },
+  {
+    model: 'patient',
+    operation: 'updateMany',
+    // A filter, because the port refuses an unfiltered update: see withFilter.
+    call: (p) => p.patient.updateMany({ where: { id: testId(1) }, data: {} }),
+  },
   { model: 'appointment', operation: 'findMany', call: (p) => p.appointment.findMany({}) },
   { model: 'appointment', operation: 'count', call: (p) => p.appointment.count({}) },
   { model: 'appointment', operation: 'findFirst', call: (p) => p.appointment.findFirst({}) },
@@ -138,7 +143,7 @@ const SURFACE: { model: string; operation: string; call: (port: DbPort) => Promi
   {
     model: 'appointment',
     operation: 'updateMany',
-    call: (p) => p.appointment.updateMany({ data: {} }),
+    call: (p) => p.appointment.updateMany({ where: { id: testId(3) }, data: {} }),
   },
   { model: 'auditEvent', operation: 'create', call: (p) => p.auditEvent.create(AUDIT_CREATE) },
   { model: 'auditEvent', operation: 'findFirst', call: (p) => p.auditEvent.findFirst({}) },
@@ -212,5 +217,57 @@ describe('the RLS-bound port', () => {
     expect(typeof port.$transaction).toBe('function');
     expect(typeof port.patient.findMany).toBe('function');
     expect(tenantTransactionSatisfiesPort).toBe(true);
+  });
+});
+
+describe('the unfiltered-update guard', () => {
+  /**
+   * RLS makes a filterless updateMany a tenant-sized problem rather than a
+   * database-sized one. That is a large improvement and not a licence to ship
+   * the call: within one practice it still rewrites every patient, and nothing
+   * downstream would report it as anything but a successful write.
+   */
+  it('refuses a patient update with no filter', async () => {
+    const { runner } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    await expect(port.patient.updateMany({ data: {} })).rejects.toThrow(TypeError);
+    await expect(port.patient.updateMany({ data: {} })).rejects.toThrow(
+      /rewrites every row the session can see/
+    );
+  });
+
+  it('refuses an empty filter as well as a missing one', async () => {
+    const { runner } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    // `where: {}` is the same instruction spelled differently, and is what a
+    // conditionally-built filter collapses to when every condition is absent.
+    await expect(port.patient.updateMany({ where: {}, data: {} })).rejects.toThrow(TypeError);
+  });
+
+  it('refuses an appointment update with no filter', async () => {
+    const { runner } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    await expect(port.appointment.updateMany({ data: {} })).rejects.toThrow(TypeError);
+  });
+
+  it('refuses before opening a session, so nothing reaches the database', async () => {
+    const { runner, sessions } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    await expect(port.patient.updateMany({ data: {} })).rejects.toThrow(TypeError);
+
+    expect(sessions).toHaveLength(0);
+  });
+
+  it('allows a filtered update through untouched', async () => {
+    const { runner } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    await expect(port.patient.updateMany({ where: { id: testId(1) }, data: {} })).resolves.toEqual({
+      count: 1,
+    });
   });
 });

@@ -67,6 +67,19 @@ export function createPrismaRepositoryRegistry(connect: DbPortFactory): Reposito
  */
 const TENANT_STAMPED_BY_CLIENT = '';
 
+/**
+ * An identity filter written the long way, on purpose.
+ *
+ * `{ id }` is shorthand for `{ id: { equals: id } }` only while `id` is a
+ * scalar. Hand Prisma an object there and it reads the keys as filter
+ * operators, so a value that reached this layer as `{ not: '' }` would select
+ * every row rather than none - the ORM equivalent of operator injection. Every
+ * route already parses the parameter with `z.uuid()`, so this cannot happen
+ * today; spelling the operator out means it stays impossible if a future caller
+ * arrives from somewhere other than a route.
+ */
+const byId = (id: string): Record<string, unknown> => ({ id: { equals: id } });
+
 export function createPrismaCollection<
   M extends PrismaModelName,
   TCreate,
@@ -94,7 +107,7 @@ export function createPrismaCollection<
     const column = spec.model === 'Patient' ? 'id' : spec.compartment.column;
     // ANDed rather than merged, so a filter the caller supplied on the same
     // column cannot widen the compartment: the outer AND still has to hold.
-    return { AND: [where ?? {}, { [column]: compartment }] };
+    return { AND: [where ?? {}, { [column]: { equals: compartment } }] };
   };
 
   const delegate = port.model(spec.model);
@@ -138,7 +151,7 @@ export function createPrismaCollection<
 
     async findById(id: string): Promise<ScopedRow<M> | null> {
       if (closed) return null;
-      const record = await delegate.findFirst({ where: scoped({ id }) });
+      const record = await delegate.findFirst({ where: scoped(byId(id)) });
       if (record === null) return null;
       const row = toPlainRow<M>(record) as ScopedRow<M>;
       recordRead(row);
@@ -183,7 +196,7 @@ export function createPrismaCollection<
       return port.$transaction(async (tx) => {
         if (closed) return null;
         const scopedDelegate = tx.model(spec.model);
-        const existing = await scopedDelegate.findFirst({ where: scoped({ id }) });
+        const existing = await scopedDelegate.findFirst({ where: scoped(byId(id)) });
         if (existing === null) return null;
 
         const before = toPlainRow<M>(existing) as ScopedRow<M>;
@@ -192,12 +205,12 @@ export function createPrismaCollection<
           now: new Date(),
           nextId: uuidv7,
         });
-        const result = await scopedDelegate.updateMany({ where: scoped({ id }), data });
+        const result = await scopedDelegate.updateMany({ where: scoped(byId(id)), data });
         if (result.count === 0) return null;
 
         // Re-read rather than trust the patch: defaults, triggers and the
         // `updatedAt` column are the database's to decide.
-        const record = await scopedDelegate.findFirst({ where: scoped({ id }) });
+        const record = await scopedDelegate.findFirst({ where: scoped(byId(id)) });
         if (record === null) return null;
         const row = toPlainRow<M>(record) as ScopedRow<M>;
 

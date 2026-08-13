@@ -72,6 +72,22 @@ describe('signing in with a token', () => {
     expect(heldSession()).toEqual(SESSION);
   });
 
+  it('starts the application from scratch rather than layering it over the form', async () => {
+    // A document navigation, not a router push: the signed-out tree, its state
+    // and anything it rendered go away before the signed-in one is built.
+    const assign = vi.fn();
+    vi.stubGlobal('location', { assign, search: '' });
+    fetchImpl.mockResolvedValue(accepted());
+    render(<SignInScreen credentials={[]} />);
+
+    fireEvent.change(screen.getByLabelText('Access token'), {
+      target: { value: 'dev-clinician-a' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/schedule'));
+  });
+
   it('sends them back to the page they were trying to open', async () => {
     fetchImpl.mockResolvedValue(accepted());
     render(<SignInScreen navigate={navigate} credentials={[]} next="/patients?query=okafor" />);

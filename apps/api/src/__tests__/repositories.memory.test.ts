@@ -18,6 +18,7 @@ import {
   makeAppointmentRow,
   makePatientRow,
   seedPatients,
+  seed,
   testId,
 } from './support.js';
 
@@ -148,13 +149,14 @@ describe('the in-memory patient repository', () => {
 
   it('finds by id and by MRN inside the tenant only', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(makePatientRow({ id: testId(1), tenantId: DEMO_TENANT_A }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1), tenantId: DEMO_TENANT_A }));
     const { repos } = harness(dataset);
+    const byMrn = { ...BASE_QUERY, mrn: 'OR-100482' };
 
     await expect(repos().patients.findById(testId(1))).resolves.toMatchObject({ id: testId(1) });
-    await expect(repos().patients.findByMrn('OR-100482')).resolves.toMatchObject({ id: testId(1) });
+    await expect(repos().patients.list(byMrn)).resolves.toMatchObject({ total: 1 });
     await expect(repos(DEMO_TENANT_B).patients.findById(testId(1))).resolves.toBeNull();
-    await expect(repos(DEMO_TENANT_B).patients.findByMrn('OR-100482')).resolves.toBeNull();
+    await expect(repos(DEMO_TENANT_B).patients.list(byMrn)).resolves.toMatchObject({ total: 0 });
   });
 
   it('paginates and reports the whole-set total', async () => {
@@ -182,7 +184,9 @@ describe('the in-memory patient repository', () => {
 
   it('filters by MRN, name prefix, birth date, active and sex', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(
+    seed(
+      dataset,
+      'Patient',
       makePatientRow({
         id: testId(1),
         mrn: 'OR-1',
@@ -216,7 +220,9 @@ describe('the in-memory patient repository', () => {
 
   it('matches free text across name, preferred name and MRN', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(
+    seed(
+      dataset,
+      'Patient',
       makePatientRow({ id: testId(1), mrn: 'OR-100482', preferredName: 'Tess' }),
       makePatientRow({ id: testId(2), mrn: 'OR-999', familyName: 'Nobody', givenName: 'Nemo' })
     );
@@ -231,7 +237,9 @@ describe('the in-memory patient repository', () => {
 
   it('sorts by each supported key in both directions', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(
+    seed(
+      dataset,
+      'Patient',
       makePatientRow({
         id: testId(1),
         mrn: 'a',
@@ -260,7 +268,9 @@ describe('the in-memory patient repository', () => {
 
   it('breaks ties on id so a page boundary is stable', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(
+    seed(
+      dataset,
+      'Patient',
       makePatientRow({ id: testId(2), mrn: 'a', familyName: 'Same', givenName: 'Same' }),
       makePatientRow({ id: testId(1), mrn: 'b', familyName: 'Same', givenName: 'Same' })
     );
@@ -272,7 +282,7 @@ describe('the in-memory patient repository', () => {
 
   it('patches only the fields present and reports them on the audit event', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
     const { repos, sink } = harness(dataset);
 
     const row = await repos().patients.update(testId(1), { familyName: 'Renamed', active: false });
@@ -283,7 +293,7 @@ describe('the in-memory patient repository', () => {
 
   it('patches every patchable column', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
     const { repos } = harness(dataset);
 
     const row = await repos().patients.update(testId(1), {
@@ -323,13 +333,13 @@ describe('the in-memory patient repository', () => {
 
   it('resolves update to null for another tenant rather than touching the row', async () => {
     const dataset = createEmptyDataset();
-    dataset.patients.push(makePatientRow({ id: testId(1), familyName: 'Patientsson' }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1), familyName: 'Patientsson' }));
     const { repos } = harness(dataset);
 
     await expect(
       repos(DEMO_TENANT_B).patients.update(testId(1), { familyName: 'Stolen' })
     ).resolves.toBeNull();
-    expect(dataset.patients[0]?.familyName).toBe('Patientsson');
+    expect(dataset.table('Patient')[0]?.familyName).toBe('Patientsson');
   });
 
   it('registers a read for every row it hands back', async () => {
@@ -408,7 +418,9 @@ describe('the in-memory appointment repository', () => {
 
   it('filters by facility, provider, patient, status and a half-open window', async () => {
     const dataset = createEmptyDataset();
-    dataset.appointments.push(
+    seed(
+      dataset,
+      'Appointment',
       makeAppointmentRow({ id: testId(101), start: new Date('2026-08-14T09:00:00.000Z') }),
       makeAppointmentRow({
         id: testId(102),
@@ -445,7 +457,9 @@ describe('the in-memory appointment repository', () => {
 
   it('sorts by start or creation, in both directions', async () => {
     const dataset = createEmptyDataset();
-    dataset.appointments.push(
+    seed(
+      dataset,
+      'Appointment',
       makeAppointmentRow({
         id: testId(101),
         start: new Date('2026-08-14T11:00:00.000Z'),
@@ -476,7 +490,7 @@ describe('the in-memory appointment repository', () => {
 
   it('stamps checkedInAt exactly once, when the status first reaches CHECKED_IN', async () => {
     const dataset = createEmptyDataset();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
     const { repos, sink } = harness(dataset);
 
     const first = await repos().appointments.update(testId(101), { status: 'CHECKED_IN' });
@@ -494,7 +508,7 @@ describe('the in-memory appointment repository', () => {
 
   it('applies every patchable field', async () => {
     const dataset = createEmptyDataset();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
     const { repos } = harness(dataset);
 
     const row = await repos().appointments.update(testId(101), {
@@ -514,7 +528,7 @@ describe('the in-memory appointment repository', () => {
 
   it('omits the status transition from the audit event when the status did not move', async () => {
     const dataset = createEmptyDataset();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
     const { repos, sink } = harness(dataset);
 
     await repos().appointments.update(testId(101), { room: '5' });
@@ -524,7 +538,7 @@ describe('the in-memory appointment repository', () => {
 
   it("hides another tenant's appointments from read and update alike", async () => {
     const dataset = createEmptyDataset();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
     const { repos } = harness(dataset);
 
     await expect(repos(DEMO_TENANT_B).appointments.findById(testId(101))).resolves.toBeNull();
@@ -559,6 +573,6 @@ describe('the in-memory appointment repository', () => {
 
     const row = await repos.appointments.create(CREATE_INPUT);
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(registry.dataset.appointments).toHaveLength(1);
+    expect(registry.dataset.table('Appointment')).toHaveLength(1);
   });
 });

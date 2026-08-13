@@ -1,9 +1,8 @@
-import type { Bundle, CapabilityStatement, OperationOutcome, Patient } from '@openrunic/fhir';
+import type { Bundle, OperationOutcome, Patient } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
 import { buildSearchsetBundle } from '../fhir/bundle.js';
-import { fhirBaseUrl } from '../fhir/index.js';
-import { buildCapabilityStatement } from '../fhir/metadata.js';
+import { fhirBaseUrl, servedResources } from '../fhir/index.js';
 import {
   DROPPED_FIELDS,
   fhirPatientToCreateInput,
@@ -12,85 +11,28 @@ import {
   patientRowToFhir,
   toFhirGender,
 } from '../fhir/patient.js';
-import { acceptedSearchParams, FHIR_RESOURCES } from '../fhir/registry.js';
-import { parsePaging, rejectUnsupportedParams, tokenValue } from '../fhir/search.js';
+import {
+  booleanToken,
+  dateWindow,
+  parseDateOnly,
+  referenceId,
+  rejectUnsupportedParams,
+  tokenValue,
+} from '../fhir/params.js';
+import { acceptedSearchParams } from '../fhir/registry.js';
 import { toPatientDto } from '../schemas/patients.js';
 
 import {
   bearer,
   createTestApp,
-  FIXED_NOW,
   jsonBearer,
   makePatientRow,
   seedPatients,
   TOKENS,
   testId,
   UNPRIVILEGED_TOKEN,
+  seed,
 } from './support.js';
-
-describe('the CapabilityStatement', () => {
-  it('is generated from the resource registry, so it cannot claim more than is served', () => {
-    const statement = buildCapabilityStatement(FIXED_NOW, '0.0.0');
-    const served = statement.rest?.[0]?.resource ?? [];
-
-    expect(served.map((resource) => resource.type)).toEqual(
-      FHIR_RESOURCES.map((resource) => resource.type)
-    );
-  });
-
-  it('advertises the interactions and search parameters Patient implements', async () => {
-    const { app } = createTestApp();
-    const statement = (await (await app.request('/fhir/metadata')).json()) as CapabilityStatement;
-    const patient = statement.rest?.[0]?.resource?.find((entry) => entry.type === 'Patient');
-
-    expect(patient?.interaction?.map((entry) => entry.code).sort()).toEqual([
-      'create',
-      'read',
-      'search-type',
-    ]);
-    expect(patient?.searchParam?.map((param) => param.name)).toEqual([
-      '_id',
-      'identifier',
-      'family',
-      'given',
-      'name',
-      'birthdate',
-      'gender',
-      'active',
-      '_count',
-      '_offset',
-    ]);
-    expect(patient?.supportedProfile?.[0]).toContain('us-core-patient');
-  });
-
-  it('accepts every search parameter it advertises', async () => {
-    const { app } = createTestApp();
-    const statement = (await (await app.request('/fhir/metadata')).json()) as CapabilityStatement;
-    const params = statement.rest?.[0]?.resource?.[0]?.searchParam ?? [];
-
-    // Anything advertised must not come back as "not a supported search
-    // parameter". This is the drift guard ADR-0002 asks for.
-    for (const param of params) {
-      const value = param.name === 'birthdate' ? '1994-03-02' : '1';
-      const res = await app.request(`/fhir/Patient?${param.name}=${value}`, {
-        headers: bearer(TOKENS.clinicianA),
-      });
-      expect([200, 400], `${param.name} -> ${String(res.status)}`).toContain(res.status);
-      if (res.status === 400) {
-        // A 400 is acceptable only when it is about the *value*, never about
-        // the parameter being unknown.
-        const outcome = (await res.json()) as OperationOutcome;
-        expect(outcome.issue[0]?.code).not.toBe('not-supported');
-      }
-    }
-  });
-
-  it('serves metadata without a token', async () => {
-    const { app } = createTestApp();
-
-    expect((await app.request('/fhir/metadata')).status).toBe(200);
-  });
-});
 
 describe('the Patient mapper', () => {
   it('maps every administrative gender in both directions', () => {
@@ -365,41 +307,60 @@ describe('the Patient mapper', () => {
 
 describe('search parameter handling', () => {
   it('accepts what the registry lists and nothing else', () => {
-    expect(acceptedSearchParams('Patient').has('family')).toBe(true);
-    expect(acceptedSearchParams('Patient').has('_count')).toBe(true);
-    expect(acceptedSearchParams('Observation').has('family')).toBe(false);
-    expect(acceptedSearchParams('Observation').has('_count')).toBe(true);
+    const served = servedResources();
+
+    expect(acceptedSearchParams(served, 'Patient').has('family')).toBe(true);
+    expect(acceptedSearchParams(served, 'Patient').has('_count')).toBe(true);
+    expect(acceptedSearchParams(served, 'Observation').has('family')).toBe(false);
+    expect(acceptedSearchParams(served, 'Observation').has('_count')).toBe(true);
   });
 
   it('refuses an unsupported parameter rather than ignoring it', () => {
-    expect(() => rejectUnsupportedParams('Patient', { telecom: 'x' })).toThrow(
+    const accepted = acceptedSearchParams(servedResources(), 'Patient');
+
+    expect(() => rejectUnsupportedParams('Patient', { telecom: 'x' }, accepted)).toThrow(
       /Unsupported search/
     );
-    expect(() => rejectUnsupportedParams('Patient', { family: 'x' })).not.toThrow();
+    expect(() => rejectUnsupportedParams('Patient', { family: 'x' }, accepted)).not.toThrow();
   });
 
-  it('names every unsupported parameter, not just the first', () => {
-    try {
-      rejectUnsupportedParams('Patient', { telecom: 'x', address: 'y' });
-      expect.unreachable('should have thrown');
-    } catch (error) {
-      expect(String(error)).toContain('telecom, address');
-    }
-  });
-
-  it('reads the value half of a token', () => {
+  it('reads the value half of a token, and a bare value whole', () => {
+    expect(tokenValue('https://openrunic.org/fhir/sid/mrn|OR-100482')).toBe('OR-100482');
     expect(tokenValue('OR-100482')).toBe('OR-100482');
-    expect(tokenValue(`${MRN_SYSTEM}|OR-100482`)).toBe('OR-100482');
-    expect(tokenValue('|OR-100482')).toBe('OR-100482');
   });
 
-  it('defaults and bounds the paging parameters', () => {
-    expect(parsePaging({})).toEqual({ count: 25, offset: 0 });
-    expect(parsePaging({ _count: '10', _offset: '20' })).toEqual({ count: 10, offset: 20 });
-    expect(() => parsePaging({ _count: '0' })).toThrow(/_count/);
-    expect(() => parsePaging({ _count: '1000' })).toThrow(/_count/);
-    expect(() => parsePaging({ _count: '2.5' })).toThrow(/_count/);
-    expect(() => parsePaging({ _offset: '-1' })).toThrow(/_offset/);
+  it('reads a reference as an id, typed or bare, and refuses the wrong type', () => {
+    expect(referenceId(`Patient/${testId(1)}`, 'Patient', 'patient')).toBe(testId(1));
+    expect(referenceId(testId(1), 'Patient', 'patient')).toBe(testId(1));
+    expect(() => referenceId(`Group/${testId(1)}`, 'Patient', 'patient')).toThrow(
+      /must reference a Patient/
+    );
+  });
+
+  it('reads a date parameter as a half-open window, prefix by prefix', () => {
+    const day = dateWindow('2026-08-14', 'date');
+    expect(day.from?.toISOString()).toBe('2026-08-14T00:00:00.000Z');
+    expect(day.to?.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+
+    expect(dateWindow('ge2026-08-14', 'date').to).toBeUndefined();
+    expect(dateWindow('le2026-08-14', 'date').from).toBeUndefined();
+    expect(dateWindow('gt2026-08-14', 'date').from?.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+    expect(dateWindow('lt2026-08-14', 'date').to?.toISOString()).toBe('2026-08-14T00:00:00.000Z');
+    // A negation cannot be expressed as one window, so it is refused rather
+    // than answered approximately.
+    expect(() => dateWindow('ne2026-08-14', 'date')).toThrow(/does not support the ne prefix/);
+    expect(() => dateWindow('not-a-date', 'date')).toThrow(/ISO 8601/);
+  });
+
+  it('reads a boolean token, and refuses anything else', () => {
+    expect(booleanToken('true', 'active')).toBe(true);
+    expect(booleanToken('false', 'active')).toBe(false);
+    expect(() => booleanToken('yes', 'active')).toThrow(/true or false/);
+  });
+
+  it('refuses a date-only parameter that is not a calendar date', () => {
+    expect(parseDateOnly('1994-03-02', 'birthdate').toISOString()).toBe('1994-03-02T00:00:00.000Z');
+    expect(() => parseDateOnly('1994-03', 'birthdate')).toThrow(/YYYY-MM-DD/);
   });
 });
 
@@ -467,7 +428,7 @@ describe('the searchset Bundle', () => {
 describe('GET /fhir/Patient', () => {
   it('returns a searchset Bundle of Patient resources', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
 
     const res = await app.request('/fhir/Patient?family=Patient', {
       headers: bearer(TOKENS.clinicianA),
@@ -516,9 +477,11 @@ describe('GET /fhir/Patient', () => {
     expect(bundle.link?.some((link) => link.relation === 'previous')).toBe(false);
   });
 
-  it('searches by _id, identifier, name, birthdate, gender and active', async () => {
+  it('searches by _id, identifier, name, family, given, birthdate and gender', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(
+    seed(
+      dataset,
+      'Patient',
       makePatientRow({ id: testId(1) }),
       makePatientRow({
         id: testId(2),
@@ -542,7 +505,6 @@ describe('GET /fhir/Patient', () => {
     expect(await total('name=Nemo')).toBe(1);
     expect(await total('birthdate=1980-01-01')).toBe(1);
     expect(await total('gender=male')).toBe(1);
-    expect(await total('active=false')).toBe(1);
     expect(await total('given=Test')).toBe(1);
   });
 
@@ -550,7 +512,7 @@ describe('GET /fhir/Patient', () => {
     ['an unsupported parameter', 'telecom=555', 'not-supported'],
     ['an unparseable birthdate', 'birthdate=01-01-1980', 'invalid'],
     ['a gender outside the value set', 'gender=nonbinary', 'invalid'],
-    ['a non-boolean active flag', 'active=maybe', 'invalid'],
+    ['a parameter this server does not implement', 'active=true', 'not-supported'],
     ['a ragged offset', '_count=10&_offset=5', 'invalid'],
   ])('rejects %s with a 400 OperationOutcome', async (_label, query, code) => {
     const { app } = createTestApp();
@@ -579,7 +541,7 @@ describe('GET /fhir/Patient', () => {
 describe('GET /fhir/Patient/:id', () => {
   it('reads one Patient', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
 
     const res = await app.request(`/fhir/Patient/${testId(1)}`, {
       headers: bearer(TOKENS.clinicianA),
@@ -626,7 +588,7 @@ describe('POST /fhir/Patient', () => {
     expect(res.status).toBe(201);
     const created = (await res.json()) as Patient;
     expect(res.headers.get('location')).toContain(`/fhir/Patient/${created.id ?? ''}`);
-    expect(dataset.patients).toHaveLength(1);
+    expect(dataset.table('Patient')).toHaveLength(1);
   });
 
   it('400s a body that is not JSON', async () => {

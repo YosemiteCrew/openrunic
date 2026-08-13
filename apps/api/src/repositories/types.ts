@@ -2,13 +2,14 @@ import type {
   ADMINISTRATIVE_GENDERS,
   APPOINTMENT_CREATED_VIA,
   APPOINTMENT_STATUSES,
-  AppointmentCreateInput,
-  PatientCreateInput,
-  PatientUpdateInput,
   SENSITIVITY_CLASSES,
 } from '@openrunic/database';
 
-import type { AuditCollector } from '../audit/collector.js';
+import type { AuditQueryRepository } from './audit-query.js';
+import type { Collection, CollectionSpec } from './collection.js';
+import type { RequestScope } from './registry.js';
+import type { ScopedRow } from './rows.js';
+import type { COLLECTION_SPECS } from './specs/index.js';
 
 /**
  * Data access, behind an interface.
@@ -25,6 +26,10 @@ import type { AuditCollector } from '../audit/collector.js';
  * so a handler holding one cannot ask it about another tenant. Cross-tenant
  * access is not a check that a handler can forget; it is a parameter a handler
  * cannot supply.
+ *
+ * The set of repositories is derived from the spec map rather than listed
+ * again here, so adding an aggregate to `specs/` is the whole of adding it to
+ * the API's data layer.
  */
 
 export type AdministrativeGender = (typeof ADMINISTRATIVE_GENDERS)[number];
@@ -32,152 +37,36 @@ export type SensitivityClass = (typeof SENSITIVITY_CLASSES)[number];
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 export type AppointmentCreatedVia = (typeof APPOINTMENT_CREATED_VIA)[number];
 
-/** The stored patient, as the API reads it. Mirrors the Prisma `Patient` columns. */
-export interface PatientRow {
-  id: string;
-  tenantId: string;
-  mrn: string;
-  primaryFacilityId: string | null;
-  givenName: string;
-  middleName: string | null;
-  familyName: string;
-  prefix: string | null;
-  suffix: string | null;
-  preferredName: string | null;
-  birthDate: Date;
-  deceasedAt: Date | null;
-  sexAtBirth: AdministrativeGender;
-  genderIdentityCode: string | null;
-  pronouns: string | null;
-  raceCodes: string[];
-  ethnicityCodes: string[];
-  languageCode: string;
-  maritalStatusCode: string | null;
-  email: string | null;
-  phoneMobile: string | null;
-  phoneHome: string | null;
-  addressLine1: string | null;
-  addressLine2: string | null;
-  city: string | null;
-  state: string | null;
-  postalCode: string | null;
-  country: string;
-  sensitivityClass: SensitivityClass;
-  portalEnabled: boolean;
-  active: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export type { Page, SortOrder, BaseQuery } from './collection.js';
+export type { RequestScope } from './registry.js';
+export type { ScopedRow } from './rows.js';
+export type { AuditEventRow, AuditQuery, AuditQueryRepository } from './audit-query.js';
+export type {
+  AppointmentListQuery,
+  AppointmentUpdateInput,
+  PatientListQuery,
+} from './specs/core.js';
 
-/** The stored appointment, as the API reads it. Mirrors the Prisma `Appointment` columns. */
-export interface AppointmentRow {
-  id: string;
-  tenantId: string;
-  facilityId: string;
-  patientId: string | null;
-  providerId: string;
-  typeCode: string;
-  typeDisplay: string;
-  status: AppointmentStatus;
-  start: Date;
-  end: Date;
-  durationMinutes: number;
-  room: string | null;
-  reasonText: string | null;
-  recurrenceGroupId: string | null;
-  createdVia: AppointmentCreatedVia;
-  cancelReason: string | null;
-  checkedInAt: Date | null;
-  createdById: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+/** The stored patient, as the API reads it. */
+export type PatientRow = ScopedRow<'Patient'>;
+/** The stored appointment, as the API reads it. */
+export type AppointmentRow = ScopedRow<'Appointment'>;
 
-/** One page of results plus the count needed to render a pager. */
-export interface Page<T> {
-  rows: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+type CollectionOf<S> =
+  S extends CollectionSpec<infer M, infer TCreate, infer TPatch, infer TQuery>
+    ? Collection<ScopedRow<M>, TCreate, TPatch, TQuery>
+    : never;
 
-export type SortOrder = 'asc' | 'desc';
+export type CollectionKey = keyof typeof COLLECTION_SPECS;
 
-export interface PatientListQuery {
-  page: number;
-  pageSize: number;
-  /** Exact logical id. Backs the FHIR `_id` search parameter. */
-  id?: string;
-  /** Free text matched against family name, given name and MRN. */
-  q?: string;
-  mrn?: string;
-  sexAtBirth?: AdministrativeGender;
-  family?: string;
-  given?: string;
-  /** Exact date of birth, midnight UTC. */
-  birthDate?: Date;
-  active?: boolean;
-  sort: 'familyName' | 'birthDate' | 'createdAt';
-  order: SortOrder;
-}
-
-export interface AppointmentListQuery {
-  page: number;
-  pageSize: number;
-  facilityId?: string;
-  providerId?: string;
-  patientId?: string;
-  status?: AppointmentStatus;
-  /** Inclusive lower bound on `start`. */
-  from?: Date;
-  /** Exclusive upper bound on `start`. */
-  to?: Date;
-  sort: 'start' | 'createdAt';
-  order: SortOrder;
-}
-
-/** Fields an appointment update may change. Reschedules keep the same row. */
-export interface AppointmentUpdateInput {
-  status?: AppointmentStatus;
-  start?: Date;
-  end?: Date;
-  durationMinutes?: number;
-  room?: string;
-  reasonText?: string;
-  cancelReason?: string;
-  providerId?: string;
-  typeCode?: string;
-  typeDisplay?: string;
-}
-
-export interface PatientRepository {
-  list(query: PatientListQuery): Promise<Page<PatientRow>>;
-  findById(id: string): Promise<PatientRow | null>;
-  findByMrn(mrn: string): Promise<PatientRow | null>;
-  create(input: PatientCreateInput): Promise<PatientRow>;
-  /** Resolves to `null` when the id belongs to no patient *in this tenant*. */
-  update(id: string, input: PatientUpdateInput): Promise<PatientRow | null>;
-}
-
-export interface AppointmentRepository {
-  list(query: AppointmentListQuery): Promise<Page<AppointmentRow>>;
-  findById(id: string): Promise<AppointmentRow | null>;
-  create(input: AppointmentCreateInput): Promise<AppointmentRow>;
-  update(id: string, input: AppointmentUpdateInput): Promise<AppointmentRow | null>;
-}
-
-/** Every repository, already bound to one tenant and one audit collector. */
-export interface Repositories {
+/** Every repository, already bound to one tenant, one compartment and one collector. */
+export type Repositories = {
   readonly tenantId: string;
-  readonly patients: PatientRepository;
-  readonly appointments: AppointmentRepository;
-}
-
-/** What the tenant-scope middleware supplies to obtain request-bound repositories. */
-export interface RequestScope {
-  tenantId: string;
-  audit: AuditCollector;
-}
+  /** The audit log: readable, never writable through the API. */
+  readonly audit: AuditQueryRepository;
+} & {
+  readonly [K in CollectionKey]: CollectionOf<(typeof COLLECTION_SPECS)[K]>;
+};
 
 export interface RepositoryRegistry {
   forRequest(scope: RequestScope): Repositories;

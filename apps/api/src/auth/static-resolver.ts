@@ -31,6 +31,9 @@ export const DEMO_TENANT_B = '01890000-0000-7000-8000-00000000000b';
 const DEMO_FACILITY_A = '01890000-0000-7000-8000-0000000000fa';
 const DEMO_FACILITY_B = '01890000-0000-7000-8000-0000000000fb';
 
+/** The chart the demo portal principal is confined to. */
+const DEMO_PORTAL_PATIENT = '01890000-0000-7000-8000-000000000001';
+
 /**
  * Principals for local development and for the test suite. Two tenants exist on
  * purpose: cross-tenant isolation is only provable when there is a second
@@ -49,6 +52,7 @@ export const DEMO_PRINCIPALS: ReadonlyMap<string, Principal> = new Map<string, P
       displayName: 'Dr. Adaeze Okafor',
       roles: ['clinician'],
       facilityIds: [DEMO_FACILITY_A],
+      scopes: ['user/*.read', 'user/*.write'],
       purposeOfUse: 'TREAT',
     },
   ],
@@ -61,6 +65,7 @@ export const DEMO_PRINCIPALS: ReadonlyMap<string, Principal> = new Map<string, P
       displayName: 'Front Desk',
       roles: ['front-desk'],
       facilityIds: [DEMO_FACILITY_A],
+      scopes: ['user/*.read', 'user/*.write'],
       purposeOfUse: 'HOPERAT',
     },
   ],
@@ -73,6 +78,7 @@ export const DEMO_PRINCIPALS: ReadonlyMap<string, Principal> = new Map<string, P
       displayName: 'Billing',
       roles: ['biller'],
       facilityIds: [DEMO_FACILITY_A],
+      scopes: ['user/*.read', 'user/*.write'],
       purposeOfUse: 'HPAYMT',
     },
   ],
@@ -85,9 +91,29 @@ export const DEMO_PRINCIPALS: ReadonlyMap<string, Principal> = new Map<string, P
       displayName: 'Dr. Rowan Vale',
       roles: ['clinician'],
       facilityIds: [DEMO_FACILITY_B],
+      scopes: ['user/*.read', 'user/*.write'],
+      purposeOfUse: 'TREAT',
+    },
+  ],
+  [
+    'dev-portal-a',
+    {
+      // A portal login. It holds the portal role's permissions like any other
+      // principal, and on top of that a launch context that pins it to one
+      // chart; the repositories it is handed are narrowed to that chart, so
+      // "the patient can only see their own record" is not a rule any handler
+      // has to remember.
+      subject: DEMO_PORTAL_PATIENT,
+      tenantId: DEMO_TENANT_A,
+      actorType: 'patient',
+      displayName: 'Testina Patientsson',
+      roles: ['patient-portal'],
+      facilityIds: [DEMO_FACILITY_A],
+      scopes: ['patient/*.read', 'launch/patient'],
+      compartmentPatientId: DEMO_PORTAL_PATIENT,
       purposeOfUse: 'TREAT',
     },
   ],
 ]);
 
-export { DEMO_FACILITY_A, DEMO_FACILITY_B };
+export { DEMO_FACILITY_A, DEMO_FACILITY_B, DEMO_PORTAL_PATIENT };

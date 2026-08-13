@@ -56,7 +56,20 @@ export function auditCollector(options: AuditCollectorOptions) {
     });
 
     c.set('audit', collector);
-    c.set('repositories', options.repositories.forRequest({ tenantId, audit: collector }));
+    // The launch context travels with the repositories, not with the handlers.
+    // A patient-scoped token therefore reaches one chart because the objects it
+    // is given cannot reach another, rather than because every handler
+    // remembered to ask.
+    c.set(
+      'repositories',
+      options.repositories.forRequest({
+        tenantId,
+        ...(principal.compartmentPatientId === undefined
+          ? {}
+          : { compartmentPatientId: principal.compartmentPatientId }),
+        audit: collector,
+      })
+    );
 
     try {
       await next();

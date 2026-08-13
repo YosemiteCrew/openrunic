@@ -13,6 +13,7 @@ import {
   TOKENS,
   testId,
   UNPRIVILEGED_TOKEN,
+  seed,
 } from './support.js';
 
 const VALID_BODY = {
@@ -50,7 +51,9 @@ describe('GET /bff/v0/patients', () => {
 
   it('searches by name prefix, MRN, birth date and free text', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(
+    seed(
+      dataset,
+      'Patient',
       makePatientRow({ id: testId(1), mrn: 'OR-100482', preferredName: 'Tess' }),
       makePatientRow({ id: testId(2), mrn: 'OR-100999', familyName: 'Nobody', givenName: 'Nemo' })
     );
@@ -110,7 +113,7 @@ describe('GET /bff/v0/patients', () => {
 describe('GET /bff/v0/patients/:id', () => {
   it('reads one patient', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
 
     const res = await app.request(`/bff/v0/patients/${testId(1)}`, {
       headers: bearer(TOKENS.clinicianA),
@@ -128,7 +131,7 @@ describe('GET /bff/v0/patients/:id', () => {
 
   it('emits a date of birth with no time component', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
 
     const body = (await (
       await app.request(`/bff/v0/patients/${testId(1)}`, { headers: bearer(TOKENS.clinicianA) })
@@ -168,7 +171,7 @@ describe('POST /bff/v0/patients', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as PatientDto;
     expect(res.headers.get('location')).toBe(`/bff/v0/patients/${body.id}`);
-    expect(dataset.patients).toHaveLength(1);
+    expect(dataset.table('Patient')).toHaveLength(1);
   });
 
   it('422s a body that parses but breaks the contract', async () => {
@@ -236,7 +239,7 @@ describe('POST /bff/v0/patients', () => {
 describe('PATCH /bff/v0/patients/:id', () => {
   it('amends the fields it was given and leaves the rest alone', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
 
     const res = await app.request(`/bff/v0/patients/${testId(1)}`, {
       method: 'PATCH',
@@ -251,7 +254,7 @@ describe('PATCH /bff/v0/patients/:id', () => {
 
   it('refuses to reassign the MRN', async () => {
     const { app, dataset } = createTestApp();
-    dataset.patients.push(makePatientRow({ id: testId(1) }));
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
 
     const res = await app.request(`/bff/v0/patients/${testId(1)}`, {
       method: 'PATCH',
@@ -260,7 +263,7 @@ describe('PATCH /bff/v0/patients/:id', () => {
     });
 
     expect(res.status).toBe(422);
-    expect(dataset.patients[0]?.mrn).toBe('OR-100482');
+    expect(dataset.table('Patient')[0]?.mrn).toBe('OR-100482');
   });
 
   it('404s an unknown id', async () => {

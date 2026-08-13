@@ -43,7 +43,10 @@ describe('createApp', () => {
 
   it('unknown /fhir/* routes return a 404 OperationOutcome', async () => {
     const { app } = createTestApp();
-    const res = await app.request('/fhir/Observation/does-not-exist', {
+    // A resource type this server does not serve at all, rather than one it
+    // serves with an id that happens to be malformed: those are different
+    // failures and only one of them is this test's subject.
+    const res = await app.request('/fhir/Medication/does-not-exist', {
       headers: bearer(TOKENS.clinicianA),
     });
 

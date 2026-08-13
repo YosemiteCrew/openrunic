@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseEnv, type Env } from '../env.js';
+import { oidcSettings, parseEnv, type Env } from '../env.js';
 
 describe('parseEnv', () => {
   it('applies defaults when variables are absent', () => {
@@ -13,7 +13,11 @@ describe('parseEnv', () => {
   it('parses and coerces provided values', () => {
     const env = parseEnv({ PORT: '8080', NODE_ENV: 'production' });
 
-    expect(env).toEqual({ PORT: 8080, NODE_ENV: 'production' });
+    expect(env).toEqual({
+      PORT: 8080,
+      NODE_ENV: 'production',
+      OIDC_CLOCK_SKEW_SECONDS: 60,
+    });
   });
 
   it('rejects out-of-range ports', () => {
@@ -35,5 +39,45 @@ describe('parseEnv', () => {
     // values must never leak into the error message
     expect(message).not.toContain('not-a-port');
     expect(message).not.toContain('staging');
+  });
+});
+
+describe('the identity-provider settings', () => {
+  const configured = {
+    OIDC_ISSUER: 'https://idp.example.invalid',
+    OIDC_AUDIENCE: 'openrunic-api, openrunic-portal',
+    OIDC_JWKS_URI: 'https://idp.example.invalid/jwks',
+  };
+
+  it('are absent when the deployment configured none', () => {
+    expect(oidcSettings(parseEnv({}))).toBeUndefined();
+  });
+
+  it('read a comma-separated audience list', () => {
+    expect(oidcSettings(parseEnv(configured))).toEqual({
+      issuer: 'https://idp.example.invalid',
+      audience: ['openrunic-api', 'openrunic-portal'],
+      jwksUri: 'https://idp.example.invalid/jwks',
+      clockSkewSeconds: 60,
+    });
+  });
+
+  it('accept an explicit clock skew', () => {
+    const env = parseEnv({ ...configured, OIDC_CLOCK_SKEW_SECONDS: '15' });
+
+    expect(oidcSettings(env)?.clockSkewSeconds).toBe(15);
+  });
+
+  it('are refused when only half of them are set', () => {
+    // A partial configuration would fall back to the development principal
+    // table, which is the failure this refusal exists to prevent.
+    expect(() => parseEnv({ OIDC_ISSUER: 'https://idp.example.invalid' })).toThrow(/OIDC_ISSUER/);
+    expect(() =>
+      parseEnv({ OIDC_ISSUER: 'https://idp.example.invalid', OIDC_AUDIENCE: 'a' })
+    ).toThrow(/OIDC_ISSUER/);
+  });
+
+  it('refuse an issuer that is not a URL', () => {
+    expect(() => parseEnv({ ...configured, OIDC_ISSUER: 'not-a-url' })).toThrow(/OIDC_ISSUER/);
   });
 });

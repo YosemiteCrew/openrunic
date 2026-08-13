@@ -13,6 +13,7 @@ function principal(overrides: Partial<Principal> = {}): Principal {
     actorType: 'user',
     roles: ['clinician'],
     facilityIds: [testId(800)],
+    scopes: ['user/*.read'],
     purposeOfUse: 'TREAT',
     ...overrides,
   };

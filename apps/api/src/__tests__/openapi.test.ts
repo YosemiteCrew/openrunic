@@ -8,6 +8,16 @@ import { internalRouteContracts } from '../routes/index.js';
 
 import { createTestApp } from './support.js';
 
+/**
+ * The published spec, checked against the routes that exist.
+ *
+ * An OpenAPI file rots in two directions and both matter. A documented endpoint
+ * that does not exist sends a client to a 404 it had no reason to expect; an
+ * endpoint that exists without documentation is a surface nobody reviewed and
+ * nobody can plan around. Both are failures here, and neither has an exemption
+ * list, because an exemption list is where the rot starts.
+ */
+
 interface RegisteredRoute {
   method: string;
   path: string;
@@ -23,6 +33,12 @@ function registeredRoutes(): Set<string> {
   );
 }
 
+function documentedRoutes(): Set<string> {
+  return new Set(
+    internalRouteContracts().map((contract) => `${contract.method} ${toHonoPath(contract.path)}`)
+  );
+}
+
 describe('the OpenAPI document', () => {
   it('is served at /openapi.json without a token', async () => {
     const { app } = createTestApp();
@@ -34,39 +50,78 @@ describe('the OpenAPI document', () => {
     expect(document.info.title).toContain('openrunic');
   });
 
-  it('describes every internal route and nothing that does not exist', () => {
+  it('documents nothing that is not mounted', () => {
     const registered = registeredRoutes();
 
-    for (const contract of internalRouteContracts()) {
-      const key = `${contract.method} ${toHonoPath(contract.path)}`;
-      expect(registered, `${key} is documented but not mounted`).toContain(key);
-    }
+    const phantom = [...documentedRoutes()].filter((route) => !registered.has(route));
+
+    expect(phantom, 'documented but not mounted').toEqual([]);
   });
 
-  it('documents every mounted internal route', () => {
-    const documented = new Set(
-      internalRouteContracts().map((contract) => `${contract.method} ${toHonoPath(contract.path)}`)
-    );
+  it('leaves no internal route undocumented', () => {
+    const documented = documentedRoutes();
 
     const undocumented = [...registeredRoutes()].filter(
       (route) => route.includes('/bff/v0/') && !documented.has(route)
     );
 
-    // The stub instance routes are deliberately mounted without their own
-    // contract: the collection entry documents the aggregate, and publishing
-    // four not-implemented operations per aggregate would be noise.
-    expect(undocumented.every((route) => /\/:id$/.test(route))).toBe(true);
+    expect(undocumented, 'mounted but not documented').toEqual([]);
   });
 
-  it('converts a braced OpenAPI path to the Hono form', () => {
-    expect(toHonoPath('/bff/v0/patients/{id}')).toBe('/bff/v0/patients/:id');
-    expect(toHonoPath('/bff/v0/patients')).toBe('/bff/v0/patients');
+  it('covers every aggregate the product ships', () => {
+    const tags = new Set(internalRouteContracts().flatMap((contract) => contract.tags));
+
+    for (const tag of [
+      'patients',
+      'appointments',
+      'encounters',
+      'notes',
+      'problems',
+      'medications',
+      'allergies',
+      'immunisations',
+      'observations',
+      'orders',
+      'results',
+      'documents',
+      'tasks',
+      'messages',
+      'coverage',
+      'charges',
+      'claims',
+      'payments',
+      'remittances',
+      'statements',
+      'forms',
+      'users',
+      'roles',
+      'facilities',
+      'terminology',
+      'audit',
+    ]) {
+      expect(tags, tag).toContain(tag);
+    }
   });
 
   it('gives every operation a unique operationId', () => {
     const ids = internalRouteContracts().map((contract) => contract.operationId);
 
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('names the permission every operation requires', () => {
+    const missing = internalRouteContracts().filter(
+      (contract) => contract.permission === undefined
+    );
+
+    // A route with no declared permission is a route nobody decided the
+    // authorisation for, which is a worse failure than the wrong permission.
+    expect(missing.map((contract) => contract.operationId)).toEqual([]);
+  });
+
+  it('converts a braced OpenAPI path to the Hono form', () => {
+    expect(toHonoPath('/bff/v0/patients/{id}')).toBe('/bff/v0/patients/:id');
+    expect(toHonoPath('/bff/v0/patients')).toBe('/bff/v0/patients');
   });
 
   it('flattens a query schema into one parameter per field', () => {
@@ -104,7 +159,7 @@ describe('the OpenAPI document', () => {
     expect(Object.keys(properties)).toContain('birthDate');
   });
 
-  it('names the permission each operation requires', () => {
+  it('names the permission each operation requires in the document itself', () => {
     const document = buildOpenApiDocument(internalRouteContracts());
     const create = document.paths['/bff/v0/patients']?.post as Record<string, unknown>;
 
@@ -140,7 +195,7 @@ describe('the OpenAPI document', () => {
       )
     );
 
-    for (const status of ['400', '401', '403', '404', '409', '422', '501']) {
+    for (const status of ['400', '401', '403', '404', '409', '422']) {
       expect(statuses, status).toContain(status);
     }
   });

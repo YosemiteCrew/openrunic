@@ -16,6 +16,7 @@ import {
   makeAppointmentRow,
   makePatientRow,
   TOKENS,
+  seed,
   testId,
 } from './support.js';
 
@@ -40,11 +41,15 @@ import {
 
 function twoTenantApp(): ReturnType<typeof createTestApp> {
   const harness = createTestApp();
-  harness.dataset.patients.push(
+  seed(
+    harness.dataset,
+    'Patient',
     makePatientRow({ id: testId(1), tenantId: DEMO_TENANT_A, mrn: 'OR-100482' }),
     makePatientRow({ id: testId(2), tenantId: DEMO_TENANT_B, mrn: 'OR-200001' })
   );
-  harness.dataset.appointments.push(
+  seed(
+    harness.dataset,
+    'Appointment',
     makeAppointmentRow({ id: testId(101), tenantId: DEMO_TENANT_A }),
     makeAppointmentRow({ id: testId(102), tenantId: DEMO_TENANT_B })
   );
@@ -109,7 +114,9 @@ describe('a principal from tenant A cannot reach tenant B', () => {
     });
 
     expect(res.status).toBe(404);
-    expect(dataset.patients.find((row) => row.id === testId(2))?.familyName).toBe('Patientsson');
+    expect(dataset.table('Patient').find((row) => row.id === testId(2))?.familyName).toBe(
+      'Patientsson'
+    );
   });
 
   it("cannot amend another tenant's appointment", async () => {
@@ -122,7 +129,7 @@ describe('a principal from tenant A cannot reach tenant B', () => {
     });
 
     expect(res.status).toBe(404);
-    expect(dataset.appointments.find((row) => row.id === testId(102))?.room).toBeNull();
+    expect(dataset.table('Appointment').find((row) => row.id === testId(102))?.room).toBeNull();
   });
 
   it('cannot search another tenant by MRN', async () => {
@@ -172,7 +179,9 @@ describe('a principal from tenant A cannot reach tenant B', () => {
       }),
     });
 
-    expect(dataset.patients.find((row) => row.mrn === 'OR-300001')?.tenantId).toBe(DEMO_TENANT_B);
+    expect(dataset.table('Patient').find((row) => row.mrn === 'OR-300001')?.tenantId).toBe(
+      DEMO_TENANT_B
+    );
   });
 
   it('lets each organisation use the same MRN independently', async () => {
@@ -242,7 +251,7 @@ describe('the tenant assertion header', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(dataset.patients.some((row) => row.mrn === 'OR-400001')).toBe(false);
+    expect(dataset.table('Patient').some((row) => row.mrn === 'OR-400001')).toBe(false);
   });
 });
 

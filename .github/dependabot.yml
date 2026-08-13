@@ -2,6 +2,28 @@
 # target-branch below only aims the PRs at dev. Any change here must land on
 # main to take effect, so keep the copies on dev and main byte-identical, or a
 # config change sits silently inert until the next promotion.
+#
+# EVERY DEPENDENCY CHANGE ARRIVES IN ONE PULL REQUEST, ON dev. Advisories
+# included. Two settings hold that, and they are not both in this file:
+#
+#  1. The groups below pool version updates into a single pull request, aimed at
+#     dev. A weekly version bump fixes an advisory as a side effect of moving to
+#     a current release, so the pooled run is the normal path for security work.
+#
+#  2. Dependabot SECURITY updates are disabled in repository settings, and must
+#     stay disabled. They ignore `target-branch` entirely and always open against
+#     the DEFAULT branch, one pull request per advisory - which is both a swarm
+#     and a swarm aimed at main, the branch a clinic installs.
+#
+# Dependabot ALERTS remain on: detection is not the thing being turned off. The
+# alert still fires the moment an advisory lands, it is visible in the Security
+# tab, and it is fixed by the pooled pull request. If one cannot wait for
+# Monday, raise it by hand on a branch off dev rather than re-enabling security
+# updates.
+#
+# The `security-updates` groups below are deliberate belt-and-braces: they do
+# nothing while the setting is off, and if a future maintainer turns it back on,
+# advisories pool into one pull request instead of arriving one at a time.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -50,6 +72,53 @@ updates:
           - major
           - minor
           - patch
+      # Inert while security updates are disabled in settings (see the header).
+      # Present so that re-enabling them yields one pull request rather than one
+      # per advisory. It would still be aimed at the default branch, which the
+      # promotion guard refuses, so re-enabling is a deliberate act either way.
+      all-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+  # Base images for the self-host containers. Added because PR #26 pins both
+  # Dockerfiles to a base-image DIGEST, which is right for reproducibility and
+  # wrong for staleness: a digest never moves, so a patched base image is a
+  # release nobody here would ever notice. Without this entry the pin quietly
+  # becomes "run last quarter's openssl in a clinic".
+  #
+  # `directories` rather than `directory`, because the two Dockerfiles live
+  # beside their apps rather than at the root.
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:15'
+      timezone: 'UTC'
+    target-branch: dev
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: 'chore(repo)'
+    labels:
+      - dependencies
+    groups:
+      # Both images move together in one pull request, same as every other
+      # ecosystem here.
+      all-images:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
+          - minor
+          - patch
+      all-images-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -76,3 +145,8 @@ updates:
           - major
           - minor
           - patch
+      # Same reasoning as all-security above.
+      all-actions-security:
+        applies-to: security-updates
+        patterns:
+          - '*'

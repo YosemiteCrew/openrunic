@@ -1,0 +1,100 @@
+/*
+ * Downtime styling.
+ *
+ * High contrast and unmissable, because the failure mode this replaces is a
+ * clinician not noticing that nothing is being saved. It sits at the top of the
+ * document flow rather than floating over content, so it can never cover a
+ * control someone is reaching for.
+ */
+
+.banner {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 1rem 1.25rem;
+  background: #7a1f1f;
+  color: #fff;
+  border-bottom: 3px solid #4d1212;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.body {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.detail,
+.action {
+  margin: 0.25rem 0 0;
+}
+
+.action {
+  /* Slightly recessed: what happened first, what to do second. */
+  opacity: 0.92;
+}
+
+.retry {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.9rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 0.375rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.retry:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/*
+ * The full-page fallback, used when a screen cannot render at all.
+ */
+.fallback {
+  max-width: 40rem;
+  margin: 3rem auto;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.fallbackTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.4rem;
+}
+
+.fallbackBody {
+  margin: 0 0 0.75rem;
+  line-height: 1.6;
+}
+
+.reference {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retry {
+    transition: none;
+  }
+}

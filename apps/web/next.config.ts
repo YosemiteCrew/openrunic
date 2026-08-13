@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -26,6 +28,26 @@ const nextConfig: NextConfig = {
    * skeletons are the compile-time proof that each one exists.
    */
   typedRoutes: false,
+  /**
+   * Standalone output, for the self-hosted image.
+   *
+   * `next build` traces which files the server actually reaches and copies just
+   * those into `.next/standalone`, including a minimal node_modules. Without
+   * it the runtime image has to carry the whole workspace install - in this
+   * repository that is Next's own toolchain, the SWC binary and every
+   * development dependency, and the image is several hundred megabytes larger
+   * for it.
+   */
+  output: 'standalone',
+  /**
+   * Tracing has to start at the monorepo root, not at apps/web.
+   *
+   * pnpm links workspace dependencies as symlinks into ../../node_modules, so a
+   * trace rooted at this directory follows those links outside its own root and
+   * silently drops the files. The symptom is an image that builds cleanly and
+   * then fails at runtime on a missing module.
+   */
+  outputFileTracingRoot: path.join(import.meta.dirname, '..', '..'),
 };
 
 export default nextConfig;

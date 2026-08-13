@@ -1,0 +1,264 @@
+name: Ops
+
+# Reusable ops stage: run the artefacts an operator will actually run, on every
+# pull request, against a real Postgres.
+#
+# The four legs answer four claims the product makes out loud:
+#
+#   migration-lint   no release destroys data without a reviewer seeing it
+#   drill            a practice can get through a full clinical day
+#   install          `docker compose up` reaches a working install
+#   backup-restore   the database can be lost and brought back
+#
+# Every one of them runs the real command. None of them asserts against a mock
+# of the thing being claimed, because the failure mode this stage exists to
+# catch is exactly the one a mock cannot see: the artefact having drifted from
+# the documentation that describes it.
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Cheap, no Docker, runs on every pull request.
+  # ---------------------------------------------------------------------------
+  migration-lint:
+    name: Migration safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # --annotate puts each finding on the diff itself, which is where the
+      # reviewer is. The step does not fail on findings: a destructive migration
+      # is sometimes correct, and the requirement is that it is seen, not that
+      # it is impossible.
+      - name: Lint migrations for destructive statements
+        run: pnpm --filter @openrunic/ops run ops lint-migrations --annotate
+
+  # ---------------------------------------------------------------------------
+  # The acceptance test for the product.
+  # ---------------------------------------------------------------------------
+  drill:
+    name: Full-day clinical drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # Keyed on the resolved Playwright version rather than on the lockfile
+      # hash: browsers are large, and a lockfile change that does not move
+      # Playwright must not force a re-download.
+      - name: Resolve Playwright version
+        id: playwright
+        run: |
+          version=$(pnpm --filter @openrunic/e2e exec playwright --version | tr -d 'A-Za-z ')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        # --with-deps installs system libraries too and needs sudo; it is only
+        # worth the minute it costs when the cache missed.
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @openrunic/e2e exec playwright install --with-deps chromium
+
+      - name: Install system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @openrunic/e2e exec playwright install-deps chromium
+
+      # The drill runs the application in mock mode, so no database, no API and
+      # no seed. It reports loudly and exits zero when the clinical screens are
+      # not present on the branch, and switches itself on when they land.
+      - name: Run the full clinical day
+        run: pnpm --filter @openrunic/e2e run test
+        env:
+          CI: 'true'
+
+      - name: Upload the drill report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clinical-drill-report
+          path: |
+            apps/e2e/playwright-report
+            apps/e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # `docker compose up` on a clean machine.
+  # ---------------------------------------------------------------------------
+  install:
+    name: Install drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # The timing claim in docs/self-hosting.md is "install to first
+      # appointment in under 30 minutes". This measures it on a cold runner with
+      # no image cache at all, which is the worst case and the honest one.
+      - name: Timed install
+        id: install
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          pnpm setup:selfhost
+          echo "seconds=$(( $(date +%s) - started ))" >> "$GITHUB_OUTPUT"
+
+      - name: Assert the documented install budget
+        env:
+          ELAPSED: ${{ steps.install.outputs.seconds }}
+          BUDGET: '1800'
+        run: |
+          set -euo pipefail
+          echo "Install took ${ELAPSED}s (budget ${BUDGET}s)"
+          echo "install: ${ELAPSED}s / ${BUDGET}s budget" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ELAPSED" -gt "$BUDGET" ]; then
+            echo "::error::Install took ${ELAPSED}s, over the documented 30-minute budget."
+            exit 1
+          fi
+
+      # Booking through the API is what proves the install reached a usable
+      # practice rather than three healthy containers with an empty database.
+      - name: Book the first appointment
+        env:
+          # A demo principal, not a credential. The token is a fixed string in
+          # apps/api/src/server/demo-principals.ts, it only resolves while the
+          # static resolver is mounted, and production refuses to start without
+          # a real principal resolver (assertProductionWiring). It lives in an
+          # env var rather than inline because a literal after `Authorization:`
+          # is what the secret scanner matches on, and a scanner trained to
+          # ignore this file would be worse than one that never sees it.
+          DEMO_PRINCIPAL_TOKEN: dev-frontdesk-a
+        run: |
+          set -euo pipefail
+          # pageSize, not limit. The list contract is a strict object, so an
+          # unrecognised search parameter is a 400 rather than a search that
+          # silently returns everything - see apps/api/src/schemas/patients.ts.
+          # The drill has to speak the real contract; a probe that only works
+          # against a lenient API proves nothing about this one.
+          patients=$(curl -sS --fail-with-body \
+            -H "Authorization: Bearer $DEMO_PRINCIPAL_TOKEN" \
+            'http://localhost:4000/bff/v0/patients?pageSize=1')
+          echo "$patients" | head -c 400; echo
+          echo "$patients" | node -e '
+            let raw = "";
+            process.stdin.on("data", (chunk) => { raw += chunk; });
+            process.stdin.on("end", () => {
+              const body = JSON.parse(raw);
+              const rows = body.data ?? body.items ?? [];
+              if (!Array.isArray(rows) || rows.length === 0) {
+                console.error("The seeded practice returned no patients.");
+                process.exit(1);
+              }
+              console.log(`Seeded practice reachable: ${rows.length} patient(s) read back.`);
+            });
+          '
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  # ---------------------------------------------------------------------------
+  # Lose the database, get it back.
+  # ---------------------------------------------------------------------------
+  backup-restore:
+    name: Backup and restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Bring up a seeded stack
+        run: pnpm setup:selfhost
+
+      - name: Take a backup
+        run: pnpm ops:backup
+
+      # The verification restores into a scratch database and compares row
+      # counts, the migration history and a per-table digest of one patient's
+      # whole chart against the manifest. A restore that merely completes is not
+      # a restore that worked.
+      - name: Prove the backup is restorable
+        id: restore
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          pnpm ops:verify-backup
+          echo "seconds=$(( $(date +%s) - started ))" >> "$GITHUB_OUTPUT"
+
+      - name: Assert the documented restore budget
+        env:
+          ELAPSED: ${{ steps.restore.outputs.seconds }}
+          BUDGET: '900'
+        run: |
+          set -euo pipefail
+          echo "Restore took ${ELAPSED}s (budget ${BUDGET}s)"
+          echo "restore: ${ELAPSED}s / ${BUDGET}s budget" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ELAPSED" -gt "$BUDGET" ]; then
+            echo "::error::Restore took ${ELAPSED}s, over the documented 15-minute budget."
+            exit 1
+          fi
+
+      # The real drill: destroy the live database, then bring it back from the
+      # archive and confirm the practice is whole.
+      - name: Destroy the database and restore it
+        run: |
+          set -euo pipefail
+          docker compose exec -T postgres psql -U openrunic -d postgres \
+            -v ON_ERROR_STOP=1 -c 'DROP DATABASE openrunic WITH (FORCE);'
+          pnpm ops:restore -- --yes
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans

@@ -51,6 +51,18 @@ export interface CreateAppOptions {
    * and a different one would drop every event on the floor.
    */
   agentAudit?: AuditBridge;
+  /**
+   * Whether the API can actually serve data right now.
+   *
+   * Distinct from liveness, and the distinction is the point. `/healthz` says
+   * the process is running; a process with no database is running perfectly and
+   * cannot answer a single clinical question. Without a separate readiness
+   * check, a database outage reads as healthy to every orchestrator and every
+   * status page, which is precisely when staff most need to be told.
+   *
+   * Absent in development, where there is no database to be ready for.
+   */
+  readiness?: () => Promise<boolean>;
 }
 
 /**
@@ -114,7 +126,24 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
       },
     });
 
+  // Liveness: is this process running. Deliberately checks nothing else, so a
+  // restart loop cannot be caused by a dependency being briefly slow.
   app.get('/healthz', (c) => c.json({ status: 'ok', service: 'openrunic-api' }));
+
+  // Readiness: can this process serve data. 503 when the database is gone, so
+  // an outage is visible to the container runtime and to the web application
+  // rather than hiding behind a liveness check that can never fail.
+  app.get('/readyz', async (c) => {
+    if (options.readiness === undefined) {
+      return c.json({ status: 'ok', service: 'openrunic-api', checked: [] });
+    }
+
+    const ready = await options.readiness().catch(() => false);
+    return c.json(
+      { status: ready ? 'ok' : 'degraded', service: 'openrunic-api', checked: ['database'] },
+      ready ? 200 : 503
+    );
+  });
 
   app.get('/openapi.json', (c) =>
     c.json(

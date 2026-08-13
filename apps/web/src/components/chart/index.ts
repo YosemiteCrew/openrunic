@@ -5,9 +5,11 @@
  * library has no tab primitive and no patient header today, and both are
  * written to move across unchanged.
  */
-export { appointmentOnDay, ChartRail, nextBookedAppointment } from './ChartRail';
+export { appointmentOnDay, nextBookedAppointment } from './appointments';
+export { panelId, tabId } from './ids';
+export { ChartRail } from './ChartRail';
 export type { ChartRailProps } from './ChartRail';
-export { ChartTabs, panelId, tabId } from './ChartTabs';
+export { ChartTabs } from './ChartTabs';
 export type { ChartTabItem, ChartTabsProps } from './ChartTabs';
 export { PatientContextRail } from './PatientContextRail';
 export type { PatientContextRailProps } from './PatientContextRail';

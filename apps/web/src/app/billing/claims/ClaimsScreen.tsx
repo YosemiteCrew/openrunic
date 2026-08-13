@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, Card, Input, VitalStat } from '@openrunic/ui';
+import type { StatusTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
@@ -22,7 +23,7 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { CLAIM_STATUSES, filterClaims, useClaims } from '@/lib/api';
 import type { BillingClient, Claim, ClaimStatus } from '@/lib/api';
-import { formatMoney } from '@/lib/format';
+import { formatCount, formatMoney } from '@/lib/format';
 
 /**
  * BL-03 Claim workbench. The biller's home.
@@ -31,7 +32,7 @@ import { formatMoney } from '@/lib/format';
  * primary navigation, so "what is denied" and "what is ready to submit" are one
  * click apart rather than two screens apart. There are no files anywhere on
  * this screen: acknowledgements arrive as events folded into the claim's own
- * history, which is the whole point of replacing OpenEMR's batch-file and
+ * history, which is the whole point of replacing the legacy batch-file and
  * EDI-review pair.
  *
  * The metric: a day's clean claims go from captured to submitted in three bulk
@@ -47,12 +48,23 @@ import { formatMoney } from '@/lib/format';
 
 const PAGE_SIZE = 100;
 
+/**
+ * What to do about the money sitting in an ageing band, in the band's own
+ * words. The tone already carries the urgency; this says the action, because a
+ * colour is never the only signal.
+ */
+const BAND_ADVICE: Record<StatusTone, string> = {
+  danger: 'chase these',
+  neutral: 'ageing',
+  success: 'on track',
+};
+
 export interface ClaimsScreenProps {
   /** Injectable data client. Tests drive the empty and error states with it. */
   client?: BillingClient;
 }
 
-export function ClaimsScreen({ client }: ClaimsScreenProps = {}): ReactElement {
+export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElement {
   const claimsState = useClaims({ pageSize: PAGE_SIZE }, { client });
   const now = useMemo(() => clinicNow().toISOString(), []);
 
@@ -97,7 +109,10 @@ export function ClaimsScreen({ client }: ClaimsScreenProps = {}): ReactElement {
 
   const runBulk = useCallback(
     (next: ClaimStatus, done: string) => {
-      const ids = selectable.filter((claim) => selected.has(claim.id)).map((claim) => claim.id);
+      const ids: string[] = [];
+      for (const claim of selectable) {
+        if (selected.has(claim.id)) ids.push(claim.id);
+      }
       if (ids.length === 0) {
         toasts.push({
           tone: 'info',
@@ -114,7 +129,7 @@ export function ClaimsScreen({ client }: ClaimsScreenProps = {}): ReactElement {
       setSelected(new Set());
       toasts.push({
         tone: 'success',
-        title: `${ids.length} ${ids.length === 1 ? 'claim' : 'claims'} ${done.toLowerCase()}`,
+        title: `${formatCount(ids.length, 'claim')} ${done.toLowerCase()}`,
         message: `Moved to ${CLAIM_STATUS_LABELS[next].toLowerCase()}.`,
       });
     },
@@ -222,19 +237,13 @@ export function ClaimsScreen({ client }: ClaimsScreenProps = {}): ReactElement {
             label={band.label}
             value={formatMoney(band.amount, { currency: 'USD' }).text}
             state={band.tone}
-            stateLabel={`${band.count} ${band.count === 1 ? 'claim' : 'claims'}, ${
-              band.tone === 'danger'
-                ? 'chase these'
-                : band.tone === 'neutral'
-                  ? 'ageing'
-                  : 'on track'
-            }`}
+            stateLabel={`${formatCount(band.count, 'claim')}, ${BAND_ADVICE[band.tone]}`}
           />
         ))}
       </section>
 
       <Card overline="States" title="Filter the queue">
-        <div className="or-filter-chips" role="group" aria-label="Claim state">
+        <fieldset className="or-filter-chips" aria-label="Claim state">
           <button
             type="button"
             className="or-filter-chip"
@@ -260,7 +269,7 @@ export function ClaimsScreen({ client }: ClaimsScreenProps = {}): ReactElement {
               {CLAIM_STATUS_LABELS[candidate]} <span className="or-mono">{counts[candidate]}</span>
             </button>
           ))}
-        </div>
+        </fieldset>
       </Card>
 
       <AsyncBoundary

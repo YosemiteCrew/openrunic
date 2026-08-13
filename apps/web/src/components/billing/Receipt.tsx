@@ -33,7 +33,11 @@ export interface ReceiptProps {
   onDeliver: (payment: Payment, channel: 'print' | 'email') => void;
 }
 
-export function Receipt({ payment, onClose, onDeliver }: ReceiptProps): ReactElement | null {
+export function Receipt({
+  payment,
+  onClose,
+  onDeliver,
+}: Readonly<ReceiptProps>): ReactElement | null {
   if (!payment) return null;
 
   const rows = receiptRows(payment.allocations).map((allocation): Record<string, ReactNode> => ({

@@ -59,7 +59,7 @@ export function AppShell({
   topBarActions,
   rightRail,
   children,
-}: AppShellProps): ReactElement {
+}: Readonly<AppShellProps>): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const active = activeAreaLabel(pathname ?? '');

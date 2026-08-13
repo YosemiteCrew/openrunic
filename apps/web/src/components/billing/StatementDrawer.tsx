@@ -59,7 +59,7 @@ export function StatementDrawer({
   onSend,
   onTextToPay,
   texted,
-}: StatementDrawerProps): ReactElement | null {
+}: Readonly<StatementDrawerProps>): ReactElement | null {
   if (!open || accounts.length === 0) return null;
 
   const single = accounts.length === 1 ? accounts[0] : null;

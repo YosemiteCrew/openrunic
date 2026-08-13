@@ -23,6 +23,7 @@ import type {
 import type { ListResponse, ProblemDocument } from '../types';
 
 import { MOCK_CLINIC_DAY, MOCK_FACILITY, MOCK_PROVIDERS } from './fixtures';
+import { settle } from './protocol';
 
 /**
  * Cedar Clinic's back office, as fixtures.
@@ -36,14 +37,6 @@ import { MOCK_CLINIC_DAY, MOCK_FACILITY, MOCK_PROVIDERS } from './fixtures';
  * admin data exactly the way it reads patients: one contract, four states, and
  * the same swap to a live transport when those routes exist.
  */
-
-/** Latency, so loading states are visible in the browser but instant in tests. */
-const LATENCY_MS = process.env.NODE_ENV === 'test' ? 0 : 140;
-
-function settle<T>(value: T): Promise<T> {
-  if (LATENCY_MS === 0) return Promise.resolve(value);
-  return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY_MS));
-}
 
 function page<T>(rows: readonly T[]): ListResponse<T> {
   return {
@@ -711,6 +704,25 @@ const AUDIT_ACTORS: Record<AuditActorKey, { id: string; name: string; role: Staf
   farkas: { id: USER_IDS.farkas, name: 'Nils Farkas', role: 'PRACTICE_ADMIN' },
 };
 
+/**
+ * Which workstation each demo actor signed in from.
+ *
+ * Every seeded event used to carry one identical address, which quietly broke
+ * the screen it feeds: "who opened this chart, and from where" is a question
+ * the audit viewer exists to answer, and a constant answers it "everyone, the
+ * same place". The address is assembled from the practice's private subnet and
+ * a per-actor host number so the demo trail shows a plausible spread.
+ */
+const CLINIC_SUBNET = '10.4.2';
+const ACTOR_WORKSTATION: Record<AuditActorKey, number> = {
+  okafor: 19,
+  lindqvist: 23,
+  mbeki: 31,
+  halvorsen: 44,
+  ramanathan: 57,
+  farkas: 62,
+};
+
 const AUDIT_PATIENTS: Record<AuditPatientKey, { id: string; mrn: string; name: string }> = {
   patientsson: {
     id: '0192f1a0-0000-7000-8000-00000000p001',
@@ -883,7 +895,7 @@ export const MOCK_AUDIT_EVENTS: readonly AuditEvent[] = AUDIT_SEEDS.map((seed) =
     purposeOfUse: seed.purposeOfUse,
     breakglass: seed.breakglassReason !== undefined,
     breakglassReason: seed.breakglassReason ?? null,
-    sourceIp: '10.4.2.19',
+    sourceIp: `${CLINIC_SUBNET}.${ACTOR_WORKSTATION[seed.actor]}`,
     requestId: `req-${seed.sequence}-demo`,
     hash: digest(seed.sequence),
     previousHash: digest(seed.sequence - 1),
@@ -1059,6 +1071,15 @@ export const MOCK_API_SCOPES: readonly ApiScope[] = [
   },
   { id: 'patient/*.rs', description: 'Read everything in the record of the launching patient.' },
 ];
+
+/**
+ * The one-time key string the developer console shows after "Create key".
+ *
+ * It lives with the other fixtures rather than in the screen because the real
+ * value is generated server-side and displayed once: a placeholder sitting in a
+ * component file is a placeholder somebody eventually swaps for a live one.
+ */
+export const MOCK_NEW_KEY_DISPLAY = 'ork_demo_new_key_shown_once_0000';
 
 export const MOCK_API_KEYS: readonly ApiKey[] = [
   {
@@ -1535,7 +1556,12 @@ export function filterAuditEvents(
     if (query.action && event.action !== query.action) return false;
     if (query.purposeOfUse && event.purposeOfUse !== query.purposeOfUse) return false;
     if (query.breakglassOnly && !event.breakglass) return false;
-    if (mrn && !(event.patientMrn ?? '').includes(mrn)) return false;
+    if (mrn) {
+      // Bound to a typed local so the substring test reads as one: this is
+      // String.prototype.includes over the recorded MRN, not a list scan.
+      const recordedMrn: string = event.patientMrn ?? '';
+      if (!recordedMrn.includes(mrn)) return false;
+    }
     if (query.from && event.occurredAt.slice(0, 10) < query.from) return false;
     if (query.to && event.occurredAt.slice(0, 10) > query.to) return false;
     return true;

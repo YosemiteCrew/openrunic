@@ -16,7 +16,7 @@ interface InsurancePageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function InsurancePage({ params }: InsurancePageProps) {
+export default async function InsurancePage({ params }: Readonly<InsurancePageProps>) {
   const { id } = await params;
   return <InsuranceScreen patientId={id} />;
 }

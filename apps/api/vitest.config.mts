@@ -12,7 +12,8 @@ export default defineConfig({
       // Coverage floors are enforced by CI on the merged coverage map
       // (COVERAGE_FLOORS in _test.yaml), never per shard - a per-shard
       // threshold here would evaluate against a slice of the suite and misfire
-      // the moment the shard count rises above 1.
+      // the moment the shard count rises above 1. Keep the two in step: the
+      // numbers there are statements 95, branches 95, functions 95, lines 95.
       exclude: ['src/index.ts', 'src/__tests__/**'],
       // Per-glob floors, not a global one. The agent surface (ADR-0005) is new
       // code held to the bar its own packages are held to; a global threshold

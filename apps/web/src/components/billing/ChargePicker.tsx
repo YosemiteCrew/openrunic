@@ -40,7 +40,7 @@ export function ChargePicker({
   onQueryChange,
   onAdd,
   searchInputId,
-}: ChargePickerProps): ReactElement {
+}: Readonly<ChargePickerProps>): ReactElement {
   const needle = query.trim().toLowerCase();
 
   const matches = useMemo(() => {

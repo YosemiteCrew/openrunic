@@ -32,7 +32,7 @@ export function SignNoteModal({
   patientName,
   onCancel,
   onConfirm,
-}: SignNoteModalProps): ReactElement {
+}: Readonly<SignNoteModalProps>): ReactElement {
   const [note, setNote] = useState('');
   const fieldId = useId();
 

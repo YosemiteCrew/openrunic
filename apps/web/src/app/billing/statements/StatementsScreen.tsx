@@ -9,6 +9,7 @@ import {
   arSummary,
   BUCKET_LABELS,
   BUCKET_ORDER,
+  BUCKET_STATE_LABELS,
   bucketTone,
   DUNNING_LABELS,
   Money,
@@ -22,7 +23,7 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { filterStatements, useStatements } from '@/lib/api';
 import type { AgeingBucket, BillingClient, StatementAccount } from '@/lib/api';
-import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
+import { formatCount, formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
 
 /**
  * BL-07 Statements and patient AR, with BL-08's ageing above it.
@@ -54,7 +55,7 @@ export interface StatementsScreenProps {
   client?: BillingClient;
 }
 
-export function StatementsScreen({ client }: StatementsScreenProps = {}): ReactElement {
+export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): ReactElement {
   const statementsState = useStatements({ pageSize: 100 }, { client });
   const accounts = useMemo(() => statementsState.data?.data ?? [], [statementsState.data]);
 
@@ -110,7 +111,7 @@ export function StatementsScreen({ client }: StatementsScreenProps = {}): ReactE
       setSelected(new Set());
       toasts.push({
         tone: 'success',
-        title: `${batch.length} ${batch.length === 1 ? 'statement' : 'statements'} sent`,
+        title: `${formatCount(batch.length, 'statement')} sent`,
         message: 'Accounts with a mobile number also received a payment link.',
       });
     },
@@ -263,19 +264,13 @@ export function StatementsScreen({ client }: StatementsScreenProps = {}): ReactE
             label={BUCKET_LABELS[candidate]}
             value={formatMoney(summary.buckets[candidate], { currency: 'USD' }).text}
             state={bucketTone(candidate)}
-            stateLabel={
-              candidate === 'CURRENT'
-                ? 'On track'
-                : candidate === 'DAYS_31_60'
-                  ? 'Ageing'
-                  : 'Chase these'
-            }
+            stateLabel={BUCKET_STATE_LABELS[candidate]}
           />
         ))}
       </section>
 
       <Card overline="Ageing" title="Filter by bucket">
-        <div className="or-filter-chips" role="group" aria-label="Ageing bucket">
+        <fieldset className="or-filter-chips" aria-label="Ageing bucket">
           <button
             type="button"
             className="or-filter-chip"
@@ -304,7 +299,7 @@ export function StatementsScreen({ client }: StatementsScreenProps = {}): ReactE
               </span>
             </button>
           ))}
-        </div>
+        </fieldset>
       </Card>
 
       <AsyncBoundary

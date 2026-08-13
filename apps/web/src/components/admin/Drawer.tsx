@@ -53,8 +53,8 @@ export function Drawer({
   width = 480,
   onClose,
   children,
-}: DrawerProps): ReactElement | null {
-  const panelRef = useRef<HTMLDivElement>(null);
+}: Readonly<DrawerProps>): ReactElement | null {
+  const panelRef = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
   const baseId = useId();
   const titleId = `${baseId}-title`;
@@ -82,7 +82,7 @@ export function Drawer({
 
       const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
       const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const last = focusable.at(-1);
       const active = document.activeElement;
       const atLastStop = active === (event.shiftKey ? first : last);
       if (first && !atLastStop && panel.contains(active)) return;
@@ -107,11 +107,17 @@ export function Drawer({
       {/* Decorative: Escape and the Close button are the real controls, so the
           scrim needs no keyboard handler of its own. */}
       <div className="or-drawer__scrim" aria-hidden="true" onClick={onClose} />
-      <div
+      {/* A real <dialog>, not a div wearing role="dialog". It is rendered with
+          `open` rather than opened through `showModal()`: the top layer would
+          take the panel out of the drawer's right-edge layout and replace the
+          scrim with a `::backdrop` this design does not want, and modality here
+          is already carried by the scrim, the Escape handler and the focus trap
+          below. */}
+      <dialog
         ref={panelRef}
         className="or-drawer__panel"
         style={{ width: `min(${width}px, 100%)` }}
-        role="dialog"
+        open
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
@@ -135,7 +141,7 @@ export function Drawer({
         <div className="or-drawer__body">{children}</div>
 
         {footer ? <div className="or-drawer__footer">{footer}</div> : null}
-      </div>
+      </dialog>
     </div>
   );
 }

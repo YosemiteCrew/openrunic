@@ -52,7 +52,11 @@ function statusBadge(patient: Patient): ReactElement {
   return <Badge tone="success">Active</Badge>;
 }
 
-export function PatientTable({ patients, asOf, caption }: PatientTableProps): ReactElement {
+export function PatientTable({
+  patients,
+  asOf,
+  caption,
+}: Readonly<PatientTableProps>): ReactElement {
   const rows = patients.map((patient) => ({
     id: patient.id,
     name: (

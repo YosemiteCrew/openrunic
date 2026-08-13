@@ -12,7 +12,7 @@ import { formatDate, formatDateTime, formatEnumLabel, formatTime, formatVital } 
 /**
  * CH-01, the 30-second pre-visit read.
  *
- * Ranked, not democratic. OpenEMR's chart dashboard gave allergies, problems
+ * Ranked, not democratic. The legacy chart dashboard gave allergies, problems
  * and a portal widget the same visual weight and let the user toggle boxes on
  * and off; here the rail carries what is dangerous to forget and this panel
  * carries what is being decided today, in one order that never changes. There
@@ -71,7 +71,11 @@ function reading(observation: ResultObservation): ReactElement {
   );
 }
 
-export function SummaryPanel({ chart, todayAppointment, now }: SummaryPanelProps): ReactElement {
+export function SummaryPanel({
+  chart,
+  todayAppointment,
+  now,
+}: Readonly<SummaryPanelProps>): ReactElement {
   const today = formatDate(now, 'iso');
   const todayVisit = chart.visits.find((visit) => visit.date === today) ?? null;
   const recentVisits = [...chart.visits].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);

@@ -7,6 +7,8 @@ import type { ReactElement } from 'react';
 import type { Order, OrderStatus } from '@/lib/api';
 import { formatElapsed } from '@/lib/format';
 
+import { isStuck } from './stuck';
+
 /**
  * The order's lifecycle state, as a word first and a colour second.
  *
@@ -41,20 +43,11 @@ const STATUS_ICON: Record<OrderStatus, string> = {
   CANCELLED: 'ban',
 };
 
-/** Past this, a transmitted order that nobody has acknowledged is stuck. */
-export const STUCK_AFTER_MINUTES = 24 * 60;
-
-export function isStuck(order: Order, now: string): boolean {
-  if (order.status !== 'TRANSMITTED') return false;
-  const minutes = (new Date(now).getTime() - new Date(order.lastEventAt).getTime()) / 60_000;
-  return minutes > STUCK_AFTER_MINUTES;
-}
-
 export interface OrderStatusBadgeProps {
   status: OrderStatus;
 }
 
-export function OrderStatusBadge({ status }: OrderStatusBadgeProps): ReactElement {
+export function OrderStatusBadge({ status }: Readonly<OrderStatusBadgeProps>): ReactElement {
   return (
     <Badge tone={STATUS_TONE[status]} icon={STATUS_ICON[status]}>
       {STATUS_LABEL[status]}
@@ -72,7 +65,7 @@ export interface OrderAgeProps {
  * state age, and an order is no different: an unacknowledged requisition is
  * invisible until someone counts the days.
  */
-export function OrderAge({ order, now }: OrderAgeProps): ReactElement {
+export function OrderAge({ order, now }: Readonly<OrderAgeProps>): ReactElement {
   const elapsed = formatElapsed(order.lastEventAt, now);
   if (isStuck(order, now)) {
     return (

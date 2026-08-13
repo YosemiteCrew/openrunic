@@ -43,7 +43,7 @@ export interface InboxScreenProps {
   now?: string;
 }
 
-export function InboxScreen({ client, now = MOCK_NOW }: InboxScreenProps): ReactElement {
+export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProps>): ReactElement {
   const [stream, setStream] = useState<InboxStream | null>(null);
   const [assignment, setAssignment] = useState<Assignment | ''>('');
   const [doneIds, setDoneIds] = useState<string[]>([]);
@@ -60,14 +60,14 @@ export function InboxScreen({ client, now = MOCK_NOW }: InboxScreenProps): React
   const visible = useMemo(() => {
     const rank = { OVERDUE: 0, DUE_SOON: 1, ON_TIME: 2 } as const;
     const completed = new Set(doneIds);
-    return loaded
-      .filter((item) => !completed.has(item.id))
-      .filter((item) => (stream ? item.stream === stream : true))
-      .sort(
-        (a, b) =>
-          rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
-          a.dueAt.localeCompare(b.dueAt)
-      );
+    const open = loaded.filter(
+      (item) => !completed.has(item.id) && (!stream || item.stream === stream)
+    );
+    return open.sort(
+      (a, b) =>
+        rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
+        a.dueAt.localeCompare(b.dueAt)
+    );
   }, [loaded, doneIds, stream, now]);
 
   const complete = useCallback((item: InboxItem) => {
@@ -78,15 +78,16 @@ export function InboxScreen({ client, now = MOCK_NOW }: InboxScreenProps): React
   /* One undo for both dispositions: whichever list the row landed in, this puts
      it back exactly where it was. Reversible acts get an undo, not a dialog. */
   const undo = useCallback(() => {
-    setCompletion((current) => {
-      if (current) {
-        const { id } = current.item;
-        setDoneIds((previous) => previous.filter((candidate) => candidate !== id));
-        setClaimedIds((previous) => previous.filter((candidate) => candidate !== id));
-      }
-      return null;
-    });
-  }, []);
+    if (!completion) return;
+    // Read from state rather than from inside a setter: React may replay an
+    // updater, and an updater that queues two more updates would replay those
+    // too. Nothing here needs the freshest value; the toast holding the undo is
+    // the same render's completion.
+    const { id } = completion.item;
+    setDoneIds((previous) => previous.filter((candidate) => candidate !== id));
+    setClaimedIds((previous) => previous.filter((candidate) => candidate !== id));
+    setCompletion(null);
+  }, [completion]);
 
   const claim = useCallback((item: InboxItem) => {
     setClaimedIds((previous) => [...previous, item.id]);

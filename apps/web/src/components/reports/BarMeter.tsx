@@ -27,7 +27,7 @@ export interface BarMeterProps {
   rows: BarMeterRow[];
 }
 
-export function BarMeter({ label, rows }: BarMeterProps): ReactElement {
+export function BarMeter({ label, rows }: Readonly<BarMeterProps>): ReactElement {
   const max = rows.reduce((peak, row) => Math.max(peak, row.value), 0) || 1;
 
   return (

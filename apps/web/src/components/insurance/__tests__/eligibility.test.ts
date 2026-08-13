@@ -52,7 +52,7 @@ describe('priorityForIndex', () => {
   });
 
   it('keeps the last slot rather than inventing one past tertiary', () => {
-    expect(priorityForIndex(9)).toBe(PRIORITY_SEQUENCE[PRIORITY_SEQUENCE.length - 1]);
+    expect(priorityForIndex(9)).toBe(PRIORITY_SEQUENCE.at(-1));
     expect(priorityForIndex(-1)).toBe('PRIMARY');
   });
 });

@@ -119,3 +119,68 @@ describe('RemittanceScreen', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
+}
+
+describe('RemittanceScreen, driven from the command palette', () => {
+  it('walks to the next remittance that still needs a person', async () => {
+    const withTwoQueues = MOCK_REMITTANCES.map((era) => ({
+      ...era,
+      status: 'EXCEPTIONS' as const,
+    }));
+    render(<RemittanceScreen client={createBillingClient({ remittances: withTwoQueues })} />);
+    const first = (await screen.findByRole('heading', { level: 2, name: /^Remittance / }))
+      .textContent;
+
+    await runCommand('Open the next remittance with exceptions');
+
+    expect(
+      (await screen.findByRole('heading', { level: 2, name: /^Remittance / })).textContent
+    ).not.toBe(first);
+  });
+
+  it('says so rather than doing nothing when no other queue needs work', async () => {
+    render(<RemittanceScreen />);
+    await screen.findByRole('heading', { level: 2, name: /^Remittance / });
+
+    await runCommand('Open the next remittance with exceptions');
+
+    expect(await screen.findByText('No other remittance has exceptions')).toBeInTheDocument();
+    expect(screen.getByText('Everything else posted in full.')).toBeInTheDocument();
+  });
+
+  it('filters to the exception queue and back to every remittance', async () => {
+    render(<RemittanceScreen />);
+    await screen.findByText('CHK-550194');
+
+    await runCommand('Show only remittances with exceptions');
+    expect(screen.queryByText('CHK-550194')).not.toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Exceptions only' })).toBeChecked();
+
+    await runCommand('Show every remittance');
+    expect(await screen.findByText('CHK-550194')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Exceptions only' })).not.toBeChecked();
+  });
+
+  it('drops the exception count as each line is resolved, down to nothing to work', async () => {
+    render(<RemittanceScreen />);
+    await screen.findByRole('heading', { level: 2, name: /^Remittance / });
+
+    expect(screen.getByText('Needs a decision')).toBeInTheDocument();
+
+    // Resolve every open exception on the queue this remittance carries.
+    let resolvers = screen.queryAllByRole('button', { name: /^Transferred to patient for / });
+    while (resolvers.length > 0) {
+      fireEvent.click(resolvers[0]!);
+      resolvers = screen.queryAllByRole('button', { name: /^Transferred to patient for / });
+    }
+
+    expect(screen.queryByRole('table', { name: 'Exception queue' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Nothing to work').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Needs a decision')).not.toBeInTheDocument();
+  });
+});

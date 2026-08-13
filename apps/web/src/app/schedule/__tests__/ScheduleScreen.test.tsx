@@ -2,7 +2,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ScheduleScreen } from '@/app/schedule/ScheduleScreen';
-import { ApiError, createMockClient, MOCK_APPOINTMENTS, MOCK_PATIENTS } from '@/lib/api';
+import {
+  ApiError,
+  createMockClient,
+  MOCK_APPOINTMENTS,
+  MOCK_PATIENTS,
+  MOCK_PROVIDERS,
+} from '@/lib/api';
 import type { ApiClient, Appointment } from '@/lib/api';
 
 /**
@@ -178,5 +184,280 @@ describe('ScheduleScreen', () => {
     );
 
     expect(await screen.findAllByRole('button', { name: /Double-booked/ })).toHaveLength(2);
+  });
+});
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string | RegExp): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(
+    await screen.findByRole('option', {
+      name: typeof label === 'string' ? new RegExp(label) : label,
+    })
+  );
+}
+
+function dayHeading(): string {
+  return screen.getByText(/The clinic day, per provider/).textContent ?? '';
+}
+
+describe('ScheduleScreen, moving around the day', () => {
+  it('pages back and forward a day, and comes back to today', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    expect(dayHeading()).toContain('12 Aug 2026');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+    expect(dayHeading()).toContain('11 Aug 2026');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next day' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next day' }));
+    expect(dayHeading()).toContain('13 Aug 2026');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(dayHeading()).toContain('12 Aug 2026');
+  });
+
+  it('shows an empty day rather than the previous grid when paging onto one', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+
+    expect(await screen.findByText('No appointments on this day')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Day view grid' })).not.toBeInTheDocument();
+  });
+
+  it('narrows the grid to one provider, and back to all of them', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    fireEvent.change(screen.getByLabelText('Provider'), {
+      target: { value: MOCK_PROVIDERS[0].id },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /Dr\. Okafor/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: '' } });
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('ScheduleScreen, driven from the command palette', () => {
+  it('pages the day without a mouse, in both directions and back to today', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    await runCommand('Go to the previous day');
+    expect(dayHeading()).toContain('11 Aug 2026');
+
+    await runCommand('Go to the next day');
+    await runCommand('Go to the next day');
+    expect(dayHeading()).toContain('13 Aug 2026');
+
+    await runCommand('Go to today');
+    expect(dayHeading()).toContain('12 Aug 2026');
+  });
+
+  it('opens the open-slot panel, which can then be hidden again', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    await runCommand('Find available slots');
+    expect(await screen.findByText('Next open 20-minute slots')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide open slots' }));
+    expect(screen.queryByText('Next open 20-minute slots')).not.toBeInTheDocument();
+  });
+
+  it('takes a walk-in straight into the first slot that is genuinely free', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    await runCommand('Add walk-in');
+
+    // The booking dialog opens on a slot already chosen, rather than making the
+    // desk read a list while somebody stands at the counter.
+    const dialog = await screen.findByRole('dialog', { name: 'Book appointment' });
+    expect(dialog).toHaveTextContent(/Booking holds the slot immediately/);
+    // And the panel behind it stays open, so a different slot is one click away.
+    expect(screen.getByText('Next open 20-minute slots')).toBeInTheDocument();
+  });
+
+  it('offers check-in only for a visit that is selected and not already in', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+    expect(screen.queryByRole('option', { name: /Check in/ })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByLabelText('Search patients, screens and actions'), {
+      key: 'Escape',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: ANKLE_INJURY }));
+    await runCommand('Check in Noor');
+
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Noor' }));
+    await screen.findByRole('status');
+
+    // Once she is in, the verb is gone: the palette never offers a second
+    // check-in for a patient already on the Flow Board.
+    fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+    expect(screen.queryByRole('option', { name: /Check in Noor/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('ScheduleScreen, backing out of an action', () => {
+  it('cancels the check-in from the dialog footer without checking anyone in', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeEnabled();
+  });
+
+  it('cancels a booking and leaves the day as it was', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Find available' })[0] as HTMLElement);
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: /^Book \d\d:\d\d with/ }))[0] as HTMLElement
+    );
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Book appointment' })).getByRole('button', {
+        name: 'Cancel',
+      })
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Book appointment' })).not.toBeInTheDocument()
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('dismisses the confirmation toast, which does not undo what it confirmed', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Check in Noor' })
+    );
+
+    const toast = await screen.findByRole('status');
+    expect(within(toast).getByRole('link', { name: 'Open the Flow Board' })).toHaveAttribute(
+      'href',
+      '/schedule/flow-board'
+    );
+
+    fireEvent.click(within(toast).getByRole('button', { name: /Dismiss|Close/ }));
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeDisabled();
+  });
+
+  it('books from the rail walk-in button as well as the page action', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Add walk-in' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Book appointment' })).toBeInTheDocument();
+  });
+});
+
+describe('ScheduleScreen, a slot with no patient on it', () => {
+  /** A held slot: booked time with nobody attached to it yet. */
+  function unassignedDay(): ApiClient {
+    const first = MOCK_APPOINTMENTS[0] as Appointment;
+    return createMockClient({
+      appointments: [{ ...first, id: 'held-slot', patientId: null, reasonText: null }],
+      patients: MOCK_PATIENTS,
+    });
+  }
+
+  it('names the slot as unassigned rather than showing a blank patient row', async () => {
+    render(<ScheduleScreen client={unassignedDay()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /08:00 to 08:20/ }));
+
+    expect(within(rail()).getByText('Unassigned slot')).toBeInTheDocument();
+    // No chart to open and no coverage to check, so neither is offered.
+    expect(within(rail()).queryByRole('link', { name: 'Open chart' })).not.toBeInTheDocument();
+    expect(within(rail()).getByRole('button', { name: 'Check in' })).toBeInTheDocument();
+  });
+
+  it('checks a held slot in, wording the confirmation without a name', async () => {
+    render(<ScheduleScreen client={unassignedDay()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /08:00 to 08:20/ }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in' }));
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent(
+      "Check in this visit. This creates today's visit and moves it onto the Flow Board."
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in visit' }));
+
+    const toast = await screen.findByRole('status');
+    expect(toast).toHaveTextContent('The visit was created and is on the Flow Board.');
+  });
+
+  it('offers a check-in verb with no name in it when the slot has no patient', async () => {
+    render(<ScheduleScreen client={unassignedDay()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /08:00 to 08:20/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+
+    expect(
+      await screen.findByRole('option', { name: /Check in the selected visit/ })
+    ).toBeInTheDocument();
+  });
+
+  it('opens the booking dialog on nothing when the day has no room left', async () => {
+    // One provider's day taken wall to wall, and the board filtered to them:
+    // the walk-in verb has no slot to reach for, and must not open a booking
+    // dialog on an undefined one.
+    const first = MOCK_APPOINTMENTS[0] as Appointment;
+    const dayStart = Date.parse(`${first.start.slice(0, 10)}T00:00:00.000Z`);
+    const wallToWall = Array.from({ length: 72 }, (_, index) => ({
+      ...first,
+      id: `full-${index}`,
+      start: new Date(dayStart + index * 20 * 60_000).toISOString(),
+      end: new Date(dayStart + (index + 1) * 20 * 60_000).toISOString(),
+    }));
+    render(<ScheduleScreen client={createMockClient({ appointments: wallToWall })} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+    fireEvent.change(screen.getByLabelText('Provider'), {
+      target: { value: first.providerId },
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })
+      ).not.toBeInTheDocument()
+    );
+
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Add walk-in' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Book appointment' })).not.toBeInTheDocument();
+    // The open-slot panel opens instead and says there is nothing to offer.
+    expect(await screen.findByText(/No slot fits 20 minutes on this day/)).toBeInTheDocument();
   });
 });

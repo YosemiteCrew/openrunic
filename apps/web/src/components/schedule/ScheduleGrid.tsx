@@ -78,7 +78,7 @@ export function ScheduleGrid({
   now,
   selectedId,
   onSelect,
-}: ScheduleGridProps): ReactElement {
+}: Readonly<ScheduleGridProps>): ReactElement {
   /* A cancelled visit frees its slot, so it belongs in the day's counts rather
      than on the grid; a no-show consumed the slot and stays visible. */
   const onGrid = appointments.filter((appointment) => appointment.status !== 'CANCELLED');
@@ -104,7 +104,13 @@ export function ScheduleGrid({
 
   return (
     <div className="or-sched" style={gridStyle}>
-      <div className="or-sched__scroll" tabIndex={0} role="region" aria-label="Day view grid">
+      {/* A named <section> is the region landmark natively, so no explicit role.
+          `tabIndex` is deliberate and required: this is a scrollable container
+          (see `.or-sched__scroll`), and WCAG 2.1.1 means a keyboard-only user
+          must be able to focus it to scroll a day that overflows. The day can be
+          empty of appointment buttons and still need scrolling, so the inner
+          controls are not a substitute. `:focus-visible` is styled for it. */}
+      <section className="or-sched__scroll" tabIndex={0} aria-label="Day view grid">
         <div className="or-sched__grid">
           <div className="or-sched__corner">
             <span className="or-overline">Time</span>
@@ -228,7 +234,7 @@ export function ScheduleGrid({
             </div>
           ) : null}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

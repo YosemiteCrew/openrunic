@@ -196,3 +196,115 @@ describe('PatientChartScreen', () => {
     expect(screen.getByText('Dr. Halvorsen')).toBeInTheDocument();
   });
 });
+
+describe('PatientChartScreen, the chart tab strip on the keyboard alone', () => {
+  async function strip(): Promise<HTMLElement[]> {
+    await screen.findByRole('tab', { name: /Summary/ });
+    return screen.getAllByRole('tab');
+  }
+
+  it('wraps from the last tab round to the first, and back', async () => {
+    render(<PatientChartScreen patientId={testina.id} />);
+    const tabs = await strip();
+    const first = tabs[0]!;
+    const last = tabs.at(-1)!;
+
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowLeft' });
+
+    await waitFor(() => expect(screen.getAllByRole('tab').at(-1)).toHaveFocus());
+    expect(screen.getAllByRole('tab').at(-1)).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(screen.getAllByRole('tab').at(-1)!, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getAllByRole('tab')[0]).toHaveFocus());
+    expect(last).not.toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('jumps to the ends with Home and End', async () => {
+    render(<PatientChartScreen patientId={testina.id} />);
+    const tabs = await strip();
+    const count = tabs.length;
+
+    tabs[0]!.focus();
+    fireEvent.keyDown(tabs[0]!, { key: 'End' });
+    await waitFor(() => expect(screen.getAllByRole('tab').at(-1)).toHaveFocus());
+
+    fireEvent.keyDown(screen.getAllByRole('tab').at(-1)!, { key: 'Home' });
+    await waitFor(() => expect(screen.getAllByRole('tab')[0]).toHaveFocus());
+    expect(screen.getAllByRole('tab')).toHaveLength(count);
+  });
+
+  it('ignores keys that are not navigation, leaving the selection where it is', async () => {
+    render(<PatientChartScreen patientId={testina.id} />);
+    const tabs = await strip();
+    const summary = tabs[0]!;
+
+    summary.focus();
+    fireEvent.keyDown(summary, { key: 'a' });
+    fireEvent.keyDown(summary, { key: 'PageDown' });
+
+    expect(summary).toHaveAttribute('aria-selected', 'true');
+    expect(summary).toHaveFocus();
+  });
+
+  it('leaves exactly one tab in the page tab order at any moment', async () => {
+    render(<PatientChartScreen patientId={testina.id} />);
+    const tabs = await strip();
+
+    tabs[0]!.focus();
+    fireEvent.keyDown(tabs[0]!, { key: 'ArrowRight' });
+
+    await waitFor(() => {
+      const inOrder = screen.getAllByRole('tab').filter((tab) => tab.tabIndex === 0);
+      expect(inOrder).toHaveLength(1);
+    });
+    // Tabbing out of the strip goes to the panel, not through six more tabs.
+    expect(screen.getAllByRole('tab').filter((tab) => tab.tabIndex === 0)[0]).toHaveFocus();
+  });
+});
+
+describe('PatientChartScreen, which note it offers to open', () => {
+  it('falls back to the oldest unsigned note when there is no visit today', async () => {
+    const chart = await createMockChartClient().summary.get(testina.id);
+    const noVisitToday: ChartClient = createMockChartClient({
+      charts: [
+        {
+          ...chart,
+          visits: chart.visits.map((visit) => ({
+            ...visit,
+            // Push every visit into the past; leave the note states alone.
+            date: '2026-05-16',
+          })),
+        },
+      ],
+    });
+
+    render(<PatientChartScreen patientId={testina.id} chartClient={noVisitToday} />);
+
+    // Unsigned documentation is the debt worth surfacing, so the chart offers
+    // that note rather than no note at all.
+    const link = await screen.findByRole('link', { name: 'Open visit note' });
+    expect(link).toHaveAttribute('href', expect.stringContaining('/encounters/'));
+  });
+
+  it('offers no note at all when every visit is signed and none is today', async () => {
+    const chart = await createMockChartClient().summary.get(testina.id);
+    const allSigned: ChartClient = createMockChartClient({
+      charts: [
+        {
+          ...chart,
+          visits: chart.visits.map((visit) => ({
+            ...visit,
+            date: '2026-05-16',
+            noteState: 'SIGNED' as const,
+          })),
+        },
+      ],
+    });
+
+    render(<PatientChartScreen patientId={testina.id} chartClient={allSigned} />);
+
+    await screen.findByRole('tab', { name: /Summary/ });
+    expect(screen.queryByRole('link', { name: 'Open visit note' })).not.toBeInTheDocument();
+  });
+});

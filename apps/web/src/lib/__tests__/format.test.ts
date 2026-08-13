@@ -4,6 +4,7 @@ import type { PatientName } from '@/lib/api/types';
 import {
   NOT_RECORDED,
   formatAge,
+  formatCount,
   formatDate,
   formatDateTime,
   formatElapsed,
@@ -14,6 +15,7 @@ import {
   formatName,
   formatTime,
   formatVital,
+  pluralise,
 } from '@/lib/format';
 
 const testina: PatientName = {
@@ -219,5 +221,121 @@ describe('formatEnumLabel', () => {
     expect(formatEnumLabel('CHECKED_IN')).toBe('Checked in');
     expect(formatEnumLabel('NOSHOW')).toBe('Noshow');
     expect(formatEnumLabel('')).toBe('');
+  });
+});
+
+describe('pluralise', () => {
+  it('uses the singular for exactly one and the plural for anything else', () => {
+    expect(pluralise(1, 'note')).toBe('note');
+    expect(pluralise(0, 'note')).toBe('notes');
+    expect(pluralise(4, 'note')).toBe('notes');
+  });
+
+  it('takes an explicit plural when the sentence changes shape around it', () => {
+    expect(pluralise(1, 'error blocks', 'errors block')).toBe('error blocks');
+    expect(pluralise(3, 'error blocks', 'errors block')).toBe('errors block');
+  });
+});
+
+describe('formatCount', () => {
+  it('renders the number with the noun that agrees with it', () => {
+    expect(formatCount(1, 'claim')).toBe('1 claim');
+    expect(formatCount(0, 'claim')).toBe('0 claims');
+    expect(formatCount(12, 'claim')).toBe('12 claims');
+  });
+
+  it('carries an explicit plural through', () => {
+    expect(formatCount(2, 'coverage')).toBe('2 coverages');
+    expect(formatCount(2, 'error blocks', 'errors block')).toBe('2 errors block');
+  });
+});
+
+/*
+ * Absent, malformed and out-of-order inputs.
+ *
+ * These are the states a formatter meets in a real chart: a date of birth that
+ * was never captured, a discharge time the interface sent as an empty string, a
+ * wait timer whose start is later than "now" because two clocks disagree.
+ * Every one of them has to read as "not recorded", because a formatter that
+ * renders "NaN" or "Invalid Date" into a chart is worse than one that admits it
+ * has nothing.
+ */
+describe('the date and time formatters, with nothing to format', () => {
+  const nothing = [null, undefined, ''] as const;
+
+  it.each(nothing)('formatTime says not recorded for %p', (value) => {
+    expect(formatTime(value)).toBe(NOT_RECORDED);
+  });
+
+  it.each(nothing)('formatDateTime says not recorded for %p', (value) => {
+    expect(formatDateTime(value)).toBe(NOT_RECORDED);
+  });
+
+  it.each(nothing)('formatAge says not recorded for %p', (value) => {
+    expect(formatAge(value)).toBe(NOT_RECORDED);
+  });
+
+  it.each(nothing)('formatElapsed says not recorded for %p', (value) => {
+    expect(formatElapsed(value)).toBe(NOT_RECORDED);
+  });
+
+  it('refuses an unparseable timestamp rather than rendering Invalid Date', () => {
+    expect(formatDate('not a date')).toBe(NOT_RECORDED);
+    expect(formatTime('not a date')).toBe(NOT_RECORDED);
+    expect(formatDateTime('not a date')).toBe(NOT_RECORDED);
+    expect(formatAge('1990-13-45')).toBe(NOT_RECORDED);
+    expect(formatElapsed('not a date', '2026-08-12T10:00:00.000Z')).toBe(NOT_RECORDED);
+    expect(formatElapsed('2026-08-12T10:00:00.000Z', new Date('not a date'))).toBe(NOT_RECORDED);
+  });
+
+  it('refuses a start in the future rather than counting backwards', () => {
+    // Two clocks disagreeing is common; a wait timer reading "-3 min" is not
+    // something a flow board should ever show.
+    expect(formatElapsed('2026-08-12T10:05:00.000Z', new Date('2026-08-12T10:00:00.000Z'))).toBe(
+      NOT_RECORDED
+    );
+  });
+
+  it('measures against the wall clock when no as-of instant is given', () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+    expect(formatElapsed(twoHoursAgo)).toBe('2 h');
+    // Someone born today is zero days old, not "not recorded".
+    expect(formatAge(new Date().toISOString())).toBe('0 d');
+  });
+
+  it('names every month rather than leaving a gap for December', () => {
+    // The month lookup is one-based; an off-by-one would silently blank the
+    // last month of the year on every prose date in the product.
+    const months = Array.from({ length: 12 }, (_, index) =>
+      formatDate(`2026-${String(index + 1).padStart(2, '0')}-15`)
+    );
+
+    expect(months).toEqual([
+      '15 Jan 2026',
+      '15 Feb 2026',
+      '15 Mar 2026',
+      '15 Apr 2026',
+      '15 May 2026',
+      '15 Jun 2026',
+      '15 Jul 2026',
+      '15 Aug 2026',
+      '15 Sep 2026',
+      '15 Oct 2026',
+      '15 Nov 2026',
+      '15 Dec 2026',
+    ]);
+    expect(months.every((month) => !month.includes('  '))).toBe(true);
+  });
+
+  it('reads a date the same way either side of a timezone boundary', () => {
+    // 23:30 in New York on the 12th is 03:30 UTC on the 13th. The clinic's
+    // calendar day is the clinic's, so a visit does not move to tomorrow when
+    // the server happens to be in another zone.
+    const lateEvening = '2026-08-13T03:30:00.000Z';
+
+    expect(formatDate(lateEvening, 'iso', 'America/New_York')).toBe('2026-08-12');
+    expect(formatTime(lateEvening, 'America/New_York')).toBe('23:30');
+    expect(formatDate(lateEvening, 'iso', 'UTC')).toBe('2026-08-13');
   });
 });

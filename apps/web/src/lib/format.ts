@@ -23,6 +23,27 @@ export const CLINIC_TIME_ZONE = 'UTC';
 /** The locale every formatter uses. en-US primary; DE ships at v1. */
 const LOCALE = 'en-US';
 
+/**
+ * Built formatters, kept for the life of the page.
+ *
+ * Constructing an `Intl.NumberFormat` is one of the more expensive things in
+ * the standard library, and a ledger screen formats one per cell per render.
+ * The options cannot be hoisted to a constant because the currency comes from
+ * the row, so they are memoised on the option set instead. The key space is the
+ * currencies a practice actually bills in, which is a handful, so this cannot
+ * grow without bound.
+ */
+const NUMBER_FORMATTERS = new Map<string, Intl.NumberFormat>();
+
+function numberFormatter(options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = JSON.stringify(options);
+  const cached = NUMBER_FORMATTERS.get(key);
+  if (cached) return cached;
+  const built = new Intl.NumberFormat(LOCALE, options);
+  NUMBER_FORMATTERS.set(key, built);
+  return built;
+}
+
 const MONTHS = [
   'Jan',
   'Feb',
@@ -40,6 +61,35 @@ const MONTHS = [
 
 /** What a formatter renders when a value is genuinely absent. Never an empty cell. */
 export const NOT_RECORDED = 'Not recorded';
+
+/**
+ * Anything a date formatter accepts. Named because five signatures take it, and
+ * an alias is the only way to keep them from drifting apart one argument at a
+ * time.
+ */
+export type DateInput = string | Date | null | undefined;
+
+/* -------------------------------------------------------------------------- */
+/* Counts                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The noun for a count: "note" or "notes".
+ *
+ * The plural is a parameter rather than a suffix rule because clinical English
+ * does not derive: "coverage"/"coverages" is regular, but the summary line
+ * "1 error blocks billing" has to become "2 errors block billing", where the
+ * verb moves too. Passing both words keeps that decision at the call site,
+ * where the sentence is.
+ */
+export function pluralise(count: number, singular: string, plural = `${singular}s`): string {
+  return count === 1 ? singular : plural;
+}
+
+/** The count and its noun together: "1 claim", "4 claims". */
+export function formatCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${pluralise(count, singular, plural)}`;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Names and identifiers                                                       */
@@ -138,7 +188,7 @@ function pad(value: number): string {
 }
 
 export function formatDate(
-  value: string | Date | null | undefined,
+  value: DateInput,
   style: DateStyle = 'prose',
   timeZone: string = CLINIC_TIME_ZONE
 ): string {
@@ -153,10 +203,7 @@ export function formatDate(
 }
 
 /** "09:20". 24-hour, because a clinic day crosses noon and am/pm doubles the reading. */
-export function formatTime(
-  value: string | Date | null | undefined,
-  timeZone: string = CLINIC_TIME_ZONE
-): string {
+export function formatTime(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string {
   if (!value) return NOT_RECORDED;
   const date = toDate(value);
   if (!date) return NOT_RECORDED;
@@ -166,7 +213,7 @@ export function formatTime(
 
 /** "12 Aug 2026, 09:20". */
 export function formatDateTime(
-  value: string | Date | null | undefined,
+  value: DateInput,
   style: DateStyle = 'prose',
   timeZone: string = CLINIC_TIME_ZONE
 ): string {
@@ -181,10 +228,7 @@ export function formatDateTime(
  * month, days before that. Pass `asOf` on any surface that must not move with
  * the clock (fixtures, tests, printed records).
  */
-export function formatAge(
-  birthDate: string | Date | null | undefined,
-  asOf: string | Date = new Date()
-): string {
+export function formatAge(birthDate: DateInput, asOf: string | Date = new Date()): string {
   if (!birthDate) return NOT_RECORDED;
   const born = toDate(birthDate);
   const now = toDate(asOf);
@@ -206,10 +250,7 @@ export function formatAge(
  * Under a minute reads "just now" rather than counting seconds, because a
  * second-by-second number on a clinical board invites watching it.
  */
-export function formatElapsed(
-  from: string | Date | null | undefined,
-  to: string | Date = new Date()
-): string {
+export function formatElapsed(from: DateInput, to: string | Date = new Date()): string {
   if (!from) return NOT_RECORDED;
   const start = toDate(from);
   const end = toDate(to);
@@ -266,13 +307,13 @@ export function formatMoney(amount: number, options: MoneyOptions = {}): Money {
   const negative = amount < 0;
   const label = negative ? (options.negativeLabel ?? 'Credit') : null;
 
-  const magnitude = new Intl.NumberFormat(LOCALE, {
+  const magnitude = numberFormatter({
     style: 'currency',
     currency,
     currencyDisplay: 'narrowSymbol',
   }).format(Math.abs(amount));
 
-  const spoken = new Intl.NumberFormat(LOCALE, {
+  const spoken = numberFormatter({
     style: 'currency',
     currency,
     currencyDisplay: 'name',

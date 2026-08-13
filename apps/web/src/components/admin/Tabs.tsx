@@ -31,10 +31,17 @@ export interface TabsProps {
   onChange: (id: string) => void;
 }
 
-export function Tabs({ label, items, active, onChange }: TabsProps): ReactElement {
+export function Tabs({ label, items, active, onChange }: Readonly<TabsProps>): ReactElement {
   const refs = useRef(new Map<string, HTMLButtonElement>());
 
-  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+  /**
+   * Arrow-key navigation lives on the tabs, not on the tablist around them.
+   * The tablist is deliberately not a tab stop (WAI-ARIA's roving tabindex puts
+   * the single stop on the selected tab), so a key handler on it would be a
+   * handler on something the keyboard can never reach directly. Every key that
+   * reaches this handler came from a focused tab anyway.
+   */
+  const move = (event: KeyboardEvent<HTMLButtonElement>) => {
     const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
     if (!keys.includes(event.key)) return;
     const index = items.findIndex((item) => item.id === active);
@@ -54,7 +61,7 @@ export function Tabs({ label, items, active, onChange }: TabsProps): ReactElemen
   };
 
   return (
-    <div className="or-tabs" role="tablist" aria-label={label} onKeyDown={move}>
+    <div className="or-tabs" role="tablist" aria-label={label}>
       {items.map((item) => {
         const selected = item.id === active;
         return (
@@ -73,6 +80,7 @@ export function Tabs({ label, items, active, onChange }: TabsProps): ReactElemen
             className="or-tabs__tab"
             data-selected={selected ? 'true' : undefined}
             onClick={() => onChange(item.id)}
+            onKeyDown={move}
           >
             {item.label}
             {item.hint === undefined ? null : <span className="or-tabs__hint">{item.hint}</span>}
@@ -90,7 +98,7 @@ export interface TabPanelProps {
 }
 
 /** The panel a tab controls. Unmounted when inactive: no hidden focus stops. */
-export function TabPanel({ id, active, children }: TabPanelProps): ReactElement | null {
+export function TabPanel({ id, active, children }: Readonly<TabPanelProps>): ReactElement | null {
   if (!active) return null;
   return (
     <div

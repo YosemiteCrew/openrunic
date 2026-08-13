@@ -12,14 +12,14 @@ import {
   moveItem,
   presentEligibility,
   priorityForIndex,
+  useCoverages,
 } from '@/components/insurance';
-import { useCoverages } from '@/components/insurance';
 import { clinicNow } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { IS_MOCK_MODE, mockVerifyEligibility, usePatient } from '@/lib/api';
 import type { MockCoverage, MockEligibilityResult } from '@/lib/api';
-import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import { formatAge, formatCount, formatDate, formatMrn, formatName } from '@/lib/format';
 
 /**
  * FD-08 Insurance and eligibility.
@@ -55,7 +55,7 @@ function toneFor(result: MockEligibilityResult): ToastTone {
   return 'danger';
 }
 
-export function InsuranceScreen({ patientId }: InsuranceScreenProps): ReactElement {
+export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): ReactElement {
   const [asOf] = useState<Date>(() => clinicNow());
   const [order, setOrder] = useState<string[] | null>(null);
   const [checking, setChecking] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -119,7 +119,7 @@ export function InsuranceScreen({ patientId }: InsuranceScreenProps): ReactEleme
       const problems = all.length - active - unavailable;
       setToast({
         tone: problems > 0 ? 'danger' : 'success',
-        title: `${all.length} ${all.length === 1 ? 'coverage' : 'coverages'} checked`,
+        title: `${formatCount(all.length, 'coverage')} checked`,
         message: [
           `${active} active`,
           problems > 0 ? `${problems} needing attention` : null,

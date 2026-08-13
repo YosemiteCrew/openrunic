@@ -3,7 +3,7 @@ import type { AdministrativeGender, Patient, SensitivityClass } from '@/lib/api'
 /**
  * Registration rules, with no React in them.
  *
- * Two OpenEMR failures are answered here. It required fields the workflow did
+ * Two legacy failures are answered here. It required fields the workflow did
  * not need (Referral Source on a walk-in), so exactly four fields are required
  * and everything else is genuinely optional. And its duplicate check was
  * advisory, so duplicates piled up for years; here a strong match blocks the
@@ -63,7 +63,13 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /* Deliberately loose: a phone number that a person can be reached on takes many
    shapes, and rejecting a valid one at the desk is worse than storing an odd one. */
 const PHONE = /^[+\d][\d\s()-]{6,}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/* The domain is matched label by label, with the dot excluded from the label
+   class. Allowing a label to swallow dots made the split between label and
+   separator ambiguous, so an address with no dot after the @ ("a@" plus a long
+   run) forced the engine to retry every split: quadratic work on input typed at
+   the front desk. Each label being dot-free makes the split forced, and it also
+   rejects the empty label in "a@b..c", which the looser pattern accepted. */
+const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 /**
  * Errors keyed by field. Messages say what to do, never just what is wrong, and

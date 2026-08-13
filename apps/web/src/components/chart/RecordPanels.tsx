@@ -42,7 +42,7 @@ function noteTone(state: Visit['noteState']): StatusTone {
   return 'neutral';
 }
 
-export function VisitsPanel({ visits }: { visits: readonly Visit[] }): ReactElement {
+export function VisitsPanel({ visits }: Readonly<{ visits: readonly Visit[] }>): ReactElement {
   const rows = [...visits]
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((visit) => ({
@@ -86,7 +86,9 @@ const RESULT_COLUMNS: TableColumn[] = [
   { key: 'review', header: 'Review' },
 ];
 
-export function ResultsPanel({ results }: { results: readonly ResultObservation[] }): ReactElement {
+export function ResultsPanel({
+  results,
+}: Readonly<{ results: readonly ResultObservation[] }>): ReactElement {
   const rows = [...results]
     .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt))
     .map((observation) => {
@@ -151,9 +153,9 @@ function medicationRow(med: Medication): Record<string, ReactNode> {
 
 export function MedicationsPanel({
   medications,
-}: {
+}: Readonly<{
   medications: readonly Medication[];
-}): ReactElement {
+}>): ReactElement {
   const active = medications.filter((med) => med.status === 'ACTIVE');
   const discontinued = medications.filter((med) => med.status === 'DISCONTINUED');
 
@@ -216,10 +218,10 @@ function expiryCell(document: ChartDocument, today: string): ReactNode {
 export function DocumentsPanel({
   documents,
   now,
-}: {
+}: Readonly<{
   documents: readonly ChartDocument[];
   now: string;
-}): ReactElement {
+}>): ReactElement {
   const today = formatDate(now, 'iso');
   const rows = [...documents]
     .sort((a, b) => b.receivedOn.localeCompare(a.receivedOn))
@@ -243,12 +245,15 @@ export function DocumentsPanel({
 /* Care team                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export function CareTeamPanel({ chart }: { chart: ChartSummary }): ReactElement {
-  // The primary provider first, then the internal team, then anyone outside the
-  // practice: the order a clinician asks "who owns this patient" in.
-  const rank = { PRIMARY: 0, CARE_TEAM: 1, EXTERNAL: 2 };
+// The primary provider first, then the internal team, then anyone outside the
+// practice: the order a clinician asks "who owns this patient" in.
+const CARE_TEAM_RANK = { PRIMARY: 0, CARE_TEAM: 1, EXTERNAL: 2 };
+
+export function CareTeamPanel({ chart }: Readonly<{ chart: ChartSummary }>): ReactElement {
   const ordered = [...chart.careTeam].sort(
-    (a, b) => rank[a.relationship] - rank[b.relationship] || a.name.localeCompare(b.name)
+    (a, b) =>
+      CARE_TEAM_RANK[a.relationship] - CARE_TEAM_RANK[b.relationship] ||
+      a.name.localeCompare(b.name)
   );
 
   return (

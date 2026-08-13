@@ -35,7 +35,10 @@ export interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
-export function ConfirmDialog({ open, ...rest }: ConfirmDialogProps): ReactElement | null {
+export function ConfirmDialog({
+  open,
+  ...rest
+}: Readonly<ConfirmDialogProps>): ReactElement | null {
   // The panel holds the typed phrase, and it only exists while the dialog is
   // open. That is what makes a reopened dialog impossible to arrive
   // pre-confirmed, without an effect that resets state behind the user.
@@ -51,7 +54,7 @@ function ConfirmPanel({
   children,
   onConfirm,
   onCancel,
-}: Omit<ConfirmDialogProps, 'open'>): ReactElement {
+}: Readonly<Omit<ConfirmDialogProps, 'open'>>): ReactElement {
   const [typed, setTyped] = useState('');
   const ready = typedConfirmation === undefined || typed.trim() === typedConfirmation;
 

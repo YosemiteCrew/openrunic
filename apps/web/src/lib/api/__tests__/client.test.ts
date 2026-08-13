@@ -145,7 +145,7 @@ describe('filterPatients', () => {
     const ascending = filterPatients(MOCK_PATIENTS, {});
     const descending = filterPatients(MOCK_PATIENTS, { order: 'desc' });
     expect(ascending[0]?.name.family).toBe('Ahlgren');
-    expect(descending[0]?.name.family).toBe(ascending[ascending.length - 1]?.name.family);
+    expect(descending[0]?.name.family).toBe(ascending.at(-1)?.name.family);
   });
 });
 
@@ -215,5 +215,149 @@ describe('createMockClient', () => {
   it('can be handed its own fixtures for a screen test', async () => {
     const client = createMockClient({ patients: [], appointments: [] });
     await expect(client.appointments.list()).resolves.toMatchObject({ data: [] });
+  });
+});
+
+describe('requestJson, when the server answers badly', () => {
+  it('falls back to the status when an error carries no problem document', async () => {
+    // A 502 from a proxy in front of the API is HTML, not problem+json, and
+    // parsing it as a problem would put a page of markup in an error toast.
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('<html>Bad gateway</html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      })
+    );
+
+    const failure = await requestJson({ baseUrl: 'http://api.test', fetchImpl }, '/patients').catch(
+      (error: unknown) => error as ApiError
+    );
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as ApiError).message).toBe('Request failed with status 502.');
+    expect((failure as ApiError).problem).toBeNull();
+    // A gateway hiccup is worth a retry, so the screen offers one.
+    expect((failure as ApiError).retryable).toBe(true);
+  });
+
+  it('ignores a JSON error body that is not a problem document', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ oops: true }, 400));
+
+    const failure = await requestJson({ baseUrl: 'http://api.test', fetchImpl }, '/patients').catch(
+      (error: unknown) => error as ApiError
+    );
+
+    expect((failure as ApiError).problem).toBeNull();
+    expect((failure as ApiError).message).toBe('Request failed with status 400.');
+    // 400 is the caller's fault; retrying the same request cannot fix it.
+    expect((failure as ApiError).retryable).toBe(false);
+  });
+
+  it('ignores a JSON error body that is a bare string or null', async () => {
+    for (const body of ['nope', null]) {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(body, 409));
+      const failure = await requestJson(
+        { baseUrl: 'http://api.test', fetchImpl },
+        '/patients'
+      ).catch((error: unknown) => error as ApiError);
+
+      expect((failure as ApiError).problem).toBeNull();
+    }
+  });
+
+  it('survives an error response whose JSON body is truncated', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('{"title": "Forb', {
+        status: 500,
+        headers: { 'content-type': 'application/problem+json' },
+      })
+    );
+
+    const failure = await requestJson({ baseUrl: 'http://api.test', fetchImpl }, '/patients').catch(
+      (error: unknown) => error as ApiError
+    );
+
+    expect((failure as ApiError).problem).toBeNull();
+    expect((failure as ApiError).status).toBe(500);
+  });
+
+  it('names a broken success body as unreadable rather than as a network failure', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('not json at all', { status: 200, headers: { 'content-type': 'text/plain' } })
+      );
+
+    const failure = await requestJson({ baseUrl: 'http://api.test', fetchImpl }, '/patients').catch(
+      (error: unknown) => error as ApiError
+    );
+
+    expect((failure as ApiError).kind).toBe('parse');
+    expect((failure as ApiError).message).toBe(
+      'The server sent a response this app could not read.'
+    );
+    // Retrying a malformed body gets the same malformed body.
+    expect((failure as ApiError).retryable).toBe(false);
+  });
+
+  it('sends no authorization header when there is no token to send', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    await requestJson({ baseUrl: 'http://api.test', fetchImpl }, '/patients');
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).has('authorization')).toBe(false);
+  });
+
+  it('honours a base path other than the default', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    await requestJson({ baseUrl: 'http://api.test', basePath: '/fhir/r4', fetchImpl }, '/Patient');
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://api.test/fhir/r4/Patient');
+  });
+});
+
+describe('createHttpClient, every route it exposes', () => {
+  it('reads one patient and one appointment by id, escaping the id in the path', async () => {
+    // A fresh Response per call: a body can only be read once.
+    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ id: 'x' })));
+    const client = createHttpClient({ baseUrl: 'http://api.test', fetchImpl });
+
+    // An id is user-controlled in a URL bar; it is escaped rather than
+    // concatenated, so a slash in one cannot reach another route.
+    await client.patients.get('a/b?c');
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://api.test/bff/v0/patients/a%2Fb%3Fc');
+
+    await client.appointments.get('appt 1');
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe('http://api.test/bff/v0/appointments/appt%201');
+  });
+
+  it('builds the appointment list path with its day window', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: [], page: {} }));
+    const client = createHttpClient({ baseUrl: 'http://api.test', fetchImpl });
+
+    await client.appointments.list({ from: '2026-08-12T00:00:00.000Z', pageSize: 100 });
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'http://api.test/bff/v0/appointments?from=2026-08-12T00%3A00%3A00.000Z&pageSize=100'
+    );
+  });
+
+  it('passes the abort signal through, so a cancelled render cancels the request', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ data: [], page: {} })));
+    const client = createHttpClient({ baseUrl: 'http://api.test', fetchImpl });
+    const controller = new AbortController();
+
+    await client.patients.list({}, controller.signal);
+    await client.appointments.list({}, controller.signal);
+
+    for (const call of fetchImpl.mock.calls) {
+      expect((call[1] as RequestInit).signal).toBe(controller.signal);
+    }
+  });
+
+  it('says it is the live client, which is how a screen labels its data', () => {
+    expect(createHttpClient({ baseUrl: 'http://api.test' }).mode).toBe('live');
   });
 });

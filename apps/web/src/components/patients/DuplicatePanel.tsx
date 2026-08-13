@@ -11,7 +11,7 @@ import type { DuplicateMatch } from './registration';
  * The duplicate panel: candidates side by side, and an override that has to be
  * said out loud.
  *
- * OpenEMR checked for duplicates and then let you save anyway with a shrug, so
+ * Legacy registration checked for duplicates and then let you save anyway, so
  * practices accumulated two records per person. Here a strong match blocks the
  * save, shows what matched and why, and offers the two things that are actually
  * useful: open the record that already exists, or state that this is a
@@ -34,7 +34,7 @@ export function DuplicatePanel({
   overridden,
   onOverrideChange,
   asOf,
-}: DuplicatePanelProps): ReactElement {
+}: Readonly<DuplicatePanelProps>): ReactElement {
   return (
     <Card
       overline="Possible duplicate"

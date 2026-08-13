@@ -1,8 +1,8 @@
-import { ApiError, requestJson } from '../client';
+import { requestJson } from '../client';
 import { API_BASE_URL, API_MODE } from '../config';
 import { mockChartFor, mockEncounterNote } from '../mock/chart';
 import { MOCK_PATIENTS } from '../mock/fixtures';
-import type { ProblemDocument } from '../types';
+import { notFound, settle } from '../mock/protocol';
 
 import type { ChartSummary, EncounterNote } from './types';
 
@@ -28,33 +28,6 @@ export interface ChartClient {
   notes: {
     get: (noteId: string, signal?: AbortSignal) => Promise<EncounterNote>;
   };
-}
-
-/** Latency, so loading states are visible in the browser but instant in tests. */
-const LATENCY_MS = process.env.NODE_ENV === 'test' ? 0 : 140;
-
-function settle<T>(value: T): Promise<T> {
-  if (LATENCY_MS === 0) return Promise.resolve(value);
-  return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY_MS));
-}
-
-function problem(status: number, title: string, detail: string, kind: string): ProblemDocument {
-  return {
-    type: `https://openrunic.org/problems/${kind}`,
-    title,
-    status,
-    detail,
-    instance: '/bff/v0',
-    requestId: 'mock-request',
-  };
-}
-
-function notFound(detail: string): ApiError {
-  return new ApiError(detail, {
-    kind: 'http',
-    status: 404,
-    problem: problem(404, 'Not found', detail, 'not-found'),
-  });
 }
 
 export interface MockChartClientOptions {

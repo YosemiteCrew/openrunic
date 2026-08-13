@@ -23,8 +23,9 @@ interface PatientChartPageProps {
 }
 
 export async function generateMetadata({ params }: PatientChartPageProps): Promise<Metadata> {
-  const { id } = await params;
   if (!IS_MOCK_MODE) return { title: 'Chart' };
+
+  const { id } = await params;
 
   const patient = MOCK_PATIENTS.find((record) => record.id === id);
   if (!patient) return { title: 'Chart' };
@@ -33,7 +34,7 @@ export async function generateMetadata({ params }: PatientChartPageProps): Promi
   return { title: `${patient.name.family.toUpperCase()}, ${given} - Chart` };
 }
 
-export default async function PatientChartPage({ params }: PatientChartPageProps) {
+export default async function PatientChartPage({ params }: Readonly<PatientChartPageProps>) {
   const { id } = await params;
   return <PatientChartScreen patientId={id} />;
 }

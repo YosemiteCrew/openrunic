@@ -5,6 +5,9 @@ import type { ReactElement } from 'react';
 
 import { ApiError } from '@/lib/api';
 
+import { explain } from './explain';
+import type { ExplainableError } from './explain';
+
 /**
  * The one error surface: what happened, then what to do.
  *
@@ -17,79 +20,11 @@ import { ApiError } from '@/lib/api';
 export interface ErrorStateProps {
   /** What was being read: "today's schedule", "this patient". Lower case, no full stop. */
   subject: string;
-  error?: ApiError | Error | null;
+  error?: ExplainableError;
   /** Overrides the derived sentence when a screen knows better. */
   message?: string;
   /** Wire this to the hook's `refetch`. Omitted when nothing is retryable. */
   onRetry?: () => void;
-}
-
-interface Explanation {
-  title: string;
-  message: string;
-  retryable: boolean;
-}
-
-/**
- * The status-to-sentence table. Each line says what happened and what to do,
- * in the clinician register: precise, short, no filler, never blaming.
- */
-export function explain(subject: string, error: ErrorStateProps['error']): Explanation {
-  if (error instanceof ApiError) {
-    if (error.kind === 'network') {
-      return {
-        title: 'No connection to the server',
-        message: `openrunic could not reach the server, so ${subject} did not load. Check the connection and try again.`,
-        retryable: true,
-      };
-    }
-    if (error.status === 401) {
-      return {
-        title: 'Your session has ended',
-        message: 'Sign in again to continue. Nothing you entered has been lost.',
-        retryable: false,
-      };
-    }
-    if (error.status === 403) {
-      return {
-        title: 'Your role cannot open this',
-        message: `Your role does not include access to ${subject}. Ask a practice admin to grant it.`,
-        retryable: false,
-      };
-    }
-    if (error.status === 404) {
-      return {
-        title: 'Not found',
-        message: `openrunic could not find ${subject}. It may have been merged or removed. Check the identifier and search again.`,
-        retryable: false,
-      };
-    }
-    if (error.status === 501) {
-      return {
-        title: 'Not built yet',
-        message: `This part of openrunic is not implemented yet, so ${subject} has nothing to show.`,
-        retryable: false,
-      };
-    }
-    if (error.status >= 500) {
-      return {
-        title: 'The server could not answer',
-        message: `The server failed while loading ${subject}. Try again; if it keeps failing, report the request id below.`,
-        retryable: true,
-      };
-    }
-    return {
-      title: 'That request was refused',
-      message: error.problem?.detail ?? `The server refused the request for ${subject}.`,
-      retryable: false,
-    };
-  }
-
-  return {
-    title: 'This did not load',
-    message: `openrunic could not load ${subject}. Try again.`,
-    retryable: true,
-  };
 }
 
 export function ErrorState({
@@ -97,7 +32,7 @@ export function ErrorState({
   error = null,
   message,
   onRetry,
-}: ErrorStateProps): ReactElement {
+}: Readonly<ErrorStateProps>): ReactElement {
   const explanation = explain(subject, error);
   const requestId = error instanceof ApiError ? (error.problem?.requestId ?? null) : null;
 

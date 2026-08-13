@@ -214,7 +214,7 @@ export const MOCK_FEE_SHEETS: readonly FeeSheet[] = [
         units: 1,
         unitFee: 24,
         justifiedBy: [],
-        // Struck, retained, restorable: the mistake the OpenEMR fee sheet hid.
+        // Struck, retained, restorable: the mistake the legacy fee sheet hid.
         deleted: true,
       },
     ],
@@ -1527,9 +1527,19 @@ export const MOCK_PAYMENTS: readonly Payment[] = [
 /* Filters, mirroring what the API will apply                                  */
 /* -------------------------------------------------------------------------- */
 
+/* Built once per patient reference and kept while that object is alive: a
+   biller filtering a ledger types a character at a time, and rebuilding a
+   joined, lowercased string for every row on every keystroke is the whole cost
+   of the filter. A WeakMap, so nothing is retained past the fixture. */
+const HAYSTACKS = new WeakMap<BillingPatientRef, string>();
+
 function haystack(patient: BillingPatientRef): string {
+  const cached = HAYSTACKS.get(patient);
+  if (cached !== undefined) return cached;
   const { given, family, preferred } = patient.name;
-  return [given, family, preferred ?? '', patient.mrn].join(' ').toLowerCase();
+  const built = [given, family, preferred ?? '', patient.mrn].join(' ').toLowerCase();
+  HAYSTACKS.set(patient, built);
+  return built;
 }
 
 export function filterFeeSheets(
@@ -1588,7 +1598,10 @@ export function filterStatements(
     if (query.bucket && account.bucket !== query.bucket) return false;
     if (query.dunningStage && account.dunningStage !== query.dunningStage) return false;
     if (query.minBalance !== undefined && account.balance < query.minBalance) return false;
-    if (needle && !haystack(account.patient).includes(needle)) return false;
+    if (needle) {
+      const searchable: string = haystack(account.patient);
+      if (!searchable.includes(needle)) return false;
+    }
     return true;
   });
 }

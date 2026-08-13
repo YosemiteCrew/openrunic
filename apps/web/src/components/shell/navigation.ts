@@ -29,7 +29,7 @@ export const NAV_AREAS: readonly NavArea[] = [
     keywords: ['calendar', 'day view', 'appointments', 'book', 'front desk'],
   },
   {
-    // Kept verbatim from OpenEMR: migrants know this board by this name.
+    // Kept verbatim from legacy systems: migrants know this board by this name.
     label: 'Flow Board',
     href: '/schedule/flow-board',
     icon: 'columns-3',

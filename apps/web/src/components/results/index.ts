@@ -1,7 +1,8 @@
 /**
  * Results. The triage queue, the reading pane and the sign-with-note dialog.
  */
-export { RESULT_FLAG_LABELS, ResultFlagBadge } from './ResultFlagBadge';
+export { RESULT_FLAG_LABELS } from './flag-labels';
+export { ResultFlagBadge } from './ResultFlagBadge';
 export type { ResultFlagBadgeProps } from './ResultFlagBadge';
 export { ResultList } from './ResultList';
 export type { ResultListProps } from './ResultList';

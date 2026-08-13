@@ -1,22 +1,17 @@
 'use client';
 
 import { Badge, Button, Card, Modal, Toast } from '@openrunic/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import { useRegisterCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import { clinicNow } from '@/lib/api/chart';
-import type {
-  Addendum,
-  EmittedItem,
-  EncounterNote,
-  NoteSection,
-  SlashCommand,
-} from '@/lib/api/chart';
+import type { EmittedItem, EncounterNote, NoteSection, SlashCommand } from '@/lib/api/chart';
 import { formatDate, formatDateTime } from '@/lib/format';
 
 import { NoteBlock } from './NoteBlock';
+import { ATTESTATION, initialDraft, isLocked, reduceNoteDraft } from './note-draft';
 import { SignatureBlock } from './SignatureBlock';
 
 /**
@@ -44,32 +39,19 @@ export interface NoteEditorProps {
   commands: readonly SlashCommand[];
 }
 
-const ATTESTATION = 'I attest that this note records the care I provided at this visit.';
-
-/** A short, stable content hash. Deterministic, so a signed fixture reads the same every run. */
-export function contentHash(sections: readonly NoteSection[]): string {
-  const text = sections.map((section) => `${section.key}:${section.text}`).join('|');
-  let hash = 5381;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = ((hash << 5) + hash + text.charCodeAt(index)) >>> 0;
-  }
-  const hex = hash.toString(16).padStart(8, '0');
-  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${(text.length % 65536).toString(16).padStart(4, '0')}`;
-}
-
 type Confirming = 'sign' | 'addendum' | null;
 
-export function NoteEditor({ note, commands }: NoteEditorProps): ReactElement {
-  const [sections, setSections] = useState<NoteSection[]>(note.sections);
-  const [state, setState] = useState(note.state);
-  const [signature, setSignature] = useState(note.signature);
-  const [addenda, setAddenda] = useState<Addendum[]>([...note.addenda]);
+export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): ReactElement {
+  /* The note itself is one value with one transition per action. The rest is
+     interface state that belongs to this screen and to nothing in the record. */
+  const [draft, dispatch] = useReducer(reduceNoteDraft, note, initialDraft);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [addendumText, setAddendumText] = useState('');
   const [writingAddendum, setWritingAddendum] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const locked = state === 'SIGNED' || state === 'COSIGN_PENDING';
+  const { sections, state, signature, addenda } = draft;
+  const locked = isLocked(draft);
 
   useEffect(() => {
     if (!toast) return;
@@ -78,51 +60,32 @@ export function NoteEditor({ note, commands }: NoteEditorProps): ReactElement {
   }, [toast]);
 
   const updateSection = (key: NoteSection['key'], text: string) => {
-    setSections((current) =>
-      current.map((section) => (section.key === key ? { ...section, text } : section))
-    );
+    dispatch({ type: 'edit', key, text });
   };
 
   const emit = (key: NoteSection['key'], item: Omit<EmittedItem, 'id'>) => {
-    setSections((current) =>
-      current.map((section) =>
-        section.key === key
-          ? {
-              ...section,
-              emitted: [
-                ...section.emitted,
-                { ...item, id: `${section.key}-${section.emitted.length + 1}` },
-              ],
-            }
-          : section
-      )
-    );
+    dispatch({ type: 'emit', key, item });
   };
 
   const sign = () => {
-    setSignature({
+    dispatch({
+      type: 'sign',
       signerName: note.providerName,
       credential: note.providerCredential,
       signedAt: clinicNow(),
-      attestation: ATTESTATION,
-      hash: contentHash(sections),
     });
-    setState('SIGNED');
     setConfirming(null);
     setToast('Note signed');
   };
 
   const signAddendum = () => {
-    setAddenda((current) => [
-      ...current,
-      {
-        id: `addendum-${current.length + 1}`,
-        authorName: note.providerName,
-        credential: note.providerCredential,
-        addedAt: clinicNow(),
-        text: addendumText.trim(),
-      },
-    ]);
+    dispatch({
+      type: 'addendum',
+      authorName: note.providerName,
+      credential: note.providerCredential,
+      addedAt: clinicNow(),
+      text: addendumText.trim(),
+    });
     setAddendumText('');
     setWritingAddendum(false);
     setConfirming(null);

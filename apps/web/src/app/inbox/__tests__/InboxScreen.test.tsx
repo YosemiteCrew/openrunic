@@ -138,3 +138,98 @@ describe('InboxScreen', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
+}
+
+describe('InboxScreen, driven from the command palette', () => {
+  it.each(['results', 'messages', 'refills', 'cosign', 'tasks'])(
+    'filters the queue to %s',
+    async (stream) => {
+      render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+      await screen.findByRole('list', { name: 'Inbox items' });
+
+      await runCommand(`Show ${stream} in the inbox`);
+
+      const rows = within(list()).queryAllByRole('listitem');
+      const expected = MOCK_INBOX_ITEMS.filter(
+        (item) => item.stream === stream.toUpperCase()
+      ).length;
+      expect(rows).toHaveLength(expected);
+    }
+  );
+
+  it('goes back to every stream from the palette', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    await runCommand('Show refills in the inbox');
+    expect(within(list()).getAllByRole('listitem').length).toBeLessThan(MOCK_INBOX_ITEMS.length);
+
+    await runCommand('Show every inbox stream');
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(MOCK_INBOX_ITEMS.length);
+  });
+
+  it('switches between my queue and the team pool without a mouse', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    await runCommand('Show only my inbox items');
+    expect(await screen.findByLabelText('Assignment')).toHaveValue('ME');
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(
+      MOCK_INBOX_ITEMS.filter((item) => item.assignedTo === 'ME').length
+    );
+
+    await runCommand('Show the team pool');
+    expect(await screen.findByLabelText('Assignment')).toHaveValue('TEAM');
+  });
+});
+
+describe('InboxScreen, undo', () => {
+  it('puts a claimed item back in the pool when the claim was a mistake', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    const before = within(list()).getAllByRole('button', { name: 'Assign to me' }).length;
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Assign to me' })));
+    await screen.findByText('Assigned to you');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(within(list()).getAllByRole('button', { name: 'Assign to me' })).toHaveLength(before);
+    expect(screen.queryByText('Assigned to you')).not.toBeInTheDocument();
+  });
+
+  it('dismisses the toast without undoing what it confirmed', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    const before = within(list()).getAllByRole('listitem').length;
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Approve refill' })));
+    await screen.findByText('Refill approved');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
+  });
+
+  it('undoes the last completion only, not everything finished so far', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    const before = within(list()).getAllByRole('listitem').length;
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Approve refill' })));
+    await screen.findByText('Refill approved');
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Assign to me' })));
+    await screen.findByText('Assigned to you');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    // The refill stays approved; only the claim is reversed.
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
+  });
+});

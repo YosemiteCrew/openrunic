@@ -5,6 +5,7 @@ import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import { formatDate } from '@/lib/format';
+import { numericFieldValue } from '@/lib/numeric-field';
 
 import type { OpenItem } from './billing';
 import { Money } from './Money';
@@ -37,7 +38,7 @@ export function AllocationTable({
   currency,
   allocations,
   onChange,
-}: AllocationTableProps): ReactElement {
+}: Readonly<AllocationTableProps>): ReactElement {
   const rows = items.map((item): Record<string, ReactNode> => ({
     id: item.visitId,
     serviceDate: formatDate(item.serviceDate),
@@ -49,7 +50,10 @@ export function AllocationTable({
         className="or-units-field or-mono"
         value={allocations[item.visitId] ?? 0}
         aria-label={`Amount allocated to the visit on ${formatDate(item.serviceDate)}`}
-        onChange={(event) => onChange(item.visitId, Number(event.target.value))}
+        onChange={(event) => {
+          const next = numericFieldValue(event.target.value);
+          if (next !== null) onChange(item.visitId, next);
+        }}
       />
     ),
   }));

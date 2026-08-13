@@ -25,7 +25,11 @@ export interface TopBarProps {
   children?: ReactNode;
 }
 
-export function TopBar({ area, user = 'Dr. Okafor', children }: TopBarProps): ReactElement {
+export function TopBar({
+  area,
+  user = 'Dr. Okafor',
+  children,
+}: Readonly<TopBarProps>): ReactElement {
   const { open } = useCommandPalette();
 
   return (

@@ -5,6 +5,8 @@ import type { ReactElement } from 'react';
 
 import type { SlashCommand } from '@/lib/api/chart';
 
+import { optionId } from './ids';
+
 /**
  * The popover behind `/` in a note block.
  *
@@ -28,17 +30,13 @@ export interface SlashCommandMenuProps {
   onSelect: (command: SlashCommand) => void;
 }
 
-export function optionId(prefix: string, commandId: string): string {
-  return `${prefix}-command-${commandId}`;
-}
-
 export function SlashCommandMenu({
   commands,
   activeId,
   idPrefix,
   query,
   onSelect,
-}: SlashCommandMenuProps): ReactElement {
+}: Readonly<SlashCommandMenuProps>): ReactElement {
   if (commands.length === 0) {
     return (
       <div className="or-slash" id={`${idPrefix}-listbox`}>
@@ -52,6 +50,12 @@ export function SlashCommandMenu({
   return (
     <ul className="or-slash" id={`${idPrefix}-listbox`} role="listbox" aria-label="Note commands">
       {commands.map((command) => (
+        /* No key handler here, on purpose. These options are not focus targets:
+           the caret stays in the note's textarea, which owns
+           ArrowUp/ArrowDown/Enter/Escape and publishes the highlight through
+           `aria-activedescendant`. That is the whole promise of the block
+           editor, so a keydown listener on a row that can never hold focus
+           would be unreachable code. The pointer handlers stand alone. */
         <li
           key={command.id}
           id={optionId(idPrefix, command.id)}

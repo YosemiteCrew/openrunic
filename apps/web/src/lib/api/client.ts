@@ -1,12 +1,4 @@
-import type {
-  ApiClient,
-  Appointment,
-  AppointmentListQuery,
-  ListResponse,
-  Patient,
-  PatientListQuery,
-  ProblemDocument,
-} from './types';
+import type { ApiClient, Appointment, ListResponse, Patient, ProblemDocument } from './types';
 
 /**
  * The typed fetch client for `apps/api`.
@@ -166,4 +158,4 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
   };
 }
 
-export type { ApiClient, AppointmentListQuery, PatientListQuery };
+export type { ApiClient, AppointmentListQuery, PatientListQuery } from './types';

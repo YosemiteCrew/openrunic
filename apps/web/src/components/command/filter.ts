@@ -57,16 +57,31 @@ export interface CommandSection {
  * keyboard user learns that the second item is always the same command.
  */
 export function filterCommands(commands: Command[], query: string): CommandSection[] {
-  const scored = commands
-    .map((command, index) => ({ command, score: scoreCommand(command, query), index }))
-    .filter((entry) => entry.score < NO_MATCH)
-    .sort((a, b) => a.score - b.score || a.index - b.index);
+  const scored: { command: Command; score: number; index: number }[] = [];
+  for (const [index, command] of commands.entries()) {
+    const score = scoreCommand(command, query);
+    if (score < NO_MATCH) scored.push({ command, score, index });
+  }
+  scored.sort((a, b) => a.score - b.score || a.index - b.index);
 
-  return COMMAND_GROUP_ORDER.map((group) => ({
-    group,
-    label: COMMAND_GROUP_LABELS[group],
-    commands: scored.filter((entry) => entry.command.group === group).map((entry) => entry.command),
-  })).filter((section) => section.commands.length > 0);
+  /* Bucketed in one pass over the survivors rather than one pass per group:
+     the sort above already fixed the order inside each bucket, so appending
+     preserves it. */
+  const buckets = new Map<CommandGroup, Command[]>();
+  for (const entry of scored) {
+    const bucket = buckets.get(entry.command.group);
+    if (bucket) bucket.push(entry.command);
+    else buckets.set(entry.command.group, [entry.command]);
+  }
+
+  const sections: CommandSection[] = [];
+  for (const group of COMMAND_GROUP_ORDER) {
+    const groupCommands = buckets.get(group);
+    if (groupCommands) {
+      sections.push({ group, label: COMMAND_GROUP_LABELS[group], commands: groupCommands });
+    }
+  }
+  return sections;
 }
 
 /** The sections flattened into the order the arrow keys walk. */

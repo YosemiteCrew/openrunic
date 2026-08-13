@@ -43,6 +43,103 @@ const COUNTERS: readonly Counter[] = [
   { label: 'Cancelled', statuses: ['CANCELLED'] },
 ];
 
+/** MRN and age, the two things staff check before they touch a chart. */
+function PatientMeta({
+  patient,
+  asOf,
+}: Readonly<{ patient: Patient; asOf: string }>): ReactElement {
+  return (
+    <p className="or-small or-day-rail__meta">
+      <span className="or-mono">{formatMrn(patient.mrn)}</span>
+      {' · '}
+      {formatAge(patient.birthDate, new Date(asOf))}
+    </p>
+  );
+}
+
+/**
+ * The three things a front desk does with the visit they just clicked. Chart
+ * and eligibility need a patient; an unassigned slot can still be checked in.
+ */
+function VisitActions({
+  appointment,
+  patient,
+  alreadyIn,
+  onCheckIn,
+}: Readonly<{
+  appointment: Appointment;
+  patient: Patient | undefined;
+  alreadyIn: boolean;
+  onCheckIn: (appointment: Appointment) => void;
+}>): ReactElement {
+  return (
+    <div className="or-day-rail__actions">
+      <Button iconLeft="log-in" disabled={alreadyIn} onClick={() => onCheckIn(appointment)}>
+        {patient ? `Check in ${givenName(patient.name)}` : 'Check in'}
+      </Button>
+      {patient ? (
+        <>
+          <Button variant="secondary" iconLeft="folder-open" href={`/patients/${patient.id}`}>
+            Open chart
+          </Button>
+          <Button
+            variant="ghost"
+            iconLeft="shield-check"
+            href={`/patients/${patient.id}/insurance`}
+          >
+            Insurance and eligibility
+          </Button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+interface SelectedVisitProps {
+  appointment: Appointment;
+  patient: Patient | undefined;
+  alreadyIn: boolean;
+  onCheckIn: (appointment: Appointment) => void;
+}
+
+/** Everything known about the clicked visit, and what can be done to it. */
+function SelectedVisit({
+  appointment,
+  patient,
+  alreadyIn,
+  onCheckIn,
+}: Readonly<SelectedVisitProps>): ReactElement {
+  const status = presentStatus(appointment.status);
+
+  return (
+    <div className="or-day-rail__visit">
+      <p className="or-body-lg or-day-rail__patient">
+        {patient ? formatName(patient.name) : 'Unassigned slot'}
+      </p>
+      {patient ? <PatientMeta patient={patient} asOf={appointment.start} /> : null}
+
+      <p className="or-body">{appointment.type.display}</p>
+      {appointment.reasonText ? <p className="or-small">{appointment.reasonText}</p> : null}
+
+      <div className="or-day-rail__chips">
+        {/* Checking in during this session outranks the status the server last
+            sent: the rail has to reflect the action the user just took. */}
+        <Badge tone={alreadyIn ? 'success' : status.tone}>
+          {alreadyIn ? 'Checked in' : status.label}
+        </Badge>
+        <Tag>{appointment.room ?? 'No room assigned'}</Tag>
+      </div>
+
+      <VisitActions
+        appointment={appointment}
+        patient={patient}
+        alreadyIn={alreadyIn}
+        onCheckIn={onCheckIn}
+      />
+    </div>
+  );
+}
+
 export function DayRail({
   appointments,
   patientsById,
@@ -50,10 +147,8 @@ export function DayRail({
   checkedIn,
   onCheckIn,
   onWalkIn,
-}: DayRailProps): ReactElement {
+}: Readonly<DayRailProps>): ReactElement {
   const patient = selected?.patientId ? patientsById.get(selected.patientId) : undefined;
-  const status = selected ? presentStatus(selected.status) : null;
-  const alreadyIn = selected ? checkedIn.has(selected.id) : false;
 
   return (
     <div className="or-day-rail">
@@ -77,49 +172,13 @@ export function DayRail({
         overline="Selected visit"
         title={selected ? formatTime(selected.start) : 'No visit selected'}
       >
-        {selected && status ? (
-          <div className="or-day-rail__visit">
-            <p className="or-body-lg or-day-rail__patient">
-              {patient ? formatName(patient.name) : 'Unassigned slot'}
-            </p>
-            {patient ? (
-              <p className="or-small or-day-rail__meta">
-                <span className="or-mono">{formatMrn(patient.mrn)}</span>
-                {' · '}
-                {formatAge(patient.birthDate, new Date(selected.start))}
-              </p>
-            ) : null}
-
-            <p className="or-body">{selected.type.display}</p>
-            {selected.reasonText ? <p className="or-small">{selected.reasonText}</p> : null}
-
-            <div className="or-day-rail__chips">
-              <Badge tone={alreadyIn ? 'success' : status.tone}>
-                {alreadyIn ? 'Checked in' : status.label}
-              </Badge>
-              {selected.room ? <Tag>{selected.room}</Tag> : <Tag>No room assigned</Tag>}
-            </div>
-
-            <div className="or-day-rail__actions">
-              <Button iconLeft="log-in" disabled={alreadyIn} onClick={() => onCheckIn(selected)}>
-                {patient ? `Check in ${givenName(patient.name)}` : 'Check in'}
-              </Button>
-              {patient ? (
-                <Button variant="secondary" iconLeft="folder-open" href={`/patients/${patient.id}`}>
-                  Open chart
-                </Button>
-              ) : null}
-              {patient ? (
-                <Button
-                  variant="ghost"
-                  iconLeft="shield-check"
-                  href={`/patients/${patient.id}/insurance`}
-                >
-                  Insurance and eligibility
-                </Button>
-              ) : null}
-            </div>
-          </div>
+        {selected ? (
+          <SelectedVisit
+            appointment={selected}
+            patient={patient}
+            alreadyIn={checkedIn.has(selected.id)}
+            onCheckIn={onCheckIn}
+          />
         ) : (
           <p className="or-body">
             Select a visit in the grid to check the patient in, open their chart, or verify

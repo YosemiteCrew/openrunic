@@ -49,8 +49,8 @@ export function Drawer({
   footer,
   onClose,
   children,
-}: DrawerProps): ReactElement | null {
-  const panelRef = useRef<HTMLDivElement>(null);
+}: Readonly<DrawerProps>): ReactElement | null {
+  const panelRef = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
   const baseId = useId();
   const titleId = `${baseId}-title`;
@@ -76,7 +76,7 @@ export function Drawer({
 
       const stops = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
       const first = stops[0];
-      const last = stops[stops.length - 1];
+      const last = stops.at(-1);
       const active = document.activeElement;
       const atEdge = active === (event.shiftKey ? first : last);
 
@@ -102,10 +102,15 @@ export function Drawer({
       {/* Escape is the keyboard route out and the close control is the pointer
           route, so the scrim is decoration and stays out of the reading order. */}
       <div className="or-drawer__scrim" aria-hidden="true" onClick={onClose} />
-      <div
+      {/* A real <dialog>, not a div wearing role="dialog". Rendered with `open`
+          rather than through `showModal()`: the top layer would pull the panel
+          out of the drawer's right-edge layout and swap the scrim for a
+          `::backdrop`, and modality is already carried by the scrim, the Escape
+          handler and the focus trap above. */}
+      <dialog
         ref={panelRef}
         className="or-drawer__panel"
-        role="dialog"
+        open
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
@@ -123,7 +128,7 @@ export function Drawer({
         <div className="or-drawer__body">{children}</div>
 
         {footer ? <div className="or-drawer__footer">{footer}</div> : null}
-      </div>
+      </dialog>
     </div>
   );
 }

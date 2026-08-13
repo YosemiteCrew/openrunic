@@ -71,7 +71,7 @@ export function feeSheetTotals(sheet: FeeSheet, lines: readonly ChargeLine[]): F
  * ever seen a CMS-1500 already knows how to read it.
  */
 export function diagnosisPointer(index: number): string {
-  return String.fromCharCode(65 + (index % 26));
+  return String.fromCodePoint(65 + (index % 26));
 }
 
 /** A charge added from the picker, with nothing justified yet: the honest start. */
@@ -110,7 +110,7 @@ export interface ScrubFinding {
  * Every reason this sheet cannot go to the claim pipeline yet.
  *
  * An unjustified line blocks: a charge with no diagnosis behind it cannot be
- * submitted at all, and the OpenEMR fee sheet's habit of letting one through
+ * submitted at all, and the legacy fee sheet's habit of letting one through
  * silently is exactly what this screen exists to end. An exhausted prior
  * authorisation does not block, because it is the payer's answer rather than a
  * defect in the claim, and the biller may still decide to bill it; it is
@@ -259,6 +259,17 @@ export interface AgeingBand {
   tone: StatusTone;
 }
 
+/**
+ * Which ageing band a claim of this age falls in, oldest band first so the
+ * boundaries read in the same order as the labels above.
+ */
+function ageingBandIndex(days: number): number {
+  if (days >= 60) return 3;
+  if (days >= 30) return 2;
+  if (days >= 14) return 1;
+  return 0;
+}
+
 /** The strip above the workbench: how much money is sitting where, by age. */
 export function claimAgeingBands(claims: readonly Claim[], now: string | Date): AgeingBand[] {
   const bands: AgeingBand[] = [
@@ -270,8 +281,7 @@ export function claimAgeingBands(claims: readonly Claim[], now: string | Date): 
 
   for (const claim of claims) {
     const days = claimAgeDays(claim, now);
-    const index = days >= 60 ? 3 : days >= 30 ? 2 : days >= 14 ? 1 : 0;
-    const band = bands[index];
+    const band = bands[ageingBandIndex(days)];
     if (!band) continue;
     band.count += 1;
     band.amount += claim.billed - claim.paid;
@@ -413,6 +423,17 @@ export const BUCKET_ORDER: readonly AgeingBucket[] = [
   'DAYS_91_PLUS',
 ];
 
+/**
+ * The state word beside a bucket's amount. It says the same thing the tone
+ * does, in words, so the tint is never the only signal on the AR strip.
+ */
+export const BUCKET_STATE_LABELS: Record<AgeingBucket, string> = {
+  CURRENT: 'On track',
+  DAYS_31_60: 'Ageing',
+  DAYS_61_90: 'Chase these',
+  DAYS_91_PLUS: 'Chase these',
+};
+
 export function bucketTone(bucket: AgeingBucket): StatusTone {
   if (bucket === 'DAYS_91_PLUS') return 'danger';
   if (bucket === 'DAYS_61_90') return 'danger';
@@ -527,6 +548,34 @@ export function autoAllocate(amount: number, items: readonly OpenItem[]): Record
   return allocations;
 }
 
+/**
+ * The visits this payment actually paid something towards.
+ *
+ * A zero-allocated visit is not part of the payment and must not appear on the
+ * receipt: a receipt listing a visit it paid nothing on is a receipt a patient
+ * reads as settled.
+ */
+export function allocatedLines(
+  items: readonly OpenItem[],
+  allocations: Readonly<Record<string, number>>
+): PaymentAllocation[] {
+  const lines: PaymentAllocation[] = [];
+  for (const item of items) {
+    const allocated = allocations[item.visitId] ?? 0;
+    if (allocated > 0) {
+      lines.push({
+        id: `${item.visitId}-alloc`,
+        visitId: item.visitId,
+        serviceDate: item.serviceDate,
+        description: item.description,
+        outstanding: item.outstanding,
+        allocated,
+      });
+    }
+  }
+  return lines;
+}
+
 export interface AllocationState {
   allocated: number;
   unallocated: number;
@@ -549,6 +598,36 @@ export function allocationState(
     over: cents(left) < 0,
   };
 }
+
+/**
+ * Which of the three allocation states a payment is in, as one word.
+ *
+ * `balanced` and `over` are independent booleans on {@link AllocationState},
+ * which invites every caller to re-derive the third state ("neither, so it is
+ * short") with its own chain of conditions. Naming it once means the chip and
+ * the button hint can never disagree about what the same payment is doing.
+ */
+export type AllocationStateName = 'over' | 'balanced' | 'short';
+
+export function allocationStateName(state: AllocationState): AllocationStateName {
+  if (state.over) return 'over';
+  if (state.balanced) return 'balanced';
+  return 'short';
+}
+
+/** The chip beside the running total. */
+export const ALLOCATION_STATE_LABELS: Record<AllocationStateName, string> = {
+  over: 'Over-allocated',
+  balanced: 'Fully allocated',
+  short: 'Still to allocate',
+};
+
+/** The line under the Take payment button: why it is disabled, or that it is ready. */
+export const ALLOCATION_HINTS: Record<AllocationStateName, string> = {
+  over: 'More is allocated than is being taken.',
+  balanced: 'Every amount is applied to a visit.',
+  short: 'Allocate the whole payment before taking it.',
+};
 
 /** Turns a saved payment's allocations back into the rows a receipt renders. */
 export function receiptRows(allocations: readonly PaymentAllocation[]): PaymentAllocation[] {

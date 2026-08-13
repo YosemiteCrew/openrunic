@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ageingState,
+  ALLOCATION_HINTS,
+  ALLOCATION_STATE_LABELS,
   allocationState,
+  allocationStateName,
   arSummary,
   autoAllocate,
   blockingFindings,
@@ -315,6 +318,23 @@ describe('payment allocation', () => {
 
   it('is never balanced when nothing is being taken', () => {
     expect(allocationState(0, {}).balanced).toBe(false);
+  });
+
+  it('names each of the three allocation states exactly once', () => {
+    expect(allocationStateName(allocationState(20, { v1: 25 }))).toBe('over');
+    expect(allocationStateName(allocationState(20, { v1: 20 }))).toBe('balanced');
+    expect(allocationStateName(allocationState(20, { v1: 5 }))).toBe('short');
+    expect(allocationStateName(allocationState(0, {}))).toBe('short');
+  });
+
+  it('gives the chip and the button hint the same reading of one payment', () => {
+    const over = allocationStateName(allocationState(20, { v1: 25 }));
+    expect(ALLOCATION_STATE_LABELS[over]).toBe('Over-allocated');
+    expect(ALLOCATION_HINTS[over]).toBe('More is allocated than is being taken.');
+
+    const balanced = allocationStateName(allocationState(20, { v1: 20 }));
+    expect(ALLOCATION_STATE_LABELS[balanced]).toBe('Fully allocated');
+    expect(ALLOCATION_HINTS[balanced]).toBe('Every amount is applied to a visit.');
   });
 
   it('reads a receipt oldest visit first', () => {

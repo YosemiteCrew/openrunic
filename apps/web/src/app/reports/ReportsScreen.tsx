@@ -81,7 +81,7 @@ const STATUS_OPTIONS = [
   { value: 'NOSHOW', label: 'No-show' },
 ];
 
-export function ReportsScreen({ client }: ReportsScreenProps = {}): ReactElement {
+export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactElement {
   const options = useAdminClientOption(client);
   const dashboard = usePracticeDashboard(options);
 

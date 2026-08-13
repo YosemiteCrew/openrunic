@@ -34,7 +34,7 @@ import { formatDate, formatName } from '@/lib/format';
  *
  * Three zones, and the order never changes: the patient context rail (who this
  * is and what must never be forgotten), the chart tab row (one level, never
- * nested), and the panel. The rail answers OpenEMR's widget-hub dashboard,
+ * nested), and the panel. The rail answers the legacy widget-hub dashboard,
  * where allergies sat in a box of equal weight to a portal link and could be
  * toggled off entirely: here it cannot be dismissed, reordered or hidden, and
  * the summary below it is ranked rather than configurable.
@@ -54,7 +54,7 @@ const CHART_TABS = [
 
 type ChartTabId = (typeof CHART_TABS)[number]['id'];
 
-const TAB_IDS: readonly string[] = CHART_TABS.map((tab) => tab.id);
+const TAB_IDS: ReadonlySet<string> = new Set(CHART_TABS.map((tab) => tab.id));
 
 interface TabEmpty {
   title: string;
@@ -163,7 +163,7 @@ export function PatientChartScreen({
   patientId,
   client,
   chartClient,
-}: PatientChartScreenProps): ReactElement {
+}: Readonly<PatientChartScreenProps>): ReactElement {
   const now = clinicNow();
   const [activeTab, setActiveTab] = useState<ChartTabId>('summary');
 
@@ -195,7 +195,7 @@ export function PatientChartScreen({
    * below can hold it without re-registering on every render.
    */
   const selectTab = (id: string) => {
-    if (TAB_IDS.includes(id)) setActiveTab(id as ChartTabId);
+    if (TAB_IDS.has(id)) setActiveTab(id as ChartTabId);
   };
 
   const commands = useMemo<Command[]>(() => {

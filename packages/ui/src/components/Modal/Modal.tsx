@@ -68,7 +68,7 @@ export function Modal({
   style,
   ...rest
 }: ModalProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
   const modalId = useFieldId(id);
   const titleId = `${modalId}-title`;
@@ -129,11 +129,17 @@ export function Modal({
 
   return (
     <div className="or-modal">
-      <div
+      {/* A real <dialog>, not a div wearing role="dialog". Rendered with `open`
+          rather than through `showModal()`: the top layer would replace this
+          design's espresso scrim with a `::backdrop` and take the panel out of
+          the page's stacking context, and modality is already carried by the
+          scrim, the Escape handler and the Tab trap above. `role` still comes
+          through `rest`, so `role="alertdialog"` keeps working. */}
+      <dialog
         ref={panelRef}
         id={modalId}
         className={cx('or-modal__dialog', className)}
-        role="dialog"
+        open
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         aria-describedby={description ? descriptionId : undefined}
@@ -166,7 +172,7 @@ export function Modal({
         ) : null}
         {children ? <div className="or-modal__body">{children}</div> : null}
         {footer ? <div className="or-modal__footer">{footer}</div> : null}
-      </div>
+      </dialog>
     </div>
   );
 }

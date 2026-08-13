@@ -56,7 +56,7 @@ export function AsyncBoundary<T>({
   loadingVariant = 'table',
   loadingRows = 6,
   children,
-}: AsyncBoundaryProps<T>): ReactElement {
+}: Readonly<AsyncBoundaryProps<T>>): ReactElement {
   if (state.status === 'loading') {
     return (
       <LoadingState label={sentenceStart(subject)} variant={loadingVariant} rows={loadingRows} />
@@ -80,9 +80,4 @@ export function AsyncBoundary<T>({
   }
 
   return <>{children(state.data)}</>;
-}
-
-/** The emptiness test every list endpoint shares. */
-export function isEmptyList(payload: { data: unknown[] }): boolean {
-  return payload.data.length === 0;
 }

@@ -76,6 +76,18 @@ describe('validateRegistration', () => {
     expect(validateRegistration(draft({ email: 'not-an-address' }), NOW).email).toBeDefined();
   });
 
+  it('accepts the address shapes a front desk actually types', () => {
+    for (const email of ['tess@example.com', 'a.b+tag@sub.example.co.uk', 'x@y.z']) {
+      expect(validateRegistration(draft({ email }), NOW).email).toBeUndefined();
+    }
+  });
+
+  it('rejects an address whose domain is missing a label', () => {
+    for (const email of ['a@b..c', 'a@example', 'a@.com', 'a@b.']) {
+      expect(validateRegistration(draft({ email }), NOW).email).toBeDefined();
+    }
+  });
+
   it('asks for an email when the portal invitation needs somewhere to go', () => {
     expect(validateRegistration(draft({ portalEnabled: true }), NOW).email).toMatch(/Portal/);
   });

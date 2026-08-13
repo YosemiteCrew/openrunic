@@ -33,7 +33,7 @@ export function EncounterNoteScreen({
   encounterId,
   chartClient,
   commands = SLASH_COMMANDS,
-}: EncounterNoteScreenProps): ReactElement {
+}: Readonly<EncounterNoteScreenProps>): ReactElement {
   const note = useEncounterNote(encounterId, chartClient ? { client: chartClient } : {});
   const patientId = note.data?.patientId ?? null;
 

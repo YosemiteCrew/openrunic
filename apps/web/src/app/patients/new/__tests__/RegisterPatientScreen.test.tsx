@@ -177,3 +177,203 @@ describe('RegisterPatientScreen', () => {
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
   });
 });
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
+}
+
+describe('RegisterPatientScreen, the fields beyond the required four', () => {
+  it('uses the preferred name everywhere the patient is named, not the given one', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    fillWalkIn();
+    type('Preferred name', 'Kai-Lee');
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Create a record for Kai-Lee Nordstrom, born 1991-02-17');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Register patient' }));
+
+    expect(
+      await screen.findByText('Kai-Lee Nordstrom is in the practice and can be booked.')
+    ).toBeInTheDocument();
+  });
+
+  it('records sex at birth and pronouns as separate answers', () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    fireEvent.change(screen.getByLabelText('Sex at birth'), { target: { value: 'FEMALE' } });
+    type('Pronouns', 'they/them');
+
+    // Two different questions, deliberately: one drives clinical decision
+    // support, the other is how the patient is addressed.
+    expect(screen.getByLabelText('Sex at birth')).toHaveValue('FEMALE');
+    expect(screen.getByLabelText('Pronouns')).toHaveValue('they/them');
+  });
+
+  it('keeps every optional address field, none of which blocks the save', () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    type('Street address', '14 Alder Row');
+    type('City', 'Birchwood');
+    type('State', 'OR');
+    type('Postal code', '97031');
+
+    expect(screen.getByLabelText('Street address')).toHaveValue('14 Alder Row');
+    expect(screen.getByLabelText('City')).toHaveValue('Birchwood');
+    expect(screen.getByLabelText('State')).toHaveValue('OR');
+    expect(screen.getByLabelText('Postal code')).toHaveValue('97031');
+
+    // Still nothing to fix: the address is genuinely optional.
+    fillWalkIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    expect(screen.queryByText('Fix these before registering')).not.toBeInTheDocument();
+  });
+
+  it('sets the language, the record sensitivity and the portal invitation', () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    fireEvent.change(screen.getByLabelText('Preferred language'), { target: { value: 'es-US' } });
+    fireEvent.change(screen.getByLabelText('Record sensitivity'), {
+      target: { value: 'RESTRICTED' },
+    });
+    const portal = screen.getByLabelText('Invite to the patient portal');
+    fireEvent.click(portal);
+
+    expect(screen.getByLabelText('Preferred language')).toHaveValue('es-US');
+    expect(screen.getByLabelText('Record sensitivity')).toHaveValue('RESTRICTED');
+    expect(portal).toBeChecked();
+
+    // And it toggles back off, rather than being a one-way switch.
+    fireEvent.click(portal);
+    expect(portal).not.toBeChecked();
+  });
+});
+
+describe('RegisterPatientScreen, driven from the command palette', () => {
+  it('registers from the palette, with the same confirmation as the button', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+    fillWalkIn();
+
+    await runCommand('Register this patient');
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Create a record for Kai Nordstrom'
+    );
+  });
+
+  it('refuses from the palette too, and names the fields still missing', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+    type('Given name', 'Kai');
+
+    await runCommand('Register this patient');
+
+    expect(await screen.findByText('Fix these before registering')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole('alert')).getByRole('link', { name: 'Family name' })
+    ).toHaveAttribute('href', '#register-family');
+  });
+
+  it('clears a half-typed form, including the errors it had already shown', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+    type('Given name', 'Kai');
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    expect(await screen.findByText('Fix these before registering')).toBeInTheDocument();
+
+    await runCommand('Clear the registration form');
+
+    expect(screen.getByLabelText('Given name')).toHaveValue('');
+    // The error summary goes with the draft that produced it: a blank form
+    // showing four errors would be shouting at somebody who has typed nothing.
+    expect(screen.queryByText('Fix these before registering')).not.toBeInTheDocument();
+  });
+});
+
+describe('RegisterPatientScreen, backing out', () => {
+  it('cancels the confirmation from its footer, keeping everything typed', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+    fillWalkIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Given name')).toHaveValue('Kai');
+    expect(screen.queryByText(/is in the practice/)).not.toBeInTheDocument();
+  });
+
+  it('dismisses the confirmation toast without un-registering the patient', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+    fillWalkIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Register patient',
+      })
+    );
+
+    const toast = await screen.findByRole('status');
+    expect(within(toast).getByRole('link', { name: 'Book an appointment' })).toHaveAttribute(
+      'href',
+      '/schedule'
+    );
+
+    fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    // The form is clear and ready for the next walk-in, not repopulated.
+    expect(screen.getByLabelText('Given name')).toHaveValue('');
+  });
+});
+
+describe('RegisterPatientScreen, when each required field is left', () => {
+  it.each([
+    ['Given name', 'Enter the given name.'],
+    ['Family name', 'Enter the family name.'],
+    ['Date of birth', 'Enter the date of birth as YYYY-MM-DD.'],
+    ['Mobile number', 'Enter a mobile number.'],
+  ])('says what is wrong with %s the moment it is left empty', (label) => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    const field = screen.getByLabelText(label);
+    fireEvent.change(field, { target: { value: 'x' } });
+    fireEvent.change(field, { target: { value: '' } });
+    // Nothing said yet: an error while somebody is still typing is nagging.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.blur(field);
+
+    // Now that the field has been left, the problem is stated on the field.
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('checks the email only once it has been left, and clears when corrected', () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    const email = screen.getByLabelText('Email');
+    fireEvent.change(email, { target: { value: 'not-an-address' } });
+    expect(email).not.toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.blur(email);
+    expect(email).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(email, { target: { value: 'kai@example.invalid' } });
+    expect(email).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('accepts a blank email, because the portal is optional', () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+    fillWalkIn();
+
+    fireEvent.blur(screen.getByLabelText('Email'));
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+
+    expect(screen.queryByText('Fix these before registering')).not.toBeInTheDocument();
+  });
+});

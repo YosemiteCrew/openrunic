@@ -5,6 +5,7 @@ import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { ChargeDiagnosis, ChargeLine } from '@/lib/api';
+import { numericFieldValue } from '@/lib/numeric-field';
 
 import { diagnosisPointer, lineCharge } from './billing';
 import { Money } from './Money';
@@ -16,7 +17,7 @@ import { Money } from './Money';
  * diagnosis panel, so the link between a CPT line and the ICD-10 code paying
  * for it is visible on the row itself rather than in a popup. A line with
  * nothing linked says "Not justified" in words. Nothing here is hover-only and
- * nothing is hidden behind an unlabelled icon: the OpenEMR fee sheet's two
+ * nothing is hidden behind an unlabelled icon: the legacy fee sheet's two
  * worst habits were undiscoverable capability and un-deletable mistakes, so
  * every capability is a labelled control and every deletion is reversible.
  *
@@ -67,7 +68,7 @@ export function ChargeLines({
   onUnitsChange,
   onDelete,
   onRestore,
-}: ChargeLinesProps): ReactElement {
+}: Readonly<ChargeLinesProps>): ReactElement {
   const rows = lines.map((line): Record<string, ReactNode> => {
     const modifier = line.modifiers[0] ?? '';
 
@@ -132,7 +133,10 @@ export function ChargeLines({
           value={line.units}
           disabled={readOnly}
           aria-label={`Units for ${line.code}`}
-          onChange={(event) => onUnitsChange(line.id, Number(event.target.value))}
+          onChange={(event) => {
+            const next = numericFieldValue(event.target.value);
+            if (next !== null) onUnitsChange(line.id, next);
+          }}
         />
       ),
       fee: <Money amount={lineCharge(line)} currency={currency} />,

@@ -8,6 +8,8 @@ import type { OrderCatalogEntry, OrderPriority, PatientProblem } from '@/lib/api
 import { ORDER_PRIORITIES } from '@/lib/api';
 import { formatEnumLabel } from '@/lib/format';
 
+import { SPECIMEN_OPTIONS } from './specimens';
+
 /**
  * The drafted orders, each with the four fields an order actually needs.
  *
@@ -26,15 +28,6 @@ export interface DraftOrder {
   specimen: string | null;
   diagnosisCode: string | null;
 }
-
-/** What a lab specimen can be. Chosen from the catalogue, never typed. */
-export const SPECIMEN_OPTIONS = [
-  'Blood, EDTA',
-  'Blood, serum',
-  'Blood, citrate',
-  'Urine, random',
-  'Swab',
-] as const;
 
 const PRIORITY_OPTIONS: SelectOption[] = ORDER_PRIORITIES.map((priority) => ({
   value: priority,
@@ -56,7 +49,7 @@ export function DraftOrders({
   problems,
   onChange,
   onRemove,
-}: DraftOrdersProps): ReactElement {
+}: Readonly<DraftOrdersProps>): ReactElement {
   const diagnosisOptions: SelectOption[] = [
     { value: NO_DIAGNOSIS, label: 'Not linked yet' },
     ...problems.map((problem) => ({

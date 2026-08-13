@@ -3,7 +3,7 @@
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
 import type { TableColumn } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 import {
   adminBreadcrumb,
@@ -27,14 +27,15 @@ import {
   usePermissionMatrix,
   useStaffUsers,
 } from '@/lib/api';
-import type { AdminClient, StaffRole, StaffStatus, StaffUser } from '@/lib/api';
-import { formatDateTime, NOT_RECORDED } from '@/lib/format';
+import type { AdminClient, PermissionRow, StaffRole, StaffStatus, StaffUser } from '@/lib/api';
+import { formatCount, formatDateTime, NOT_RECORDED } from '@/lib/format';
 
 /**
  * AD-01 Users and roles.
  *
- * The OpenEMR failure this screen exists to avoid: phpGACL's group, section and
- * sensitivity maze, which admins configured wrongly and were never told. So a
+ * The legacy failure this screen exists to avoid: the group, section and
+ * sensitivity maze of inherited ACL libraries, which admins configured wrongly
+ * and were never told. So a
  * role here is a named bundle with a plain-language summary, per-user grants
  * are labelled as exceptions rather than folded in silently, and nobody is ever
  * deleted: deactivation keeps the account resolvable from the audit trail.
@@ -90,10 +91,12 @@ const STATUS_LABEL: Record<StaffStatus, string> = {
   DEACTIVATED: 'Deactivated',
 };
 
-function facilityNames(ids: string[]): string {
-  const names = MOCK_FACILITIES.filter((facility) => ids.includes(facility.id)).map(
-    (facility) => facility.name
-  );
+function facilityNames(ids: readonly string[]): string {
+  const wanted = new Set(ids);
+  const names: string[] = [];
+  for (const facility of MOCK_FACILITIES) {
+    if (wanted.has(facility.id)) names.push(facility.name);
+  }
   return names.length > 0 ? names.join(', ') : NOT_RECORDED;
 }
 
@@ -114,7 +117,317 @@ const EMPTY_INVITE: InviteDraft = {
   facilityIds: [MOCK_FACILITIES[0]?.id ?? ''],
 };
 
-export function UsersScreen({ client }: UsersScreenProps = {}): ReactElement {
+/**
+ * The invite form.
+ *
+ * Split out because it is a form with its own draft, not part of the account
+ * list around it, and because the role summary underneath has to be read next
+ * to the role control that decides it.
+ */
+function InviteFields({
+  invite,
+  permissions,
+  onChange,
+}: Readonly<{
+  invite: InviteDraft;
+  permissions: readonly PermissionRow[] | null;
+  onChange: (next: InviteDraft) => void;
+}>): ReactElement {
+  return (
+    <div className="or-stack">
+      <Input
+        label="Full name"
+        value={invite.name}
+        onChange={(event) => onChange({ ...invite, name: event.target.value })}
+        required
+      />
+      <Input
+        label="Work email"
+        type="email"
+        value={invite.email}
+        onChange={(event) => onChange({ ...invite, email: event.target.value })}
+        required
+      />
+      <Select
+        label="Role"
+        options={STAFF_ROLES.map((entry) => ({
+          value: entry,
+          label: STAFF_ROLE_LABELS[entry],
+        }))}
+        value={invite.role}
+        onChange={(event) => onChange({ ...invite, role: event.target.value as StaffRole })}
+      />
+      <fieldset className="or-fieldset">
+        <legend className="or-overline">Facilities</legend>
+        {MOCK_FACILITIES.map((facility) => (
+          <Checkbox
+            key={facility.id}
+            label={facility.name}
+            checked={invite.facilityIds.includes(facility.id)}
+            onChange={() =>
+              onChange({
+                ...invite,
+                facilityIds: invite.facilityIds.includes(facility.id)
+                  ? invite.facilityIds.filter((id) => id !== facility.id)
+                  : [...invite.facilityIds, facility.id],
+              })
+            }
+          />
+        ))}
+      </fieldset>
+      <p className="or-small">
+        {permissions
+          ? summariseRole([...permissions], invite.role, {})
+          : 'The role summary appears once permissions load.'}
+      </p>
+    </div>
+  );
+}
+
+function userRow(user: StaffUser, onOpen: (id: string) => void): Record<string, ReactNode> {
+  return {
+    id: user.id,
+    name: (
+      <span className="or-cell-stack">
+        <span className="or-body">{user.name}</span>
+        <span className="or-caption">{user.email}</span>
+      </span>
+    ),
+    roles: (
+      <span className="or-cell-chips">
+        {user.roles.map((entry) => (
+          <Tag key={entry}>{STAFF_ROLE_LABELS[entry]}</Tag>
+        ))}
+        {user.isProvider ? <Tag>Provider</Tag> : null}
+      </span>
+    ),
+    facilities: <span className="or-small">{facilityNames(user.facilityIds)}</span>,
+    mfa: user.mfaEnrolled ? (
+      <Badge tone="success">Enrolled</Badge>
+    ) : (
+      <Badge tone="danger">Not enrolled</Badge>
+    ),
+    lastActive: (
+      <span className="or-small">
+        {user.lastActiveAt ? formatDateTime(user.lastActiveAt, 'dense') : 'Never'}
+      </span>
+    ),
+    status: <Badge tone={STATUS_TONE[user.status]}>{STATUS_LABEL[user.status]}</Badge>,
+    actions: (
+      <Button size="sm" variant="ghost" onClick={() => onOpen(user.id)}>
+        Open {user.name}
+      </Button>
+    ),
+  };
+}
+
+/** The exceptions granted on top of this person's role, when there are any. */
+function RoleExceptions({ user }: Readonly<{ user: StaffUser }>): ReactElement | null {
+  if (user.exceptions.length === 0) return null;
+  return (
+    <div className="or-stack">
+      <p className="or-overline">Exceptions</p>
+      <ul className="or-list">
+        {user.exceptions.map((exception) => (
+          <li key={exception} className="or-small">
+            {exception}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+interface UserDetailProps {
+  user: StaffUser;
+  roleSummary: string;
+}
+
+/** The drawer body: who this person is, and what the system lets them do. */
+function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElement {
+  return (
+    <div className="or-stack">
+      <DetailList
+        items={[
+          { label: 'Roles', value: user.roles.map((r) => STAFF_ROLE_LABELS[r]).join(', ') },
+          { label: 'Facilities', value: facilityNames(user.facilityIds) },
+          { label: 'Provider', value: user.isProvider ? 'Yes' : 'No' },
+          { label: 'NPI', value: user.npi ?? NOT_RECORDED, mono: true },
+          { label: 'Taxonomy', value: user.taxonomy ?? NOT_RECORDED },
+          { label: 'Two-factor', value: user.mfaEnrolled ? 'Enrolled' : 'Not enrolled' },
+          {
+            label: 'Last active',
+            value: user.lastActiveAt ? formatDateTime(user.lastActiveAt, 'prose') : 'Never',
+          },
+        ]}
+      />
+
+      <Card tone="bone" title="What this person can do">
+        <p className="or-body">{roleSummary}</p>
+        <RoleExceptions user={user} />
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * The role editor: pick a role, read what it can do in a sentence, then change
+ * the grid underneath.
+ *
+ * The sentence is the point. A permission grid alone is what let legacy admins
+ * configure access wrongly and never find out, so the plain-language summary
+ * sits above the checkboxes and is derived from the same overrides.
+ */
+function RoleEditor({
+  permissions,
+  roleFocus,
+  grants,
+  onRoleFocusChange,
+  onToggle,
+}: Readonly<{
+  permissions: ReturnType<typeof usePermissionMatrix>;
+  roleFocus: StaffRole;
+  grants: Record<string, boolean>;
+  onRoleFocusChange: (role: StaffRole) => void;
+  onToggle: (capabilityId: string, role: StaffRole, allowed: boolean) => void;
+}>): ReactElement {
+  return (
+    <AsyncBoundary
+      state={permissions}
+      subject="role permissions"
+      isEmpty={(rows) => rows.length === 0}
+      empty={{
+        title: 'No capabilities are defined',
+        message:
+          'Roles have nothing to grant until the capability list is loaded. Reload the screen, and report it if the list stays empty.',
+        icon: 'shield',
+      }}
+    >
+      {(rows: PermissionRow[]) => (
+        <div className="or-stack">
+          <Select
+            label="Summarise"
+            hint="The sentence below describes the role you pick here."
+            options={STAFF_ROLES.map((entry) => ({
+              value: entry,
+              label: STAFF_ROLE_LABELS[entry],
+            }))}
+            value={roleFocus}
+            onChange={(event) => onRoleFocusChange(event.target.value as StaffRole)}
+          />
+          <Card tone="bone">
+            <p className="or-body" data-testid="role-summary">
+              {summariseRole(rows, roleFocus, grants)}
+            </p>
+          </Card>
+          <PermissionMatrix
+            rows={rows}
+            roles={STAFF_ROLES}
+            overrides={grants}
+            onToggle={onToggle}
+          />
+        </div>
+      )}
+    </AsyncBoundary>
+  );
+}
+
+/**
+ * The account list and the four filters above it.
+ *
+ * Filters and table together because the filters are only meaningful next to
+ * what they narrow, and the empty state has to name the filters as the reason
+ * the list is empty rather than claiming the practice has no staff.
+ */
+function StaffAccounts({
+  users,
+  allUsers,
+  search,
+  role,
+  status,
+  facilityId,
+  onSearchChange,
+  onRoleChange,
+  onStatusChange,
+  onFacilityChange,
+  onInvite,
+  onOpenUser,
+}: Readonly<{
+  users: ReturnType<typeof useStaffUsers>;
+  allUsers: readonly StaffUser[];
+  search: string;
+  role: StaffRole | '';
+  status: StaffStatus | '';
+  facilityId: string;
+  onSearchChange: (value: string) => void;
+  onRoleChange: (value: StaffRole | '') => void;
+  onStatusChange: (value: StaffStatus | '') => void;
+  onFacilityChange: (value: string) => void;
+  onInvite: () => void;
+  onOpenUser: (id: string) => void;
+}>): ReactElement {
+  return (
+    <>
+      <FilterBar
+        label="Filter staff accounts"
+        summary={users.data ? formatCount(allUsers.length, 'account') : null}
+      >
+        <Input
+          label="Search"
+          iconLeft="search"
+          placeholder="Name or email"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
+        <Select
+          label="Role"
+          options={ROLE_OPTIONS}
+          value={role}
+          onChange={(event) => onRoleChange(event.target.value as StaffRole | '')}
+        />
+        <Select
+          label="Status"
+          options={STATUS_OPTIONS}
+          value={status}
+          onChange={(event) => onStatusChange(event.target.value as StaffStatus | '')}
+        />
+        <Select
+          label="Facility"
+          options={FACILITY_OPTIONS}
+          value={facilityId}
+          onChange={(event) => onFacilityChange(event.target.value)}
+        />
+      </FilterBar>
+
+      <AsyncBoundary
+        state={users}
+        subject="staff accounts"
+        isEmpty={isEmptyList}
+        empty={{
+          title: 'No accounts match these filters',
+          message:
+            'Every account is filtered out by the current search, role, status or facility. Clear the filters, or invite the colleague you are looking for.',
+          icon: 'users',
+          action: (
+            <Button variant="primary" onClick={onInvite}>
+              Invite a colleague
+            </Button>
+          ),
+        }}
+      >
+        {() => (
+          <Table
+            caption="Staff accounts"
+            columns={COLUMNS}
+            rows={allUsers.map((user) => userRow(user, onOpenUser))}
+          />
+        )}
+      </AsyncBoundary>
+    </>
+  );
+}
+
+export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElement {
   const options = useAdminClientOption(client);
 
   const [search, setSearch] = useState('');
@@ -186,12 +499,14 @@ export function UsersScreen({ client }: UsersScreenProps = {}): ReactElement {
     [openInvite, openRoles, showUnenrolled]
   );
 
-  const applyOverlay = (rows: StaffUser[]): StaffUser[] =>
-    [...invited, ...rows].map((user) =>
-      deactivated.includes(user.id)
+  const applyOverlay = (rows: StaffUser[]): StaffUser[] => {
+    const deactivatedIds = new Set(deactivated);
+    return [...invited, ...rows].map((user) =>
+      deactivatedIds.has(user.id)
         ? { ...user, status: 'DEACTIVATED' as StaffStatus, deactivatedAt: null }
         : user
     );
+  };
 
   const confirmDeactivation = () => {
     if (!confirmUser) return;
@@ -265,100 +580,20 @@ export function UsersScreen({ client }: UsersScreenProps = {}): ReactElement {
         </Card>
       ) : null}
 
-      <FilterBar
-        label="Filter staff accounts"
-        summary={
-          users.data ? `${allUsers.length} ${allUsers.length === 1 ? 'account' : 'accounts'}` : null
-        }
-      >
-        <Input
-          label="Search"
-          iconLeft="search"
-          placeholder="Name or email"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <Select
-          label="Role"
-          options={ROLE_OPTIONS}
-          value={role}
-          onChange={(event) => setRole(event.target.value as StaffRole | '')}
-        />
-        <Select
-          label="Status"
-          options={STATUS_OPTIONS}
-          value={status}
-          onChange={(event) => setStatus(event.target.value as StaffStatus | '')}
-        />
-        <Select
-          label="Facility"
-          options={FACILITY_OPTIONS}
-          value={facilityId}
-          onChange={(event) => setFacilityId(event.target.value)}
-        />
-      </FilterBar>
-
-      <AsyncBoundary
-        state={users}
-        subject="staff accounts"
-        isEmpty={isEmptyList}
-        empty={{
-          title: 'No accounts match these filters',
-          message:
-            'Every account is filtered out by the current search, role, status or facility. Clear the filters, or invite the colleague you are looking for.',
-          icon: 'users',
-          action: (
-            <Button variant="primary" onClick={openInvite}>
-              Invite a colleague
-            </Button>
-          ),
-        }}
-      >
-        {() => (
-          <Table
-            caption="Staff accounts"
-            columns={COLUMNS}
-            rows={allUsers.map((user) => ({
-              id: user.id,
-              name: (
-                <span className="or-cell-stack">
-                  <span className="or-body">{user.name}</span>
-                  <span className="or-caption">{user.email}</span>
-                </span>
-              ),
-              roles: (
-                <span className="or-cell-chips">
-                  {user.roles.map((entry) => (
-                    <Tag key={entry}>{STAFF_ROLE_LABELS[entry]}</Tag>
-                  ))}
-                  {user.isProvider ? <Tag>Provider</Tag> : null}
-                </span>
-              ),
-              facilities: <span className="or-small">{facilityNames(user.facilityIds)}</span>,
-              mfa: user.mfaEnrolled ? (
-                <Badge tone="success">Enrolled</Badge>
-              ) : (
-                <Badge tone="danger">Not enrolled</Badge>
-              ),
-              lastActive: (
-                <span className="or-small">
-                  {user.lastActiveAt ? formatDateTime(user.lastActiveAt, 'dense') : 'Never'}
-                </span>
-              ),
-              status: <Badge tone={STATUS_TONE[user.status]}>{STATUS_LABEL[user.status]}</Badge>,
-              actions: (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setDrawer({ kind: 'user', id: user.id })}
-                >
-                  Open {user.name}
-                </Button>
-              ),
-            }))}
-          />
-        )}
-      </AsyncBoundary>
+      <StaffAccounts
+        users={users}
+        allUsers={allUsers}
+        search={search}
+        role={role}
+        status={status}
+        facilityId={facilityId}
+        onSearchChange={setSearch}
+        onRoleChange={setRole}
+        onStatusChange={setStatus}
+        onFacilityChange={setFacilityId}
+        onInvite={openInvite}
+        onOpenUser={(id) => setDrawer({ kind: 'user', id })}
+      />
 
       {/* ---- One account ---------------------------------------------- */}
       <Drawer
@@ -389,50 +624,14 @@ export function UsersScreen({ client }: UsersScreenProps = {}): ReactElement {
         }
       >
         {selected ? (
-          <div className="or-stack">
-            <DetailList
-              items={[
-                {
-                  label: 'Roles',
-                  value: selected.roles.map((r) => STAFF_ROLE_LABELS[r]).join(', '),
-                },
-                { label: 'Facilities', value: facilityNames(selected.facilityIds) },
-                { label: 'Provider', value: selected.isProvider ? 'Yes' : 'No' },
-                { label: 'NPI', value: selected.npi ?? NOT_RECORDED, mono: true },
-                { label: 'Taxonomy', value: selected.taxonomy ?? NOT_RECORDED },
-                {
-                  label: 'Two-factor',
-                  value: selected.mfaEnrolled ? 'Enrolled' : 'Not enrolled',
-                },
-                {
-                  label: 'Last active',
-                  value: selected.lastActiveAt
-                    ? formatDateTime(selected.lastActiveAt, 'prose')
-                    : 'Never',
-                },
-              ]}
-            />
-
-            <Card tone="bone" title="What this person can do">
-              <p className="or-body">
-                {permissions.data
-                  ? summariseRole(permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
-                  : 'Loading the role summary.'}
-              </p>
-              {selected.exceptions.length > 0 ? (
-                <div className="or-stack">
-                  <p className="or-overline">Exceptions</p>
-                  <ul className="or-list">
-                    {selected.exceptions.map((exception) => (
-                      <li key={exception} className="or-small">
-                        {exception}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </Card>
-          </div>
+          <UserDetail
+            user={selected}
+            roleSummary={
+              permissions.data
+                ? summariseRole(permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
+                : 'Loading the role summary.'
+            }
+          />
         ) : null}
       </Drawer>
 
@@ -453,53 +652,7 @@ export function UsersScreen({ client }: UsersScreenProps = {}): ReactElement {
           </>
         }
       >
-        <div className="or-stack">
-          <Input
-            label="Full name"
-            value={invite.name}
-            onChange={(event) => setInvite({ ...invite, name: event.target.value })}
-            required
-          />
-          <Input
-            label="Work email"
-            type="email"
-            value={invite.email}
-            onChange={(event) => setInvite({ ...invite, email: event.target.value })}
-            required
-          />
-          <Select
-            label="Role"
-            options={STAFF_ROLES.map((entry) => ({
-              value: entry,
-              label: STAFF_ROLE_LABELS[entry],
-            }))}
-            value={invite.role}
-            onChange={(event) => setInvite({ ...invite, role: event.target.value as StaffRole })}
-          />
-          <fieldset className="or-fieldset">
-            <legend className="or-overline">Facilities</legend>
-            {MOCK_FACILITIES.map((facility) => (
-              <Checkbox
-                key={facility.id}
-                label={facility.name}
-                checked={invite.facilityIds.includes(facility.id)}
-                onChange={() =>
-                  setInvite({
-                    ...invite,
-                    facilityIds: invite.facilityIds.includes(facility.id)
-                      ? invite.facilityIds.filter((id) => id !== facility.id)
-                      : [...invite.facilityIds, facility.id],
-                  })
-                }
-              />
-            ))}
-          </fieldset>
-          <p className="or-small">
-            {permissions.data
-              ? summariseRole(permissions.data, invite.role, {})
-              : 'The role summary appears once permissions load.'}
-          </p>
-        </div>
+        <InviteFields invite={invite} permissions={permissions.data ?? null} onChange={setInvite} />
       </Drawer>
 
       {/* ---- Role editor ----------------------------------------------- */}
@@ -526,48 +679,18 @@ export function UsersScreen({ client }: UsersScreenProps = {}): ReactElement {
           </>
         }
       >
-        <AsyncBoundary
-          state={permissions}
-          subject="role permissions"
-          isEmpty={(rows) => rows.length === 0}
-          empty={{
-            title: 'No capabilities are defined',
-            message:
-              'Roles have nothing to grant until the capability list is loaded. Reload the screen, and report it if the list stays empty.',
-            icon: 'shield',
-          }}
-        >
-          {(rows) => (
-            <div className="or-stack">
-              <Select
-                label="Summarise"
-                hint="The sentence below describes the role you pick here."
-                options={STAFF_ROLES.map((entry) => ({
-                  value: entry,
-                  label: STAFF_ROLE_LABELS[entry],
-                }))}
-                value={roleFocus}
-                onChange={(event) => setRoleFocus(event.target.value as StaffRole)}
-              />
-              <Card tone="bone">
-                <p className="or-body" data-testid="role-summary">
-                  {summariseRole(rows, roleFocus, grants)}
-                </p>
-              </Card>
-              <PermissionMatrix
-                rows={rows}
-                roles={STAFF_ROLES}
-                overrides={grants}
-                onToggle={(capabilityId, entry, allowed) =>
-                  setGrants((previous) => ({
-                    ...previous,
-                    [permissionKey(capabilityId, entry)]: allowed,
-                  }))
-                }
-              />
-            </div>
-          )}
-        </AsyncBoundary>
+        <RoleEditor
+          permissions={permissions}
+          roleFocus={roleFocus}
+          grants={grants}
+          onRoleFocusChange={setRoleFocus}
+          onToggle={(capabilityId, entry, allowed) =>
+            setGrants((previous) => ({
+              ...previous,
+              [permissionKey(capabilityId, entry)]: allowed,
+            }))
+          }
+        />
       </Drawer>
 
       <ConfirmDialog

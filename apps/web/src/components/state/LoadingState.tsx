@@ -33,7 +33,7 @@ export function LoadingState({
   label,
   variant = 'table',
   rows = 6,
-}: LoadingStateProps): ReactElement {
+}: Readonly<LoadingStateProps>): ReactElement {
   return (
     <div className="or-loading" data-variant={variant}>
       <div className="or-loading__skeleton" aria-hidden="true">
@@ -43,9 +43,7 @@ export function LoadingState({
         ))}
       </div>
       {/* Polite, not assertive: a load is expected, so it waits for a pause. */}
-      <p className="or-loading__status or-small" role="status">
-        Loading {label.toLowerCase()}
-      </p>
+      <output className="or-loading__status or-small">Loading {label.toLowerCase()}</output>
     </div>
   );
 }

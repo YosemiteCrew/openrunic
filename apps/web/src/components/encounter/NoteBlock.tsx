@@ -4,10 +4,12 @@ import { Card, IconButton, Tag } from '@openrunic/ui';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
+import { useActiveOptionInView } from '@/lib/active-option';
 import type { EmittedItem, NoteSection, SlashCommand } from '@/lib/api/chart';
-import { formatEnumLabel } from '@/lib/format';
+import { formatCount, formatEnumLabel } from '@/lib/format';
 
-import { optionId, SlashCommandMenu } from './SlashCommandMenu';
+import { optionId } from './ids';
+import { SlashCommandMenu } from './SlashCommandMenu';
 
 /**
  * One block of the note.
@@ -16,7 +18,7 @@ import { optionId, SlashCommandMenu } from './SlashCommandMenu';
  * the text itself, and the structured data that text wrote. Typing `/` opens
  * the command list at the caret, and committing a command inserts narrative AND
  * emits a chip naming what it wrote to the chart. That pairing is the answer to
- * OpenEMR's split between iframe-loaded note forms and a separate ordering
+ * The legacy split between iframe-loaded note forms and a separate ordering
  * module: here the sentence and the order come from the same keystrokes, and
  * the block shows both.
  *
@@ -58,7 +60,7 @@ export function NoteBlock({
   locked,
   onChange,
   onEmit,
-}: NoteBlockProps): ReactElement {
+}: Readonly<NoteBlockProps>): ReactElement {
   const blockId = `note-block-${section.key}`;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [menu, setMenu] = useState<{ start: number; query: string } | null>(null);
@@ -70,6 +72,9 @@ export function NoteBlock({
 
   const visible = menu ? commands.filter((command) => matches(command, menu.query)) : [];
   const active = visible[Math.min(activeIndex, Math.max(visible.length - 1, 0))] ?? null;
+  const activeOptionId = menu && active ? optionId(blockId, active.id) : undefined;
+
+  useActiveOptionInView(activeOptionId);
 
   // The caret is restored after the parent has committed the new text, so the
   // insertion leaves the writer exactly where they would have typed next.
@@ -175,7 +180,7 @@ export function NoteBlock({
             aria-labelledby={`${blockId}-title`}
             aria-describedby={`${blockId}-hint`}
             aria-controls={menu ? `${blockId}-listbox` : undefined}
-            aria-activedescendant={menu && active ? optionId(blockId, active.id) : undefined}
+            aria-activedescendant={activeOptionId}
             rows={6}
             value={section.text}
             onChange={handleChange}
@@ -192,11 +197,11 @@ export function NoteBlock({
             />
           ) : null}
 
-          <p className="or-visually-hidden" role="status">
+          <output className="or-visually-hidden">
             {menu
-              ? `${visible.length} ${visible.length === 1 ? 'command' : 'commands'} available. Use the arrow keys and Enter.`
+              ? `${formatCount(visible.length, 'command')} available. Use the arrow keys and Enter.`
               : ''}
-          </p>
+          </output>
         </>
       )}
 

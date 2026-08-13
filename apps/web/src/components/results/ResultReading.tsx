@@ -41,23 +41,23 @@ export interface ResultReadingProps {
   now: string;
 }
 
+const COLUMNS: TableColumn[] = [
+  { key: 'analyte', header: 'Analyte' },
+  { key: 'value', header: 'Result', numeric: true },
+  { key: 'range', header: 'Reference range' },
+  { key: 'state', header: 'Range state' },
+  { key: 'previous', header: 'Previous' },
+];
+
 export function ResultReading({
   report,
   signed,
   onSign,
   onSignWithNote,
   now,
-}: ResultReadingProps): ReactElement {
+}: Readonly<ResultReadingProps>): ReactElement {
   const patient = mockPatientById(report.patientId);
   const isSigned = report.status === 'SIGNED' || signed !== null;
-
-  const columns: TableColumn[] = [
-    { key: 'analyte', header: 'Analyte' },
-    { key: 'value', header: 'Result', numeric: true },
-    { key: 'range', header: 'Reference range' },
-    { key: 'state', header: 'Range state' },
-    { key: 'previous', header: 'Previous' },
-  ];
 
   return (
     <Card
@@ -130,7 +130,7 @@ export function ResultReading({
 
       {report.analytes.length > 0 ? (
         <Table
-          columns={columns}
+          columns={COLUMNS}
           rows={report.analytes.map((analyte) => toRow(analyte))}
           caption={`${report.panel}, values against their reference ranges`}
         />

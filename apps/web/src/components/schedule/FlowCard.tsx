@@ -12,7 +12,7 @@ import { delayTier, givenName, minutesBetween, nextStatus, presentStatus } from 
 /**
  * One patient moving through the day.
  *
- * OpenEMR's flow board was its best screen and its worst behaviour: the delay
+ * The legacy flow board was a good screen with bad behaviour: the delay
  * alert blinked at you until you stopped seeing it. The semantics are kept
  * whole - statuses, rooms, two timers, one-click advance - and the blinking is
  * replaced by a static tier plus a counted, worded label. Nothing on this card
@@ -46,7 +46,7 @@ export function FlowCard({
   onAdvance,
   onAssignRoom,
   room,
-}: FlowCardProps): ReactElement {
+}: Readonly<FlowCardProps>): ReactElement {
   const status = presentStatus(appointment.status);
   const inStatus = minutesBetween(statusSince, now);
   const tier = delayTier(appointment.status, inStatus);

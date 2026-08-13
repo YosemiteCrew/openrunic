@@ -103,3 +103,62 @@ describe('Drawer', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
   });
 });
+
+describe('Drawer, the rest of the focus trap', () => {
+  it('cycles Shift-Tab from the first stop round to the last', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open claim CLM-24118' }));
+
+    screen.getByRole('button', { name: 'Close' }).focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Rebill claim' }));
+  });
+
+  it('leaves an ordinary Tab in the middle of the panel to the browser', () => {
+    render(
+      <Drawer
+        open
+        title="Claim CLM-24118"
+        onClose={vi.fn()}
+        footer={<button type="button">Rebill claim</button>}
+      >
+        <button type="button">Open the fee sheet</button>
+      </Drawer>
+    );
+
+    const middle = screen.getByRole('button', { name: 'Open the fee sheet' });
+    middle.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    // Not at either edge, so the trap must not yank the caret back to the top
+    // of the panel on every keystroke.
+    expect(document.activeElement).toBe(middle);
+  });
+
+  it('pulls focus back in when it has escaped to the page behind', () => {
+    render(<Harness />);
+    const opener = screen.getByRole('button', { name: 'Open claim CLM-24118' });
+    fireEvent.click(opener);
+
+    opener.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+
+  it('ignores every key that is neither Escape nor Tab', () => {
+    const onClose = vi.fn();
+    render(
+      <Drawer open title="Claim CLM-24118" onClose={onClose}>
+        <p>Event history</p>
+      </Drawer>
+    );
+
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    fireEvent.keyDown(document, { key: 'a' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});

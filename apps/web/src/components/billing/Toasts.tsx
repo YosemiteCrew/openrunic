@@ -66,7 +66,7 @@ export interface ToastDockProps {
   onDismiss: (id: number) => void;
 }
 
-export function ToastDock({ toasts, onDismiss }: ToastDockProps): ReactElement | null {
+export function ToastDock({ toasts, onDismiss }: Readonly<ToastDockProps>): ReactElement | null {
   if (toasts.length === 0) return null;
 
   return (

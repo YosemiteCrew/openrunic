@@ -23,7 +23,7 @@ import { formatName } from '@/lib/format';
  * reference range in words, and a batch action clears the unremarkable ones.
  * Critical values are never in that batch: someone reads them.
  *
- * OpenEMR's Pending Review flagged abnormal results and then offered nothing to
+ * Legacy "pending review" screens flagged abnormal results and then offered nothing to
  * do about them, which is why results piled up there. Here signing, signing
  * with a note, and ordering a follow-up all happen without leaving the screen.
  */
@@ -49,7 +49,10 @@ export interface ResultsScreenProps {
   now?: string;
 }
 
-export function ResultsScreen({ client, now = MOCK_NOW }: ResultsScreenProps): ReactElement {
+export function ResultsScreen({
+  client,
+  now = MOCK_NOW,
+}: Readonly<ResultsScreenProps>): ReactElement {
   const [assignment, setAssignment] = useState<Assignment | ''>('ME');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [signed, setSigned] = useState<Record<string, SignedNote>>({});
@@ -269,7 +272,7 @@ export function ResultsScreen({ client, now = MOCK_NOW }: ResultsScreenProps): R
       />
 
       <SignNoteModal
-        open={signing !== null && signing.withNote}
+        open={signing?.withNote === true}
         subject={signing?.report.panel ?? ''}
         patientName={selectedPatientName}
         onCancel={() => setSigning(null)}

@@ -3,7 +3,9 @@
  */
 export { InboxList } from './InboxList';
 export type { InboxListProps } from './InboxList';
-export { INBOX_STREAM_ICON, INBOX_STREAM_LABELS, InboxStreamFilter } from './InboxStreamFilter';
+export { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './streams';
+export { InboxStreamFilter } from './InboxStreamFilter';
 export type { InboxStreamFilterProps } from './InboxStreamFilter';
-export { SlaBadge, slaLabel } from './SlaBadge';
+export { slaLabel } from './sla';
+export { SlaBadge } from './SlaBadge';
 export type { SlaBadgeProps } from './SlaBadge';

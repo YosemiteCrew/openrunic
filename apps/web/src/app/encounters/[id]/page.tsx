@@ -19,8 +19,9 @@ interface EncounterPageProps {
 }
 
 export async function generateMetadata({ params }: EncounterPageProps): Promise<Metadata> {
-  const { id } = await params;
   if (!IS_MOCK_MODE) return { title: 'Visit note' };
+
+  const { id } = await params;
 
   const note = mockEncounterNote(id);
   const patient = note ? MOCK_PATIENTS.find((record) => record.id === note.patientId) : undefined;
@@ -30,7 +31,7 @@ export async function generateMetadata({ params }: EncounterPageProps): Promise<
   return { title: `${patient.name.family.toUpperCase()}, ${given} - Visit note` };
 }
 
-export default async function EncounterPage({ params }: EncounterPageProps) {
+export default async function EncounterPage({ params }: Readonly<EncounterPageProps>) {
   const { id } = await params;
   return <EncounterNoteScreen encounterId={id} />;
 }

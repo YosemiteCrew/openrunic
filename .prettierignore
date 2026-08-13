@@ -4,6 +4,11 @@ build/
 .next/
 coverage/
 .turbo/
+
+# Storybook build output. Ignored by packages/ui/.gitignore, but Prettier only reads the root
+# .gitignore, so `pnpm run format:check` fails on any tree that has run `build-storybook`.
+storybook-static/
+
 pnpm-lock.yaml
 CHANGELOG.md
 

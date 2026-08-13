@@ -7,7 +7,8 @@ import type { ReactElement } from 'react';
 import type { DashboardTile } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
 
-import { Sparkline, trendWord } from './Sparkline';
+import { Sparkline } from './Sparkline';
+import { trendWord } from './trend';
 
 /**
  * One number on the practice dashboard.
@@ -31,10 +32,8 @@ function readValue(tile: DashboardTile): { text: string; unit: string | null } {
   return { text: tile.value.toLocaleString('en-US'), unit: tile.unit };
 }
 
-export function StatTile({ tile }: StatTileProps): ReactElement {
+export function StatTile({ tile }: Readonly<StatTileProps>): ReactElement {
   const { text, unit } = readValue(tile);
-  const tone =
-    tile.state === 'danger' ? 'danger' : tile.state === 'success' ? 'success' : 'neutral';
 
   return (
     <Card className="or-stat" data-state={tile.state}>
@@ -46,7 +45,10 @@ export function StatTile({ tile }: StatTileProps): ReactElement {
       </p>
 
       <div className="or-stat__state">
-        <Badge tone={tone}>{tile.stateLabel}</Badge>
+        {/* A tile's state is already the badge's tone: same three words, same
+            meaning. Mapping one onto the other only creates somewhere for them
+            to disagree. */}
+        <Badge tone={tile.state}>{tile.stateLabel}</Badge>
       </div>
 
       <p className="or-small or-stat__detail">{tile.detail}</p>

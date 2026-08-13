@@ -7,7 +7,7 @@ import type { ReactElement } from 'react';
 import { arSummary, claimCounts, Money, remittanceSummary } from '@/components/billing';
 import { AppShell } from '@/components/shell';
 import { useClaims, useRemittances, useStatements } from '@/lib/api';
-import { formatMoney } from '@/lib/format';
+import { formatCount, formatMoney } from '@/lib/format';
 
 /**
  * The billing area's front door.
@@ -88,7 +88,7 @@ export function BillingScreen(): ReactElement {
           label="Denied"
           value={formatMoney(denied, { currency: 'USD' }).text}
           state={counts.DENIED > 0 ? 'danger' : 'success'}
-          stateLabel={`${counts.DENIED} ${counts.DENIED === 1 ? 'claim' : 'claims'}`}
+          stateLabel={formatCount(counts.DENIED, 'claim')}
         />
         <VitalStat
           label="Remittance exceptions"

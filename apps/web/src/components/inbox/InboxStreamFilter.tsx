@@ -6,6 +6,8 @@ import type { ReactElement } from 'react';
 import { INBOX_STREAMS } from '@/lib/api';
 import type { InboxItem, InboxStream } from '@/lib/api';
 
+import { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './streams';
+
 /**
  * The five typed streams, as filter chips with counts.
  *
@@ -19,22 +21,6 @@ import type { InboxItem, InboxStream } from '@/lib/api';
  * actions; composed here from tokens instead.
  */
 
-const STREAM_LABEL: Record<InboxStream, string> = {
-  RESULTS: 'Results',
-  MESSAGES: 'Messages',
-  REFILLS: 'Refills',
-  COSIGN: 'Cosign',
-  TASKS: 'Tasks',
-};
-
-export const INBOX_STREAM_ICON: Record<InboxStream, string> = {
-  RESULTS: 'flask-conical',
-  MESSAGES: 'message-square',
-  REFILLS: 'pill',
-  COSIGN: 'pen-line',
-  TASKS: 'square-check',
-};
-
 export interface InboxStreamFilterProps {
   items: InboxItem[];
   /** Null means every stream. */
@@ -46,9 +32,9 @@ export function InboxStreamFilter({
   items,
   active,
   onChange,
-}: InboxStreamFilterProps): ReactElement {
+}: Readonly<InboxStreamFilterProps>): ReactElement {
   return (
-    <div className="or-filters" role="group" aria-label="Filter by stream">
+    <fieldset className="or-filters" aria-label="Filter by stream">
       <button
         type="button"
         className="or-filter"
@@ -71,13 +57,11 @@ export function InboxStreamFilter({
             onClick={() => onChange(stream)}
           >
             <Icon name={INBOX_STREAM_ICON[stream]} size={16} />
-            <span>{STREAM_LABEL[stream]}</span>
+            <span>{INBOX_STREAM_LABELS[stream]}</span>
             <span className="or-filter__count">{count}</span>
           </button>
         );
       })}
-    </div>
+    </fieldset>
   );
 }
-
-export { STREAM_LABEL as INBOX_STREAM_LABELS };

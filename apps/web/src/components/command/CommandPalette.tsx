@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
+import { useActiveOptionInView } from '@/lib/active-option';
 import { usePatients } from '@/lib/api';
 import { formatDate, formatMrn, formatName } from '@/lib/format';
 
@@ -36,6 +37,38 @@ const SEARCH_DEBOUNCE_MS = 150;
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex="0"]';
 
+/** The keys that move the highlight rather than acting on it. */
+const MOVE_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Home', 'End']);
+
+/**
+ * Where a move key sends the highlight. Wrapping is computed from the clamped
+ * index, so it stays in range even when the previous keystroke shortened the
+ * result list.
+ */
+function nextIndex(key: string, current: number, length: number): number {
+  if (length === 0 || key === 'Home') return 0;
+  if (key === 'End') return length - 1;
+  const step = key === 'ArrowDown' ? 1 : -1;
+  return (current + step + length) % length;
+}
+
+/**
+ * Tab cycles inside the modal rather than escaping to the page behind, which
+ * would leave an open overlay nobody can close.
+ */
+function cycleFocus(
+  panel: HTMLDialogElement | null,
+  event: ReactKeyboardEvent<HTMLInputElement>
+): void {
+  const stops = Array.from(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+  const first = stops[0];
+  const last = stops.at(-1);
+  if (!first || !last) return;
+  if (document.activeElement !== (event.shiftKey ? first : last)) return;
+  event.preventDefault();
+  (event.shiftKey ? last : first).focus();
+}
+
 export function CommandPalette() {
   const { isOpen, close } = useCommandPalette();
   if (!isOpen) return null;
@@ -46,14 +79,14 @@ interface CommandPaletteDialogProps {
   onClose: () => void;
 }
 
-function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
+function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) {
   const router = useRouter();
   const { commands } = useCommandPalette();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
-  const [requestedIndex, setActiveIndex] = useState(0);
+  const [requestedIndex, setRequestedIndex] = useState(0);
 
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDialogElement>(null);
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const baseId = useId();
   const listId = `${baseId}-list`;
@@ -128,57 +161,29 @@ function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
     [onClose, router]
   );
 
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
       return;
     }
-
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (flat.length === 0) return;
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      // Stepped from the clamped index, so a wrap is always in range even when
-      // the previous keystroke shortened the result list.
-      setActiveIndex((activeIndex + step + flat.length) % flat.length);
-      return;
-    }
-
-    if (event.key === 'Home') {
-      event.preventDefault();
-      setActiveIndex(0);
-      return;
-    }
-
-    if (event.key === 'End') {
-      event.preventDefault();
-      setActiveIndex(Math.max(flat.length - 1, 0));
-      return;
-    }
-
     if (event.key === 'Enter') {
       event.preventDefault();
       run(flat[activeIndex]);
       return;
     }
-
-    if (event.key === 'Tab') {
-      // The dialog is modal, so Tab cycles inside it rather than escaping to
-      // the page behind, which would leave an open overlay nobody can close.
-      const stops = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
-      const first = stops[0];
-      const last = stops[stops.length - 1];
-      if (!first || !last) return;
-      const atEdge = document.activeElement === (event.shiftKey ? first : last);
-      if (!atEdge) return;
+    if (MOVE_KEYS.has(event.key)) {
       event.preventDefault();
-      (event.shiftKey ? last : first).focus();
+      setRequestedIndex(nextIndex(event.key, activeIndex, flat.length));
+      return;
     }
+    if (event.key === 'Tab') cycleFocus(panelRef.current, event);
   };
 
   const activeCommand = flat[activeIndex];
   const activeOptionId = activeCommand ? `${baseId}-option-${activeCommand.id}` : undefined;
+
+  useActiveOptionInView(activeOptionId);
 
   return (
     <div className="or-palette">
@@ -186,13 +191,17 @@ function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
           Escape is the keyboard route out, and a second "close" node would only
           add noise to the dialog's reading order. */}
       <div className="or-palette__scrim" aria-hidden="true" onClick={onClose} />
-      <div
+      {/* A real <dialog>, not a div wearing role="dialog". Rendered with `open`
+          rather than through `showModal()`, so the palette keeps its own
+          centring and scrim instead of the top layer's `::backdrop`. The
+          keyboard contract below (arrows, Home/End, Enter, Escape, Tab cycling)
+          is unchanged. */}
+      <dialog
         ref={panelRef}
         className="or-palette__panel"
-        role="dialog"
+        open
         aria-modal="true"
         aria-labelledby={titleId}
-        onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className="or-visually-hidden">
           Command palette
@@ -206,8 +215,14 @@ function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setActiveIndex(0);
+              setRequestedIndex(0);
             }}
+            /* Every key the palette understands is handled here rather than on
+               the dialog around it. In the ARIA combobox pattern this field is
+               the only thing that ever holds focus, so it is the only element a
+               keystroke can originate from; a handler on the dialog would be
+               catching its own child's bubbles. */
+            onKeyDown={onKeyDown}
             role="combobox"
             aria-expanded="true"
             aria-controls={listId}
@@ -241,6 +256,14 @@ function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
                   const index = flat.indexOf(command);
                   const selected = index === activeIndex;
                   return (
+                    /* No key handler here, on purpose. In the ARIA combobox
+                       pattern the options are not focus targets: DOM focus
+                       stays in the text field above, which owns
+                       ArrowUp/ArrowDown/Home/End/Enter/Escape and publishes the
+                       highlight through `aria-activedescendant`. A keydown
+                       listener on an element that can never hold focus would be
+                       unreachable code, so the click handler stands alone as
+                       the pointer affordance. */
                     <div
                       key={command.id}
                       id={`${baseId}-option-${command.id}`}
@@ -251,7 +274,7 @@ function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
                           ? 'or-palette__option or-palette__option--active'
                           : 'or-palette__option'
                       }
-                      onMouseMove={() => setActiveIndex(index)}
+                      onMouseMove={() => setRequestedIndex(index)}
                       onClick={() => run(command)}
                     >
                       {command.icon ? (
@@ -274,7 +297,7 @@ function CommandPaletteDialog({ onClose }: CommandPaletteDialogProps) {
         <p className="or-palette__footer or-caption">
           Arrow keys move, Enter opens, Escape closes.
         </p>
-      </div>
+      </dialog>
     </div>
   );
 }

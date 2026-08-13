@@ -28,7 +28,7 @@ import { formatDate, formatMoney } from '@/lib/format';
  * on. Anything that did not match what the claim expected is lifted into an
  * exception queue above the ledger, with its disposition available in the row.
  *
- * There is no file anywhere on this screen. The OpenEMR flow was upload, then
+ * There is no file anywhere on this screen. The legacy flow was upload, then
  * review, then trust the biller to notice a short payment across two columns;
  * here the variance is computed, labelled in words, and the only thing asked of
  * a person is the decision a person is actually needed for.
@@ -39,7 +39,7 @@ export interface RemittanceScreenProps {
   client?: BillingClient;
 }
 
-export function RemittanceScreen({ client }: RemittanceScreenProps = {}): ReactElement {
+export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): ReactElement {
   const remittancesState = useRemittances({}, { client });
   const remittances = useMemo(() => remittancesState.data?.data ?? [], [remittancesState.data]);
 

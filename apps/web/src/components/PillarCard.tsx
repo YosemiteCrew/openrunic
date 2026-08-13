@@ -3,7 +3,7 @@ export interface PillarCardProps {
   description: string;
 }
 
-export function PillarCard({ title, description }: PillarCardProps) {
+export function PillarCard({ title, description }: Readonly<PillarCardProps>) {
   return (
     <article className="pillar-card">
       <h2>{title}</h2>

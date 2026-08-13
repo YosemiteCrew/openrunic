@@ -42,7 +42,7 @@ export function RemittanceLines({
   resolutions,
   onResolve,
   caption,
-}: RemittanceLinesProps): ReactElement {
+}: Readonly<RemittanceLinesProps>): ReactElement {
   const columns: TableColumn[] = [
     { key: 'claim', header: 'Claim', mono: true },
     { key: 'patient', header: 'Patient' },

@@ -18,15 +18,23 @@ import {
   useToasts,
 } from '@/components/billing';
 import { ScreenCommands } from '@/components/command';
+import type { FeeSheetTotals } from '@/components/billing';
 import type { Command } from '@/components/command';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_PROCEDURE_PANELS, useFeeSheets } from '@/lib/api';
 import type { BillingClient, ChargeLine, FeeSheet, ProcedureCode } from '@/lib/api';
-import { formatDate, formatMoney, formatMrn, formatName, formatTime } from '@/lib/format';
+import {
+  formatCount,
+  formatDate,
+  formatMoney,
+  formatMrn,
+  formatName,
+  formatTime,
+} from '@/lib/format';
 
 /**
- * BL-01 Fee sheet. The most-complained OpenEMR screen, rebuilt.
+ * BL-01 Fee sheet. The most-complained-about screen in legacy EMRs, rebuilt.
  *
  * Three decisions carry the whole screen. Every capability is a visible,
  * labelled control, because the original's features were undiscoverable.
@@ -49,7 +57,121 @@ export interface ChargesScreenProps {
   client?: BillingClient;
 }
 
-export function ChargesScreen({ client }: ChargesScreenProps = {}): ReactElement {
+/**
+ * The line under the "Mark ready" button: why the button is disabled, or that
+ * the work is done. It always says something, because a disabled control with
+ * no reason beside it is the thing this screen exists to stop.
+ */
+function readyHint(isReady: boolean, blockingCount: number): string {
+  if (isReady) return 'This visit is in the claim pipeline.';
+  if (blockingCount === 0) return 'Charges are clean.';
+  return `${formatCount(blockingCount, 'error blocks', 'errors block')} billing. See the scrub panel.`;
+}
+
+/**
+ * The copay chip on the visit header: due and taken, due and short, or nothing
+ * owed. Money is always named as money, never implied by a tone.
+ */
+function CopayBadge({ sheet }: Readonly<{ sheet: FeeSheet }>): ReactElement {
+  const money = (amount: number): string => formatMoney(amount, { currency: sheet.currency }).text;
+
+  if (sheet.copayDue === 0) {
+    return (
+      <Badge tone="neutral" icon="minus">
+        No copay due
+      </Badge>
+    );
+  }
+  if (sheet.copayCollected >= sheet.copayDue) {
+    return <Badge tone="success">Copay collected {money(sheet.copayCollected)}</Badge>;
+  }
+  return (
+    <Badge tone="danger">Copay outstanding {money(sheet.copayDue - sheet.copayCollected)}</Badge>
+  );
+}
+
+/**
+ * One visit's charges, with the money it adds up to underneath.
+ *
+ * Its own component so the totals sit next to the lines that produce them: a
+ * fee sheet whose footer is computed three hundred lines away from its rows is
+ * a fee sheet nobody checks.
+ */
+function VisitCharges({
+  sheet,
+  lines,
+  totals,
+  isReady,
+  onToggleJustify,
+  onModifierChange,
+  onUnitsChange,
+  onSetDeleted,
+}: Readonly<{
+  sheet: FeeSheet;
+  lines: readonly ChargeLine[];
+  totals: FeeSheetTotals | null;
+  isReady: boolean;
+  onToggleJustify: (lineId: string, code: string) => void;
+  onModifierChange: (lineId: string, modifier: string) => void;
+  onUnitsChange: (lineId: string, units: number) => void;
+  onSetDeleted: (lineId: string, deleted: boolean) => void;
+}>): ReactElement {
+  return (
+    <Card
+      overline="Visit"
+      title={formatName(sheet.patient.name)}
+      footer={
+        totals ? (
+          <dl className="or-totals">
+            <div className="or-totals__row">
+              <dt>Charges</dt>
+              <dd>
+                <Money amount={totals.charges} currency={sheet.currency} emphasis />
+              </dd>
+            </div>
+            <div className="or-totals__row">
+              <dt>Copay collected</dt>
+              <dd>
+                <Money amount={totals.copayCollected} currency={sheet.currency} />
+              </dd>
+            </div>
+            <div className="or-totals__row">
+              <dt>Expected from payer</dt>
+              <dd>
+                <Money amount={totals.expectedFromPayer} currency={sheet.currency} />
+              </dd>
+            </div>
+          </dl>
+        ) : null
+      }
+    >
+      <div className="or-visit-header">
+        <Tag mono>{formatMrn(sheet.patient.mrn)}</Tag>
+        <Tag>{sheet.visitType}</Tag>
+        <Tag>{sheet.providerName}</Tag>
+        <span className="or-small">
+          {formatDate(sheet.serviceDate)}, {formatTime(sheet.serviceDate)}
+        </span>
+        <CopayBadge sheet={sheet} />
+        {isReady ? <Badge tone="success">Ready for billing</Badge> : null}
+      </div>
+
+      <ChargeLines
+        lines={lines}
+        diagnoses={sheet.diagnoses}
+        currency={sheet.currency}
+        readOnly={isReady}
+        onToggleJustify={onToggleJustify}
+        onModifierChange={onModifierChange}
+        onUnitsChange={onUnitsChange}
+        onDelete={(lineId) => onSetDeleted(lineId, true)}
+        onRestore={(lineId) => onSetDeleted(lineId, false)}
+      />
+    </Card>
+  );
+}
+
+export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactElement {
   const sheetsState = useFeeSheets({}, { client });
   const sheets = useMemo(() => sheetsState.data?.data ?? [], [sheetsState.data]);
 
@@ -238,11 +360,7 @@ export function ChargesScreen({ client }: ChargesScreenProps = {}): ReactElement
               Mark ready for billing
             </Button>
             <p className="or-caption or-billing__action-hint">
-              {isReady
-                ? 'This visit is in the claim pipeline.'
-                : blocking.length > 0
-                  ? `${blocking.length} ${blocking.length === 1 ? 'error blocks' : 'errors block'} billing. See the scrub panel.`
-                  : 'Charges are clean.'}
+              {readyHint(isReady, blocking.length)}
             </p>
           </div>
         ) : null
@@ -274,79 +392,16 @@ export function ChargesScreen({ client }: ChargesScreenProps = {}): ReactElement
         {() =>
           sheet ? (
             <>
-              <Card
-                overline="Visit"
-                title={formatName(sheet.patient.name)}
-                footer={
-                  totals ? (
-                    <dl className="or-totals">
-                      <div className="or-totals__row">
-                        <dt>Charges</dt>
-                        <dd>
-                          <Money amount={totals.charges} currency={sheet.currency} emphasis />
-                        </dd>
-                      </div>
-                      <div className="or-totals__row">
-                        <dt>Copay collected</dt>
-                        <dd>
-                          <Money amount={totals.copayCollected} currency={sheet.currency} />
-                        </dd>
-                      </div>
-                      <div className="or-totals__row">
-                        <dt>Expected from payer</dt>
-                        <dd>
-                          <Money amount={totals.expectedFromPayer} currency={sheet.currency} />
-                        </dd>
-                      </div>
-                    </dl>
-                  ) : null
-                }
-              >
-                <div className="or-visit-header">
-                  <Tag mono>{formatMrn(sheet.patient.mrn)}</Tag>
-                  <Tag>{sheet.visitType}</Tag>
-                  <Tag>{sheet.providerName}</Tag>
-                  <span className="or-small">
-                    {formatDate(sheet.serviceDate)}, {formatTime(sheet.serviceDate)}
-                  </span>
-                  {sheet.copayDue === 0 ? (
-                    <Badge tone="neutral" icon="minus">
-                      No copay due
-                    </Badge>
-                  ) : sheet.copayCollected >= sheet.copayDue ? (
-                    <Badge tone="success">
-                      Copay collected{' '}
-                      {
-                        formatMoney(sheet.copayCollected, {
-                          currency: sheet.currency,
-                        }).text
-                      }
-                    </Badge>
-                  ) : (
-                    <Badge tone="danger">
-                      Copay outstanding{' '}
-                      {
-                        formatMoney(sheet.copayDue - sheet.copayCollected, {
-                          currency: sheet.currency,
-                        }).text
-                      }
-                    </Badge>
-                  )}
-                  {isReady ? <Badge tone="success">Ready for billing</Badge> : null}
-                </div>
-
-                <ChargeLines
-                  lines={lines}
-                  diagnoses={sheet.diagnoses}
-                  currency={sheet.currency}
-                  readOnly={isReady}
-                  onToggleJustify={toggleJustify}
-                  onModifierChange={setModifier}
-                  onUnitsChange={setUnits}
-                  onDelete={(lineId) => setDeleted(lineId, true)}
-                  onRestore={(lineId) => setDeleted(lineId, false)}
-                />
-              </Card>
+              <VisitCharges
+                sheet={sheet}
+                lines={lines}
+                totals={totals}
+                isReady={isReady}
+                onToggleJustify={toggleJustify}
+                onModifierChange={setModifier}
+                onUnitsChange={setUnits}
+                onSetDeleted={setDeleted}
+              />
 
               <ChargePicker
                 catalog={sheet.catalog}

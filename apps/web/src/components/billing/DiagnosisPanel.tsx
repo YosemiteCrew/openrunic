@@ -4,6 +4,7 @@ import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { ChargeDiagnosis, ChargeLine } from '@/lib/api';
+import { formatCount } from '@/lib/format';
 
 import { diagnosisPointer } from './billing';
 
@@ -22,7 +23,7 @@ export interface DiagnosisPanelProps {
   lines: readonly ChargeLine[];
 }
 
-export function DiagnosisPanel({ diagnoses, lines }: DiagnosisPanelProps): ReactElement {
+export function DiagnosisPanel({ diagnoses, lines }: Readonly<DiagnosisPanelProps>): ReactElement {
   const active = lines.filter((line) => !line.deleted);
 
   return (
@@ -49,9 +50,7 @@ export function DiagnosisPanel({ diagnoses, lines }: DiagnosisPanelProps): React
                   Not linked
                 </Badge>
               ) : (
-                <Badge tone="success">
-                  {uses} {uses === 1 ? 'charge' : 'charges'}
-                </Badge>
+                <Badge tone="success">{formatCount(uses, 'charge')}</Badge>
               )}
             </li>
           );

@@ -6,11 +6,13 @@ import type { ReactElement } from 'react';
 import type { PermissionRow, StaffRole } from '@/lib/api';
 import { STAFF_ROLE_LABELS } from '@/lib/api';
 
+import { isAllowed } from './permissions';
+
 /**
  * The role editor's permission matrix.
  *
- * The OpenEMR failure this exists to avoid: phpGACL's group and section maze,
- * which admins configured wrong and never found out. So every capability is a
+ * The legacy failure this exists to avoid: the group and section maze of
+ * inherited ACL libraries, which admins configured wrong and never found out. So every capability is a
  * sentence, every cell is a labelled checkbox rather than a coloured dot, and
  * the summary above the grid says in plain language what the selected role can
  * do. Policy is enforced at the data layer regardless of what this grid shows;
@@ -27,41 +29,13 @@ export interface PermissionMatrixProps {
   disabled?: boolean;
 }
 
-export function permissionKey(capabilityId: string, role: StaffRole): string {
-  return `${capabilityId}:${role}`;
-}
-
-export function isAllowed(
-  row: PermissionRow,
-  role: StaffRole,
-  overrides: Record<string, boolean>
-): boolean {
-  return overrides[permissionKey(row.id, role)] ?? row.roles[role] === 'ALLOW';
-}
-
-/** "Can view charts, edit charts and sign notes. Cannot work claims." */
-export function summariseRole(
-  rows: PermissionRow[],
-  role: StaffRole,
-  overrides: Record<string, boolean>
-): string {
-  const can = rows.filter((row) => isAllowed(row, role, overrides));
-  const cannot = rows.filter((row) => !isAllowed(row, role, overrides));
-  const list = (items: PermissionRow[]) =>
-    items.map((row) => row.capability.toLowerCase()).join(', ');
-
-  if (can.length === 0) return 'This role can do nothing yet. Grant at least one capability.';
-  const cannotSentence = cannot.length === 0 ? '' : ` Cannot ${list(cannot)}.`;
-  return `Can ${list(can)}.${cannotSentence}`;
-}
-
 export function PermissionMatrix({
   rows,
   roles,
   overrides,
   onToggle,
   disabled = false,
-}: PermissionMatrixProps): ReactElement {
+}: Readonly<PermissionMatrixProps>): ReactElement {
   return (
     <div className="or-matrix">
       <table className="or-matrix__grid">

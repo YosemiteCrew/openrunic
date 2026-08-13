@@ -6,12 +6,8 @@ import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { DetailList } from '@/components/admin/DetailList';
 import { Drawer } from '@/components/admin/Drawer';
 import { FilterBar } from '@/components/admin/FilterBar';
-import {
-  isAllowed,
-  PermissionMatrix,
-  permissionKey,
-  summariseRole,
-} from '@/components/admin/PermissionMatrix';
+import { PermissionMatrix } from '@/components/admin/PermissionMatrix';
+import { isAllowed, permissionKey, summariseRole } from '@/components/admin/permissions';
 import { TabPanel, Tabs } from '@/components/admin/Tabs';
 import { MOCK_PERMISSIONS } from '@/lib/api';
 import type { PermissionRow } from '@/lib/api';
@@ -105,16 +101,26 @@ describe('Tabs', () => {
 
   it('moves between tabs with the arrow keys and wraps at the ends', () => {
     render(<Harness />);
-    const list = screen.getByRole('tablist', { name: 'Developer platform sections' });
+    // Roving tabindex: exactly one tab is in the tab order, and the arrow keys
+    // are pressed on it, which is where a keyboard user's focus actually is.
+    const selectedTab = () => screen.getByRole('tab', { selected: true });
 
-    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    fireEvent.keyDown(selectedTab(), { key: 'ArrowRight' });
     expect(screen.getByText('apps panel')).toBeInTheDocument();
 
-    fireEvent.keyDown(list, { key: 'End' });
+    fireEvent.keyDown(selectedTab(), { key: 'End' });
     expect(screen.getByText('webhooks panel')).toBeInTheDocument();
 
-    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    fireEvent.keyDown(selectedTab(), { key: 'ArrowRight' });
     expect(screen.getByText('keys panel')).toBeInTheDocument();
+  });
+
+  it('keeps only the selected tab in the tab order', () => {
+    render(<Harness />);
+    const tabs = screen.getAllByRole('tab');
+
+    expect(tabs.filter((tab) => tab.getAttribute('tabindex') === '0')).toHaveLength(1);
+    expect(screen.getByRole('tab', { selected: true })).toHaveAttribute('tabindex', '0');
   });
 
   it('unmounts the inactive panels rather than hiding them', () => {
@@ -245,5 +251,117 @@ describe('FilterBar and DetailList', () => {
     render(<DetailList items={[{ label: 'NPI', value: 'Not recorded', mono: true }]} />);
     expect(screen.getByText('NPI')).toBeInTheDocument();
     expect(screen.getByText('Not recorded')).toBeInTheDocument();
+  });
+});
+
+describe('Drawer, the focus trap', () => {
+  function TrapHarness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open the drawer
+        </button>
+        <Drawer
+          open={open}
+          title="Dev Sandoval"
+          onClose={() => setOpen(false)}
+          footer={
+            <button type="button" id="save">
+              Save
+            </button>
+          }
+        >
+          <input aria-label="Display name" defaultValue="Dev" />
+        </Drawer>
+      </>
+    );
+  }
+
+  it('cycles Tab from the last stop back to the first, never onto the page behind', () => {
+    render(<TrapHarness />);
+    const dialog = screen.getByRole('dialog');
+    const stops = within(dialog).getAllByRole('button');
+    const last = screen.getByRole('button', { name: 'Save' });
+    const first = stops[0]!;
+
+    last.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    // The page behind an open drawer is not reachable: Tab from the last stop
+    // lands on the first, rather than on the button that opened it.
+    expect(first).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Open the drawer' })).not.toHaveFocus();
+  });
+
+  it('cycles Shift-Tab from the first stop round to the last', () => {
+    render(<TrapHarness />);
+    const dialog = screen.getByRole('dialog');
+    const first = within(dialog).getAllByRole('button')[0]!;
+
+    first.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus();
+  });
+
+  it('leaves an ordinary Tab in the middle of the panel alone', () => {
+    render(<TrapHarness />);
+    const field = screen.getByLabelText('Display name');
+
+    field.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    // Not at either end, so the browser moves focus itself; the trap must not
+    // yank the caret back to the top of the panel on every keystroke.
+    expect(field).toHaveFocus();
+  });
+
+  it('pulls focus back in when it has escaped to the page behind', () => {
+    render(<TrapHarness />);
+    const outside = screen.getByRole('button', { name: 'Open the drawer' });
+
+    outside.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+
+  it('returns focus to whatever opened it', () => {
+    render(<TrapHarness />);
+    const opener = screen.getByRole('button', { name: 'Open the drawer' });
+
+    opener.focus();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]!);
+
+    // A keyboard user is never dropped at the top of the page when a panel
+    // closes: they are put back where they were.
+    expect(opener).toHaveFocus();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes when the scrim behind it is clicked', () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <Drawer open title="Dev Sandoval" onClose={onClose}>
+        body
+      </Drawer>
+    );
+
+    fireEvent.click(container.querySelector('.or-drawer__scrim')!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('traps nothing when the panel has no focusable stop of its own', () => {
+    render(
+      <Drawer open title="Empty" onClose={vi.fn()}>
+        <p>Nothing to interact with.</p>
+      </Drawer>
+    );
+
+    // The header close button is always a stop, so the panel is never a dead
+    // end; Tab stays inside it.
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
   });
 });

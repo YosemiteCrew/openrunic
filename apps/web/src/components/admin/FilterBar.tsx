@@ -21,23 +21,26 @@ export interface FilterBarProps {
   summary?: ReactNode;
 }
 
-export function FilterBar({ label, children, actions, summary }: FilterBarProps): ReactElement {
+export function FilterBar({
+  label,
+  children,
+  actions,
+  summary,
+}: Readonly<FilterBarProps>): ReactElement {
   return (
     // A group rather than a landmark region: these are related controls, not a
     // section of the page, and a filter bar on every screen would litter the
     // landmark list.
-    <div className="or-filterbar" role="group" aria-label={label}>
+    <fieldset className="or-filterbar" aria-label={label}>
       <div className="or-filterbar__fields">{children}</div>
       <div className="or-filterbar__end">
         {summary ? (
           // Polite: the count changes as filters change, and a screen reader
           // user needs to hear the result without chasing the table.
-          <p className="or-small or-filterbar__summary" role="status">
-            {summary}
-          </p>
+          <output className="or-small or-filterbar__summary">{summary}</output>
         ) : null}
         {actions ? <div className="or-filterbar__actions">{actions}</div> : null}
       </div>
-    </div>
+    </fieldset>
   );
 }

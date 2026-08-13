@@ -14,6 +14,7 @@ import {
   MOCK_REMITTANCES,
   MOCK_STATEMENT_ACCOUNTS,
 } from './mock/billing';
+import { paginate } from './pagination';
 import type { ListResponse, PaginationQuery, PatientName } from './types';
 
 /**
@@ -384,25 +385,6 @@ export interface PaymentListQuery extends PaginationQuery {
 /* -------------------------------------------------------------------------- */
 /* Client                                                                      */
 /* -------------------------------------------------------------------------- */
-
-const DEFAULT_PAGE_SIZE = 25;
-const MAX_PAGE_SIZE = 100;
-
-function paginate<T>(rows: readonly T[], page = 1, pageSize = DEFAULT_PAGE_SIZE): ListResponse<T> {
-  const size = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
-  const current = Math.max(page, 1);
-  const start = (current - 1) * size;
-  return {
-    data: rows.slice(start, start + size),
-    page: {
-      page: current,
-      pageSize: size,
-      total: rows.length,
-      // A zero-result filter still has one (empty) page, so the footer renders.
-      totalPages: Math.max(1, Math.ceil(rows.length / size)),
-    },
-  };
-}
 
 /** The read surface the five billing screens share. */
 export interface BillingClient {

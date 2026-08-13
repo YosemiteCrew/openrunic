@@ -1,8 +1,8 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CommandProvider } from '@/components/command';
+import { CommandPalette, CommandProvider } from '@/components/command';
 import { contentHash, NoteEditor } from '@/components/encounter';
 import { SLASH_COMMANDS } from '@/lib/api/chart';
 import type { EncounterNote } from '@/lib/api/chart';
@@ -216,6 +216,101 @@ describe('NoteEditor, signed', () => {
   });
 });
 
+/**
+ * The slash menu without a pointer.
+ *
+ * The options carry pointer handlers and no key handler, which is only sound
+ * because the textarea owns the keyboard. Nothing below fires a pointer event:
+ * the list is opened by typing, walked with the arrow keys, and committed with
+ * Enter, and the caret never leaves the note while it happens.
+ */
+describe('NoteEditor slash commands, keyboard only', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function openMenu(): { plan: HTMLElement; options: HTMLElement[] } {
+    renderEditor(unsigned);
+    const plan = screen.getByRole('textbox', { name: 'Plan' });
+    plan.focus();
+    fireEvent.change(plan, { target: { value: '/' } });
+    return { plan, options: screen.getAllByRole('option') };
+  }
+
+  it('opens the whole list from a typed slash and points the textarea at the first option', () => {
+    const { plan, options } = openMenu();
+
+    expect(options).toHaveLength(SLASH_COMMANDS.length);
+    expect(plan).toHaveAttribute('aria-controls', 'note-block-plan-listbox');
+    expect(plan).toHaveAttribute('aria-activedescendant', options[0]?.id);
+    expect(plan).toHaveFocus();
+  });
+
+  it('commits the command the arrow keys landed on, caret still in the note', async () => {
+    const { plan, options } = openMenu();
+    const third = SLASH_COMMANDS[2];
+
+    fireEvent.keyDown(plan, { key: 'ArrowDown' });
+    fireEvent.keyDown(plan, { key: 'ArrowDown' });
+
+    expect(plan).toHaveAttribute('aria-activedescendant', options[2]?.id);
+    expect(options[2]).toHaveAttribute('aria-selected', 'true');
+    expect(options[0]).toHaveAttribute('aria-selected', 'false');
+
+    fireEvent.keyDown(plan, { key: 'Enter' });
+
+    await waitFor(() => expect(plan).toHaveValue(third?.insertText));
+    const written = screen.getByRole('list', { name: 'Written to the chart from plan' });
+    expect(within(written).getByText('Problem: Essential hypertension (I10)')).toBeInTheDocument();
+    expect(plan).toHaveFocus();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('reaches the last command by pressing Up at the top of the list', async () => {
+    const { plan, options } = openMenu();
+    const last = SLASH_COMMANDS[SLASH_COMMANDS.length - 1];
+
+    fireEvent.keyDown(plan, { key: 'ArrowUp' });
+
+    expect(plan).toHaveAttribute('aria-activedescendant', options.at(-1)?.id);
+
+    fireEvent.keyDown(plan, { key: 'Enter' });
+    await waitFor(() => expect(plan).toHaveValue(last?.insertText));
+  });
+
+  it('scrolls the highlighted command back into view as the selection moves', () => {
+    const revealed: Element[] = [];
+    vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function reveal(
+      this: Element
+    ) {
+      revealed.push(this);
+    });
+
+    const { plan, options } = openMenu();
+    revealed.length = 0;
+
+    fireEvent.keyDown(plan, { key: 'ArrowDown' });
+
+    expect(revealed.at(-1)).toBe(options[1]);
+  });
+
+  it('announces how many commands are on offer, for a reader that cannot see them', () => {
+    const { plan } = openMenu();
+
+    /* Every block owns a live region; only the block with the list open says
+       anything, so the reader is never told about a menu somewhere else. */
+    const announcing = () => screen.getAllByRole('status').filter((node) => node.textContent);
+
+    expect(announcing()).toHaveLength(1);
+    expect(announcing()[0]).toHaveTextContent(
+      `${SLASH_COMMANDS.length} commands available. Use the arrow keys and Enter.`
+    );
+
+    fireEvent.change(plan, { target: { value: '/presc' } });
+    expect(announcing()[0]).toHaveTextContent('1 command available. Use the arrow keys and Enter.');
+  });
+});
+
 describe('contentHash', () => {
   it('is stable for the same text and different for different text', () => {
     expect(contentHash(unsigned.sections)).toBe(contentHash(unsigned.sections));
@@ -224,5 +319,189 @@ describe('contentHash', () => {
 
   it('reads as a grouped hash rather than a bare number', () => {
     expect(contentHash(signed.sections)).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}$/);
+  });
+});
+
+describe('NoteEditor, the slash menu at its edges', () => {
+  function plan(): HTMLElement {
+    return screen.getByRole('textbox', { name: 'Plan' });
+  }
+
+  it('opens from the labelled button when the caret sits mid-sentence', () => {
+    renderEditor(unsigned);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert a command in plan' }));
+
+    // Opened without a typed slash: the whole library is on offer.
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.getAllByRole('option').length).toBe(SLASH_COMMANDS.length);
+  });
+
+  it('separates the inserted text from what is already written', () => {
+    renderEditor(unsigned);
+    const field = plan();
+
+    fireEvent.change(field, { target: { value: 'Continue metformin /' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    // The `/token` is consumed rather than left in the chart, and exactly one
+    // space separates the inserted narrative from the last word written.
+    const written = (field as HTMLTextAreaElement).value;
+    expect(written).toMatch(/^Continue metformin \S/);
+    expect(written).not.toContain('/');
+  });
+
+  it('inserts at the start of an empty block without a leading space', () => {
+    renderEditor(unsigned);
+    const field = plan();
+
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.change(field, { target: { value: '/' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect((field as HTMLTextAreaElement).value).not.toMatch(/^\s/);
+    expect((field as HTMLTextAreaElement).value.length).toBeGreaterThan(0);
+  });
+
+  it('leaves other keys alone while the menu is open', () => {
+    renderEditor(unsigned);
+    const field = plan();
+
+    fireEvent.change(field, { target: { value: '/' } });
+    fireEvent.keyDown(field, { key: 'Tab' });
+    fireEvent.keyDown(field, { key: 'a' });
+
+    // Tab still moves out of the field, and an ordinary letter still types:
+    // the menu intercepts navigation keys only.
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('takes no key at all when the menu is closed', () => {
+    renderEditor(unsigned);
+    const field = plan();
+    const before = (field as HTMLTextAreaElement).value;
+
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect((field as HTMLTextAreaElement).value).toBe(before);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('holds the arrow keys still when the filter matches nothing', () => {
+    renderEditor(unsigned);
+    const field = plan();
+
+    fireEvent.change(field, { target: { value: '/zzzz' } });
+    expect(screen.getByText(/No command matches/)).toBeInTheDocument();
+
+    // No option to move to and none to commit: neither key may throw, and
+    // Enter must not insert an undefined command into the chart.
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    fireEvent.keyDown(field, { key: 'ArrowUp' });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect((field as HTMLTextAreaElement).value).toBe('/zzzz');
+  });
+
+  it('closes the menu when the slash is deleted again', () => {
+    renderEditor(unsigned);
+    const field = plan();
+
+    fireEvent.change(field, { target: { value: '/hpi' } });
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    fireEvent.change(field, { target: { value: 'hpi' } });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(field).not.toHaveAttribute('aria-controls');
+  });
+});
+
+describe('NoteEditor, signing and its confirmations', () => {
+  it('cancels the addendum confirmation, keeping the text to sign later', () => {
+    renderEditor(signed);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add addendum' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Addendum text' }), {
+      target: { value: 'Ferritin repeated on 20 May.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign addendum' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Addendum text' })).toHaveValue(
+      'Ferritin repeated on 20 May.'
+    );
+    expect(screen.getAllByText('Addendum')).toHaveLength(1);
+  });
+
+  it('discards a half-written addendum, clearing the text with it', () => {
+    renderEditor(signed);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add addendum' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Addendum text' }), {
+      target: { value: 'Started typing the wrong thing' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard addendum' }));
+
+    expect(screen.queryByRole('textbox', { name: 'Addendum text' })).not.toBeInTheDocument();
+
+    // Reopening starts blank, rather than restoring the discarded draft.
+    fireEvent.click(screen.getByRole('button', { name: 'Add addendum' }));
+    expect(screen.getByRole('textbox', { name: 'Addendum text' })).toHaveValue('');
+  });
+
+  it('offers the addendum verb rather than the sign verb once a note is locked', async () => {
+    render(
+      <CommandProvider defaultOpen>
+        <NoteEditor note={signed} commands={SLASH_COMMANDS} />
+        <CommandPalette />
+      </CommandProvider>
+    );
+
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+    expect(within(palette).getByText('Add addendum')).toBeInTheDocument();
+    // A signed note cannot be signed again, so the verb is not offered at all.
+    expect(within(palette).queryByText('Sign note')).not.toBeInTheDocument();
+  });
+
+  it('renders a locked block with nothing in it as an absence, not a blank', () => {
+    const empty: EncounterNote = {
+      ...signed,
+      sections: signed.sections.map((section) => ({ ...section, text: '' })),
+    };
+    render(
+      <CommandProvider>
+        <NoteEditor note={empty} commands={SLASH_COMMANDS} />
+      </CommandProvider>
+    );
+
+    expect(screen.getAllByText('Nothing recorded in this block.')).toHaveLength(
+      signed.sections.length
+    );
+  });
+
+  it('clears its own toast after the message has been read', async () => {
+    vi.useFakeTimers();
+    try {
+      renderEditor(unsigned);
+      fireEvent.click(screen.getByRole('button', { name: 'Sign note' }));
+      fireEvent.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Sign note' })
+      );
+      const toastMessage = /This build keeps note changes in the browser/;
+      expect(screen.getByText(toastMessage)).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5100);
+      });
+
+      // A confirmation that never leaves becomes furniture nobody reads.
+      expect(screen.queryByText(toastMessage)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

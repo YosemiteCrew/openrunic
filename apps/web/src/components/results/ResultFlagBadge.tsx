@@ -6,6 +6,8 @@ import type { ReactElement } from 'react';
 
 import type { ResultFlag } from '@/lib/api';
 
+import { RESULT_FLAG_LABELS } from './flag-labels';
+
 /**
  * The triage flag, as a labelled chip.
  *
@@ -20,12 +22,6 @@ const FLAG_TONE: Record<ResultFlag, BadgeTone> = {
   CRITICAL: 'danger',
 };
 
-const FLAG_LABEL: Record<ResultFlag, string> = {
-  NORMAL: 'In range',
-  ABNORMAL: 'Above or below range',
-  CRITICAL: 'Critical value',
-};
-
 const FLAG_ICON: Record<ResultFlag, string> = {
   NORMAL: 'check',
   ABNORMAL: 'triangle-alert',
@@ -36,12 +32,10 @@ export interface ResultFlagBadgeProps {
   flag: ResultFlag;
 }
 
-export function ResultFlagBadge({ flag }: ResultFlagBadgeProps): ReactElement {
+export function ResultFlagBadge({ flag }: Readonly<ResultFlagBadgeProps>): ReactElement {
   return (
     <Badge tone={FLAG_TONE[flag]} icon={FLAG_ICON[flag]}>
-      {FLAG_LABEL[flag]}
+      {RESULT_FLAG_LABELS[flag]}
     </Badge>
   );
 }
-
-export { FLAG_LABEL as RESULT_FLAG_LABELS };

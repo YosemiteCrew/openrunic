@@ -20,7 +20,7 @@ export interface SparklineProps {
 
 const HEIGHT = 32;
 
-export function Sparkline({ values, width = 96 }: SparklineProps): ReactElement | null {
+export function Sparkline({ values, width = 96 }: Readonly<SparklineProps>): ReactElement | null {
   if (values.length < 2) return null;
 
   const min = Math.min(...values);
@@ -49,12 +49,4 @@ export function Sparkline({ values, width = 96 }: SparklineProps): ReactElement 
       <polyline points={points} fill="none" strokeWidth="1.75" strokeLinejoin="round" />
     </svg>
   );
-}
-
-/** "rising", "falling", "steady" - the word that goes beside the drawing. */
-export function trendWord(values: number[]): string {
-  const first = values[0];
-  const last = values[values.length - 1];
-  if (first === undefined || last === undefined || first === last) return 'steady';
-  return last > first ? 'rising' : 'falling';
 }

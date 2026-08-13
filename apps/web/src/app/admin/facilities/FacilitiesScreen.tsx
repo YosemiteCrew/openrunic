@@ -12,14 +12,15 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { useAdminClientOption, useFacilities } from '@/lib/api';
 import type { AdminClient, Facility } from '@/lib/api';
+import { formatCount } from '@/lib/format';
 
 /**
  * AD-02 Facilities.
  *
  * One screen owns the physical practice: identity and billing attributes, the
  * hours grid the slot engine reads, and the rooms the Flow Board reads. In
- * OpenEMR those three lived in globals, the facility table and the multisite
- * module; splitting them is how a practice ends up booking into a room that
+ * legacy systems those three lived in server globals, the facility table and a
+ * multisite module; splitting them is how a practice ends up booking into a room that
  * does not exist.
  *
  * Single-facility practices see no multi-facility chrome: the list renders, the
@@ -42,7 +43,7 @@ function hoursSummary(facility: Facility): string {
   return `${open.length} days a week`;
 }
 
-export function FacilitiesScreen({ client }: FacilitiesScreenProps = {}): ReactElement {
+export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): ReactElement {
   const options = useAdminClientOption(client);
   const facilities = useFacilities(options);
 
@@ -140,9 +141,7 @@ export function FacilitiesScreen({ client }: FacilitiesScreenProps = {}): ReactE
                     {facility.isPrimary ? <Tag>Primary</Tag> : null}
                     <Tag mono>POS {facility.posCode}</Tag>
                     <Tag>{facility.posLabel}</Tag>
-                    <Tag>
-                      {facility.rooms.length} {facility.rooms.length === 1 ? 'room' : 'rooms'}
-                    </Tag>
+                    <Tag>{formatCount(facility.rooms.length, 'room')}</Tag>
                     <Tag>{hoursSummary(facility)}</Tag>
                   </div>
 

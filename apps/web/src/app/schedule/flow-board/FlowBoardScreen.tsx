@@ -52,11 +52,11 @@ const NO_APPOINTMENTS: readonly Appointment[] = [];
 const NO_PATIENTS: ReadonlyMap<string, Patient> = new Map();
 
 /** Every status that puts a card on the board, in any column. */
-const ON_BOARD: readonly AppointmentStatus[] = FLOW_COLUMNS.flatMap((column) => [
-  ...column.statuses,
-]);
+const ON_BOARD: ReadonlySet<AppointmentStatus> = new Set(
+  FLOW_COLUMNS.flatMap((column) => [...column.statuses])
+);
 
-export function FlowBoardScreen({ client }: FlowBoardScreenProps = {}): ReactElement {
+export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): ReactElement {
   const [providerId, setProviderId] = useState('');
   const [room, setRoom] = useState('');
   const [delayedOnly, setDelayedOnly] = useState(false);
@@ -85,7 +85,7 @@ export function FlowBoardScreen({ client }: FlowBoardScreenProps = {}): ReactEle
   const onBoard = useMemo(
     () =>
       appointments.filter((appointment) => {
-        if (!ON_BOARD.includes(statusOf(appointment))) return false;
+        if (!ON_BOARD.has(statusOf(appointment))) return false;
         if (room && roomOf(appointment) !== room) return false;
         if (delayedOnly) {
           const waited = minutesBetween(mockStatusSince(appointment), now);
@@ -116,12 +116,13 @@ export function FlowBoardScreen({ client }: FlowBoardScreenProps = {}): ReactEle
     const previousRoom = roomOf(appointment);
     const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
 
+    // Named once: the toast says the same "who" whichever branch it takes.
+    const who = patient ? givenName(patient.name) : 'This visit';
+
     setRoomOverrides((previous) => ({ ...previous, [appointment.id]: next }));
     setToast({
       title: next ? 'Room assigned' : 'Room cleared',
-      message: next
-        ? `${patient ? givenName(patient.name) : 'This visit'} is in ${next}.`
-        : `${patient ? givenName(patient.name) : 'This visit'} has no room.`,
+      message: next ? `${who} is in ${next}.` : `${who} has no room.`,
       undo: () =>
         setRoomOverrides((previous) => ({ ...previous, [appointment.id]: previousRoom ?? '' })),
     });

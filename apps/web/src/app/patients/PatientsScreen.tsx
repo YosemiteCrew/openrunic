@@ -12,6 +12,7 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { usePatients } from '@/lib/api';
 import type { ApiClient } from '@/lib/api';
+import { formatCount } from '@/lib/format';
 
 /**
  * FD-06 Patient search: find the person, or find out they are not here yet.
@@ -27,7 +28,17 @@ export interface PatientsScreenProps {
   client?: ApiClient;
 }
 
-export function PatientsScreen({ client }: PatientsScreenProps = {}): ReactElement {
+/**
+ * The table's caption names the view, and the search term when there is one, so
+ * a screen reader hears what the rows below were narrowed by.
+ */
+function tableCaption(viewLabel: string, search: string): string {
+  const term = search.trim();
+  if (!term) return viewLabel;
+  return `${viewLabel} matching "${term}"`;
+}
+
+export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): ReactElement {
   const [search, setSearch] = useState('');
   const [viewId, setViewId] = useState<string>(DEFAULT_VIEW_ID);
   const [asOf] = useState<Date>(() => clinicNow());
@@ -84,7 +95,7 @@ export function PatientsScreen({ client }: PatientsScreenProps = {}): ReactEleme
           placeholder="Patientsson, Tess, OR-100482"
         />
 
-        <div className="or-roster__views" role="group" aria-label="Saved views">
+        <fieldset className="or-roster__views" aria-label="Saved views">
           {SAVED_VIEWS.map((saved) => (
             <Button
               key={saved.id}
@@ -96,7 +107,7 @@ export function PatientsScreen({ client }: PatientsScreenProps = {}): ReactEleme
               {saved.label}
             </Button>
           ))}
-        </div>
+        </fieldset>
         <p className="or-caption or-roster__view-note">{view.description}</p>
       </Card>
 
@@ -123,10 +134,10 @@ export function PatientsScreen({ client }: PatientsScreenProps = {}): ReactEleme
             <PatientTable
               patients={page.data}
               asOf={asOf}
-              caption={`${view.label}${search.trim() ? ` matching "${search.trim()}"` : ''}`}
+              caption={tableCaption(view.label, search)}
             />
             <p className="or-caption or-roster__count">
-              {page.page.total} {page.page.total === 1 ? 'patient' : 'patients'} in this view
+              {formatCount(page.page.total, 'patient')} in this view
             </p>
           </>
         )}

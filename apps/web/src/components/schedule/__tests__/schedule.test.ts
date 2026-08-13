@@ -110,6 +110,16 @@ describe('dayWindow', () => {
   it('widens for a visit that ends after the clinic closes', () => {
     expect(dayWindow([appointment('a', '17:40', 20)]).closeMinutes).toBe(18 * 60);
   });
+
+  it('keeps the clinic day when a booking carries times it cannot read', () => {
+    // A row that arrives with an unreadable instant must not be allowed to
+    // widen the grid to the whole of history: the day the front desk is looking
+    // at stays the clinic day, and the bad row simply does not move its edges.
+    const broken: Appointment = { ...appointment('a', '09:00', 20), start: '', end: 'not-a-time' };
+    const window = dayWindow([broken]);
+    expect(window.openMinutes).toBe(8 * 60);
+    expect(window.closeMinutes).toBe(17 * 60);
+  });
 });
 
 describe('rowForInstant', () => {
@@ -145,6 +155,20 @@ describe('assignLanes', () => {
       window
     );
     expect(placed.find((entry) => entry.appointment.id === 'c')?.lanes).toBe(1);
+  });
+
+  it('reuses a lane that has freed up instead of adding a third', () => {
+    // 09:00-09:20, 09:10-09:30, then 09:20-09:40. The third overlaps the second
+    // but starts exactly when the first ends, so it belongs in the first's
+    // lane. Opening a third lane instead would narrow every card on a busy
+    // morning for no reason.
+    const window = dayWindow([]);
+    const placed = assignLanes(
+      [appointment('a', '09:00', 20), appointment('b', '09:10', 20), appointment('c', '09:20', 20)],
+      window
+    );
+    expect(placed.find((entry) => entry.appointment.id === 'c')?.lane).toBe(0);
+    expect(placed.every((entry) => entry.lanes === 2)).toBe(true);
   });
 
   it('spans at least one row so a zero-length booking is still visible', () => {

@@ -3,7 +3,7 @@
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
 import type { TableColumn } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 import { adminBreadcrumb, DetailList, Drawer, FilterBar } from '@/components/admin';
 import type { Command } from '@/components/command';
@@ -31,7 +31,7 @@ import { formatDateTime, formatEnumLabel } from '@/lib/format';
  * detail drawer so an auditor can see that the record is tamper-evident rather
  * than being told so.
  *
- * The OpenEMR failure: audit existed, its defaults wrecked performance, and
+ * The legacy failure this answers: audit existed, its defaults wrecked performance, and
  * exporting meant SQL. Here the filters are the query, the export is a button,
  * and "who viewed this patient in July" is one filtered question.
  */
@@ -80,7 +80,126 @@ const PURPOSE_OPTIONS = [
   ...PURPOSES_OF_USE.map((purpose) => ({ value: purpose, label: formatEnumLabel(purpose) })),
 ];
 
-export function AuditScreen({ client }: AuditScreenProps = {}): ReactElement {
+/**
+ * The line under the filter bar: "42 events, 3 breakglass".
+ *
+ * Breakglass is only named when there is some, so the ordinary case reads as
+ * one plain count rather than a count plus a reassuring zero.
+ */
+function filterSummary(total: number, breakglassCount: number): string {
+  const noun = total === 1 ? 'event' : 'events';
+  if (breakglassCount === 0) {
+    return `${total} ${noun}`;
+  }
+  return `${total} ${noun}, ${breakglassCount} breakglass`;
+}
+
+/** The patient cell: an audit event does not always have a chart context. */
+function patientCell(event: AuditEvent): ReactElement {
+  if (!event.patientMrn) {
+    return <span className="or-caption">No chart context</span>;
+  }
+  return (
+    <span className="or-cell-stack">
+      <span className="or-small">{event.patientName}</span>
+      <span className="or-caption or-mono">{event.patientMrn}</span>
+    </span>
+  );
+}
+
+/** Breakglass outranks the purpose of use: it is the thing an auditor scans for. */
+function purposeCell(event: AuditEvent): ReactElement {
+  if (event.breakglass) {
+    return <Badge tone="danger">Breakglass</Badge>;
+  }
+  return <Tag>{formatEnumLabel(event.purposeOfUse)}</Tag>;
+}
+
+function auditRow(event: AuditEvent, onOpen: (id: string) => void): Record<string, ReactNode> {
+  return {
+    id: event.id,
+    when: (
+      <span className="or-cell-stack">
+        <span className="or-small">{formatDateTime(event.occurredAt, 'dense')}</span>
+        <span className="or-caption or-mono">#{event.sequence}</span>
+      </span>
+    ),
+    actor: (
+      <span className="or-cell-stack">
+        <span className="or-body">{event.actorName}</span>
+        <span className="or-caption">{formatEnumLabel(event.actorRole)}</span>
+      </span>
+    ),
+    action: <span className="or-small">{formatEnumLabel(event.action)}</span>,
+    target: (
+      <span className="or-cell-stack">
+        <span className="or-small">{event.targetLabel}</span>
+        <span className="or-caption">{event.targetType}</span>
+      </span>
+    ),
+    patient: patientCell(event),
+    purpose: purposeCell(event),
+    open: (
+      <Button size="sm" variant="ghost" onClick={() => onOpen(event.id)}>
+        Open event {event.sequence}
+      </Button>
+    ),
+  };
+}
+
+/** The drawer body: the full event, plus the hash chain that makes it trustworthy. */
+function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElement {
+  return (
+    <div className="or-stack">
+      {event.breakglass ? (
+        <Card className="or-notice" data-tone="critical">
+          <p className="or-body">
+            <strong>Emergency access outside the care team.</strong> The reason given was:
+            {` "${event.breakglassReason ?? ''}"`}
+          </p>
+        </Card>
+      ) : null}
+
+      <DetailList
+        columns={2}
+        items={[
+          { label: 'Actor', value: event.actorName },
+          { label: 'Role', value: formatEnumLabel(event.actorRole) },
+          { label: 'Target', value: `${event.targetType}: ${event.targetLabel}` },
+          { label: 'Purpose of use', value: formatEnumLabel(event.purposeOfUse) },
+          { label: 'Patient', value: event.patientName ?? 'No chart context' },
+          { label: 'MRN', value: event.patientMrn ?? 'No chart context', mono: true },
+          { label: 'Source address', value: event.sourceIp, mono: true },
+          { label: 'Request id', value: event.requestId, mono: true },
+          ...event.detail.map((entry) => ({ label: entry.label, value: entry.value })),
+        ]}
+      />
+
+      <Card tone="bone" title="Hash chain">
+        <p className="or-small">
+          Each event is hashed together with the hash of the event before it. Changing or removing
+          any event breaks every hash after it, which is what makes this trail tamper-evident rather
+          than merely locked.
+        </p>
+        <DetailList
+          items={[
+            { label: 'Position', value: `#${event.sequence}`, mono: true },
+            { label: 'Previous hash', value: event.previousHash, mono: true },
+            { label: 'This hash', value: event.hash, mono: true },
+            {
+              label: 'Integrity',
+              value: event.chainVerified
+                ? 'Verified against the chain'
+                : 'Not verified. Report this immediately.',
+            },
+          ]}
+        />
+      </Card>
+    </div>
+  );
+}
+
+export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElement {
   const options = useAdminClientOption(client);
 
   const [actorId, setActorId] = useState('');
@@ -181,13 +300,7 @@ export function AuditScreen({ client }: AuditScreenProps = {}): ReactElement {
 
       <FilterBar
         label="Filter the audit trail"
-        summary={
-          events.data
-            ? `${rows.length} ${rows.length === 1 ? 'event' : 'events'}${
-                breakglassCount > 0 ? `, ${breakglassCount} breakglass` : ''
-              }`
-            : null
-        }
+        summary={events.data ? filterSummary(rows.length, breakglassCount) : null}
         actions={
           <Button variant="ghost" size="sm" iconLeft="download" onClick={exportRows}>
             Export CSV
@@ -263,46 +376,7 @@ export function AuditScreen({ client }: AuditScreenProps = {}): ReactElement {
           <Table
             caption="Audit events, newest first"
             columns={COLUMNS}
-            rows={rows.map((event) => ({
-              id: event.id,
-              when: (
-                <span className="or-cell-stack">
-                  <span className="or-small">{formatDateTime(event.occurredAt, 'dense')}</span>
-                  <span className="or-caption or-mono">#{event.sequence}</span>
-                </span>
-              ),
-              actor: (
-                <span className="or-cell-stack">
-                  <span className="or-body">{event.actorName}</span>
-                  <span className="or-caption">{formatEnumLabel(event.actorRole)}</span>
-                </span>
-              ),
-              action: <span className="or-small">{formatEnumLabel(event.action)}</span>,
-              target: (
-                <span className="or-cell-stack">
-                  <span className="or-small">{event.targetLabel}</span>
-                  <span className="or-caption">{event.targetType}</span>
-                </span>
-              ),
-              patient: event.patientMrn ? (
-                <span className="or-cell-stack">
-                  <span className="or-small">{event.patientName}</span>
-                  <span className="or-caption or-mono">{event.patientMrn}</span>
-                </span>
-              ) : (
-                <span className="or-caption">No chart context</span>
-              ),
-              purpose: event.breakglass ? (
-                <Badge tone="danger">Breakglass</Badge>
-              ) : (
-                <Tag>{formatEnumLabel(event.purposeOfUse)}</Tag>
-              ),
-              open: (
-                <Button size="sm" variant="ghost" onClick={() => setOpenId(event.id)}>
-                  Open event {event.sequence}
-                </Button>
-              ),
-            }))}
+            rows={rows.map((event) => auditRow(event, setOpenId))}
           />
         )}
       </AsyncBoundary>
@@ -328,54 +402,7 @@ export function AuditScreen({ client }: AuditScreenProps = {}): ReactElement {
           </Button>
         }
       >
-        {selected ? (
-          <div className="or-stack">
-            {selected.breakglass ? (
-              <Card className="or-notice" data-tone="critical">
-                <p className="or-body">
-                  <strong>Emergency access outside the care team.</strong> The reason given was:
-                  {` "${selected.breakglassReason ?? ''}"`}
-                </p>
-              </Card>
-            ) : null}
-
-            <DetailList
-              columns={2}
-              items={[
-                { label: 'Actor', value: selected.actorName },
-                { label: 'Role', value: formatEnumLabel(selected.actorRole) },
-                { label: 'Target', value: `${selected.targetType}: ${selected.targetLabel}` },
-                { label: 'Purpose of use', value: formatEnumLabel(selected.purposeOfUse) },
-                { label: 'Patient', value: selected.patientName ?? 'No chart context' },
-                { label: 'MRN', value: selected.patientMrn ?? 'No chart context', mono: true },
-                { label: 'Source address', value: selected.sourceIp, mono: true },
-                { label: 'Request id', value: selected.requestId, mono: true },
-                ...selected.detail.map((entry) => ({ label: entry.label, value: entry.value })),
-              ]}
-            />
-
-            <Card tone="bone" title="Hash chain">
-              <p className="or-small">
-                Each event is hashed together with the hash of the event before it. Changing or
-                removing any event breaks every hash after it, which is what makes this trail
-                tamper-evident rather than merely locked.
-              </p>
-              <DetailList
-                items={[
-                  { label: 'Position', value: `#${selected.sequence}`, mono: true },
-                  { label: 'Previous hash', value: selected.previousHash, mono: true },
-                  { label: 'This hash', value: selected.hash, mono: true },
-                  {
-                    label: 'Integrity',
-                    value: selected.chainVerified
-                      ? 'Verified against the chain'
-                      : 'Not verified. Report this immediately.',
-                  },
-                ]}
-              />
-            </Card>
-          </div>
-        ) : null}
+        {selected ? <AuditEventDetail event={selected} /> : null}
       </Drawer>
 
       {toast ? (

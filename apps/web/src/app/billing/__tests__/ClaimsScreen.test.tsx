@@ -160,3 +160,78 @@ describe('ClaimsScreen', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
+}
+
+describe('ClaimsScreen, bulk actions from the palette', () => {
+  it('refuses a bulk action with nothing selected rather than acting on everything', async () => {
+    render(<ClaimsScreen />);
+    await screen.findByRole('table', { name: 'Claims' });
+
+    await runCommand('Submit selected claims');
+
+    expect(await screen.findByText('Nothing selected')).toBeInTheDocument();
+    expect(screen.getByText('Select the claims to act on first.')).toBeInTheDocument();
+  });
+
+  it('selects every claim the scrubber has not blocked, and submits exactly those', async () => {
+    render(<ClaimsScreen />);
+    await filterTo('Captured');
+
+    await runCommand('Select every claim in this view');
+    // CLM-24119 has a scrub error, so it is not selectable and must not move.
+    expect(screen.getByRole('checkbox', { name: 'Select claim CLM-24119' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select claim CLM-24118' })).toBeChecked();
+
+    await runCommand('Submit selected claims');
+
+    expect(await screen.findByText(/claims? submitted/)).toBeInTheDocument();
+    expect(screen.getByText('Moved to submitted.')).toBeInTheDocument();
+  });
+
+  it('unticks a claim that was ticked by mistake', async () => {
+    render(<ClaimsScreen />);
+    await filterTo('Captured');
+
+    const box = screen.getByRole('checkbox', { name: 'Select claim CLM-24118' });
+    fireEvent.click(box);
+    expect(box).toBeChecked();
+
+    fireEvent.click(box);
+    expect(box).not.toBeChecked();
+
+    await runCommand('Scrub selected claims');
+    expect(await screen.findByText('Nothing selected')).toBeInTheDocument();
+  });
+
+  it('drops the selection when the state filter changes', async () => {
+    render(<ClaimsScreen />);
+    await filterTo('Captured');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select claim CLM-24118' }));
+
+    // Selecting in one queue and then switching queues must not carry the
+    // selection into a bulk action over claims nobody looked at.
+    await runCommand('Show denied claims');
+    await runCommand('Scrub selected claims');
+
+    expect(await screen.findByText('Nothing selected')).toBeInTheDocument();
+  });
+
+  it('goes back to every claim from the All chip', async () => {
+    render(<ClaimsScreen />);
+    await filterTo('Denied');
+    expect(
+      within(screen.getByRole('table', { name: 'Claims' })).queryByText('CLM-24118')
+    ).not.toBeInTheDocument();
+
+    await filterTo('All');
+
+    expect(
+      within(await screen.findByRole('table', { name: 'Claims' })).getByText('CLM-24118')
+    ).toBeInTheDocument();
+  });
+});

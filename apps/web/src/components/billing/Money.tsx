@@ -28,7 +28,7 @@ export function Money({
   currency = 'USD',
   negativeLabel,
   emphasis = false,
-}: MoneyProps): ReactElement {
+}: Readonly<MoneyProps>): ReactElement {
   const money = formatMoney(amount, { currency, negativeLabel });
 
   return (

@@ -16,7 +16,7 @@ import { Money } from './Money';
  * BL-04 Claim detail, in the drawer the queue opens it from.
  *
  * One timeline tells the claim's whole story: every transition, every
- * acknowledgement, every note, timestamped and attributed. In OpenEMR that
+ * acknowledgement, every note, timestamped and attributed. In legacy systems that
  * story was scattered across EDI history, claim notes and the database; here
  * there is one place to read it and the queue behind stays visible while you
  * do.
@@ -42,7 +42,68 @@ export interface ClaimDrawerProps {
   onRebill: (claim: Claim) => void;
 }
 
-export function ClaimDrawer({ claim, onClose, onRebill }: ClaimDrawerProps): ReactElement | null {
+/**
+ * A money cell that has not been adjudicated yet says so, rather than showing a
+ * zero a biller would read as "the payer allowed nothing".
+ */
+function amountCell(amount: number | null, currency: string): ReactNode {
+  if (amount === null) return <span className="or-small">{NOT_RECORDED}</span>;
+  return <Money amount={amount} currency={currency} />;
+}
+
+interface RebillFooterProps {
+  claim: Claim;
+  confirming: boolean;
+  onConfirmingChange: (confirming: boolean) => void;
+  onRebill: (claim: Claim) => void;
+}
+
+/**
+ * Only a denied claim can be rebilled, and rebilling is a two-step action: the
+ * consequence is spelled out before the button that carries it out.
+ */
+function RebillFooter({
+  claim,
+  confirming,
+  onConfirmingChange,
+  onRebill,
+}: Readonly<RebillFooterProps>): ReactElement | null {
+  if (claim.status !== 'DENIED') return null;
+
+  if (!confirming) {
+    return (
+      <Button iconLeft="refresh-cw" onClick={() => onConfirmingChange(true)}>
+        Correct and rebill
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <p className="or-small or-drawer__confirm">
+        Correct and rebill {claim.claimNumber} to {claim.payer.name}. The original stays on the
+        record and the replacement links back to it.
+      </p>
+      <Button variant="secondary" onClick={() => onConfirmingChange(false)}>
+        Cancel
+      </Button>
+      <Button
+        onClick={() => {
+          onConfirmingChange(false);
+          onRebill(claim);
+        }}
+      >
+        Rebill claim
+      </Button>
+    </>
+  );
+}
+
+export function ClaimDrawer({
+  claim,
+  onClose,
+  onRebill,
+}: Readonly<ClaimDrawerProps>): ReactElement | null {
   const [confirming, setConfirming] = useState(false);
 
   if (!claim) return null;
@@ -61,24 +122,9 @@ export function ClaimDrawer({ claim, onClose, onRebill }: ClaimDrawerProps): Rea
     ),
     units: <span className="or-mono">{line.units}</span>,
     billed: <Money amount={line.billed} currency={claim.currency} />,
-    allowed:
-      line.allowed === null ? (
-        <span className="or-small">{NOT_RECORDED}</span>
-      ) : (
-        <Money amount={line.allowed} currency={claim.currency} />
-      ),
-    paid:
-      line.paid === null ? (
-        <span className="or-small">{NOT_RECORDED}</span>
-      ) : (
-        <Money amount={line.paid} currency={claim.currency} />
-      ),
-    responsibility:
-      line.patientResponsibility === null ? (
-        <span className="or-small">{NOT_RECORDED}</span>
-      ) : (
-        <Money amount={line.patientResponsibility} currency={claim.currency} />
-      ),
+    allowed: amountCell(line.allowed, claim.currency),
+    paid: amountCell(line.paid, claim.currency),
+    responsibility: amountCell(line.patientResponsibility, claim.currency),
   }));
 
   return (
@@ -95,31 +141,12 @@ export function ClaimDrawer({ claim, onClose, onRebill }: ClaimDrawerProps): Rea
       }
       onClose={onClose}
       footer={
-        claim.status === 'DENIED' ? (
-          confirming ? (
-            <>
-              <p className="or-small or-drawer__confirm">
-                Correct and rebill {claim.claimNumber} to {claim.payer.name}. The original stays on
-                the record and the replacement links back to it.
-              </p>
-              <Button variant="secondary" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setConfirming(false);
-                  onRebill(claim);
-                }}
-              >
-                Rebill claim
-              </Button>
-            </>
-          ) : (
-            <Button iconLeft="refresh-cw" onClick={() => setConfirming(true)}>
-              Correct and rebill
-            </Button>
-          )
-        ) : null
+        <RebillFooter
+          claim={claim}
+          confirming={confirming}
+          onConfirmingChange={setConfirming}
+          onRebill={onRebill}
+        />
       }
     >
       <div className="or-claim-detail">

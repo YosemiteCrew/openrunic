@@ -13,7 +13,7 @@ import type { OrderCatalogEntry, PatientProblem } from '@/lib/api';
  * The screen is built on the fact that a practice orders the same twenty
  * things. Favourites are one click with everything pre-filled, and the search
  * ranks the catalogue against this patient's problem list before it ranks it
- * alphabetically. OpenEMR's procedure order form had neither, which is why
+ * alphabetically. The legacy procedure order form had neither, which is why
  * ordering there began with remembering what the test was called.
  *
  * The field is a combobox: typing filters, Arrow keys move the active option,
@@ -42,7 +42,7 @@ export function OrderPicker({
   draftedCodes,
   onAdd,
   searchInputId,
-}: OrderPickerProps): ReactElement {
+}: Readonly<OrderPickerProps>): ReactElement {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const baseId = useId();
@@ -91,7 +91,7 @@ export function OrderPicker({
         <p className="or-overline">Favourites</p>
         {/* Named as a group so "the favourites row" is one thing to a screen
             reader and to an agent, not eight loose buttons. */}
-        <div className="or-cluster" role="group" aria-label="Favourite orders">
+        <fieldset className="or-cluster" aria-label="Favourite orders">
           {favourites.map((entry) => (
             <Button
               key={entry.code}
@@ -103,7 +103,7 @@ export function OrderPicker({
               {entry.name}
             </Button>
           ))}
-        </div>
+        </fieldset>
       </div>
 
       <Input

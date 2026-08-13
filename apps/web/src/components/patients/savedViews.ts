@@ -3,7 +3,7 @@ import type { PatientListQuery } from '@/lib/api';
 /**
  * Saved views for the patient roster.
  *
- * A saved view is a named query, not a second screen. OpenEMR shipped a
+ * A saved view is a named query, not a second screen. Legacy systems shipped a
  * different search form per purpose and none of them remembered anything;
  * here every view is the same table with a different question asked of it, and
  * each one is a palette command so it is reachable without the mouse.

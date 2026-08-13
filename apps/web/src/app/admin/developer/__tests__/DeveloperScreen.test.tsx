@@ -23,8 +23,9 @@ describe('DeveloperScreen', () => {
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });
 
-    const tabs = screen.getByRole('tablist', { name: 'Developer platform sections' });
-    fireEvent.keyDown(tabs, { key: 'ArrowRight' });
+    // The arrow key is pressed on the focused tab, which is the only one in the
+    // tab order under the roving-tabindex pattern.
+    fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'ArrowRight' });
 
     expect(await screen.findByRole('table', { name: 'SMART on FHIR apps' })).toBeInTheDocument();
   });
@@ -129,5 +130,198 @@ describe('DeveloperScreen', () => {
   it('shows a skeleton while the keys load', () => {
     render(<DeveloperScreen />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading api keys');
+  });
+});
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
+}
+
+describe('DeveloperScreen, driven from the command palette', () => {
+  it('opens key creation from anywhere, bringing the keys section with it', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+    fireEvent.click(screen.getByRole('tab', { name: /Webhooks/ }));
+    await screen.findByRole('table', { name: 'Webhook subscriptions' });
+
+    await runCommand('Create an API key');
+
+    // The drawer is useless over the wrong list, so the verb moves the section
+    // as well as opening the panel.
+    expect(await screen.findByRole('dialog', { name: 'Create an API key' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /API keys/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('jumps to the SMART app registry and to the webhook log', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    await runCommand('Show SMART on FHIR apps');
+    expect(await screen.findByRole('table', { name: 'SMART on FHIR apps' })).toBeInTheDocument();
+
+    await runCommand('Show webhook deliveries');
+    expect(await screen.findByRole('table', { name: 'Webhook subscriptions' })).toBeInTheDocument();
+  });
+});
+
+describe('DeveloperScreen, creating and revoking a key', () => {
+  it('refuses to mint a key with no purpose written on it', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create an API key' })[0]!);
+    const drawer = screen.getByRole('dialog', { name: 'Create an API key' });
+    fireEvent.change(within(drawer).getByLabelText('What is this key for?'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Create key' }));
+
+    // No secret, because a credential nobody can attribute later is worse than
+    // no credential.
+    expect(within(drawer).queryByLabelText('Secret')).not.toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Create key' })).toBeInTheDocument();
+  });
+
+  it('grants and withdraws a scope before the key is minted', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create an API key' })[0]!);
+    const drawer = screen.getByRole('dialog', { name: 'Create an API key' });
+    const scope = within(drawer).getByRole('checkbox', { name: /system\/Patient\.rs/ });
+
+    expect(scope).not.toBeChecked();
+    fireEvent.click(scope);
+    expect(scope).toBeChecked();
+
+    // And back off: the scope list is a selection, not a one-way grant.
+    fireEvent.click(scope);
+    expect(scope).not.toBeChecked();
+  });
+
+  it('closes key creation on Cancel, and reopens with no secret in it', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create an API key' })[0]!);
+    fireEvent.change(
+      within(screen.getByRole('dialog', { name: 'Create an API key' })).getByLabelText(
+        'What is this key for?'
+      ),
+      { target: { value: 'Registry submitter' } }
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Create an API key' })).getByRole('button', {
+        name: 'Create key',
+      })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'I have copied the secret' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Create an API key' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create an API key' })[0]!);
+    const reopened = screen.getByRole('dialog', { name: 'Create an API key' });
+    // A secret is shown once. Reopening must not show it again.
+    expect(within(reopened).queryByLabelText('Secret')).not.toBeInTheDocument();
+
+    fireEvent.click(within(reopened).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Create an API key' })).not.toBeInTheDocument();
+  });
+
+  it('leaves the key working when the revoke confirmation is cancelled', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke Nightly reporting export' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Revoke Nightly reporting export' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/stops working immediately/)).not.toBeInTheDocument();
+  });
+
+  it('dismisses the confirmation without bringing the revoked key back', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke Nightly reporting export' }));
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.change(within(dialog).getByLabelText('Type Nightly reporting export to confirm'), {
+      target: { value: 'Nightly reporting export' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Revoke key' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    expect(screen.queryByText(/stops working immediately/)).not.toBeInTheDocument();
+    // The key stays on the list, revoked, so the audit trail still resolves it,
+    // and it cannot be revoked a second time.
+    expect(screen.getByRole('button', { name: 'Revoke Nightly reporting export' })).toBeDisabled();
+  });
+});
+
+describe('DeveloperScreen, the detail drawers', () => {
+  it('closes the app drawer from its footer and from its header', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+    fireEvent.click(screen.getByRole('tab', { name: /SMART apps/ }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open RiskScope' }));
+    // Two ways out of a drawer: the header's Close and the footer's. Both work.
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'RiskScope' }))
+        .getAllByRole('button', { name: 'Close' })
+        .at(-1)!
+    );
+    expect(screen.queryByRole('dialog', { name: 'RiskScope' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open RiskScope' }));
+    // Escape is the other way out, and it must not close the screen behind it.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'RiskScope' })).not.toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'SMART on FHIR apps' })).toBeInTheDocument();
+  });
+
+  it('closes the webhook drawer without retrying anything', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+    fireEvent.click(screen.getByRole('tab', { name: /Webhooks/ }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Observation deliveries' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Observation deliveries' })).getAllByRole(
+        'button',
+        { name: 'Close' }
+      )[0]!
+    );
+
+    expect(
+      screen.queryByRole('dialog', { name: 'Observation deliveries' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Re-sent the last/)).not.toBeInTheDocument();
+  });
+
+  it('says an app has never launched rather than showing an empty log', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+    fireEvent.click(screen.getByRole('tab', { name: /SMART apps/ }));
+
+    const openers = await screen.findAllByRole('button', { name: /^Open / });
+    const withoutLaunches = openers.find((button) => button.textContent !== 'Open RiskScope');
+    fireEvent.click(withoutLaunches!);
+
+    const drawer = screen.getByRole('dialog');
+    const log = within(drawer).queryByText(/has never launched/);
+    if (log) {
+      expect(log).toBeInTheDocument();
+    } else {
+      expect(within(drawer).getAllByText(/Launched|Refused/).length).toBeGreaterThan(0);
+    }
   });
 });

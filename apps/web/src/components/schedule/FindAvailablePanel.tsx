@@ -31,7 +31,7 @@ export function FindAvailablePanel({
   durationMinutes,
   onBook,
   onClose,
-}: FindAvailablePanelProps): ReactElement {
+}: Readonly<FindAvailablePanelProps>): ReactElement {
   const providerName = (id: string): string =>
     providers.find((provider) => provider.id === id)?.name ?? 'Unassigned';
 

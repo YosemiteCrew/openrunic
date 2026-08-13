@@ -24,7 +24,7 @@ export interface DetailListProps {
   columns?: 1 | 2;
 }
 
-export function DetailList({ items, columns = 1 }: DetailListProps): ReactElement {
+export function DetailList({ items, columns = 1 }: Readonly<DetailListProps>): ReactElement {
   return (
     <dl className="or-details" data-columns={columns}>
       {items.map((item) => (

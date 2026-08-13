@@ -21,7 +21,10 @@ export interface SignatureBlockProps {
   addenda: readonly Addendum[];
 }
 
-export function SignatureBlock({ signature, addenda }: SignatureBlockProps): ReactElement {
+export function SignatureBlock({
+  signature,
+  addenda,
+}: Readonly<SignatureBlockProps>): ReactElement {
   return (
     <Card title="Signature" className="or-signature">
       <p className="or-body or-signature__attestation">{signature.attestation}</p>

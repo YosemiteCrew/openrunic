@@ -6,7 +6,8 @@ import type { ReactElement } from 'react';
 
 import { slaState } from '@/lib/api';
 import type { SlaState } from '@/lib/api';
-import { formatDateTime, formatElapsed } from '@/lib/format';
+
+import { slaLabel } from './sla';
 
 /**
  * How long this item has, in words.
@@ -35,14 +36,7 @@ export interface SlaBadgeProps {
   now: string;
 }
 
-export function slaLabel(dueAt: string, now: string): string {
-  const state = slaState(dueAt, now);
-  if (state === 'OVERDUE') return `Overdue by ${formatElapsed(dueAt, now)}`;
-  if (state === 'DUE_SOON') return `Due in ${formatElapsed(now, dueAt)}`;
-  return `Due ${formatDateTime(dueAt, 'dense')}`;
-}
-
-export function SlaBadge({ dueAt, now }: SlaBadgeProps): ReactElement {
+export function SlaBadge({ dueAt, now }: Readonly<SlaBadgeProps>): ReactElement {
   const state = slaState(dueAt, now);
   return (
     <Badge tone={TONE[state]} icon={ICON[state]}>

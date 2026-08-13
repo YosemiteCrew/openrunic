@@ -4,11 +4,10 @@ import type { ReactElement, ReactNode } from 'react';
 
 import { AsyncBoundary } from '@/components/state';
 import { useAppointments, usePatient } from '@/lib/api';
-import type { Appointment } from '@/lib/api';
 import { clinicNow, useChartSummary } from '@/lib/api/chart';
 import type { ChartClient } from '@/lib/api/chart';
-import { formatDate } from '@/lib/format';
 
+import { nextBookedAppointment } from './appointments';
 import { PatientContextRail } from './PatientContextRail';
 
 /**
@@ -33,38 +32,13 @@ export interface ChartRailProps {
   children?: ReactNode;
 }
 
-/** The next booked appointment at or after `now`; the fixtures are already sorted by start. */
-export function nextBookedAppointment(
-  appointments: readonly Appointment[],
-  now: string
-): Appointment | null {
-  return (
-    appointments.find(
-      (appointment) =>
-        appointment.start >= now &&
-        (appointment.status === 'BOOKED' ||
-          appointment.status === 'PENDING' ||
-          appointment.status === 'PROPOSED')
-    ) ?? null
-  );
-}
-
-/** The appointment that belongs to the clinic day `now` falls in, whatever its status. */
-export function appointmentOnDay(
-  appointments: readonly Appointment[],
-  now: string
-): Appointment | null {
-  const day = formatDate(now, 'iso');
-  return appointments.find((appointment) => formatDate(appointment.start, 'iso') === day) ?? null;
-}
-
 export function ChartRail({
   patientId,
   onOpenSection,
   patientHref,
   chartClient,
   children,
-}: ChartRailProps): ReactElement {
+}: Readonly<ChartRailProps>): ReactElement {
   const now = clinicNow();
   const patient = usePatient(patientId);
   const chart = useChartSummary(patientId, chartClient ? { client: chartClient } : {});

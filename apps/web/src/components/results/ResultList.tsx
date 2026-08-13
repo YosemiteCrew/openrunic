@@ -13,7 +13,7 @@ import { ResultFlagBadge } from './ResultFlagBadge';
 /**
  * The triage queue: abnormal first, and every row says why it is flagged.
  *
- * OpenEMR's Pending Review screen showed abnormal flags and then offered
+ * The legacy "pending review" screen showed abnormal flags and then offered
  * nothing to do about them. Here the queue is designed to shrink: the row
  * carries the value that matters and the sign-off action, and moving down the
  * list is Arrow keys rather than Tab through every control.
@@ -61,20 +61,26 @@ export function ResultList({
   onSelect,
   onSign,
   signedIds,
-}: ResultListProps): ReactElement {
+}: Readonly<ResultListProps>): ReactElement {
   const listRef = useRef<HTMLUListElement>(null);
   const signed = new Set(signedIds);
 
   /* Arrow keys walk the queue, Home and End jump its ends. Tab still reaches
-     every control in a row; this is the shortcut, not the only way in. */
-  const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+     every control in a row; this is the shortcut, not the only way in.
+
+     Bound to each row's button rather than to the <ul>. The list itself is not
+     focusable and never should be, so a key handler on it could only ever fire
+     from a bubbling child; putting it on the child that actually holds focus
+     says the same thing without claiming the list handles keys. */
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
     if (!keys.includes(event.key)) return;
     const rows = Array.from(
       listRef.current?.querySelectorAll<HTMLButtonElement>('[data-result-row]') ?? []
     );
     if (rows.length === 0) return;
-    const current = rows.findIndex((row) => row === document.activeElement);
+    const active = document.activeElement;
+    const current = active instanceof HTMLButtonElement ? rows.indexOf(active) : -1;
     event.preventDefault();
 
     if (event.key === 'Home') {
@@ -82,7 +88,7 @@ export function ResultList({
       return;
     }
     if (event.key === 'End') {
-      rows[rows.length - 1]?.focus();
+      rows.at(-1)?.focus();
       return;
     }
     const step = event.key === 'ArrowDown' ? 1 : -1;
@@ -91,12 +97,7 @@ export function ResultList({
   };
 
   return (
-    <ul
-      ref={listRef}
-      className="or-results__list"
-      aria-label="Results to review"
-      onKeyDown={onKeyDown}
-    >
+    <ul ref={listRef} className="or-results__list" aria-label="Results to review">
       {reports.map((report) => {
         const patient = mockPatientById(report.patientId);
         const isSigned = report.status === 'SIGNED' || signed.has(report.id);
@@ -108,6 +109,7 @@ export function ResultList({
               className="or-result-row__open"
               aria-current={report.id === selectedId ? 'true' : undefined}
               onClick={() => onSelect(report.id)}
+              onKeyDown={onKeyDown}
             >
               <span className="or-result-row__head">
                 <span className="or-result-row__patient">

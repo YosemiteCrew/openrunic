@@ -7,7 +7,7 @@ import { mockPatientById } from '@/lib/api';
 import type { InboxItem } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
 
-import { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './InboxStreamFilter';
+import { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './streams';
 import { SlaBadge } from './SlaBadge';
 
 /**
@@ -36,7 +36,7 @@ export function InboxList({
   onComplete,
   onClaim,
   claimedIds,
-}: InboxListProps): ReactElement {
+}: Readonly<InboxListProps>): ReactElement {
   const claimed = new Set(claimedIds);
 
   return (

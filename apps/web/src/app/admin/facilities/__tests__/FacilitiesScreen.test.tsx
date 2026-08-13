@@ -95,3 +95,68 @@ describe('FacilitiesScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading facilities');
   });
 });
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
+}
+
+describe('FacilitiesScreen, driven from the command palette', () => {
+  it('opens the main site, and opening it again does not switch sites', async () => {
+    render(<FacilitiesScreen />);
+    await listLoaded();
+
+    await runCommand('Open the main facility');
+    expect(await screen.findByRole('dialog', { name: 'Cedar Clinic' })).toBeInTheDocument();
+
+    // Already open on a facility: the verb must not yank the drawer onto a
+    // different site mid-edit.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Birchwood Annex' }));
+    await runCommand('Open the main facility');
+    expect(screen.getByRole('dialog', { name: 'Birchwood Annex' })).toBeInTheDocument();
+  });
+
+  it('reveals the retired sites, which are kept rather than deleted', async () => {
+    render(<FacilitiesScreen />);
+    await listLoaded();
+
+    await runCommand('Show inactive facilities');
+
+    // A claim from an earlier year still has to resolve where it happened.
+    expect(await screen.findByText('Rune Street Rooms')).toBeInTheDocument();
+    expect(screen.getByLabelText('Show inactive')).toBeChecked();
+  });
+
+  it('closes the drawer from Cancel and from Save alike', async () => {
+    render(<FacilitiesScreen />);
+    await listLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Cedar Clinic' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Cedar Clinic' })).getByRole('button', {
+        name: 'Cancel',
+      })
+    );
+    expect(screen.queryByRole('dialog', { name: 'Cedar Clinic' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Cedar Clinic' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Cedar Clinic' })).getByRole('button', {
+        name: 'Save facility',
+      })
+    );
+    expect(screen.queryByRole('dialog', { name: 'Cedar Clinic' })).not.toBeInTheDocument();
+  });
+
+  it('opens an inactive site once it is visible, and names it as inactive', async () => {
+    render(<FacilitiesScreen />);
+    await listLoaded();
+    fireEvent.click(screen.getByLabelText('Show inactive'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Rune Street Rooms' }));
+
+    const drawer = await screen.findByRole('dialog', { name: 'Rune Street Rooms' });
+    expect(within(drawer).getByText('Inactive')).toBeInTheDocument();
+  });
+});

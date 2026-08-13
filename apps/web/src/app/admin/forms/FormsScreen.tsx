@@ -21,13 +21,13 @@ import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { useAdminClientOption, useFormDefinitions, useFormFieldTypes } from '@/lib/api';
-import type { AdminClient, FormDefinition, FormField, FormFieldType } from '@/lib/api';
+import type { AdminClient, FormDefinition, FormField, FormFieldType, FormSection } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 
 /**
  * AD-03 Form builder.
  *
- * The crown jewel, and the screen with the sharpest OpenEMR failure to avoid:
+ * The crown jewel, and the screen with the sharpest legacy failure to avoid:
  * LBF was powerful and hostile, configured through cryptic option strings with
  * no preview and an EAV store underneath. Here every capability is a visible
  * control, the preview is always one toggle away, a published version is
@@ -50,6 +50,18 @@ const PURPOSE_LABEL: Record<FormDefinition['purpose'], string> = {
   REFERRAL: 'Referral',
 };
 
+/**
+ * The version number the next publish will carry.
+ *
+ * A published form is immutable, so editing it starts the next version; a draft
+ * is still the version it already claims to be. Nothing loaded yet publishes
+ * as version 1.
+ */
+function nextVersionOf(definition: FormDefinition | null): number {
+  if (!definition) return 1;
+  return definition.status === 'PUBLISHED' ? definition.version + 1 : definition.version;
+}
+
 /** A field added from the catalogue starts sensible and editable, never blank. */
 function newField(type: FormFieldType, sectionId: string, index: number): FormField {
   return {
@@ -67,7 +79,126 @@ function newField(type: FormFieldType, sectionId: string, index: number): FormFi
   };
 }
 
-export function FormsScreen({ client }: FormsScreenProps = {}): ReactElement {
+/**
+ * What one field on the canvas is, in words.
+ *
+ * Separate from the canvas because the canvas is about arrangement and this is
+ * about meaning: the label a patient reads, whether an answer is required, and
+ * whether a later visit is allowed to reuse it.
+ */
+function FieldProperties({
+  selectedField,
+  onEdit,
+}: Readonly<{
+  selectedField: FormField | null;
+  onEdit: (patch: Partial<FormField>) => void;
+}>): ReactElement {
+  return (
+    <Card className="or-builder__pane" title="Field properties">
+      {selectedField ? (
+        <div className="or-stack">
+          <Input
+            label="Label"
+            value={selectedField.label}
+            onChange={(event) => onEdit({ label: event.target.value })}
+          />
+          <Input
+            label="Help text"
+            value={selectedField.helpText ?? ''}
+            hint="One short sentence, in the patient's register on portal forms."
+            onChange={(event) => onEdit({ helpText: event.target.value })}
+          />
+          <Checkbox
+            label="Required"
+            checked={selectedField.required}
+            onChange={() => onEdit({ required: !selectedField.required })}
+          />
+          <Checkbox
+            label="Visible in the patient portal"
+            checked={selectedField.portalVisible}
+            onChange={() => onEdit({ portalVisible: !selectedField.portalVisible })}
+          />
+          <Checkbox
+            label="Graphable"
+            hint="Numeric answers can be plotted on a flowsheet."
+            checked={selectedField.graphable}
+            onChange={() => onEdit({ graphable: !selectedField.graphable })}
+          />
+          <Checkbox
+            label="Ask once"
+            hint="Later visits read the stored answer instead of asking again."
+            checked={selectedField.writeOnce}
+            onChange={() => onEdit({ writeOnce: !selectedField.writeOnce })}
+          />
+          <Input
+            label="Show when"
+            value={selectedField.condition ?? ''}
+            hint="Leave empty to always show. Example: Show when Do you smoke? is Yes"
+            onChange={(event) => onEdit({ condition: event.target.value || null })}
+          />
+        </div>
+      ) : (
+        <p className="or-body">
+          Select a field on the canvas to change its label, whether it is required, and where it
+          appears.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The form as it is arranged: sections, and the fields inside each one.
+ *
+ * Fields arrive already bucketed by section so the canvas does not rescan the
+ * whole field list once per section, and every field is a button because
+ * choosing one is what opens its properties.
+ */
+function FormCanvas({
+  sections,
+  fieldsBySection,
+  selectedFieldId,
+  onSelectField,
+}: Readonly<{
+  sections: readonly FormSection[];
+  fieldsBySection: ReadonlyMap<string, FormField[]>;
+  selectedFieldId: string | null;
+  onSelectField: (id: string) => void;
+}>): ReactElement {
+  return (
+    <Card className="or-builder__pane or-builder__canvas" title="Canvas">
+      {sections.map((section) => (
+        <section key={section.id} className="or-canvas__section">
+          <h3 className="or-overline">{section.title}</h3>
+          <ul className="or-canvas__fields">
+            {(fieldsBySection.get(section.id) ?? []).map((field) => (
+              <li key={field.id}>
+                <button
+                  type="button"
+                  className="or-canvas__field"
+                  aria-pressed={field.id === selectedFieldId}
+                  onClick={() => onSelectField(field.id)}
+                >
+                  <span className="or-body">{field.label}</span>
+                  <span className="or-cell-chips">
+                    <Tag>{field.type.replaceAll('-', ' ')}</Tag>
+                    {field.required ? <Tag>Required</Tag> : null}
+                    {field.portalVisible ? <Tag>Portal</Tag> : null}
+                    {field.graphable ? <Tag>Graphable</Tag> : null}
+                    {field.writeOnce ? <Tag>Asked once</Tag> : null}
+                  </span>
+                  {field.condition ? <span className="or-caption">{field.condition}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </Card>
+  );
+}
+
+export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElement {
   const options = useAdminClientOption(client);
   const forms = useFormDefinitions(options);
   const fieldTypes = useFormFieldTypes(options);
@@ -114,11 +245,16 @@ export function FormsScreen({ client }: FormsScreenProps = {}): ReactElement {
     : [];
   const selectedField = fields.find((field) => field.id === selectedFieldId) ?? null;
 
-  const nextVersion = definition
-    ? definition.status === 'PUBLISHED'
-      ? definition.version + 1
-      : definition.version
-    : 1;
+  /* Bucketed once rather than rescanned per section: the canvas renders every
+     section and each one used to walk the whole field list looking for its own. */
+  const fieldsBySection = new Map<string, FormField[]>();
+  for (const field of fields) {
+    const bucket = fieldsBySection.get(field.sectionId);
+    if (bucket) bucket.push(field);
+    else fieldsBySection.set(field.sectionId, [field]);
+  }
+
+  const nextVersion = nextVersionOf(definition);
   const dirty = added.length > 0 || Object.keys(edits).length > 0;
 
   const addField = (type: FormFieldType) => {
@@ -311,94 +447,14 @@ export function FormsScreen({ client }: FormsScreenProps = {}): ReactElement {
                     </AsyncBoundary>
                   </Card>
 
-                  {/* ---- Canvas ------------------------------------------- */}
-                  <Card className="or-builder__pane or-builder__canvas" title="Canvas">
-                    {current.sections.map((section) => (
-                      <section key={section.id} className="or-canvas__section">
-                        <h3 className="or-overline">{section.title}</h3>
-                        <ul className="or-canvas__fields">
-                          {fields
-                            .filter((field) => field.sectionId === section.id)
-                            .map((field) => (
-                              <li key={field.id}>
-                                <button
-                                  type="button"
-                                  className="or-canvas__field"
-                                  aria-pressed={field.id === selectedFieldId}
-                                  onClick={() => setSelectedFieldId(field.id)}
-                                >
-                                  <span className="or-body">{field.label}</span>
-                                  <span className="or-cell-chips">
-                                    <Tag>{field.type.replaceAll('-', ' ')}</Tag>
-                                    {field.required ? <Tag>Required</Tag> : null}
-                                    {field.portalVisible ? <Tag>Portal</Tag> : null}
-                                    {field.graphable ? <Tag>Graphable</Tag> : null}
-                                    {field.writeOnce ? <Tag>Asked once</Tag> : null}
-                                  </span>
-                                  {field.condition ? (
-                                    <span className="or-caption">{field.condition}</span>
-                                  ) : null}
-                                </button>
-                              </li>
-                            ))}
-                        </ul>
-                      </section>
-                    ))}
-                  </Card>
+                  <FormCanvas
+                    sections={current.sections}
+                    fieldsBySection={fieldsBySection}
+                    selectedFieldId={selectedFieldId}
+                    onSelectField={setSelectedFieldId}
+                  />
 
-                  {/* ---- Properties --------------------------------------- */}
-                  <Card className="or-builder__pane" title="Field properties">
-                    {selectedField ? (
-                      <div className="or-stack">
-                        <Input
-                          label="Label"
-                          value={selectedField.label}
-                          onChange={(event) => editField({ label: event.target.value })}
-                        />
-                        <Input
-                          label="Help text"
-                          value={selectedField.helpText ?? ''}
-                          hint="One short sentence, in the patient's register on portal forms."
-                          onChange={(event) => editField({ helpText: event.target.value })}
-                        />
-                        <Checkbox
-                          label="Required"
-                          checked={selectedField.required}
-                          onChange={() => editField({ required: !selectedField.required })}
-                        />
-                        <Checkbox
-                          label="Visible in the patient portal"
-                          checked={selectedField.portalVisible}
-                          onChange={() =>
-                            editField({ portalVisible: !selectedField.portalVisible })
-                          }
-                        />
-                        <Checkbox
-                          label="Graphable"
-                          hint="Numeric answers can be plotted on a flowsheet."
-                          checked={selectedField.graphable}
-                          onChange={() => editField({ graphable: !selectedField.graphable })}
-                        />
-                        <Checkbox
-                          label="Ask once"
-                          hint="Later visits read the stored answer instead of asking again."
-                          checked={selectedField.writeOnce}
-                          onChange={() => editField({ writeOnce: !selectedField.writeOnce })}
-                        />
-                        <Input
-                          label="Show when"
-                          value={selectedField.condition ?? ''}
-                          hint="Leave empty to always show. Example: Show when Do you smoke? is Yes"
-                          onChange={(event) => editField({ condition: event.target.value || null })}
-                        />
-                      </div>
-                    ) : (
-                      <p className="or-body">
-                        Select a field on the canvas to change its label, whether it is required,
-                        and where it appears.
-                      </p>
-                    )}
-                  </Card>
+                  <FieldProperties selectedField={selectedField} onEdit={editField} />
                 </div>
               )}
 

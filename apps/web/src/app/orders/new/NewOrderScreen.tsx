@@ -2,19 +2,27 @@
 
 import { Badge, Button, Card, Modal, Select, Table, Tag, Toast } from '@openrunic/ui';
 import type { SelectOption, TableColumn } from '@openrunic/ui';
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, ReactElement } from 'react';
+import { useCallback, useId, useMemo, useReducer, useRef, useState } from 'react';
+import type { ChangeEvent, ReactElement, ReactNode, RefObject } from 'react';
 
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
-import { DraftOrders, OrderWarnings } from '@/components/orders';
+import { DraftOrders, OrderPicker, OrderWarnings } from '@/components/orders';
 import type { DraftOrder } from '@/components/orders';
-import { OrderPicker } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_NOW, patientProblems, rankCatalog, usePatients, warningsFor } from '@/lib/api';
-import type { ApiClient, ListResponse, OrderCatalogEntry, Patient } from '@/lib/api';
-import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import type {
+  ApiClient,
+  ListResponse,
+  OrderCatalogEntry,
+  OrderWarning,
+  Patient,
+  PatientProblem,
+} from '@/lib/api';
+import { formatAge, formatCount, formatDate, formatMrn, formatName } from '@/lib/format';
+
+import { EMPTY_COMPOSITION, reduceComposition } from './composition';
 
 /**
  * OR-01 Order composer: labs, imaging and procedures on one surface.
@@ -30,13 +38,11 @@ import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
  * That split is the answer to alert fatigue, which is what kills computerised
  * ordering when every warning is a wall.
  *
- * OpenEMR's procedure order form was requisition paperwork first, with no
+ * The legacy procedure order form was requisition paperwork first, with no
  * favourites and no ranking, so ordering began with remembering what the test
  * was called. Here the catalogue is ranked against the patient's problem list
  * before a single character is typed.
  */
-
-type Step = 'build' | 'review';
 
 /** Signed orders leave the composer. This is what the toast says they became. */
 interface Completion {
@@ -55,7 +61,10 @@ export interface NewOrderScreenProps {
 const COMPOSER_DESCRIPTION =
   'Labs, imaging and procedures. Build the list, then review and sign it.';
 
-export function NewOrderScreen({ client, now = MOCK_NOW }: NewOrderScreenProps): ReactElement {
+export function NewOrderScreen({
+  client,
+  now = MOCK_NOW,
+}: Readonly<NewOrderScreenProps>): ReactElement {
   const patients = usePatients({ active: true, pageSize: 50 }, { client });
   const page = patients.status === 'success' ? patients.data : null;
 
@@ -101,13 +110,264 @@ interface ComposerProps {
   now: string;
 }
 
-function Composer({ patients, now }: ComposerProps): ReactElement {
+const REVIEW_COLUMNS: TableColumn[] = [
+  { key: 'order', header: 'Order' },
+  { key: 'code', header: 'Code', mono: true },
+  { key: 'priority', header: 'Priority' },
+  { key: 'specimen', header: 'Specimen' },
+  { key: 'diagnosis', header: 'Diagnosis' },
+  { key: 'destination', header: 'Destination' },
+];
+
+/**
+ * The build step: pick orders, answer their warnings, then go to review.
+ *
+ * Its own component so the composer reads as two steps rather than one long
+ * conditional. It owns no state: everything it shows comes from the
+ * composition, and everything it does is an action on it.
+ */
+function BuildStep({
+  problems,
+  drafts,
+  warnings,
+  cleared,
+  searchInputId,
+  onAdd,
+  onUpdateDraft,
+  onRemoveDraft,
+  onClearWarning,
+  onRestoreWarning,
+  onReview,
+}: Readonly<{
+  problems: readonly PatientProblem[];
+  drafts: readonly DraftOrder[];
+  warnings: readonly OrderWarning[];
+  cleared: Record<string, string>;
+  searchInputId: string;
+  onAdd: (entry: OrderCatalogEntry) => void;
+  onUpdateDraft: (key: string, patch: Partial<DraftOrder>) => void;
+  onRemoveDraft: (key: string) => void;
+  onClearWarning: (warningId: string, reason: string) => void;
+  onRestoreWarning: (warningId: string) => void;
+  onReview: () => void;
+}>): ReactElement {
+  return (
+    <>
+      <Card tone="cream" title="Add an order">
+        <OrderPicker
+          problems={[...problems]}
+          draftedCodes={drafts.map((draft) => draft.entry.code)}
+          onAdd={onAdd}
+          searchInputId={searchInputId}
+        />
+      </Card>
+
+      {drafts.length === 0 ? (
+        <Card tone="cream" title="Nothing drafted yet">
+          <p className="or-body">
+            Pick a favourite or search the catalogue. Specimen, destination and priority are filled
+            in for you, and a diagnosis is suggested from the problem list.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <OrderWarnings
+            warnings={[...warnings]}
+            cleared={cleared}
+            onClear={onClearWarning}
+            onRestore={onRestoreWarning}
+          />
+          <DraftOrders
+            drafts={[...drafts]}
+            problems={[...problems]}
+            onChange={onUpdateDraft}
+            onRemove={onRemoveDraft}
+          />
+          <div className="or-cluster">
+            <Button variant="secondary" iconRight="arrow-right" onClick={onReview}>
+              Review and sign
+            </Button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * Who the order is for, and what is already known about them.
+ *
+ * The rail is what makes a wrong-patient order visible before it is signed, so
+ * it names the chart, the age and the problem list rather than an id.
+ */
+function OrderingForRail({
+  patient,
+  problems,
+  now,
+}: Readonly<{
+  patient: Patient;
+  problems: readonly PatientProblem[];
+  now: string;
+}>): ReactElement {
+  return (
+    <Card tone="cream" overline="Ordering for" title={formatName(patient.name, 'full')}>
+      <dl className="or-keyvalues">
+        <dt className="or-small">MRN</dt>
+        <dd className="or-mono">{formatMrn(patient.mrn)}</dd>
+        <dt className="or-small">Age</dt>
+        <dd className="or-small">
+          {formatAge(patient.birthDate, now)}, born {formatDate(patient.birthDate)}
+        </dd>
+        <dt className="or-small">Problems</dt>
+        <dd className="or-small">
+          {problems.length === 0 ? (
+            'No problems recorded'
+          ) : (
+            <ul className="or-plainlist">
+              {problems.map((problem) => (
+                <li key={problem.code}>
+                  {problem.display} <span className="or-mono">{problem.code}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </dd>
+      </dl>
+      <p className="or-small or-muted">
+        Signing transmits immediately. Pending keeps the orders in the visit tray, unsigned.
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * What stands between this draft and a signature, in the order a person would
+ * fix it: the criticals they must answer, then the diagnoses they must link.
+ *
+ * Pure, and separate from the component, because it is the rule that decides
+ * whether an order can be signed. Never a disabled button with no explanation.
+ */
+function signBlockers(
+  drafts: readonly DraftOrder[],
+  warnings: readonly OrderWarning[],
+  cleared: Readonly<Record<string, string>>
+): string[] {
+  /* `flatMap` rather than `.filter().map()`: one pass over each list, and the
+     empty array is the "not a blocker" case rather than a second traversal. */
+  const openCriticals = warnings.flatMap((warning) =>
+    warning.tier === 'CRITICAL' && !cleared[warning.id]
+      ? [`${warning.title}. Choose an override reason or remove the order.`]
+      : []
+  );
+
+  const missingDiagnosis = drafts.flatMap((draft) =>
+    draft.diagnosisCode ? [] : [`${draft.entry.name} has no diagnosis linked.`]
+  );
+
+  return [...openCriticals, ...missingDiagnosis];
+}
+
+/**
+ * The review step: the draft as a table, its warnings, and what still blocks a
+ * signature.
+ *
+ * The blockers panel is the point of the step. It is a focusable `role="alert"`
+ * so a sign attempt that cannot go through moves the caret to the reason,
+ * rather than leaving a disabled button and no explanation.
+ */
+function ReviewStep({
+  reviewRows,
+  patientName,
+  warnings,
+  cleared,
+  blockers,
+  showBlockers,
+  blockerRef,
+  signLabel,
+  onClearWarning,
+  onRestoreWarning,
+  onBack,
+  onPend,
+  onSign,
+}: Readonly<{
+  reviewRows: Record<string, ReactNode>[];
+  patientName: string;
+  warnings: readonly OrderWarning[];
+  cleared: Record<string, string>;
+  blockers: readonly string[];
+  showBlockers: boolean;
+  blockerRef: RefObject<HTMLDivElement | null>;
+  signLabel: string;
+  onClearWarning: (warningId: string, reason: string) => void;
+  onRestoreWarning: (warningId: string) => void;
+  onBack: () => void;
+  onPend: () => void;
+  onSign: () => void;
+}>): ReactElement {
+  return (
+    <>
+      <Card tone="cream" title={`Review ${countLabel(reviewRows.length)}`}>
+        {reviewRows.length === 0 ? (
+          <p className="or-body">
+            The draft is empty. Go back and add an order from the favourites or the catalogue.
+          </p>
+        ) : (
+          <Table
+            columns={REVIEW_COLUMNS}
+            rows={reviewRows}
+            caption={`Orders drafted for ${patientName}`}
+          />
+        )}
+      </Card>
+
+      <OrderWarnings
+        warnings={[...warnings]}
+        cleared={cleared}
+        onClear={onClearWarning}
+        onRestore={onRestoreWarning}
+      />
+
+      {showBlockers && blockers.length > 0 ? (
+        <div
+          ref={blockerRef}
+          tabIndex={-1}
+          role="alert"
+          className="or-blockers"
+          aria-label="Before signing"
+        >
+          <h3 className="or-h3">Before signing</h3>
+          <ul className="or-blockers__list">
+            {blockers.map((blocker) => (
+              <li key={blocker} className="or-small">
+                {blocker}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="or-cluster">
+        <Button variant="ghost" iconLeft="arrow-left" onClick={onBack}>
+          Back to building
+        </Button>
+        <Button variant="secondary" iconLeft="inbox" onClick={onPend}>
+          Pend orders
+        </Button>
+        <Button iconLeft="pen-line" onClick={onSign}>
+          {signLabel}
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
   const rows = patients.data;
   const [patientId, setPatientId] = useState(rows[0]?.id ?? '');
-  const [drafts, setDrafts] = useState<DraftOrder[]>([]);
-  const [cleared, setCleared] = useState<Record<string, string>>({});
-  const [step, setStep] = useState<Step>('build');
-  const [showBlockers, setShowBlockers] = useState(false);
+  /* One composition rather than four settings: see `composition.ts` for why
+     signing and switching patients have to move all of them together. */
+  const [composition, dispatch] = useReducer(reduceComposition, EMPTY_COMPOSITION);
+  const { drafts, cleared, step, showBlockers } = composition;
   const [confirming, setConfirming] = useState(false);
   const [completion, setCompletion] = useState<Completion | null>(null);
 
@@ -127,25 +387,21 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
     [patient?.id, drafts]
   );
 
-  /* What stands between this draft and a signature, in the order a person would
-     fix it. Never a disabled button with no explanation. */
-  const blockers = useMemo(() => {
-    const missingDiagnosis = drafts
-      .filter((draft) => !draft.diagnosisCode)
-      .map((draft) => `${draft.entry.name} has no diagnosis linked.`);
-    const openCriticals = warnings
-      .filter((warning) => warning.tier === 'CRITICAL' && !cleared[warning.id])
-      .map((warning) => `${warning.title}. Choose an override reason or remove the order.`);
-    return [...openCriticals, ...missingDiagnosis];
-  }, [drafts, warnings, cleared]);
+  const blockers = useMemo(
+    () => signBlockers(drafts, warnings, cleared),
+    [drafts, warnings, cleared]
+  );
 
   const addOrder = useCallback(
     (entry: OrderCatalogEntry) => {
       draftKeySeed.current += 1;
-      const suggested = problems.find((problem) => entry.problemCodes.includes(problem.code));
-      setDrafts((previous) => [
-        ...previous,
-        {
+      /* A set, because this scans every problem against every code the entry
+         lists, and both grow with the patient. */
+      const entryCodes = new Set(entry.problemCodes);
+      const suggested = problems.find((problem) => entryCodes.has(problem.code));
+      dispatch({
+        type: 'add',
+        draft: {
           key: `${entry.code}-${draftKeySeed.current}`,
           entry,
           priority: 'ROUTINE',
@@ -153,40 +409,30 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
           // Pre-fill everything predictable: one obvious diagnosis is predictable.
           diagnosisCode: suggested?.code ?? null,
         },
-      ]);
-      setShowBlockers(false);
+      });
       setCompletion(null);
     },
     [problems]
   );
 
   const updateDraft = useCallback((key: string, patch: Partial<DraftOrder>) => {
-    setDrafts((previous) =>
-      previous.map((draft) => (draft.key === key ? { ...draft, ...patch } : draft))
-    );
+    dispatch({ type: 'update', key, patch });
   }, []);
 
   const removeDraft = useCallback((key: string) => {
-    setDrafts((previous) => previous.filter((draft) => draft.key !== key));
+    dispatch({ type: 'remove', key });
   }, []);
 
   const clearWarning = useCallback((warningId: string, reason: string) => {
-    setCleared((previous) => ({ ...previous, [warningId]: reason }));
+    dispatch({ type: 'clearWarning', warningId, reason });
   }, []);
 
   const restoreWarning = useCallback((warningId: string) => {
-    setCleared((previous) => {
-      const next = { ...previous };
-      delete next[warningId];
-      return next;
-    });
+    dispatch({ type: 'restoreWarning', warningId });
   }, []);
 
   const finish = useCallback((title: string, message: string) => {
-    setDrafts([]);
-    setCleared({});
-    setStep('build');
-    setShowBlockers(false);
+    dispatch({ type: 'reset' });
     setConfirming(false);
     setCompletion({ title, message });
   }, []);
@@ -201,9 +447,9 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
 
   const requestSign = useCallback(() => {
     if (drafts.length === 0) return;
-    setStep('review');
+    dispatch({ type: 'goTo', step: 'review' });
     if (blockers.length > 0) {
-      setShowBlockers(true);
+      dispatch({ type: 'revealBlockers' });
       // Move the caret to the reason, not just the scroll position.
       window.requestAnimationFrame(() => blockerRef.current?.focus());
       return;
@@ -221,9 +467,7 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
     (nextId: string) => {
       setPatientId(nextId);
       if (drafts.length > 0) {
-        setDrafts([]);
-        setCleared({});
-        setStep('build');
+        dispatch({ type: 'reset' });
         setCompletion({
           title: 'Draft cleared',
           message: 'Orders belong to one chart, so switching patients starts a new draft.',
@@ -260,7 +504,7 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
         label: 'Review the draft orders',
         keywords: ['check orders', 'before signing'],
         icon: 'list-checks',
-        perform: () => setStep('review'),
+        perform: () => dispatch({ type: 'goTo', step: 'review' }),
       },
       {
         id: 'orders.new.pend',
@@ -285,15 +529,6 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
     value: row.id,
     label: `${formatName(row.name, 'listing')} (${formatMrn(row.mrn)})`,
   }));
-
-  const reviewColumns: TableColumn[] = [
-    { key: 'order', header: 'Order' },
-    { key: 'code', header: 'Code', mono: true },
-    { key: 'priority', header: 'Priority' },
-    { key: 'specimen', header: 'Specimen' },
-    { key: 'diagnosis', header: 'Diagnosis' },
-    { key: 'destination', header: 'Destination' },
-  ];
 
   const reviewRows = drafts.map((draft) => ({
     id: draft.key,
@@ -326,35 +561,7 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
         </>
       }
       rightRail={
-        patient ? (
-          <Card tone="cream" overline="Ordering for" title={formatName(patient.name, 'full')}>
-            <dl className="or-keyvalues">
-              <dt className="or-small">MRN</dt>
-              <dd className="or-mono">{formatMrn(patient.mrn)}</dd>
-              <dt className="or-small">Age</dt>
-              <dd className="or-small">
-                {formatAge(patient.birthDate, now)}, born {formatDate(patient.birthDate)}
-              </dd>
-              <dt className="or-small">Problems</dt>
-              <dd className="or-small">
-                {problems.length === 0 ? (
-                  'No problems recorded'
-                ) : (
-                  <ul className="or-plainlist">
-                    {problems.map((problem) => (
-                      <li key={problem.code}>
-                        {problem.display} <span className="or-mono">{problem.code}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </dd>
-            </dl>
-            <p className="or-small or-muted">
-              Signing transmits immediately. Pending keeps the orders in the visit tray, unsigned.
-            </p>
-          </Card>
-        ) : null
+        patient ? <OrderingForRail patient={patient} problems={problems} now={now} /> : null
       }
     >
       <ScreenCommands commands={commands} />
@@ -378,103 +585,35 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
       </Card>
 
       {step === 'build' ? (
-        <>
-          <Card tone="cream" title="Add an order">
-            <OrderPicker
-              problems={problems}
-              draftedCodes={drafts.map((draft) => draft.entry.code)}
-              onAdd={addOrder}
-              searchInputId={searchInputId}
-            />
-          </Card>
-
-          {drafts.length === 0 ? (
-            <Card tone="cream" title="Nothing drafted yet">
-              <p className="or-body">
-                Pick a favourite or search the catalogue. Specimen, destination and priority are
-                filled in for you, and a diagnosis is suggested from the problem list.
-              </p>
-            </Card>
-          ) : (
-            <>
-              <OrderWarnings
-                warnings={warnings}
-                cleared={cleared}
-                onClear={clearWarning}
-                onRestore={restoreWarning}
-              />
-              <DraftOrders
-                drafts={drafts}
-                problems={problems}
-                onChange={updateDraft}
-                onRemove={removeDraft}
-              />
-              <div className="or-cluster">
-                <Button
-                  variant="secondary"
-                  iconRight="arrow-right"
-                  onClick={() => setStep('review')}
-                >
-                  Review and sign
-                </Button>
-              </div>
-            </>
-          )}
-        </>
+        <BuildStep
+          problems={problems}
+          drafts={drafts}
+          warnings={warnings}
+          cleared={cleared}
+          searchInputId={searchInputId}
+          onAdd={addOrder}
+          onUpdateDraft={updateDraft}
+          onRemoveDraft={removeDraft}
+          onClearWarning={clearWarning}
+          onRestoreWarning={restoreWarning}
+          onReview={() => dispatch({ type: 'goTo', step: 'review' })}
+        />
       ) : (
-        <>
-          <Card tone="cream" title={`Review ${countLabel(drafts.length)}`}>
-            {drafts.length === 0 ? (
-              <p className="or-body">
-                The draft is empty. Go back and add an order from the favourites or the catalogue.
-              </p>
-            ) : (
-              <Table
-                columns={reviewColumns}
-                rows={reviewRows}
-                caption={`Orders drafted for ${patient ? formatName(patient.name, 'full') : 'this patient'}`}
-              />
-            )}
-          </Card>
-
-          <OrderWarnings
-            warnings={warnings}
-            cleared={cleared}
-            onClear={clearWarning}
-            onRestore={restoreWarning}
-          />
-
-          {showBlockers && blockers.length > 0 ? (
-            <div
-              ref={blockerRef}
-              tabIndex={-1}
-              role="alert"
-              className="or-blockers"
-              aria-label="Before signing"
-            >
-              <h3 className="or-h3">Before signing</h3>
-              <ul className="or-blockers__list">
-                {blockers.map((blocker) => (
-                  <li key={blocker} className="or-small">
-                    {blocker}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <div className="or-cluster">
-            <Button variant="ghost" iconLeft="arrow-left" onClick={() => setStep('build')}>
-              Back to building
-            </Button>
-            <Button variant="secondary" iconLeft="inbox" onClick={pend}>
-              Pend orders
-            </Button>
-            <Button iconLeft="pen-line" onClick={requestSign}>
-              {`Sign ${countLabel(drafts.length)}`}
-            </Button>
-          </div>
-        </>
+        <ReviewStep
+          reviewRows={reviewRows}
+          patientName={patient ? formatName(patient.name, 'full') : 'this patient'}
+          warnings={warnings}
+          cleared={cleared}
+          blockers={blockers}
+          showBlockers={showBlockers}
+          blockerRef={blockerRef}
+          signLabel={`Sign ${countLabel(drafts.length)}`}
+          onClearWarning={clearWarning}
+          onRestoreWarning={restoreWarning}
+          onBack={() => dispatch({ type: 'goTo', step: 'build' })}
+          onPend={pend}
+          onSign={requestSign}
+        />
       )}
 
       <Modal
@@ -520,7 +659,7 @@ function Composer({ patients, now }: ComposerProps): ReactElement {
 
 /** "1 order", "3 orders". One plural rule for the whole screen. */
 function countLabel(count: number): string {
-  return `${count} ${count === 1 ? 'order' : 'orders'}`;
+  return formatCount(count, 'order');
 }
 
 /** Favourites promoted into the palette. Four keeps the group readable. */

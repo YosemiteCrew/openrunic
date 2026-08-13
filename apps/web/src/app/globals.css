@@ -85,6 +85,47 @@
 
 /* --- Utilities ------------------------------------------------------------ */
 
+/* `<output>` is the element for a polite status line, and every status line in
+   this app owns its line. The UA default is `inline`, so reset it once here
+   rather than in each of the seven places one appears. */
+output {
+  display: block;
+  margin: 0;
+}
+
+/* `<dialog>` is the element for a modal surface, so drawers and the command
+   palette use it rather than `role="dialog"` on a div. They are rendered with
+   the `open` attribute rather than opened through `showModal()`, which keeps
+   them inside the page's own layout and scrim instead of the top layer; the UA
+   box (absolute positioning, auto margins, fit-content sizing, a border and a
+   padding) has to come off for that to work. Each panel's own class supplies
+   the geometry. */
+dialog {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: transparent;
+}
+
+/* `<fieldset>` is the element for a named set of related controls, so filter
+   bars and chip rows use it rather than `role="group"` on a div. The UA gives
+   it a border, padding and `min-inline-size: min-content`; that last one stops
+   it shrinking inside a flex or grid parent, which is why it is reset here and
+   not just visually. Layout comes from the class on each fieldset. */
+fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .or-visually-hidden {
   position: absolute;
   width: 1px;
@@ -1245,12 +1286,16 @@
   color: var(--text-ink);
 }
 
-/* Bottom-left, one at a time, never for an error that needs an action. */
+/* Bottom-left, one at a time, never for an error that needs an action. When
+   more than one is queued they stack upward in the order they arrived. */
 .or-toast-dock {
   position: fixed;
   bottom: var(--space-5);
   left: var(--space-5);
   z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   max-width: min(420px, calc(100vw - var(--space-8)));
 }
 
@@ -2104,7 +2149,7 @@
 }
 
 /* The delay treatment is a static wash plus a counted, worded badge. Nothing
-   here blinks, pulses or moves; the OpenEMR flash is deliberately not rebuilt.
+   here blinks, pulses or moves; the legacy blink is deliberately not rebuilt.
    See the caution-tier note in :root. */
 .or-flow-card[data-tier='caution'] {
   border-color: var(--or-status-caution);
@@ -2580,12 +2625,23 @@
   max-width: min(420px, calc(100vw - var(--space-6)));
 }
 
-/* Drawer (proposed library addition) --------------------------------------- */
+/* Drawer (proposed library addition) ---------------------------------------
+ *
+ * One block, used by both drawer components (admin and billing). They were
+ * written as two identically-named blocks in two sections of this file, which
+ * meant the cascade silently resolved each property to whichever section came
+ * last, rather than to what either author intended. The values below are that
+ * resolved set, written down once.
+ *
+ * Width is the one geometry that genuinely differs: 720px suits a claim or a
+ * composer, and the admin drawer narrows itself to 480 by passing an inline
+ * width, which beats this rule.
+ */
 
 .or-drawer {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 75;
   display: flex;
   justify-content: flex-end;
 }
@@ -2600,8 +2656,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  width: min(720px, 100%);
   max-width: 100%;
   height: 100%;
+  max-height: 100dvh;
   background: var(--surface-card);
   box-shadow: var(--shadow-overlay);
   /* Enters from the right and leaves to the right: a surface exits the way it
@@ -2617,15 +2675,15 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-5) var(--space-5) var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-5);
   border-bottom: var(--hairline) solid var(--border-hairline);
 }
 
 .or-drawer__heading {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -2633,7 +2691,11 @@
   margin: 0;
 }
 
-.or-drawer__description {
+/* The line under the title: `description` on the admin drawer, `subtitle` on
+   the billing one. Same role, so the same rule. */
+.or-drawer__description,
+.or-drawer__subtitle {
+  margin: 0;
   color: var(--text-secondary);
   max-width: 60ch;
 }
@@ -2647,6 +2709,7 @@
 
 .or-drawer__body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-5);
 }
@@ -2654,11 +2717,20 @@
 .or-drawer__footer {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border-top: var(--hairline) solid var(--border-hairline);
   background: var(--bg-page);
+}
+
+/* The consequence sentence, left of the buttons that carry it out. */
+.or-drawer__confirm {
+  flex: 1;
+  min-width: 24ch;
+  margin: 0;
+  color: var(--text-secondary);
 }
 
 @keyframes or-drawer-in {
@@ -3664,81 +3736,12 @@
   color: var(--text-secondary);
 }
 
-/* --- Billing: drawer ------------------------------------------------------ */
-
-.or-drawer {
-  position: fixed;
-  inset: 0;
-  z-index: 75;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.or-drawer__scrim {
-  position: absolute;
-  inset: 0;
-  background: var(--scrim-espresso);
-}
-
-.or-drawer__panel {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: min(720px, 100%);
-  max-height: 100dvh;
-  background: var(--surface-card);
-  box-shadow: var(--shadow-overlay);
-}
-
-.or-drawer__panel:focus {
-  outline: none;
-}
-
-.or-drawer__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border-bottom: var(--hairline) solid var(--border-hairline);
-}
-
-.or-drawer__heading {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.or-drawer__subtitle {
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-.or-drawer__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-5);
-}
-
-.or-drawer__footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-top: var(--hairline) solid var(--border-hairline);
-}
-
-/* The consequence sentence, left of the buttons that carry it out. */
-.or-drawer__confirm {
-  flex: 1;
-  min-width: 24ch;
-  margin: 0;
-  color: var(--text-secondary);
-}
+/* --- Billing: drawer ------------------------------------------------------
+ *
+ * Intentionally empty. The billing drawer uses the shared `.or-drawer` block
+ * in the admin section above; it used to restate it here, which made the
+ * cascade, rather than either author, decide what a drawer looked like.
+ */
 
 /* --- Billing: remittance, statements, payments ---------------------------- */
 
@@ -3868,11 +3871,4 @@
 .or-area-list__body .or-small {
   margin: 0;
   color: var(--text-secondary);
-}
-
-/* Stacks the dock the shared bottom-left toast container already positions. */
-.or-toast-dock {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }

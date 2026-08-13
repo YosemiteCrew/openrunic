@@ -35,7 +35,21 @@ export interface OrdersScreenProps {
   now?: string;
 }
 
-export function OrdersScreen({ client, now = MOCK_NOW }: OrdersScreenProps): ReactElement {
+const COLUMNS: TableColumn[] = [
+  { key: 'order', header: 'Order' },
+  { key: 'patient', header: 'Patient' },
+  { key: 'placed', header: 'Placed' },
+  { key: 'provider', header: 'Ordered by' },
+  { key: 'destination', header: 'Destination' },
+  { key: 'status', header: 'Status' },
+  { key: 'age', header: 'In this state' },
+  { key: 'actions', header: 'Actions' },
+];
+
+export function OrdersScreen({
+  client,
+  now = MOCK_NOW,
+}: Readonly<OrdersScreenProps>): ReactElement {
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const orders = useOrders(status ? { status } : {}, { client });
 
@@ -68,17 +82,6 @@ export function OrdersScreen({ client, now = MOCK_NOW }: OrdersScreenProps): Rea
     ],
     []
   );
-
-  const columns: TableColumn[] = [
-    { key: 'order', header: 'Order' },
-    { key: 'patient', header: 'Patient' },
-    { key: 'placed', header: 'Placed' },
-    { key: 'provider', header: 'Ordered by' },
-    { key: 'destination', header: 'Destination' },
-    { key: 'status', header: 'Status' },
-    { key: 'age', header: 'In this state' },
-    { key: 'actions', header: 'Actions' },
-  ];
 
   return (
     <AppShell
@@ -122,7 +125,7 @@ export function OrdersScreen({ client, now = MOCK_NOW }: OrdersScreenProps): Rea
         >
           {(page: ListResponse<Order>) => (
             <Table
-              columns={columns}
+              columns={COLUMNS}
               rows={page.data.map((order) => toRow(order, now))}
               caption="Orders across the practice, newest first"
             />

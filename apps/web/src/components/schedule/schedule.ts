@@ -73,7 +73,7 @@ const CATEGORY_VIZ: Readonly<Record<string, number>> = {
 export function categoryViz(code: string): number {
   const known = CATEGORY_VIZ[code.toUpperCase()];
   if (known) return known;
-  const sum = [...code].reduce((total, character) => total + character.charCodeAt(0), 0);
+  const sum = [...code].reduce((total, character) => total + (character.codePointAt(0) ?? 0), 0);
   return (sum % 6) + 1;
 }
 
@@ -239,7 +239,7 @@ export function nextStatus(status: AppointmentStatus): AppointmentStatus | null 
 }
 
 /**
- * Waiting bands. OpenEMR blinked at you past the threshold; this returns a tier
+ * Waiting bands. Legacy boards blinked at you past the threshold; this returns a tier
  * and the screen renders a static treatment plus a counted, worded label.
  */
 export type DelayTier = 'none' | 'caution' | 'delayed';
@@ -248,10 +248,14 @@ export const CAUTION_MINUTES = 15;
 export const DELAYED_MINUTES = 30;
 
 /** Only a patient still waiting for someone can be delayed; a visit in progress cannot. */
-const WAITING_STATUSES: readonly AppointmentStatus[] = ['ARRIVED', 'CHECKED_IN', 'ROOMED'];
+const WAITING_STATUSES: ReadonlySet<AppointmentStatus> = new Set([
+  'ARRIVED',
+  'CHECKED_IN',
+  'ROOMED',
+]);
 
 export function delayTier(status: AppointmentStatus, waitingMinutes: number): DelayTier {
-  if (!WAITING_STATUSES.includes(status)) return 'none';
+  if (!WAITING_STATUSES.has(status)) return 'none';
   if (waitingMinutes >= DELAYED_MINUTES) return 'delayed';
   if (waitingMinutes >= CAUTION_MINUTES) return 'caution';
   return 'none';
@@ -323,7 +327,7 @@ export function findOpenSlots(
   }
 
   return slots
-    .sort((a, b) => a.start.localeCompare(b.start) || a.providerId.localeCompare(b.providerId))
+    .toSorted((a, b) => a.start.localeCompare(b.start) || a.providerId.localeCompare(b.providerId))
     .slice(0, limit);
 }
 

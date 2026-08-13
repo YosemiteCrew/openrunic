@@ -235,3 +235,135 @@ describe('NewOrderScreen', () => {
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
 });
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string | RegExp): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(
+    await screen.findByRole('option', {
+      name: typeof label === 'string' ? new RegExp(label) : label,
+    })
+  );
+}
+
+describe('NewOrderScreen, driven from the command palette', () => {
+  it('puts the caret in the catalogue search', async () => {
+    await renderComposer();
+
+    await runCommand('Search the order catalogue');
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Search the order catalogue'));
+  });
+
+  it('orders a favourite by name, without opening the catalogue at all', async () => {
+    await renderComposer();
+
+    await runCommand(/^Order Lipid panel/);
+
+    const drafts = await screen.findByRole('list', { name: 'Drafted orders' });
+    expect(within(drafts).getByText('LAB-LIPID')).toBeInTheDocument();
+  });
+
+  it('moves to review, and back to building from the review step', async () => {
+    await renderComposer();
+    fireEvent.click(favourite(/Lipid panel/));
+
+    await runCommand('Review the draft orders');
+    expect(await screen.findByRole('table', { name: /Orders drafted for/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to building' }));
+    expect(await screen.findByRole('list', { name: 'Drafted orders' })).toBeInTheDocument();
+  });
+
+  it('pends and signs from the palette exactly as the buttons do', async () => {
+    await renderComposer();
+    fireEvent.click(favourite(/Lipid panel/));
+
+    await runCommand('Pend the draft orders');
+    expect(await screen.findByText('1 order pended')).toBeInTheDocument();
+
+    fireEvent.click(favourite(/Lipid panel/));
+    await runCommand('Sign the draft orders');
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign and transmit' }));
+
+    expect(await screen.findByText('1 order signed')).toBeInTheDocument();
+  });
+
+  it('does nothing at all with an empty draft', async () => {
+    await renderComposer();
+
+    await runCommand('Pend the draft orders');
+    expect(screen.queryByText(/pended/)).not.toBeInTheDocument();
+
+    await runCommand('Sign the draft orders');
+    // No confirmation for zero orders, and no move to a review of nothing.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing drafted yet')).toBeInTheDocument();
+  });
+});
+
+describe('NewOrderScreen, the review step', () => {
+  it('says the draft is empty rather than showing a table with no rows', async () => {
+    await renderComposer();
+
+    await runCommand('Review the draft orders');
+
+    expect(
+      await screen.findByText(
+        'The draft is empty. Go back and add an order from the favourites or the catalogue.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: /Orders drafted for/ })).not.toBeInTheDocument();
+  });
+
+  it('names every reason the signature is held, and moves the caret to them', async () => {
+    await renderComposer();
+    fireEvent.click(favourite(/HbA1c/));
+    // The duplicate hard stop is raised before the order is even drafted, so
+    // draft something orderable alongside it.
+    fireEvent.click(favourite(/Full blood count/));
+
+    await runCommand('Sign the draft orders');
+
+    const blockers = await screen.findByRole('alert', { name: 'Before signing' });
+    expect(within(blockers).getByRole('heading', { name: 'Before signing' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('cancels the signature confirmation, leaving the draft intact', async () => {
+    await renderComposer();
+    fireEvent.click(favourite(/Lipid panel/));
+    fireEvent.click(at(screen.getAllByRole('button', { name: 'Sign 1 order' })));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('table', { name: /Orders drafted for/ })).toBeInTheDocument();
+    expect(screen.queryByText(/order signed/)).not.toBeInTheDocument();
+  });
+
+  it('pends from the review step as well as from the page action', async () => {
+    await renderComposer();
+    fireEvent.click(favourite(/Lipid panel/));
+
+    await runCommand('Review the draft orders');
+    await screen.findByRole('table', { name: /Orders drafted for/ });
+    // Two Pend controls exist: one in the page header, one at the foot of the
+    // review step. The review step's is the one under the reviewed list.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pend orders' }).at(-1)!);
+
+    expect(await screen.findByText('1 order pended')).toBeInTheDocument();
+  });
+
+  it('says a drafted order still needs a diagnosis, in the review table', async () => {
+    await renderComposer();
+    fireEvent.click(favourite(/Full blood count/));
+
+    await runCommand('Review the draft orders');
+
+    const table = await screen.findByRole('table', { name: /Orders drafted for/ });
+    expect(within(table).getByText('Needs a diagnosis')).toBeInTheDocument();
+  });
+});

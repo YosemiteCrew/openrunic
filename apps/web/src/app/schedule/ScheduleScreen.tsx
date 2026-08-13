@@ -29,7 +29,7 @@ import { formatDate, formatName, formatTime } from '@/lib/format';
  * FD-01 Schedule day view: the front door.
  *
  * The whole day at a glance, and the launch point for everything the front desk
- * does with it. OpenEMR buried its calendar behind a menu and defaulted to a
+ * does with it. Legacy systems buried the calendar behind a menu and defaulted to a
  * month view that took thirty seconds to draw; here the day is the home screen,
  * the current time is ruled across it, and every action on a visit is reachable
  * from the palette without touching the grid.
@@ -66,7 +66,7 @@ const NO_PATIENTS: ReadonlyMap<string, Patient> = new Map();
 
 const DEFAULT_SLOT_MINUTES = 20;
 
-export function ScheduleScreen({ client }: ScheduleScreenProps = {}): ReactElement {
+export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): ReactElement {
   const [day, setDay] = useState<string>(() => clinicToday());
   const [providerId, setProviderId] = useState<string>('');
   const [selectedId, setSelectedId] = useState<string | null>(null);

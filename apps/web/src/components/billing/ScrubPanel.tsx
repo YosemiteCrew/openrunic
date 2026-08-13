@@ -3,6 +3,8 @@
 import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
+import { formatCount } from '@/lib/format';
+
 import type { ScrubFinding } from './billing';
 
 /**
@@ -19,7 +21,7 @@ export interface ScrubPanelProps {
   findings: readonly ScrubFinding[];
 }
 
-export function ScrubPanel({ findings }: ScrubPanelProps): ReactElement {
+export function ScrubPanel({ findings }: Readonly<ScrubPanelProps>): ReactElement {
   const blocking = findings.filter((finding) => finding.severity === 'BLOCKING');
   const advisory = findings.filter((finding) => finding.severity === 'ADVISORY');
   const ordered = [...blocking, ...advisory];
@@ -28,12 +30,12 @@ export function ScrubPanel({ findings }: ScrubPanelProps): ReactElement {
     <Card overline="Scrub" title="Before billing">
       {/* Polite: the biller is editing the sheet, and each keystroke changing
           the count must not interrupt them mid-line. */}
-      <p className="or-small or-billing__hint" role="status">
+      <output className="or-small or-billing__hint">
         {blocking.length === 0
           ? 'Nothing blocks this visit from billing.'
-          : `${blocking.length} ${blocking.length === 1 ? 'error blocks' : 'errors block'} billing.`}
+          : `${formatCount(blocking.length, 'error blocks', 'errors block')} billing.`}
         {advisory.length > 0 ? ` ${advisory.length} to review.` : ''}
-      </p>
+      </output>
 
       {ordered.length === 0 ? null : (
         <ul className="or-scrub-list">

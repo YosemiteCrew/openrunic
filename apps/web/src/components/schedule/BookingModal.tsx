@@ -14,7 +14,7 @@ import type { ScheduleProvider } from './ScheduleGrid';
 /**
  * Booking into a chosen slot: three fields, everything else optional.
  *
- * OpenEMR's appointment form fought walk-ins by demanding fields the workflow
+ * The legacy appointment form fought walk-ins by demanding fields the workflow
  * did not need. Here the slot already carries the time and the provider, so
  * what is left is who and what for, and the reason line is genuinely optional.
  *
@@ -53,7 +53,7 @@ export function BookingModal({
   patients,
   onCancel,
   onConfirm,
-}: BookingModalProps): ReactElement {
+}: Readonly<BookingModalProps>): ReactElement {
   const [patientId, setPatientId] = useState(patients[0]?.id ?? '');
   const [visitType, setVisitType] = useState(VISIT_TYPES[0] ?? 'Follow-up');
   const [reason, setReason] = useState('');

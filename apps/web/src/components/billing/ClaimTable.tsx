@@ -47,7 +47,7 @@ export function ClaimTable({
   selected,
   onToggle,
   onOpen,
-}: ClaimTableProps): ReactElement {
+}: Readonly<ClaimTableProps>): ReactElement {
   const rows = claims.map((claim): Record<string, ReactNode> => {
     const days = claimAgeDays(claim, now);
     const ageing = ageingState(days);

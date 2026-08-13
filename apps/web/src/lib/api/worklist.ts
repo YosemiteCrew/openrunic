@@ -262,7 +262,7 @@ export function patientProblems(patientId: string | null): PatientProblem[] {
 /**
  * The catalogue, ranked for this patient.
  *
- * Ranking is the whole point of the screen: OpenEMR's procedure order form made
+ * Ranking is the whole point of the screen: The legacy procedure order form made
  * a clinician re-find the same eight tests every day. Favourites first, then
  * anything the patient's problem list makes likely, then name matches, then the
  * rest, and a typed query narrows before any of that applies.
@@ -304,10 +304,12 @@ export function warningsFor(
 ): OrderWarning[] {
   const drafted = new Set(codes);
   const rank: Record<WarningTier, number> = { CRITICAL: 0, CAUTION: 1, INFO: 2 };
-  return warnings
-    .filter((warning) => drafted.has(warning.orderCode))
-    .filter((warning) => warning.patientId === null || warning.patientId === patientId)
-    .sort((a, b) => rank[a.tier] - rank[b.tier]);
+  const relevant = warnings.filter(
+    (warning) =>
+      drafted.has(warning.orderCode) &&
+      (warning.patientId === null || warning.patientId === patientId)
+  );
+  return relevant.sort((a, b) => rank[a.tier] - rank[b.tier]);
 }
 
 /* -------------------------------------------------------------------------- */

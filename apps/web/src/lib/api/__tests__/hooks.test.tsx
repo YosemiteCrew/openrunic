@@ -2,9 +2,15 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/lib/api/client';
-import { queryKey, useAppointments, usePatient, usePatients } from '@/lib/api/hooks';
+import {
+  queryKey,
+  useAppointment,
+  useAppointments,
+  usePatient,
+  usePatients,
+} from '@/lib/api/hooks';
 import { createMockClient } from '@/lib/api/mock/client';
-import { MOCK_PATIENTS } from '@/lib/api/mock/fixtures';
+import { MOCK_APPOINTMENTS, MOCK_PATIENTS } from '@/lib/api/mock/fixtures';
 import type { ApiClient } from '@/lib/api/types';
 
 /**
@@ -13,7 +19,7 @@ import type { ApiClient } from '@/lib/api/types';
  * change, and a retry that actually re-runs the request.
  */
 
-function Probe({ client, q }: { client: ApiClient; q?: string }) {
+function Probe({ client, q }: Readonly<{ client: ApiClient; q?: string }>) {
   const patients = usePatients({ q }, { client });
   return (
     <div>
@@ -94,7 +100,7 @@ describe('usePatients', () => {
 });
 
 describe('usePatient', () => {
-  function OneProbe({ id }: { id: string | null }) {
+  function OneProbe({ id }: Readonly<{ id: string | null }>) {
     const patient = usePatient(id, { client: createMockClient() });
     return (
       <p data-testid="mrn">
@@ -128,5 +134,116 @@ describe('useAppointments', () => {
     render(<DayProbe />);
     await waitFor(() => expect(screen.getByTestId('day')).not.toHaveTextContent('loading'));
     expect(Number(screen.getByTestId('day').textContent)).toBeGreaterThan(0);
+  });
+});
+
+describe('useApiQuery, the states a screen has to render', () => {
+  function ExplicitProbe({ client, enabled }: Readonly<{ client: ApiClient; enabled?: boolean }>) {
+    const patients = usePatients({}, { client, enabled });
+    return (
+      <p data-testid="state">{`${patients.status}:${patients.data?.data.length ?? 'none'}`}</p>
+    );
+  }
+
+  it('does not fire a disabled query, and does not sit in loading either', () => {
+    const list = vi.fn();
+    render(
+      <ExplicitProbe
+        client={failingClient(new ApiError('x', { kind: 'network' }), list)}
+        enabled={false}
+      />
+    );
+
+    // A disabled query has nothing to wait for, so the screen renders its
+    // empty state rather than a spinner that never resolves.
+    expect(screen.getByTestId('state')).toHaveTextContent('success:none');
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('turns a rejection that is not an ApiError into one a screen can explain', async () => {
+    const client = {
+      mode: 'mock',
+      patients: {
+        list: () => Promise.reject(new TypeError('boom')),
+        get: () => Promise.reject(new TypeError('boom')),
+      },
+      appointments: {
+        list: () => Promise.reject(new TypeError('boom')),
+        get: () => Promise.reject(new TypeError('boom')),
+      },
+    } as unknown as ApiClient;
+
+    function ErrorProbe() {
+      const patients = usePatients({}, { client });
+      return (
+        <p data-testid="kind">{`${patients.status}:${patients.error?.kind ?? 'none'}:${patients.error?.message ?? ''}`}</p>
+      );
+    }
+
+    render(<ErrorProbe />);
+
+    // Every failure reaches the screen as an ApiError, so ErrorState never has
+    // to guess at a raw TypeError from somewhere in the stack.
+    await waitFor(() =>
+      expect(screen.getByTestId('kind')).toHaveTextContent(
+        'error:network:The request could not be completed.'
+      )
+    );
+  });
+
+  it('drops a response that arrives after the component is gone', async () => {
+    let resolve: ((value: unknown) => void) | undefined;
+    const client = {
+      mode: 'mock',
+      patients: {
+        list: () =>
+          new Promise((settle) => {
+            resolve = settle;
+          }),
+        get: () => Promise.reject(new Error('unused')),
+      },
+      appointments: {
+        list: () => Promise.reject(new Error('unused')),
+        get: () => Promise.reject(new Error('unused')),
+      },
+    } as unknown as ApiClient;
+
+    const view = render(<ExplicitProbe client={client} />);
+    expect(screen.getByTestId('state')).toHaveTextContent('loading:none');
+
+    view.unmount();
+    // Settling after unmount must not set state on a gone component. React
+    // would warn, and in a real chart the request belongs to a screen the
+    // clinician has already left.
+    await act(async () => {
+      resolve?.({ data: [], page: { page: 1, pageSize: 25, total: 0, totalPages: 1 } });
+      await Promise.resolve();
+    });
+
+    expect(view.container).toBeEmptyDOMElement();
+  });
+});
+
+describe('the remaining read hooks', () => {
+  function AppointmentProbe({ id }: Readonly<{ id: string | null }>) {
+    const appointment = useAppointment(id, { client: createMockClient() });
+    return (
+      <p data-testid="appointment">{`${appointment.status}:${appointment.data?.status ?? 'none'}`}</p>
+    );
+  }
+
+  it('reads one appointment by id', async () => {
+    const first = MOCK_APPOINTMENTS[0]!;
+    render(<AppointmentProbe id={first.id} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('appointment')).toHaveTextContent(`success:${first.status}`)
+    );
+  });
+
+  it('fires no request for an appointment with no id', () => {
+    render(<AppointmentProbe id={null} />);
+
+    expect(screen.getByTestId('appointment')).toHaveTextContent('success:none');
   });
 });

@@ -45,6 +45,23 @@ const STATUS_TONE: Record<IntegrationStatus, 'success' | 'neutral' | 'danger'> =
   NOT_CONNECTED: 'neutral',
 };
 
+/**
+ * What a test connection reports back, per state. A seam that is already
+ * failing says what to replace, one with no adapter says what is missing, and
+ * a working seam reports the round trip. Listed per status rather than
+ * branched, so adding a state forces a sentence to be written for it.
+ */
+const TEST_RESULT: Record<IntegrationStatus, string> = {
+  CONNECTED: 'The connection answered in 142 ms and returned the expected response.',
+  DEMO: 'The connection answered in 142 ms and returned the expected response.',
+  ERROR: 'The lab refused the credentials again. Replace the service account, then test once more.',
+  NOT_CONNECTED: 'There is nothing to test yet. Choose an adapter and save its credentials first.',
+};
+
+function testResultFor(status: IntegrationStatus): string {
+  return TEST_RESULT[status];
+}
+
 /** One sentence under the chip, so the state is never only a colour and a word. */
 function statusSentence(integration: Integration): string {
   switch (integration.status) {
@@ -59,7 +76,137 @@ function statusSentence(integration: Integration): string {
   }
 }
 
-export function IntegrationsScreen({ client }: IntegrationsScreenProps = {}): ReactElement {
+/** One seam's card in the grid: what it is, how it is doing, and a way in. */
+function AdapterCard({
+  integration,
+  onConfigure,
+}: Readonly<{ integration: Integration; onConfigure: (id: string) => void }>): ReactElement {
+  return (
+    <Card className="or-adapter" data-status={integration.status}>
+      <div className="or-adapter__head">
+        <h2 className="or-h3">{integration.name}</h2>
+        <Badge tone={STATUS_TONE[integration.status]}>{STATUS_LABEL[integration.status]}</Badge>
+      </div>
+
+      <p className="or-small">{integration.description}</p>
+      <p className="or-small or-adapter__state">{statusSentence(integration)}</p>
+
+      <div className="or-cell-chips">
+        <Tag mono>{integration.seam}</Tag>
+        {integration.adapter ? (
+          <Tag>
+            {integration.adapter} {integration.adapterVersion}
+          </Tag>
+        ) : null}
+        {integration.webhookVerified ? <Tag>Webhook verified</Tag> : null}
+      </div>
+
+      <Button variant="secondary" size="sm" onClick={() => onConfigure(integration.id)}>
+        Configure {integration.name}
+      </Button>
+    </Card>
+  );
+}
+
+/** The notice at the top of the drawer, when this seam has something to say. */
+function SeamNotice({ integration }: Readonly<{ integration: Integration }>): ReactElement | null {
+  if (integration.status === 'ERROR') {
+    return (
+      <Card className="or-notice" data-tone="serious">
+        <p className="or-body">{integration.failureDetail}</p>
+        <p className="or-small">Last working: {formatDateTime(integration.lastGoodAt, 'prose')}.</p>
+      </Card>
+    );
+  }
+
+  if (integration.status === 'DEMO') {
+    return (
+      <Card className="or-notice" data-tone="info">
+        <p className="or-body">
+          <strong>Demo mode.</strong> Orders, messages and payments through this seam go to the
+          built-in mock and never reach a real partner. Every screen that transmits through it says
+          so on its own button.
+        </p>
+      </Card>
+    );
+  }
+
+  return null;
+}
+
+/** Everything that has gone through this seam, newest first. */
+function ActivityLog({ integration }: Readonly<{ integration: Integration }>): ReactElement {
+  if (integration.activityLog.length === 0) {
+    return (
+      <p className="or-body">
+        Nothing has gone through this seam yet. Activity appears here as soon as it does.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="or-log">
+      {integration.activityLog.map((entry) => (
+        <li key={entry.at} className="or-log__row">
+          <span className="or-caption or-mono">{formatDateTime(entry.at, 'dense')}</span>
+          <span className="or-small">{entry.summary}</span>
+          <Badge tone={entry.ok ? 'success' : 'danger'}>{entry.ok ? 'Succeeded' : 'Failed'}</Badge>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+interface SeamDetailProps {
+  integration: Integration;
+  testResult: string | undefined;
+}
+
+/** The drawer body: why this seam is in the state it is, and what it did. */
+function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): ReactElement {
+  return (
+    <div className="or-stack">
+      <SeamNotice integration={integration} />
+
+      <Card tone="bone" title="Credentials">
+        <p className="or-small">
+          openrunic stores a reference, not the secret. The value is never displayed, logged or
+          exported, including here.
+        </p>
+        <Input
+          label="Secret reference"
+          mono
+          readOnly
+          value={integration.secretRef ?? 'No credential stored'}
+        />
+      </Card>
+
+      {testResult ? (
+        <Card tone="bone" title="Test result">
+          <output className="or-body">{testResult}</output>
+        </Card>
+      ) : null}
+
+      <DetailList
+        columns={2}
+        items={[
+          { label: 'Seam', value: integration.seam, mono: true },
+          { label: 'Adapter', value: integration.adapter ?? 'None chosen' },
+          { label: 'Version', value: integration.adapterVersion ?? 'Not applicable' },
+          { label: 'Last activity', value: formatDateTime(integration.lastActivityAt, 'prose') },
+          { label: 'Last working', value: formatDateTime(integration.lastGoodAt, 'prose') },
+          { label: 'Webhook', value: integration.webhookVerified ? 'Verified' : 'Not verified' },
+        ]}
+      />
+
+      <Card tone="bone" title="Recent activity">
+        <ActivityLog integration={integration} />
+      </Card>
+    </div>
+  );
+}
+
+export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>): ReactElement {
   const options = useAdminClientOption(client);
   const integrations = useIntegrations(options);
 
@@ -92,12 +239,7 @@ export function IntegrationsScreen({ client }: IntegrationsScreenProps = {}): Re
   );
 
   const testConnection = (integration: Integration) => {
-    const result =
-      integration.status === 'ERROR'
-        ? 'The lab refused the credentials again. Replace the service account, then test once more.'
-        : integration.status === 'NOT_CONNECTED'
-          ? 'There is nothing to test yet. Choose an adapter and save its credentials first.'
-          : 'The connection answered in 142 ms and returned the expected response.';
+    const result = testResultFor(integration.status);
     setTested((previous) => ({ ...previous, [integration.id]: result }));
     setToast(`${integration.name}: ${result}`);
   };
@@ -144,31 +286,7 @@ export function IntegrationsScreen({ client }: IntegrationsScreenProps = {}): Re
           <ul className="or-cardgrid">
             {rows.map((integration) => (
               <li key={integration.id}>
-                <Card className="or-adapter" data-status={integration.status}>
-                  <div className="or-adapter__head">
-                    <h2 className="or-h3">{integration.name}</h2>
-                    <Badge tone={STATUS_TONE[integration.status]}>
-                      {STATUS_LABEL[integration.status]}
-                    </Badge>
-                  </div>
-
-                  <p className="or-small">{integration.description}</p>
-                  <p className="or-small or-adapter__state">{statusSentence(integration)}</p>
-
-                  <div className="or-cell-chips">
-                    <Tag mono>{integration.seam}</Tag>
-                    {integration.adapter ? (
-                      <Tag>
-                        {integration.adapter} {integration.adapterVersion}
-                      </Tag>
-                    ) : null}
-                    {integration.webhookVerified ? <Tag>Webhook verified</Tag> : null}
-                  </div>
-
-                  <Button variant="secondary" size="sm" onClick={() => setOpenId(integration.id)}>
-                    Configure {integration.name}
-                  </Button>
-                </Card>
+                <AdapterCard integration={integration} onConfigure={setOpenId} />
               </li>
             ))}
           </ul>
@@ -202,86 +320,7 @@ export function IntegrationsScreen({ client }: IntegrationsScreenProps = {}): Re
           ) : null
         }
       >
-        {selected ? (
-          <div className="or-stack">
-            {selected.status === 'ERROR' ? (
-              <Card className="or-notice" data-tone="serious">
-                <p className="or-body">{selected.failureDetail}</p>
-                <p className="or-small">
-                  Last working: {formatDateTime(selected.lastGoodAt, 'prose')}.
-                </p>
-              </Card>
-            ) : null}
-
-            {selected.status === 'DEMO' ? (
-              <Card className="or-notice" data-tone="info">
-                <p className="or-body">
-                  <strong>Demo mode.</strong> Orders, messages and payments through this seam go to
-                  the built-in mock and never reach a real partner. Every screen that transmits
-                  through it says so on its own button.
-                </p>
-              </Card>
-            ) : null}
-
-            <Card tone="bone" title="Credentials">
-              <p className="or-small">
-                openrunic stores a reference, not the secret. The value is never displayed, logged
-                or exported, including here.
-              </p>
-              <Input
-                label="Secret reference"
-                mono
-                readOnly
-                value={selected.secretRef ?? 'No credential stored'}
-              />
-            </Card>
-
-            {tested[selected.id] ? (
-              <Card tone="bone" title="Test result">
-                <p className="or-body" role="status">
-                  {tested[selected.id]}
-                </p>
-              </Card>
-            ) : null}
-
-            <DetailList
-              columns={2}
-              items={[
-                { label: 'Seam', value: selected.seam, mono: true },
-                { label: 'Adapter', value: selected.adapter ?? 'None chosen' },
-                { label: 'Version', value: selected.adapterVersion ?? 'Not applicable' },
-                { label: 'Last activity', value: formatDateTime(selected.lastActivityAt, 'prose') },
-                { label: 'Last working', value: formatDateTime(selected.lastGoodAt, 'prose') },
-                {
-                  label: 'Webhook',
-                  value: selected.webhookVerified ? 'Verified' : 'Not verified',
-                },
-              ]}
-            />
-
-            <Card tone="bone" title="Recent activity">
-              {selected.activityLog.length === 0 ? (
-                <p className="or-body">
-                  Nothing has gone through this seam yet. Activity appears here as soon as it does.
-                </p>
-              ) : (
-                <ul className="or-log">
-                  {selected.activityLog.map((entry) => (
-                    <li key={entry.at} className="or-log__row">
-                      <span className="or-caption or-mono">
-                        {formatDateTime(entry.at, 'dense')}
-                      </span>
-                      <span className="or-small">{entry.summary}</span>
-                      <Badge tone={entry.ok ? 'success' : 'danger'}>
-                        {entry.ok ? 'Succeeded' : 'Failed'}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
-        ) : null}
+        {selected ? <SeamDetail integration={selected} testResult={tested[selected.id]} /> : null}
       </Drawer>
 
       {toast ? (

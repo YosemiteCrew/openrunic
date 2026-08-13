@@ -7,7 +7,7 @@ import type { ApiClient } from '@/lib/api';
 
 /**
  * The board at 10:20 on the fixture clinic day: one patient delayed, one in the
- * caution band, the rest calm. What is asserted here is the OpenEMR lesson - a
+ * caution band, the rest calm. What is asserted here is the legacy lesson - a
  * delay is a static, counted, worded state, and advancing a status is one click
  * with an undo behind it.
  */
@@ -151,5 +151,122 @@ describe('FlowBoardScreen', () => {
 
     fireEvent.click(document.activeElement as HTMLElement);
     expect(screen.getByRole('region', { name: /^Checked in, 2 patients$/ })).toBeInTheDocument();
+  });
+});
+
+/** Opens the palette the way a keyboard user does, and runs one verb by name. */
+async function runCommand(label: string | RegExp): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+  fireEvent.click(
+    await screen.findByRole('option', {
+      name: typeof label === 'string' ? new RegExp(label) : label,
+    })
+  );
+}
+
+describe('FlowBoardScreen, driven from the command palette', () => {
+  it('toggles the delayed filter, and the verb renames itself to what it now does', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+
+    await runCommand('Show delayed patients only');
+    expect(screen.getByRole('switch', { name: /Delayed patients only/ })).toBeChecked();
+
+    // The verb is now the opposite one: a palette that keeps offering "show
+    // delayed only" while it is already on is a palette nobody trusts.
+    await runCommand('Show every patient on the board');
+    expect(screen.getByRole('switch', { name: /Delayed patients only/ })).not.toBeChecked();
+  });
+
+  it('clears provider, room and delay filters in one verb', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+
+    const cards = () => screen.queryAllByRole('button', { name: /^Move / }).length;
+    const everyone = cards();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Room' }), {
+      target: { value: 'Room 1' },
+    });
+    fireEvent.click(screen.getByRole('switch', { name: /Delayed patients only/ }));
+    expect(cards()).toBeLessThan(everyone);
+
+    await runCommand('Clear board filters');
+
+    expect(screen.getByRole('combobox', { name: 'Room' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Provider' })).toHaveValue('');
+    expect(screen.getByRole('switch', { name: /Delayed patients only/ })).not.toBeChecked();
+    expect(cards()).toBe(everyone);
+  });
+
+  it('reads the board again, which is the only way it ever refreshes', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+
+    await runCommand('Read the board again');
+
+    // The board never polls on its own, so a re-read has to leave it whole
+    // rather than emptying it while it waits.
+    expect(
+      await screen.findByRole('region', { name: /^Arrived, 1 patients$/ })
+    ).toBeInTheDocument();
+  });
+
+  it('narrows to one provider without hiding the columns', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+
+    const provider = screen.getByRole('combobox', { name: 'Provider' }) as HTMLSelectElement;
+    const option = Array.from(provider.options).find((entry) => entry.text.includes('Lindqvist'));
+    fireEvent.change(provider, { target: { value: option!.value } });
+
+    // Every column still renders, so the board's shape does not change under a
+    // filter; only the counts do.
+    expect(
+      (await screen.findAllByRole('region', { name: /, \d+ patients$/ })).length
+    ).toBeGreaterThan(3);
+  });
+});
+
+describe('FlowBoardScreen, rooms and undo', () => {
+  it('clears a room, saying so in words rather than blanking the card', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    const inProgress = await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
+
+    const roomSelect = within(inProgress).getByRole('combobox', { name: /^Room for / });
+    fireEvent.change(roomSelect, { target: { value: '' } });
+
+    const toast = await screen.findByRole('status');
+    expect(toast).toHaveTextContent('Room cleared');
+    expect(toast).toHaveTextContent('has no room');
+  });
+
+  it('puts a patient back in the room the undo came from', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    const inProgress = await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
+    const roomSelect = within(inProgress).getByRole('combobox', { name: /^Room for / });
+    const before = (roomSelect as HTMLSelectElement).value;
+
+    fireEvent.change(roomSelect, { target: { value: 'Room 4' } });
+    expect(roomSelect).toHaveValue('Room 4');
+
+    fireEvent.click(
+      within(await screen.findByRole('status')).getByRole('button', { name: 'Undo' })
+    );
+
+    expect(roomSelect).toHaveValue(before);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('dismisses the confirmation without undoing the move it confirmed', async () => {
+    render(<FlowBoardScreen client={createMockClient()} />);
+    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+
+    fireEvent.click(within(arrived).getAllByRole('button', { name: /^Move / })[0]!);
+    const toast = await screen.findByRole('status');
+    fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Arrived, 0 patients$/ })).toBeInTheDocument();
   });
 });

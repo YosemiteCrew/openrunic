@@ -38,7 +38,7 @@ export function CommandProvider({
   children,
   baseCommands,
   defaultOpen = false,
-}: CommandProviderProps) {
+}: Readonly<CommandProviderProps>) {
   const [sources, setSources] = useState<Record<string, Command[]>>({});
   const [isOpen, setIsOpen] = useState(defaultOpen);
 

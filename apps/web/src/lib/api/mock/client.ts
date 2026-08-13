@@ -1,15 +1,14 @@
-import { ApiError } from '../client';
+import { paginate } from '../pagination';
 import type {
   ApiClient,
   Appointment,
   AppointmentListQuery,
-  ListResponse,
   Patient,
   PatientListQuery,
-  ProblemDocument,
 } from '../types';
 
 import { MOCK_APPOINTMENTS, MOCK_PATIENTS } from './fixtures';
+import { notFound, settle } from './protocol';
 
 /**
  * The fixture-backed client.
@@ -26,55 +25,19 @@ import { MOCK_APPOINTMENTS, MOCK_PATIENTS } from './fixtures';
  * server never saw.
  */
 
-const DEFAULT_PAGE_SIZE = 25;
-const MAX_PAGE_SIZE = 100;
-
-/** Latency, so loading states are visible in the browser but instant in tests. */
-const LATENCY_MS = process.env.NODE_ENV === 'test' ? 0 : 140;
-
-function settle<T>(value: T): Promise<T> {
-  if (LATENCY_MS === 0) return Promise.resolve(value);
-  return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY_MS));
-}
-
-function problem(status: number, title: string, detail: string, kind: string): ProblemDocument {
-  return {
-    type: `https://openrunic.org/problems/${kind}`,
-    title,
-    status,
-    detail,
-    instance: '/bff/v0',
-    requestId: 'mock-request',
-  };
-}
-
-function notFound(detail: string): ApiError {
-  return new ApiError(detail, {
-    kind: 'http',
-    status: 404,
-    problem: problem(404, 'Not found', detail, 'not-found'),
-  });
-}
-
-function paginate<T>(rows: readonly T[], page = 1, pageSize = DEFAULT_PAGE_SIZE): ListResponse<T> {
-  const size = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
-  const current = Math.max(page, 1);
-  const start = (current - 1) * size;
-  return {
-    data: rows.slice(start, start + size),
-    page: {
-      page: current,
-      pageSize: size,
-      total: rows.length,
-      // A zero-result search has one empty page, not zero: the pager still renders.
-      totalPages: Math.max(1, Math.ceil(rows.length / size)),
-    },
-  };
-}
+/* Built once per patient and kept for as long as that patient object is alive.
+   The palette searches on every keystroke, and rebuilding a joined, lowercased
+   string for every row on every one of those is the whole cost of the search.
+   A WeakMap, so a patient that falls out of the fixture is not held here. */
+const HAYSTACKS = new WeakMap<Patient, string>();
 
 function haystack(patient: Patient): string {
+  const cached = HAYSTACKS.get(patient);
+  if (cached !== undefined) return cached;
   const { given, family, preferred } = patient.name;
-  return [given, family, preferred ?? '', patient.mrn].join(' ').toLowerCase();
+  const built = [given, family, preferred ?? '', patient.mrn].join(' ').toLowerCase();
+  HAYSTACKS.set(patient, built);
+  return built;
 }
 
 /** Case-insensitive prefix match, matching the FHIR `string` search semantic. */
@@ -90,7 +53,10 @@ export function filterPatients(
   const needle = q?.trim().toLowerCase();
 
   const matched = rows.filter((patient) => {
-    if (needle && !haystack(patient).includes(needle)) return false;
+    if (needle) {
+      const searchable: string = haystack(patient);
+      if (!searchable.includes(needle)) return false;
+    }
     if (mrn && patient.mrn !== mrn) return false;
     if (family && !startsWith(patient.name.family, family)) return false;
     if (given && !startsWith(patient.name.given, given)) return false;

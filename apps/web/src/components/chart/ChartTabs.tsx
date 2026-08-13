@@ -4,6 +4,8 @@ import { cx } from '@openrunic/ui';
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 
+import { panelId, tabId } from './ids';
+
 /**
  * The chart's one level of tabs.
  *
@@ -35,21 +37,13 @@ export interface ChartTabsProps {
   label: string;
 }
 
-export function tabId(prefix: string, id: string): string {
-  return `${prefix}-tab-${id}`;
-}
-
-export function panelId(prefix: string, id: string): string {
-  return `${prefix}-panel-${id}`;
-}
-
 export function ChartTabs({
   tabs,
   activeId,
   onChange,
   idPrefix,
   label,
-}: ChartTabsProps): ReactElement {
+}: Readonly<ChartTabsProps>): ReactElement {
   const buttons = useRef(new Map<string, HTMLButtonElement>());
 
   const focusTab = (index: number) => {
@@ -62,7 +56,12 @@ export function ChartTabs({
     buttons.current.get(item.id)?.focus();
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  /**
+   * Bound to each tab rather than to the tablist. Roving tabindex leaves the
+   * tablist itself out of the tab order on purpose, so it is not something a
+   * keyboard can focus, and a key handler belongs on the thing that can be.
+   */
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const current = tabs.findIndex((tab) => tab.id === activeId);
     if (current < 0) return;
 
@@ -82,7 +81,7 @@ export function ChartTabs({
   };
 
   return (
-    <div className="or-chart-tabs" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
+    <div className="or-chart-tabs" role="tablist" aria-label={label}>
       {tabs.map((tab) => {
         const selected = tab.id === activeId;
         return (
@@ -100,6 +99,7 @@ export function ChartTabs({
             aria-controls={panelId(idPrefix, tab.id)}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
+            onKeyDown={onKeyDown}
           >
             {tab.label}
             {tab.count === null || tab.count === undefined ? null : (

@@ -45,7 +45,12 @@ export interface TieredAlertProps {
   children?: ReactNode;
 }
 
-export function TieredAlert({ tier, title, detail, children }: TieredAlertProps): ReactElement {
+export function TieredAlert({
+  tier,
+  title,
+  detail,
+  children,
+}: Readonly<TieredAlertProps>): ReactElement {
   return (
     <section
       className={`or-alert ${TIER_CLASS[tier]}`}
@@ -76,7 +81,7 @@ export function OrderWarnings({
   cleared,
   onClear,
   onRestore,
-}: OrderWarningsProps): ReactElement | null {
+}: Readonly<OrderWarningsProps>): ReactElement | null {
   if (warnings.length === 0) return null;
 
   return (
@@ -101,7 +106,12 @@ interface WarningRowProps {
   onRestore: (warningId: string) => void;
 }
 
-function WarningRow({ warning, clearedWith, onClear, onRestore }: WarningRowProps): ReactElement {
+function WarningRow({
+  warning,
+  clearedWith,
+  onClear,
+  onRestore,
+}: Readonly<WarningRowProps>): ReactElement {
   const reasons = warning.overrideReasons ?? [];
   const [reason, setReason] = useState(reasons[0] ?? 'Acknowledged');
   const selectId = useId();

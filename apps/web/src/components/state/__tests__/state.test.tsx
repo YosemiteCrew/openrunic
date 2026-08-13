@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AsyncBoundary, isEmptyList } from '@/components/state/AsyncBoundary';
-import { ErrorState, explain } from '@/components/state/ErrorState';
+import { AsyncBoundary } from '@/components/state/AsyncBoundary';
+import { isEmptyList } from '@/components/state/empty';
+import { ErrorState } from '@/components/state/ErrorState';
+import { explain } from '@/components/state/explain';
 import { LoadingState } from '@/components/state/LoadingState';
 import { ApiError } from '@/lib/api/client';
 import type { AsyncState } from '@/lib/api/hooks';

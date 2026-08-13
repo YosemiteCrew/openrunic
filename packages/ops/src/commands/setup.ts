@@ -1,4 +1,4 @@
-import { access, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { fillGeneratedSecrets, missingKeys } from '../env/secrets.js';
@@ -137,10 +137,20 @@ export async function ensureEnvFile(repoRoot: string): Promise<EnsureEnvResult> 
   const filled = fillGeneratedSecrets(current);
 
   if (filled.generated.length > 0) {
-    // 0600: this file holds the database password, and the default umask on a
-    // shared box would leave it world-readable.
-    await writeFile(envPath, filled.contents, { encoding: 'utf8', mode: 0o600 });
+    await writeFile(envPath, filled.contents, 'utf8');
   }
+
+  // 0600, applied with chmod and applied every run.
+  //
+  // `writeFile`'s `mode` option only takes effect when the write creates the
+  // file, and by this point .env always exists: either copyFile above just made
+  // it from the template, or a previous run left one. So the mode that was
+  // passed to writeFile here never applied to anything, and the file holding
+  // POSTGRES_PASSWORD kept .env.example's permissions - world-readable in a
+  // fresh clone. It is not conditional on having generated a secret either,
+  // because the file holds the database password whether or not this run
+  // filled anything in.
+  await chmod(envPath, 0o600);
 
   return {
     created: !exists,

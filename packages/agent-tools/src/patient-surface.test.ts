@@ -6,7 +6,6 @@ import { ALL_TOOLS, PATIENT_TOOLS, V1_TOOLS, createV1Registry } from './catalogu
 import type { AgentTool } from './registry.js';
 import { resolveTools } from './resolve.js';
 import { TEST_PATIENT_ID, recordingApiClient, stubPrincipal } from './testing/index.js';
-import { ownedRetrievalSchema } from './tools/patient-shared.js';
 
 /**
  * A patient may only ever reach their own chart.
@@ -113,12 +112,6 @@ function pageOfOneChartlessRow(): unknown {
     ),
     page: page.page,
   };
-}
-
-/** The rows a patient-surface result carries, and none when the tool refused. */
-function rowsOf(result: unknown): { patientId: string }[] {
-  const parsed = ownedRetrievalSchema.safeParse(result);
-  return parsed.success ? parsed.data.rows : [];
 }
 
 /** One call per tool, with arguments its own input schema accepts. */
@@ -256,7 +249,9 @@ describe('a patient cannot reach another patient record', () => {
    * today reaches it by refusing the page - the row no longer matches the shape
    * the tool declared - rather than by dropping the row, and a future tool could
    * reach it either way. Both are the property; a stamped row is not, and that
-   * is the only thing asserted.
+   * is the only thing asserted. The whole serialised result is searched rather
+   * than a parsed row list, so a tool whose output has some other shape cannot
+   * pass this by being unreadable.
    */
   it.each(granted.map((tool) => [tool.id, tool] as const))(
     '%s reads the chart on a row from the payload rather than stamping the reader own',
@@ -272,8 +267,8 @@ describe('a patient cannot reach another patient record', () => {
         .catch(() => undefined);
 
       expect(
-        rowsOf(result).map((row) => row.patientId),
-        `${tool.id} named the reader's chart on a row the API sent without one`
+        JSON.stringify(result ?? null),
+        `${tool.id} named the reader's chart in a result built from a row that carried none`
       ).not.toContain(TEST_PATIENT_ID);
     }
   );

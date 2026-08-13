@@ -29,6 +29,15 @@ interface DemoTokenSpec {
   readonly roles: readonly string[];
   /** HL7 PurposeOfUse asserted for everything this token does. */
   readonly purposeOfUse: string;
+  /**
+   * SMART on FHIR scopes, stated per token rather than derived from the roles.
+   *
+   * Roles decide what the product offers; scopes decide what the API allows,
+   * and the two are deliberately not the same list. Writing them out here keeps
+   * a demo token from quietly gaining reach because someone added a role name
+   * to a mapping table somewhere else.
+   */
+  readonly scopes: readonly string[];
 }
 
 /**
@@ -44,18 +53,21 @@ export const DEMO_TOKENS: readonly DemoTokenSpec[] = [
     email: 'a.okafor@demo.invalid',
     roles: ['clinician'],
     purposeOfUse: 'TREAT',
+    scopes: ['user/*.read', 'user/*.write'],
   },
   {
     token: 'dev-frontdesk-a',
     email: 'f.deskly@demo.invalid',
     roles: ['front-desk'],
     purposeOfUse: 'HOPERAT',
+    scopes: ['user/*.read', 'user/*.write'],
   },
   {
     token: 'dev-biller-a',
     email: 'r.claimsworth@demo.invalid',
     roles: ['biller'],
     purposeOfUse: 'HPAYMT',
+    scopes: ['user/*.read', 'user/*.write'],
   },
 ];
 
@@ -104,6 +116,7 @@ export function createDemoPrincipalResolver(client: PrismaClient): PrincipalReso
         actorType: 'user',
         displayName: `${user.givenName} ${user.familyName}${credential}`,
         roles: spec.roles,
+        scopes: spec.scopes,
         facilityIds,
         purposeOfUse: spec.purposeOfUse,
       });

@@ -5,6 +5,7 @@ import { createPrismaAuditSink, type AuditWriteScope } from '../audit/prisma-sin
 import type { AuditSink } from '../audit/types.js';
 import type { PrincipalResolver } from '../auth/principal.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
+import { createDbPort } from '../repositories/db-port.js';
 import type { RepositoryRegistry } from '../repositories/types.js';
 
 import { createDemoPrincipalResolver } from './demo-principals.js';
@@ -147,8 +148,12 @@ function standaloneAuditScope(prisma: PrismaClient): AuditWriteScope {
 export function buildServerWiring(env: WiringEnv, client?: PrismaClient): ServerWiring {
   const prisma = client ?? createPrismaClient({ datasourceUrl: env.DATABASE_URL });
 
+  // `createDbPort` is not optional plumbing: the registry wants the port's
+  // generic `model(name)` accessor, and a tenant-scoped client is still keyed by
+  // model name. Handing the raw client over compiles only because both are
+  // structurally close, and fails at the first delegate lookup.
   const repositories = createPrismaRepositoryRegistry((tenantId) =>
-    createTenantClient(prisma, { tenantId })
+    createDbPort(createTenantClient(prisma, { tenantId }))
   );
 
   const auditSink = createPrismaAuditSink({ standalone: standaloneAuditScope(prisma) });

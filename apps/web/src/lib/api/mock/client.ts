@@ -14,6 +14,8 @@ import type {
   EncounterDto,
   EncounterListQuery,
   EncounterStatus,
+  FacilityDto,
+  FacilityListQuery,
   FormDefinitionDto,
   NoteListQuery,
   Patient,
@@ -27,9 +29,16 @@ import type {
   StatementDto,
   TaskDto,
   TaskWorkStatus,
+  UserDto,
+  UserListQuery,
 } from '../types';
 
-import { MOCK_APPOINTMENTS, MOCK_PATIENTS } from './fixtures';
+import {
+  MOCK_APPOINTMENTS,
+  MOCK_DIRECTORY_FACILITIES,
+  MOCK_DIRECTORY_USERS,
+  MOCK_PATIENTS,
+} from './fixtures';
 import { assertTransition, attempt, conflict, validationFailed } from './protocol';
 import {
   MOCK_ACTING_USER,
@@ -188,6 +197,52 @@ export function filterNotes(
     );
   }
   return [...matched].sort((a, b) => a.createdAt.localeCompare(b.createdAt) * direction);
+}
+
+export function filterFacilities(
+  rows: readonly FacilityDto[],
+  query: FacilityListQuery = {}
+): readonly FacilityDto[] {
+  const needle = query.q?.trim().toLowerCase();
+  const matched = rows.filter((row) => {
+    if (query.active !== undefined && row.active !== query.active) return false;
+    // The route's `q` is free text over the name and the short code, which is
+    // how a practice with two dozen sites finds one by the code on the door.
+    if (needle && !`${row.name} ${row.code}`.toLowerCase().includes(needle)) return false;
+    return true;
+  });
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  const sort = query.sort ?? 'name';
+  return [...matched].sort((a, b) => {
+    if (sort === 'code') return a.code.localeCompare(b.code, 'en') * direction;
+    if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
+    return a.name.localeCompare(b.name, 'en') * direction;
+  });
+}
+
+export function filterDirectoryUsers(
+  rows: readonly UserDto[],
+  query: UserListQuery = {}
+): readonly UserDto[] {
+  const needle = query.q?.trim().toLowerCase();
+  const matched = rows.filter((row) => {
+    if (query.status && row.status !== query.status) return false;
+    if (query.isProvider !== undefined && row.isProvider !== query.isProvider) return false;
+    if (needle) {
+      const searchable = `${row.givenName} ${row.familyName} ${row.email}`.toLowerCase();
+      if (!searchable.includes(needle)) return false;
+    }
+    return true;
+  });
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  const sort = query.sort ?? 'familyName';
+  return [...matched].sort((a, b) => {
+    if (sort === 'email') return a.email.localeCompare(b.email, 'en') * direction;
+    if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
+    return a.familyName.localeCompare(b.familyName, 'en') * direction;
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -469,6 +524,14 @@ function assertPatchIsUsable(body: AppointmentUpdateBody): void {
 /* -------------------------------------------------------------------------- */
 
 export interface MockClientOptions {
+  /**
+   * The facility directory. An empty array is a real state a screen has to
+   * handle: an organisation with no facility cannot be booked into, and a
+   * screen that carried on regardless would be posting an id from nowhere.
+   */
+  facilities?: readonly FacilityDto[];
+  /** The staff directory, clinicians and everyone else. */
+  users?: readonly UserDto[];
   patients?: readonly Patient[];
   appointments?: readonly Appointment[];
   encounters?: readonly EncounterDto[];
@@ -554,8 +617,25 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
       return claims.patch(id, { status: to, ...stamps, ...defined({ statusReason }) }, NO_CLAIM);
     });
 
+  /* Read-only, so they are plain arrays rather than tables: nothing in the
+     client writes a facility or a user, and a table would imply otherwise. */
+  const facilities = options.facilities ?? MOCK_DIRECTORY_FACILITIES;
+  const directoryUsers = options.users ?? MOCK_DIRECTORY_USERS;
+
   return {
     mode: 'mock',
+
+    facilities: {
+      list: (query = {}) =>
+        answer(() => paginate(filterFacilities(facilities, query), query.page, query.pageSize)),
+    },
+
+    users: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterDirectoryUsers(directoryUsers, query), query.page, query.pageSize)
+        ),
+    },
 
     patients: {
       list: (query = {}) =>

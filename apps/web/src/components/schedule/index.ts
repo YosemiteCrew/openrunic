@@ -34,6 +34,7 @@ export {
   presentStatus,
   rowForInstant,
   SLOT_MINUTES,
+  toScheduleProvider,
 } from './schedule';
 export type {
   DayWindow,

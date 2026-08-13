@@ -1,7 +1,9 @@
 import type { BadgeTone } from '@openrunic/ui';
 
-import type { Appointment, AppointmentStatus, PatientName } from '@/lib/api';
+import type { Appointment, AppointmentStatus, PatientName, UserDto } from '@/lib/api';
 import { formatEnumLabel, formatTime } from '@/lib/format';
+
+import type { ScheduleProvider } from './ScheduleGrid';
 
 /**
  * The schedule's arithmetic, with no React in it.
@@ -55,6 +57,23 @@ export function presentStatus(status: AppointmentStatus): StatusPresentation {
  */
 export function givenName(name: PatientName): string {
   return name.preferred ?? name.given;
+}
+
+/**
+ * A directory row, as a column heading.
+ *
+ * The name and the credential are everything `/bff/v0/users` publishes about a
+ * clinician that a person can read: there is no display name and no specialty
+ * label on the wire, and `taxonomyCode` is a NUCC code rather than a word. So
+ * the column says the name and, under it, the credential the record actually
+ * carries, and says nothing where the record is silent.
+ */
+export function toScheduleProvider(user: UserDto): ScheduleProvider {
+  return {
+    id: user.id,
+    name: `${user.givenName} ${user.familyName}`,
+    role: user.credential ?? '',
+  };
 }
 
 /** Visit categories draw from the viz ramp at fixed lightness, never a free colour. */

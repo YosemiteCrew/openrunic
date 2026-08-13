@@ -18,9 +18,10 @@ import {
   nextStatus,
   useClinicDay,
 } from '@/components/schedule';
+import type { ScheduleProvider } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
-import { api, MOCK_PROVIDERS, MOCK_ROOMS, mockStatusSince, useMutation } from '@/lib/api';
+import { api, MOCK_ROOMS, mockStatusSince, useMutation } from '@/lib/api';
 import type { ApiClient, ApiError, Appointment, AppointmentStatus, Patient } from '@/lib/api';
 import { formatEnumLabel, formatName, formatTime } from '@/lib/format';
 
@@ -63,6 +64,7 @@ function refusalOf(error: ApiError): string {
 
 const NO_APPOINTMENTS: readonly Appointment[] = [];
 const NO_PATIENTS: ReadonlyMap<string, Patient> = new Map();
+const NO_PROVIDERS: readonly ScheduleProvider[] = [];
 
 /** Every status that puts a card on the board, in any column. */
 const ON_BOARD: ReadonlySet<AppointmentStatus> = new Set(
@@ -81,6 +83,9 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
   const state = useClinicDay({ day, providerId: providerId || undefined, client });
   const appointments = state.data?.appointments ?? NO_APPOINTMENTS;
   const patientsById = state.data?.patientsById ?? NO_PATIENTS;
+  /* The filter narrows a server-side query, so its options have to be ids the
+     server knows. A fixture id here would quietly empty the board. */
+  const providers = state.data?.providers ?? NO_PROVIDERS;
 
   const writes = client ?? api;
   const refetch = state.refetch;
@@ -245,7 +250,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
             onChange={(event) => setProviderId(event.target.value)}
             options={[
               { value: '', label: 'All providers' },
-              ...MOCK_PROVIDERS.map((provider) => ({
+              ...providers.map((provider) => ({
                 value: provider.id,
                 label: provider.name,
               })),

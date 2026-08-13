@@ -11,7 +11,9 @@ export type { ApiMode } from './config';
 export {
   createMockClient,
   filterAppointments,
+  filterDirectoryUsers,
   filterEncounters,
+  filterFacilities,
   filterNotes,
   filterPatients,
 } from './mock/client';
@@ -20,6 +22,8 @@ export {
   MOCK_APPOINTMENTS,
   MOCK_CLINIC_DAY,
   MOCK_COVERAGES,
+  MOCK_DIRECTORY_FACILITIES,
+  MOCK_DIRECTORY_USERS,
   MOCK_FACILITY,
   MOCK_NOW,
   MOCK_PATIENTS,
@@ -50,9 +54,16 @@ export {
 export type { AsyncState, AsyncStatus, HookOptions, MutationOutcome, MutationState } from './hooks';
 export * from './types';
 
-/* Admin, developer platform and reports. The routes behind these do not exist in
-   `apps/api` yet, so the client is fixture-only for now and the contract is
-   written the way the API will answer. */
+/* Admin, developer platform and reports, on a fixture-only client.
+
+   Two different reasons, and the difference decides what the work is. Audit
+   events, facilities, staff users, roles, form definitions and terminology are
+   all served by `apps/api` today; those screens are fixture-backed because
+   nothing maps those routes into these view types yet, which is the same gap
+   the schedule's directory just closed. API keys, API scopes, integrations,
+   webhooks, SMART apps, the permission matrix, the practice dashboard and the
+   visit report have no route at all, and the contract below is written the way
+   the API will answer when they do. */
 export {
   adminApi,
   AUDIT_ACTIONS,
@@ -137,9 +148,14 @@ export {
 } from './mock/admin';
 export type { AdminMockOptions } from './mock/admin';
 
-/* Orders, results and the typed inbox. Fixture-backed for the same reason: the
-   aggregates answer NotImplemented in `apps/api` today, and the client shape is
-   the one an HTTP client will satisfy. */
+/* Orders, results and the typed inbox, on a fixture-only client.
+
+   `/bff/v0/orders` and `/bff/v0/results` are both served, transitions included,
+   and the `orders` and `results` methods on {@link ApiClient} already reach
+   them; what is missing is the mapping from those payloads into the worklist
+   view types below. The inbox is the one thing here with no route of its own:
+   it is a composition across results, messages and tasks that the API does not
+   assemble. */
 export {
   ASSIGNMENTS,
   createWorklistClient,
@@ -199,9 +215,14 @@ export {
   mockResultById,
 } from './mock/fixtures';
 
-/* Billing and the revenue cycle. Fixture-backed for the same reason as the two
-   blocks above: `apps/api` reserves claims and payments and answers 501, and
-   the other three aggregates have no segment yet. */
+/* Billing and the revenue cycle, on a fixture-only client.
+
+   Claims, payments, remittances, statements, charges and coverage are all
+   served by `apps/api`, and the transitions these screens drive - scrub,
+   submit, post, generate, send - are on {@link ApiClient} already. Again the
+   gap is the mapping into the view types below rather than a missing route.
+   The fee sheet and the payer directory are the exceptions: neither has a
+   segment, and the shapes here are written the way the API will answer. */
 export {
   AGEING_BUCKETS,
   billing,

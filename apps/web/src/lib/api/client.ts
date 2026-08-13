@@ -7,6 +7,7 @@ import type {
   ClinicalNoteDto,
   DiagnosticReportDto,
   EncounterDto,
+  FacilityDto,
   FormDefinitionDto,
   ListResponse,
   NoteAddendumDto,
@@ -20,6 +21,7 @@ import type {
   ServiceRequestDto,
   StatementDto,
   TaskDto,
+  UserDto,
 } from './types';
 
 /**
@@ -198,6 +200,13 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
 
   return {
     mode: 'live',
+    facilities: {
+      list: (query, signal) =>
+        get<ListResponse<FacilityDto>>(`/facilities${toSearchParams(query)}`, signal),
+    },
+    users: {
+      list: (query, signal) => get<ListResponse<UserDto>>(`/users${toSearchParams(query)}`, signal),
+    },
     patients: {
       list: (query, signal) =>
         get<ListResponse<Patient>>(`/patients${toSearchParams(query)}`, signal),

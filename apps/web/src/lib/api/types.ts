@@ -759,6 +759,102 @@ export interface FormDefinitionPublishBody {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Directory: facilities and the people who work in them                       */
+/* -------------------------------------------------------------------------- */
+
+/** Mirrors `facilityDtoSchema.address` in `apps/api/src/schemas/platform.ts`. */
+export interface FacilityAddress {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string;
+}
+
+/**
+ * Mirrors `facilityDtoSchema`.
+ *
+ * A booking names the facility it happens at, and the API checks that name
+ * against the grants on the token before it writes anything. So a screen that
+ * books has to have read this list: an id from anywhere else is a 403 at best
+ * and a row in the wrong clinic at worst.
+ */
+export interface FacilityDto {
+  id: string;
+  name: string;
+  /** The short code the practice knows it by, unique per organisation. */
+  code: string;
+  npi: string | null;
+  /** CMS place-of-service code, e.g. `11` for an office. */
+  posCode: string | null;
+  /**
+   * IANA zone, e.g. `America/Chicago`.
+   *
+   * Read but not yet used: the schedule draws its day in `CLINIC_TIME_ZONE`,
+   * one constant for the whole app. Drawing it in this zone instead is a change
+   * of its own, and a real one for a practice whose sites are in two.
+   */
+  timezone: string;
+  address: FacilityAddress;
+  phone: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Mirrors `facilityListQuerySchema`. */
+export interface FacilityListQuery extends PaginationQuery {
+  active?: boolean;
+  /** Free text over the name and the short code. */
+  q?: string;
+  sort?: 'name' | 'code' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
+/** Mirrors `USER_STATUSES` in `@openrunic/database`. */
+export const USER_STATUSES = ['INVITED', 'ACTIVE', 'SUSPENDED', 'DEACTIVATED'] as const;
+
+export type UserStatus = (typeof USER_STATUSES)[number];
+
+/**
+ * Mirrors `userDtoSchema`: the staff directory entry, as everyone inside the
+ * practice may see it.
+ *
+ * There is no display name and no specialty label on the wire, so a screen
+ * showing a practitioner shows the given name, the family name and the
+ * credential. Inventing a title the record does not carry would put a word on
+ * screen that no row anywhere can be checked against.
+ */
+export interface UserDto {
+  id: string;
+  email: string;
+  givenName: string;
+  familyName: string;
+  /** "MD", "DO", "NP". Null for staff who hold none. */
+  credential: string | null;
+  npi: string | null;
+  /** NUCC taxonomy code. A code, not a label: no screen renders it raw. */
+  taxonomyCode: string | null;
+  isProvider: boolean;
+  locale: string;
+  status: UserStatus;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Mirrors `userListQuerySchema`. `isProvider=true` is the clinician picker. */
+export interface UserListQuery extends PaginationQuery {
+  status?: UserStatus;
+  isProvider?: boolean;
+  /** Free text over given name, family name and email. */
+  q?: string;
+  sort?: 'familyName' | 'email' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
+/* -------------------------------------------------------------------------- */
 /* The client                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -773,6 +869,17 @@ export interface FormDefinitionPublishBody {
  */
 export interface ApiClient {
   readonly mode: 'live' | 'mock';
+  /**
+   * The facility directory. Read-only here: a screen books into a facility, it
+   * does not create one, and the admin surface that does is its own client.
+   */
+  facilities: {
+    list: (query?: FacilityListQuery, signal?: AbortSignal) => Promise<ListResponse<FacilityDto>>;
+  };
+  /** The staff directory, filtered to clinicians wherever a provider is picked. */
+  users: {
+    list: (query?: UserListQuery, signal?: AbortSignal) => Promise<ListResponse<UserDto>>;
+  };
   patients: {
     list: (query?: PatientListQuery, signal?: AbortSignal) => Promise<ListResponse<Patient>>;
     get: (id: string, signal?: AbortSignal) => Promise<Patient>;

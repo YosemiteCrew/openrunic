@@ -20,9 +20,12 @@ import type { ListResponse, PaginationQuery, PatientName } from './types';
 /**
  * Billing and the revenue cycle.
  *
- * `apps/api` reserves `claims` and `payments` and answers NotImplemented for
- * both; charges, remittances and statements have no segment at all yet. So this
- * module is the seam that lets the five billing screens exist: the same
+ * `apps/api` serves claims, payments, remittances, statements, charges and
+ * coverage, and the transitions these screens drive are on {@link ApiClient}
+ * already. What is missing is the mapping from those payloads into the view
+ * types below. The fee sheet and the payer directory are the exceptions:
+ * neither has a segment. So this module is the seam that lets the five billing
+ * screens exist meanwhile: the same
  * {@link AsyncState} shape the rest of the data layer returns, the same
  * injectable-client convention as `HookOptions`, and fixtures that live in the
  * one mock module rather than a parallel one. When the aggregates land, the

@@ -22,6 +22,12 @@ export interface DayRailProps {
   appointments: readonly Appointment[];
   patientsById: ReadonlyMap<string, Patient>;
   selected: Appointment | null;
+  /**
+   * False when the day has no facility or no clinician to book against. The
+   * walk-in verb is then disabled rather than left live and refused; the page
+   * carries the reason in an alert, so the rail does not repeat it.
+   */
+  canBook?: boolean;
   onCheckIn: (appointment: Appointment) => void;
   onWalkIn: () => void;
 }
@@ -150,6 +156,7 @@ export function DayRail({
   appointments,
   patientsById,
   selected,
+  canBook = true,
   onCheckIn,
   onWalkIn,
 }: Readonly<DayRailProps>): ReactElement {
@@ -168,7 +175,13 @@ export function DayRail({
             </div>
           ))}
         </dl>
-        <Button variant="secondary" iconLeft="user-plus" fullWidth onClick={onWalkIn}>
+        <Button
+          variant="secondary"
+          iconLeft="user-plus"
+          fullWidth
+          disabled={!canBook}
+          onClick={onWalkIn}
+        >
           Add walk-in
         </Button>
       </Card>

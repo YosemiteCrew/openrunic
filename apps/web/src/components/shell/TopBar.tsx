@@ -66,12 +66,19 @@ export function TopBar({
     <header className="or-topbar">
       <div className="or-topbar__context">
         {area ? <span className="or-topbar__area">{area}</span> : null}
-        <Tag className="or-topbar__facility">{MOCK_FACILITY.name}</Tag>
         {IS_MOCK_MODE ? (
-          // Demo data is never silent: every screen says so, in the same place.
-          <Badge tone="neutral" icon="flask-conical">
-            Demo data
-          </Badge>
+          <>
+            {/* The demo clinic's name, and only in mock mode. Against a real
+                deployment the shell has no session and therefore no facility to
+                name, and a fixture name painted over a real organisation would
+                be the shell asserting something it has not read. Screens that
+                do read a facility name it themselves. */}
+            <Tag className="or-topbar__facility">{MOCK_FACILITY.name}</Tag>
+            {/* Demo data is never silent: every screen says so, in the same place. */}
+            <Badge tone="neutral" icon="flask-conical">
+              Demo data
+            </Badge>
+          </>
         ) : null}
       </div>
 

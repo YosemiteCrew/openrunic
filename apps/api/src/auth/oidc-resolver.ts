@@ -308,6 +308,33 @@ function toPrincipal(
   };
 }
 
+/**
+ * Verifies the signature over `header.payload`. A key that cannot be imported,
+ * or one from the wrong family for the algorithm, counts as a token this
+ * process cannot verify rather than as a provider outage: there is nothing a
+ * client could resend that would help, and the answer is the same 401.
+ */
+function signatureIsValid(
+  jwk: Jwk,
+  algorithm: SignatureAlgorithm,
+  signingInput: string,
+  signature: string
+): boolean {
+  try {
+    const key = createPublicKey({ key: { ...jwk }, format: 'jwk' });
+    if (key.asymmetricKeyType !== algorithm.keyType) return false;
+
+    return verifySignature(
+      algorithm.hash,
+      Buffer.from(signingInput, 'ascii'),
+      { key, ...algorithm.verifyOptions },
+      Buffer.from(signature, 'base64url')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function createOidcPrincipalResolver(options: OidcResolverOptions): PrincipalResolver {
   const nowDate = options.now ?? ((): Date => new Date());
   const skewSeconds = options.clockSkewSeconds ?? DEFAULT_CLOCK_SKEW_SECONDS;
@@ -324,33 +351,6 @@ export function createOidcPrincipalResolver(options: OidcResolverOptions): Princ
       ? {}
       : { minRefetchIntervalMs: options.minRefetchIntervalMs }),
   });
-
-  /**
-   * Verifies the signature over `header.payload`. A key that cannot be imported,
-   * or one from the wrong family for the algorithm, counts as a token this
-   * process cannot verify rather than as a provider outage: there is nothing a
-   * client could resend that would help, and the answer is the same 401.
-   */
-  function signatureIsValid(
-    jwk: Jwk,
-    algorithm: SignatureAlgorithm,
-    signingInput: string,
-    signature: string
-  ): boolean {
-    try {
-      const key = createPublicKey({ key: { ...jwk }, format: 'jwk' });
-      if (key.asymmetricKeyType !== algorithm.keyType) return false;
-
-      return verifySignature(
-        algorithm.hash,
-        Buffer.from(signingInput, 'ascii'),
-        { key, ...algorithm.verifyOptions },
-        Buffer.from(signature, 'base64url')
-      );
-    } catch {
-      return false;
-    }
-  }
 
   function claimsAreValid(claims: Record<string, unknown>): boolean {
     if (claims.iss !== options.issuer) return false;

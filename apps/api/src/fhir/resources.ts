@@ -10,7 +10,6 @@ import {
 import { ApiError } from '../errors.js';
 
 import {
-  booleanToken,
   dateWindow,
   parseDateOnly,
   referenceId,
@@ -452,4 +451,4 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   taskModule,
 ];
 
-export { booleanToken };
+export { booleanToken } from './params.js';

@@ -51,7 +51,7 @@ import type { ScopedRow } from '../repositories/rows.js';
 
 /** Converts the storage spelling of absence into the domain spelling of it. */
 function absent<T>(value: T | null): T | undefined {
-  return value === null ? undefined : value;
+  return value ?? undefined;
 }
 
 function instant(value: Date | null): string | undefined {

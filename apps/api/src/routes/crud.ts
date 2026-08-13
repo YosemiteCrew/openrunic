@@ -298,7 +298,7 @@ function crudRoutes<
 function rowId(row: unknown): string {
   const id = (row as { id?: unknown }).id;
   if (typeof id !== 'string') {
-    throw new Error('crudRoutes: the repository returned a row with no id');
+    throw new TypeError('crudRoutes: the repository returned a row with no id');
   }
   return id;
 }

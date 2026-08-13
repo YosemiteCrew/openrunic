@@ -211,10 +211,27 @@ export function startsWithFold(value: string | null, prefix: string): boolean {
   return value !== null && value.toLowerCase().startsWith(prefix.toLowerCase());
 }
 
+/**
+ * A query field the caller did not send constrains nothing.
+ *
+ * These two exist so a spec's `matches` reads as one conjunction instead of a
+ * ladder of `if (query.x !== undefined && ...) return false`. The ladder is
+ * where the duplication and the complexity came from: eight fields meant eight
+ * statements and eight guards, and every new filter added both.
+ */
+export function equalsIfSet<T>(expected: T | undefined, actual: T | null | undefined): boolean {
+  return expected === undefined || actual === expected;
+}
+
+/** As `equalsIfSet`, for fields compared by a predicate rather than by identity. */
+export function matchesIfSet<T>(expected: T | undefined, test: (value: T) => boolean): boolean {
+  return expected === undefined || test(expected);
+}
+
 /** Case-insensitive substring match over several columns. */
 export function containsFold(values: readonly (string | null)[], needle: string): boolean {
   const folded = needle.toLowerCase();
-  return values.some((value) => value !== null && value.toLowerCase().includes(folded));
+  return values.some((value) => value?.toLowerCase().includes(folded) ?? false);
 }
 
 /**

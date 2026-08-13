@@ -64,7 +64,10 @@ const COMPARTMENT_RANK: Readonly<Record<ScopeCompartment, number>> = {
 };
 
 function isCompartment(value: string): value is ScopeCompartment {
-  return SCOPE_COMPARTMENTS.some((compartment) => compartment === value);
+  // The widening cast is the point: SCOPE_COMPARTMENTS is typed as the narrow
+  // union, and this predicate exists precisely to test a value that is not yet
+  // known to be in it.
+  return (SCOPE_COMPARTMENTS as readonly string[]).includes(value);
 }
 
 /**

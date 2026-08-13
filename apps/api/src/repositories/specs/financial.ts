@@ -420,6 +420,20 @@ function claimChargedTotal(input: ClaimCreateInput): number {
   );
 }
 
+/**
+ * The claim list windows on exactly one timestamp: `submittedAt` when the
+ * caller asks for it, `createdAt` otherwise. Kept as a named function rather
+ * than an inline ternary chain, because "no window at all" and "which column"
+ * are two separate decisions and reading them as one nested expression is how
+ * the wrong column gets filtered.
+ */
+function claimWindow(query: ClaimListQuery) {
+  const stamp = windowFilter(query.from, query.to);
+  if (stamp === undefined) return {};
+  if (query.window === 'submittedAt') return { submittedAt: stamp };
+  return { createdAt: stamp };
+}
+
 export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInput, ClaimListQuery> =
   {
     model: 'Claim',
@@ -486,13 +500,7 @@ export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInpu
     },
 
     where(query: ClaimListQuery) {
-      const stamp = windowFilter(query.from, query.to);
-      const windowed =
-        stamp === undefined
-          ? {}
-          : query.window === 'submittedAt'
-            ? { submittedAt: stamp }
-            : { createdAt: stamp };
+      const windowed = claimWindow(query);
       return {
         ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
         ...(query.payerId === undefined ? {} : { payerId: query.payerId }),

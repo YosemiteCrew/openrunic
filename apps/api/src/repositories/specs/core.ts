@@ -6,7 +6,9 @@ import type {
 
 import {
   containsFold,
+  equalsIfSet,
   jsonColumn,
+  matchesIfSet,
   startsWithFold,
   windowFilter,
   type BaseQuery,
@@ -111,17 +113,20 @@ export const patientSpec: CollectionSpec<
   },
 
   matches(row: ScopedRow<'Patient'>, query: PatientListQuery): boolean {
-    if (query.id !== undefined && row.id !== query.id) return false;
-    if (query.mrn !== undefined && row.mrn !== query.mrn) return false;
-    if (query.sexAtBirth !== undefined && row.sexAtBirth !== query.sexAtBirth) return false;
-    if (query.family !== undefined && !startsWithFold(row.familyName, query.family)) return false;
-    if (query.given !== undefined && !startsWithFold(row.givenName, query.given)) return false;
-    if (query.active !== undefined && row.active !== query.active) return false;
-    if (query.facilityId !== undefined && row.primaryFacilityId !== query.facilityId) return false;
-    if (query.birthDate !== undefined && !sameUtcDay(row.birthDate, query.birthDate)) return false;
+    // One conjunction, one line per filter. Every clause is "unconstrained, or
+    // satisfied", so adding a filter adds a line rather than a branch.
     return (
-      query.q === undefined ||
-      containsFold([row.familyName, row.givenName, row.preferredName, row.mrn], query.q)
+      equalsIfSet(query.id, row.id) &&
+      equalsIfSet(query.mrn, row.mrn) &&
+      equalsIfSet(query.sexAtBirth, row.sexAtBirth) &&
+      equalsIfSet(query.active, row.active) &&
+      equalsIfSet(query.facilityId, row.primaryFacilityId) &&
+      matchesIfSet(query.family, (family) => startsWithFold(row.familyName, family)) &&
+      matchesIfSet(query.given, (given) => startsWithFold(row.givenName, given)) &&
+      matchesIfSet(query.birthDate, (birthDate) => sameUtcDay(row.birthDate, birthDate)) &&
+      matchesIfSet(query.q, (q) =>
+        containsFold([row.familyName, row.givenName, row.preferredName, row.mrn], q)
+      )
     );
   },
 

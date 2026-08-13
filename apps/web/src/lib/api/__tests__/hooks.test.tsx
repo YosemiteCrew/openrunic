@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/lib/api/client';
@@ -6,6 +7,7 @@ import {
   queryKey,
   useAppointment,
   useAppointments,
+  useMutation,
   usePatient,
   usePatients,
 } from '@/lib/api/hooks';
@@ -245,5 +247,118 @@ describe('the remaining read hooks', () => {
     render(<AppointmentProbe id={null} />);
 
     expect(screen.getByTestId('appointment')).toHaveTextContent('success:none');
+  });
+});
+
+describe('useMutation', () => {
+  function WriteProbe({ perform }: Readonly<{ perform: (value: string) => Promise<string> }>) {
+    const write = useMutation(perform);
+    const [answer, setAnswer] = useState<string | null>(null);
+    return (
+      <div>
+        <p data-testid="write">{`${write.pending ? 'pending' : 'idle'}:${
+          write.error?.problem?.detail ?? write.error?.message ?? 'none'
+        }:${answer ?? 'none'}`}</p>
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              const outcome = await write.run('go');
+              setAnswer(outcome.ok ? outcome.value : null);
+            })();
+          }}
+        >
+          Run
+        </button>
+        <button type="button" onClick={write.reset}>
+          Reset
+        </button>
+      </div>
+    );
+  }
+
+  function state(): string {
+    return screen.getByTestId('write').textContent ?? '';
+  }
+
+  it('reports the write as pending while it is outstanding, then hands back its value', async () => {
+    let settle: ((value: string) => void) | undefined;
+    render(
+      <WriteProbe
+        perform={() =>
+          new Promise<string>((resolve) => {
+            settle = resolve;
+          })
+        }
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(state()).toBe('pending:none:none'));
+
+    await act(async () => {
+      settle?.('saved');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(state()).toBe('idle:none:saved'));
+  });
+
+  it('resolves with null on a refusal, and keeps the problem document to render', async () => {
+    const refusal = new ApiError('conflict', {
+      kind: 'http',
+      status: 409,
+      problem: {
+        type: 'https://openrunic.org/problems/invalid-transition',
+        title: 'Invalid state transition',
+        status: 409,
+        detail: 'A claim in DRAFT cannot move to SUBMITTED.',
+        instance: '/bff/v0/claims',
+        requestId: 'req-1',
+      },
+    });
+    render(<WriteProbe perform={() => Promise.reject(refusal)} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    // Null rather than a rejection: a click handler is not a promise chain, and
+    // a rejected one is an unhandled rejection in a clinician's console.
+    await waitFor(() =>
+      expect(state()).toBe('idle:A claim in DRAFT cannot move to SUBMITTED.:none')
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(state()).toBe('idle:none:none'));
+  });
+
+  it('names a failure that was never an ApiError rather than swallowing it', async () => {
+    render(<WriteProbe perform={() => Promise.reject(new TypeError('offline'))} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => expect(state()).toBe('idle:The request could not be completed.:none'));
+  });
+
+  it('does not set state on a screen the clinician has already left', async () => {
+    let settle: ((value: string) => void) | undefined;
+    const view = render(
+      <WriteProbe
+        perform={() =>
+          new Promise<string>((resolve) => {
+            settle = resolve;
+          })
+        }
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    view.unmount();
+
+    await act(async () => {
+      settle?.('saved');
+      await Promise.resolve();
+    });
+
+    // The write still happened; what must not happen is a render into a gone tree.
+    expect(view.container).toBeEmptyDOMElement();
   });
 });

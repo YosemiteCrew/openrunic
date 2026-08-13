@@ -1,13 +1,15 @@
 'use client';
 
-import { Button, IconButton, Modal, Select, Toast } from '@openrunic/ui';
+import { Button, IconButton, Select, Toast } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import {
+  awaitsCheckIn,
   BookingModal,
+  CheckInDialog,
   clinicNow,
   clinicToday,
   DayRail,
@@ -21,8 +23,8 @@ import {
 import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
-import { IS_MOCK_MODE, MOCK_PROVIDERS } from '@/lib/api';
-import type { ApiClient, Appointment, Patient } from '@/lib/api';
+import { api, MOCK_FACILITY, MOCK_PROVIDERS, useMutation } from '@/lib/api';
+import type { ApiClient, ApiError, Appointment, Patient } from '@/lib/api';
 import { formatDate, formatName, formatTime } from '@/lib/format';
 
 /**
@@ -34,10 +36,10 @@ import { formatDate, formatName, formatTime } from '@/lib/format';
  * the current time is ruled across it, and every action on a visit is reachable
  * from the palette without touching the grid.
  *
- * Writes are not built yet, so check-in and booking are held for this session
- * and said so plainly rather than pretending to have saved. When the
- * appointment write endpoints land, the two pieces of local state below become
- * a mutation plus a refetch and nothing else on this screen changes.
+ * Booking posts to `/appointments` and check-in patches one, and both are
+ * followed by a re-read of the day rather than by a local edit of the row. The
+ * day is a shared surface - two people at one desk work the same list - so what
+ * it shows has to be what the server holds, not what this browser last did.
  */
 
 export interface ScheduleScreenProps {
@@ -66,6 +68,12 @@ const NO_PATIENTS: ReadonlyMap<string, Patient> = new Map();
 
 const DEFAULT_SLOT_MINUTES = 20;
 
+/** The server's own sentence for a refusal, or nothing when none was given. */
+function refusalOf(error: ApiError | null): string | null {
+  if (!error) return null;
+  return error.problem?.detail ?? error.message;
+}
+
 export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): ReactElement {
   const [day, setDay] = useState<string>(() => clinicToday());
   const [providerId, setProviderId] = useState<string>('');
@@ -73,7 +81,6 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
   const [findingSlots, setFindingSlots] = useState(false);
   const [bookingSlot, setBookingSlot] = useState<OpenSlot | null>(null);
   const [confirming, setConfirming] = useState<Appointment | null>(null);
-  const [checkedIn, setCheckedIn] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   /* Read once at mount: the rule marks when the screen was opened, and nothing
@@ -83,6 +90,26 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
   const state = useClinicDay({ day, providerId: providerId || undefined, client });
   const appointments = state.data?.appointments ?? NO_APPOINTMENTS;
   const patientsById = state.data?.patientsById ?? NO_PATIENTS;
+
+  const writes = client ?? api;
+  const refetch = state.refetch;
+
+  const checkIn = useMutation((appointment: Appointment) =>
+    writes.appointments.update(appointment.id, { status: 'CHECKED_IN' })
+  );
+  const booking = useMutation((details: BookingDetails) =>
+    writes.appointments.create({
+      facilityId: MOCK_FACILITY.id,
+      patientId: details.patientId,
+      providerId: details.slot.providerId,
+      typeCode: details.visitTypeCode,
+      typeDisplay: details.visitType,
+      start: details.slot.start,
+      end: details.slot.end,
+      durationMinutes: DEFAULT_SLOT_MINUTES,
+      ...(details.reason.trim() ? { reasonText: details.reason.trim() } : {}),
+    })
+  );
 
   const columns = useMemo(
     () => (providerId ? PROVIDERS.filter((provider) => provider.id === providerId) : PROVIDERS),
@@ -109,28 +136,36 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     setBookingSlot(slots[0] ?? null);
   }, [slots]);
 
-  const confirmCheckIn = (appointment: Appointment) => {
-    const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
-    setCheckedIn((previous) => new Set(previous).add(appointment.id));
+  const confirmCheckIn = async (appointment: Appointment) => {
+    const outcome = await checkIn.run(appointment);
+    // The dialog stays open on a refusal so the reason is read next to the
+    // button that caused it, rather than behind a closed dialog.
+    if (!outcome.ok) return;
+    const patient = outcome.value.patientId ? patientsById.get(outcome.value.patientId) : undefined;
     setConfirming(null);
+    refetch();
     setToast({
       title: 'Checked in',
       message: patient
-        ? `${formatName(patient.name)} is on the Flow Board. Today's visit was created.`
-        : 'The visit was created and is on the Flow Board.',
+        ? `${formatName(patient.name)} is on the Flow Board.`
+        : 'The visit is on the Flow Board.',
       href: '/schedule/flow-board',
       hrefLabel: 'Open the Flow Board',
     });
   };
 
-  const confirmBooking = (details: BookingDetails) => {
+  const confirmBooking = async (details: BookingDetails) => {
+    const outcome = await booking.run(details);
+    if (!outcome.ok) return;
+    const saved = outcome.value;
     const patient = patientsById.get(details.patientId);
     setBookingSlot(null);
+    refetch();
     setToast({
       title: 'Appointment booked',
       message: `${patient ? formatName(patient.name) : 'The patient'} is booked at ${formatTime(
-        details.slot.start
-      )} for a ${details.visitType.toLowerCase()}.`,
+        saved.start
+      )} for a ${saved.type.display.toLowerCase()}.`,
     });
   };
 
@@ -176,7 +211,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       },
     ];
 
-    if (selected && !checkedIn.has(selected.id)) {
+    if (selected && awaitsCheckIn(selected.status)) {
       const patient = selected.patientId ? patientsById.get(selected.patientId) : undefined;
       registered.push({
         id: 'schedule.check-in',
@@ -189,7 +224,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     }
 
     return registered;
-  }, [checkedIn, openWalkIn, patientsById, selected]);
+  }, [openWalkIn, patientsById, selected]);
 
   const confirmingPatient = confirming?.patientId
     ? patientsById.get(confirming.patientId)
@@ -242,7 +277,6 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
           appointments={appointments}
           patientsById={patientsById}
           selected={selected}
-          checkedIn={checkedIn}
           onCheckIn={setConfirming}
           onWalkIn={openWalkIn}
         />
@@ -288,39 +322,14 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
         )}
       </AsyncBoundary>
 
-      {IS_MOCK_MODE ? (
-        <p className="or-caption or-fd-mock-note">
-          Mock mode: the schedule reads fixtures, and check-in and booking are held for this session
-          only.
-        </p>
-      ) : null}
-
       {confirming ? (
-        <Modal
-          open
-          role="alertdialog"
-          width={520}
-          title="Check in this patient"
-          description={
-            confirmingPatient
-              ? `Check in ${formatName(confirmingPatient.name)} for the ${formatTime(
-                  confirming.start
-                )} ${confirming.type.display.toLowerCase()}. This creates today's visit and moves them onto the Flow Board.`
-              : "Check in this visit. This creates today's visit and moves it onto the Flow Board."
-          }
-          onClose={() => setConfirming(null)}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setConfirming(null)}>
-                Cancel
-              </Button>
-              <Button onClick={() => confirmCheckIn(confirming)}>
-                {confirmingPatient
-                  ? `Check in ${givenName(confirmingPatient.name)}`
-                  : 'Check in visit'}
-              </Button>
-            </>
-          }
+        <CheckInDialog
+          appointment={confirming}
+          patient={confirmingPatient}
+          pending={checkIn.pending}
+          error={refusalOf(checkIn.error)}
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmCheckIn}
         />
       ) : null}
 
@@ -329,6 +338,8 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
           slot={bookingSlot}
           providers={columns}
           patients={[...patientsById.values()]}
+          pending={booking.pending}
+          error={refusalOf(booking.error)}
           onCancel={() => setBookingSlot(null)}
           onConfirm={confirmBooking}
         />

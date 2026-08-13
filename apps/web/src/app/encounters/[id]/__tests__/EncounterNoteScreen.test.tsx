@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EncounterNoteScreen } from '@/app/encounters/[id]/EncounterNoteScreen';
 import { ApiError } from '@/lib/api';
+import { createMockChartClient } from '@/lib/api/chart';
 import type { ChartClient } from '@/lib/api/chart';
 import { MOCK_ENCOUNTER_IDS } from '@/lib/api/mock/chart';
 
@@ -13,11 +14,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 function chartThatFails(): ChartClient {
-  return {
-    mode: 'mock',
-    summary: { get: () => Promise.reject(new ApiError('offline', { kind: 'network' })) },
-    notes: { get: () => Promise.reject(new ApiError('offline', { kind: 'network' })) },
-  };
+  return createMockChartClient({ failure: new ApiError('offline', { kind: 'network' }) });
 }
 
 describe('EncounterNoteScreen', () => {

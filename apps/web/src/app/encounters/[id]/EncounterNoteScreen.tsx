@@ -85,7 +85,13 @@ export function EncounterNoteScreen({
           message: 'Notes are created when a visit starts. Open the chart to see the visit list.',
         }}
       >
-        {(loaded) => <NoteEditor note={loaded} commands={commands} />}
+        {(loaded) => (
+          <NoteEditor
+            note={loaded}
+            commands={commands}
+            {...(chartClient ? { client: chartClient } : {})}
+          />
+        )}
       </AsyncBoundary>
     </AppShell>
   );

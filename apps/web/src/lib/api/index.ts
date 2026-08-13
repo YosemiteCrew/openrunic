@@ -8,7 +8,14 @@ export { ApiError, BFF_BASE_PATH, createHttpClient, requestJson, toSearchParams 
 export type { ApiClientConfig, ApiErrorKind } from './client';
 export { API_BASE_URL, API_CONFIG, API_MODE, IS_MOCK_MODE, resolveApiMode } from './config';
 export type { ApiMode } from './config';
-export { createMockClient, filterAppointments, filterPatients } from './mock/client';
+export {
+  createMockClient,
+  filterAppointments,
+  filterEncounters,
+  filterNotes,
+  filterPatients,
+} from './mock/client';
+export type { MockClientOptions } from './mock/client';
 export {
   MOCK_APPOINTMENTS,
   MOCK_CLINIC_DAY,
@@ -36,10 +43,11 @@ export {
   useApiQuery,
   useAppointment,
   useAppointments,
+  useMutation,
   usePatient,
   usePatients,
 } from './hooks';
-export type { AsyncState, AsyncStatus, HookOptions } from './hooks';
+export type { AsyncState, AsyncStatus, HookOptions, MutationOutcome, MutationState } from './hooks';
 export * from './types';
 
 /* Admin, developer platform and reports. The routes behind these do not exist in

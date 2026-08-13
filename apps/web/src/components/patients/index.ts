@@ -11,7 +11,9 @@ export {
   EMPTY_DRAFT,
   findDuplicates,
   isBlocking,
+  proposeMrn,
   REQUIRED_FIELDS,
+  toPatientCreateBody,
   validateRegistration,
 } from './registration';
 export type {

@@ -6,12 +6,19 @@ import type { ReactElement } from 'react';
 
 import { useRegisterCommands } from '@/components/command';
 import type { Command } from '@/components/command';
-import { clinicNow } from '@/lib/api/chart';
-import type { EmittedItem, EncounterNote, NoteSection, SlashCommand } from '@/lib/api/chart';
+import { ATTESTATION, chartApi } from '@/lib/api/chart';
+import type {
+  ChartClient,
+  EmittedItem,
+  EncounterNote,
+  NoteSection,
+  SlashCommand,
+} from '@/lib/api/chart';
+import { useMutation } from '@/lib/api';
 import { formatDate, formatDateTime } from '@/lib/format';
 
 import { NoteBlock } from './NoteBlock';
-import { ATTESTATION, initialDraft, isLocked, reduceNoteDraft } from './note-draft';
+import { initialDraft, isLocked, reduceNoteDraft } from './note-draft';
 import { SignatureBlock } from './SignatureBlock';
 
 /**
@@ -28,20 +35,24 @@ import { SignatureBlock } from './SignatureBlock';
  * button. It is not made harder than that: friction on a routine, correct
  * action is how a system trains people to click through warnings.
  *
- * Signing is local to this screen until the note API lands. Nothing here
- * pretends to have reached a server: the mock client implements reads only, on
- * purpose, because a fixture that accepts writes teaches screens to trust state
- * the server never saw.
+ * Signing and amending both reach the server, and the note the server answers
+ * with is what the screen then shows. The text is committed as part of signing
+ * rather than saved separately, because "sign this note" means "sign what I
+ * just wrote", and there is no autosave to have done it earlier. A refusal
+ * leaves the note exactly as it was and says why: the one thing this screen
+ * must never do is show a signature block for a signature that did not happen.
  */
 
 export interface NoteEditorProps {
   note: EncounterNote;
   commands: readonly SlashCommand[];
+  /** Injectable for tests. Defaults to the app's chart client. */
+  client?: ChartClient;
 }
 
 type Confirming = 'sign' | 'addendum' | null;
 
-export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): ReactElement {
+export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>): ReactElement {
   /* The note itself is one value with one transition per action. The rest is
      interface state that belongs to this screen and to nothing in the record. */
   const [draft, dispatch] = useReducer(reduceNoteDraft, note, initialDraft);
@@ -52,6 +63,12 @@ export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): React
 
   const { sections, state, signature, addenda } = draft;
   const locked = isLocked(draft);
+
+  const notes = (client ?? chartApi).notes;
+  const signing = useMutation((committed: readonly NoteSection[]) =>
+    notes.sign(note.id, committed)
+  );
+  const amending = useMutation((text: string) => notes.addAddendum(note.id, text));
 
   useEffect(() => {
     if (!toast) return;
@@ -67,25 +84,20 @@ export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): React
     dispatch({ type: 'emit', key, item });
   };
 
-  const sign = () => {
-    dispatch({
-      type: 'sign',
-      signerName: note.providerName,
-      credential: note.providerCredential,
-      signedAt: clinicNow(),
-    });
+  const sign = async () => {
+    const outcome = await signing.run(sections);
+    // The dialog stays open on a refusal, so the reason is read beside the
+    // button that caused it rather than behind a dialog that closed anyway.
+    if (!outcome.ok) return;
+    dispatch({ type: 'replace', note: outcome.value });
     setConfirming(null);
     setToast('Note signed');
   };
 
-  const signAddendum = () => {
-    dispatch({
-      type: 'addendum',
-      authorName: note.providerName,
-      credential: note.providerCredential,
-      addedAt: clinicNow(),
-      text: addendumText.trim(),
-    });
+  const signAddendum = async () => {
+    const outcome = await amending.run(addendumText.trim());
+    if (!outcome.ok) return;
+    dispatch({ type: 'replace', note: outcome.value });
     setAddendumText('');
     setWritingAddendum(false);
     setConfirming(null);
@@ -231,8 +243,8 @@ export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): React
             <Button variant="ghost" onClick={() => setConfirming(null)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={sign}>
-              Sign note
+            <Button variant="primary" disabled={signing.pending} onClick={sign}>
+              {signing.pending ? 'Signing...' : 'Sign note'}
             </Button>
           </>
         }
@@ -241,6 +253,11 @@ export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): React
         <p className="or-caption">
           Signing as {note.providerName}, {note.providerCredential}.
         </p>
+        {signing.error ? (
+          <p className="or-body" role="alert">
+            {signing.error.problem?.detail ?? signing.error.message}
+          </p>
+        ) : null}
       </Modal>
 
       <Modal
@@ -254,13 +271,18 @@ export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): React
             <Button variant="ghost" onClick={() => setConfirming(null)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={signAddendum}>
-              Sign addendum
+            <Button variant="primary" disabled={amending.pending} onClick={signAddendum}>
+              {amending.pending ? 'Signing...' : 'Sign addendum'}
             </Button>
           </>
         }
       >
         <p className="or-body">{addendumText}</p>
+        {amending.error ? (
+          <p className="or-body" role="alert">
+            {amending.error.problem?.detail ?? amending.error.message}
+          </p>
+        ) : null}
       </Modal>
 
       {toast ? (
@@ -268,7 +290,7 @@ export function NoteEditor({ note, commands }: Readonly<NoteEditorProps>): React
           <Toast
             tone="success"
             title={toast}
-            message="This build keeps note changes in the browser; the note API is not wired up yet."
+            message="Recorded against this visit. The text is locked; corrections are added as an addendum."
             onClose={() => setToast(null)}
           />
         </div>

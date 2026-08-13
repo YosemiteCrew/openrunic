@@ -1,7 +1,5 @@
 import type { Addendum, EmittedItem, EncounterNote, NoteSection } from '@/lib/api/chart';
 
-import { contentHash } from './content-hash';
-
 /**
  * The note being edited, as one value.
  *
@@ -13,8 +11,6 @@ import { contentHash } from './content-hash';
  * lives in one place that can be tested without rendering anything.
  */
 
-export const ATTESTATION = 'I attest that this note records the care I provided at this visit.';
-
 export interface NoteDraft {
   sections: NoteSection[];
   state: EncounterNote['state'];
@@ -25,14 +21,15 @@ export interface NoteDraft {
 export type NoteDraftAction =
   | { type: 'edit'; key: NoteSection['key']; text: string }
   | { type: 'emit'; key: NoteSection['key']; item: Omit<EmittedItem, 'id'> }
-  | { type: 'sign'; signerName: string; credential: string; signedAt: string }
-  | {
-      type: 'addendum';
-      authorName: string;
-      credential: string;
-      addedAt: string;
-      text: string;
-    };
+  /**
+   * The note as the server now holds it, after a signature or an addendum.
+   *
+   * The two write transitions used to be built here from a name and a clock,
+   * which meant the screen decided what a signature said. The server decides
+   * that, and this is how its answer replaces the draft wholesale rather than
+   * being merged field by field into a value that could end up half-signed.
+   */
+  | { type: 'replace'; note: EncounterNote };
 
 export function initialDraft(note: EncounterNote): NoteDraft {
   return {
@@ -61,8 +58,9 @@ function mapSection(
 
 export function reduceNoteDraft(draft: NoteDraft, action: NoteDraftAction): NoteDraft {
   // Every edit path is refused once the note is signed, in the reducer rather
-  // than in the component, so no future caller can reach round the lock.
-  if (isLocked(draft) && action.type !== 'addendum') return draft;
+  // than in the component, so no future caller can reach round the lock. A
+  // replacement is not an edit: it is the server's own answer arriving.
+  if (isLocked(draft) && action.type !== 'replace') return draft;
 
   switch (action.type) {
     case 'edit':
@@ -77,34 +75,7 @@ export function reduceNoteDraft(draft: NoteDraft, action: NoteDraftAction): Note
         ],
       }));
 
-    case 'sign':
-      return {
-        ...draft,
-        state: 'SIGNED',
-        signature: {
-          signerName: action.signerName,
-          credential: action.credential,
-          signedAt: action.signedAt,
-          attestation: ATTESTATION,
-          // Hashed from the sections this transition is signing, so the hash can
-          // never describe text the signature did not cover.
-          hash: contentHash(draft.sections),
-        },
-      };
-
-    case 'addendum':
-      return {
-        ...draft,
-        addenda: [
-          ...draft.addenda,
-          {
-            id: `addendum-${draft.addenda.length + 1}`,
-            authorName: action.authorName,
-            credential: action.credential,
-            addedAt: action.addedAt,
-            text: action.text,
-          },
-        ],
-      };
+    case 'replace':
+      return initialDraft(action.note);
   }
 }

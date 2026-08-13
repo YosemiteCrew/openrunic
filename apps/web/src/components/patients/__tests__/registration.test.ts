@@ -5,7 +5,9 @@ import {
   EMPTY_DRAFT,
   findDuplicates,
   isBlocking,
+  proposeMrn,
   REQUIRED_FIELDS,
+  toPatientCreateBody,
   validateRegistration,
 } from '@/components/patients';
 import type { RegistrationDraft } from '@/components/patients';
@@ -19,9 +21,12 @@ import { MOCK_NOW, MOCK_PATIENTS } from '@/lib/api';
 
 const NOW = new Date(MOCK_NOW);
 
+/** The form as the screen presents it: empty, but with an MRN already proposed. */
+const PROPOSED: RegistrationDraft = { ...EMPTY_DRAFT, mrn: proposeMrn(NOW) };
+
 function draft(overrides: Partial<RegistrationDraft> = {}): RegistrationDraft {
   return {
-    ...EMPTY_DRAFT,
+    ...PROPOSED,
     given: 'Kai',
     family: 'Nordstrom',
     birthDate: '1991-02-17',
@@ -32,8 +37,15 @@ function draft(overrides: Partial<RegistrationDraft> = {}): RegistrationDraft {
 
 describe('validateRegistration', () => {
   it('requires exactly the four fields that make a record bookable', () => {
-    const errors = validateRegistration(EMPTY_DRAFT, NOW);
+    // The MRN is not one of them: the form arrives with one proposed, so the
+    // front desk types four values and no more.
+    const errors = validateRegistration(PROPOSED, NOW);
     expect(Object.keys(errors).sort()).toEqual([...REQUIRED_FIELDS].sort());
+  });
+
+  it('asks for a record number only when somebody has cleared the proposal', () => {
+    expect(validateRegistration({ ...draft(), mrn: '   ' }, NOW).mrn).toMatch(/record number/);
+    expect(validateRegistration(draft(), NOW).mrn).toBeUndefined();
   });
 
   it('accepts a walk-in with nothing but those four', () => {
@@ -155,5 +167,50 @@ describe('findDuplicates', () => {
     expect(
       findDuplicates(draft({ given: 'Testina', family: 'Patientsson' }), MOCK_PATIENTS, 1)
     ).toHaveLength(1);
+  });
+});
+
+describe('proposeMrn', () => {
+  it('proposes a number in the practice format, stable for the same instant', () => {
+    expect(proposeMrn(NOW)).toMatch(/^OR-\d{6}$/);
+    expect(proposeMrn(NOW)).toBe(proposeMrn(NOW));
+  });
+
+  it('moves with the clock, so two registrations minutes apart do not collide', () => {
+    const later = new Date(NOW.getTime() + 60_000);
+    expect(proposeMrn(later)).not.toBe(proposeMrn(NOW));
+  });
+});
+
+describe('toPatientCreateBody', () => {
+  it('sends only what was typed, so a blank optional field is absent not empty', () => {
+    const body = toPatientCreateBody(draft());
+
+    expect(body).toMatchObject({
+      givenName: 'Kai',
+      familyName: 'Nordstrom',
+      birthDate: '1991-02-17',
+      phoneMobile: '+1 555 0142 900',
+    });
+    // An empty string is a value the API rejects where it expects a missing
+    // one, and "a middle name that is one space" is not what an empty field
+    // means at a front desk.
+    expect(Object.keys(body)).not.toContain('email');
+    expect(Object.keys(body)).not.toContain('preferredName');
+    expect(Object.keys(body)).not.toContain('sexAtBirth');
+  });
+
+  it('trims what was typed, because a trailing space is not part of a name', () => {
+    const body = toPatientCreateBody(draft({ given: '  Kai  ', city: '  Birchwood ' }));
+    expect(body.givenName).toBe('Kai');
+    expect(body.city).toBe('Birchwood');
+  });
+
+  it('carries the answers the form always has, whether or not they were touched', () => {
+    const body = toPatientCreateBody(draft({ sexAtBirth: 'FEMALE', portalEnabled: true }));
+    expect(body.sexAtBirth).toBe('FEMALE');
+    expect(body.portalEnabled).toBe(true);
+    expect(body.languageCode).toBe('en-US');
+    expect(body.sensitivityClass).toBe('NORMAL');
   });
 });

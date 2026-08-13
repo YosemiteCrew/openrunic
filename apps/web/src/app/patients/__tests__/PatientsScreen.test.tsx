@@ -16,11 +16,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 function failing(error: ApiError): ApiClient {
-  return {
-    mode: 'mock',
-    patients: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-    appointments: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-  };
+  return createMockClient({ failure: error });
 }
 
 describe('PatientsScreen', () => {

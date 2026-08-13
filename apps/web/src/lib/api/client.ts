@@ -1,4 +1,26 @@
-import type { ApiClient, Appointment, ListResponse, Patient, ProblemDocument } from './types';
+import type {
+  ApiClient,
+  Appointment,
+  AppointmentCreateBody,
+  AppointmentUpdateBody,
+  ClaimDto,
+  ClinicalNoteDto,
+  DiagnosticReportDto,
+  EncounterDto,
+  FormDefinitionDto,
+  ListResponse,
+  NoteAddendumDto,
+  Patient,
+  PatientCreateBody,
+  PatientUpdateBody,
+  PaymentDto,
+  ProblemDocument,
+  RemittanceParseResult,
+  RemittancePostResult,
+  ServiceRequestDto,
+  StatementDto,
+  TaskDto,
+} from './types';
 
 /**
  * The typed fetch client for `apps/api`.
@@ -137,23 +159,123 @@ export async function requestJson<T>(
   }
 }
 
+/**
+ * A body-carrying request.
+ *
+ * Every write goes through here rather than building its own `RequestInit`, so
+ * the content type is set once and a transition with no body still sends `{}`.
+ * The API's transition schemas are strict objects, and a POST with no body at
+ * all is a 400 rather than the no-op a caller intended.
+ */
+function writeJson<T>(
+  config: ApiClientConfig,
+  method: 'POST' | 'PATCH',
+  path: string,
+  body: unknown,
+  signal?: AbortSignal
+): Promise<T> {
+  return requestJson<T>(config, path, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** An id reaches a path only escaped: a slash in one must not reach another route. */
+function segment(id: string): string {
+  return encodeURIComponent(id);
+}
+
 /** Builds the live client. Screens never call this: they import `api`. */
 export function createHttpClient(config: ApiClientConfig): ApiClient {
+  const get = <T>(path: string, signal?: AbortSignal): Promise<T> =>
+    requestJson<T>(config, path, { signal });
+  const post = <T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> =>
+    writeJson<T>(config, 'POST', path, body, signal);
+  const patch = <T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> =>
+    writeJson<T>(config, 'PATCH', path, body, signal);
+
   return {
     mode: 'live',
     patients: {
       list: (query, signal) =>
-        requestJson<ListResponse<Patient>>(config, `/patients${toSearchParams(query)}`, { signal }),
-      get: (id, signal) =>
-        requestJson<Patient>(config, `/patients/${encodeURIComponent(id)}`, { signal }),
+        get<ListResponse<Patient>>(`/patients${toSearchParams(query)}`, signal),
+      get: (id, signal) => get<Patient>(`/patients/${segment(id)}`, signal),
+      create: (body: PatientCreateBody, signal) => post<Patient>('/patients', body, signal),
+      update: (id, body: PatientUpdateBody, signal) =>
+        patch<Patient>(`/patients/${segment(id)}`, body, signal),
     },
     appointments: {
       list: (query, signal) =>
-        requestJson<ListResponse<Appointment>>(config, `/appointments${toSearchParams(query)}`, {
-          signal,
-        }),
-      get: (id, signal) =>
-        requestJson<Appointment>(config, `/appointments/${encodeURIComponent(id)}`, { signal }),
+        get<ListResponse<Appointment>>(`/appointments${toSearchParams(query)}`, signal),
+      get: (id, signal) => get<Appointment>(`/appointments/${segment(id)}`, signal),
+      create: (body: AppointmentCreateBody, signal) =>
+        post<Appointment>('/appointments', body, signal),
+      update: (id, body: AppointmentUpdateBody, signal) =>
+        patch<Appointment>(`/appointments/${segment(id)}`, body, signal),
+    },
+    encounters: {
+      list: (query, signal) =>
+        get<ListResponse<EncounterDto>>(`/encounters${toSearchParams(query)}`, signal),
+      get: (id, signal) => get<EncounterDto>(`/encounters/${segment(id)}`, signal),
+      sign: (id, signal) => post<EncounterDto>(`/encounters/${segment(id)}/sign`, {}, signal),
+    },
+    notes: {
+      list: (query, signal) =>
+        get<ListResponse<ClinicalNoteDto>>(`/notes${toSearchParams(query)}`, signal),
+      get: (id, signal) => get<ClinicalNoteDto>(`/notes/${segment(id)}`, signal),
+      create: (body, signal) => post<ClinicalNoteDto>('/notes', body, signal),
+      update: (id, body, signal) => patch<ClinicalNoteDto>(`/notes/${segment(id)}`, body, signal),
+      sign: (id, signal) => post<ClinicalNoteDto>(`/notes/${segment(id)}/sign`, {}, signal),
+      listAddenda: (noteId, query, signal) =>
+        get<ListResponse<NoteAddendumDto>>(
+          `/notes/${segment(noteId)}/addenda${toSearchParams(query)}`,
+          signal
+        ),
+      addAddendum: (noteId, body, signal) =>
+        post<NoteAddendumDto>(`/notes/${segment(noteId)}/addenda`, body, signal),
+    },
+    orders: {
+      sign: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/sign`, {}, signal),
+      transmit: (id, signal) =>
+        post<ServiceRequestDto>(`/orders/${segment(id)}/transmit`, {}, signal),
+      cancel: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/cancel`, {}, signal),
+    },
+    results: {
+      review: (id, signal) =>
+        post<DiagnosticReportDto>(`/results/${segment(id)}/review`, {}, signal),
+    },
+    tasks: {
+      complete: (id, body, signal) =>
+        post<TaskDto>(`/tasks/${segment(id)}/complete`, body ?? {}, signal),
+    },
+    claims: {
+      scrub: (id, body, signal) =>
+        post<ClaimDto>(`/claims/${segment(id)}/scrub`, body ?? {}, signal),
+      submit: (id, body, signal) =>
+        post<ClaimDto>(`/claims/${segment(id)}/submit`, body ?? {}, signal),
+      status: (id, body, signal) => post<ClaimDto>(`/claims/${segment(id)}/status`, body, signal),
+    },
+    payments: {
+      post: (id, body, signal) =>
+        post<PaymentDto>(`/payments/${segment(id)}/post`, body ?? {}, signal),
+    },
+    remittances: {
+      parse: (id, signal) =>
+        post<RemittanceParseResult>(`/remittances/${segment(id)}/parse`, {}, signal),
+      post: (id, body, signal) =>
+        post<RemittancePostResult>(`/remittances/${segment(id)}/post`, body ?? {}, signal),
+    },
+    statements: {
+      generate: (id, body, signal) =>
+        post<StatementDto>(`/statements/${segment(id)}/generate`, body ?? {}, signal),
+      send: (id, body, signal) =>
+        post<StatementDto>(`/statements/${segment(id)}/send`, body, signal),
+    },
+    forms: {
+      publish: (id, body, signal) =>
+        post<FormDefinitionDto>(`/forms/definitions/${segment(id)}/publish`, body, signal),
     },
   };
 }

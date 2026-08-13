@@ -231,6 +231,24 @@ export const FLOW_COLUMNS: readonly FlowColumn[] = [
   { id: 'DONE', label: 'Checked out', statuses: ['CHECKED_OUT', 'FULFILLED'], done: true },
 ];
 
+/**
+ * Statuses a front desk can still check a patient in from.
+ *
+ * Read off the appointment rather than remembered per session, so two people
+ * working the same desk see the same answer and a reload does not offer to
+ * check somebody in twice.
+ */
+const AWAITING_CHECK_IN: ReadonlySet<AppointmentStatus> = new Set<AppointmentStatus>([
+  'PROPOSED',
+  'PENDING',
+  'BOOKED',
+  'ARRIVED',
+]);
+
+export function awaitsCheckIn(status: AppointmentStatus): boolean {
+  return AWAITING_CHECK_IN.has(status);
+}
+
 /** The next status a one-click advance moves to, or null at the end of the line. */
 export function nextStatus(status: AppointmentStatus): AppointmentStatus | null {
   const index = FLOW_SEQUENCE.indexOf(status);

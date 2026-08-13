@@ -100,10 +100,40 @@ export function writeSegment(source: Segment, delimiters: Delimiters): string {
  * value, so splitting it would turn the one element that defines the rule into
  * an empty pair.
  */
+/**
+ * Trims the whitespace an interchange puts around a segment, linearly.
+ *
+ * The trailing half used to be `/[\r\n]+$/`, anchored at the end but not the
+ * start, so the engine retried the run from every position and cost grew with
+ * the square of the segment length (CodeQL js/polynomial-redos). An X12 file
+ * comes from a payer, and a padded segment is ordinary rather than exotic.
+ *
+ * Leading and trailing sets differ on purpose, and that is not a typo: a
+ * segment may be indented with tabs and spaces, but only the line break itself
+ * is stripped from the end. Trailing spaces inside an element are data in a
+ * fixed-width ISA header.
+ */
+function trimSegment(chunk: string): string {
+  let start = 0;
+  while (start < chunk.length && LEADING.has(chunk.charCodeAt(start))) {
+    start += 1;
+  }
+  let end = chunk.length;
+  while (end > start && TRAILING.has(chunk.charCodeAt(end - 1))) {
+    end -= 1;
+  }
+  return start === 0 && end === chunk.length ? chunk : chunk.slice(start, end);
+}
+
+/** `\r`, `\n`, `\t`, space. */
+const LEADING = new Set([13, 10, 9, 32]);
+/** `\r`, `\n` only: a trailing space can be significant. */
+const TRAILING = new Set([13, 10]);
+
 export function readSegments(raw: string, delimiters: Delimiters): readonly Segment[] {
   const segments: Segment[] = [];
   for (const chunk of raw.split(delimiters.segment)) {
-    const trimmed = chunk.replace(/^[\r\n\t ]+/, '').replace(/[\r\n]+$/, '');
+    const trimmed = trimSegment(chunk);
     if (trimmed === '') continue;
     const parts = trimmed.split(delimiters.element);
     const [tag = '', ...rest] = parts;

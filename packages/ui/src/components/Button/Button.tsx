@@ -1,9 +1,28 @@
-import type { HTMLAttributes, MouseEvent, ReactNode } from 'react';
+import type { ComponentType, HTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { cx } from '../../lib/cx';
 import { ICON_STROKE_WIDTH, resolveLucideIcon } from '../../lib/lucide';
 import type { ButtonVariant, IconSlug, Size } from '../../types';
 
 const ICON_SIZE: Record<Size, number> = { sm: 15, md: 18, lg: 18 };
+
+/**
+ * Exactly what Button hands to the component named by `as`. It is the anchor's own prop
+ * set, so a router's Link accepts all of it and `as={Link}` type-checks without this
+ * library ever importing that router.
+ */
+export interface ButtonLinkProps {
+  className: string;
+  href: string;
+  target?: string;
+  rel?: string;
+  /* React's own Booleanish, written out rather than imported: this interface is the
+     contract a consumer's Link is measured against, so it should be readable on its own,
+     and a caller passing aria-disabled="true" through must still type-check. */
+  'aria-disabled'?: boolean | 'true' | 'false';
+  tabIndex?: number;
+  onClick: (event: MouseEvent<HTMLElement>) => void;
+  children?: ReactNode;
+}
 
 export interface ButtonProps extends HTMLAttributes<HTMLElement> {
   /**
@@ -20,6 +39,15 @@ export interface ButtonProps extends HTMLAttributes<HTMLElement> {
   fullWidth?: boolean;
   /** Renders an anchor instead of a button. */
   href?: string;
+  /**
+   * Renders this component in place of the plain `<a>`, keeping every class, variant and
+   * state. Pass a router's Link here so in-app navigation stays a client transition
+   * instead of a full page load. Honoured only alongside `href`.
+   *
+   * @example
+   * <Button href="/records" as={Link}>Records</Button>
+   */
+  as?: ComponentType<ButtonLinkProps>;
   /** Anchor target, honoured only alongside `href`. */
   target?: string;
   /** Anchor rel, honoured only alongside `href`. */
@@ -36,6 +64,9 @@ export interface ButtonProps extends HTMLAttributes<HTMLElement> {
  * The action control. One `primary` per view; `danger` plus an explicit confirmation for
  * destructive work, never terracotta. Renders an `<a>` when `href` is set and a `<button>`
  * otherwise, so the element always matches what the control actually does.
+ *
+ * Inside a routed app, pass the router's Link as `as` so navigation stays a client
+ * transition; the library never imports a router itself, so it stays framework-agnostic.
  */
 export function Button({
   variant = 'primary',
@@ -45,6 +76,7 @@ export function Button({
   disabled = false,
   fullWidth = false,
   href,
+  as: LinkComponent,
   target,
   rel,
   type = 'button',
@@ -100,20 +132,24 @@ export function Button({
       onClick?.(event);
     };
 
-    return (
-      <a
-        className={classes}
-        href={href}
-        target={target}
-        rel={rel}
-        aria-disabled={disabled || undefined}
-        tabIndex={disabled ? -1 : undefined}
-        onClick={handleClick}
-        {...rest}
-      >
-        {content}
-      </a>
-    );
+    const linkProps: ButtonLinkProps = {
+      className: classes,
+      href,
+      target,
+      rel,
+      'aria-disabled': disabled || undefined,
+      tabIndex: disabled ? -1 : undefined,
+      onClick: handleClick,
+      children: content,
+    };
+
+    // The consumer's Link renders the anchor itself, so every class, variant and state
+    // above still applies; only the element doing the navigating changes.
+    if (LinkComponent) {
+      return <LinkComponent {...linkProps} {...rest} />;
+    }
+
+    return <a {...linkProps} {...rest} />;
   }
 
   return (

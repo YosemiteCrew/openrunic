@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Button } from './Button';
+import type { ButtonLinkProps } from './Button';
 
 const meta = {
   title: 'Actions/Button',
@@ -108,6 +109,21 @@ export const AsLink: Story = {
 
 export const WithIcons: Story = {
   args: { iconLeft: 'file-text', iconRight: 'arrow-right', children: 'Open Testina Patientsson' },
+};
+
+/**
+ * In-app navigation. Pass the router's Link as `as` and the button keeps every class,
+ * variant and state while the router handles the transition, so moving between screens is
+ * not a full page load. The library never imports a router, so it stays framework-agnostic:
+ * the stand-in below is the shape any router's Link already has.
+ */
+export const AsRouterLink: Story = {
+  args: {
+    href: '/records',
+    as: (props: ButtonLinkProps) => <a data-router-link="true" {...props} />,
+    iconRight: 'arrow-right',
+    children: 'Records',
+  },
 };
 
 /**

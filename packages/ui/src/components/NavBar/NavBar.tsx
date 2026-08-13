@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import type { CSSProperties, HTMLAttributes, KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import { brandAssetCssUrl } from '../../assets/brand';
+import type { BrandLogoFile } from '../../assets/brand';
 import { cx } from '../../lib/cx';
 import { useFieldId } from '../../lib/useFieldId';
 import type { BandTone } from '../../types';
 import { Button } from '../Button';
 
 /** The shipped horizontal lockup, drawn through a mask so it inherits the band's ink. */
-const LOCKUP = 'lockup-horizontal.svg';
+const LOCKUP: BrandLogoFile = 'lockup-horizontal.svg';
 
 export interface NavBarProps extends HTMLAttributes<HTMLElement> {
   /** Section labels in bar order. The first is treated as home by the lockup link. */
@@ -18,7 +20,10 @@ export interface NavBarProps extends HTMLAttributes<HTMLElement> {
   tone?: BandTone;
   /** Replaces the default primary button on the right. */
   cta?: ReactNode;
-  /** Path to the copied assets/logo directory, relative to the page. */
+  /**
+   * Serve the lockup from your own copy of the design system's assets/logo directory
+   * instead of the mark bundled with this package. The mark is a shipped file either way.
+   */
   logoBasePath?: string;
 }
 
@@ -34,7 +39,7 @@ export function NavBar({
   onNavigate,
   tone = 'bone',
   cta,
-  logoBasePath = 'assets/logo',
+  logoBasePath,
   className,
   id,
   ...rest
@@ -47,7 +52,7 @@ export function NavBar({
   /* A stylesheet cannot know the consumer's asset path, so the one thing that has to be
      inline is the mask URL. Everything else about the lockup lives in NavBar.css. */
   const logoStyle = {
-    '--or-nav-bar-logo-src': `url("${encodeURI(logoBasePath)}/${LOCKUP}")`,
+    '--or-nav-bar-logo-src': brandAssetCssUrl(LOCKUP, logoBasePath),
   } as CSSProperties;
 
   const navigate = (item: string) => (event: MouseEvent<HTMLElement>) => {

@@ -3,10 +3,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Glyph } from './Glyph';
 
 /**
- * The mark is a shipped file, never redrawn. Copy the eight builds from the design
- * system's `assets/logo/` into the app's public directory and point `basePath` at that
- * folder; these stories use the default `assets/logo`, so the mark only appears once the
- * files are in place.
+ * The mark is a shipped file, never redrawn. `glyph.svg` is vendored into this package and
+ * inlined by the bundler, so the mark renders with nothing to host and no network request.
+ * `basePath` still points at your own copy when you serve it.
  */
 const meta = {
   title: 'Brand/Glyph',

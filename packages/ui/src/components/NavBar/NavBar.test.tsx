@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { NavBar } from './NavBar';
 
 const ITEMS = ['Product', 'Docs', 'Open source', 'Blog'];
@@ -133,14 +134,15 @@ describe('NavBar', () => {
     expect(screen.queryByRole('button', { name: 'Get started' })).not.toBeInTheDocument();
   });
 
-  it('points the lockup mask at the supplied asset directory', () => {
+  it('masks the bundled lockup by default and honours a caller asset directory', () => {
     const { container, rerender } = render(<NavBar items={ITEMS} />);
     const read = () =>
       container
         .querySelector<HTMLElement>('.or-nav-bar__logo')
         ?.style.getPropertyValue('--or-nav-bar-logo-src');
 
-    expect(read()).toBe('url("assets/logo/lockup-horizontal.svg")');
+    expect(read()).toBe(brandAssetCssUrl('lockup-horizontal.svg'));
+    expect(read()).toContain('data:image/svg+xml');
 
     rerender(<NavBar items={ITEMS} logoBasePath="/brand/open runic" />);
     expect(read()).toBe('url("/brand/open%20runic/lockup-horizontal.svg")');

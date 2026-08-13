@@ -1,0 +1,114 @@
+/* Tabs - one strip of sections sitting on a hairline, over one panel. The active tab is
+   terracotta ink above a 1.5px terracotta rule, the same treatment NavBar gives a current
+   section; the rest are hazelnut and darken to espresso. Below md the strip scrolls
+   sideways rather than wrapping, because a wrapped row of tabs stops reading as one strip. */
+
+.or-tabs {
+  font-family: var(--font-text);
+}
+
+.or-tabs > * {
+  min-width: 0;
+}
+
+/* The scroll container is the strip's own, not the page's: the tabs keep their labels and
+   the row scrolls sideways instead of every label being squeezed or wrapped onto a
+   second line. */
+.or-tabs__strip {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* `max-content` so the hairline runs the whole scrollable width rather than stopping at
+   the visible edge, `min-width` so it still spans the strip when there are only two tabs. */
+.or-tabs__list {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: max-content;
+  min-width: 100%;
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+@media (min-width: 768px) {
+  .or-tabs__list {
+    gap: var(--space-4);
+  }
+}
+
+.or-tabs__tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  /* Touch-target floor for phones; the exact 40px control height returns at md. */
+  min-height: 44px;
+  /* The rule is 1.5px of terracotta, per the interaction-states spec, and the pulled-up
+     margin drops it onto the strip's hairline instead of leaving a gap above it. */
+  margin-bottom: calc(var(--hairline) * -1);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--wght-regular);
+  line-height: var(--lh-small);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-tabs__tab {
+    min-height: 0;
+    height: var(--control-h-md);
+  }
+}
+
+.or-tabs__icon {
+  flex: 0 0 auto;
+}
+
+/* The selected tab is never colour alone: it also carries aria-selected, the rule under
+   the label and a heavier weight. */
+.or-tabs__tab--active {
+  border-bottom-color: var(--terracotta);
+  color: var(--terracotta-deep);
+  font-weight: var(--wght-semibold);
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* Hover pulls hazelnut down to espresso, never the other way, and only where a pointer
+   can actually hover. */
+@media (hover: hover) {
+  .or-tabs__tab:not(.or-tabs__tab--active):not(:disabled):hover {
+    color: var(--espresso);
+  }
+}
+
+.or-tabs__tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-tabs__tab:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* Panel ------------------------------------------------------------------ */
+
+.or-tabs__panel {
+  padding-top: var(--space-4);
+  animation: or-fade-up var(--dur-fast) var(--ease-out);
+}
+
+.or-tabs__panel:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

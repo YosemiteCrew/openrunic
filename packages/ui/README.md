@@ -45,6 +45,44 @@ export function Vitals() {
 the rest), a small element reset, and every component's rules, in that order. It is the only
 stylesheet you need and the only one you should load.
 
+### Importing the stylesheet
+
+`import '@openrunic/ui/styles.css'` is the supported path, and it is a plain bundler import: put it
+in the root layout or the app entry, once. A CSS `@import '@openrunic/ui/styles.css'` from your own
+stylesheet works too.
+
+Every `url()` the stylesheet contains resolves, which is what makes that possible. A CSS loader
+resolves each one at build time and fails the build on the first missing file, so a stylesheet
+pointing at font binaries it does not ship cannot be imported at all. Earlier revisions had exactly
+that problem and had to be copied into a `public/` directory and loaded with a `<link>` tag, which
+then tripped framework lint rules about raw CSS tags. **That workaround is gone: do not copy the
+stylesheet into `public/`, and do not link it by hand.** The five font files it references are
+shipped in `dist/fonts/` beside it; see [Fonts](#fonts).
+
+Components use React hooks (`useId`, `useState`), so in a server-components framework they render
+in a client component, like any other React component library. Mark the file that renders them
+`'use client'`; the stylesheet import itself has no such constraint and belongs in the root layout.
+
+### Navigation
+
+`Button` renders a `<button>` normally and an `<a>` when you give it `href`. Inside a routed app,
+pass your router's Link as `as` and the button keeps every class, variant and state while the router
+handles the transition, so moving between screens is a client transition rather than a full page
+load:
+
+```tsx
+import Link from 'your-router';
+import { Button } from '@openrunic/ui';
+
+<Button href="/records" as={Link} iconRight="arrow-right">
+  Records
+</Button>;
+```
+
+The library never imports a router, so it stays framework-agnostic. `as` is typed as
+`ComponentType<ButtonLinkProps>`, and `ButtonLinkProps` is exactly the anchor prop set Button would
+have handed its own `<a>`, which is why any router's Link satisfies it.
+
 ## The token contract
 
 Components read CSS custom properties and never literal values. Redefine a token and every
@@ -86,30 +124,49 @@ by tap and by keyboard.
 
 ## Fonts
 
-The library references three self-hosted OFL families - **Bricolage Grotesque** (display, UI and
-body), **Fraunces** (editorial longform only) and **Spline Sans Mono** (code, FHIR identifiers,
-tabular readouts). The binaries are **not** bundled here.
+Three OFL families ship inside this package: **Bricolage Grotesque** (display, UI and body),
+**Fraunces** (editorial longform only) and **Spline Sans Mono** (code, FHIR identifiers, tabular
+readouts). All five variable WOFF2 faces live in `src/assets/fonts/` with their `OFL-*.txt` licence
+files beside them, and the build copies both to `dist/fonts/`.
 
-To get the intended typography, copy them out of the design system's `assets/fonts/` into a
-`fonts/` directory beside the stylesheet you serve, so the relative `./fonts/...` URLs in
-`tokens/fonts.css` resolve:
+You do not have to do anything: importing the stylesheet is enough. `local()` is tried first in
+every `@font-face`, so a machine that already has a family installed downloads nothing; otherwise
+the face is fetched from `dist/fonts/`, which the bundler resolves and re-emits like any other
+asset. If a face fails to load, the family falls back to the system stack in `tokens/typography.css`
+(`-apple-system` / Georgia / `ui-monospace`) and only the optical-size axis is lost.
 
-```text
-your-app/public/
-  styles.css                 <- from @openrunic/ui/styles.css
-  fonts/
-    BricolageGrotesque-variable.woff2
-    BricolageGrotesque-variable.ttf
-    Fraunces-variable.woff2
-    Fraunces-Italic-variable.woff2
-    SplineSansMono-variable.woff2
-    SplineSansMono-Italic-variable.woff2
+The fonts stay **separate files** rather than being inlined into the stylesheet. Vite's library mode
+base64-inlines any asset a stylesheet resolves, which produced a 1,063 kB render-blocking stylesheet
+and defeated `font-display: swap` outright. So `tokens/fonts.css` points at `./fonts/...`, a path
+that resolves next to the _built_ stylesheet rather than next to the source one, and the
+`vendorFonts` plugin in `vite.config.ts` puts the real files there. Move either end and both must
+change; the comments in both files say so.
+
+Fonts are never hotlinked from a CDN. That is a privacy decision, not a performance one.
+
+## Brand marks
+
+`Logo`, `Glyph`, `NavBar`, `SideNav`, `Footer` and `EmptyState` render **shipped SVG files**: the
+brand rule is that a mark is a file and is never redrawn in code. All eight logo builds are vendored
+into this package, so every one of those components works out of the box:
+
+```tsx
+<Logo variant="horizontal" height={28} />
+<Glyph size={32} color="var(--terracotta)" />
+<EmptyState title="No records yet" />
 ```
 
-Without them nothing breaks: `--font-text` and friends fall back to `-apple-system` / Georgia /
-`ui-monospace`, and the only loss is the variable optical-size axis that makes the system look
-bespoke. `local()` is tried first, so a machine that already has a family installed downloads
-nothing. Fonts are never hotlinked from a CDN - that is a privacy decision, not a performance one.
+The marks are read as source at build time and inlined as data URIs, so they are part of the
+JavaScript bundle: no network request, nothing for your app to host, and they render correctly
+behind any route, base path or CDN prefix. All eight builds together cost about 3 kB gzipped.
+
+If your app serves its own copies of the design system's `assets/logo/`, point `basePath` (or
+`logoBasePath` / `glyphBasePath`) at that directory and the component uses yours instead:
+
+```tsx
+<Logo variant="horizontal" height={28} basePath="/assets/logo" />
+<EmptyState title="No records yet" glyphBasePath="/assets/logo" />
+```
 
 ## Scripts
 

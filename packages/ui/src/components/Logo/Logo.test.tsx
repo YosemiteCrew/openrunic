@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { brandAssetCssUrl, brandAssetUrl } from '../../assets/brand';
 import { Logo } from './Logo';
 
 /** Both branches render an image named for the brand, so one query serves the whole suite. */
@@ -14,7 +15,7 @@ describe('Logo', () => {
     expect(logo.tagName).toBe('SPAN');
     expect(logo).toHaveClass('or-logo', 'or-logo--mask');
     expect(logo.style.getPropertyValue('--or-logo-src')).toBe(
-      'url(assets/logo/lockup-horizontal.svg)'
+      brandAssetCssUrl('lockup-horizontal.svg')
     );
     expect(logo).toHaveStyle({ width: '116px', height: '32px' });
   });
@@ -35,9 +36,9 @@ describe('Logo', () => {
     expect(logo.tagName).toBe(tag);
 
     if (tag === 'SPAN') {
-      expect(logo.style.getPropertyValue('--or-logo-src')).toBe(`url(assets/logo/${file})`);
+      expect(logo.style.getPropertyValue('--or-logo-src')).toBe(brandAssetCssUrl(file));
     } else {
-      expect(logo).toHaveAttribute('src', `assets/logo/${file}`);
+      expect(logo).toHaveAttribute('src', brandAssetUrl(file));
     }
   });
 
@@ -45,7 +46,7 @@ describe('Logo', () => {
     render(<Logo variant="stacked" />);
     const logo = mark();
     expect(logo).toHaveClass('or-logo--image');
-    expect(logo).toHaveAttribute('src', 'assets/logo/lockup-stacked-light.svg');
+    expect(logo).toHaveAttribute('src', brandAssetUrl('lockup-stacked-light.svg'));
   });
 
   it.each([
@@ -65,7 +66,7 @@ describe('Logo', () => {
   it('resolves the masked build against a caller basePath', () => {
     render(<Logo basePath="/brand/logo" />);
     expect(mark().style.getPropertyValue('--or-logo-src')).toBe(
-      'url(/brand/logo/lockup-horizontal.svg)'
+      'url("/brand/logo/lockup-horizontal.svg")'
     );
   });
 

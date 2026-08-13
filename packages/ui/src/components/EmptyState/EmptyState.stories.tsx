@@ -17,9 +17,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * The default mark is the brand glyph, loaded from `glyphBasePath` - the consuming app
- * serves `assets/logo/glyph.svg` itself, because brand marks are shipped files and are
- * never redrawn in code. Point `glyphBasePath` wherever the app hosts them.
+ * The brand glyph is the default mark. It is vendored into this package and inlined by the
+ * bundler, so no call site has to pass an icon or host a file. The mark is decorative and
+ * hidden from assistive technology; the heading and the message carry the whole meaning.
  */
 export const Default: Story = {
   args: {
@@ -29,6 +29,14 @@ export const Default: Story = {
       </Button>
     ),
   },
+};
+
+/**
+ * An app that serves its own copies of the marks points `glyphBasePath` at that directory.
+ * Brand marks are shipped files either way and are never redrawn in code.
+ */
+export const WithHostedGlyph: Story = {
+  args: { glyphBasePath: 'assets/logo' },
 };
 
 /** A Lucide slug replaces the glyph when the state is about one kind of thing. */

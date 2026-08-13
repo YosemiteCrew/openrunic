@@ -1,22 +1,35 @@
-/* All three families self-hosted, SIL OFL 1.1. Licenses in assets/fonts/OFL-*.txt. */
-/* The font binaries are NOT shipped inside @openrunic/ui. Copy them from the design
-   system's assets/fonts/ into a `fonts/` directory beside the stylesheet you serve
-   (see README, "Fonts"). Until they are there the browser falls back to the stacks in
-   typography.css (-apple-system / Georgia / ui-monospace), so nothing breaks - only the
-   bespoke optical-size axis is lost. local() is listed first so a machine that already
-   has the family installed never downloads anything. */
+/* Type families, all three self-hosted from `src/assets/fonts/`. All three are SIL OFL 1.1
+   and travel with their `OFL-*.txt` licence files, which is what makes redistributing the
+   binaries inside this package legitimate. Fonts are never hotlinked from a CDN: that is a
+   privacy decision rather than a performance one.
+
+   `local()` is listed first in every rule, so a machine that already has the family
+   installed uses it and downloads nothing.
+
+   `./fonts/...` is relative to the BUILT stylesheet, not to this source file, and that is
+   deliberate. Vite's library mode base64-inlines every asset a stylesheet resolves, and no
+   setting turns that off; inlining these five faces produced a 1,063 kB stylesheet that
+   blocked first paint and defeated `font-display: swap`. Because this path does not exist
+   beside the source file, Vite leaves the url() exactly as written, and the vendorFonts
+   plugin in vite.config.ts emits the real files to `dist/fonts/`. A consuming bundler then
+   resolves `./fonts/...` against `dist/styles.css` and re-emits them as ordinary,
+   separately cacheable font requests. Move or rename either end and both must change.
+
+   Each family still falls back to a system stack in typography.css (-apple-system /
+   Georgia / ui-monospace) if a face fails to load. */
+
 /* Bricolage Grotesque - variable (opsz 12-96, wdth 75-100, wght 200-800). Display + UI + body. */
 @font-face {
   font-family: 'Bricolage Grotesque';
   src:
     local('Bricolage Grotesque'),
-    url('./fonts/BricolageGrotesque-variable.woff2') format('woff2-variations'),
-    url('./fonts/BricolageGrotesque-variable.ttf') format('truetype-variations');
+    url('./fonts/BricolageGrotesque-variable.woff2') format('woff2-variations');
   font-weight: 200 800;
   font-stretch: 75% 100%;
   font-style: normal;
   font-display: swap;
 }
+
 /* Fraunces - variable (opsz 9-144, wght 100-900, SOFT + WONK). Editorial longform only. */
 @font-face {
   font-family: 'Fraunces';
@@ -36,6 +49,7 @@
   font-style: italic;
   font-display: swap;
 }
+
 /* Spline Sans Mono - variable (wght 300-700). Code, FHIR IDs, tabular readouts. */
 @font-face {
   font-family: 'Spline Sans Mono';

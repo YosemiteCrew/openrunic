@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Button } from './Button';
+import type { ButtonLinkProps } from './Button';
 
 describe('Button', () => {
   it('renders a button with an accessible name and a safe default type', () => {
@@ -142,5 +143,67 @@ describe('Button', () => {
     expect(onClick).not.toHaveBeenCalled();
     // fireEvent returns false once a listener has called preventDefault.
     expect(clicked).toBe(false);
+  });
+
+  it('renders a caller-supplied link component with every class and state intact', () => {
+    /* Stands in for a router's Link: it takes the same anchor props Button hands to its
+       own <a>, so nothing about the styling or the states changes. */
+    const RouterLink = ({ href, children, ...props }: ButtonLinkProps) => (
+      <a data-router-link="true" href={href} {...props}>
+        {children}
+      </a>
+    );
+
+    render(
+      <Button href="/records" as={RouterLink} variant="secondary" size="lg" iconRight="arrow-right">
+        Records
+      </Button>
+    );
+    const link = screen.getByRole('link', { name: 'Records' });
+    expect(link).toHaveAttribute('data-router-link', 'true');
+    expect(link).toHaveAttribute('href', '/records');
+    expect(link).toHaveClass('or-btn', 'or-btn--secondary', 'or-btn--lg');
+    expect(link.querySelector('.or-btn__icon')).toBeInTheDocument();
+  });
+
+  it('calls onClick through a caller-supplied link component', async () => {
+    const onClick = vi.fn();
+    const RouterLink = (props: ButtonLinkProps) => <a {...props} />;
+
+    render(
+      <Button href="#records" as={RouterLink} onClick={onClick}>
+        Open records
+      </Button>
+    );
+    await userEvent.click(screen.getByRole('link', { name: 'Open records' }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the disabled treatment into a caller-supplied link component', () => {
+    const onClick = vi.fn();
+    const RouterLink = (props: ButtonLinkProps) => <a {...props} />;
+
+    render(
+      <Button href="/docs" as={RouterLink} disabled onClick={onClick}>
+        Read the docs
+      </Button>
+    );
+    const link = screen.getByRole('link', { name: 'Read the docs' });
+    expect(link).toHaveAttribute('aria-disabled', 'true');
+    expect(link).toHaveAttribute('tabindex', '-1');
+    expect(fireEvent.click(link)).toBe(false);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('ignores the link component when there is no href, so the control stays a button', () => {
+    const RouterLink = (props: ButtonLinkProps) => <a {...props} />;
+
+    render(
+      <Button as={RouterLink} onClick={vi.fn()}>
+        Connect a clinic
+      </Button>
+    );
+    expect(screen.getByRole('button', { name: 'Connect a clinic' })).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });

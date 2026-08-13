@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { EmptyState } from './EmptyState';
 
 describe('EmptyState', () => {
@@ -22,18 +23,18 @@ describe('EmptyState', () => {
     expect(container.querySelector('.or-empty-state__message')).toBeNull();
   });
 
-  it('falls back to the brand glyph, masked from the default path and hidden from AT', () => {
+  it('falls back to the bundled brand glyph, hidden from AT, with no path to host', () => {
     const { container } = render(<EmptyState title="No records yet" />);
     const glyph = container.querySelector('.or-empty-state__glyph');
     expect(glyph).toBeInTheDocument();
     expect(glyph).toHaveAttribute('aria-hidden', 'true');
-    expect(glyph?.getAttribute('style')).toContain("url('assets/logo/glyph.svg')");
+    expect(glyph?.getAttribute('style')).toContain(brandAssetCssUrl('glyph.svg'));
   });
 
   it('serves the glyph from a caller-supplied base path', () => {
     const { container } = render(<EmptyState title="No records yet" glyphBasePath="/brand" />);
     const glyph = container.querySelector('.or-empty-state__glyph');
-    expect(glyph?.getAttribute('style')).toContain("url('/brand/glyph.svg')");
+    expect(glyph?.getAttribute('style')).toContain('url("/brand/glyph.svg")');
   });
 
   it('renders a Lucide icon instead of the glyph when a slug is given', () => {

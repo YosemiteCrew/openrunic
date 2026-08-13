@@ -1,0 +1,79 @@
+/* DescriptionList - label and value pairs for one record. Table's single-record sibling:
+   where a table reads across many records, this reads down one. Hairlines do the same work
+   here as there - pairs are separated, columns never are. */
+
+.or-description-list {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+}
+
+/* The caption names the list. It sits above the <dl> rather than inside it, because a <dl>
+   may hold nothing but its pairs; aria-labelledby carries the association. */
+.or-description-list__caption {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  font-weight: var(--wght-semibold);
+  letter-spacing: var(--track-caption);
+  line-height: var(--lh-caption);
+}
+
+/* Each pair is its own grid rather than the <dl> being one, so a pair can carry the
+   hairline under it. Every pair shares the same template, so the values still line up
+   down the list. */
+.or-description-list__pair {
+  display: grid;
+  /* Stacked below md: the term sits on its own line above a full-width value. */
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+}
+
+/* Grid children default to min-width:auto, which lets a long mono identifier push the pair
+   wider than its column. Both halves are allowed to shrink and wrap instead. */
+.or-description-list__pair > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Hairline between pairs, never after the last one - whatever holds the list closes it. */
+.or-description-list__pair:not(:last-child) {
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-description-list__term {
+  color: var(--text-secondary);
+  font-weight: var(--wght-medium);
+  line-height: var(--lh-small);
+}
+
+.or-description-list__value {
+  /* A <dd> carries a UA inline-start margin that would knock it out of its column. */
+  margin: 0;
+  color: var(--text-ink);
+  line-height: var(--lh-small);
+}
+
+/* Value treatments ------------------------------------------------------- */
+
+.or-description-list__value--mono {
+  font-family: var(--font-mono);
+}
+
+.or-description-list__value--numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Responsive ------------------------------------------------------------- */
+
+/* From md the pair becomes two columns, term left and value right. The tracks are
+   fractions rather than fixed widths so the column follows the container the list was
+   dropped into, and minmax(0, ...) keeps a long identifier inside its track. */
+@media (min-width: 768px) {
+  .or-description-list__pair {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    column-gap: var(--space-5);
+    align-items: baseline;
+  }
+}

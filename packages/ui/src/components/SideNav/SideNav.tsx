@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, HTMLAttributes, KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import { brandAssetCssUrl } from '../../assets/brand';
+import type { BrandLogoFile } from '../../assets/brand';
 import { cx } from '../../lib/cx';
 import { ICON_STROKE_WIDTH, resolveLucideIcon } from '../../lib/lucide';
 import { useFieldId } from '../../lib/useFieldId';
@@ -7,7 +9,7 @@ import type { IconSlug } from '../../types';
 import { Button } from '../Button';
 
 /** The shipped horizontal lockup, drawn through a mask so it inherits the rail's ink. */
-const LOCKUP = 'lockup-horizontal.svg';
+const LOCKUP: BrandLogoFile = 'lockup-horizontal.svg';
 
 /** Row icon size, straight from the design system's sidebar specimen. */
 const ICON_SIZE = 17;
@@ -30,7 +32,10 @@ export interface SideNavProps extends HTMLAttributes<HTMLElement> {
   onNavigate?: (label: string) => void;
   /** Pinned to the bottom - account row, help link. */
   footer?: ReactNode;
-  /** Path to the copied assets/logo directory, relative to the page. */
+  /**
+   * Serve the lockup from your own copy of the design system's assets/logo directory
+   * instead of the mark bundled with this package. The mark is a shipped file either way.
+   */
   logoBasePath?: string;
 }
 
@@ -45,7 +50,7 @@ export function SideNav({
   active,
   onNavigate,
   footer,
-  logoBasePath = 'assets/logo',
+  logoBasePath,
   className,
   id,
   ...rest
@@ -59,7 +64,7 @@ export function SideNav({
   /* A stylesheet cannot know the consumer's asset path, so the one thing that has to be
      inline is the mask URL. Everything else about the lockup lives in SideNav.css. */
   const logoStyle = {
-    '--or-side-nav-logo-src': `url("${encodeURI(logoBasePath)}/${LOCKUP}")`,
+    '--or-side-nav-logo-src': brandAssetCssUrl(LOCKUP, logoBasePath),
   } as CSSProperties;
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { Glyph } from './Glyph';
 
 /** The block is the only element carrying inline style, and it is always the named image. */
@@ -21,13 +22,13 @@ describe('Glyph', () => {
   it('points the mask at the shipped currentColor build', () => {
     render(<Glyph />);
     const glyph = block();
-    expect(glyph.style.getPropertyValue('--or-glyph-src')).toBe('url(assets/logo/glyph.svg)');
+    expect(glyph.style.getPropertyValue('--or-glyph-src')).toBe(brandAssetCssUrl('glyph.svg'));
     expect(glyph.style.getPropertyValue('--or-glyph-ink')).toBe('currentColor');
   });
 
   it('resolves the mask against a caller basePath', () => {
     render(<Glyph basePath="/brand/logo" />);
-    expect(block().style.getPropertyValue('--or-glyph-src')).toBe('url(/brand/logo/glyph.svg)');
+    expect(block().style.getPropertyValue('--or-glyph-src')).toBe('url("/brand/logo/glyph.svg")');
   });
 
   it('takes an explicit ink, terracotta included', () => {

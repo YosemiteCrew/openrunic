@@ -71,6 +71,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The program below is JavaScript held in single quotes so the shell
+          # hands it to node untouched. shellcheck, which actionlint runs over
+          # every `run:` block, sees `${...}` inside single quotes and assumes
+          # the author wanted shell expansion. Same false positive, same scoped
+          # answer as pr-governance.yml.
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
 

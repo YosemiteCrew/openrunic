@@ -1,5 +1,10 @@
 import { lintMigrationDirectory } from '../migration-lint/lint.js';
-import { appliedMigrations, rowCounts, type PostgresTarget } from '../db/postgres.js';
+import {
+  assertReachable,
+  appliedMigrations,
+  rowCounts,
+  type PostgresTarget,
+} from '../db/postgres.js';
 
 import { latestBackup } from './backup.js';
 import { planUpgrade, type UpgradePlan } from './upgrade-plan.js';
@@ -50,11 +55,26 @@ export async function preflight(
   const checks: PreflightCheck[] = [];
 
   const lint = lintMigrationDirectory(migrationsDirectory);
+
+  // Probed, not inferred, and deliberately allowed to propagate.
+  //
+  // The obvious shortcut is to read reachability off appliedMigrations, and it
+  // is wrong: that function swallows its errors on purpose, because "no
+  // migrations table yet" is a legitimate state on a database that has never
+  // been deployed to. A refused connection and a fresh database both come back
+  // as an empty list, so the shortcut reports "database reachable" at the one
+  // moment an operator most needs to hear otherwise.
+  //
+  // Throwing rather than pushing ok:false is the honest shape: rowCounts below
+  // needs the same connection, so a preflight that carried on would fail a few
+  // lines later with a worse message.
+  await assertReachable(target);
+
   const applied = await appliedMigrations(target);
   const plan = planUpgrade(applied, lint.migrations);
 
-  // True by construction rather than by assertion: appliedMigrations threw if
-  // the database did not answer, so reaching this line is the proof.
+  // True by construction now that a probe stands behind it: assertReachable
+  // throws when the database does not answer, so reaching this line is proof.
   checks.push({
     name: 'database reachable',
     ok: true,

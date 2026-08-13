@@ -155,6 +155,23 @@ export async function rowCounts(target: PostgresTarget): Promise<Record<string, 
 }
 
 /** Migration names Prisma has recorded as applied, in order. */
+/**
+ * Answers whether the database is actually reachable, and lets a failure say so.
+ *
+ * `appliedMigrations` deliberately swallows its errors, because "no migrations
+ * table yet" is a legitimate state on a database that has never been deployed
+ * to. That makes it useless as a liveness signal: a refused connection and a
+ * fresh database both come back as an empty list. A preflight that inferred
+ * reachability from it would report "database reachable" with the database
+ * down, which is the one moment an operator most needs to be told otherwise.
+ *
+ * `SELECT 1` answers on any database that will talk to us at all, and this
+ * lets the error propagate rather than folding it into a value.
+ */
+export async function assertReachable(target: PostgresTarget): Promise<void> {
+  await query(target, 'SELECT 1');
+}
+
 export async function appliedMigrations(target: PostgresTarget): Promise<string[]> {
   try {
     const rows = await query(

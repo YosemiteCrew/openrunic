@@ -141,8 +141,10 @@ describe('decideUpgrade', () => {
  */
 const appliedMigrations = vi.hoisted(() => vi.fn<() => Promise<string[]>>());
 const rowCounts = vi.hoisted(() => vi.fn<() => Promise<Record<string, number>>>());
+const assertReachable = vi.hoisted(() => vi.fn<() => Promise<void>>());
 
 vi.mock('../db/postgres.js', () => ({
+  assertReachable: (): Promise<void> => assertReachable(),
   appliedMigrations: (): Promise<string[]> => appliedMigrations(),
   rowCounts: (): Promise<Record<string, number>> => rowCounts(),
 }));
@@ -159,6 +161,7 @@ describe('preflight', () => {
     migrations = path.join(root, 'migrations');
     backups = path.join(root, 'backups');
     await mkdir(migrations, { recursive: true });
+    assertReachable.mockResolvedValue(undefined);
     appliedMigrations.mockResolvedValue([]);
     rowCounts.mockResolvedValue({});
   });
@@ -269,14 +272,19 @@ describe('preflight', () => {
 
     const { checks } = await preflight(target, migrations, backups);
 
-    // True by construction: appliedMigrations throws when the database does not
+    // True by construction: assertReachable throws when the database does not
     // answer, so the line reporting this is only reached on a live one.
+    // appliedMigrations cannot carry that proof - it returns [] for a refused
+    // connection as readily as for a database with no migrations table.
     expect(named(checks, 'database reachable').detail).toBe('1 migration(s) already applied');
   });
 
   it('propagates a database that did not answer, instead of reporting it reachable', async () => {
     await write('20260101000000_init', 'CREATE TABLE "Patient" ("id" TEXT NOT NULL);');
-    appliedMigrations.mockRejectedValue(new Error('psql failed: connection refused'));
+    // Mocked on the probe, not on appliedMigrations: the real appliedMigrations
+    // catches everything, so a test that made IT reject would prove a thing the
+    // shipped code cannot do.
+    assertReachable.mockRejectedValue(new Error('psql failed: connection refused'));
 
     await expect(preflight(target, migrations, backups)).rejects.toThrow(/connection refused/);
   });

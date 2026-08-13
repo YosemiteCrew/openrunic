@@ -15,7 +15,10 @@ import { PERMISSIONS } from '../policy/permissions.js';
 import {
   bearer,
   createTestApp,
+  DEMO_PORTAL_PATIENT,
   jsonBearer,
+  makeAppointmentRow,
+  seed,
   seedPatients,
   testId,
   TOKENS,
@@ -306,6 +309,45 @@ describe('running a turn', () => {
     });
     expect(response.status).toBe(401);
   });
+
+  it('answers a portal turn from the chart on the token, not the one the body named', async () => {
+    const { app, dataset } = createAgentApp([
+      { toolCalls: [{ toolName: 'visits.list', input: { when: 'upcoming' } }] },
+      { text: 'You have one appointment booked.' },
+    ]);
+    seedPatients(dataset, 1);
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        patientId: DEMO_PORTAL_PATIENT,
+        /* Relative to the real clock, because the capability computes its own
+           window from `Date.now()` rather than being told one. A fixed date
+           would quietly stop being upcoming. */
+        start: new Date(Date.now() + 86_400_000),
+        end: new Date(Date.now() + 88_200_000),
+      })
+    );
+
+    const response = await app.request('/bff/v0/agent/turns', {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.portalA),
+      // Somebody else's chart, which is what a tampered client would send.
+      body: JSON.stringify({ message: 'When am I next in?', chartPatientId: testId(700) }),
+    });
+
+    const events = await readStream(response);
+
+    /* The compartment came from the token, so the reader's own appointment
+       matches it and the boundary re-check passes. Had the body been believed,
+       the turn would have been bound to a chart this API never answers for, and
+       the reader's own row would have aborted it on the way out. */
+    expect(events.find((event) => event.type === 'failed')).toBeUndefined();
+    expect(events.find((event) => event.type === 'sources')).toMatchObject({
+      entries: [{ resourceType: 'Appointment' }],
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'turn-finished', outcome: 'completed' });
+  });
 });
 
 describe('confirming a proposal', () => {
@@ -413,6 +455,36 @@ describe('the principal handed to the loop', () => {
       testId(5)
     );
     expect(principal.compartment).toEqual({ patientId: testId(5) });
+  });
+
+  it('binds a token that names its own chart to that chart, and reads no chart from the request', () => {
+    const portal = {
+      subject: testId(1),
+      tenantId: testId(1),
+      actorType: 'patient' as const,
+      roles: ['patient-portal'],
+      facilityIds: [],
+      scopes: ['patient/*.read', 'launch/patient'],
+      // The launch context on a portal token. It is the only chart the
+      // repositories behind this session will answer for, so it is the only
+      // chart a capability may be asked to check its rows against.
+      compartmentPatientId: testId(1),
+      purposeOfUse: 'TREAT',
+    };
+
+    // With a chart named in the request, and with none: the same answer, which
+    // is the point. ADR-0006 gives this surface no way to change chart.
+    expect(toAgentPrincipal(portal, testId(7)).compartment).toEqual({ patientId: testId(1) });
+    expect(toAgentPrincipal(portal).compartment).toEqual({ patientId: testId(1) });
+
+    // The rule is the token's, not the surface's: a staff session launched
+    // against one chart is bound by its token in exactly the same way.
+    const confinedStaff = toAgentPrincipal(
+      { ...portal, actorType: 'user', roles: ['clinician'] },
+      testId(7)
+    );
+    expect(confinedStaff.surface).toBe('staff');
+    expect(confinedStaff.compartment).toEqual({ patientId: testId(1) });
   });
 });
 

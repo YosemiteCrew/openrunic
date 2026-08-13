@@ -80,45 +80,6 @@ updates:
         applies-to: security-updates
         patterns:
           - '*'
-  # Base images for the self-host containers. Added because PR #26 pins both
-  # Dockerfiles to a base-image DIGEST, which is right for reproducibility and
-  # wrong for staleness: a digest never moves, so a patched base image is a
-  # release nobody here would ever notice. Without this entry the pin quietly
-  # becomes "run last quarter's openssl in a clinic".
-  #
-  # `directories` rather than `directory`, because the two Dockerfiles live
-  # beside their apps rather than at the root.
-  - package-ecosystem: docker
-    directories:
-      - /apps/api
-      - /apps/web
-    schedule:
-      interval: weekly
-      day: monday
-      time: '05:15'
-      timezone: 'UTC'
-    target-branch: dev
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: 'chore(repo)'
-    labels:
-      - dependencies
-    groups:
-      # Both images move together in one pull request, same as every other
-      # ecosystem here.
-      all-images:
-        applies-to: version-updates
-        patterns:
-          - '*'
-        update-types:
-          - major
-          - minor
-          - patch
-      all-images-security:
-        applies-to: security-updates
-        patterns:
-          - '*'
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

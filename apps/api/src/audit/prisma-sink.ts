@@ -1,0 +1,98 @@
+import { linkAuditEvent, uuidv7, type Prisma } from '@openrunic/database';
+
+import type { AuditEventDelegate } from '../repositories/db-port.js';
+
+import type { AuditEvent, AuditSink, AuditUnitOfWork } from './types.js';
+
+/**
+ * The runtime audit sink: appends to the per-tenant hash chain in Postgres.
+ *
+ * The chain rule is that `seq` and `prevHash` must be read and the new row
+ * written without another writer slipping between them, so both halves happen
+ * on the transaction handle the caller passed in. `@@unique([tenantId, seq])`
+ * is the backstop: a lost race fails the insert instead of forking the chain.
+ */
+
+/** The slice of a transaction this sink needs. */
+export interface AuditWriteScope {
+  auditEvent: AuditEventDelegate;
+}
+
+/** Recognises a unit of work this sink can write through. */
+export function isAuditWriteScope(value: AuditUnitOfWork | undefined): value is AuditWriteScope {
+  if (value === undefined) return false;
+  const candidate = value as { auditEvent?: { create?: unknown; findFirst?: unknown } };
+  return (
+    typeof candidate.auditEvent?.create === 'function' &&
+    typeof candidate.auditEvent.findFirst === 'function'
+  );
+}
+
+export interface PrismaAuditSinkOptions {
+  /** Used when no unit of work is supplied, e.g. for a denial or a read batch. */
+  standalone: AuditWriteScope;
+  now?: () => Date;
+}
+
+export function createPrismaAuditSink(options: PrismaAuditSinkOptions): AuditSink {
+  const now = options.now ?? ((): Date => new Date());
+
+  const append = async (
+    tenantId: string,
+    event: AuditEvent,
+    scope: AuditWriteScope
+  ): Promise<void> => {
+    const tail = await scope.auditEvent.findFirst({
+      orderBy: { seq: 'desc' },
+      select: { seq: true, hash: true },
+    });
+    const occurredAt = now();
+    const chained = { ...event, tenantId, occurredAt };
+    const { seq, prevHash, hash } = linkAuditEvent(chained, tail);
+    await scope.auditEvent.create({
+      data: {
+        ...chained,
+        // `metadata` is a JSONB column. The collector guarantees a plain object
+        // of JSON-safe values, which is exactly Prisma's `InputJsonObject`; the
+        // structural type just cannot see that through `Record<string, unknown>`.
+        metadata: chained.metadata as Prisma.InputJsonObject,
+        id: uuidv7(),
+        seq,
+        prevHash,
+        hash,
+      },
+    });
+  };
+
+  return {
+    recordReadBatch(tenantId: string, event: AuditEvent): Promise<void> {
+      // Reads are flushed after the response, so there is no caller transaction
+      // to join; this is the one path that legitimately stands alone.
+      return append(tenantId, event, options.standalone);
+    },
+
+    // `async` rather than promise-returning so the refusal below arrives as a
+    // rejection like every other failure, instead of as a synchronous throw
+    // that a `.catch()` on the call site would miss.
+    async recordWrite(
+      tenantId: string,
+      event: AuditEvent,
+      unitOfWork?: AuditUnitOfWork
+    ): Promise<void> {
+      if (unitOfWork === undefined) {
+        // A denial: nothing was mutated, so nothing needs to be atomic with it.
+        await append(tenantId, event, options.standalone);
+        return;
+      }
+      if (!isAuditWriteScope(unitOfWork)) {
+        // Falling back to the standalone scope here would write the audit row
+        // outside the mutation's transaction, which is the exact failure this
+        // sink exists to prevent. Refuse instead.
+        throw new TypeError(
+          'createPrismaAuditSink: unrecognised unit of work. A mutation audit event must be written through the transaction that performed the mutation.'
+        );
+      }
+      await append(tenantId, event, unitOfWork);
+    },
+  };
+}

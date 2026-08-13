@@ -107,6 +107,28 @@ function withFilter<A extends { readonly where?: unknown }>(args: A, operation: 
   return args;
 }
 
+/**
+ * On the two `// nosec` markers below.
+ *
+ * The SAST scanner reports "NoSQL injection attack possible" wherever a
+ * variable reaches an `updateMany` filter, because that method name belongs to
+ * a document store's query API. This project has no document store. The
+ * datasource in `packages/database/prisma/schema.prisma` is `postgresql`, and
+ * Prisma compiles every filter to parameterised SQL, so there is no query
+ * language here for an operator like `$ne` to be smuggled into.
+ *
+ * The taint the rule assumes is absent too. `args` arrives from `prisma.ts`,
+ * which builds `{ where: { id } }` itself from an id the route already parsed
+ * with `z.uuid()`. A client supplies a path segment, which Hono hands over as a
+ * string, so no caller can put an object where the filter belongs.
+ *
+ * Revisit if any of that stops holding: a non-relational datasource, a raw
+ * query assembled by concatenation, or a repository that forwards a
+ * client-supplied object as `where` instead of constructing one. Any of the
+ * three turns this from a false positive into a real finding, and the markers
+ * should come out with it.
+ */
+
 /** The wiring, with the session mechanism left as a parameter. */
 export function createSessionBoundPortFactory(runSession: TenantSessionRunner): DbPortFactory {
   return (tenantId: string): DbPort => {
@@ -121,6 +143,7 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
         create: (args) => inSession((tx) => tx.patient.create(args)),
         updateMany: async (args) => {
           withFilter(args, 'patient.updateMany');
+          // nosec
           return inSession((tx) => tx.patient.updateMany(args));
         },
       },
@@ -131,6 +154,7 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
         create: (args) => inSession((tx) => tx.appointment.create(args)),
         updateMany: async (args) => {
           withFilter(args, 'appointment.updateMany');
+          // nosec
           return inSession((tx) => tx.appointment.updateMany(args));
         },
       },

@@ -9,6 +9,8 @@
     { "path": "packages/adapters" },
     { "path": "packages/terminology" },
     { "path": "packages/ui" },
+    { "path": "packages/agent-tools" },
+    { "path": "packages/agent" },
     { "path": "apps/api" },
     { "path": "apps/portal" },
     { "path": "apps/web" }

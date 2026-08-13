@@ -17,6 +17,7 @@
     "type-check": "turbo run type-check",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
+    "agent:conform": "pnpm --filter @openrunic/agent run conform",
     "check:secrets": "secretlint --no-gitignore \"**/*\"",
     "verify": "pnpm run lint && pnpm run type-check && pnpm run test && pnpm run build"
   },

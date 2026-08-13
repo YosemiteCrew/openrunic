@@ -2,6 +2,10 @@ import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 
+import type { AgentRuntime } from '@openrunic/agent';
+
+import { agentRouteContracts, agentRoutes } from './agent/routes.js';
+import { createAuditBridge, loadAgentRuntime, type AuditBridge } from './agent/runtime.js';
 import { createMemoryAuditSink } from './audit/memory-sink.js';
 import type { AuditSink } from './audit/types.js';
 import type { PrincipalResolver } from './auth/principal.js';
@@ -33,6 +37,19 @@ export interface CreateAppOptions {
   now?: () => Date;
   generateRequestId?: () => string;
   onAuditFlushError?: (error: unknown) => void;
+  /**
+   * The assistant subsystem (ADR-0005). Defaults to whatever the environment
+   * says, which by default says nothing: no endpoint configured means no agent
+   * routes are mounted at all, so every agent path answers 404 and the rest of
+   * the API is byte-for-byte the same product.
+   */
+  agent?: AgentRuntime;
+  /**
+   * Carries the request-scoped audit collector into the loop. Supply it
+   * alongside `agent`, because the loop was built holding this bridge's sink
+   * and a different one would drop every event on the floor.
+   */
+  agentAudit?: AuditBridge;
 }
 
 /**
@@ -80,12 +97,37 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     app.use(link.handler);
   }
 
+  const auditBridge = options.agentAudit ?? createAuditBridge();
+  const agent =
+    options.agent ??
+    loadAgentRuntime({
+      audit: auditBridge.sink,
+      onMisconfigured: (reason) => {
+        // Loud, and only about the agent. A misconfigured assistant must never
+        // stop a clinic booking an appointment (ADR-0005).
+        console.error(`openrunic agent subsystem disabled: ${reason}`);
+      },
+    });
+
   app.get('/healthz', (c) => c.json({ status: 'ok', service: 'openrunic-api' }));
 
-  app.get('/openapi.json', (c) => c.json(buildOpenApiDocument(internalRouteContracts())));
+  app.get('/openapi.json', (c) =>
+    c.json(
+      buildOpenApiDocument([
+        ...internalRouteContracts(),
+        // Documented only where it exists. An endpoint in the specification
+        // that answers 404 is worse than an undocumented one.
+        ...(agent.status === 'enabled' ? agentRouteContracts : []),
+      ])
+    )
+  );
 
   app.route(FHIR_BASE_PATH, fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now }));
   app.route(BFF_BASE_PATH, internalRoutes());
+
+  if (agent.status === 'enabled') {
+    app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));
+  }
 
   app.notFound(() => {
     throw ApiError.notFound('No route matches this path.');

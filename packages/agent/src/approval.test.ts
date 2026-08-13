@@ -116,10 +116,17 @@ describe('an approval cannot be forged', () => {
     const subject = registry();
     const { token } = register(subject);
 
+    // The tamper has to change the digest whatever it happens to be. Overwriting
+    // the last character with a fixed digit left the signature untouched on the
+    // one run in sixteen where the hex already ended in that digit, and the test
+    // then read a correct acceptance as a failure to detect forgery.
+    const tampered = token.signature.replace(/.$/, (last) => (last === '0' ? '1' : '0'));
+    expect(tampered).not.toBe(token.signature);
+
     expect(
       reasonOf(
         subject.approve({
-          token: { ...token, signature: token.signature.replace(/.$/, '0') },
+          token: { ...token, signature: tampered },
           input: { typeCode: 'FOLLOWUP' },
           approver: principal,
         })

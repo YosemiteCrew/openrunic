@@ -50,20 +50,6 @@ const PATIENT_CREATE: Prisma.PatientCreateArgs = {
   },
 };
 
-const APPOINTMENT_CREATE: Prisma.AppointmentCreateArgs = {
-  data: {
-    id: testId(4),
-    tenantId: DEMO_TENANT_A,
-    facilityId: testId(50),
-    providerId: testId(60),
-    typeCode: 'OFFICE_VISIT',
-    typeDisplay: 'Office visit',
-    start: new Date('2026-08-14T09:00:00.000Z'),
-    end: new Date('2026-08-14T09:20:00.000Z'),
-    durationMinutes: 20,
-  },
-};
-
 const AUDIT_CREATE: Prisma.AuditEventCreateArgs = {
   data: {
     id: testId(5),
@@ -125,28 +111,9 @@ const SURFACE: { model: string; operation: string; call: (port: DbPort) => Promi
   { model: 'patient', operation: 'findMany', call: (p) => p.patient.findMany({}) },
   { model: 'patient', operation: 'count', call: (p) => p.patient.count({}) },
   { model: 'patient', operation: 'findFirst', call: (p) => p.patient.findFirst({}) },
-  { model: 'patient', operation: 'create', call: (p) => p.patient.create(PATIENT_CREATE) },
-  {
-    model: 'patient',
-    operation: 'updateMany',
-    // A filter, because the port refuses an unfiltered update: see withFilter.
-    call: (p) => p.patient.updateMany({ where: { id: testId(1) }, data: {} }),
-  },
   { model: 'appointment', operation: 'findMany', call: (p) => p.appointment.findMany({}) },
   { model: 'appointment', operation: 'count', call: (p) => p.appointment.count({}) },
   { model: 'appointment', operation: 'findFirst', call: (p) => p.appointment.findFirst({}) },
-  {
-    model: 'appointment',
-    operation: 'create',
-    call: (p) => p.appointment.create(APPOINTMENT_CREATE),
-  },
-  {
-    model: 'appointment',
-    operation: 'updateMany',
-    call: (p) => p.appointment.updateMany({ where: { id: testId(3) }, data: {} }),
-  },
-  { model: 'auditEvent', operation: 'create', call: (p) => p.auditEvent.create(AUDIT_CREATE) },
-  { model: 'auditEvent', operation: 'findFirst', call: (p) => p.auditEvent.findFirst({}) },
 ];
 
 describe('the RLS-bound port', () => {
@@ -179,6 +146,28 @@ describe('the RLS-bound port', () => {
     expect(new Set(reachable)).toEqual(
       new Set(SURFACE.map(({ model, operation }) => `${model}.${operation}`))
     );
+  });
+
+  it('exposes no write outside a transaction, so no write can skip its audit event', () => {
+    const { runner } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    // Every write in this API is paired with an audit event that has to land or
+    // fail with it, which is why `prisma.ts` issues all of them inside
+    // `$transaction`. A `create` or `updateMany` hanging off the port would be
+    // an unaudited path; the type withholds it, and this asserts the value does
+    // too, since a type cannot stop a plain object from carrying the method.
+    const delegates = [port.patient, port.appointment];
+
+    for (const delegate of delegates) {
+      expect(Object.keys(delegate)).toEqual(['findMany', 'count', 'findFirst']);
+      expect(delegate).not.toHaveProperty('create');
+      expect(delegate).not.toHaveProperty('updateMany');
+    }
+
+    // Writes still exist; they are reached through a transaction, not here.
+    expect(port).not.toHaveProperty('auditEvent');
+    expect(typeof port.$transaction).toBe('function');
   });
 
   it('runs an explicit transaction inside one declared session', async () => {
@@ -217,57 +206,5 @@ describe('the RLS-bound port', () => {
     expect(typeof port.$transaction).toBe('function');
     expect(typeof port.patient.findMany).toBe('function');
     expect(tenantTransactionSatisfiesPort).toBe(true);
-  });
-});
-
-describe('the unfiltered-update guard', () => {
-  /**
-   * RLS makes a filterless updateMany a tenant-sized problem rather than a
-   * database-sized one. That is a large improvement and not a licence to ship
-   * the call: within one practice it still rewrites every patient, and nothing
-   * downstream would report it as anything but a successful write.
-   */
-  it('refuses a patient update with no filter', async () => {
-    const { runner } = recorder();
-    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
-
-    await expect(port.patient.updateMany({ data: {} })).rejects.toThrow(TypeError);
-    await expect(port.patient.updateMany({ data: {} })).rejects.toThrow(
-      /rewrites every row the session can see/
-    );
-  });
-
-  it('refuses an empty filter as well as a missing one', async () => {
-    const { runner } = recorder();
-    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
-
-    // `where: {}` is the same instruction spelled differently, and is what a
-    // conditionally-built filter collapses to when every condition is absent.
-    await expect(port.patient.updateMany({ where: {}, data: {} })).rejects.toThrow(TypeError);
-  });
-
-  it('refuses an appointment update with no filter', async () => {
-    const { runner } = recorder();
-    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
-
-    await expect(port.appointment.updateMany({ data: {} })).rejects.toThrow(TypeError);
-  });
-
-  it('refuses before opening a session, so nothing reaches the database', async () => {
-    const { runner, sessions } = recorder();
-    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
-
-    await expect(port.patient.updateMany({ data: {} })).rejects.toThrow(TypeError);
-
-    expect(sessions).toHaveLength(0);
-  });
-
-  it('allows a filtered update through untouched', async () => {
-    const { runner } = recorder();
-    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
-
-    await expect(port.patient.updateMany({ where: { id: testId(1) }, data: {} })).resolves.toEqual({
-      count: 1,
-    });
   });
 });

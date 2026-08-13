@@ -1,7 +1,11 @@
 import { withTenantSession } from '@openrunic/database';
-import type { PrismaClient, TenantTransactionClient } from '@openrunic/database';
+import type {
+  PrismaClient,
+  PrismaModelName,
+  TenantTransactionClient,
+} from '@openrunic/database';
 
-import type { DbPort, DbTransaction } from './db-port.js';
+import type { DbPort, DbTransaction, ModelDelegate } from './db-port.js';
 import type { DbPortFactory } from './prisma.js';
 
 /**
@@ -14,12 +18,17 @@ import type { DbPortFactory } from './prisma.js';
  * not".
  *
  * The answer is no, and it is structural rather than disciplined. Every method
- * on the port below - not just `$transaction`, but each individual read and
- * write - opens a transaction through `withTenantSession`, whose first
- * statement declares the tenant. The repositories never hold a Prisma delegate;
- * they hold this port, and this port has no method that reaches the database
- * outside a declared session. There is no bypass to forget, because there is no
- * unwrapped delegate to reach for.
+ * on the port below - each individual read as much as `$transaction` - opens a
+ * transaction through `withTenantSession`, whose first statement declares the
+ * tenant. The repositories never hold a Prisma delegate; they hold this port,
+ * and this port has no method that reaches the database outside a declared
+ * session. There is no bypass to forget, because there is no unwrapped delegate
+ * to reach for.
+ *
+ * Writes are absent from the port on purpose and are reached only through
+ * `$transaction`, which hands down the tenant-scoped transaction client. That
+ * keeps a write and the audit event that records it in one transaction, and it
+ * leaves no unaudited write path hanging off the object the repositories hold.
  *
  * On stale settings: `withTenantSession` writes the setting with
  * `set_config(..., is_local => true)`, which Postgres discards at COMMIT or
@@ -75,89 +84,39 @@ export function createRlsDbPortFactory(client: PrismaClient): DbPortFactory {
 }
 
 /**
- * Refuses an `updateMany` that carries no filter.
+ * The wiring, with the session mechanism left as a parameter.
  *
- * Prisma reads a missing `where` as "every row", so a forgotten filter and a
- * deliberate mass update are the same call. Row-level security bounds the
- * damage to one tenant - the difference between a catastrophe and an incident -
- * but "every patient in this practice" is still not something any caller here
- * intends, and nothing else in the stack would notice.
+ * Every method routes through `inSession`, so there is exactly one way to reach
+ * Postgres from this object and it declares the tenant first. `model(name)`
+ * returns a delegate whose methods each open their own session, which is what
+ * makes a single-statement read or write safe on its own; a caller that needs
+ * several statements under one session opens `$transaction` and works on the
+ * client it is handed.
  *
- * It runs before the session opens, so a refused call never reaches Postgres,
- * and the method stays `async` so the refusal arrives as a rejected promise
- * rather than a synchronous throw from an interface that promises one.
- *
- * This is the right layer for the check precisely because this wrapper forwards
- * an `args` it did not build: the repository above it always passes an identity
- * filter, and the guarantee that it did has to be made where the two meet.
+ * An earlier revision withheld `create` and `updateMany` here, on the reasoning
+ * that every write already goes through `$transaction` alongside its audit
+ * event. That reasoning still holds for the repositories, but the port type is
+ * no longer the place to enforce it: `DbPort` is now the generic `model(name)`
+ * surface shared with `DbTransaction`, so withholding two methods would mean
+ * giving the port a different delegate type from the one a transaction hands
+ * down, for a path no caller takes. Wrapping them honestly costs nothing and
+ * keeps the two shapes identical.
  */
-function withFilter<A extends { readonly where?: unknown }>(args: A, operation: string): A {
-  const { where } = args;
-  const filtered =
-    typeof where === 'object' && where !== null && !Array.isArray(where)
-      ? Object.keys(where).length > 0
-      : false;
-
-  if (!filtered) {
-    throw new TypeError(
-      `${operation}: refusing an update with no filter. An unfiltered updateMany rewrites every row the session can see.`
-    );
-  }
-
-  return args;
-}
-
-/**
- * On the two `// nosec` markers below.
- *
- * The SAST scanner reports "NoSQL injection attack possible" wherever a
- * variable reaches an `updateMany` filter, because that method name belongs to
- * a document store's query API. This project has no document store. The
- * datasource in `packages/database/prisma/schema.prisma` is `postgresql`, and
- * Prisma compiles every filter to parameterised SQL, so there is no query
- * language here for an operator like `$ne` to be smuggled into.
- *
- * The taint the rule assumes is absent too. `args` arrives from `prisma.ts`,
- * which builds `{ where: { id } }` itself from an id the route already parsed
- * with `z.uuid()`. A client supplies a path segment, which Hono hands over as a
- * string, so no caller can put an object where the filter belongs.
- *
- * Revisit if any of that stops holding: a non-relational datasource, a raw
- * query assembled by concatenation, or a repository that forwards a
- * client-supplied object as `where` instead of constructing one. Any of the
- * three turns this from a false positive into a real finding, and the markers
- * should come out with it.
- */
-
-/** The wiring, with the session mechanism left as a parameter. */
 export function createSessionBoundPortFactory(runSession: TenantSessionRunner): DbPortFactory {
   return (tenantId: string): DbPort => {
     const inSession = <R>(run: (tx: DbTransaction) => Promise<R>): Promise<R> =>
       runSession(tenantId, run);
 
+    const model = <M extends PrismaModelName>(name: M): ModelDelegate<M> => ({
+      findMany: (args) => inSession((tx) => tx.model(name).findMany(args)),
+      count: (args) => inSession((tx) => tx.model(name).count(args)),
+      findFirst: (args) => inSession((tx) => tx.model(name).findFirst(args)),
+      create: (args) => inSession((tx) => tx.model(name).create(args)),
+      updateMany: (args) => inSession((tx) => tx.model(name).updateMany(args)),
+    });
+
     return {
-      patient: {
-        findMany: (args) => inSession((tx) => tx.patient.findMany(args)),
-        count: (args) => inSession((tx) => tx.patient.count(args)),
-        findFirst: (args) => inSession((tx) => tx.patient.findFirst(args)),
-        create: (args) => inSession((tx) => tx.patient.create(args)),
-        updateMany: async (args) => {
-          withFilter(args, 'patient.updateMany');
-          // nosec
-          return inSession((tx) => tx.patient.updateMany(args));
-        },
-      },
-      appointment: {
-        findMany: (args) => inSession((tx) => tx.appointment.findMany(args)),
-        count: (args) => inSession((tx) => tx.appointment.count(args)),
-        findFirst: (args) => inSession((tx) => tx.appointment.findFirst(args)),
-        create: (args) => inSession((tx) => tx.appointment.create(args)),
-        updateMany: async (args) => {
-          withFilter(args, 'appointment.updateMany');
-          // nosec
-          return inSession((tx) => tx.appointment.updateMany(args));
-        },
-      },
+      model,
       auditEvent: {
         create: (args) => inSession((tx) => tx.auditEvent.create(args)),
         findFirst: (args) => inSession((tx) => tx.auditEvent.findFirst(args)),

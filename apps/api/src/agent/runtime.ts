@@ -135,15 +135,18 @@ const PLACEHOLDER_SECRET = 'agent-subsystem-disabled-placeholder-secret';
  *
  * **The chart comes from the token wherever the token names one.** A
  * patient-scoped session carries `compartmentPatientId`, which is the only
- * chart it may ever reach: the tenant-scope middleware hands its repositories
- * that identifier and nothing else. So the request body does not get a say. On
- * a patient surface there is no "change chart" to express, and honouring a body
- * field there would be a second, weaker source for a binding the verified token
- * already makes - the signed chart context ADR-0006 asks for, which for that
- * surface is the token itself.
+ * chart it may ever reach: the request-scoped middleware installs repositories
+ * narrowed to that identifier, so no part of the request can reach another. The
+ * body therefore does not get a say. A portal session is patient-scoped, so on
+ * that surface there is no "change chart" to express, and honouring a body field
+ * would be a second, weaker source for a binding the verified token already
+ * makes - the signed chart context ADR-0006 asks for, which on that surface is
+ * the token itself. A staff launch confined to one chart is bound by its token
+ * in exactly the same way, because the rule is the token's rather than the
+ * surface's.
  *
- * `chartPatientId` is therefore read only for a session the token left
- * chart-wide, which is every staff session: it is the chart the clinician has
+ * `chartPatientId` is therefore read only for a session whose token named no
+ * chart, which is the ordinary staff session: it is the chart the clinician has
  * open, and it can only ever **narrow**. A compartment-bound tool refuses rows
  * outside it, and every read and every commit is authorised again by this API
  * against the caller's own session, so naming a chart the caller cannot reach

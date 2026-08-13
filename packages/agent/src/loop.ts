@@ -259,9 +259,9 @@ export class AgentLoop {
        * finished.
        *
        * An aborted phase is a discarded turn: the compartment re-check found a
-       * row from outside the open chart, or a cap fired mid-answer, and the
-       * surfaces say the answer was thrown away. Publishing what it had read up
-       * to that point would draw a citation list under a turn whose answer is
+       * row from outside the open chart, or a cap fired mid-answer. Either way
+       * the turn ends `failed` and no answer stands. Publishing what it had read
+       * up to that point would draw a citation list under a turn whose answer is
        * not being shown, which reads as an answer that was checked. The audit
        * still records the retrieval set below, because what the turn actually
        * read is exactly what an access report has to be able to say.

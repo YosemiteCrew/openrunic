@@ -1,0 +1,166 @@
+name: Container Scan
+
+# Operating-system layer vulnerability scanning for the images clinics install.
+#
+# supply-chain.yml runs `syft scan dir:.`, which inventories the DEPENDENCY
+# tree. It never sees a built image, so the OS packages in the base layer -
+# openssl, zlib, busybox, the packages CVEs are actually filed against - are
+# scanned by nothing. openrunic ships `openrunic-api` and `openrunic-web` as
+# images that clinics run on their own hardware, which makes a vulnerable base
+# layer a vulnerable hospital server.
+#
+# This gate builds every Dockerfile in the tree and runs grype over the built
+# image. grype (not another scanner) because supply-chain.yml already trusts it
+# for the dependency SBOM, it already reads the shared exception policy in
+# .grype.yaml, and one vulnerability database across both gates means one
+# severity vocabulary and one exception process.
+#
+# The severity threshold is `--fail-on critical`, read from supply-chain.yml
+# rather than invented here. If that threshold is ever tightened, tighten it in
+# both places.
+#
+# NO DOCKERFILES ON THIS BRANCH YET. They arrive with the self-hosting work.
+# The discovery step therefore exits 0 with an explanatory message when it finds
+# none, and the gate starts doing real work the moment the first Dockerfile
+# lands. Nothing here is conditional on a branch name or a date, so there is
+# nothing to remember to turn on.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+  # A newly published CVE makes a previously-clean image vulnerable without a
+  # single commit, so the images are re-scanned on a schedule as well.
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: container-scan-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  scan:
+    name: Scan container images (grype)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read # read the tree so the images can be built from it
+      # Surfacing findings in the Security tab. The job still gates the pull
+      # request through its own exit code if this upload is unavailable.
+      security-events: write # upload the grype SARIF to code scanning
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes; the token must not persist in .git/config where
+          # a `docker build` context could pick it up and bake it into a layer.
+          persist-credentials: false
+
+      - name: Discover Dockerfiles
+        id: discover
+        run: |
+          set -euo pipefail
+          # Tracked files only: an untracked Dockerfile left in a working tree
+          # is not part of what this repository ships.
+          FOUND=$(git ls-files -- '**/Dockerfile' 'Dockerfile' '**/Dockerfile.*' 'Dockerfile.*' \
+            | grep -v '\.dockerignore$' || true)
+          if [ -z "$FOUND" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile in the tree - nothing to build or scan."
+            echo "This gate activates automatically when the first Dockerfile lands." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "dockerfiles<<EOF"
+              echo "$FOUND"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "Dockerfiles to scan:"
+            echo "$FOUND"
+          fi
+
+      - name: Install grype (pinned, checksum-verified)
+        if: steps.discover.outputs.found == 'true'
+        env:
+          # Kept in lockstep with supply-chain.yml so both gates resolve the
+          # same vulnerability database and the same severity vocabulary.
+          GRYPE_VERSION: 0.117.0
+          # sha256 of grype_0.117.0_linux_amd64.tar.gz from the release's
+          # published checksums. Verified before extraction so a tampered or
+          # swapped release binary fails the job instead of running on a runner
+          # with the repository checked out.
+          GRYPE_SHA256: 38525dab1e06f162ebaa02f94d82d1f807076b011a44180cf2777edf1a7b9c26
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/grype.tar.gz"
+          echo "${GRYPE_SHA256}  ${RUNNER_TEMP}/grype.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/grype" version
+
+      # Accepted findings live in .grype.yaml at the repository root (grype
+      # auto-discovers it), each with a reason, an owner and a re-review date -
+      # the same exception process the dependency scan uses.
+      - name: Build and scan each image
+        if: steps.discover.outputs.found == 'true'
+        env:
+          DOCKERFILES: ${{ steps.discover.outputs.dockerfiles }}
+          DOCKER_BUILDKIT: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p security/reports/container
+          FAILED=0
+          while IFS= read -r dockerfile; do
+            [ -n "$dockerfile" ] || continue
+            # A stable, path-derived tag so the report names say which image
+            # a finding belongs to.
+            slug=$(printf '%s' "$dockerfile" | tr '/.' '--' | tr '[:upper:]' '[:lower:]')
+            tag="openrunic-scan/${slug}:ci"
+            echo "::group::build ${dockerfile}"
+            # Repository root as the build context: these are pnpm workspace
+            # images and need the lockfile and the sibling packages. If an image
+            # ever needs a narrower context, this is the line to change.
+            docker build --file "$dockerfile" --tag "$tag" .
+            echo "::endgroup::"
+
+            echo "::group::scan ${tag}"
+            if ! grype "docker:${tag}" \
+              --fail-on critical \
+              -o table \
+              -o "sarif=security/reports/container/${slug}.sarif"; then
+              echo "::error file=${dockerfile}::critical vulnerabilities in the image built from ${dockerfile}"
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done <<< "$DOCKERFILES"
+          exit "$FAILED"
+
+      - name: Upload scan reports
+        if: always() && steps.discover.outputs.found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: container-scan-reports
+          path: security/reports/container/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload SARIF to code scanning
+        # Dependabot-actor runs cannot write security events; the gate above
+        # still applies to them through the job's exit code.
+        if: always() && steps.discover.outputs.found == 'true' && github.actor != 'dependabot[bot]'
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: security/reports/container/
+          category: container-scan

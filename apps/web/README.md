@@ -54,6 +54,26 @@ pagination, and fails the same way (an `ApiError` carrying an RFC 9457 problem d
 fixtures are deterministic and obviously synthetic: fixed ids, a fixed clinic day
 (`MOCK_CLINIC_DAY`), Synthea-style names, `OR-` MRNs. Never seed them from a real record.
 
+## Sessions
+
+```sh
+SESSION_COOKIE_SECRET=   # server-side only; required outside development
+```
+
+The session cookie is signed with this key so that the idle timeout and the absolute lifetime
+inside it cannot be rewritten by whoever holds the cookie. It is read on the server only and never
+reaches the browser bundle, which is why it has no `NEXT_PUBLIC_` prefix.
+
+Outside development it has no default. A deployment without it seals no cookies and recognises
+none, so nobody can sign in and `POST /session` answers 503 saying exactly that; in development a
+fixed value in `src/lib/auth/seal.ts` keeps a fresh clone runnable. Rotating the key signs out
+every open session, which is the intended behaviour.
+
+`src/lib/auth/session.ts` is the written-out reasoning for the whole session design: where the
+token lives, what memory-only storage does and does not protect against, and how long a session
+lasts. `src/lib/auth/idle.ts` carries the separate decision about what counts as somebody being at
+the workstation.
+
 ## Assets that are not vendored
 
 Two sets of files are deliberately absent from git, and the app degrades gracefully without them:

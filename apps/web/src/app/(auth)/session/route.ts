@@ -3,9 +3,9 @@ import type { NextRequest } from 'next/server';
 
 import { applySessionCookie, clearSessionCookie } from '@/lib/auth/cookie';
 import { identityForAccessToken } from '@/lib/auth/credentials';
+import { sealSessionCookie, sessionSealKey, unsealSessionCookie } from '@/lib/auth/seal';
 import {
   SESSION_COOKIE,
-  decodeSessionCookie,
   sessionState,
   startSessionRecord,
   toSession,
@@ -17,10 +17,10 @@ import {
  * session cookie, and the seam the real identity provider arrives through.
  *
  * Three verbs, three moments. POST is signing in, and it is where a credential
- * becomes a cookie. GET is a page load asking for its token back, and it is
- * where the idle and absolute deadlines are actually enforced, because a check
- * on the server is a rule and a timer in a tab is advice. DELETE is signing
- * out.
+ * becomes a cookie. GET is a tab asking for its token back and for its idle
+ * clock to be re-stamped, and it is where both deadlines are actually enforced,
+ * because a check on the server is a rule and a timer in a tab is advice.
+ * DELETE is signing out.
  *
  * When OIDC lands, POST becomes a redirect to the provider plus a callback that
  * exchanges an authorization code, and GET becomes a refresh-token exchange
@@ -41,11 +41,28 @@ import {
 
 const UNAUTHENTICATED = 401;
 
+const MISCONFIGURED = 503;
+
 /** Deliberately incurious about which part was wrong. */
 const REFUSAL = { error: 'The credential was not accepted.' } as const;
 
+/**
+ * The one refusal that is not about the caller.
+ *
+ * A deployment with no `SESSION_COOKIE_SECRET` cannot seal a cookie, so it
+ * cannot hold a session at all. Answering 401 would blame the credential for a
+ * server's missing configuration and send whoever is debugging it to look at
+ * the wrong end; 503 says the truth, which is that this server is not in a
+ * state to sign anybody in.
+ */
+const UNSEALABLE = { error: 'This deployment has no session key configured.' } as const;
+
 function refuse(): NextResponse {
   return clearSessionCookie(NextResponse.json(REFUSAL, { status: UNAUTHENTICATED }));
+}
+
+function unsealable(): NextResponse {
+  return clearSessionCookie(NextResponse.json(UNSEALABLE, { status: MISCONFIGURED }));
 }
 
 function readSubmittedToken(body: unknown): string | null {
@@ -55,6 +72,9 @@ function readSubmittedToken(body: unknown): string | null {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const key = sessionSealKey();
+  if (key === null) return unsealable();
+
   let body: unknown;
   try {
     body = await request.json();
@@ -69,20 +89,37 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (identity === null) return refuse();
 
   const record = startSessionRecord(token, identity, Date.now());
-  return applySessionCookie(NextResponse.json(toSession(record)), record);
+  return applySessionCookie(
+    NextResponse.json(toSession(record)),
+    await sealSessionCookie(record, key)
+  );
 }
 
-export function GET(request: NextRequest): NextResponse {
-  const record = decodeSessionCookie(request.cookies.get(SESSION_COOKIE)?.value);
+/**
+ * A page load asking for its token back, and a working tab asking for its idle
+ * clock to be re-stamped. They are the same request, deliberately.
+ *
+ * The tab calls this while somebody is at the keyboard (`lib/auth/idle.ts`),
+ * which is what makes `lastSeenAt` mean "last seen" rather than "last loaded".
+ * Both deadlines are checked before the stamp is moved, so a keep-alive can
+ * only refresh a session that is still live: it can never revive one the idle
+ * window or the shift has already ended.
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const key = sessionSealKey();
+  if (key === null) return unsealable();
+
+  const record = await unsealSessionCookie(request.cookies.get(SESSION_COOKIE)?.value, key);
   if (record === null) return refuse();
 
   const now = Date.now();
   if (sessionState(record, now) !== 'active') return refuse();
 
-  // Re-stamped on every page load, which is what makes the idle window a window
-  // of inactivity rather than a countdown from signing in.
   const refreshed = touchSessionRecord(record, now);
-  return applySessionCookie(NextResponse.json(toSession(refreshed)), refreshed);
+  return applySessionCookie(
+    NextResponse.json(toSession(refreshed)),
+    await sealSessionCookie(refreshed, key)
+  );
 }
 
 export function DELETE(): NextResponse {

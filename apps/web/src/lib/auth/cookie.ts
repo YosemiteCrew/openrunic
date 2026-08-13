@@ -1,7 +1,6 @@
 import type { NextResponse } from 'next/server';
 
-import { ABSOLUTE_LIFETIME_MS, SESSION_COOKIE, encodeSessionCookie } from './session';
-import type { SessionRecord } from './session';
+import { ABSOLUTE_LIFETIME_MS, SESSION_COOKIE } from './session';
 
 /**
  * Writing and clearing the session cookie, in one place so the attributes
@@ -9,6 +8,11 @@ import type { SessionRecord } from './session';
  * revokes it. A cookie cleared with a different `path` than it was set with is
  * not cleared at all, and the failure is invisible until someone stays signed
  * in after pressing sign out.
+ *
+ * This module owns the attributes and nothing else. What goes in the value is
+ * `lib/auth/seal.ts`'s business, and it takes a key and an await to produce, so
+ * a caller hands the sealed string in already made. That keeps the one function
+ * that decides `httpOnly` and `SameSite` synchronous and readable at a glance.
  *
  * ## SameSite is Lax, not Strict
  *
@@ -36,13 +40,10 @@ function secure(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
-export function applySessionCookie<T>(
-  response: NextResponse<T>,
-  record: SessionRecord
-): NextResponse<T> {
+export function applySessionCookie<T>(response: NextResponse<T>, sealed: string): NextResponse<T> {
   response.cookies.set({
     name: SESSION_COOKIE,
-    value: encodeSessionCookie(record),
+    value: sealed,
     httpOnly: true,
     sameSite: 'lax',
     secure: secure(),

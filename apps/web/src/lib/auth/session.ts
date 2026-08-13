@@ -6,14 +6,24 @@
  * Two homes, one per reader.
  *
  * The browser holds the bearer token in memory only (`store.ts`): never in
- * `localStorage`, never in a cookie script can read. `lib/api/client.ts` asks
- * for it synchronously on every request, so it has to be reachable from script,
- * and nothing in a browser can hide a value from script running in the same
- * document. Claiming otherwise would be the wrong lesson to leave in the code.
- * What memory-only does buy is that the token does not outlive the tab: a
- * stored cross-site scripting payload that runs tomorrow finds nothing from
- * today, and the next person to sit down at a shared workstation cannot recover
- * a credential from disk.
+ * `localStorage`, never in a cookie `document.cookie` exposes.
+ *
+ * Say plainly what that does and does not buy, because the usual claim for it
+ * is false. It does **not** put the token beyond the reach of injected script.
+ * `lib/api/client.ts` asks for it synchronously on every request, so it has to
+ * be reachable from script, and script running in this page can read anything
+ * the page can reach, a module-scoped variable included. Anyone who has
+ * achieved execution on this origin can read the token, and can call `/session`
+ * to be handed a fresh one besides. Memory-only is not a defence against
+ * cross-site scripting, and writing that it is would be the wrong lesson to
+ * leave in the code.
+ *
+ * What it does buy is that the token is never at rest and never outlives the
+ * tab. Nothing is written to disk, so a payload that runs tomorrow finds
+ * nothing from today, a backup or a synced profile carries no credential, and
+ * the next person to sit down at a shared workstation recovers nothing from
+ * storage. The window an attacker has to be inside is the life of the tab
+ * rather than the life of the browser profile.
  *
  * The server holds the same session in an httpOnly cookie, because two readers
  * on that side need it and neither is script. `proxy.ts` decides whether a
@@ -52,22 +62,34 @@
  * be extended by activity, which is the whole point of having it as well as the
  * idle timeout.
  *
- * Both are enforced on the server, by the `/session` handler and by
- * `proxy.ts`, because a timer in a tab is advice and a check on the cookie
- * is a rule. The tab runs the idle timer too, so the screen actually clears
- * while the clinician is away rather than only failing on their return.
+ * `lastSeenAt` is the idle clock, and the word to hold onto is *seen*. It is
+ * the last moment a person was known to be at the workstation, not the last
+ * time a page was loaded, and `lib/auth/idle.ts` is what keeps that true: the
+ * tab watches for human input and asks `/session` to re-stamp the clock while
+ * someone is working. That file carries the decision about what counts as a
+ * person being there, and what deliberately does not.
+ *
+ * Both deadlines are enforced on the server, by the `/session` handler and by
+ * `proxy.ts`, because a timer in a tab is advice and a check on the cookie is
+ * a rule. The tab runs its own countdown as well, so the screen actually clears
+ * while the clinician is away rather than only failing on their return, and it
+ * counts from the same instant the server does so that the two cannot disagree
+ * about whether a session is still live.
  *
  * ## Tampering
  *
- * The cookie is JSON, which is a format and not a protection: anyone can read
- * and rewrite it. That is fine, because nothing in
- * it is a permission. The token is a credential the API verifies on every
- * request, and the identity is a label this application renders. Editing the
- * identity changes the name in your own top bar and nothing else; editing the
- * timestamps
- * can only shorten the session, because a token the API rejects is a 401 no
- * matter what the cookie claims. The security boundary is the API, and it is
- * the API's job to keep it.
+ * The cookie is sealed: `<signature>.<json>`, signed by this deployment with
+ * HMAC-SHA-256. Rewriting any byte of it makes it read as no session at all.
+ *
+ * The seal is here for the clocks above, not for the token. A cookie somebody
+ * writes by hand carries a token the API refuses, so it was never going to
+ * reach a record - but before the seal, the timestamps beside that token were
+ * writable too, and moving `issuedAt` forward turned a session with a minute
+ * left into one with twelve hours. That is a control being erased by the person
+ * it constrains. `lib/auth/seal.ts` sets out what signing does and does not
+ * establish; the short version is that the API remains the boundary that
+ * protects a record, and the seal is what makes the timeout a rule rather than
+ * a suggestion.
  */
 
 /** Who is signed in, as far as this application is concerned. */
@@ -138,10 +160,13 @@ export function readIdentity(value: unknown): Identity | null {
 }
 
 /**
- * Parses a cookie record. Every field is checked because the cookie arrives
- * from the client, so a hand-edited one must fail to parse rather than produce
- * a record with `NaN` timestamps that compare false against every deadline and
- * so never expire.
+ * Parses a cookie record, checking every field.
+ *
+ * The seal already refuses anything this deployment did not write, so in
+ * practice these checks run on our own JSON. They stay because the shape of the
+ * failure they prevent is severe out of proportion to their cost: a record with
+ * `NaN` timestamps compares false against every deadline and so never expires,
+ * and this is the last point before that record becomes a live session.
  */
 export function readSessionRecord(value: unknown): SessionRecord | null {
   if (!isRecord(value)) return null;
@@ -165,36 +190,6 @@ export function readSessionPayload(value: unknown): Session | null {
   if (token === null || identity === null || expiresAt === null) return null;
 
   return { token, identity, expiresAt };
-}
-
-/**
- * JSON, and nothing on top of it.
- *
- * A cookie value cannot carry a semicolon, a space, a quote or a character
- * outside ASCII, all of which JSON produces, so something has to percent-encode
- * it. That something is the platform: `NextResponse.cookies.set` encodes on the
- * way into the header and `NextRequest.cookies.get` decodes on the way out.
- * Encoding here as well produced a value that was escaped twice on the way out
- * and once on the way back, so every cookie this application wrote came back
- * unreadable and every session ended at the first reload.
- */
-export function encodeSessionCookie(record: SessionRecord): string {
-  return JSON.stringify(record);
-}
-
-/**
- * Reads a cookie value, or null for anything that is not one of ours. The parse
- * throws on a hand-written value, which means the same thing as a value that
- * parses into the wrong shape: this is not a session.
- */
-export function decodeSessionCookie(value: string | undefined): SessionRecord | null {
-  if (value === undefined || value === '') return null;
-
-  try {
-    return readSessionRecord(JSON.parse(value));
-  } catch {
-    return null;
-  }
 }
 
 /** When the absolute lifetime runs out, irrespective of activity. */

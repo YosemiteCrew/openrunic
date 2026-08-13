@@ -1,7 +1,10 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import type { RenderResult } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SessionGate } from '@/lib/auth/SessionGate';
+import { ACTIVITY_REFRESH_MS } from '@/lib/auth/idle';
 import { ABSOLUTE_LIFETIME_MS, IDLE_TIMEOUT_MS } from '@/lib/auth/session';
 import type { Session } from '@/lib/auth/session';
 import { heldSession, holdSession } from '@/lib/auth/store';
@@ -50,12 +53,16 @@ function refusal(): Response {
   });
 }
 
-function renderGate(): void {
-  render(
+function gate(): ReactElement {
+  return (
     <SessionGate navigate={navigate}>
       <p>Chart for PATIENTSSON, Testina</p>
     </SessionGate>
   );
+}
+
+function renderGate(): RenderResult {
+  return render(gate());
 }
 
 beforeEach(() => {
@@ -187,41 +194,42 @@ describe('a workstation left unattended', () => {
     expect(navigate.mock.calls[0]?.[0]).toBe('/sign-in?next=%2Fpatients&reason=idle');
   });
 
-  it('stays signed in while somebody is still using it', async () => {
+  it('stays signed in through a whole shift of steady use', async () => {
+    // The defect this is written against: the idle window ran from the last
+    // document load, so a clinician who signed in and then worked inside the
+    // application was signed out about fifteen minutes later regardless.
     holdSession(SESSION);
-    fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
+    fetchImpl.mockImplementation(async () => sessionResponse());
     renderGate();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1000);
-    });
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1000);
-    });
+    for (let minute = 0; minute < 40; minute += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+      });
+    }
 
     expect(heldSession()).toEqual(SESSION);
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('counts a click as somebody being there', async () => {
+  it('re-stamps the server clock as well as its own, so the proxy agrees', async () => {
+    // Without the request the tab would believe the session was live while
+    // `proxy.ts` bounced the very next navigation.
     holdSession(SESSION);
-    fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
+    fetchImpl.mockImplementation(async () => sessionResponse());
     renderGate();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1000);
-    });
-    act(() => {
-      window.dispatchEvent(new Event('pointerdown'));
+      await vi.advanceTimersByTimeAsync(ACTIVITY_REFRESH_MS);
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1000);
+      window.dispatchEvent(new Event('pointerdown'));
     });
 
-    expect(heldSession()).toEqual(SESSION);
+    expect(fetchImpl).toHaveBeenCalledWith('/session', { method: 'GET' });
   });
 
   it('ends the session on a public page without throwing the reader off it', async () => {
@@ -236,5 +244,48 @@ describe('a workstation left unattended', () => {
 
     expect(heldSession()).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('sends them to sign in when the server has ended the session behind their back', async () => {
+    // The keep-alive is also how a tab learns that its session is over: the
+    // handler refuses, the token goes, and the gate does what it does for any
+    // other session that has finished.
+    holdSession(SESSION);
+    fetchImpl.mockImplementation(async () => refusal());
+    renderGate();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACTIVITY_REFRESH_MS);
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(heldSession()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith('/sign-in?next=%2Fpatients&reason=expired');
+  });
+
+  it('keeps counting across a client navigation rather than starting over', async () => {
+    // Where the clinician is changes on every client navigation. If that reset
+    // the countdown, the tab would hold a screen open past the moment the
+    // server had already decided the session was idle.
+    holdSession(SESSION);
+    fetchImpl.mockImplementation(async () => new Response(null, { status: 204 }));
+    const view = renderGate();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS / 2);
+    });
+    pathname = '/schedule';
+    act(() => {
+      view.rerender(gate());
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS / 2);
+    });
+
+    expect(heldSession()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith('/sign-in?next=%2Fschedule&reason=idle');
   });
 });

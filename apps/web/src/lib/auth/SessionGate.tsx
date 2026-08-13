@@ -1,17 +1,22 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { endSession, restoreSession } from './client';
+import { watchForIdleness } from './idle';
 import { isPublicPath, signInUrl } from './routes';
-import { IDLE_TIMEOUT_MS } from './session';
 import { useSession } from './useSession';
 
 /**
  * Stands between a clinical route and its screen until there is a session
  * behind it, and takes the session away again when the workstation goes quiet.
+ *
+ * The quiet half is `lib/auth/idle.ts`: it watches for a person at the
+ * keyboard, keeps the server's idle clock stamped while there is one, and calls
+ * back here when there has not been one for the whole window. This component
+ * only decides what that should look like on screen.
  *
  * ## Why a gate as well as `proxy.ts`
  *
@@ -92,12 +97,21 @@ export function SessionGate({
     navigate(signInUrl(currentTarget(pathname), 'expired'));
   }, [blocked, restoreFailed, navigate, pathname]);
 
+  /**
+   * What to do when the workstation goes quiet, held in a ref so that changing
+   * it does not restart the watch.
+   *
+   * It depends on where the clinician is, and where they are changes on every
+   * client navigation. If those changes were effect dependencies the watch
+   * would be torn down and rebuilt on each one, restarting the tab's countdown
+   * from zero without telling the server anything - and the tab would then be
+   * holding a screen open that the proxy had already decided was over. The
+   * countdown has to survive navigation for the same reason the session does.
+   */
+  const onIdle = useRef<() => void>(undefined);
+
   useEffect(() => {
-    if (session === null) return;
-
-    let timer = 0;
-
-    const expire = (): void => {
+    onIdle.current = () => {
       void endSession().finally(() => {
         // Only a guarded route is worth interrupting. Ending the session while
         // someone reads the public pages is right; throwing them off the page
@@ -105,22 +119,13 @@ export function SessionGate({
         if (guarded && pathname !== null) navigate(signInUrl(currentTarget(pathname), 'idle'));
       });
     };
+  });
 
-    const restart = (): void => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(expire, IDLE_TIMEOUT_MS);
-    };
+  useEffect(() => {
+    if (session === null) return undefined;
 
-    restart();
-    window.addEventListener('pointerdown', restart, { passive: true });
-    window.addEventListener('keydown', restart, { passive: true });
-
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('pointerdown', restart);
-      window.removeEventListener('keydown', restart);
-    };
-  }, [session, guarded, navigate, pathname]);
+    return watchForIdleness({ onIdle: () => onIdle.current?.() });
+  }, [session]);
 
   if (!blocked) return <>{children}</>;
 

@@ -3,9 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ABSOLUTE_LIFETIME_MS,
   IDLE_TIMEOUT_MS,
-  decodeSessionCookie,
-  encodeSessionCookie,
   readSessionPayload,
+  readSessionRecord,
   sessionExpiresAt,
   sessionState,
   startSessionRecord,
@@ -26,76 +25,27 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
   return { ...startSessionRecord('dev-clinician-a', CLINICIAN, NOON), ...overrides };
 }
 
-/**
- * A cookie somebody wrote by hand. It is the JSON verbatim, because the
- * transport encoding belongs to the platform rather than to this module.
- */
-function handWritten(json: string): string {
-  return json;
-}
+describe('reading a record', () => {
+  /*
+   * How a record gets into and out of a cookie is `seal.ts`'s business, and
+   * `seal.test.ts` covers the ways one can arrive rewritten. What is left here
+   * is the shape check itself, which runs on JSON that has already been proved
+   * to be ours.
+   */
 
-describe('the session cookie', () => {
-  it('carries the token and the identity back out unchanged', () => {
-    const restored = decodeSessionCookie(encodeSessionCookie(record()));
-
-    expect(restored).toEqual(record());
+  it('takes a record that is one', () => {
+    expect(readSessionRecord(JSON.parse(JSON.stringify(record())))).toEqual(record());
   });
 
-  it('survives a name that is not plain ASCII', () => {
-    const original = record({ identity: { ...CLINICIAN, displayName: 'Dr. Ingrid Sjöberg' } });
-
-    expect(decodeSessionCookie(encodeSessionCookie(original))?.identity.displayName).toBe(
-      'Dr. Ingrid Sjöberg'
-    );
-  });
-
-  it('reads nothing from an absent or empty cookie', () => {
-    expect(decodeSessionCookie(undefined)).toBeNull();
-    expect(decodeSessionCookie('')).toBeNull();
-  });
-
-  it('reads nothing from a value that is not one of ours', () => {
-    expect(decodeSessionCookie('not-a-cookie-we-wrote')).toBeNull();
-    expect(decodeSessionCookie(handWritten('[1,2,3]'))).toBeNull();
+  it('refuses anything that is not an object', () => {
+    expect(readSessionRecord(null)).toBeNull();
+    expect(readSessionRecord([1, 2, 3])).toBeNull();
+    expect(readSessionRecord('dev-clinician-a')).toBeNull();
   });
 
   it('refuses a record with a field missing, rather than half-reading it', () => {
-    const withoutToken = handWritten(JSON.stringify({ ...record(), token: '' }));
-    const withoutRoles = handWritten(
-      JSON.stringify({ ...record(), identity: { ...CLINICIAN, roles: undefined } })
-    );
-
-    expect(decodeSessionCookie(withoutToken)).toBeNull();
-    expect(decodeSessionCookie(withoutRoles)).toBeNull();
-  });
-
-  it('refuses a timestamp that is not a number, so a hand-edited cookie cannot become immortal', () => {
-    const notATime = handWritten(JSON.stringify({ ...record(), lastSeenAt: 'later' }));
-
-    expect(decodeSessionCookie(notATime)).toBeNull();
-  });
-
-  it('refuses a role list holding something that is not a role', () => {
-    const oddRoles = handWritten(
-      JSON.stringify({ ...record(), identity: { ...CLINICIAN, roles: ['clinician', 7] } })
-    );
-
-    expect(decodeSessionCookie(oddRoles)).toBeNull();
-  });
-
-  it('accepts a rewritten identity rather than pretending to detect tampering', () => {
-    // Stated as a test because it is a deliberate position, not an oversight:
-    // the cookie is not signed, and it does not need to be. Editing the name
-    // changes the label in your own top bar; the token beside it is the thing
-    // the API checks, and it is unchanged.
-    const rewritten = handWritten(
-      JSON.stringify({ ...record(), identity: { ...CLINICIAN, displayName: 'Somebody Else' } })
-    );
-
-    const decoded = decodeSessionCookie(rewritten);
-
-    expect(decoded?.identity.displayName).toBe('Somebody Else');
-    expect(decoded?.token).toBe('dev-clinician-a');
+    expect(readSessionRecord({ ...record(), token: '' })).toBeNull();
+    expect(readSessionRecord({ ...record(), issuedAt: undefined })).toBeNull();
   });
 });
 

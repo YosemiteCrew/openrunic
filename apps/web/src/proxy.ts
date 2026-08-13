@@ -3,23 +3,36 @@ import type { NextRequest } from 'next/server';
 
 import { clearSessionCookie } from '@/lib/auth/cookie';
 import { SIGNED_IN_HOME, SIGN_IN_PATH, isPublicPath, signInQuery } from '@/lib/auth/routes';
-import { SESSION_COOKIE, decodeSessionCookie, sessionState } from '@/lib/auth/session';
+import { sessionSealKey, unsealSessionCookie } from '@/lib/auth/seal';
+import { SESSION_COOKIE, sessionState } from '@/lib/auth/session';
 
 /**
  * The door. Nothing under a clinical route is served without a live session
  * cookie, and a stale cookie is taken away on the way past.
  *
- * This is not where a record is protected - the API verifies the bearer token
- * on every request and answers 401 without one, which is the boundary that
- * actually holds. What this stops is the shape of failure that comes before
- * that: an anonymous browser rendering the chart frame, the rail, the patient
- * banner and a row of error panels, which looks like a broken product and leaks
- * the map of the application to anyone who types a URL.
+ * ## What passing this guard establishes, exactly
  *
- * The cookie is only read here, never trusted for anything but "should this
- * page render". Its contents are client-editable (see `lib/auth/session.ts`),
- * and editing them can shorten a session but cannot lengthen one, because a
- * token the API rejects is a 401 whatever the cookie claims.
+ * That the browser is carrying a cookie this deployment sealed, whose absolute
+ * and idle deadlines have not passed. That is the whole claim. It says nothing
+ * about whether the token inside it is still one the API will accept: the API
+ * is a separate origin with its own view of that token, it has never seen this
+ * deployment's key, and it can revoke or expire a token without anything here
+ * hearing about it. A browser can therefore be waved through this door and get
+ * a 401 from the first request the screen makes, which is by design - the
+ * boundary that protects a record is the API's, and this one is not standing in
+ * for it.
+ *
+ * What this stops is the shape of failure that comes before that: an anonymous
+ * browser rendering the chart frame, the rail, the patient banner and a row of
+ * error panels, which looks like a broken product and hands the map of the
+ * application to anyone who types a URL.
+ *
+ * The seal is what makes the deadlines worth checking. The cookie used to be
+ * plain JSON, so anyone holding it could move its clocks and keep a session
+ * alive indefinitely; the comment that used to sit here said editing it could
+ * only shorten a session, and that was wrong. `lib/auth/seal.ts` has the rest.
+ * A deployment with no key configured seals nothing and recognises nothing, so
+ * this door stays shut - the safe way for a misconfiguration to fail.
  *
  * Two redirects rather than one, because there are two wrong places to be.
  * Someone without a session on a clinical route is sent to sign in, carrying
@@ -59,10 +72,16 @@ function redirect(request: NextRequest, pathname: string, query = ''): NextRespo
   return NextResponse.redirect(destination);
 }
 
-export function proxy(request: NextRequest): NextResponse {
+/**
+ * Async because verifying the seal is: `crypto.subtle` has no synchronous form,
+ * and it is the one Web Crypto both this file's edge runtime and the route
+ * handler's Node runtime have. Next awaits a proxy that returns a promise.
+ */
+export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
+  const key = sessionSealKey();
   const cookie = request.cookies.get(SESSION_COOKIE)?.value;
-  const record = decodeSessionCookie(cookie);
+  const record = key === null ? null : await unsealSessionCookie(cookie, key);
   const live = record !== null && sessionState(record, Date.now()) === 'active';
 
   if (live) {
@@ -76,9 +95,9 @@ export function proxy(request: NextRequest): NextResponse {
 
   const response = redirect(request, SIGN_IN_PATH, signInQuery(`${pathname}${search}`, 'expired'));
 
-  // A cookie that decoded but had run out is worth removing now, so the next
-  // request is honestly anonymous rather than presenting a credential the whole
-  // system has already agreed is finished.
+  // A cookie that we sealed ourselves but that had run out is worth removing
+  // now, so the next request is honestly anonymous rather than presenting a
+  // credential the whole system has already agreed is finished.
   return record === null ? response : clearSessionCookie(response);
 }
 

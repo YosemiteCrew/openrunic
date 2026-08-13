@@ -28,8 +28,9 @@
  * The server holds the same session in an httpOnly cookie, because two readers
  * on that side need it and neither is script. `proxy.ts` decides whether a
  * clinical route renders at all, and the `/session` route handler hands the
- * token back to a page that has just been loaded. httpOnly keeps the value out
- * of `document.cookie`; SameSite keeps it off cross-site writes.
+ * token back to a page that has just been loaded and re-stamps the idle clock
+ * for a tab that somebody is working in. httpOnly keeps the value out of
+ * `document.cookie`; SameSite keeps it off cross-site writes.
  *
  * Be honest about the limit. A script that has already achieved execution on
  * this origin can call `/session` itself and be handed the token, exactly as

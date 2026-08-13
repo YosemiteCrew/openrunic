@@ -85,14 +85,18 @@ export async function signIn(accessToken: string): Promise<SignInOutcome> {
 }
 
 /**
- * Puts the token back in memory after a page load, if the cookie still carries
- * a live session.
+ * Puts the token back in memory, if the cookie still carries a live session.
  *
- * This is also where the idle and absolute deadlines are actually enforced: the
- * handler re-stamps the idle clock when it answers, and refuses when either
- * deadline has passed. A page load is therefore the moment a session that
- * outlived its welcome stops existing, which is why the gate waits for this
- * answer before it renders a chart.
+ * Two callers, one request. A page load asks because it has no token yet, and
+ * that is why the gate waits for this answer before it renders a chart. A tab
+ * with somebody working in it asks periodically, because this is also what
+ * re-stamps the server's idle clock; `lib/auth/idle.ts` decides when.
+ *
+ * Either way it is where both deadlines are actually enforced: the handler
+ * re-stamps only after checking them and refuses once either has passed. So a
+ * keep-alive can hold a live session open and can never revive a finished one,
+ * and a session that outlived its welcome stops existing at the first of these
+ * that reaches the server.
  */
 export async function restoreSession(): Promise<Session | null> {
   await revoking;

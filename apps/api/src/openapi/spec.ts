@@ -165,7 +165,7 @@ export function buildOpenApiDocument(
       },
     },
     security: [{ bearerAuth: [] }],
-    tags: [...tags].sort().map((name) => ({ name })),
+    tags: [...tags].sort((a, b) => a.localeCompare(b)).map((name) => ({ name })),
   };
 }
 

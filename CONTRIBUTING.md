@@ -77,6 +77,13 @@ resource fields.
 Formatting is handled by Prettier (repo config). A pre-commit hook formats staged files and runs
 secret scanning; do not bypass it.
 
+CI also holds the React surface to a **React Doctor score of 95**. Run `pnpm run doctor` to see
+where you stand, or `pnpm run doctor:json` for the full report. Note that the score is calculated
+by a remote service while the diagnostics are computed locally; `docs/quality-gates.md` explains
+that trade-off, and the licence exception the tool needs, in full.
+
+`docs/quality-gates.md` lists every gate CI enforces and what each one is for.
+
 ## Commit messages and PR titles
 
 We use [Conventional Commits](https://www.conventionalcommits.org/), enforced by commitlint.

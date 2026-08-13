@@ -68,23 +68,59 @@ require-license: false
 #   # package.json says "bsd" (nonstandard spelling); the LICENSE file is
 #   # plain BSD-3-Clause. Owner: ankit-yc. Re-review by: YYYY-MM-DD.
 #   - some-package
-ignore-packages: []
-
-# Precedent, so the next person to hit this does not resolve it the quick way.
+# Precedent, kept because the argument is right and the decision went the other
+# way. Read both halves before touching this.
 #
-# `react-doctor` was added as a dev-tooling convenience and denied here as
-# SEE-LICENSE-IN-LICENSE. Its LICENSE file was read: it is a "Modified MIT
-# License" that additionally requires written permission to use the software as
-# AI training data, or to offer it as a paid or hosted service. A field-of-use
-# restriction fails the Open Source Definition clause 6, so the licence is not
-# open source and is not on the FSF GPL-compatible list. It therefore cannot
-# join an allow list whose stated basis is "permissive, AGPL-compatible", and
-# the dependency was removed instead.
+# `react-doctor` was denied here as SEE-LICENSE-IN-LICENSE. Its LICENSE file was
+# read: a "Modified MIT License" that additionally requires written permission
+# to use the software as AI training data, or to offer it as a paid or hosted
+# service. A field-of-use restriction fails clause 6 of the Open Source
+# Definition, so **the licence is not open source** and is not on the FSF
+# GPL-compatible list. It cannot join an allow list whose stated basis is
+# "permissive, AGPL-compatible", and it has not been added to one.
 #
 # Two shortcuts to avoid specifically. Allow-listing the literal string
 # SEE-LICENSE-IN-LICENSE admits any package shipping any custom licence text,
-# which is an allow-all wearing a specific name. Adding such a package to
-# ignore-packages silences a gate that is firing correctly. If a package with a
-# non-free licence is ever genuinely needed, that is a deliberate licensing
-# decision for the maintainers, recorded with an owner and a re-review date -
-# not a config edit made to turn a pull request green.
+# which is an allow-all wearing a specific name. Adding a package to
+# ignore-packages to turn a pull request green silences a gate that is firing
+# correctly.
+#
+# The maintainers then took the decision the paragraph above anticipates: if a
+# package under a non-free licence is genuinely wanted, that is a deliberate
+# licensing call, recorded with an owner and a re-review date. It is recorded
+# below. The gate was not weakened to reach it - the allow list is unchanged,
+# and the exception names two packages and nothing else.
+ignore-packages:
+  # react-doctor and its oxlint plugin. Both declare "SEE LICENSE IN LICENSE"
+  # in package.json, which is not an SPDX identifier, so grant cannot classify
+  # them and denies by default. That default is right; this is the deliberate
+  # override, not a correction of it.
+  #
+  # VERIFIED by reading the LICENSE file in each installed package, not the
+  # package.json field. Both carry identical text: the MIT grant verbatim, plus
+  # two uses that need prior written permission.
+  #
+  #   1. Using the Software as training, fine-tuning or evaluation data, or as
+  #      input to a pipeline for training or improving an ML model or AI system.
+  #   2. Selling the Software, or offering it to third parties as a paid,
+  #      hosted or managed product or service whose value derives entirely or
+  #      substantially from it.
+  #
+  # Why the restrictions do not bite here, which is a narrower claim than "the
+  # licence is fine": we run it as a dev-time analyser, we do not train on its
+  # source, and we neither sell it nor host it. It is a devDependency, so it is
+  # not linked into or shipped with the product - the container images and
+  # published artifacts do not contain it, and no AGPL combination question
+  # arises. A downstream fork inherits a non-free dev tool it can delete in one
+  # line, which is a materially smaller obligation than the copyleft entries on
+  # the allow list above.
+  #
+  # It stays a package exception rather than a licence family precisely because
+  # the licence is not open source: the permission must not generalise to
+  # anything else shipping the same nonstandard string.
+  #
+  # Owner: ankit-yc. Re-review by: 2027-02-13, or sooner if either package
+  # changes its LICENSE, or if openrunic ever offers a hosted service in which
+  # code analysis is a substantial part of the value.
+  - react-doctor
+  - oxlint-plugin-react-doctor

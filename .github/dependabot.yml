@@ -33,45 +33,21 @@ updates:
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
     groups:
-      # Every group is minor-and-patch only, including the named ones below. A
-      # named group without `update-types` silently swallows MAJORS too, which
-      # is how breaking major bumps end up inside an unreviewable group PR
-      # instead of the individual PR a breaking major needs. Majors always get
-      # their own PR and their own review.
-      typescript-eslint:
-        patterns:
-          - 'typescript'
-          - '@types/*'
-          - 'eslint*'
-          - '@typescript-eslint/*'
-        update-types:
-          - minor
-          - patch
-      testing:
-        patterns:
-          - 'vitest*'
-          - '@vitest/*'
-          - '@testing-library/*'
-        update-types:
-          - minor
-          - patch
-      build-tooling:
-        patterns:
-          - 'turbo'
-          - 'prettier'
-          - 'husky'
-          - 'lint-staged'
-        update-types:
-          - minor
-          - patch
-      # Catch-all. Must stay LAST: a dependency joins the first group it
-      # matches, so an earlier '*' would swallow the named groups above.
-      # Minor and patch only, so major bumps still get an individual PR
-      # and an individual review.
-      minor-and-patch:
+      # ONE pooled pull request for every npm update, majors included.
+      # Deliberate trade-off, recorded so the next person does not "fix" it:
+      # a grouped major is harder to review and harder to revert in isolation
+      # than an individual one. We accept that because a dozen separate bot
+      # pull requests a week is its own failure mode, and because the full gate
+      # (build, lint, type-check, tests with coverage floors, Sonar, SBOM,
+      # grype, licence policy) runs on the pooled branch. If a single dependency
+      # in the pool breaks the gate, add it to `ignore` above with a rationale
+      # and a revisit condition, then let the rest land.
+      all-dependencies:
+        applies-to: version-updates
         patterns:
           - '*'
         update-types:
+          - major
           - minor
           - patch
   - package-ecosystem: github-actions
@@ -89,11 +65,14 @@ updates:
       - dependencies
       - github_actions
     groups:
-      # Action majors are routinely breaking, so keep them out of the group
-      # and let each land on its own.
-      actions:
+      # One pooled pull request for GitHub Actions too. Dependabot cannot merge
+      # across ecosystems, so this is a separate pull request from the npm pool
+      # by design, not by oversight.
+      all-actions:
+        applies-to: version-updates
         patterns:
           - '*'
         update-types:
+          - major
           - minor
           - patch

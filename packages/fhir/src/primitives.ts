@@ -425,6 +425,23 @@ export function hexToBase64(hex: string | undefined): string | undefined {
 }
 
 /**
+ * Strips base64 padding without a regular expression.
+ *
+ * `value.replace(/=+$/, '')` is anchored at the end but not the start, so the
+ * engine retries the `=+` run from every position: quadratic in the length of
+ * the input (CodeQL js/polynomial-redos). The value here arrives inside a FHIR
+ * resource from another system, which makes it uncontrolled data by definition,
+ * and a digest field is trivially long. A backwards scan is linear.
+ */
+function stripBase64Padding(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 61 /* '=' */) {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+}
+
+/**
  * Converts a base64 digest back to lowercase hex. Digests therefore round-trip
  * in lowercase, which is the casing Openrunic stores.
  */
@@ -432,7 +449,7 @@ export function base64ToHex(value: string | undefined): string | undefined {
   if (value === undefined || value.length === 0) {
     return undefined;
   }
-  const cleaned = value.replace(/=+$/, '');
+  const cleaned = stripBase64Padding(value);
   let buffer = 0;
   let bits = 0;
   let hex = '';

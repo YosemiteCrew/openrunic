@@ -12,9 +12,11 @@ import type { Identity } from './session';
  * just accepted a token has no way to ask what it means, and something has to
  * know the name to render. Under OIDC that something is the token itself - the
  * identity comes out of the verified claims, and this table stops being
- * consulted. {@link identityForAccessToken} is that seam: it is the one
- * function that turns a credential into a name, and the OIDC path replaces its
- * body rather than the shape of anything that calls it.
+ * consulted. `identityForAccessToken` in `credentials.ts` is that seam: it is
+ * the one function that turns a credential into a name, and the OIDC path
+ * replaces its body rather than the shape of anything that calls it. It lives
+ * in its own module because checking a credential needs `node:crypto` and this
+ * one is read by the sign-in screen in the browser.
  *
  * ## Why these values are safe to commit
  *
@@ -101,22 +103,4 @@ const DEVELOPMENT_STAFF: readonly StaffCredential[] = [
  */
 export function developmentCredentials(nodeEnv: string | undefined): readonly StaffCredential[] {
   return nodeEnv === 'production' ? [] : DEVELOPMENT_STAFF;
-}
-
-/**
- * Turns an access token into the identity to render, or null when this build
- * does not recognise it.
- *
- * The lookup is a plain scan with no constant-time comparison and no rate
- * limiting, for the reason the API's resolver gives for the same choice: these
- * tokens are public fixtures, so there is nothing here worth guessing. Both of
- * those become requirements the moment this function verifies a real
- * credential, and the OIDC implementation that replaces it verifies a signature
- * instead of comparing a string.
- */
-export function identityForAccessToken(
-  token: string,
-  nodeEnv: string | undefined
-): Identity | null {
-  return developmentCredentials(nodeEnv).find((entry) => entry.token === token)?.identity ?? null;
 }

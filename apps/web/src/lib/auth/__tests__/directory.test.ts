@@ -1,60 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { developmentCredentials, identityForAccessToken } from '@/lib/auth/directory';
+import { developmentCredentials } from '@/lib/auth/directory';
 
-describe('the development sign-in', () => {
-  it('recognises the API development principals and names them', () => {
-    expect(identityForAccessToken('dev-clinician-a', 'development')?.displayName).toBe(
-      'Dr. Adaeze Okafor'
-    );
-    expect(identityForAccessToken('dev-frontdesk-a', 'development')?.displayName).toBe(
-      'Front Desk'
-    );
-    expect(identityForAccessToken('dev-biller-a', 'development')?.displayName).toBe('Billing');
-    expect(identityForAccessToken('dev-clinician-b', 'development')?.displayName).toBe(
-      'Dr. Rowan Vale'
-    );
-  });
-
-  it('attributes an access to the same subject the API would', () => {
-    // These ids are what an audit record files a chart access under, so they
-    // have to match `apps/api/src/auth/static-resolver.ts` exactly rather than
-    // merely look like it.
-    expect(identityForAccessToken('dev-clinician-a', 'test')?.subject).toBe(
-      '01890000-0000-7000-8000-000000000101'
-    );
-    expect(identityForAccessToken('dev-clinician-b', 'test')?.subject).toBe(
-      '01890000-0000-7000-8000-000000000201'
-    );
-  });
-
-  it('refuses the patient-portal principal, because this is the staff EMR', () => {
-    // The API accepts this token. Letting it in here would give a patient a
-    // rail, a top bar and a patient list they have no scopes for, and a session
-    // spent collecting 403s.
-    expect(identityForAccessToken('dev-portal-a', 'development')).toBeNull();
-  });
-
-  it('refuses a token nobody issued', () => {
-    expect(identityForAccessToken('dev-clinician-c', 'development')).toBeNull();
-    expect(identityForAccessToken('', 'development')).toBeNull();
-  });
-
-  it('recognises nothing at all in a production build', () => {
-    // The API refuses to start with these tokens under NODE_ENV=production, so
-    // a web build that still opened the door for them would mint a session for
-    // a credential that server has already decided to reject.
-    expect(identityForAccessToken('dev-clinician-a', 'production')).toBeNull();
-    expect(developmentCredentials('production')).toHaveLength(0);
-  });
-
-  it('offers every development principal as a one-click sign-in', () => {
+describe('the credentials the sign-in screen offers', () => {
+  it('offers every development principal, each with a name and a role to show', () => {
     const offered = developmentCredentials('development');
 
     expect(offered).toHaveLength(4);
     for (const credential of offered) {
-      expect(identityForAccessToken(credential.token, 'development')).toEqual(credential.identity);
+      expect(credential.token).not.toBe('');
+      expect(credential.identity.displayName).not.toBe('');
       expect(credential.identity.roles.length).toBeGreaterThan(0);
     }
+  });
+
+  it('offers none of them in a production build, which has no door', () => {
+    expect(developmentCredentials('production')).toHaveLength(0);
+  });
+
+  it('leaves out the patient-portal principal, because this is the staff EMR', () => {
+    const tokens = developmentCredentials('development').map((credential) => credential.token);
+
+    expect(tokens).not.toContain('dev-portal-a');
   });
 });

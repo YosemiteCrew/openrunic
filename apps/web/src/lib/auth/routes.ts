@@ -77,18 +77,28 @@ export function safeReturnPath(value: string | null | undefined): string | null 
 }
 
 /**
- * The sign-in URL, carrying where to return to and why we are here.
+ * The query the sign-in screen needs: where to return to, and why we are here.
+ *
+ * Separate from {@link signInUrl} because the two callers want different
+ * halves. The browser wants a whole path to navigate to; `proxy.ts` wants only
+ * the query, because it builds its redirect by editing the request's own parsed
+ * URL rather than by concatenating one, which is what keeps the destination on
+ * this origin by construction instead of by inspection.
  *
  * A return path pointing back at the sign-in screen is dropped: it would send a
  * clinician who has just signed in straight back to the form.
  */
-export function signInUrl(next?: string | null, reason?: SignInReason): string {
+export function signInQuery(next?: string | null, reason?: SignInReason): string {
   const params = new URLSearchParams();
   const target = safeReturnPath(next);
   if (target !== null && !target.startsWith(SIGN_IN_PATH)) params.set('next', target);
   if (reason !== undefined) params.set('reason', reason);
+  return params.toString();
+}
 
-  const query = params.toString();
+/** The sign-in path with that query attached, for a browser to navigate to. */
+export function signInUrl(next?: string | null, reason?: SignInReason): string {
+  const query = signInQuery(next, reason);
   return query === '' ? SIGN_IN_PATH : `${SIGN_IN_PATH}?${query}`;
 }
 

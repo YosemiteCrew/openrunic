@@ -7,6 +7,7 @@ import {
   isPublicPath,
   landingPath,
   safeReturnPath,
+  signInQuery,
   signInUrl,
 } from '@/lib/auth/routes';
 
@@ -73,6 +74,11 @@ describe('the ?next parameter', () => {
 describe('the sign-in URL', () => {
   it('is bare when there is nothing to say', () => {
     expect(signInUrl()).toBe(SIGN_IN_PATH);
+    expect(signInQuery()).toBe('');
+  });
+
+  it('offers the query on its own, for a redirect built on the request URL', () => {
+    expect(signInQuery('/schedule', 'idle')).toBe('next=%2Fschedule&reason=idle');
   });
 
   it('carries where the clinician was headed and why they are here', () => {

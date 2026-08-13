@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { applySessionCookie, clearSessionCookie } from '@/lib/auth/cookie';
-import { identityForAccessToken } from '@/lib/auth/directory';
+import { identityForAccessToken } from '@/lib/auth/credentials';
 import {
   SESSION_COOKIE,
   decodeSessionCookie,

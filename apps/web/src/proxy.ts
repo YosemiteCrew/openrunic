@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { clearSessionCookie } from '@/lib/auth/cookie';
-import { SIGNED_IN_HOME, SIGN_IN_PATH, isPublicPath, signInUrl } from '@/lib/auth/routes';
+import { SIGNED_IN_HOME, SIGN_IN_PATH, isPublicPath, signInQuery } from '@/lib/auth/routes';
 import { SESSION_COOKIE, decodeSessionCookie, sessionState } from '@/lib/auth/session';
 
 /**
@@ -41,6 +41,24 @@ import { SESSION_COOKIE, decodeSessionCookie, sessionState } from '@/lib/auth/se
  * quietly reopening the door.
  */
 
+/**
+ * A redirect built by editing the request's own parsed URL rather than by
+ * joining a string onto it.
+ *
+ * The difference matters. `new URL(target, request.url)` resolves `target`
+ * against the request, so a target that ever began `//` would resolve to
+ * another host entirely, and reading the code you would have to go and check
+ * every caller to know that it cannot. Here the origin comes from the request
+ * and the destination is assigned field by field, so leaving this origin is not
+ * something a value can express.
+ */
+function redirect(request: NextRequest, pathname: string, query = ''): NextResponse {
+  const destination = request.nextUrl.clone();
+  destination.pathname = pathname;
+  destination.search = query;
+  return NextResponse.redirect(destination);
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
   const cookie = request.cookies.get(SESSION_COOKIE)?.value;
@@ -49,16 +67,14 @@ export function proxy(request: NextRequest): NextResponse {
 
   if (live) {
     if (pathname === '/' || pathname === SIGN_IN_PATH) {
-      return NextResponse.redirect(new URL(SIGNED_IN_HOME, request.url));
+      return redirect(request, SIGNED_IN_HOME);
     }
     return NextResponse.next();
   }
 
   if (isPublicPath(pathname)) return NextResponse.next();
 
-  const response = NextResponse.redirect(
-    new URL(signInUrl(`${pathname}${search}`, 'expired'), request.url)
-  );
+  const response = redirect(request, SIGN_IN_PATH, signInQuery(`${pathname}${search}`, 'expired'));
 
   // A cookie that decoded but had run out is worth removing now, so the next
   // request is honestly anonymous rather than presenting a credential the whole

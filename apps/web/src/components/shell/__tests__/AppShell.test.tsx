@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from '@/components/shell/AppShell';
@@ -138,5 +138,39 @@ describe('AppShell', () => {
   it('says when the screen is reading demo data', () => {
     render(<AppShell title="Schedule">content</AppShell>);
     expect(screen.getByText('Demo data')).toBeInTheDocument();
+  });
+});
+
+describe('the shell with no assistant configured', () => {
+  /**
+   * The most important guarantee in ADR-0005, asserted through the real shell
+   * rather than through the panel in isolation: a clinic that configured
+   * nothing gets the product it had before. No control, no reserved column, no
+   * "not configured" empty state, and nothing in the top bar.
+   */
+  it('renders no assistant affordance anywhere', async () => {
+    const { container } = render(<AppShell title="Schedule">content</AppShell>);
+
+    // After the capability probe has had a chance to settle, not merely on the
+    // first frame: a placeholder that appears and then disappears is still
+    // layout space reserved for the agent.
+    await waitFor(() => expect(container.querySelector('.or-assistant')).toBeNull());
+
+    expect(screen.queryByRole('button', { name: 'Assistant' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Assistant' })).toBeNull();
+    expect(container.textContent).not.toMatch(/assistant/i);
+  });
+
+  it('leaves the shell a single column, with only the bar and the content in it', async () => {
+    const { container } = render(<AppShell title="Schedule">content</AppShell>);
+    await waitFor(() => expect(container.querySelector('.or-assistant')).toBeNull());
+
+    // The stylesheet gives `.or-app__body` a second column only through
+    // `:has(> .or-assistant)`, so with no panel node there is nothing for that
+    // rule to match and the layout is exactly what it was.
+    const body = container.querySelector('.or-app__body');
+    expect(body?.children).toHaveLength(2);
+    expect(body?.children[0]).toHaveClass('or-topbar');
+    expect(body?.children[1]?.tagName).toBe('MAIN');
   });
 });

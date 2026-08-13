@@ -41,7 +41,7 @@
     "ops:restore": "pnpm --filter @openrunic/ops run ops restore",
     "ops:upgrade": "pnpm --filter @openrunic/ops run ops upgrade",
     "ops:lint-migrations": "pnpm --filter @openrunic/ops run ops lint-migrations",
-    "e2e": "pnpm --filter @openrunic/e2e run test",
+    "e2e": "pnpm --filter @openrunic/e2e run drill",
     "e2e:install": "pnpm --filter @openrunic/e2e exec playwright install --with-deps chromium"
 >>>>>>> 454d7e6 (feat(repo): add self-host deployment, backup/restore and the clinical-day drill)
   },

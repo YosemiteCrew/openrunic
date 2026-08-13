@@ -8,7 +8,7 @@
   "scripts": {
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
-    "test": "node scripts/run-drill.mjs"
+    "drill": "node scripts/run-drill.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",

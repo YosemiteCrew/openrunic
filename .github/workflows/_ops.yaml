@@ -97,11 +97,19 @@ jobs:
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @openrunic/e2e exec playwright install-deps chromium
 
+      # apps/web imports @openrunic/ui and the other workspace packages by their
+      # built output, so the shared packages have to exist before Next can
+      # resolve them. Without this the drill fails as 74 "Module not found"
+      # errors from Turbopack, which reads as a broken application rather than
+      # as a missing build step.
+      - name: Build the workspace packages the application imports
+        run: pnpm turbo run build --filter='./packages/*'
+
       # The drill runs the application in mock mode, so no database, no API and
       # no seed. It reports loudly and exits zero when the clinical screens are
       # not present on the branch, and switches itself on when they land.
       - name: Run the full clinical day
-        run: pnpm --filter @openrunic/e2e run test
+        run: pnpm --filter @openrunic/e2e run drill
         env:
           CI: 'true'
 

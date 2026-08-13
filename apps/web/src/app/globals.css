@@ -5,7 +5,7 @@
  * proposed token addition, raised in the pull request rather than inlined.
  *
  * Layout order matches the file: fonts, utilities, shell, top bar, breadcrumb,
- * palette, data states, landing page.
+ * palette, data states, public pages.
  */
 
 /* --- Fonts ---------------------------------------------------------------
@@ -592,73 +592,421 @@ fieldset {
   color: var(--text-secondary);
 }
 
-/* --- Landing page --------------------------------------------------------- */
+/* --- Public pages ---------------------------------------------------------
+ *
+ * The four routes under `src/app/(marketing)`: the only surfaces in this app a
+ * stranger loads. They are server components, so they compose the library's own
+ * classes - .or-card, .or-btn, .or-logo, the type roles - rather than importing
+ * its React components, which would pull the whole client bundle onto the one
+ * page that most needs to arrive fast. Everything below is layout and band
+ * rhythm on top of those classes; nothing here restates a component's skin.
+ *
+ * Bands alternate bone and cream, and cards step one paper up from whichever
+ * band they land on. That is why the card background comes from a custom
+ * property the band sets rather than from a tone modifier on the element: the
+ * same card is cream on bone and white on cream, without the page having to
+ * pass a tone down.
+ *
+ * No motion is declared here. The library's hover transitions carry the whole
+ * surface, and they already sit under its `prefers-reduced-motion` reset.
+ */
 
-.landing {
+/* --- Masthead ------------------------------------------------------------- */
+
+.or-mk-header {
+  border-bottom: var(--hairline) solid var(--border-hairline);
+  background: var(--bg-page);
+}
+
+.or-mk-header__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
   max-width: var(--content-max);
+  /* The bar height from the design system's top-bar specimen. It is a minimum
+     rather than a height because at 375px the links wrap to a second row. */
+  min-height: 72px;
   margin: 0 auto;
-  padding: var(--space-9) var(--space-5) var(--space-7);
+  padding: var(--space-3) var(--space-4);
 }
 
-.hero {
-  margin-bottom: var(--space-7);
-  text-align: center;
+@media (min-width: 768px) {
+  .or-mk-header__inner {
+    padding: var(--space-3) var(--space-6);
+  }
 }
 
-.hero h1 {
-  margin: 0 0 var(--space-3);
-  font-family: var(--font-display);
-  font-size: var(--text-hero);
-  font-weight: var(--wght-semibold);
-  line-height: var(--lh-hero);
-  letter-spacing: var(--track-tight);
+.or-mk-header__home {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+/* Restated on :hover/:visited so base.css's `a:hover` cannot repaint the mark,
+   which is drawn in currentColor. */
+.or-mk-header__home,
+.or-mk-header__home:hover,
+.or-mk-header__home:visited {
   color: var(--text-heading);
+  text-decoration: none;
 }
 
-.tagline {
+/* 120x33 is the brand's minimum horizontal-lockup width at the 480:132 build
+   ratio. The mark is a shipped file in public/assets/logo, drawn through the
+   library's own mask rules so it takes the ink of the band it sits on. */
+.or-mk-lockup {
+  --or-logo-src: url('/assets/logo/lockup-horizontal.svg');
+
+  width: 120px;
+  height: 33px;
+}
+
+.or-mk-header__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
   margin: 0;
-  font-size: var(--text-body-lg);
-  color: var(--text-secondary);
+  padding: 0;
+  list-style: none;
 }
 
-.pillars {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--space-4);
+.or-mk-header__link {
+  display: inline-flex;
+  align-items: center;
+  /* Touch-target floor for phones; the row shrinks to its text from md. */
+  min-height: 44px;
+  border-bottom: 1.5px solid transparent;
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
-.pillar-card {
-  padding: var(--card-pad);
-  border-radius: var(--radius-card);
+@media (min-width: 768px) {
+  .or-mk-header__link {
+    min-height: 0;
+    padding-bottom: var(--space-1);
+  }
+}
+
+/* Espresso ink and no rule until hover: a masthead of underlined links reads as
+   a paragraph of links. Restated across the three states so base.css's `a` and
+   `a:hover` cannot repaint them terracotta at rest. */
+.or-mk-header__link,
+.or-mk-header__link:visited {
+  color: var(--text-ink);
+  text-decoration: none;
+}
+
+.or-mk-header__link:hover {
+  color: var(--action-primary);
+  text-decoration: none;
+}
+
+/* The section being read: terracotta ink and a 1.5px terracotta rule, which is
+   the top bar's active treatment everywhere in this product. `aria-current` on
+   the same link carries the fact for anyone the colour does not reach. */
+.or-mk-header__link--current,
+.or-mk-header__link--current:hover,
+.or-mk-header__link--current:visited {
+  border-bottom-color: var(--action-primary);
+  color: var(--action-primary);
+}
+
+/* --- Bands ---------------------------------------------------------------- */
+
+/* The main landmark takes focus from the skip link; it is not an interactive
+   control, so it gets no ring of its own. */
+.or-mk-main:focus {
+  outline: none;
+}
+
+.or-mk-hero,
+.or-mk-section {
+  padding: var(--space-8) var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .or-mk-hero {
+    padding: var(--hero-y) var(--space-6);
+  }
+
+  .or-mk-section {
+    padding: var(--section-y) var(--space-6);
+  }
+}
+
+/* Cards step one paper up from their band: cream on bone, white on cream. */
+.or-mk-hero,
+.or-mk-section--bone {
+  --or-mk-card-bg: var(--surface-card);
+
+  background: var(--bg-page);
+}
+
+.or-mk-section--cream {
+  --or-mk-card-bg: var(--surface-field);
+
   background: var(--surface-card);
 }
 
-.pillar-card h2 {
-  margin: 0 0 var(--space-2);
-  font-family: var(--font-display);
-  font-size: var(--text-h3);
-  font-weight: var(--wght-medium);
-  color: var(--text-heading);
-}
-
-.pillar-card p {
-  margin: 0;
-  font-size: var(--text-small);
-  color: var(--text-secondary);
-}
-
-.site-footer {
+.or-mk-hero__inner,
+.or-mk-section__inner {
+  display: grid;
+  gap: var(--space-6);
   max-width: var(--content-max);
   margin: 0 auto;
-  padding: var(--space-6) var(--space-5) var(--space-7);
-  border-top: var(--hairline) solid var(--border-hairline);
-  text-align: center;
 }
 
-.site-footer p {
-  margin: 0;
-  font-size: var(--text-caption);
+.or-mk-hero__inner > *,
+.or-mk-section__inner > * {
+  min-width: 0;
+}
+
+.or-mk-hero__inner {
+  gap: var(--space-5);
+  justify-items: start;
+}
+
+.or-mk-hero__eyebrow {
   color: var(--text-secondary);
+}
+
+.or-mk-hero__lead {
+  max-width: 60ch;
+}
+
+.or-mk-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.or-mk-section__head {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 68ch;
+}
+
+.or-mk-section__lead,
+.or-mk-section__aside {
+  color: var(--text-secondary);
+}
+
+/* --- Status note ---------------------------------------------------------- */
+
+/* What the project actually is today, stated beside the claims rather than
+   under them. Plain cream paper on purpose: a caution wash would read as a
+   warning about the software, and this is not a warning. */
+.or-mk-status {
+  gap: var(--space-2);
+  max-width: 62ch;
+  border-color: var(--border-hairline);
+  background: var(--or-mk-card-bg);
+}
+
+.or-mk-status__label {
+  color: var(--text-secondary);
+}
+
+/* --- Pillar cards --------------------------------------------------------- */
+
+/* min() inside the track keeps auto-fit honest: a bare minmax floor wider than
+   the container makes the column overflow it rather than collapsing to one. */
+.or-mk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: var(--space-4);
+}
+
+/* Four rows so the link sits on the card's floor whatever the summary above it
+   does, which is what keeps three cards of different lengths reading as a row. */
+.or-mk-pillar {
+  grid-template-rows: auto auto 1fr auto;
+  border-color: var(--border-hairline);
+  background: var(--or-mk-card-bg);
+}
+
+.or-mk-pillar__points {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.or-mk-pillar__link {
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+}
+
+/* --- Titled paragraphs ---------------------------------------------------- */
+
+/* Two columns at the content width, never three: these are paragraphs on a
+   62ch measure, and a third column would set them in a newspaper gutter and
+   leave a four-item band as three plus an orphan. */
+.or-mk-points {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: var(--space-6);
+}
+
+.or-mk-point {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  max-width: 62ch;
+}
+
+.or-mk-point p {
+  color: var(--text-secondary);
+}
+
+/* --- Closing band --------------------------------------------------------- */
+
+/* Espresso paper, so it re-points the ink roles for its subtree the way the
+   library's inverse surfaces do; every quiet role inside then resolves to ink
+   drawn for espresso rather than carrying a variant of its own. */
+.or-mk-footer {
+  --text-ink: var(--text-inverse);
+  --text-heading: var(--text-inverse);
+  --text-secondary: var(--text-inverse-secondary);
+  --text-decorative: var(--text-inverse-decorative);
+
+  padding: var(--space-7) var(--space-4);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+@media (min-width: 768px) {
+  .or-mk-footer {
+    padding: var(--space-8) var(--space-6);
+  }
+}
+
+.or-mk-footer__inner {
+  display: grid;
+  gap: var(--space-6);
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.or-mk-footer__inner > * {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .or-mk-footer__inner {
+    grid-template-columns: minmax(200px, 1fr) 2fr;
+    gap: var(--space-8);
+  }
+}
+
+.or-mk-footer__brand {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.or-mk-footer__note {
+  max-width: 40ch;
+  color: var(--text-inverse-secondary);
+}
+
+.or-mk-footer__columns {
+  display: grid;
+  gap: var(--space-5);
+}
+
+@media (min-width: 768px) {
+  .or-mk-footer__columns {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--space-6);
+  }
+}
+
+.or-mk-footer__column {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+}
+
+/* Caramel is the system's decorative ink and carries the overline in every
+   band; on this band --text-decorative resolves to its espresso-paper weight. */
+.or-mk-footer__column-title {
+  color: var(--text-decorative);
+}
+
+.or-mk-footer__links {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .or-mk-footer__links {
+    gap: var(--space-2);
+  }
+}
+
+.or-mk-footer__link {
+  display: inline-flex;
+  align-items: center;
+  /* Touch-target floor for phones; the row shrinks to its text from md. */
+  min-height: 44px;
+  font-size: var(--text-small);
+  transition: text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+/* Restated on :hover/:visited so base.css's `a:hover` cannot repaint bone to
+   terracotta, which has no contrast against the espresso band. The rule is
+   always drawn and simply transparent until hover, so the ink never moves. */
+.or-mk-footer__link,
+.or-mk-footer__link:hover,
+.or-mk-footer__link:visited {
+  color: var(--text-inverse);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .or-mk-footer__link {
+    min-height: 0;
+  }
+}
+
+/* On a dark band, dimming the ink would be the wrong hover: the rule comes up. */
+@media (hover: hover) {
+  .or-mk-footer__link:hover {
+    text-decoration-color: currentcolor;
+  }
+}
+
+.or-mk-footer__bottom {
+  display: grid;
+  gap: var(--space-2);
+  max-width: var(--content-max);
+  margin: var(--space-6) auto 0;
+  padding-top: var(--space-5);
+  border-top: var(--hairline) solid var(--border-inverse);
+  color: var(--text-inverse-secondary);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+}
+
+.or-mk-footer__bottom p {
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .or-mk-footer__bottom {
+    margin-top: var(--space-7);
+  }
 }
 
 /* --- Chart: tabs and panel ------------------------------------------------ */

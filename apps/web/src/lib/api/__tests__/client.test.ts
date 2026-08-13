@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError, createHttpClient, requestJson, toSearchParams } from '@/lib/api/client';
-import { resolveApiMode } from '@/lib/api/config';
+import { API_BASE_URL, API_CONFIG, resolveApiMode } from '@/lib/api/config';
 import { createMockClient, filterAppointments, filterPatients } from '@/lib/api/mock/client';
 import {
   MOCK_APPOINTMENTS,
@@ -359,5 +359,14 @@ describe('createHttpClient, every route it exposes', () => {
 
   it('says it is the live client, which is how a screen labels its data', () => {
     expect(createHttpClient({ baseUrl: 'http://api.test' }).mode).toBe('live');
+  });
+});
+
+describe('API_CONFIG', () => {
+  it('is the one transport configuration, and it holds no token yet', () => {
+    // Both the screens' client and the assistant transport read this, so a
+    // token source lands in one place rather than in two that can drift.
+    expect(API_CONFIG.baseUrl).toBe(API_BASE_URL);
+    expect(API_CONFIG.getToken?.()).toBeNull();
   });
 });

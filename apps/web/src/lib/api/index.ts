@@ -6,7 +6,7 @@
 export { api } from './api';
 export { ApiError, BFF_BASE_PATH, createHttpClient, requestJson, toSearchParams } from './client';
 export type { ApiClientConfig, ApiErrorKind } from './client';
-export { API_BASE_URL, API_MODE, IS_MOCK_MODE, resolveApiMode } from './config';
+export { API_BASE_URL, API_CONFIG, API_MODE, IS_MOCK_MODE, resolveApiMode } from './config';
 export type { ApiMode } from './config';
 export { createMockClient, filterAppointments, filterPatients } from './mock/client';
 export {

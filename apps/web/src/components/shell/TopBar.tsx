@@ -3,6 +3,7 @@
 import { Badge, Tag } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
+import { AssistantLauncher } from '@/components/assistant';
 import { useCommandPalette } from '@/components/command';
 import { IS_MOCK_MODE, MOCK_FACILITY } from '@/lib/api';
 
@@ -47,6 +48,9 @@ export function TopBar({
 
       <div className="or-topbar__actions">
         {children}
+        {/* Renders nothing at all unless the API reported a configured
+            assistant, which by default it does not. */}
+        <AssistantLauncher />
         <button type="button" className="or-topbar__command" onClick={open}>
           <span className="or-topbar__command-label">Search or run a command</span>
           <kbd className="or-topbar__kbd" aria-hidden="true">

@@ -57,6 +57,9 @@
   --shell-gutter: var(--space-5);
   --shell-rail-w: 320px;
   --shell-topbar-h: 56px;
+  /* Wider than the context rail: the assistant column holds prose and a
+     composer, and 320px leaves an answer reading at about 34 characters. */
+  --assistant-w: 380px;
 
   /* --- Caution tier: a local stand-in for a missing design-system token -----
    *
@@ -511,6 +514,240 @@ fieldset {
   padding-top: var(--space-2);
   border-top: var(--hairline) solid var(--border-hairline);
   color: var(--text-secondary);
+}
+
+/* --- Assistant (ADR-0005) -------------------------------------------------
+ *
+ * The panel is a column beside the content, never an overlay on it: a clinician
+ * asking about the chart has to keep reading the chart while they read the
+ * answer.
+ *
+ * The `:has()` rule below is the whole of the layout coupling, and it is
+ * written this way on purpose. ADR-0005 asks that no screen reserve layout
+ * space for the agent, and `<AssistantPanel />` renders null unless the API
+ * reported one, so with no assistant configured the selector has nothing to
+ * match and `.or-app__body` keeps every rule it had. There is no "assistant
+ * off" class, no placeholder column and nothing to get wrong: the second column
+ * exists exactly when the panel does.
+ */
+
+@media (min-width: 1280px) {
+  .or-app__body:has(> .or-assistant) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--assistant-w);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .or-app__body:has(> .or-assistant) > .or-topbar {
+    grid-column: 1 / -1;
+  }
+}
+
+.or-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4) var(--shell-gutter) var(--space-6);
+  border-top: var(--hairline) solid var(--border-hairline);
+  background: var(--surface-card);
+}
+
+@media (min-width: 1280px) {
+  .or-assistant {
+    border-top: 0;
+    border-left: var(--hairline) solid var(--border-hairline);
+    padding: var(--space-5) var(--space-5) var(--space-6);
+  }
+}
+
+.or-assistant__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.or-assistant__purpose,
+.or-assistant__model,
+.or-assistant__scope {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* The purpose statement is the one line that must not read as fine print: it is
+   what the surface asserts about itself, so it takes the ink of body copy while
+   keeping the caption size. */
+.or-assistant__purpose {
+  color: var(--text-ink);
+}
+
+.or-assistant__capabilities > summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.or-assistant__capabilities > ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0 0 var(--space-4);
+  color: var(--text-secondary);
+  list-style: disc;
+}
+
+.or-assistant__transcript {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-top: var(--space-2);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-assistant__intro {
+  color: var(--text-secondary);
+  max-width: 48ch;
+}
+
+.or-assistant__turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  list-style: none;
+}
+
+.or-assistant__turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The question is marked by a terracotta edge as well as by its weight, so the
+   turn boundary survives a monochrome print-out. */
+.or-assistant__question {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--action-accent);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  color: var(--text-ink);
+}
+
+.or-assistant__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.or-assistant__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.or-assistant__step[data-done] .or-assistant__step-icon {
+  color: var(--status-success);
+}
+
+.or-assistant__answer {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.or-assistant__withheld,
+.or-assistant__deferred,
+.or-assistant__stopped {
+  margin: 0;
+  color: var(--text-secondary);
+  max-width: 60ch;
+}
+
+.or-assistant__failure {
+  margin: 0;
+}
+
+.or-assistant__sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-wash);
+}
+
+.or-assistant__sources > ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.or-assistant__source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.or-assistant__source-link {
+  color: var(--text-link);
+}
+
+.or-assistant__source-ref {
+  color: var(--text-secondary);
+}
+
+.or-assistant__source-id {
+  font-size: var(--text-caption);
+}
+
+.or-assistant__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--or-status-caution);
+  border-radius: var(--radius-sm);
+  background: var(--or-status-caution-wash);
+}
+
+.or-assistant__draft-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+}
+
+.or-assistant__draft-fields > div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.or-assistant__draft-fields dt {
+  color: var(--text-secondary);
+}
+
+.or-assistant__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-assistant__field {
+  width: 100%;
+}
+
+.or-assistant__controls {
+  display: flex;
+  gap: var(--space-3);
 }
 
 /* --- Loading, error ------------------------------------------------------- */

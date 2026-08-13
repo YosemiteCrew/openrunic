@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { AssistantPanel, AssistantProvider } from '@/components/assistant';
 import { CommandPalette, CommandProvider } from '@/components/command';
 
 import { Breadcrumb } from './Breadcrumb';
@@ -76,48 +77,63 @@ export function AppShell({
 
   return (
     <CommandProvider baseCommands={NAVIGATE_COMMANDS}>
-      <div className="or-app">
-        <SideNav
-          className="or-app__nav"
-          items={items}
-          active={active}
-          onNavigate={navigate}
-          logoBasePath="/assets/logo"
-        />
+      {/* Inside the command registry so the assistant can register its own
+          palette entry, and around the shell so the panel keeps one
+          conversation while a clinician walks from chart to chart. It asks the
+          API once whether an assistant exists; when the answer is no - which is
+          the shipped default - nothing below changes by so much as a pixel. */}
+      <AssistantProvider>
+        <div className="or-app">
+          <SideNav
+            className="or-app__nav"
+            items={items}
+            active={active}
+            onNavigate={navigate}
+            logoBasePath="/assets/logo"
+          />
 
-        <div className="or-app__body">
-          <TopBar area={active}>{topBarActions}</TopBar>
+          <div className="or-app__body">
+            <TopBar area={active}>{topBarActions}</TopBar>
 
-          {/* The skip link in the root layout lands here. tabIndex -1 makes the
-              landmark focusable so the skip actually moves the caret, not just
-              the scroll position. */}
-          <main id="main-content" className="or-app__main" tabIndex={-1}>
-            <div className="or-app__page">
-              {breadcrumb && breadcrumb.length > 0 ? <Breadcrumb items={breadcrumb} /> : null}
+            {/* The skip link in the root layout lands here. tabIndex -1 makes the
+                landmark focusable so the skip actually moves the caret, not just
+                the scroll position. */}
+            <main id="main-content" className="or-app__main" tabIndex={-1}>
+              <div className="or-app__page">
+                {breadcrumb && breadcrumb.length > 0 ? <Breadcrumb items={breadcrumb} /> : null}
 
-              <div className="or-app__header">
-                <div className="or-app__heading">
-                  <h1 className="or-h2">{title}</h1>
-                  {description ? (
-                    <p className="or-body or-app__description">{description}</p>
-                  ) : null}
+                <div className="or-app__header">
+                  <div className="or-app__heading">
+                    <h1 className="or-h2">{title}</h1>
+                    {description ? (
+                      <p className="or-body or-app__description">{description}</p>
+                    ) : null}
+                  </div>
+                  {actions ? <div className="or-app__actions">{actions}</div> : null}
                 </div>
-                {actions ? <div className="or-app__actions">{actions}</div> : null}
+
+                <div className="or-app__content">{children}</div>
               </div>
 
-              <div className="or-app__content">{children}</div>
-            </div>
+              {rightRail ? (
+                <aside className="or-app__rail" aria-label="Page context">
+                  {rightRail}
+                </aside>
+              ) : null}
+            </main>
 
-            {rightRail ? (
-              <aside className="or-app__rail" aria-label="Page context">
-                {rightRail}
-              </aside>
-            ) : null}
-          </main>
+            {/* A sibling of the content, never an overlay on it: a clinician
+                asking about the chart has to keep reading the chart. It renders
+                null unless the API reported an assistant, and the stylesheet
+                gives this row a second column only when the panel is actually
+                present, so an unconfigured deployment lays out exactly as
+                before. */}
+            <AssistantPanel />
+          </div>
         </div>
-      </div>
 
-      <CommandPalette />
+        <CommandPalette />
+      </AssistantProvider>
     </CommandProvider>
   );
 }

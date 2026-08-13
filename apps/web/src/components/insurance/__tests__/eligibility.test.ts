@@ -70,7 +70,9 @@ describe('moveItem', () => {
 
 describe('mockCoveragesForPatient', () => {
   it('returns coverage already in billing order', () => {
-    const coverages = mockCoveragesForPatient(MOCK_PATIENTS[7]?.id ?? '');
+    const coverages = mockCoveragesForPatient(
+      MOCK_PATIENTS.find((p) => p.mrn === 'OR-100482')?.id ?? ''
+    );
     expect(coverages.map((coverage) => coverage.priority)).toEqual(['PRIMARY', 'SECONDARY']);
   });
 

@@ -20,7 +20,7 @@ import {
 } from '@/lib/api/worklist';
 
 const TESTINA = '0192f1a0-0000-7000-8000-00000000p001';
-const MAREK = '0192f1a0-0000-7000-8000-00000000p002';
+const EXAMPLA = '0192f1a0-0000-7000-8000-00000000p002';
 
 describe('rankCatalog', () => {
   it('ranks what the patient is actually being treated for above the rest', () => {
@@ -48,7 +48,7 @@ describe('warningsFor', () => {
   it('raises the duplicate hard stop only for the patient it belongs to', () => {
     const forTestina = warningsFor(TESTINA, ['LAB-HBA1C']);
     expect(forTestina.map((warning) => warning.tier)).toContain('CRITICAL');
-    expect(warningsFor(MAREK, ['LAB-HBA1C'])).toHaveLength(0);
+    expect(warningsFor(EXAMPLA, ['LAB-HBA1C'])).toHaveLength(0);
   });
 
   it('sorts criticals before caution and information', () => {
@@ -59,7 +59,7 @@ describe('warningsFor', () => {
   });
 
   it('gives every critical an override reason to choose from', () => {
-    for (const warning of warningsFor(MAREK, ['IMG-CT-ABDO'])) {
+    for (const warning of warningsFor(EXAMPLA, ['IMG-CT-ABDO'])) {
       if (warning.tier === 'CRITICAL') expect(warning.overrideReasons?.length).toBeGreaterThan(0);
     }
   });

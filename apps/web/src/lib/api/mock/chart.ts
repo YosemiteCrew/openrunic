@@ -37,9 +37,9 @@ import { MOCK_CLINIC_DAY, MOCK_PATIENTS } from './fixtures';
 
 const PATIENT_IDS = {
   testina: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100482')?.id ?? '',
-  marek: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100517')?.id ?? '',
-  aiko: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100608')?.id ?? '',
-  synthea: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100702')?.id ?? '',
+  exampla: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100517')?.id ?? '',
+  demonstra: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100608')?.id ?? '',
+  syntheta: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100702')?.id ?? '',
 } as const;
 
 /**
@@ -50,8 +50,8 @@ const PATIENT_IDS = {
  *
  * The dates are pinned to the appointment fixtures rather than invented. On the
  * clinic day Testina's 08:00 follow-up was fulfilled and its note is still
- * unsigned, which is the documentation debt the chart surfaces; Aiko's
- * well-child visit was fulfilled at 08:40, so her note is today's draft; Marek
+ * unsigned, which is the documentation debt the chart surfaces; Demonstra's
+ * well-child visit was fulfilled at 08:40, so her note is today's draft; Exampla
  * was checked out of his 08:20 chronic-care visit, and his signed note is from
  * February.
  */
@@ -59,7 +59,7 @@ export const MOCK_ENCOUNTER_IDS = {
   testinaUnsigned: '0192f1a0-0000-7000-8000-00000000e001',
   testinaSigned: '0192f1a0-0000-7000-8000-00000000e002',
   marekSigned: '0192f1a0-0000-7000-8000-00000000e003',
-  aikoDraft: '0192f1a0-0000-7000-8000-00000000e004',
+  demonstraDraft: '0192f1a0-0000-7000-8000-00000000e004',
 } as const;
 
 /* -------------------------------------------------------------------------- */
@@ -373,11 +373,11 @@ const TESTINA_CARE_GAPS: CareGap[] = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/* Marek Oyelaran - chronic care                                               */
+/* Exampla Testperson - chronic care                                               */
 /* -------------------------------------------------------------------------- */
 
 const MAREK_CHART: ChartSummary = {
-  patientId: PATIENT_IDS.marek,
+  patientId: PATIENT_IDS.exampla,
   allergies: recorded([
     {
       id: 'al-m-001',
@@ -543,11 +543,11 @@ const MAREK_CHART: ChartSummary = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Aiko Fernstrom - paediatric                                                 */
+/* Demonstra Fixtureby - paediatric                                                 */
 /* -------------------------------------------------------------------------- */
 
 const AIKO_CHART: ChartSummary = {
-  patientId: PATIENT_IDS.aiko,
+  patientId: PATIENT_IDS.demonstra,
   allergies: noKnownAllergies('2026-08-12'),
   problems: [
     {
@@ -577,7 +577,7 @@ const AIKO_CHART: ChartSummary = {
   visits: [
     {
       id: 'vs-a-001',
-      encounterId: MOCK_ENCOUNTER_IDS.aikoDraft,
+      encounterId: MOCK_ENCOUNTER_IDS.demonstraDraft,
       date: MOCK_CLINIC_DAY,
       type: 'Well-child visit',
       providerName: 'Dr. Lindqvist',
@@ -641,7 +641,7 @@ export const MOCK_CHARTS: readonly ChartSummary[] = [
   TESTINA_CHART,
   MAREK_CHART,
   AIKO_CHART,
-  affirmedEmptyChart(PATIENT_IDS.synthea),
+  affirmedEmptyChart(PATIENT_IDS.syntheta),
 ];
 
 /** The chart for a patient, falling back to the honest empty one. */
@@ -806,7 +806,7 @@ const MAREK_SIGNED_SECTIONS: NoteSection[] = [
 
 const MAREK_SIGNED_NOTE: EncounterNote = {
   id: MOCK_ENCOUNTER_IDS.marekSigned,
-  patientId: PATIENT_IDS.marek,
+  patientId: PATIENT_IDS.exampla,
   visitType: 'Chronic care',
   visitDate: '2026-02-11',
   providerName: 'Dr. Okafor',
@@ -825,8 +825,8 @@ const MAREK_SIGNED_NOTE: EncounterNote = {
 };
 
 const AIKO_DRAFT_NOTE: EncounterNote = {
-  id: MOCK_ENCOUNTER_IDS.aikoDraft,
-  patientId: PATIENT_IDS.aiko,
+  id: MOCK_ENCOUNTER_IDS.demonstraDraft,
+  patientId: PATIENT_IDS.demonstra,
   visitType: 'Well-child visit',
   visitDate: MOCK_CLINIC_DAY,
   providerName: 'Dr. Lindqvist',

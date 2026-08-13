@@ -46,7 +46,7 @@ describe('EncounterNoteScreen', () => {
   });
 
   it('renders a draft note as a draft, not as an unsigned one', async () => {
-    render(<EncounterNoteScreen encounterId={MOCK_ENCOUNTER_IDS.aikoDraft} />);
+    render(<EncounterNoteScreen encounterId={MOCK_ENCOUNTER_IDS.demonstraDraft} />);
 
     expect(await screen.findByText('Draft')).toBeInTheDocument();
     expect(screen.getByText(/not part of the record until it is signed/)).toBeInTheDocument();

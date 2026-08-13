@@ -18,7 +18,7 @@ function failing(): BillingClient {
   };
 }
 
-/** Ivo Petrescu: the largest balance, three open visits, no card on file. */
+/** Dummonde Stubbins: the largest balance, three open visits, no card on file. */
 function withoutCard(): BillingClient {
   const account = MOCK_STATEMENT_ACCOUNTS.find((row) => !row.cardOnFile);
   if (!account) throw new Error('Fixture missing');

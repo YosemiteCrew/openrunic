@@ -17,7 +17,7 @@ import { formatDateTime } from '@/lib/format';
  * AD-07 Integrations and adapters.
  *
  * Connection state is visible, testable, and honest about which failures are
- * ours and which are a partner's. Demo adapters are never quiet about being
+ * ours and which are a partner's. Placeholder adapters are never quiet about being
  * demo adapters: the chip says so here, and every dependent screen's transmit
  * action says so there.
  *
@@ -33,7 +33,7 @@ export interface IntegrationsScreenProps {
 
 const STATUS_LABEL: Record<IntegrationStatus, string> = {
   CONNECTED: 'Connected',
-  DEMO: 'Demo mode',
+  DEMO: 'Placeholder mode',
   ERROR: 'Not working',
   NOT_CONNECTED: 'Not connected',
 };
@@ -123,9 +123,9 @@ function SeamNotice({ integration }: Readonly<{ integration: Integration }>): Re
     return (
       <Card className="or-notice" data-tone="info">
         <p className="or-body">
-          <strong>Demo mode.</strong> Orders, messages and payments through this seam go to the
-          built-in mock and never reach a real partner. Every screen that transmits through it says
-          so on its own button.
+          <strong>Placeholder mode.</strong> Orders, messages and payments through this seam go to
+          the built-in mock and never reach a real partner. Every screen that transmits through it
+          says so on its own button.
         </p>
       </Card>
     );

@@ -47,7 +47,7 @@ describe('FlowBoardScreen', () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
     const checkedIn = await screen.findByRole('region', { name: /^Checked in, \d+ patients$/ });
-    // Bram Voskuijlen has been waiting since 09:26 against a 10:20 now.
+    // Sampleton Mockford has been waiting since 09:26 against a 10:20 now.
     expect(within(checkedIn).getByText(/^Delayed \d+/)).toBeInTheDocument();
   });
 

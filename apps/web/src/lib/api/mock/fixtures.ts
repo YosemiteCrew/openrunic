@@ -13,7 +13,7 @@ import type {
 /**
  * The demo clinic, as fixtures.
  *
- * Every value here is synthetic by construction and obviously so: Synthea-style
+ * Every value here is synthetic by construction and obviously so: Syntheta-style
  * names, `OR-` MRNs, no real-format identifiers, no real addresses. Nothing in
  * this file may ever be seeded from a real record.
  *
@@ -190,8 +190,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p002',
     mrn: 'OR-100517',
-    given: 'Marek',
-    family: 'Oyelaran',
+    given: 'Exampla',
+    family: 'Testperson',
     birthDate: '1962-11-02',
     sexAtBirth: 'MALE',
     pronouns: 'he/him',
@@ -202,8 +202,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p003',
     mrn: 'OR-100608',
-    given: 'Aiko',
-    family: 'Fernstrom',
+    given: 'Demonstra',
+    family: 'Fixtureby',
     birthDate: '2019-06-28',
     sexAtBirth: 'FEMALE',
     pronouns: 'she/her',
@@ -213,8 +213,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p004',
     mrn: 'OR-100641',
-    given: 'Demo',
-    family: 'Rungard',
+    given: 'Placeholder',
+    family: 'Nullsson',
     birthDate: '1954-01-19',
     sexAtBirth: 'MALE',
     city: 'Cedar Falls',
@@ -223,8 +223,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p005',
     mrn: 'OR-100702',
-    given: 'Synthea',
-    family: 'Marwick',
+    given: 'Syntheta',
+    family: 'Fakeley',
     birthDate: '1996-09-05',
     sexAtBirth: 'FEMALE',
     pronouns: 'they/them',
@@ -234,8 +234,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p006',
     mrn: 'OR-100744',
-    given: 'Bram',
-    family: 'Voskuijlen',
+    given: 'Sampleton',
+    family: 'Mockford',
     birthDate: '1978-04-23',
     sexAtBirth: 'MALE',
     city: 'Cedar Falls',
@@ -243,8 +243,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p007',
     mrn: 'OR-100810',
-    given: 'Noor',
-    family: 'Haddadin',
+    given: 'Fictitia',
+    family: 'Notreal',
     birthDate: '2001-12-11',
     sexAtBirth: 'FEMALE',
     portalEnabled: true,
@@ -253,8 +253,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p008',
     mrn: 'OR-100866',
-    given: 'Ivo',
-    family: 'Petrescu',
+    given: 'Dummonde',
+    family: 'Stubbins',
     birthDate: '1949-07-30',
     sexAtBirth: 'MALE',
     city: 'Birchwood',
@@ -262,8 +262,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p009',
     mrn: 'OR-100913',
-    given: 'Halla',
-    family: 'Gunnarsdottir',
+    given: 'Prototypo',
+    family: 'Sandboxer',
     birthDate: '1990-02-08',
     sexAtBirth: 'FEMALE',
     portalEnabled: true,
@@ -272,8 +272,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p010',
     mrn: 'OR-100978',
-    given: 'Tobias',
-    family: 'Ekwueme',
+    given: 'Simula',
+    family: 'Testarossa',
     birthDate: '2014-10-17',
     sexAtBirth: 'MALE',
     city: 'Birchwood',
@@ -281,8 +281,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p011',
     mrn: 'OR-101025',
-    given: 'Wilma',
-    family: 'Ahlgren',
+    given: 'Lorem',
+    family: 'Ipsumsen',
     birthDate: '1937-05-26',
     sexAtBirth: 'FEMALE',
     city: 'Cedar Falls',
@@ -292,8 +292,8 @@ const PATIENT_SEEDS: readonly PatientSeed[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000p012',
     mrn: 'OR-101088',
-    given: 'Rafael',
-    family: 'Quispe',
+    given: 'Quinta',
+    family: 'Examplebury',
     birthDate: '1983-08-01',
     sexAtBirth: 'MALE',
     portalEnabled: true,
@@ -745,7 +745,7 @@ const COVERAGE_SEEDS: readonly MockCoverage[] = [
     planName: 'Prairie Managed Care',
     memberId: 'ZZ-1188-46',
     groupNumber: 'GRP-0041',
-    subscriberName: 'Marek Oyelaran',
+    subscriberName: 'Exampla Testperson',
     subscriberRelationship: 'Self',
     effectiveFrom: '2025-09-01',
     effectiveTo: null,
@@ -762,7 +762,7 @@ const COVERAGE_SEEDS: readonly MockCoverage[] = [
     planName: 'Cedar Family HMO',
     memberId: 'ZZ-5502-73',
     groupNumber: 'GRP-2210',
-    subscriberName: 'Ingrid Fernstrom',
+    subscriberName: 'Ingrid Fixtureby',
     subscriberRelationship: 'Parent',
     effectiveFrom: '2019-07-01',
     effectiveTo: null,
@@ -779,7 +779,7 @@ const COVERAGE_SEEDS: readonly MockCoverage[] = [
     planName: 'Senior Part B equivalent',
     memberId: 'ZZ-7741-90',
     groupNumber: null,
-    subscriberName: 'Demo Rungard',
+    subscriberName: 'Placeholder Nullsson',
     subscriberRelationship: 'Self',
     effectiveFrom: '2019-02-01',
     effectiveTo: null,
@@ -890,16 +890,16 @@ export function mockVerifyEligibility(coverageId: string): Promise<MockEligibili
 /** Patient ids by first name, so a fixture row never carries a bare UUID. */
 const PATIENT_ID = {
   testina: '0192f1a0-0000-7000-8000-00000000p001',
-  marek: '0192f1a0-0000-7000-8000-00000000p002',
-  aiko: '0192f1a0-0000-7000-8000-00000000p003',
+  exampla: '0192f1a0-0000-7000-8000-00000000p002',
+  demonstra: '0192f1a0-0000-7000-8000-00000000p003',
   demo: '0192f1a0-0000-7000-8000-00000000p004',
-  synthea: '0192f1a0-0000-7000-8000-00000000p005',
-  bram: '0192f1a0-0000-7000-8000-00000000p006',
-  noor: '0192f1a0-0000-7000-8000-00000000p007',
-  ivo: '0192f1a0-0000-7000-8000-00000000p008',
-  halla: '0192f1a0-0000-7000-8000-00000000p009',
-  tobias: '0192f1a0-0000-7000-8000-00000000p010',
-  rafael: '0192f1a0-0000-7000-8000-00000000p012',
+  syntheta: '0192f1a0-0000-7000-8000-00000000p005',
+  sampleton: '0192f1a0-0000-7000-8000-00000000p006',
+  fictitia: '0192f1a0-0000-7000-8000-00000000p007',
+  dummonde: '0192f1a0-0000-7000-8000-00000000p008',
+  prototypo: '0192f1a0-0000-7000-8000-00000000p009',
+  simula: '0192f1a0-0000-7000-8000-00000000p010',
+  quinta: '0192f1a0-0000-7000-8000-00000000p012',
 } as const;
 
 const PROVIDER_ID = {
@@ -925,14 +925,18 @@ export const MOCK_PATIENT_PROBLEMS: Readonly<Record<string, PatientProblem[]>> =
     { code: 'E11.9', display: 'Type 2 diabetes', onset: '2021-04-09' },
     { code: 'I10', display: 'High blood pressure', onset: '2019-11-22' },
   ],
-  [PATIENT_ID.marek]: [
+  [PATIENT_ID.exampla]: [
     { code: 'E11.22', display: 'Type 2 diabetes with kidney disease', onset: '2016-02-18' },
     { code: 'N18.30', display: 'Chronic kidney disease, stage 3', onset: '2023-09-01' },
   ],
-  [PATIENT_ID.aiko]: [{ code: 'J45.20', display: 'Mild intermittent asthma', onset: '2024-05-30' }],
-  [PATIENT_ID.bram]: [{ code: 'E78.5', display: 'Raised blood lipids', onset: '2022-01-14' }],
-  [PATIENT_ID.noor]: [{ code: 'D50.9', display: 'Iron deficiency anaemia', onset: '2026-05-19' }],
-  [PATIENT_ID.halla]: [{ code: 'E03.9', display: 'Underactive thyroid', onset: '2024-10-02' }],
+  [PATIENT_ID.demonstra]: [
+    { code: 'J45.20', display: 'Mild intermittent asthma', onset: '2024-05-30' },
+  ],
+  [PATIENT_ID.sampleton]: [{ code: 'E78.5', display: 'Raised blood lipids', onset: '2022-01-14' }],
+  [PATIENT_ID.fictitia]: [
+    { code: 'D50.9', display: 'Iron deficiency anaemia', onset: '2026-05-19' },
+  ],
+  [PATIENT_ID.prototypo]: [{ code: 'E03.9', display: 'Underactive thyroid', onset: '2024-10-02' }],
   [PATIENT_ID.demo]: [{ code: 'J20.9', display: 'Acute bronchitis', onset: '2026-08-09' }],
 };
 
@@ -1163,7 +1167,7 @@ export const MOCK_ORDER_WARNINGS: readonly OrderWarning[] = [
   {
     id: 'warn-contrast-kidney',
     orderCode: 'IMG-CT-ABDO',
-    patientId: PATIENT_ID.marek,
+    patientId: PATIENT_ID.exampla,
     tier: 'CRITICAL',
     title: 'Contrast study with reduced kidney function',
     detail:
@@ -1193,7 +1197,7 @@ export const MOCK_ORDER_WARNINGS: readonly OrderWarning[] = [
   {
     id: 'warn-tsh-trend',
     orderCode: 'LAB-TSH',
-    patientId: PATIENT_ID.halla,
+    patientId: PATIENT_ID.prototypo,
     tier: 'INFO',
     title: 'TSH is being tracked',
     detail: 'The 2 Jul 2026 TSH was 8.4 mIU/L, above range.',
@@ -1230,7 +1234,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o002',
-    patientId: PATIENT_ID.marek,
+    patientId: PATIENT_ID.exampla,
     code: 'LAB-CMP',
     status: 'RESULTED',
     priority: 'URGENT',
@@ -1256,7 +1260,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o004',
-    patientId: PATIENT_ID.halla,
+    patientId: PATIENT_ID.prototypo,
     code: 'LAB-TSH',
     status: 'RESULTED',
     priority: 'ROUTINE',
@@ -1269,7 +1273,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o005',
-    patientId: PATIENT_ID.noor,
+    patientId: PATIENT_ID.fictitia,
     code: 'LAB-CBC',
     status: 'RESULTED',
     priority: 'ROUTINE',
@@ -1282,7 +1286,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o006',
-    patientId: PATIENT_ID.bram,
+    patientId: PATIENT_ID.sampleton,
     code: 'LAB-BMP',
     status: 'RESULTED',
     priority: 'ROUTINE',
@@ -1295,7 +1299,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o007',
-    patientId: PATIENT_ID.synthea,
+    patientId: PATIENT_ID.syntheta,
     code: 'LAB-URINE',
     status: 'RESULTED',
     priority: 'ROUTINE',
@@ -1308,7 +1312,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o008',
-    patientId: PATIENT_ID.aiko,
+    patientId: PATIENT_ID.demonstra,
     code: 'IMG-CXR',
     status: 'RESULTED',
     priority: 'ROUTINE',
@@ -1321,7 +1325,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o009',
-    patientId: PATIENT_ID.rafael,
+    patientId: PATIENT_ID.quinta,
     code: 'PRC-ECG',
     status: 'RESULTED',
     priority: 'ROUTINE',
@@ -1334,7 +1338,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o010',
-    patientId: PATIENT_ID.ivo,
+    patientId: PATIENT_ID.dummonde,
     code: 'IMG-ANKLE',
     status: 'TRANSMITTED',
     priority: 'URGENT',
@@ -1358,7 +1362,7 @@ const ORDER_SEEDS: readonly OrderSeed[] = [
   },
   {
     id: '0192f1a0-0000-7000-8000-00000000o012',
-    patientId: PATIENT_ID.tobias,
+    patientId: PATIENT_ID.simula,
     code: 'IMG-CXR',
     status: 'CANCELLED',
     priority: 'ROUTINE',
@@ -1420,7 +1424,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r001',
     orderId: '0192f1a0-0000-7000-8000-00000000o002',
-    patientId: PATIENT_ID.marek,
+    patientId: PATIENT_ID.exampla,
     panel: 'Comprehensive metabolic panel',
     category: 'LAB',
     collectedAt: '2026-08-12T07:05:00.000Z',
@@ -1519,7 +1523,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r003',
     orderId: '0192f1a0-0000-7000-8000-00000000o004',
-    patientId: PATIENT_ID.halla,
+    patientId: PATIENT_ID.prototypo,
     panel: 'Thyroid panel',
     category: 'LAB',
     collectedAt: '2026-08-07T10:22:00.000Z',
@@ -1558,7 +1562,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r004',
     orderId: '0192f1a0-0000-7000-8000-00000000o005',
-    patientId: PATIENT_ID.noor,
+    patientId: PATIENT_ID.fictitia,
     panel: 'Full blood count with differential',
     category: 'LAB',
     collectedAt: '2026-08-08T10:02:00.000Z',
@@ -1598,7 +1602,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r005',
     orderId: '0192f1a0-0000-7000-8000-00000000o006',
-    patientId: PATIENT_ID.bram,
+    patientId: PATIENT_ID.sampleton,
     panel: 'Basic metabolic panel',
     category: 'LAB',
     collectedAt: '2026-08-11T08:31:00.000Z',
@@ -1635,7 +1639,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r006',
     orderId: '0192f1a0-0000-7000-8000-00000000o007',
-    patientId: PATIENT_ID.synthea,
+    patientId: PATIENT_ID.syntheta,
     panel: 'Urinalysis',
     category: 'LAB',
     collectedAt: '2026-08-11T11:26:00.000Z',
@@ -1663,7 +1667,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r007',
     orderId: '0192f1a0-0000-7000-8000-00000000o008',
-    patientId: PATIENT_ID.aiko,
+    patientId: PATIENT_ID.demonstra,
     panel: 'Chest X-ray, two views',
     category: 'IMAGING',
     collectedAt: '2026-08-06T15:02:00.000Z',
@@ -1680,7 +1684,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000r008',
     orderId: '0192f1a0-0000-7000-8000-00000000o009',
-    patientId: PATIENT_ID.rafael,
+    patientId: PATIENT_ID.quinta,
     panel: 'ECG, 12-lead',
     category: 'PROCEDURE',
     collectedAt: '2026-08-04T15:10:00.000Z',
@@ -1707,7 +1711,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i001',
     stream: 'RESULTS',
-    patientId: PATIENT_ID.marek,
+    patientId: PATIENT_ID.exampla,
     summary: 'Critical potassium on a metabolic panel',
     detail: 'Potassium 6.2 mmol/L, above range. Reported 09:40 today by Cedar Reference Lab.',
     receivedAt: '2026-08-12T09:41:00.000Z',
@@ -1721,7 +1725,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i002',
     stream: 'RESULTS',
-    patientId: PATIENT_ID.noor,
+    patientId: PATIENT_ID.fictitia,
     summary: 'Full blood count back, haemoglobin below range',
     detail: 'Haemoglobin 96 g/L and ferritin 8 ug/L, both below range.',
     receivedAt: '2026-08-11T08:06:00.000Z',
@@ -1735,7 +1739,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i003',
     stream: 'RESULTS',
-    patientId: PATIENT_ID.halla,
+    patientId: PATIENT_ID.prototypo,
     summary: 'Thyroid panel back, TSH above range',
     detail: 'TSH 8.4 mIU/L against a range of 0.4 to 4.0 mIU/L.',
     receivedAt: '2026-08-08T13:21:00.000Z',
@@ -1749,7 +1753,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i004',
     stream: 'MESSAGES',
-    patientId: PATIENT_ID.synthea,
+    patientId: PATIENT_ID.syntheta,
     summary: 'Asks whether to finish the antibiotic course',
     detail: 'Portal message, sent 08:40 today. Two days of the course remain.',
     receivedAt: '2026-08-12T08:40:00.000Z',
@@ -1763,7 +1767,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i005',
     stream: 'MESSAGES',
-    patientId: PATIENT_ID.rafael,
+    patientId: PATIENT_ID.quinta,
     summary: 'Asks to move the Thursday appointment',
     detail: 'Portal message, sent yesterday evening. Front desk can take this one.',
     receivedAt: '2026-08-11T21:05:00.000Z',
@@ -1777,7 +1781,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i006',
     stream: 'REFILLS',
-    patientId: PATIENT_ID.bram,
+    patientId: PATIENT_ID.sampleton,
     summary: 'Atorvastatin 20 mg, three refills requested',
     detail: 'Last dispensed 14 Jul 2026. Lipids reviewed 11 Aug 2026.',
     receivedAt: '2026-08-11T18:02:00.000Z',
@@ -1791,7 +1795,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i007',
     stream: 'REFILLS',
-    patientId: PATIENT_ID.halla,
+    patientId: PATIENT_ID.prototypo,
     summary: 'Levothyroxine 75 mcg, portal request',
     detail: 'TSH from 8 Aug 2026 is above range, so the dose may need review first.',
     receivedAt: '2026-08-10T20:14:00.000Z',
@@ -1805,7 +1809,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i008',
     stream: 'COSIGN',
-    patientId: PATIENT_ID.aiko,
+    patientId: PATIENT_ID.demonstra,
     summary: 'Well-child visit note, 8 Aug, Dr. Lindqvist',
     detail: 'Attestation only. Nothing in the note has changed since it was signed.',
     receivedAt: '2026-08-08T16:40:00.000Z',
@@ -1833,7 +1837,7 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
   {
     id: '0192f1a0-0000-7000-8000-00000000i010',
     stream: 'TASKS',
-    patientId: PATIENT_ID.ivo,
+    patientId: PATIENT_ID.dummonde,
     summary: 'Chase Birchwood Imaging for the ankle X-ray',
     detail: 'Transmitted 10 Aug at 11:06 and still unacknowledged.',
     receivedAt: '2026-08-12T08:00:00.000Z',

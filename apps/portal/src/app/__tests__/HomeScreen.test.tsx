@@ -16,7 +16,7 @@ const IN_PERSON: Appointment = {
   startsAt: '2026-09-24T14:00:00.000Z',
   durationMinutes: 30,
   reason: 'Blood pressure check',
-  clinician: 'Marek Oyelaran',
+  clinician: 'Exampla Testperson',
   department: 'General practice',
   mode: 'in-person',
   location: 'Elmfield Practice, Room 4',

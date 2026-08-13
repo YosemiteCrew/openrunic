@@ -20,8 +20,8 @@ function patientByMrn(mrn: string): Patient {
 }
 
 const testina = patientByMrn('OR-100482');
-const aiko = patientByMrn('OR-100608');
-const wilma = patientByMrn('OR-101025');
+const demonstra = patientByMrn('OR-100608');
+const lorem = patientByMrn('OR-101025');
 
 function renderRail(
   patient: Patient,
@@ -55,12 +55,12 @@ describe('PatientContextRail identity', () => {
   });
 
   it('replaces the identity block with the date of death for a deceased patient', () => {
-    renderRail(wilma, mockChartFor(wilma.id));
+    renderRail(lorem, mockChartFor(lorem.id));
     expect(screen.getByText(/Deceased 2 Apr 2026/)).toBeInTheDocument();
   });
 
   it('flags an interpreter need rather than hiding it in the demographics tab', () => {
-    renderRail(aiko, mockChartFor(aiko.id));
+    renderRail(demonstra, mockChartFor(demonstra.id));
     expect(screen.getByText('Interpreter needed, sv-SE')).toBeInTheDocument();
   });
 });
@@ -75,7 +75,7 @@ describe('PatientContextRail allergies', () => {
   });
 
   it('says "no known allergies" as an affirmed fact, with the date it was affirmed', () => {
-    renderRail(aiko, mockChartFor(aiko.id));
+    renderRail(demonstra, mockChartFor(demonstra.id));
 
     expect(screen.getByText('No known allergies')).toBeInTheDocument();
     expect(screen.getByText('Affirmed 12 Aug 2026')).toBeInTheDocument();
@@ -123,12 +123,12 @@ describe('PatientContextRail clinical summary', () => {
   });
 
   it('says the balance is settled when nothing is owed', () => {
-    renderRail(aiko, mockChartFor(aiko.id));
+    renderRail(demonstra, mockChartFor(demonstra.id));
     expect(screen.getByText('Patient responsibility, settled')).toBeInTheDocument();
   });
 
   it('says "No appointment scheduled" rather than leaving the line blank', () => {
-    renderRail(aiko, mockChartFor(aiko.id));
+    renderRail(demonstra, mockChartFor(demonstra.id));
     expect(screen.getByText('No appointment scheduled')).toBeInTheDocument();
   });
 });

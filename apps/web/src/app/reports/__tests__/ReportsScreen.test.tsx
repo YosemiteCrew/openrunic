@@ -76,7 +76,7 @@ describe('ReportsScreen report shell', () => {
 
     const summary = await screen.findByText(/4 visits/);
     expect(summary).toBeInTheDocument();
-    expect(screen.queryByText('Demo Rungard')).not.toBeInTheDocument();
+    expect(screen.queryByText('Placeholder Nullsson')).not.toBeInTheDocument();
   });
 
   it('offers an export that says what it did', async () => {

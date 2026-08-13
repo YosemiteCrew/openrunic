@@ -16,13 +16,28 @@ vi.mock('next/navigation', () => ({
 }));
 
 /** Testina Patientsson: an active primary and a terminated secondary. */
-const TESTINA = MOCK_PATIENTS[7]?.id ?? '';
-/** Marek Oyelaran: one coverage the payer cannot find. */
-const MAREK = MOCK_PATIENTS[6]?.id ?? '';
-/** Demo Rungard: one coverage whose payer does not answer. */
-const DEMO = MOCK_PATIENTS[10]?.id ?? '';
-/** Aiko Fernstrom has coverage; Halla Gunnarsdottir has none. */
-const NO_COVERAGE = MOCK_PATIENTS[3]?.id ?? '';
+/**
+ * Patients are looked up by MRN, never by index.
+ *
+ * `MOCK_PATIENTS` is sorted by family name, so an index is a position in an
+ * alphabetical list rather than a reference to a person: renaming any fixture
+ * silently repoints every index-based constant at a different patient, and the
+ * test then asserts the wrong person's coverage while still reading as if it
+ * meant the right one. An MRN is the identifier the product itself uses.
+ */
+function byMrn(mrn: string): string {
+  const patient = MOCK_PATIENTS.find((candidate) => candidate.mrn === mrn);
+  if (patient === undefined) throw new Error(`no fixture patient with MRN ${mrn}`);
+  return patient.id;
+}
+
+const TESTINA = byMrn('OR-100482');
+/** Exampla Testperson: one coverage the payer cannot find. */
+const EXAMPLA = byMrn('OR-100517');
+/** Placeholder Nullsson: one coverage whose payer does not answer. */
+const DEMO = byMrn('OR-100641');
+/** Demonstra Fixtureby has coverage; Prototypo Sandboxer has none. */
+const NO_COVERAGE = byMrn('OR-100913');
 
 /* The rail repeats each coverage's status, so an assertion about a card scopes
    itself to that card's region rather than matching the summary line too. Every
@@ -80,7 +95,7 @@ describe('InsuranceScreen', () => {
   });
 
   it('says which fields to check when the payer cannot find the member', async () => {
-    render(<InsuranceScreen patientId={MAREK} />);
+    render(<InsuranceScreen patientId={EXAMPLA} />);
 
     fireEvent.click(await screen.findByRole('button', { name: /^Verify eligibility with/ }));
 
@@ -134,7 +149,7 @@ describe('InsuranceScreen', () => {
   });
 
   it('keeps eligibility history once a coverage has been checked twice', async () => {
-    render(<InsuranceScreen patientId={MAREK} />);
+    render(<InsuranceScreen patientId={EXAMPLA} />);
 
     const verify = await screen.findByRole('button', { name: /^Verify eligibility with/ });
     fireEvent.click(verify);

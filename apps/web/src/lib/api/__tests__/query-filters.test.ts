@@ -101,7 +101,7 @@ describe('filterClaims', () => {
 
   it('searches claim number, patient name and MRN with one box', () => {
     expect(filterClaims(MOCK_CLAIMS, { q: 'CLM-24062' })).toHaveLength(1);
-    expect(filterClaims(MOCK_CLAIMS, { q: 'petrescu' })[0]!.patient.name.family).toBe('Petrescu');
+    expect(filterClaims(MOCK_CLAIMS, { q: 'stubbins' })[0]!.patient.name.family).toBe('Stubbins');
     expect(filterClaims(MOCK_CLAIMS, { q: 'OR-100517' })[0]!.patient.mrn).toBe('OR-100517');
     // Whitespace around a pasted MRN is the normal case, not the exception.
     expect(filterClaims(MOCK_CLAIMS, { q: '  or-100517  ' })[0]!.patient.mrn).toBe('OR-100517');
@@ -190,7 +190,7 @@ describe('filterPayments', () => {
 
   it('searches by receipt number and by patient name', () => {
     expect(filterPayments(MOCK_PAYMENTS, { q: 'RCP-70408' })[0]!.method.kind).toBe('CASH');
-    expect(filterPayments(MOCK_PAYMENTS, { q: 'voskuijlen' })[0]!.receiptNumber).toBe('RCP-70386');
+    expect(filterPayments(MOCK_PAYMENTS, { q: 'mockford' })[0]!.receiptNumber).toBe('RCP-70386');
     expect(filterPayments(MOCK_PAYMENTS, { q: 'RCP-00000' })).toHaveLength(0);
   });
 });

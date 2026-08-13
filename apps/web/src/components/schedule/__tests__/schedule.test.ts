@@ -304,14 +304,14 @@ describe('givenName', () => {
   it('falls back to the given name', () => {
     expect(
       givenName({
-        given: 'Marek',
+        given: 'Exampla',
         middle: null,
-        family: 'Oyelaran',
+        family: 'Testperson',
         prefix: null,
         suffix: null,
         preferred: null,
       })
-    ).toBe('Marek');
+    ).toBe('Exampla');
   });
 });
 

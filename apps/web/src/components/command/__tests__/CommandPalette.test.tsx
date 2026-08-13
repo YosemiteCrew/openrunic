@@ -284,8 +284,8 @@ describe('CommandPalette', () => {
     openPalette();
     const input = await findCombobox();
 
-    fireEvent.change(input, { target: { value: 'Oyelaran' } });
-    const option = await screen.findByRole('option', { name: /Oyelaran, Marek/ });
+    fireEvent.change(input, { target: { value: 'Testperson' } });
+    const option = await screen.findByRole('option', { name: /Testperson, Exampla/ });
     fireEvent.click(option);
 
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/patients/'));

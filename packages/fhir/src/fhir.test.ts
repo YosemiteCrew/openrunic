@@ -43,8 +43,8 @@ describe('fhirReference', () => {
 describe('patient mapping', () => {
   const fullPatient: DomainPatient = {
     id: '9b2f6a2e-2f9d-4c1a-9f7a-1d2e3f4a5b6c',
-    familyName: 'Runeberg',
-    givenNames: ['Astrid', 'Maja'],
+    familyName: 'Testperson',
+    givenNames: ['Exampla', 'Marit'],
     birthDate: '1984-06-02',
     gender: 'female',
   };
@@ -100,7 +100,7 @@ describe('patient mapping', () => {
     expect(toFhirPatient(fullPatient)).toStrictEqual({
       resourceType: 'Patient',
       id: '9b2f6a2e-2f9d-4c1a-9f7a-1d2e3f4a5b6c',
-      name: [{ family: 'Runeberg', given: ['Astrid', 'Maja'] }],
+      name: [{ family: 'Testperson', given: ['Exampla', 'Marit'] }],
       birthDate: '1984-06-02',
       gender: 'female',
     });
@@ -121,7 +121,7 @@ describe('patient mapping', () => {
   it('does not share array references between domain and FHIR shapes', () => {
     const resource = toFhirPatient(fullPatient);
     resource.name?.[0]?.given?.push('Mutation');
-    expect(fullPatient.givenNames).toStrictEqual(['Astrid', 'Maja']);
+    expect(fullPatient.givenNames).toStrictEqual(['Exampla', 'Marit']);
   });
 
   it('degrades absent FHIR fields to empty domain values', () => {

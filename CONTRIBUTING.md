@@ -194,6 +194,52 @@ This is critical for a health project and is enforced without exception:
 - Any issue, PR, or attachment containing real patient data will be scrubbed or deleted on sight,
   and we will treat it as a data incident.
 
+### The guard that enforces it
+
+`scripts/ci/phi-guard.mjs` runs on every pull request (the "Synthetic data only" check). Run it
+yourself before pushing:
+
+```bash
+pnpm run check:phi          # scan the tree
+pnpm run check:phi:test     # the guard's own tests
+```
+
+It reports the file, the line and the rule, and **redacts the middle of every value**, so a finding
+never puts an identifier into a public CI log.
+
+**What trips it, and what to write instead.**
+
+| It fails on                                                      | Write this instead                                                                    |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| A US Social Security number that could have been issued          | The never-issued ranges: area `000`, `666`, or `900`-`999`; group `00`; serial `0000` |
+| An NHS number that passes its mod-11 checksum                    | The reserved synthetic range, which starts `999`                                      |
+| A card number that passes Luhn with a real issuer prefix         | A publicly documented test card number                                                |
+| An email on a real domain                                        | `example.com`, `example.org`, or anything on a `.invalid` / `.test` domain            |
+| A routable phone number                                          | NANP `555-0100` to `555-0199`, or an Ofcom drama range for UK numbers                 |
+| A name next to a date of birth, where the name could be a person | A name that obviously could not be: `Testina Patientsson`, `Exampla Testperson`       |
+
+That last one is the only rule that needs judgement, so here is exactly how it works. When a
+fixture pairs a full identity with a date of birth, the guard checks the identity for a marker that
+makes it unmistakably invented - `test`, `example`, `demo`, `mock`, `fixture`, `placeholder`,
+`synth`, `stub`, `sample`, and others. `PATIENT_NAMES` in `packages/database/src/seed/data.ts` is
+the reference: every row carries one across the given/family pair. Follow that convention and the
+rule never fires. Invent a plausible-sounding person and attach a birth date, and it will.
+
+**Where it looks.** Two tiers, because the cost of a false positive differs by rule:
+
+- The checksum rules (SSN, NHS number, payment card) run over the **whole tree**. A valid one has no
+  legitimate place in any file here, source included.
+- The contact-detail and identity rules run only over **seeds, fixtures, test files, snapshots,
+  stories and docs**. Application source legitimately contains LOINC, CPT and SNOMED codes and FHIR
+  canonical URIs; scanning it would generate noise and find nothing.
+
+**If you believe a finding is wrong**, do not silence it in passing. Either the fixture needs
+fixing, or the rule needs calibrating in `scripts/ci/phi-guard.mjs` - with a test that pins the new
+behaviour, and a comment saying why. The allowlists in that file each carry a reason and a revisit
+condition; anything added to them should too.
+
+A broader map of every automated control is in [docs/security-gates.md](docs/security-gates.md).
+
 ## Licensing of contributions
 
 We keep the process simple: there is no CLA and no DCO sign-off requirement. By submitting a

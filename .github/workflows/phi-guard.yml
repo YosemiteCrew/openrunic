@@ -1,0 +1,57 @@
+name: Synthetic Data Guard
+
+# CLAUDE.md, AGENTS.md and CONTRIBUTING.md all carry the same hard rule:
+# synthetic patient data only, never real PHI or PII, in tests, fixtures, seeds,
+# screenshots or logs. It is the single most consequential rule in this
+# repository and until this gate existed it was enforced by trust alone.
+#
+# scripts/ci/phi-guard.mjs is the implementation and carries the rationale for
+# every rule; scripts/ci/phi-guard.test.mjs proves each rule catches what it
+# claims to and stays quiet on the fixtures this repository ships. Both run
+# here, and the tests run FIRST: a guard whose own tests are broken has no
+# business reporting on a pull request.
+#
+# The job uses the runner's system Node rather than the repository toolchain -
+# the guard is dependency-free by design, so there is nothing to install.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: phi-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  phi-guard:
+    name: Synthetic data only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the tree; this job writes nothing back
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job only reads the tree, so the default GITHUB_TOKEN must not
+          # be left behind in .git/config where a later step could read it.
+          persist-credentials: false
+
+      - name: Test the guard itself
+        run: node --test scripts/ci/phi-guard.test.mjs
+
+      # The guard redacts the middle of every value it reports, so a finding
+      # never puts the offending identifier into a public CI log. Reviewers get
+      # the file, the line and the rule, which is enough to act on.
+      - name: Scan the tree for PHI-shaped values
+        run: node scripts/ci/phi-guard.mjs

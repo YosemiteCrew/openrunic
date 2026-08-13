@@ -353,3 +353,29 @@ describe('the repository as it stands', () => {
     assert.deepEqual(JSON.parse(result).findings, []);
   });
 });
+
+describe('the proper-noun test', () => {
+  it('stays linear on a long hyphenated value', () => {
+    // The first character class used to include the hyphen that also separates
+    // name parts, so every hyphen could be taken by either side and the number
+    // of parses doubled with each one: exponential backtracking on a value read
+    // from a file (CodeQL js/redos). A guard that can be hung by a crafted
+    // fixture is a gate that can be switched off by the very change it exists
+    // to catch, so linearity is pinned here rather than assumed.
+    const pathological = `A${'a-'.repeat(40)}!`;
+
+    const started = performance.now();
+    assert.deepEqual(properNouns(`'${pathological}'`), []);
+    assert.ok(performance.now() - started < 1000);
+  });
+
+  it('still reads hyphenated, spaced and apostrophed names as proper nouns', () => {
+    assert.deepEqual(properNouns(`'Anne-Marie'`), ['Anne-Marie']);
+    assert.deepEqual(properNouns(`'Van Der Berg'`), ['Van Der Berg']);
+    assert.deepEqual(properNouns(`'O’Brien'`), ['O’Brien']);
+  });
+
+  it('still rejects a shouted fragment, which needs a lowercase letter', () => {
+    assert.deepEqual(properNouns(`'SAM'`), []);
+  });
+});

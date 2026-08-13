@@ -1,5 +1,15 @@
 import type { Prisma, TenantClient } from '@openrunic/database';
 
+import type {
+  CountArgs,
+  CreateArgs,
+  FindFirstArgs,
+  FindManyArgs,
+  ModelRecord,
+  PrismaModelName,
+  UpdateManyArgs,
+} from './rows.js';
+
 /**
  * The narrow slice of the Prisma client the API actually uses.
  *
@@ -17,9 +27,6 @@ import type { Prisma, TenantClient } from '@openrunic/database';
  * out.
  */
 
-export type PatientRecord = Prisma.PatientGetPayload<Record<string, never>>;
-export type AppointmentRecord = Prisma.AppointmentGetPayload<Record<string, never>>;
-
 /**
  * Reads are `findFirst`, never `findUnique`, and writes are `updateMany`,
  * never `update`. Both choices are forced by the tenant extension in
@@ -29,21 +36,26 @@ export type AppointmentRecord = Prisma.AppointmentGetPayload<Record<string, neve
  * isolation layer cannot scope. Filter-shaped operations keep every query on
  * the scoped path.
  */
-export interface PatientDelegate {
-  findMany(args: Prisma.PatientFindManyArgs): Promise<PatientRecord[]>;
-  count(args: Prisma.PatientCountArgs): Promise<number>;
-  findFirst(args: Prisma.PatientFindFirstArgs): Promise<PatientRecord | null>;
-  create(args: Prisma.PatientCreateArgs): Promise<PatientRecord>;
-  updateMany(args: Prisma.PatientUpdateManyArgs): Promise<{ count: number }>;
+export interface ModelDelegate<M extends PrismaModelName> {
+  findMany(args: FindManyArgs<M>): Promise<ModelRecord<M>[]>;
+  count(args: CountArgs<M>): Promise<number>;
+  findFirst(args: FindFirstArgs<M>): Promise<ModelRecord<M> | null>;
+  create(args: CreateArgs<M>): Promise<ModelRecord<M>>;
+  updateMany(args: UpdateManyArgs<M>): Promise<{ count: number }>;
 }
 
-export interface AppointmentDelegate {
-  findMany(args: Prisma.AppointmentFindManyArgs): Promise<AppointmentRecord[]>;
-  count(args: Prisma.AppointmentCountArgs): Promise<number>;
-  findFirst(args: Prisma.AppointmentFindFirstArgs): Promise<AppointmentRecord | null>;
-  create(args: Prisma.AppointmentCreateArgs): Promise<AppointmentRecord>;
-  updateMany(args: Prisma.AppointmentUpdateManyArgs): Promise<{ count: number }>;
-}
+/** The property name a model is reached by on the client, e.g. `medicationRequest`. */
+export type DelegateKey = Prisma.TypeMap['meta']['modelProps'];
+
+/**
+ * The whole client, as this API needs it: one delegate per model, keyed the way
+ * Prisma keys them. Only the compile-time assertion below consumes this type;
+ * repositories reach a delegate through {@link DbTransaction.model} instead, so
+ * a fake port implements one method rather than forty-seven.
+ */
+export type PrismaDelegates = {
+  [K in DelegateKey]: ModelDelegate<Capitalize<K> & PrismaModelName>;
+};
 
 export interface AuditEventDelegate {
   create(args: Prisma.AuditEventCreateArgs): Promise<{ id: string }>;
@@ -51,44 +63,60 @@ export interface AuditEventDelegate {
   findFirst(args: Prisma.AuditEventFindFirstArgs): Promise<{ seq: bigint; hash: string } | null>;
 }
 
-/** What a repository sees inside a transaction: the full surface, reads and writes. */
+/** What a repository sees inside a transaction. */
 export interface DbTransaction {
-  patient: PatientDelegate;
-  appointment: AppointmentDelegate;
+  model<M extends PrismaModelName>(name: M): ModelDelegate<M>;
   auditEvent: AuditEventDelegate;
 }
 
-/** The read half of a delegate, which is all of it the port exposes directly. */
-export type ReadsOnly<D> = Omit<D, 'create' | 'updateMany'>;
-
-/**
- * What a repository sees outside a transaction: reads, and a way to open one.
- *
- * The port deliberately does not extend {@link DbTransaction}. Every write in
- * this API is paired with an audit event that has to land or fail with it, so
- * `prisma.ts` already issues all of them inside `$transaction`; none of them
- * goes through a delegate on this object. Leaving `create` and `updateMany`
- * exposed here would advertise an unaudited write path that nothing uses and
- * nothing should, so the type withholds it and a stray `port.patient.create`
- * fails `type-check` instead of quietly skipping the audit log.
- */
-export interface DbPort {
-  patient: ReadsOnly<PatientDelegate>;
-  appointment: ReadsOnly<AppointmentDelegate>;
+export interface DbPort extends DbTransaction {
   $transaction<R>(fn: (tx: DbTransaction) => Promise<R>): Promise<R>;
 }
 
 /**
- * Compile-time proof that the tenant-scoped Prisma client satisfies both the
- * transaction surface and the port. Both are asserted, because neither implies
- * the other: {@link DbTransaction} says nothing about `$transaction`, and
- * {@link DbPort} withholds the write methods. Type-only: they erase, and they
- * exist so a drift between either shape and the generated client fails
- * `type-check` rather than production.
+ * Compile-time proof that the tenant-scoped Prisma client satisfies every
+ * delegate this API reaches for. Type-only: it erases, and it exists so a drift
+ * between the port and the generated client fails `type-check` rather than
+ * production.
  */
-export type TenantClientSatisfiesTransaction = TenantClient extends DbTransaction ? true : never;
-export type TenantClientSatisfiesPort = TenantClient extends DbPort ? true : never;
+export type TenantClientSatisfiesPort = TenantClient extends PrismaDelegates ? true : never;
 
-/** Reified so the assertions cannot be tree-shaken out of the type graph. */
-export const tenantClientSatisfiesTransaction: TenantClientSatisfiesTransaction = true;
+/** Reified so the assertion cannot be tree-shaken out of the type graph. */
 export const tenantClientSatisfiesPort: TenantClientSatisfiesPort = true;
+
+/** `Encounter` to `encounter`, which is how Prisma names the delegate property. */
+export function delegateKey(model: PrismaModelName): string {
+  return model.charAt(0).toLowerCase() + model.slice(1);
+}
+
+/**
+ * Adapts a tenant-scoped client to the port.
+ *
+ * The single cast in this file lives here. `PrismaDelegates` is a mapped type
+ * over a literal union of forty-seven keys, and indexing it with a value the
+ * compiler only knows as `PrismaModelName` produces the union of every
+ * delegate, which no single narrowed delegate satisfies. The assertion above
+ * is what makes the cast safe: it proves the client really does carry a
+ * conforming delegate under every one of those keys, so the only thing being
+ * asserted here is that the key was derived correctly, which the line above it
+ * does.
+ */
+export function createDbPort(client: TenantClient): DbPort {
+  const model = <M extends PrismaModelName>(name: M): ModelDelegate<M> =>
+    (client as unknown as Record<string, ModelDelegate<M>>)[delegateKey(name)] as ModelDelegate<M>;
+
+  return {
+    model,
+    auditEvent: client.auditEvent,
+    $transaction: <R>(fn: (tx: DbTransaction) => Promise<R>): Promise<R> =>
+      client.$transaction((tx) =>
+        fn({
+          model: <M extends PrismaModelName>(name: M): ModelDelegate<M> =>
+            (tx as unknown as Record<string, ModelDelegate<M>>)[
+              delegateKey(name)
+            ] as ModelDelegate<M>,
+          auditEvent: tx.auditEvent,
+        })
+      ),
+  };
+}

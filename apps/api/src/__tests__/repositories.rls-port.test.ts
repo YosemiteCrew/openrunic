@@ -1,7 +1,8 @@
 import type { Prisma, PrismaClient } from '@openrunic/database';
 import { describe, expect, it } from 'vitest';
 
-import type { AppointmentRecord, DbPort, DbTransaction } from '../repositories/db-port.js';
+import type { DbPort, DbTransaction, ModelDelegate } from '../repositories/db-port.js';
+import type { PrismaModelName } from '../repositories/rows.js';
 import {
   createRlsDbPortFactory,
   createSessionBoundPortFactory,
@@ -9,7 +10,7 @@ import {
   type TenantSessionRunner,
 } from '../repositories/rls-port.js';
 
-import { DEMO_TENANT_A, makeAppointmentRow, makePatientRow, testId } from './support.js';
+import { DEMO_TENANT_A, makePatientRow, testId } from './support.js';
 
 /**
  * The RLS port, driven by a recording session runner.
@@ -17,9 +18,12 @@ import { DEMO_TENANT_A, makeAppointmentRow, makePatientRow, testId } from './sup
  * What is under test is a claim, not a behaviour: that no method on the port
  * can reach Postgres outside a transaction that has declared its tenant. The
  * runner below stands in for `withTenantSession`, so every call that would have
- * opened a session is recorded, and the test enumerates the port's entire
- * surface and asserts that each entry appears. A method added later without a
- * session wrapper fails the last test in this file rather than shipping.
+ * opened a session is recorded.
+ *
+ * The sweep is driven by the delegate's own keys rather than by a hand-written
+ * list, so a method added to `ModelDelegate` is exercised the moment it exists.
+ * Forget the session wrapper on it and the session count no longer matches the
+ * number of keys, and this file fails.
  *
  * The session mechanism itself - `set_config(..., is_local => true)` as the
  * first statement, the policy that rejects a query without it - is proved
@@ -31,11 +35,6 @@ interface Recorder {
   runner: TenantSessionRunner;
   sessions: string[];
   calls: { model: string; operation: string }[];
-}
-
-/** `AppointmentRow` and Prisma's record differ only in nominal type here. */
-function appointmentRecord(n: number): AppointmentRecord {
-  return makeAppointmentRow({ id: testId(n) }) as AppointmentRecord;
 }
 
 /** Args the port forwards untouched; their only job is to type-check. */
@@ -64,6 +63,16 @@ const AUDIT_CREATE: Prisma.AuditEventCreateArgs = {
   },
 };
 
+/** Every operation a model delegate carries, as data. */
+const OPERATIONS = ['findMany', 'count', 'findFirst', 'create', 'updateMany'] as const;
+
+/** The delegate as a callable map, for sweeps that must not name methods. */
+type AnyDelegate = Record<string, (args: unknown) => Promise<unknown>>;
+
+function asMap(delegate: ModelDelegate<PrismaModelName>): AnyDelegate {
+  return delegate as unknown as AnyDelegate;
+}
+
 function recorder(): Recorder {
   const sessions: string[] = [];
   const calls: { model: string; operation: string }[] = [];
@@ -76,23 +85,16 @@ function recorder(): Recorder {
     };
 
   const transaction: DbTransaction = {
-    patient: {
-      findMany: () => note('patient', 'findMany')([makePatientRow({ id: testId(1) })]),
-      count: () => note('patient', 'count')(1),
-      findFirst: () => note('patient', 'findFirst')(makePatientRow({ id: testId(1) })),
-      create: () => note('patient', 'create')(makePatientRow({ id: testId(2) })),
-      updateMany: () => note('patient', 'updateMany')({ count: 1 }),
-    },
-    appointment: {
-      findMany: () => note('appointment', 'findMany')([appointmentRecord(3)]),
-      count: () => note('appointment', 'count')(1),
-      findFirst: () => note('appointment', 'findFirst')(appointmentRecord(3)),
-      create: () => note('appointment', 'create')(appointmentRecord(4)),
-      updateMany: () => note('appointment', 'updateMany')({ count: 1 }),
-    },
+    model: <M extends PrismaModelName>(name: M) => ({
+      findMany: () => note(name, 'findMany')([makePatientRow({ id: testId(1) })]),
+      count: () => note(name, 'count')(1),
+      findFirst: () => note(name, 'findFirst')(makePatientRow({ id: testId(1) })),
+      create: () => note(name, 'create')(makePatientRow({ id: testId(2) })),
+      updateMany: () => note(name, 'updateMany')({ count: 1 }),
+    }),
     auditEvent: {
-      create: () => note('auditEvent', 'create')({ id: testId(5) }),
-      findFirst: () => note('auditEvent', 'findFirst')({ seq: 1n, hash: 'f'.repeat(64) }),
+      create: () => note('AuditEvent', 'create')({ id: testId(5) }),
+      findFirst: () => note('AuditEvent', 'findFirst')({ seq: 1n, hash: 'f'.repeat(64) }),
     },
   };
 
@@ -106,68 +108,65 @@ function recorder(): Recorder {
   };
 }
 
-/** Every call the port can make, as data, so the sweep below cannot drift. */
-const SURFACE: { model: string; operation: string; call: (port: DbPort) => Promise<unknown> }[] = [
-  { model: 'patient', operation: 'findMany', call: (p) => p.patient.findMany({}) },
-  { model: 'patient', operation: 'count', call: (p) => p.patient.count({}) },
-  { model: 'patient', operation: 'findFirst', call: (p) => p.patient.findFirst({}) },
-  { model: 'appointment', operation: 'findMany', call: (p) => p.appointment.findMany({}) },
-  { model: 'appointment', operation: 'count', call: (p) => p.appointment.count({}) },
-  { model: 'appointment', operation: 'findFirst', call: (p) => p.appointment.findFirst({}) },
-];
-
 describe('the RLS-bound port', () => {
-  it('opens a declared session for every read and every write', async () => {
+  it('opens a declared session for every operation on a model delegate', async () => {
     const { runner, sessions, calls } = recorder();
     const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+    const delegate = asMap(port.model('Patient'));
 
-    for (const entry of SURFACE) {
-      await entry.call(port);
+    for (const operation of OPERATIONS) {
+      await delegate[operation]?.({});
     }
 
     // One session per call, all of them naming the request's organisation.
-    expect(sessions).toHaveLength(SURFACE.length);
+    expect(sessions).toHaveLength(OPERATIONS.length);
     expect(new Set(sessions)).toEqual(new Set([DEMO_TENANT_A]));
-    expect(calls).toEqual(SURFACE.map(({ model, operation }) => ({ model, operation })));
+    expect(calls).toEqual(OPERATIONS.map((operation) => ({ model: 'Patient', operation })));
   });
 
-  it('covers the whole port surface, so a new method cannot slip past unwrapped', () => {
-    const { runner } = recorder();
+  it('wraps every key the delegate exposes, so a new method cannot slip past', async () => {
+    const { runner, sessions } = recorder();
     const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+    const delegate = asMap(port.model('Appointment'));
+    const keys = Object.keys(delegate);
 
-    const reachable = Object.entries(port)
-      .filter(([, value]) => typeof value === 'object' && value !== null)
-      .flatMap(([model, delegate]) =>
-        Object.keys(delegate as Record<string, unknown>).map((operation) => `${model}.${operation}`)
-      );
+    // The delegate's own shape drives this, not a list that can drift from it.
+    expect(new Set(keys)).toEqual(new Set(OPERATIONS));
 
-    // The sweep above walks SURFACE; this asserts SURFACE is the port. Add a
-    // delegate method and forget the session wrapper, and this fails.
-    expect(new Set(reachable)).toEqual(
-      new Set(SURFACE.map(({ model, operation }) => `${model}.${operation}`))
-    );
-  });
-
-  it('exposes no write outside a transaction, so no write can skip its audit event', () => {
-    const { runner } = recorder();
-    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
-
-    // Every write in this API is paired with an audit event that has to land or
-    // fail with it, which is why `prisma.ts` issues all of them inside
-    // `$transaction`. A `create` or `updateMany` hanging off the port would be
-    // an unaudited path; the type withholds it, and this asserts the value does
-    // too, since a type cannot stop a plain object from carrying the method.
-    const delegates = [port.patient, port.appointment];
-
-    for (const delegate of delegates) {
-      expect(Object.keys(delegate)).toEqual(['findMany', 'count', 'findFirst']);
-      expect(delegate).not.toHaveProperty('create');
-      expect(delegate).not.toHaveProperty('updateMany');
+    for (const key of keys) {
+      await delegate[key]?.({});
     }
 
-    // Writes still exist; they are reached through a transaction, not here.
-    expect(port).not.toHaveProperty('auditEvent');
-    expect(typeof port.$transaction).toBe('function');
+    // Every key opened exactly one session. An unwrapped method would call
+    // straight through and leave the count short.
+    expect(sessions).toHaveLength(keys.length);
+  });
+
+  it('opens a declared session for the audit delegate too', async () => {
+    const { runner, sessions, calls } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    await port.auditEvent.create(AUDIT_CREATE);
+    await port.auditEvent.findFirst({});
+
+    // The audit log is where a bypass would matter most: an event written
+    // outside the session is an event written with no tenant policy over it.
+    expect(sessions).toEqual([DEMO_TENANT_A, DEMO_TENANT_A]);
+    expect(calls.map((entry) => entry.operation)).toEqual(['create', 'findFirst']);
+  });
+
+  it('reaches the same delegate shape through a transaction as through the port', async () => {
+    const { runner } = recorder();
+    const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
+
+    const throughPort = Object.keys(asMap(port.model('Patient'))).sort();
+    const throughTx = await port.$transaction((tx) =>
+      Promise.resolve(Object.keys(asMap(tx.model('Patient'))).sort())
+    );
+
+    // Identical on purpose: a repository written against one works against the
+    // other, which is what lets `prisma.ts` take either without knowing which.
+    expect(throughPort).toEqual(throughTx);
   });
 
   it('runs an explicit transaction inside one declared session', async () => {
@@ -175,7 +174,7 @@ describe('the RLS-bound port', () => {
     const port = createSessionBoundPortFactory(runner)(DEMO_TENANT_A);
 
     const result = await port.$transaction(async (tx) => {
-      await tx.patient.create(PATIENT_CREATE);
+      await tx.model('Patient').create(PATIENT_CREATE);
       await tx.auditEvent.create(AUDIT_CREATE);
       return 'done';
     });
@@ -191,8 +190,8 @@ describe('the RLS-bound port', () => {
     const { runner, sessions } = recorder();
     const factory = createSessionBoundPortFactory(runner);
 
-    await factory('tenant-one').patient.findMany({});
-    await factory('tenant-two').patient.findMany({});
+    await factory('tenant-one').model('Patient').findMany({});
+    await factory('tenant-two').model('Patient').findMany({});
 
     expect(sessions).toEqual(['tenant-one', 'tenant-two']);
   });
@@ -201,10 +200,10 @@ describe('the RLS-bound port', () => {
     // Constructing the port must not connect, query or extend: the registry
     // calls the factory once per request, long before a handler asks for
     // anything.
-    const port = createRlsDbPortFactory({} as unknown as PrismaClient)(DEMO_TENANT_A);
+    const port: DbPort = createRlsDbPortFactory({} as unknown as PrismaClient)(DEMO_TENANT_A);
 
     expect(typeof port.$transaction).toBe('function');
-    expect(typeof port.patient.findMany).toBe('function');
+    expect(typeof port.model('Patient').findMany).toBe('function');
     expect(tenantTransactionSatisfiesPort).toBe(true);
   });
 });

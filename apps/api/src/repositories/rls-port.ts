@@ -1,11 +1,8 @@
 import { withTenantSession } from '@openrunic/database';
-import type {
-  PrismaClient,
-  PrismaModelName,
-  TenantTransactionClient,
-} from '@openrunic/database';
+import type { PrismaClient, TenantTransactionClient } from '@openrunic/database';
 
-import type { DbPort, DbTransaction, ModelDelegate } from './db-port.js';
+import { delegateKey, type DbPort, type DbTransaction, type ModelDelegate } from './db-port.js';
+import type { PrismaModelName } from './rows.js';
 import type { DbPortFactory } from './prisma.js';
 
 /**
@@ -56,14 +53,29 @@ export type TenantSessionRunner = <R>(
 ) => Promise<R>;
 
 /**
- * Compile-time proof that a tenant-scoped transaction still satisfies the
- * narrow port the repositories use. Type-only: it erases, and it exists so a
- * Prisma upgrade that changes a delegate signature fails `type-check` rather
- * than production.
+ * Adapts a tenant-scoped transaction client to the port's shape.
+ *
+ * The raw client keys its delegates by model name (`client.medicationRequest`);
+ * the port reaches them through one `model(name)` accessor, so a fake port
+ * implements one method rather than forty-seven. This is the same adapter
+ * `createDbPort` applies, and it is applied here for the same reason: what
+ * `withTenantSession` hands back is a Prisma client, not a `DbTransaction`.
  */
-export type TenantTransactionSatisfiesPort = TenantTransactionClient extends DbTransaction
-  ? true
-  : never;
+function toDbTransaction(tx: TenantTransactionClient): DbTransaction {
+  return {
+    model: <M extends PrismaModelName>(name: M): ModelDelegate<M> =>
+      (tx as unknown as Record<string, ModelDelegate<M>>)[delegateKey(name)] as ModelDelegate<M>,
+    auditEvent: tx.auditEvent,
+  };
+}
+
+/**
+ * Compile-time proof that the adapter above still produces the shape the
+ * repositories use. Type-only: it erases, and it exists so a Prisma upgrade
+ * that changes a delegate signature fails `type-check` rather than production.
+ */
+export type TenantTransactionSatisfiesPort =
+  ReturnType<typeof toDbTransaction> extends DbTransaction ? true : never;
 
 /** Reified so the assertion cannot be tree-shaken out of the type graph. */
 export const tenantTransactionSatisfiesPort: TenantTransactionSatisfiesPort = true;
@@ -79,7 +91,7 @@ export const tenantTransactionSatisfiesPort: TenantTransactionSatisfiesPort = tr
  */
 export function createRlsDbPortFactory(client: PrismaClient): DbPortFactory {
   return createSessionBoundPortFactory((tenantId, run) =>
-    withTenantSession(client, { tenantId }, (tx) => run(tx))
+    withTenantSession(client, { tenantId }, (tx) => run(toDbTransaction(tx)))
   );
 }
 

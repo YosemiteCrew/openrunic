@@ -1,3 +1,6 @@
+import { createSessionAwareFetch } from '@/lib/auth/client';
+import { currentAccessToken } from '@/lib/auth/store';
+
 import type { ApiClientConfig } from './client';
 
 /**
@@ -32,10 +35,20 @@ export const IS_MOCK_MODE: boolean = API_MODE === 'mock';
  * place. Both `api.ts` and the assistant transport read it; a second copy is
  * how one of them ends up still sending a token the other stopped issuing.
  *
- * Auth is not wired yet, so `getToken` returns null and the API answers 401.
- * That is the honest state of the world rather than a fake success.
+ * `getToken` is read fresh on every request rather than captured, because the
+ * session it reads from is per-tab, expires on a clock and can be taken away
+ * mid-shift: a token held in a closure here would keep being sent after the
+ * clinician signed out. It returns null while signed out, which is what a
+ * server component sees as well - the store deliberately holds nothing outside
+ * the browser (`lib/auth/store.ts`).
+ *
+ * `fetchImpl` is the other half of the same wiring. A 401 from the API is that
+ * server's verdict on the token this app is holding, and the honest response is
+ * to stop holding it and send the clinician back to sign in, rather than to
+ * paint a retry button on sixty screens that a retry cannot fix.
  */
 export const API_CONFIG: ApiClientConfig = {
   baseUrl: API_BASE_URL,
-  getToken: () => null,
+  getToken: currentAccessToken,
+  fetchImpl: createSessionAwareFetch(),
 };

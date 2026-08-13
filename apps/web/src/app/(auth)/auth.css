@@ -1,0 +1,94 @@
+/* The sign-in surface, and the notice `SessionGate` shows while it waits for a
+ * token.
+ *
+ * A stylesheet of its own rather than a section of `globals.css`, because these
+ * two surfaces have no shell around them: no rail, no top bar, no page header.
+ * They are the two screens that exist before the application does, and keeping
+ * their forty lines out of the shell's stylesheet keeps that separation visible.
+ *
+ * It is imported by the root layout rather than by the route group's, because
+ * the restoring notice can appear on any protected route and its styles have to
+ * already be in the document when it does.
+ *
+ * Everything here is composed from @openrunic/ui tokens. The card, the field
+ * and the buttons are the library's own components; nothing below restates a
+ * component's skin.
+ */
+
+.or-auth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-page);
+}
+
+.or-auth__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  /* Wide enough for the longest demo label to sit on one line, narrow enough
+     that the eye does not have to travel to read a single field. */
+  max-width: 26rem;
+}
+
+.or-auth__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-auth__title {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  line-height: var(--lh-h3);
+  color: var(--text-heading);
+}
+
+.or-auth__lede {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  line-height: var(--lh-small);
+  color: var(--text-secondary);
+}
+
+.or-auth__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The development credential list. It is a fieldset rather than a row of loose
+   buttons so a screen reader hears what the four choices are choices between. */
+.or-auth__demo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-auth__demo-legend {
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  font-weight: var(--wght-semibold);
+  letter-spacing: var(--track-overline);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.or-auth__demo-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* The gate's holding screen. One line, centred, saying the true thing. */
+.or-auth__status {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}

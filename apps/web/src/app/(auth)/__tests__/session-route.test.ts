@@ -36,16 +36,25 @@ function post(body: string): NextRequest {
   return new NextRequest(ENDPOINT, { method: 'POST', body });
 }
 
+/**
+ * A request carrying the cookie the way a browser sends it: percent-encoded,
+ * because that is what the platform put in `Set-Cookie` and what it decodes
+ * again on the way out of `NextRequest.cookies`.
+ */
 function get(cookie?: SessionRecord): NextRequest {
   const headers: Record<string, string> =
-    cookie === undefined ? {} : { cookie: `${SESSION_COOKIE}=${encodeSessionCookie(cookie)}` };
+    cookie === undefined
+      ? {}
+      : { cookie: `${SESSION_COOKIE}=${encodeURIComponent(encodeSessionCookie(cookie))}` };
   return new NextRequest(ENDPOINT, { headers });
 }
 
+/** The session a response asks the browser to keep, read off the wire. */
 function cookieFrom(response: Response): SessionRecord | null {
   const header = response.headers.get('set-cookie') ?? '';
   const value = /or_session=([^;]*)/.exec(header)?.[1];
-  return decodeSessionCookie(value === '' ? undefined : value);
+  if (value === undefined || value === '') return null;
+  return decodeSessionCookie(decodeURIComponent(value));
 }
 
 beforeEach(() => {

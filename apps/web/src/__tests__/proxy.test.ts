@@ -30,10 +30,16 @@ const CLINICIAN: Identity = {
 
 const NOON = Date.parse('2026-08-13T12:00:00Z');
 
+/**
+ * A request carrying the cookie the way a browser sends it back: percent-
+ * encoded, because that is the form the platform wrote into `Set-Cookie` and
+ * the form it decodes on the way out of `NextRequest.cookies`.
+ */
 function request(path: string, cookie?: SessionRecord | string): NextRequest {
   const value = typeof cookie === 'string' ? cookie : cookie && encodeSessionCookie(cookie);
   return new NextRequest(`http://localhost:3000${path}`, {
-    headers: value === undefined ? {} : { cookie: `${SESSION_COOKIE}=${value}` },
+    headers:
+      value === undefined ? {} : { cookie: `${SESSION_COOKIE}=${encodeURIComponent(value)}` },
   });
 }
 
@@ -148,7 +154,7 @@ describe('a signed-in clinician', () => {
   });
 });
 
-describe('what the middleware runs on', () => {
+describe('what the route guard runs on', () => {
   it('guards everything it is not told to skip', () => {
     // One exclusion rather than a list of protected prefixes: a matcher that
     // names the areas to guard protects exactly the areas somebody remembered.

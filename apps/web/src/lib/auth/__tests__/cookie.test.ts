@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { describe, expect, it } from 'vitest';
 
 import { applySessionCookie, clearSessionCookie } from '@/lib/auth/cookie';
@@ -56,6 +56,34 @@ describe('writing the session cookie', () => {
     const response = applySessionCookie(NextResponse.json({}), RECORD);
 
     expect(decodeSessionCookie(response.cookies.get(SESSION_COOKIE)?.value)).toEqual(RECORD);
+  });
+
+  it('survives the header a browser actually sends it back in', () => {
+    // The whole path, because the middle of it is where this went wrong: the
+    // platform percent-encodes on the way into `Set-Cookie` and decodes on the
+    // way out of `Cookie`, so a value escaped here too came back escaped once
+    // and every session ended at the first reload.
+    const written = applySessionCookie(NextResponse.json({}), RECORD).headers.get('set-cookie');
+    const returned = (written ?? '').split(';')[0] ?? '';
+
+    const next = new NextRequest('http://localhost:3000/patients', {
+      headers: { cookie: returned },
+    });
+
+    expect(decodeSessionCookie(next.cookies.get(SESSION_COOKIE)?.value)).toEqual(RECORD);
+  });
+
+  it('survives a name that is not plain ASCII travelling the same path', () => {
+    const record = { ...RECORD, identity: { ...CLINICIAN, displayName: 'Dr. Ingrid Sjöberg' } };
+    const written = applySessionCookie(NextResponse.json({}), record).headers.get('set-cookie');
+
+    const next = new NextRequest('http://localhost:3000/patients', {
+      headers: { cookie: (written ?? '').split(';')[0] ?? '' },
+    });
+
+    expect(decodeSessionCookie(next.cookies.get(SESSION_COOKIE)?.value)?.identity.displayName).toBe(
+      'Dr. Ingrid Sjöberg'
+    );
   });
 
   it('is not marked Secure in development, where the app is served over http', () => {

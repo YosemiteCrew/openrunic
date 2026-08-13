@@ -126,9 +126,11 @@ export function SessionGate({
 
   return (
     <div className="or-auth">
-      <p className="or-auth__status" role="status">
-        Restoring your session
-      </p>
+      {/* An <output> rather than a paragraph with role="status": it is the
+          element the platform already defines as a live result, so assistive
+          technology announces the wait without the role being asserted by
+          hand. */}
+      <output className="or-auth__status">Restoring your session</output>
     </div>
   );
 }

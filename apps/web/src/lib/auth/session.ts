@@ -59,11 +59,12 @@
  *
  * ## Tampering
  *
- * The cookie is base64url, which is an encoding and not a protection: anyone
- * can decode and rewrite it. That is fine, because nothing in it is a
- * permission. The token is a credential the API verifies on every request, and
- * the identity is a label this application renders. Editing the identity
- * changes the name in your own top bar and nothing else; editing the timestamps
+ * The cookie is JSON, which is a format and not a protection: anyone can read
+ * and rewrite it. That is fine, because nothing in
+ * it is a permission. The token is a credential the API verifies on every
+ * request, and the identity is a label this application renders. Editing the
+ * identity changes the name in your own top bar and nothing else; editing the
+ * timestamps
  * can only shorten the session, because a token the API rejects is a 401 no
  * matter what the cookie claims. The security boundary is the API, and it is
  * the API's job to keep it.
@@ -167,40 +168,30 @@ export function readSessionPayload(value: unknown): Session | null {
 }
 
 /**
- * base64url, so the cookie value survives whatever the platform does with
- * percent-encoding on the way out and back: the alphabet is exactly the
- * characters `encodeURIComponent` leaves alone, so a double encode is a no-op.
+ * JSON, and nothing on top of it.
+ *
+ * A cookie value cannot carry a semicolon, a space, a quote or a character
+ * outside ASCII, all of which JSON produces, so something has to percent-encode
+ * it. That something is the platform: `NextResponse.cookies.set` encodes on the
+ * way into the header and `NextRequest.cookies.get` decodes on the way out.
+ * Encoding here as well produced a value that was escaped twice on the way out
+ * and once on the way back, so every cookie this application wrote came back
+ * unreadable and every session ended at the first reload.
  */
-function toBase64Url(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-}
-
-function fromBase64Url(value: string): string | null {
-  try {
-    const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/'));
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
 export function encodeSessionCookie(record: SessionRecord): string {
-  return toBase64Url(JSON.stringify(record));
+  return JSON.stringify(record);
 }
 
-/** Decodes a cookie value, or null for anything that is not one of ours. */
+/**
+ * Reads a cookie value, or null for anything that is not one of ours. The parse
+ * throws on a hand-written value, which means the same thing as a value that
+ * parses into the wrong shape: this is not a session.
+ */
 export function decodeSessionCookie(value: string | undefined): SessionRecord | null {
   if (value === undefined || value === '') return null;
 
-  const json = fromBase64Url(value);
-  if (json === null) return null;
-
   try {
-    return readSessionRecord(JSON.parse(json));
+    return readSessionRecord(JSON.parse(value));
   } catch {
     return null;
   }

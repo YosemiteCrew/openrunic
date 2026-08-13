@@ -26,6 +26,14 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
   return { ...startSessionRecord('dev-clinician-a', CLINICIAN, NOON), ...overrides };
 }
 
+/**
+ * A cookie somebody wrote by hand. It is the JSON verbatim, because the
+ * transport encoding belongs to the platform rather than to this module.
+ */
+function handWritten(json: string): string {
+  return json;
+}
+
 describe('the session cookie', () => {
   it('carries the token and the identity back out unchanged', () => {
     const restored = decodeSessionCookie(encodeSessionCookie(record()));
@@ -41,24 +49,19 @@ describe('the session cookie', () => {
     );
   });
 
-  it('uses only characters a cookie and a URL both leave alone', () => {
-    expect(encodeSessionCookie(record())).toMatch(/^[A-Za-z0-9_-]+$/);
-  });
-
   it('reads nothing from an absent or empty cookie', () => {
     expect(decodeSessionCookie(undefined)).toBeNull();
     expect(decodeSessionCookie('')).toBeNull();
   });
 
   it('reads nothing from a value that is not one of ours', () => {
-    expect(decodeSessionCookie('not a cookie we wrote!!')).toBeNull();
-    expect(decodeSessionCookie(btoa('plain text, not JSON'))).toBeNull();
-    expect(decodeSessionCookie(btoa('[1,2,3]'))).toBeNull();
+    expect(decodeSessionCookie('not-a-cookie-we-wrote')).toBeNull();
+    expect(decodeSessionCookie(handWritten('[1,2,3]'))).toBeNull();
   });
 
   it('refuses a record with a field missing, rather than half-reading it', () => {
-    const withoutToken = btoa(JSON.stringify({ ...record(), token: '' }));
-    const withoutRoles = btoa(
+    const withoutToken = handWritten(JSON.stringify({ ...record(), token: '' }));
+    const withoutRoles = handWritten(
       JSON.stringify({ ...record(), identity: { ...CLINICIAN, roles: undefined } })
     );
 
@@ -67,13 +70,13 @@ describe('the session cookie', () => {
   });
 
   it('refuses a timestamp that is not a number, so a hand-edited cookie cannot become immortal', () => {
-    const notATime = btoa(JSON.stringify({ ...record(), lastSeenAt: 'later' }));
+    const notATime = handWritten(JSON.stringify({ ...record(), lastSeenAt: 'later' }));
 
     expect(decodeSessionCookie(notATime)).toBeNull();
   });
 
   it('refuses a role list holding something that is not a role', () => {
-    const oddRoles = btoa(
+    const oddRoles = handWritten(
       JSON.stringify({ ...record(), identity: { ...CLINICIAN, roles: ['clinician', 7] } })
     );
 
@@ -85,7 +88,7 @@ describe('the session cookie', () => {
     // the cookie is not signed, and it does not need to be. Editing the name
     // changes the label in your own top bar; the token beside it is the thing
     // the API checks, and it is unchanged.
-    const rewritten = btoa(
+    const rewritten = handWritten(
       JSON.stringify({ ...record(), identity: { ...CLINICIAN, displayName: 'Somebody Else' } })
     );
 

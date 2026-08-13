@@ -70,9 +70,12 @@ worthless:
 
 `withTenantSession(client, { tenantId }, run)` opens a transaction, issues
 `set_config('openrunic.tenant_id', $1, true)` as its first statement, and only then calls `run`. In
-`apps/api`, `createRlsDbPortFactory` builds the repositories' database port so that _every_ method -
-each individual read and write, not only `$transaction` - goes through it. The repositories never
-hold a bare Prisma delegate, so there is no unwrapped path to forget. And if one were ever
+`apps/api`, `createRlsDbPortFactory` builds the repositories' database port so that _every_ method
+goes through it - each individual read as much as `$transaction`. The port exposes no write methods
+at all: writes reach Postgres only inside a `$transaction` callback, on the session-bound client
+that callback receives, and the port's type omits `create` and `updateMany` so a stray write
+outside a session fails to compile rather than at runtime. The repositories never hold a bare
+Prisma delegate, so there is no unwrapped path to forget. And if one were ever
 introduced, the policies fail closed: the result is an empty result set, not another organisation's
 chart.
 

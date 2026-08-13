@@ -38,6 +38,17 @@ const SECOND_CLINICIAN = MOCK_PROVIDERS[1].id;
 const PAYER = '0192f1a0-0000-7000-8000-00000000y001';
 const COVERAGE = '0192f1a0-0000-7000-8000-00000000v001';
 
+/**
+ * The canonical system LOINC codes are identified by, matching what `apps/api`
+ * stores.
+ *
+ * It is an identifier rather than an address: FHIR canonical URIs are compared
+ * as opaque strings and are never fetched, and this exact spelling is the one
+ * registered for LOINC. Writing `https` here would not secure anything and
+ * would stop a fixture code matching the same code on the server.
+ */
+const LOINC_SYSTEM = 'http://loinc.org';
+
 /** Appointments whose visit actually happened, and so have an encounter. */
 const VISITED: ReadonlySet<Appointment['status']> = new Set<Appointment['status']>([
   'IN_PROGRESS',
@@ -216,7 +227,9 @@ function noteFor(seed: NoteSeed, index: number): ClinicalNoteDto {
   };
 }
 
-export const MOCK_NOTES: readonly ClinicalNoteDto[] = NOTE_SEEDS.map(noteFor);
+export const MOCK_NOTES: readonly ClinicalNoteDto[] = NOTE_SEEDS.map((seed, index) =>
+  noteFor(seed, index)
+);
 
 /** The note a fixture refers to by position, for the same reason {@link visit} exists. */
 function note(index: number): ClinicalNoteDto {
@@ -271,7 +284,7 @@ export const MOCK_SERVICE_REQUESTS: readonly ServiceRequestDto[] = [
     intent: 'ORDER',
     priority: 'ROUTINE',
     code: '24323-8',
-    codeSystem: 'http://loinc.org',
+    codeSystem: LOINC_SYSTEM,
     display: 'Comprehensive metabolic panel',
     specimenTypeCode: 'SER',
     reasonCodes: ['I10'],
@@ -296,7 +309,7 @@ export const MOCK_SERVICE_REQUESTS: readonly ServiceRequestDto[] = [
     intent: 'ORDER',
     priority: 'ROUTINE',
     code: '4548-4',
-    codeSystem: 'http://loinc.org',
+    codeSystem: LOINC_SYSTEM,
     display: 'Haemoglobin A1c',
     specimenTypeCode: 'WB',
     reasonCodes: ['E11.9'],
@@ -321,7 +334,7 @@ export const MOCK_SERVICE_REQUESTS: readonly ServiceRequestDto[] = [
     intent: 'ORDER',
     priority: 'URGENT',
     code: '36643-5',
-    codeSystem: 'http://loinc.org',
+    codeSystem: LOINC_SYSTEM,
     display: 'Chest X-ray, two views',
     specimenTypeCode: null,
     reasonCodes: ['R05'],
@@ -349,7 +362,7 @@ export const MOCK_DIAGNOSTIC_REPORTS: readonly DiagnosticReportDto[] = [
     status: 'FINAL',
     category: 'LAB',
     code: '24323-8',
-    codeSystem: 'http://loinc.org',
+    codeSystem: LOINC_SYSTEM,
     display: 'Comprehensive metabolic panel',
     performingLabName: 'Cedar Valley Laboratory',
     abnormalFlag: 'ABNORMAL',
@@ -371,7 +384,7 @@ export const MOCK_DIAGNOSTIC_REPORTS: readonly DiagnosticReportDto[] = [
     status: 'FINAL',
     category: 'IMAGING',
     code: '36643-5',
-    codeSystem: 'http://loinc.org',
+    codeSystem: LOINC_SYSTEM,
     display: 'Chest X-ray, two views',
     performingLabName: 'Birchwood Imaging',
     abnormalFlag: 'NORMAL',

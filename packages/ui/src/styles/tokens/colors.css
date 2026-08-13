@@ -18,8 +18,14 @@
      under WCAG AA 4.5:1 at the 12.5-14px sizes the quiet roles use: --hazelnut is 4.40:1
      on cream, --olive 4.06:1 on bone, --caramel 3.82:1 on espresso. Each ink weight is
      the same hue mixed toward the ink of the paper it sits on until it clears 4.5:1, so
-     nothing gets a new colour and nothing gets a grey. Use these when the colour is text;
-     use the raw hue for fills, marks and charts. */
+     nothing gets a new colour and nothing gets a grey.
+     Nothing outside this file names an ink weight. They exist to back the semantic tokens
+     below, and the re-point is per token rather than per usage: --text-secondary,
+     --status-success and --status-neutral resolve here for every role they serve, so the
+     progress fill and the alert icon drawn from --status-success are the ink weight too,
+     not the raw hue. Reaching the untinted hue means naming --hazelnut / --olive /
+     --caramel directly, which a few component borders and washes do, or using the --viz-*
+     ramp, which carries its own copies of them. */
   --hazelnut-ink: color-mix(in oklab, var(--hazelnut) 92%, var(--espresso));
   --olive-ink: color-mix(in oklab, var(--olive) 80%, var(--espresso));
   --caramel-ink-inverse: color-mix(in oklab, var(--caramel) 80%, var(--bone));
@@ -64,8 +70,10 @@
   --border-inverse: rgba(245, 239, 230, 0.22);
 
   /* --- semantic status (never color alone: always pair with label or icon) --- */
-  /* Status colours are read as 12.5px words, so the semantic tokens are ink weights; the
-     raw --olive and --hazelnut remain for dots, fills and charts. */
+  /* Success and neutral are read as 12.5px words often enough that the token itself is an
+     ink weight rather than the raw hue. That applies to every role the token serves, not
+     just the text ones, so the badge label, the progress fill and the alert icon are all
+     the same ink weight. Charts take their olive and hazelnut from --viz-* instead. */
   --status-success: var(--olive-ink);
   --status-success-wash: #e7e9dc;
   --status-neutral: var(--hazelnut-ink);

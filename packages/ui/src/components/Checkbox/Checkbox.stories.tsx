@@ -20,8 +20,9 @@ const stack: CSSProperties = {
 };
 
 /*
- * The library's only axe exception, applied per story rather than globally. The four other
- * controls with a disabled state carry the same narrowing and point back here.
+ * The library's only axe exception, applied per story rather than globally. The five other
+ * controls with a disabled state (Input, Radio, Select, Switch, Textarea) carry the same
+ * narrowing and point back here.
  *
  * WCAG 1.4.3 exempts "text that is part of an inactive user interface component" from the
  * contrast minimum, and disabled here is the house treatment: 0.42 opacity on the row, no

@@ -218,11 +218,12 @@ pnpm --filter @openrunic/ui test-storybook
 ```
 
 There is exactly one axe exception in the library, and it is scoped to the disabled rows of the
-five controls that have a disabled state. WCAG 1.4.3 exempts text inside an inactive user
-interface component, and disabled here is 0.42 opacity on the wrapper with no colour change, so
-axe sees ordinary text at 1.77:1 with no `disabled` attribute of its own to go by. The rule stays
-enabled and its selector is narrowed to skip that one subtree; `Checkbox.stories.tsx` carries the
-full reasoning and the other four point at it. Nothing is disabled globally.
+six controls that have a disabled state (Checkbox, Input, Radio, Select, Switch, Textarea). WCAG
+1.4.3 exempts text inside an inactive user interface component, and disabled here is 0.42 opacity
+on the wrapper with no colour change, so axe sees ordinary text at 1.77:1 with no `disabled`
+attribute of its own to go by. The rule stays enabled and its selector is narrowed to skip that
+one subtree; `Checkbox.stories.tsx` carries the full reasoning and the other five point at it.
+Nothing is disabled globally.
 
 ## Visual regression
 

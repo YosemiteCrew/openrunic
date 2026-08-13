@@ -1,0 +1,62 @@
+# Only `dev` may merge into `main`.
+#
+# `main` is what a clinic installs. Everything reaches it through one route:
+# `dev`, which is where the full gate has already run against the integrated
+# tree. A branch merged straight into `main` skips that integration entirely -
+# it was green against whatever `dev` looked like when it forked, which is not
+# the same statement.
+#
+# GitHub rulesets can require a pull request, reviews and status checks, but
+# they cannot say "only this branch may be the source". So the constraint is
+# expressed as a status check instead, and the `main` ruleset requires it. The
+# job runs on every pull request targeting `main` and fails any whose head is
+# not `dev`.
+#
+# It fails closed twice over. A branch cut from `main` does not carry this file,
+# so the check never reports, and a required check that never reports leaves the
+# pull request unmergeable. That is the correct outcome for exactly the branch
+# shape this exists to refuse.
+name: Promotion guard
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  promotion-source:
+    name: Promotion source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse any source branch other than dev
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          if [ "$HEAD_REF" = "dev" ]; then
+            echo "Source branch is dev. This is a promotion."
+            exit 0
+          fi
+
+          # Named separately because the remedy differs. A bot pull request on
+          # main means the Dependabot configuration drifted, not that someone
+          # picked the wrong base.
+          if [ "$ACTOR" = "dependabot[bot]" ]; then
+            echo "::error::Dependabot opened this pull request against main from '$HEAD_REF'."
+            echo "::error::Dependency updates belong on dev, pooled into a single pull request."
+            echo "::error::Check target-branch in .github/dependabot.yml on the DEFAULT branch,"
+            echo "::error::and confirm Dependabot security updates are still disabled in settings"
+            echo "::error::(those ignore target-branch and always aim at the default branch)."
+            exit 1
+          fi
+
+          echo "::error::This pull request merges '$HEAD_REF' into main. Only dev may do that."
+          echo "::error::main is what a clinic installs, and dev is where the gate runs against"
+          echo "::error::the integrated tree. Retarget this pull request at dev; it reaches main"
+          echo "::error::with the next promotion (see RELEASING.md)."
+          exit 1

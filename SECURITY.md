@@ -40,6 +40,23 @@ the write-up is not polished.
   ship a fix before any public disclosure. We will usually be much faster, and we are happy to
   coordinate on a timeline if the fix is complex.
 
+## How dependency advisories are handled
+
+Dependabot **alerts** are on, so an advisory against a dependency is visible in the Security tab
+the moment it is published. Dependabot **security updates** - the feature that opens a pull request
+per advisory - are deliberately off, for two reasons: those pull requests ignore the configured
+target branch and always open against the default branch, which is the release branch a clinic
+installs from; and one pull request per advisory produces a queue nobody reviews properly.
+
+Instead, every dependency change arrives in a single weekly pull request against the integration
+branch, where the full gate runs: build, lint, type-check, tests with coverage floors, SBOM
+generation, vulnerability scanning and licence policy. Moving to current releases is what fixes
+most advisories, and the pooled pull request is reviewed as one change rather than skimmed as
+twelve.
+
+An advisory that cannot wait for the weekly run is raised by hand on a branch off the integration
+branch and promoted immediately. Turning security updates back on is not the remedy.
+
 ## Safe harbor
 
 We will not pursue or support legal action against you for good-faith security research that:

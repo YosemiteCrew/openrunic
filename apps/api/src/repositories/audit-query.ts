@@ -207,7 +207,22 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
     },
 
     async verifyChain(): Promise<AuditChainVerification> {
+      // The tenant predicate is spelled out even though the tenant extension
+      // would add it: `withTenantWhere` turns an absent `where` into
+      // `{ tenantId }`, so this is scoped today either way.
+      //
+      // It is written here because this is the one query in this file that
+      // would otherwise carry no filter of its own, and because of what it
+      // feeds. `verifyAuditChain` walks the rows as a single hash chain. Given
+      // two organisations' events interleaved by `seq`, it would not leak
+      // quietly - it would report the chain as broken, which is the alarm a
+      // practice is told to treat as evidence of tampering. A false accusation
+      // of tampering in an audit log is its own kind of incident.
+      //
+      // So this does not depend on an extension staying wired up correctly,
+      // and the redundant AND it produces costs nothing.
       const records = await delegate.findMany({
+        where: { tenantId: scope.tenantId },
         orderBy: [{ seq: 'asc' }],
         take: MAX_VERIFIED_EVENTS,
       });

@@ -101,7 +101,7 @@ jobs:
       contents: read
       # Surfacing the SARIF in the Security tab needs this; the job still
       # gates the PR through its own exit code either way.
-      security-events: write
+      security-events: write # upload the grype SARIF to code scanning
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -208,7 +208,7 @@ jobs:
     timeout-minutes: 10
     needs: [sbom]
     permissions:
-      contents: write
+      contents: write # `gh release upload` attaches the SBOMs to the release
     steps:
       - name: Ensure the dispatched ref is the release tag
         if: github.event_name == 'workflow_dispatch'

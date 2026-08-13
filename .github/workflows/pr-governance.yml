@@ -10,7 +10,7 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: read # the semantic-title action reads the pull request's title
 
 jobs:
   pr-title:

@@ -1,0 +1,65 @@
+# Configuration for the Workflow Audit gate (.github/workflows/workflow-audit.yml).
+#
+# zizmor audits workflow SECURITY, which is a different question from the
+# workflow CORRECTNESS that actionlint answers. The failures it exists to catch
+# are template injection through `${{ github.event.* }}` interpolated into a
+# `run:` block, credential persistence via checkout, over-broad GITHUB_TOKEN
+# permissions, and `pull_request_target` misuse.
+#
+# EXCEPTION PROCESS - every entry below MUST carry a reason and a revisit
+# condition. The gate is worth nothing if entries accumulate here silently, so
+# the workflow also runs zizmor a second time with `--no-config` and writes the
+# unfiltered result into the job summary: allowlisted findings stay visible on
+# every run, they just do not fail the build.
+
+rules:
+  template-injection:
+    ignore:
+      # `matrix.workspace`, `matrix.shard` and `matrix.shards` are interpolated
+      # into `run:` blocks in the reusable core and test stages. The values come
+      # from scripts/ci/affected-matrix.mjs and scripts/ci/test-matrix.mjs, not
+      # from pull-request input, so they are not attacker-controllable today -
+      # but the correct fix is still to pass them through `env:` so that stays
+      # true by construction rather than by inspection.
+      #
+      # Not fixed here because a concurrent pull request (chore/lint-gates) owns
+      # ci.yaml and the reusable _*.yaml set; editing them from this branch
+      # would guarantee a merge conflict.
+      # Revisit condition: once chore/lint-gates has landed, move these three
+      # interpolations into `env:` and DELETE this ignore block.
+      - _core.yaml
+      - _test.yaml
+      # ci.yaml interpolates `contains(needs.*.result, ...)` into the aggregate
+      # gate's `run:` block. The expression evaluates to a bare `true`/`false`
+      # produced by GitHub, not by any user, so there is nothing to inject -
+      # but the same `env:` fix applies.
+      # Revisit condition: same as above - fix on chore/lint-gates, then delete.
+      - ci.yaml
+      # `matrix.app_key` is interpolated into the Sonar stage's token-selection
+      # `run:` block. Its values come from the matrix literal in ci.yaml, never
+      # from pull-request input; the `env:` fix applies here too.
+      # Revisit condition: same as above - fix on chore/lint-gates, then delete.
+      - _sonar.yaml
+
+  unpinned-images:
+    ignore:
+      # `postgres:17-alpine` as the migration stage's service container. Pinning
+      # it to a digest is the right answer and it is a one-line change, but
+      # _migration.yaml is part of the reusable set the concurrent pull request
+      # owns.
+      # Revisit condition: once chore/lint-gates has landed, pin the service
+      # image to a sha256 digest and DELETE this entry.
+      - _migration.yaml
+
+  concurrency-limits:
+    ignore:
+      # The reusable stages carry no `concurrency:` block of their own because
+      # they are always called from ci.yaml, which sets one for the whole run.
+      # A second, job-level group would cancel stages of the run that ci.yaml is
+      # still coordinating.
+      # Revisit condition: if any of these is ever called from somewhere other
+      # than ci.yaml, it needs its own concurrency group and this entry must go.
+      - _core.yaml
+      - _migration.yaml
+      - _sonar.yaml
+      - _test.yaml

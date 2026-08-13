@@ -1,0 +1,123 @@
+name: Workflow Audit
+
+# Static analysis of the workflows themselves.
+#
+# actionlint checks whether a workflow is CORRECT - valid syntax, real action
+# inputs, shell that parses. It does not check whether a workflow is SAFE. This
+# repository has roughly 1,700 lines of workflow YAML, much of it handling
+# untrusted pull-request input, and the classic failures there are template
+# injection through `${{ github.event.* }}` interpolated into a `run:` block,
+# credential persistence via checkout leaving GITHUB_TOKEN in .git/config,
+# over-broad GITHUB_TOKEN permissions, and `pull_request_target` misuse. zizmor
+# is the audit for that class.
+#
+# The `pedantic` persona is deliberate rather than aspirational: it is what
+# enforces the conventions this repository already writes down - least-privilege
+# permissions on every job, a documented reason for every permission beyond
+# `contents: read`, and pinned container images. `--min-severity=low` keeps
+# informational notes out of the gate.
+#
+# Findings that are real but cannot be fixed from this branch are allowlisted in
+# .github/zizmor.yml with a reason and a revisit condition. So that the
+# allowlist can never quietly become a graveyard, the second step below re-runs
+# the audit with `--no-config` and writes the unfiltered result into the job
+# summary. Suppressed findings stay visible on every single run.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: workflow-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: Audit workflow security (zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # read the workflows being audited
+      # Surfacing findings in the Security tab. The job still gates the pull
+      # request through its own exit code if this upload is unavailable.
+      security-events: write # upload the zizmor SARIF to code scanning
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job only reads the tree, so the default GITHUB_TOKEN must not
+          # be left behind in .git/config - which is the very finding zizmor's
+          # artipacked audit exists to report.
+          persist-credentials: false
+
+      - name: Install zizmor (pinned, checksum-verified)
+        env:
+          ZIZMOR_VERSION: 1.17.0
+          # sha256 of zizmor-x86_64-unknown-linux-gnu.tar.gz for this tag.
+          # Upstream publishes no checksums file alongside the release, so this
+          # digest was taken from the published asset and pinned here: it fails
+          # closed if the asset is ever re-uploaded or swapped, which is the
+          # property that matters. Recompute it when bumping the version.
+          ZIZMOR_SHA256: d8c3d6d14ecd442fbfb87706f120736cee84b04c511834a34527adfc968f8108
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz" \
+            -o "$RUNNER_TEMP/zizmor.tar.gz"
+          echo "${ZIZMOR_SHA256}  ${RUNNER_TEMP}/zizmor.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/zizmor.tar.gz" -C "$RUNNER_TEMP" --strip-components=1
+          chmod +x "$RUNNER_TEMP/zizmor"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zizmor" --version
+
+      # Advisory, never fails: the unfiltered audit, so allowlisted findings
+      # stay visible instead of disappearing behind .github/zizmor.yml.
+      - name: Report every finding, including allowlisted ones
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          {
+            echo '## zizmor: unfiltered audit (advisory)'
+            echo
+            echo 'Findings suppressed by `.github/zizmor.yml` still appear here.'
+            echo 'Each suppression carries a reason and a revisit condition in that file.'
+            echo
+            echo '```text'
+            zizmor --no-config --persona=pedantic --format=plain .github/ 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Audit workflows, fail on LOW and above
+        run: |
+          set -euo pipefail
+          mkdir -p security/reports
+          zizmor --persona=pedantic --min-severity=low \
+            --format=sarif .github/ > security/reports/zizmor.sarif
+
+      - name: Upload the audit report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zizmor-report
+          path: security/reports/zizmor.sarif
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload SARIF to code scanning
+        # Dependabot-actor runs cannot write security events; the gate above
+        # still applies to them through the job's exit code.
+        if: always() && github.actor != 'dependabot[bot]'
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: security/reports/zizmor.sarif
+          category: workflow-audit

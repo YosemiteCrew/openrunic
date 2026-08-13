@@ -60,7 +60,7 @@ export function AssistantTurnView({ turn, answering }: AssistantTurnViewProps) {
               />
               <span>
                 {step.label}
-                {step.done ? ', done' : ', still going'}
+                {stepState(step, turn.outcome)}
               </span>
             </li>
           ))}
@@ -96,6 +96,18 @@ export function AssistantTurnView({ turn, answering }: AssistantTurnViewProps) {
       {answering ? <span className="portal-visually-hidden">Still looking.</span> : null}
     </li>
   );
+}
+
+/**
+ * What a step says about itself, once in words and once in an icon.
+ *
+ * A step the turn never came back to is the ordinary shape of a turn that was
+ * aborted or cut short, and leaving it reading "still going" would tell somebody
+ * work is happening on a question that has already ended.
+ */
+function stepState(step: Turn['steps'][number], outcome: Turn['outcome']): string {
+  if (step.done) return ', done';
+  return outcome === null ? ', still going' : ', not finished';
 }
 
 /**

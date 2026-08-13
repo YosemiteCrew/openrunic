@@ -59,6 +59,23 @@ describe('an answer and the records behind it', () => {
     expect(lastTurn(state).withheld).toBe('unsourced');
   });
 
+  it('shows neither the words nor the records of a turn that failed', () => {
+    const state = play([
+      { type: 'text', text: 'Somebody else has an appointment on Tuesday.' },
+      { type: 'sources', entries: [SOURCE] },
+      { type: 'failed', code: 'AGENT_COMPARTMENT_VIOLATION' },
+      { type: 'finished', outcome: 'failed' },
+    ]);
+
+    /* The failure sentence says the answer was thrown away. Leaving the words
+       up, or the records under them, would be the page contradicting itself in
+       the one case where it matters most. */
+    expect(lastTurn(state).answer).toBe('');
+    expect(lastTurn(state).sources).toEqual([]);
+    expect(lastTurn(state).failures).toEqual(['AGENT_COMPARTMENT_VIOLATION']);
+    expect(offersCareTeam(lastTurn(state))).toBe(true);
+  });
+
   it('keeps a stopped answer only as far as its last full stop', () => {
     let state = play([
       { type: 'text', text: 'You have two appointments booked. The next one is on' },

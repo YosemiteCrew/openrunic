@@ -20,9 +20,13 @@
  *
  * **It will not ask anything until it knows whose record it is.** The question
  * carries the reader's own chart, and a turn with no chart bound is refused by
- * the capability itself before it reads a row. So the box does not appear until
- * the record has loaded, and a record that fails to load leaves the ordinary
- * portal error in its place.
+ * the capability itself before it reads a row. It cannot change which chart a
+ * turn reads: a portal session is patient-scoped, so the API binds the turn to
+ * the chart on the token and does not consult this field at all. It is sent
+ * because the same route serves the staff surface, and because it is what binds
+ * a turn on any session whose token named no chart. So the box does not appear
+ * until the record has loaded, and a record that fails to load leaves the
+ * ordinary portal error in its place.
  */
 
 import { useCallback } from 'react';

@@ -91,6 +91,25 @@ describe('one turn on screen', () => {
     expect(screen.getByText('Still looking.')).toBeInTheDocument();
   });
 
+  it('stops calling a step ongoing once the turn it belonged to has ended', () => {
+    render(
+      <AssistantTurnView
+        answering={false}
+        turn={{
+          ...BLANK,
+          // The shape a compartment abort leaves behind: the capability that
+          // tripped it announced itself and the turn ended before it came back.
+          steps: [{ key: 'a', label: 'Reading your appointments', done: false }],
+          failures: ['AGENT_COMPARTMENT_VIOLATION'],
+          outcome: 'failed',
+        }}
+      />
+    );
+
+    expect(screen.getByText(/Reading your appointments, not finished/)).toBeInTheDocument();
+    expect(screen.queryByText(/still going/)).not.toBeInTheDocument();
+  });
+
   it('says when part of a question was not gone ahead with, and offers the way on', () => {
     render(
       <AssistantTurnView

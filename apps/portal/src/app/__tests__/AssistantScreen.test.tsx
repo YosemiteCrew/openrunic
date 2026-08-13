@@ -271,6 +271,29 @@ describe('asking a question', () => {
     expect(screen.queryByText(/Somebody else/)).not.toBeInTheDocument();
   });
 
+  it('draws no records under an answer that was thrown away', async () => {
+    mount({
+      availability: ENABLED,
+      events: [
+        { type: 'text', text: 'You have one appointment booked.' },
+        { type: 'sources', entries: [APPOINTMENT_SOURCE] },
+        /* The stream died after the records had arrived, which is how a reader
+           reaches a settled turn holding a ledger for an answer that never
+           landed. */
+        { type: 'failed', code: 'ASSISTANT_UNREACHABLE' },
+        { type: 'finished', outcome: 'failed' },
+      ],
+    });
+
+    await userEvent.type(await screen.findByLabelText('Your question'), 'When am I next in?');
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be reached');
+    // A citation list under a failure reads as an answer that was checked.
+    expect(screen.queryByText('Where this came from')).not.toBeInTheDocument();
+    expect(screen.queryByText('You have one appointment booked.')).not.toBeInTheDocument();
+  });
+
   it('refuses to show a draft change, because a patient must never be handed one', async () => {
     mount({
       availability: ENABLED,
@@ -359,16 +382,38 @@ describe('how the page reads', () => {
   /** Long sentences are where plain language goes wrong first. */
   const MAX_WORDS_PER_SENTENCE = 25;
 
-  async function visibleText(options: MountOptions): Promise<string> {
+  /**
+   * A question to put before the page is read, and the words that mean the turn
+   * has settled.
+   *
+   * A case that supplies events without asking anything reads the same empty
+   * page as the case above it, so the events have to be driven through the box
+   * for the state under test to exist at all.
+   */
+  interface Asked {
+    question: string;
+    settlesOn: RegExp;
+  }
+
+  async function visibleText(options: MountOptions, asked?: Asked): Promise<string> {
     const { container, unmount } = mount(options);
     await screen.findByRole('heading', { name: 'Assistant' });
+
+    if (asked !== undefined) {
+      await userEvent.type(await screen.findByLabelText('Your question'), asked.question);
+      await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
+      // Read once the turn has landed: the words under test are the ones a
+      // reader is left looking at, not the ones passing through mid-stream.
+      await screen.findByText(asked.settlesOn);
+    }
+
     const text = container.textContent ?? '';
     unmount();
     return text;
   }
 
-  it.each([
-    ['before anything is asked', { availability: ENABLED }],
+  const READING_CASES: [string, MountOptions, Asked | undefined][] = [
+    ['before anything is asked', { availability: ENABLED }, undefined],
     [
       'when the answer is withheld',
       {
@@ -376,19 +421,37 @@ describe('how the page reads', () => {
         events: [
           { type: 'text', text: 'Unsourced.' },
           { type: 'finished', outcome: 'completed' },
-        ] as AssistantEvent[],
+        ],
       },
+      { question: 'What is on my record?', settlesOn: /came back without the records/ },
+    ],
+    [
+      'when the turn failed',
+      {
+        availability: ENABLED,
+        events: [
+          { type: 'failed', code: 'AGENT_COMPARTMENT_VIOLATION' },
+          { type: 'finished', outcome: 'failed' },
+        ],
+      },
+      { question: 'When am I next in?', settlesOn: /was not from your record/ },
     ],
     [
       'when the record did not load',
       { availability: ENABLED, api: stubApi({ getPatient: fails }) },
+      undefined,
     ],
-  ])('uses no clinical shorthand and no loaded words, %s', async (_case, options) => {
-    const words = (await visibleText(options as MountOptions)).toLowerCase().split(/[^a-z]+/);
+  ];
 
-    for (const word of BANNED) expect(words, word).not.toContain(word);
-    for (const word of SHORTHAND) expect(words, word).not.toContain(word);
-  });
+  it.each(READING_CASES)(
+    'uses no clinical shorthand and no loaded words, %s',
+    async (_case, options, asked) => {
+      const words = (await visibleText(options, asked)).toLowerCase().split(/[^a-z]+/);
+
+      for (const word of BANNED) expect(words, word).not.toContain(word);
+      for (const word of SHORTHAND) expect(words, word).not.toContain(word);
+    }
+  );
 
   it('writes in sentences somebody can read on a phone', async () => {
     const text = await visibleText({ availability: ENABLED });

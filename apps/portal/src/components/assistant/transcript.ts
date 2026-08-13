@@ -94,6 +94,18 @@ function settle(turn: AssistantTurn, outcome: TurnOutcome): AssistantTurn {
   const spoken = turn.answer.trim();
   const kept = outcome === 'stopped' ? trimToLastSentence(spoken) : spoken;
 
+  /* A turn that failed shows nothing it produced. Not the prose: it was cut
+     off mid-answer, or it was discarded because a row arrived from outside the
+     reader's own chart. And not the records it had reached by then, which under
+     an absent answer would read as the citations of an answer that was checked.
+     None of the failure sentences describes an answer the reader can see, and
+     several say outright that nothing is shown; this is what makes that true
+     rather than nearly true. The sentence itself is the whole message, and
+     `offersCareTeam` still hands over the route. */
+  if (outcome === 'failed') {
+    return { ...turn, answer: '', sources: [], outcome, withheld: 'none' };
+  }
+
   if (spoken !== '' && turn.sources.length === 0) {
     return { ...turn, answer: '', outcome, withheld: 'unsourced' };
   }

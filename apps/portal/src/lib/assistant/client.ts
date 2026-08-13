@@ -39,10 +39,12 @@ export interface TurnRequest {
   /** Position in this conversation. The server caps how far it may run. */
   turnIndex: number;
   /**
-   * The reader's own chart. It can only ever narrow: the API scopes every
-   * response to the chart on the bearer token whatever this says, and a tool
-   * result that disagrees with it aborts the turn. Sending the wrong one
-   * therefore buys nothing and fails shut.
+   * The reader's own chart. It can only ever narrow, and on a portal session it
+   * does not even do that: the token is patient-scoped, so the API binds the
+   * turn to the chart the token names and does not read this field. Every
+   * response is scoped to that same chart, and a tool result that disagrees with
+   * it aborts the turn. Sending the wrong one therefore buys nothing and fails
+   * shut.
    */
   chartPatientId: string;
   signal?: AbortSignal;

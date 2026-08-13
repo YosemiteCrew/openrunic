@@ -69,7 +69,12 @@ export const Sizes: Story = {
   ),
 };
 
-/** Icons inherit currentColor, so they take espresso, hazelnut or terracotta from context. */
+/**
+ * Icons inherit currentColor, so they take whatever ink the context sets. The accent pair
+ * uses `--text-link`, the accent's ink weight, rather than `--terracotta` itself: the raw
+ * hue is 3.9:1 on bone, which is fine for the 20px mark and under AA for the word beside
+ * it, and an icon should never be set in ink its own label cannot use.
+ */
 export const Ink: Story = {
   render: () => (
     <div style={row}>
@@ -81,7 +86,7 @@ export const Ink: Story = {
         <Icon name="clock" />
         <span className="or-small">Secondary ink</span>
       </span>
-      <span style={{ ...pair, color: 'var(--terracotta)' }}>
+      <span style={{ ...pair, color: 'var(--text-link)' }}>
         <Icon name="shield-check" />
         <span className="or-small">Accent ink</span>
       </span>

@@ -9,6 +9,13 @@
     "rootDir": ".",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src", ".storybook", "vite.config.ts", "vitest.config.ts", "vitest.setup.ts"],
+  "include": [
+    "src",
+    ".storybook",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "vitest.storybook.config.ts",
+    "vitest.setup.ts"
+  ],
   "exclude": []
 }

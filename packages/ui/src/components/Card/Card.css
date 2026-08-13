@@ -45,9 +45,17 @@
   border-color: var(--border-hairline);
 }
 
+/* Espresso is a different paper, so the inverse card re-points the ink roles for its whole
+   subtree rather than recolouring its own parts. Anything dropped inside - an EmptyState,
+   a VitalStat, a paragraph of --text-secondary - then inherits ink drawn for espresso and
+   needs no inverse variant of its own. */
 .or-card--inverse {
   --or-card-hairline: var(--border-inverse);
-  --or-card-overline-ink: var(--text-decorative);
+  --or-card-overline-ink: var(--text-inverse-decorative);
+  --text-ink: var(--text-inverse);
+  --text-heading: var(--text-inverse);
+  --text-secondary: var(--text-inverse-secondary);
+  --text-decorative: var(--text-inverse-decorative);
 
   background: var(--surface-inverse);
   color: var(--text-inverse);

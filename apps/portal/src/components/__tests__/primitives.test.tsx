@@ -78,7 +78,7 @@ describe('ProgressMeter', () => {
   it('does not divide by zero on a form with no questions', () => {
     render(<ProgressMeter done={0} label="0 of 0 answered" total={0} />);
 
-    expect(screen.getByRole('progressbar')).toHaveStyle({ '--portal-progress-fill': '0%' });
+    expect(screen.getByRole('progressbar')).toHaveStyle('--portal-progress-fill: 0%');
   });
 });
 

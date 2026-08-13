@@ -18,6 +18,15 @@ const stack: CSSProperties = {
   maxWidth: '520px',
 };
 
+/* The disabled-row contrast exemption, explained in full in Checkbox.stories.tsx: WCAG 1.4.3
+   exempts text inside an inactive component, and axe cannot see it because the 0.42 opacity
+   sits on the wrapper. Narrowed to the disabled field's subtree; nothing else is exempt. */
+const disabledRowContrast = {
+  a11y: {
+    config: { rules: [{ id: 'color-contrast', selector: ':not(.or-textarea--disabled *)' }] },
+  },
+};
+
 export const Default: Story = {};
 
 /** The hint is quiet hazelnut and is read out as the field's description, never its name. */
@@ -76,6 +85,7 @@ export const Mono: Story = {
 
 /** Disabled is 0.42 opacity with no colour change. */
 export const Disabled: Story = {
+  parameters: disabledRowContrast,
   args: {
     label: 'Discharge summary',
     disabled: true,
@@ -85,6 +95,8 @@ export const Disabled: Story = {
 };
 
 export const FieldSet: Story = {
+  // Carries a disabled field too, so it needs the same narrowing.
+  parameters: disabledRowContrast,
   render: () => (
     <div style={stack}>
       <Textarea label="Reason for visit" maxLength={140} defaultValue="Chest pain on exertion." />

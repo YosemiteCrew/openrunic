@@ -55,7 +55,7 @@ describe('Progress', () => {
     const bar = screen.getByRole('progressbar', { name: 'Export in progress' });
     expect(bar).toHaveAttribute('aria-valuenow', '100');
     expect(bar).toHaveAttribute('aria-valuetext', '100%');
-    expect(container.querySelector('.or-progress')).toHaveStyle({ '--or-progress-value': '100%' });
+    expect(container.querySelector('.or-progress')).toHaveStyle('--or-progress-value: 100%');
   });
 
   it.each([
@@ -118,7 +118,7 @@ describe('Progress', () => {
   it('sets the fill width as an inline custom property', () => {
     const { container } = render(<Progress label="Export in progress" value={1284} max={2000} />);
     const block = container.querySelector('.or-progress');
-    expect(block).toHaveStyle({ '--or-progress-value': '64%' });
+    expect(block).toHaveStyle('--or-progress-value: 64%');
     expect(container.querySelector('.or-progress__fill')).toBeInTheDocument();
   });
 
@@ -128,7 +128,7 @@ describe('Progress', () => {
     );
     const block = container.querySelector('.or-progress');
     expect(block).toHaveStyle({ maxWidth: '320px' });
-    expect(block).toHaveStyle({ '--or-progress-value': '64%' });
+    expect(block).toHaveStyle('--or-progress-value: 64%');
   });
 
   it('merges a caller className instead of replacing the component classes', () => {

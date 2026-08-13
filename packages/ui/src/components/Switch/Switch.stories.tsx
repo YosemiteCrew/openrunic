@@ -19,6 +19,14 @@ const panel: CSSProperties = {
   maxWidth: '420px',
 };
 
+/* The disabled-row contrast exemption, explained in full in Checkbox.stories.tsx: WCAG 1.4.3
+   exempts text inside an inactive component, and axe cannot see it because the 0.42 opacity
+   sits on the wrapper. Narrowed to the disabled row's subtree, which is what keeps the two
+   live rows in Interactive fully checked. */
+const disabledRowContrast = {
+  a11y: { config: { rules: [{ id: 'color-contrast', selector: ':not(.or-switch--disabled *)' }] } },
+};
+
 export const Default: Story = {};
 
 export const On: Story = {
@@ -31,6 +39,7 @@ export const WithoutHint: Story = {
 
 /** Disabled is 0.42 opacity with no colour change, in either position. */
 export const Disabled: Story = {
+  parameters: disabledRowContrast,
   args: {
     label: 'Share with the national registry',
     hint: 'Your clinic has not enabled registry sharing.',
@@ -39,6 +48,7 @@ export const Disabled: Story = {
 };
 
 export const DisabledOn: Story = {
+  parameters: disabledRowContrast,
   args: {
     label: 'Keep an audit log',
     hint: 'Always on. OpenRunic records every access to your data.',
@@ -49,6 +59,7 @@ export const DisabledOn: Story = {
 
 /** Live: the setting applies on the flip, so there is no save button anywhere near it. */
 export const Interactive: Story = {
+  parameters: disabledRowContrast,
   render: function SettingsPanelStory() {
     const [sync, setSync] = useState(true);
     const [alerts, setAlerts] = useState(false);

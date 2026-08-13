@@ -1,4 +1,5 @@
 import type { CSSProperties, HTMLAttributes } from 'react';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { cx } from '../../lib/cx';
 
 /**
@@ -18,7 +19,10 @@ export interface GlyphProps extends HTMLAttributes<HTMLElement> {
   animate?: boolean;
   /** Any CSS colour; defaults to currentColor. Terracotta is permitted for the glyph alone. */
   color?: string;
-  /** Path to the copied assets/logo directory, relative to the page. */
+  /**
+   * Serve the mark from your own copy of the design system's assets/logo directory instead
+   * of the glyph bundled with this package. The mark is a shipped file either way.
+   */
   basePath?: string;
 }
 
@@ -26,23 +30,24 @@ export interface GlyphProps extends HTMLAttributes<HTMLElement> {
  * The mark alone: a decorative accent (404, empty state, large in a cream or espresso
  * panel) or the brand's loading affordance when animated.
  *
- * The mark is a shipped file, never redrawn: copy the eight builds from the design
- * system's `assets/logo/` into the app's public directory and point `basePath` at it.
- * `glyph.svg` is the currentColor build, so the layers are masked and take their ink from
- * `color`. Under `prefers-reduced-motion` the animation is dropped for a static mark
- * rather than left mid-draw.
+ * The mark is a shipped file, never redrawn. `glyph.svg` is vendored into this package and
+ * inlined by the bundler, so the mark renders out of the box with no hosting and no network
+ * request; `basePath` still points at your own copy when you serve it. It is the
+ * currentColor build, so the layers are masked and take their ink from `color`. Under
+ * `prefers-reduced-motion` the animation is dropped for a static mark rather than left
+ * mid-draw.
  */
 export function Glyph({
   size = 48,
   animate = false,
   color = 'currentColor',
-  basePath = 'assets/logo',
+  basePath,
   className,
   style,
   ...rest
 }: GlyphProps) {
   const blockStyle: GlyphStyle = {
-    '--or-glyph-src': `url(${basePath}/glyph.svg)`,
+    '--or-glyph-src': brandAssetCssUrl('glyph.svg', basePath),
     '--or-glyph-ink': color,
     width: size,
     height: size,

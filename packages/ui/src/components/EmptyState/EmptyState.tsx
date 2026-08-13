@@ -1,4 +1,5 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { cx } from '../../lib/cx';
 import { ICON_STROKE_WIDTH, resolveLucideIcon } from '../../lib/lucide';
 import type { IconSlug } from '../../types';
@@ -10,11 +11,11 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, 'titl
   message?: string;
   /** Usually a single Button. */
   action?: ReactNode;
-  /** Lucide slug; omit to use the terracotta glyph. */
+  /** Lucide slug; omit to use the brand glyph. */
   icon?: IconSlug;
   /**
-   * Directory the brand glyph is served from, without a trailing slash. The mark is a
-   * shipped file that the consuming app hosts; it is never redrawn in code.
+   * Serve the glyph from your own copy of the design system's assets/logo directory
+   * instead of the mark bundled with this package. The mark is a shipped file either way.
    */
   glyphBasePath?: string;
 }
@@ -23,23 +24,25 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, 'titl
  * Nothing-here state, written in the calm voice: the fact, then the next action. No jokes
  * in clinical flows, and never an exclamation mark.
  *
- * The mark above the title is decorative and hidden from assistive technology - the
- * heading and the message carry the whole meaning.
+ * The mark above the title is decorative and hidden from assistive technology - the heading
+ * and the message carry the whole meaning. It defaults to the brand glyph, which is
+ * vendored into this package and inlined by the bundler, so no call site has to pass an
+ * icon or host a file. Pass `icon` for a Lucide slug instead.
  */
 export function EmptyState({
   title,
   message,
   action,
   icon,
-  glyphBasePath = 'assets/logo',
+  glyphBasePath,
   className,
   ...rest
 }: EmptyStateProps) {
   const MarkIcon = icon ? resolveLucideIcon(icon) : undefined;
-  /* An inline style, and it is unavoidable here: the glyph path is a runtime prop, so the
-     mask URL cannot live in the stylesheet. Everything else about the mark (size, colour,
-     mask geometry) is in EmptyState.css. */
-  const maskUrl = `url('${glyphBasePath}/glyph.svg')`;
+  /* An inline style, and it is unavoidable here: the mask URL depends on `glyphBasePath`,
+     a runtime prop, so it cannot live in the stylesheet. Everything else about the mark
+     (size, colour, mask geometry) is in EmptyState.css. */
+  const maskUrl = brandAssetCssUrl('glyph.svg', glyphBasePath);
   const glyphMask: CSSProperties = { maskImage: maskUrl, WebkitMaskImage: maskUrl };
 
   return (

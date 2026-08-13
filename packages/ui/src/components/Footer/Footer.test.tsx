@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { Footer } from './Footer';
 import type { FooterColumn } from './Footer';
 
@@ -61,14 +62,15 @@ describe('Footer', () => {
     expect(screen.queryAllByRole('navigation')).toHaveLength(0);
   });
 
-  it('points the lockup mask at the supplied asset directory', () => {
+  it('masks the bundled lockup by default and honours a caller asset directory', () => {
     const { container, rerender } = render(<Footer columns={COLUMNS} />);
     const read = () =>
       container
         .querySelector<HTMLElement>('.or-footer__logo')
         ?.style.getPropertyValue('--or-footer-logo-src');
 
-    expect(read()).toBe('url("assets/logo/lockup-horizontal.svg")');
+    expect(read()).toBe(brandAssetCssUrl('lockup-horizontal.svg'));
+    expect(read()).toContain('data:image/svg+xml');
 
     rerender(<Footer columns={COLUMNS} logoBasePath="/brand/open runic" />);
     expect(read()).toBe('url("/brand/open%20runic/lockup-horizontal.svg")');

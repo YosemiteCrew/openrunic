@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { brandAssetCssUrl } from '../../assets/brand';
 import { SideNav } from './SideNav';
 import type { SideNavItem } from './SideNav';
 
@@ -183,14 +184,15 @@ describe('SideNav', () => {
     );
   });
 
-  it('points the lockup mask at the supplied asset directory', () => {
+  it('masks the bundled lockup by default and honours a caller asset directory', () => {
     const { container, rerender } = render(<SideNav items={ITEMS} />);
     const read = () =>
       container
         .querySelector<HTMLElement>('.or-side-nav__logo')
         ?.style.getPropertyValue('--or-side-nav-logo-src');
 
-    expect(read()).toBe('url("assets/logo/lockup-horizontal.svg")');
+    expect(read()).toBe(brandAssetCssUrl('lockup-horizontal.svg'));
+    expect(read()).toContain('data:image/svg+xml');
 
     rerender(<SideNav items={ITEMS} logoBasePath="/brand/open runic" />);
     expect(read()).toBe('url("/brand/open%20runic/lockup-horizontal.svg")');

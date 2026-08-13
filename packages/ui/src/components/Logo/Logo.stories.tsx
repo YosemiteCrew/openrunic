@@ -3,10 +3,10 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Logo } from './Logo';
 
 /**
- * The lockups are shipped files, never redrawn. Copy the eight builds from the design
- * system's `assets/logo/` into the app's public directory and point `basePath` at that
- * folder; these stories use the default `assets/logo`, so a lockup only appears once the
- * files are in place. Each specimen below names the build it resolves to.
+ * The lockups are shipped files, never redrawn. All eight builds are vendored into this
+ * package and inlined by the bundler, so a lockup renders with nothing to host and no
+ * network request. `basePath` still points at your own copies when you serve them. Each
+ * specimen below names the build it resolves to.
  */
 const meta = {
   title: 'Brand/Logo',

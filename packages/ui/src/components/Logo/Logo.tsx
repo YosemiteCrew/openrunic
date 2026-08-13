@@ -1,4 +1,6 @@
 import type { CSSProperties, HTMLAttributes } from 'react';
+import { brandAssetCssUrl, brandAssetUrl } from '../../assets/brand';
+import type { BrandLogoFile } from '../../assets/brand';
 import { cx } from '../../lib/cx';
 
 export interface LogoProps extends HTMLAttributes<HTMLElement> {
@@ -8,7 +10,10 @@ export interface LogoProps extends HTMLAttributes<HTMLElement> {
   theme?: 'ink' | 'light' | 'dark';
   /** Rendered height in px. */
   height?: number;
-  /** Path to the copied assets/logo directory, relative to the page. */
+  /**
+   * Serve the builds from your own copy of the design system's assets/logo directory
+   * instead of the marks bundled with this package. The mark is a shipped file either way.
+   */
   basePath?: string;
 }
 
@@ -19,7 +24,7 @@ type LogoTheme = NonNullable<LogoProps['theme']>;
 type LogoStyle = CSSProperties & Record<`--or-logo-${string}`, string>;
 
 /** The shipped builds, by variant and theme. */
-const FILES: Record<LogoVariant, Record<LogoTheme, string>> = {
+const FILES: Record<LogoVariant, Record<LogoTheme, BrandLogoFile>> = {
   horizontal: {
     ink: 'lockup-horizontal.svg',
     light: 'lockup-horizontal-light.svg',
@@ -57,8 +62,9 @@ const HAS_INK_BUILD: Record<LogoVariant, boolean> = {
  * The OpenRunic lockups and mark. Use it anywhere the brand appears - nav, footer, docs
  * header, end cards - and never retype the wordmark in a font.
  *
- * The marks are shipped files, never redrawn: copy the eight builds from the design
- * system's `assets/logo/` into the app's public directory and point `basePath` at it.
+ * The marks are shipped files, never redrawn. All eight builds are vendored into this
+ * package and inlined by the bundler, so the lockup renders out of the box with no hosting
+ * and no network request; `basePath` still points at your own copies when you serve them.
  * `theme="ink"` renders the currentColor build through a mask, which is how the lockup
  * takes espresso on bone, bone on espresso, or a terracotta glyph; the light and dark
  * builds are images with their colours baked in.
@@ -72,16 +78,16 @@ export function Logo({
   variant = 'horizontal',
   theme = 'ink',
   height = 32,
-  basePath = 'assets/logo',
+  basePath,
   className,
   style,
   ...rest
 }: LogoProps) {
-  const src = `${basePath}/${FILES[variant][theme]}`;
+  const file = FILES[variant][theme];
 
   if (theme === 'ink' && HAS_INK_BUILD[variant]) {
     const maskStyle: LogoStyle = {
-      '--or-logo-src': `url(${src})`,
+      '--or-logo-src': brandAssetCssUrl(file, basePath),
       width: Math.round(height * RATIO[variant]),
       height,
       ...style,
@@ -101,7 +107,7 @@ export function Logo({
   return (
     <img
       className={cx('or-logo', 'or-logo--image', className)}
-      src={src}
+      src={brandAssetUrl(file, basePath)}
       alt="OpenRunic"
       style={{ height, width: 'auto', ...style }}
       {...rest}

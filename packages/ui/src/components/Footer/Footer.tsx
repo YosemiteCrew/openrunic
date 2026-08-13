@@ -1,8 +1,10 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';
+import { brandAssetCssUrl } from '../../assets/brand';
+import type { BrandLogoFile } from '../../assets/brand';
 import { cx } from '../../lib/cx';
 
 /** The shipped horizontal lockup, drawn through a mask so it inherits the band's ink. */
-const LOCKUP = 'lockup-horizontal.svg';
+const LOCKUP: BrandLogoFile = 'lockup-horizontal.svg';
 
 export interface FooterColumn {
   title: string;
@@ -15,7 +17,10 @@ export interface FooterProps extends HTMLAttributes<HTMLElement> {
   note?: string;
   /** Bottom rule line - licence, sibling-project mention. */
   siblingNote?: ReactNode;
-  /** Path to the copied assets/logo directory, relative to the page. */
+  /**
+   * Serve the lockup from your own copy of the design system's assets/logo directory
+   * instead of the mark bundled with this package. The mark is a shipped file either way.
+   */
   logoBasePath?: string;
 }
 
@@ -28,14 +33,14 @@ export function Footer({
   columns = [],
   note,
   siblingNote,
-  logoBasePath = 'assets/logo',
+  logoBasePath,
   className,
   ...rest
 }: FooterProps) {
   /* A stylesheet cannot know the consumer's asset path, so the one thing that has to be
      inline is the mask URL. Everything else about the lockup lives in Footer.css. */
   const logoStyle = {
-    '--or-footer-logo-src': `url("${encodeURI(logoBasePath)}/${LOCKUP}")`,
+    '--or-footer-logo-src': brandAssetCssUrl(LOCKUP, logoBasePath),
   } as CSSProperties;
 
   return (

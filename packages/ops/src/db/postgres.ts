@@ -154,7 +154,6 @@ export async function rowCounts(target: PostgresTarget): Promise<Record<string, 
   return counts;
 }
 
-/** Migration names Prisma has recorded as applied, in order. */
 /**
  * Answers whether the database is actually reachable, and lets a failure say so.
  *
@@ -172,6 +171,7 @@ export async function assertReachable(target: PostgresTarget): Promise<void> {
   await query(target, 'SELECT 1');
 }
 
+/** Migration names Prisma has recorded as applied, in order. */
 export async function appliedMigrations(target: PostgresTarget): Promise<string[]> {
   try {
     const rows = await query(

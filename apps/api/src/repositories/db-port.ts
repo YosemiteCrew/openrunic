@@ -1,0 +1,73 @@
+import type { Prisma, TenantClient } from '@openrunic/database';
+
+/**
+ * The narrow slice of the Prisma client the API actually uses.
+ *
+ * Written as an interface rather than taken as `TenantClient` directly for two
+ * reasons. It documents the exact surface the API depends on, so a Prisma
+ * upgrade that changes something outside this slice cannot break the API
+ * silently. And it makes the Prisma adapter testable: the suite drives it with
+ * a hand-written fake port, which is why `prisma.ts` needs no database and is
+ * covered like any other module.
+ *
+ * The safety of that arrangement rests on {@link tenantClientSatisfiesPort}
+ * below: it is a compile-time assertion that the real tenant-scoped client
+ * still satisfies this port. If Prisma changes an argument or return type, the
+ * fake keeps passing but `type-check` fails, which is the correct place to find
+ * out.
+ */
+
+export type PatientRecord = Prisma.PatientGetPayload<Record<string, never>>;
+export type AppointmentRecord = Prisma.AppointmentGetPayload<Record<string, never>>;
+
+/**
+ * Reads are `findFirst`, never `findUnique`, and writes are `updateMany`,
+ * never `update`. Both choices are forced by the tenant extension in
+ * `packages/database`: it narrows a query by rewriting `where` into
+ * `AND: [original, { tenantId }]`, which is a legal filter but not a legal
+ * *unique* filter, so the by-unique-key operations would be the one shape the
+ * isolation layer cannot scope. Filter-shaped operations keep every query on
+ * the scoped path.
+ */
+export interface PatientDelegate {
+  findMany(args: Prisma.PatientFindManyArgs): Promise<PatientRecord[]>;
+  count(args: Prisma.PatientCountArgs): Promise<number>;
+  findFirst(args: Prisma.PatientFindFirstArgs): Promise<PatientRecord | null>;
+  create(args: Prisma.PatientCreateArgs): Promise<PatientRecord>;
+  updateMany(args: Prisma.PatientUpdateManyArgs): Promise<{ count: number }>;
+}
+
+export interface AppointmentDelegate {
+  findMany(args: Prisma.AppointmentFindManyArgs): Promise<AppointmentRecord[]>;
+  count(args: Prisma.AppointmentCountArgs): Promise<number>;
+  findFirst(args: Prisma.AppointmentFindFirstArgs): Promise<AppointmentRecord | null>;
+  create(args: Prisma.AppointmentCreateArgs): Promise<AppointmentRecord>;
+  updateMany(args: Prisma.AppointmentUpdateManyArgs): Promise<{ count: number }>;
+}
+
+export interface AuditEventDelegate {
+  create(args: Prisma.AuditEventCreateArgs): Promise<{ id: string }>;
+  /** Reads the tenant's chain tail so the next event can link to it. */
+  findFirst(args: Prisma.AuditEventFindFirstArgs): Promise<{ seq: bigint; hash: string } | null>;
+}
+
+/** What a repository sees inside a transaction. */
+export interface DbTransaction {
+  patient: PatientDelegate;
+  appointment: AppointmentDelegate;
+  auditEvent: AuditEventDelegate;
+}
+
+export interface DbPort extends DbTransaction {
+  $transaction<R>(fn: (tx: DbTransaction) => Promise<R>): Promise<R>;
+}
+
+/**
+ * Compile-time proof that the tenant-scoped Prisma client satisfies
+ * {@link DbPort}. Type-only: it erases, and it exists so a drift between the
+ * port and the generated client fails `type-check` rather than production.
+ */
+export type TenantClientSatisfiesPort = TenantClient extends DbPort ? true : never;
+
+/** Reified so the assertion cannot be tree-shaken out of the type graph. */
+export const tenantClientSatisfiesPort: TenantClientSatisfiesPort = true;

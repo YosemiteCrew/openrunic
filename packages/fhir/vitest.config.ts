@@ -7,7 +7,7 @@ export default defineConfig({
       enabled: true,
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts'],
+      exclude: ['src/**/*.test.ts', 'src/test-support/**'],
       thresholds: {
         statements: 90,
         branches: 90,

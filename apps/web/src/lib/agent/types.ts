@@ -227,6 +227,15 @@ function parseTool(value: unknown): AgentToolSummary | null {
  * A body that does not carry a model identity is not a usable assistant, so it
  * reads as absent rather than as a half-configured one. The surface then
  * renders nothing, which is the state ADR-0005 asks for when there is any doubt.
+ *
+ * The provenance flags are required for the same reason but a sharper one. They
+ * are the two facts the panel repeats to a clinician: whether the model is
+ * remote, and whether their patient's data leaves the deployment to reach it.
+ * Coercing a missing flag with `=== true` would answer both with the reassuring
+ * value on no evidence at all, so a malformed or older response would render as
+ * "stays inside your deployment" precisely when the server declined to say so.
+ * Absent provenance is not local provenance; it is no answer, and no answer
+ * means no surface.
  */
 export function parseAgentCapabilities(value: unknown): AgentCapabilities | null {
   if (!isRow(value) || !isRow(value.model)) return null;
@@ -234,12 +243,15 @@ export function parseAgentCapabilities(value: unknown): AgentCapabilities | null
   const endpointHost = str(value.model.endpointHost);
   if (modelId === null || endpointHost === null) return null;
 
+  const { remote, dataLeavesDeployment } = value.model;
+  if (typeof remote !== 'boolean' || typeof dataLeavesDeployment !== 'boolean') return null;
+
   return {
     model: {
       modelId,
       endpointHost,
-      remote: value.model.remote === true,
-      dataLeavesDeployment: value.model.dataLeavesDeployment === true,
+      remote,
+      dataLeavesDeployment,
     },
     tools: Array.isArray(value.tools)
       ? value.tools.map(parseTool).filter((tool): tool is AgentToolSummary => tool !== null)

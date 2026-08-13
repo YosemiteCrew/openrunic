@@ -200,7 +200,7 @@ describe('parseAgentCapabilities', () => {
     // An unreadable tier must not read as a weaker one. READ and approval-always
     // are the two answers that claim the least about what the capability can do.
     const parsed = parseAgentCapabilities({
-      model: { modelId: 'm', endpointHost: 'h' },
+      model: { modelId: 'm', endpointHost: 'h', remote: false, dataLeavesDeployment: false },
       tools: [{ id: 'x.y', summary: 'Does something.', requiredScopes: 'patient.read' }],
     });
 
@@ -230,7 +230,39 @@ describe('parseAgentCapabilities', () => {
     ['a model with no id', { model: { endpointHost: 'h' } }],
     ['a model with no host', { model: { modelId: 'm' } }],
     ['a body that is not an object', 'enabled'],
+    // Absent provenance is not local provenance. These two flags are what the
+    // panel repeats to a clinician about where their patient's data goes, so a
+    // body that declines to state them is a body with no answer, and no answer
+    // means no surface. Coercing them would have rendered the reassuring
+    // reading on no evidence at all.
+    [
+      'a model that does not say whether it is remote',
+      { model: { modelId: 'm', endpointHost: 'h', dataLeavesDeployment: false } },
+    ],
+    [
+      'a model that does not say whether data leaves',
+      { model: { modelId: 'm', endpointHost: 'h', remote: false } },
+    ],
+    [
+      'a model whose provenance flags are not booleans',
+      { model: { modelId: 'm', endpointHost: 'h', remote: 'no', dataLeavesDeployment: 'no' } },
+    ],
   ])('reads %s as no assistant at all', (_name, body) => {
     expect(parseAgentCapabilities(body)).toBeNull();
+  });
+
+  it('keeps a remote, data-leaving model exactly as stated', () => {
+    // The unreassuring answer must survive parsing verbatim: this is the case
+    // where the clinician most needs the panel to be accurate.
+    const parsed = parseAgentCapabilities({
+      model: {
+        modelId: 'm',
+        endpointHost: 'vendor.example',
+        remote: true,
+        dataLeavesDeployment: true,
+      },
+    });
+
+    expect(parsed?.model).toMatchObject({ remote: true, dataLeavesDeployment: true });
   });
 });

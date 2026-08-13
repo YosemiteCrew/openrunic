@@ -1,12 +1,15 @@
 /**
  * The chart aggregate, as the screens read it.
  *
- * These are not wire shapes yet: `apps/api` implements patients and
- * appointments, and everything a chart shows beyond those two (allergies,
- * problems, medications, results, documents, care team, the note itself) is
- * still `NotImplemented`. So this file is the contract the chart screens were
- * built against, and when those routes land it moves to `../types.ts` beside
- * `Patient` and `Appointment` and nothing in the screens changes.
+ * These are view shapes rather than wire shapes. `apps/api` serves every
+ * aggregate a chart shows - allergies, problems, medications, results,
+ * documents and notes each have a segment - and `./live.ts` composes the visit
+ * list and the note itself out of encounters, notes and the staff directory.
+ * The rest are not mapped into these types yet, which is why the chart tabs
+ * report them as absent rather than as empty. So this file is the contract the
+ * chart screens were built against; as each mapping is written the shape here
+ * stops needing to differ from the wire and moves to `../types.ts` beside
+ * `Patient` and `Appointment`, and nothing in the screens changes.
  *
  * Every enum here mirrors an enum that already exists in `@openrunic/database`,
  * uppercase and underscored, so `formatEnumLabel` renders it and no screen ever
@@ -227,8 +230,15 @@ export interface NoteSignature {
   signedAt: string;
   /** The one sentence the signer attests to. */
   attestation: string;
-  /** Short content hash, rendered mono. Proof the locked text is the signed text. */
-  hash: string;
+  /**
+   * A short fingerprint of the note's text, rendered mono.
+   *
+   * Of the text as it currently reads, computed on this side. It is not proof
+   * that the text is the text that was signed: nothing on the wire carries the
+   * hash taken at signing time, so there is nothing here to compare it with.
+   * See `contentHash` in `./signature.ts` for what would make it proof.
+   */
+  fingerprint: string;
 }
 
 export interface Addendum {

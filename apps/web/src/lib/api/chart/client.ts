@@ -153,9 +153,12 @@ export function createMockChartClient(options: MockChartClientOptions = {}): Cha
               credential: MOCK_SIGNER.credential,
               signedAt: clock.next(),
               attestation: ATTESTATION,
-              // Hashed from the sections this signature is covering, so the
-              // hash can never describe text the signature did not include.
-              hash: contentHash(committed),
+              // The same value the live path shows, computed the same way, so
+              // the two modes cannot disagree about what this field means: a
+              // fingerprint of the note's text, and not evidence about the
+              // signature. This store never rewrites a signed note's sections,
+              // so a later read of it fingerprints the same text.
+              fingerprint: contentHash(committed),
             },
           });
         }),

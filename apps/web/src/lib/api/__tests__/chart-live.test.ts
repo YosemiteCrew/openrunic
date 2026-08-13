@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createHttpClient, createMockClient } from '@/lib/api';
+import { createHttpClient, createMockClient, MOCK_DIRECTORY_USERS } from '@/lib/api';
 import type { ClinicalNoteDto } from '@/lib/api';
 import { contentHash, createHttpChartClient, createMockChartClient } from '@/lib/api/chart';
+import { NOTE_SECTION_KEYS } from '@/lib/api/chart';
+import type { NoteSectionKey } from '@/lib/api/chart';
 import { MOCK_ENCOUNTERS, MOCK_NOTES } from '@/lib/api/mock/records';
 
 /**
@@ -36,7 +38,7 @@ describe('the live chart summary', () => {
     const visit = chart.visits.find((row) => row.id === firstVisit.id);
     expect(visit).toBeDefined();
     expect(visit?.date).toBe(firstVisit.startedAt.slice(0, 10));
-    expect(visit?.providerName).toBe('Dr. Okafor');
+    expect(visit?.providerName).toBe('Ada Okafor');
     // The link target is the note, because that is what the encounter route
     // renders. A visit with no note has nothing to open.
     expect(visit?.encounterId).toBe(MOCK_NOTES[0]?.id);
@@ -96,12 +98,114 @@ describe('the live encounter note', () => {
     expect(note.sections[3]?.text).toContain('lisinopril');
   });
 
-  it('carries a signature with a hash of the text it covers', async () => {
+  it('names the signer from the directory rather than from a fixture lookup', async () => {
     const note = await liveChart().notes.get(signedNote?.id ?? '');
 
     expect(note.signature).not.toBeNull();
-    expect(note.signature?.signerName).toBe('Dr. Okafor');
-    expect(note.signature?.hash).toBe(contentHash(note.sections));
+    // Given name and family name off the `/bff/v0/users` row, plus the
+    // credential that row carries. Nothing here is invented from the id.
+    expect(note.signature?.signerName).toBe('Ada Okafor');
+    expect(note.signature?.credential).toBe('MD');
+  });
+
+  /**
+   * What the fingerprint actually is, asserted so that a wrong implementation
+   * fails.
+   *
+   * The assertion this replaces was `signature.hash === contentHash(sections)`,
+   * which held for any implementation whatsoever - a constant, the note id,
+   * anything - because both sides were computed from the same value on the same
+   * side. What the field claims is narrower and checkable: it is derived from
+   * the note's text, from all of it, and from nothing else. So one note is
+   * varied by its text and must move, and another is varied by everything
+   * except its text and must not.
+   */
+  describe('the note fingerprint', () => {
+    const base = MOCK_NOTES.find((row) => row.state === 'SIGNED');
+    if (base === undefined) throw new Error('records.ts has no signed note to vary');
+
+    /** Reads one note back through the live client, as the screen would. */
+    async function fingerprintOf(note: ClinicalNoteDto): Promise<string | undefined> {
+      const chart = createHttpChartClient(createMockClient({ notes: [note] }));
+      return (await chart.notes.get(note.id)).signature?.fingerprint;
+    }
+
+    it('moves when the text moves', async () => {
+      const edited = base.blocks.map((block) =>
+        block.key === 'plan' ? { ...block, text: 'Recheck in two weeks.' } : block
+      );
+
+      expect(await fingerprintOf({ ...base, blocks: edited })).not.toBe(await fingerprintOf(base));
+    });
+
+    it('moves when a block far from the end moves, so it covers the whole note', async () => {
+      const edited = base.blocks.map((block) =>
+        block.key === 'subjective' ? { ...block, text: 'Reports no symptoms at all.' } : block
+      );
+
+      expect(await fingerprintOf({ ...base, blocks: edited })).not.toBe(await fingerprintOf(base));
+    });
+
+    it('stays put when everything except the text changes', async () => {
+      // A different signer, a different title, a different signing instant. The
+      // fingerprint describes the text, so none of these may disturb it.
+      const restamped: ClinicalNoteDto = {
+        ...base,
+        title: 'Retitled after the fact',
+        signedAt: '2026-07-01T08:00:00.000Z',
+        signedById: MOCK_DIRECTORY_USERS[1]?.id ?? base.authorId,
+      };
+
+      expect(await fingerprintOf(restamped)).toBe(await fingerprintOf(base));
+    });
+
+    it('is unchanged when the same blocks come back in a different order', async () => {
+      // The screen always renders subjective, objective, assessment, plan. A
+      // fingerprint that moved because storage handed the blocks over in
+      // another order would be describing the storage, not the note.
+      const reversed = [...base.blocks].reverse();
+
+      expect(await fingerprintOf({ ...base, blocks: reversed })).toBe(await fingerprintOf(base));
+    });
+
+    it('covers the text and the section it belongs to, and nothing else', async () => {
+      /** The stored text of one block, or none when the note has no such block. */
+      const textOf = (key: NoteSectionKey): string => {
+        const block = base.blocks.find((candidate) => candidate.key === key);
+        return typeof block?.text === 'string' ? block.text : '';
+      };
+
+      // Built here from the stored blocks and the order this module documents,
+      // not from the sections the client just returned, so the expectation is
+      // an independent statement rather than a restatement. The label and the
+      // hint are deliberately wrong: they are this app's interface copy rather
+      // than anything the clinician wrote, and they must not reach the hash.
+      const expected = contentHash(
+        NOTE_SECTION_KEYS.map((key) => ({
+          key,
+          label: 'not part of the note',
+          hint: 'not part of the note',
+          text: textOf(key),
+          emitted: [],
+        }))
+      );
+
+      expect(await fingerprintOf(base)).toBe(expected);
+    });
+  });
+
+  it('says it does not know an author the directory no longer lists', async () => {
+    const note = MOCK_NOTES.find((row) => row.state === 'SIGNED');
+    if (note === undefined) throw new Error('records.ts has no signed note to read');
+    // A leaver, or a directory larger than one page. Either way the chart may
+    // not put a name to the id, and "Unassigned" says exactly that.
+    const client = createMockClient({ notes: [note], users: [] });
+
+    const read = await createHttpChartClient(client).notes.get(note.id);
+
+    expect(read.providerName).toBe('Unassigned');
+    expect(read.providerCredential).toBe('');
+    expect(read.signature?.signerName).toBe('Unassigned');
   });
 
   it('leaves an unsigned note without a signature block', async () => {
@@ -146,7 +250,7 @@ describe('the live encounter note', () => {
     const amended = await chart.notes.addAddendum(id, 'Home readings average 124/76.');
 
     expect(amended.addenda.at(-1)?.text).toBe('Home readings average 124/76.');
-    expect(amended.addenda.at(-1)?.authorName).toBe('Dr. Okafor');
+    expect(amended.addenda.at(-1)?.authorName).toBe('Ada Okafor');
     // The note moves with its addendum, so a reader who sees it knows to look.
     expect((await client.notes.get(id)).state).toBe('AMENDED');
   });

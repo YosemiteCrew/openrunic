@@ -15,7 +15,7 @@ import type {
   SlashCommand,
 } from '@/lib/api/chart';
 import { useMutation } from '@/lib/api';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { formatCredentialed, formatDate, formatDateTime } from '@/lib/format';
 
 import { NoteBlock } from './NoteBlock';
 import { initialDraft, isLocked, reduceNoteDraft } from './note-draft';
@@ -189,7 +189,8 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
       ) : (
         <p className="or-caption or-note__footnote">
           Nothing is signed yet, so this note carries no signature block. Written{' '}
-          {formatDate(note.visitDate)} by {note.providerName}, {note.providerCredential}.
+          {formatDate(note.visitDate)} by{' '}
+          {formatCredentialed(note.providerName, note.providerCredential)}.
         </p>
       )}
 
@@ -251,7 +252,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
       >
         <p className="or-body">{ATTESTATION}</p>
         <p className="or-caption">
-          Signing as {note.providerName}, {note.providerCredential}.
+          Signing as {formatCredentialed(note.providerName, note.providerCredential)}.
         </p>
         {signing.error ? (
           <p className="or-body" role="alert">

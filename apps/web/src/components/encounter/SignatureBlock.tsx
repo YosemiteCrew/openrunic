@@ -4,7 +4,7 @@ import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { Addendum, NoteSignature } from '@/lib/api/chart';
-import { formatDateTime } from '@/lib/format';
+import { formatCredentialed, formatDateTime } from '@/lib/format';
 
 /**
  * The e-sign unit, C25.
@@ -12,8 +12,14 @@ import { formatDateTime } from '@/lib/format';
  * Identical wherever it appears - notes, forms, consents, staff and portal -
  * and undecorated on purpose: a signature block that has been styled to look
  * impressive is a signature block nobody reads. Signer, credential, the moment,
- * the attestation sentence, and the hash that proves the locked text is the
- * text that was signed.
+ * and the attestation sentence.
+ *
+ * The last row is a fingerprint of the note's text as it currently reads, and
+ * it is labelled as one rather than as proof of anything. It is computed on
+ * this side from the text on this side; the API stores no hash taken at signing
+ * time, so nothing here can say the text is unchanged since. Calling it proof
+ * would put a guarantee on a clinical record that no code in this repository
+ * can honour.
  */
 
 export interface SignatureBlockProps {
@@ -32,7 +38,7 @@ export function SignatureBlock({
         <div className="or-signature__pair">
           <dt className="or-overline">Signed by</dt>
           <dd className="or-body">
-            {signature.signerName}, {signature.credential}
+            {formatCredentialed(signature.signerName, signature.credential)}
           </dd>
         </div>
         <div className="or-signature__pair">
@@ -40,8 +46,8 @@ export function SignatureBlock({
           <dd className="or-body">{formatDateTime(signature.signedAt)}</dd>
         </div>
         <div className="or-signature__pair">
-          <dt className="or-overline">Content hash</dt>
-          <dd className="or-body or-mono">{signature.hash}</dd>
+          <dt className="or-overline">Note fingerprint</dt>
+          <dd className="or-body or-mono">{signature.fingerprint}</dd>
         </div>
       </dl>
 
@@ -54,7 +60,8 @@ export function SignatureBlock({
                 <Badge tone="neutral">Addendum</Badge>
                 <p className="or-body or-signature__addendum-text">{addendum.text}</p>
                 <p className="or-caption">
-                  {addendum.authorName}, {addendum.credential}, {formatDateTime(addendum.addedAt)}
+                  {formatCredentialed(addendum.authorName, addendum.credential)},{' '}
+                  {formatDateTime(addendum.addedAt)}
                 </p>
               </li>
             ))}

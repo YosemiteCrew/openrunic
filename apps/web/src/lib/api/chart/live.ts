@@ -1,7 +1,5 @@
-import { mockProviderName } from '../mock/fixtures';
-
 import { ATTESTATION, contentHash } from './signature';
-import type { ApiClient, ClinicalNoteDto, EncounterDto, NoteAddendumDto } from '../types';
+import type { ApiClient, ClinicalNoteDto, EncounterDto, NoteAddendumDto, UserDto } from '../types';
 
 import type {
   Addendum,
@@ -23,15 +21,18 @@ import type {
  * does serve is `/patients/:id`, `/encounters`, `/notes` and `/notes/:id`, and
  * this module composes those into the two shapes the chart screens read.
  *
- * Where a section of the chart has no route yet it is reported as absent rather
- * than as empty, which is a different statement and the only safe one. The
- * allergy record makes that distinction in its own type: `NOT_RECORDED` means
- * nobody has asked, and it renders differently from an affirmed
+ * Where a section of the chart is not composed here it is reported as absent
+ * rather than as empty, which is a different statement and the only safe one.
+ * The allergy record makes that distinction in its own type: `NOT_RECORDED`
+ * means nobody has asked, and it renders differently from an affirmed
  * `NO_KNOWN_ALLERGIES`. An empty list must never read as "safe".
  */
 
 /** How many visits a chart's timeline shows before it starts paging. */
 const VISIT_PAGE_SIZE = 50;
+
+/** One page of the staff directory. The API caps a page at 100. */
+const DIRECTORY_PAGE_SIZE = 100;
 
 /**
  * The four SOAP blocks, with the heading and the one-line hint each carries.
@@ -58,8 +59,47 @@ const SECTION_COPY: Readonly<Record<NoteSectionKey, { label: string; hint: strin
 
 const SECTION_ORDER: readonly NoteSectionKey[] = ['subjective', 'objective', 'assessment', 'plan'];
 
-/** The credential shown beside a signature until there is a practitioner directory. */
-const DEFAULT_CREDENTIAL = 'MD';
+/**
+ * Who someone is, for the two places the chart names a person: the signature
+ * block and the visit list.
+ *
+ * Read from `/bff/v0/users` rather than assumed. A chart that stamped a
+ * credential nobody entered would be putting a qualification on a signature
+ * block, which is the last place in the product to guess.
+ */
+interface Person {
+  name: string;
+  /** Empty when the directory row carries none, and then nothing is rendered. */
+  credential: string;
+}
+
+/**
+ * An author this page of the directory does not list.
+ *
+ * The read below asks for no status, on purpose: a note written by someone who
+ * has since left still has to carry their name, and filtering to active
+ * accounts would erase the author of every old note in the chart. So what
+ * reaches here is an id genuinely absent from the page - a deleted account, or
+ * a directory longer than one page. "Unassigned" says the chart does not know,
+ * which is true; a name invented from an id would not be.
+ */
+const UNKNOWN_PERSON: Person = { name: 'Unassigned', credential: '' };
+
+type Directory = ReadonlyMap<string, Person>;
+
+function toPerson(user: UserDto): Person {
+  return { name: `${user.givenName} ${user.familyName}`, credential: user.credential ?? '' };
+}
+
+/** The staff directory, keyed by id, for one chart read. */
+async function readDirectory(client: ApiClient, signal?: AbortSignal): Promise<Directory> {
+  const page = await client.users.list({ pageSize: DIRECTORY_PAGE_SIZE }, signal);
+  return new Map(page.data.map((user) => [user.id, toPerson(user)]));
+}
+
+function personIn(directory: Directory, userId: string): Person {
+  return directory.get(userId) ?? UNKNOWN_PERSON;
+}
 
 /**
  * Reads a block's text, whatever the editor put around it.
@@ -113,25 +153,28 @@ export function toNoteState(note: ClinicalNoteDto): NoteState {
 
 function signatureFrom(
   note: ClinicalNoteDto,
-  sections: readonly NoteSection[]
+  sections: readonly NoteSection[],
+  directory: Directory
 ): NoteSignature | null {
   if (note.signedAt === null) return null;
+  const signer = personIn(directory, note.signedById ?? note.authorId);
   return {
-    signerName: mockProviderName(note.signedById ?? note.authorId),
-    credential: DEFAULT_CREDENTIAL,
+    signerName: signer.name,
+    credential: signer.credential,
     signedAt: note.signedAt,
     attestation: ATTESTATION,
-    // Hashed from the sections the screen renders, so the hash describes the
-    // text on screen rather than a storage detail nobody can see.
-    hash: contentHash(sections),
+    // A fingerprint of the text just read, not evidence about the signature.
+    // See `fingerprint` on NoteSignature and `contentHash` in ./signature.ts.
+    fingerprint: contentHash(sections),
   };
 }
 
-function toAddendum(addendum: NoteAddendumDto): Addendum {
+function toAddendum(addendum: NoteAddendumDto, directory: Directory): Addendum {
+  const author = personIn(directory, addendum.authorId);
   return {
     id: addendum.id,
-    authorName: mockProviderName(addendum.authorId),
-    credential: DEFAULT_CREDENTIAL,
+    authorName: author.name,
+    credential: author.credential,
     addedAt: addendum.signedAt ?? addendum.createdAt,
     // One pass: a block with no text contributes nothing rather than an empty
     // paragraph in the middle of a correction.
@@ -140,7 +183,11 @@ function toAddendum(addendum: NoteAddendumDto): Addendum {
 }
 
 /** The visit timeline: one row per encounter, carrying the note it produced. */
-function toVisit(encounter: EncounterDto, notes: readonly ClinicalNoteDto[]): Visit {
+function toVisit(
+  encounter: EncounterDto,
+  notes: readonly ClinicalNoteDto[],
+  directory: Directory
+): Visit {
   const note = notes.find((candidate) => candidate.encounterId === encounter.id);
   return {
     id: encounter.id,
@@ -152,7 +199,7 @@ function toVisit(encounter: EncounterDto, notes: readonly ClinicalNoteDto[]): Vi
     // cost one request per row. `class` is what the encounter itself says it
     // was, in the API's own word.
     type: encounter.class,
-    providerName: mockProviderName(encounter.providerId),
+    providerName: personIn(directory, encounter.providerId).name,
     reason: encounter.reasonText ?? 'Not recorded',
     noteState: note ? toNoteState(note) : 'NONE',
   };
@@ -161,12 +208,14 @@ function toVisit(encounter: EncounterDto, notes: readonly ClinicalNoteDto[]): Vi
 /**
  * The chart summary, from the three routes that exist.
  *
- * Allergies, problems, medications, care gaps, results, documents, care team
- * and the account balance are each their own aggregate in `apps/api`, and
- * mapping them into this screen's view types is a change of its own. Until then
- * they are reported as absent: `NOT_RECORDED` for allergies, and empty lists
- * elsewhere, which the chart tabs already render as "nothing recorded" rather
- * than as "nothing wrong".
+ * Allergies, problems, medications, results and documents each have a segment
+ * in `apps/api` already; mapping those payloads into this screen's view types
+ * is a change of its own. Care gaps, the care team and the account balance have
+ * no segment at all, and the last of those is a derivation over charges and
+ * payments rather than a row anywhere. Until each is done they are reported as
+ * absent: `NOT_RECORDED` for allergies, and empty lists elsewhere, which the
+ * chart tabs already render as "nothing recorded" rather than as "nothing
+ * wrong".
  */
 export async function readChartSummary(
   client: ApiClient,
@@ -177,9 +226,10 @@ export async function readChartSummary(
   // full of empty tabs for a person who may not exist.
   await client.patients.get(patientId, signal);
 
-  const [encounters, notes] = await Promise.all([
+  const [encounters, notes, directory] = await Promise.all([
     client.encounters.list({ patientId, pageSize: VISIT_PAGE_SIZE }, signal),
     client.notes.list({ patientId, pageSize: VISIT_PAGE_SIZE }, signal),
+    readDirectory(client, signal),
   ]);
 
   return {
@@ -188,7 +238,7 @@ export async function readChartSummary(
     problems: [],
     medications: [],
     careGaps: [],
-    visits: encounters.data.map((encounter) => toVisit(encounter, notes.data)),
+    visits: encounters.data.map((encounter) => toVisit(encounter, notes.data, directory)),
     results: [],
     documents: [],
     careTeam: [],
@@ -199,9 +249,10 @@ export async function readChartSummary(
 /**
  * One note, with the visit it belongs to and the corrections against it.
  *
- * Three reads rather than one: the note, the visit it documents, and its
- * addenda. The visit is needed because the note carries no date or reason of
- * its own, and the API is right not to duplicate them.
+ * Four reads rather than one: the note, the visit it documents, its addenda,
+ * and the staff directory that turns the three author ids on this screen into
+ * names. The visit is needed because the note carries no date or reason of its
+ * own, and the API is right not to duplicate them.
  */
 export async function readEncounterNote(
   client: ApiClient,
@@ -209,12 +260,14 @@ export async function readEncounterNote(
   signal?: AbortSignal
 ): Promise<EncounterNote> {
   const note = await client.notes.get(noteId, signal);
-  const [encounter, addenda] = await Promise.all([
+  const [encounter, addenda, directory] = await Promise.all([
     client.encounters.get(note.encounterId, signal),
     client.notes.listAddenda(noteId, { pageSize: VISIT_PAGE_SIZE }, signal),
+    readDirectory(client, signal),
   ]);
 
   const sections = sectionsFrom(note);
+  const author = personIn(directory, note.authorId);
 
   return {
     id: note.id,
@@ -223,15 +276,12 @@ export async function readEncounterNote(
     // heading than the encounter class and is always present.
     visitType: note.title,
     visitDate: encounter.startedAt.slice(0, 10),
-    // There is no practitioner endpoint yet, so a name comes from the fixture
-    // directory, exactly as the schedule's provider columns do. When that
-    // endpoint lands this is one lookup, and nothing else here changes.
-    providerName: mockProviderName(note.authorId),
-    providerCredential: DEFAULT_CREDENTIAL,
+    providerName: author.name,
+    providerCredential: author.credential,
     reason: encounter.reasonText ?? 'Not recorded',
     state: toNoteState(note),
     sections,
-    signature: signatureFrom(note, sections),
-    addenda: addenda.data.map(toAddendum),
+    signature: signatureFrom(note, sections, directory),
+    addenda: addenda.data.map((addendum) => toAddendum(addendum, directory)),
   };
 }

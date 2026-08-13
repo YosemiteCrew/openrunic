@@ -178,12 +178,16 @@ describe('NoteEditor signing', () => {
 });
 
 describe('NoteEditor, signed', () => {
-  it('renders signed content as text, with its signature and hash', () => {
+  it('renders signed content as text, with its signature and fingerprint', () => {
     renderEditor(signed);
 
     expect(screen.getByText('Signed and locked')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.getByText('9f2c-41ab-77de')).toBeInTheDocument();
+    // The label says what the value is. It was "Content hash" beside a comment
+    // calling it proof that the locked text is the signed text, which it never
+    // was: nothing on the wire carries the hash taken at signing time.
+    expect(screen.getByText('Note fingerprint')).toBeInTheDocument();
+    expect(screen.getByText(contentHash(signed.sections))).toBeInTheDocument();
     expect(
       screen.getByText('I attest that this note records the care I provided at this visit.')
     ).toBeInTheDocument();

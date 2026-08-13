@@ -49,9 +49,20 @@ import { SESSION_COOKIE, sessionState } from '@/lib/auth/session';
  * routes under `src/app`, the file has to sit beside them in `src/`: at the
  * package root, `next dev` never loads it at all. It does not warn, it does not
  * error, it simply serves every clinical route to anyone who asks, which is the
- * worst way for a guard to fail. There is a request-level test for exactly that
- * in `src/__tests__/proxy.test.ts`, so a future move breaks a test rather than
- * quietly reopening the door.
+ * worst way for a guard to fail.
+ *
+ * So it stays here, and if you are reading this because the brief said
+ * `middleware.ts`, the brief was written before Next renamed the convention.
+ * Both halves were found by driving a browser rather than by reading docs, and
+ * both fail silently, which is why they are written down instead of left to be
+ * rediscovered.
+ *
+ * `src/__tests__/proxy.test.ts` imports this module by path and drives it with
+ * real requests, so moving or renaming the file fails that suite rather than
+ * quietly reopening the door. What no unit test can catch is the half about
+ * `next dev` not loading a guard at the package root, because the framework is
+ * not in the room: only a request to a running server shows that, which is how
+ * it was found.
  */
 
 /**

@@ -23,7 +23,12 @@ on:
     - cron: '17 4 * * 2'
   workflow_dispatch:
 
-permissions: read-all
+# Deny by default. The upstream template says `read-all` here, but that hands
+# the token read access to every scope in the repository - packages, actions,
+# deployments, the lot - when the single job below already declares exactly what
+# it needs. An empty map is the tighter spelling of the same intent, and it is
+# what keeps this workflow honest with the token-permissions check it runs.
+permissions: {}
 
 jobs:
   analysis:

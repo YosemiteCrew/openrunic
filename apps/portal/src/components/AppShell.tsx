@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from '@openrunic/ui';
-import { NAV_ITEMS, isActiveRoute } from '@/lib/nav';
+import { isActiveRoute, navItemsFor } from '@/lib/nav';
 import type { Patient } from '@/lib/api/types';
 
 export interface AppShellProps {
@@ -24,11 +24,17 @@ export interface AppShellProps {
    * is worse than chrome that arrives a moment late.
    */
   patient?: Patient | undefined;
+  /**
+   * Whether this practice configured an assistant. Defaults to no, so the navigation a
+   * portal renders before anything has been asked is the one it has always had.
+   */
+  assistantEnabled?: boolean;
   children: ReactNode;
 }
 
-export function AppShell({ patient, children }: AppShellProps) {
+export function AppShell({ patient, assistantEnabled = false, children }: AppShellProps) {
   const pathname = usePathname();
+  const items = navItemsFor(assistantEnabled);
 
   return (
     <div className="portal">
@@ -48,7 +54,7 @@ export function AppShell({ patient, children }: AppShellProps) {
 
       <nav className="portal__nav" aria-label="Portal sections">
         <ul className="portal__nav-list">
-          {NAV_ITEMS.map((item) => {
+          {items.map((item) => {
             const current = isActiveRoute(item.href, pathname);
             return (
               <li className="portal__nav-item" key={item.href}>

@@ -21,6 +21,18 @@ export interface ApiEnv {
   baseUrl?: string | undefined;
 }
 
+/**
+ * The build-time settings, read once as literal property accesses.
+ *
+ * Next inlines `process.env.NEXT_PUBLIC_*` only where it appears literally in
+ * the source, so this cannot be a function that takes an environment object:
+ * in the browser bundle there would be nothing left to read from.
+ */
+export const API_ENV: ApiEnv = {
+  mode: process.env.NEXT_PUBLIC_API_MODE,
+  baseUrl: process.env.NEXT_PUBLIC_API_URL,
+};
+
 export function createPortalApi(env: ApiEnv = {}): PortalApi {
   if (resolveApiMode(env.mode) === 'live') {
     return createHttpApi({ baseUrl: env.baseUrl ?? '' });
@@ -35,10 +47,7 @@ let shared: PortalApi | undefined;
  * navigations; screens accept an injected api in tests instead of reaching for this.
  */
 export function getPortalApi(): PortalApi {
-  shared ??= createPortalApi({
-    mode: process.env.NEXT_PUBLIC_API_MODE,
-    baseUrl: process.env.NEXT_PUBLIC_API_URL,
-  });
+  shared ??= createPortalApi(API_ENV);
   return shared;
 }
 

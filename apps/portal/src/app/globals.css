@@ -762,3 +762,154 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* ---------------------------------------------------------------- assistant */
+
+/* A section of the page, drawn like every other one. No panel, no bubble, no floating
+   control: on a phone the bottom of the screen belongs to the tab bar, and a feature most
+   deployments will never configure does not get to compete for it. */
+.portal-assistant {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.portal-assistant__service {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-assistant__service-name {
+  font-family: var(--font-mono);
+  color: var(--text-ink);
+}
+
+.portal-assistant__reach > summary {
+  cursor: pointer;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  padding-block: var(--space-2);
+}
+
+.portal-assistant__reach > ul {
+  padding-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-ink);
+}
+
+.portal-assistant__intro {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.portal-assistant__turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-5);
+}
+
+.portal-assistant__turn {
+  display: grid;
+  gap: var(--space-3);
+  padding-bottom: var(--space-5);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.portal-assistant__turn:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* The question is set apart by weight rather than by a coloured bubble. A transcript of
+   somebody asking about their own health does not need decoration. */
+.portal-assistant__question {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+  color: var(--text-heading);
+}
+
+.portal-assistant__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-assistant__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-assistant__step-icon {
+  flex: none;
+}
+
+.portal-assistant__answer {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.portal-assistant__withheld {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.portal-assistant__sources {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.portal-assistant__sources-head {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.portal-assistant__source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.portal-assistant__source {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.portal-assistant__source-note {
+  color: var(--text-secondary);
+}
+
+/* The route out. Drawn the same way whatever went wrong, because varying it would be the
+   page telling somebody how worried to be about their own record. */
+.portal-assistant__care-team {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  background: var(--surface-data);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.portal-assistant__care-team-icon {
+  flex: none;
+  color: var(--text-ink);
+}
+
+.portal-assistant__care-team-text {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.portal-assistant__compose {
+  padding-top: var(--space-2);
+}

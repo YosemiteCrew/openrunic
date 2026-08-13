@@ -16,10 +16,11 @@ import BillsPage, { metadata as billsMetadata } from '@/app/bills/page';
 import FormsPage, { metadata as formsMetadata } from '@/app/forms/page';
 import HealthRecordPage, { metadata as healthRecordMetadata } from '@/app/health-record/page';
 import MessagesPage, { metadata as messagesMetadata } from '@/app/messages/page';
+import AssistantPage, { metadata as assistantMetadata } from '@/app/assistant/page';
 
 /* The layout mounts the shell, which reads the route and renders next/link. Neither has a
    router in a unit test, so both are stubbed down to what these assertions need. */
-vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
+vi.mock('next/navigation', () => ({ usePathname: () => '/', notFound: vi.fn() }));
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={href} {...rest}>
@@ -67,5 +68,24 @@ describe.each([
     const headings = await screen.findAllByRole('heading', { level: 1 });
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent(title);
+  });
+});
+
+/**
+ * The assistant route is the exception to the block above, and deliberately so.
+ * Every other page renders a screen; this one renders nothing until the probe
+ * has answered, and answers 404 unless the practice configured an assistant.
+ * `AssistantScreen.test.tsx` covers the states; here we only assert that the
+ * route exists, is titled, and draws no heading in the shipped configuration.
+ */
+describe('Assistant route', () => {
+  it('carries its own title and description', () => {
+    expect(assistantMetadata.title).toBe('Assistant');
+    expect(assistantMetadata.description).toEqual(expect.any(String));
+  });
+
+  it('renders nothing at all outside a configured deployment', () => {
+    const { container } = render(<AssistantPage />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

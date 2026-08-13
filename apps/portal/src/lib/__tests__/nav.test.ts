@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_ITEMS, isActiveRoute } from '@/lib/nav';
+import { ASSISTANT_NAV_ITEM, NAV_ITEMS, isActiveRoute, navItemsFor } from '@/lib/nav';
 
 describe('NAV_ITEMS', () => {
   it('lists the portal six, each with a label and an icon', () => {
@@ -16,6 +16,25 @@ describe('NAV_ITEMS', () => {
 
   it('has no duplicate destinations', () => {
     const hrefs = NAV_ITEMS.map((item) => item.href);
+    expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+});
+
+describe('navItemsFor', () => {
+  it('gives a portal with no assistant the navigation it has always had', () => {
+    expect(navItemsFor(false)).toEqual(NAV_ITEMS);
+    expect(navItemsFor(false)).not.toContain(ASSISTANT_NAV_ITEM);
+  });
+
+  it('appends the assistant last, where it cannot displace Home on a phone', () => {
+    const items = navItemsFor(true);
+    expect(items).toHaveLength(NAV_ITEMS.length + 1);
+    expect(items.at(-1)).toEqual(ASSISTANT_NAV_ITEM);
+    expect(items[0]?.label).toBe('Home');
+  });
+
+  it('never repeats a destination', () => {
+    const hrefs = navItemsFor(true).map((item) => item.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 });

@@ -88,15 +88,16 @@ have handed its own `<a>`, which is why any router's Link satisfies it.
 Components read CSS custom properties and never literal values. Redefine a token and every
 component follows; that is the entire theming story.
 
-| Group     | Examples                                                                                            |
-| --------- | --------------------------------------------------------------------------------------------------- |
-| Colour    | `--bone`, `--cream`, `--espresso`, `--terracotta`, `--olive`, `--danger`                            |
-| Semantic  | `--bg-page`, `--surface-card`, `--surface-field`, `--text-body`, `--action-primary`, `--focus-ring` |
-| Spacing   | `--space-1` to `--space-10`, `--card-pad`, `--control-h-sm` / `-md` / `-lg`, `--content-max`        |
-| Radius    | `--radius-sm` / `-md` / `-lg` / `-pill`, `--radius-card`, `--radius-field`, `--radius-button`       |
-| Elevation | `--shadow-raised`, `--shadow-overlay`, `--scrim-espresso`                                           |
-| Motion    | `--ease-out`, `--dur-fast` / `--dur-base` / `--dur-slow`                                            |
-| Type      | `--font-display` / `-text` / `-editorial` / `-mono`, `--text-hero` to `--text-caption`              |
+| Group      | Examples                                                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| Colour     | `--bone`, `--cream`, `--espresso`, `--terracotta`, `--olive`, `--danger`                            |
+| Ink weight | `--hazelnut-ink`, `--olive-ink`, `--caramel-ink-inverse`                                            |
+| Semantic   | `--bg-page`, `--surface-card`, `--surface-field`, `--text-body`, `--action-primary`, `--focus-ring` |
+| Spacing    | `--space-1` to `--space-10`, `--card-pad`, `--control-h-sm` / `-md` / `-lg`, `--content-max`        |
+| Radius     | `--radius-sm` / `-md` / `-lg` / `-pill`, `--radius-card`, `--radius-field`, `--radius-button`       |
+| Elevation  | `--shadow-raised`, `--shadow-overlay`, `--scrim-espresso`                                           |
+| Motion     | `--ease-out`, `--dur-fast` / `--dur-base` / `--dur-slow`                                            |
+| Type       | `--font-display` / `-text` / `-editorial` / `-mono`, `--text-hero` to `--text-caption`              |
 
 House rules the components already enforce, so you get them for free:
 
@@ -108,6 +109,10 @@ House rules the components already enforce, so you get them for free:
   element.
 - Disabled is `opacity: 0.42` with no colour change. Nothing scales, bounces, or blurs.
 - Status is never colour alone. Every state that means something carries a text label too.
+- Quiet text roles resolve to ink weights of the warm hues rather than the hues themselves, so
+  every text token clears WCAG AA 4.5:1 on the paper it is drawn on. The raw hues stay for fills,
+  marks and charts. Espresso surfaces re-point the ink roles for their subtree, so a component
+  dropped on a band inherits ink drawn for espresso and needs no inverse variant of its own.
 
 ## Responsive
 
@@ -171,16 +176,73 @@ If your app serves its own copies of the design system's `assets/logo/`, point `
 ## Scripts
 
 ```bash
-pnpm --filter @openrunic/ui storybook    # component workshop on :6007
-pnpm --filter @openrunic/ui test         # vitest + coverage floors
+pnpm --filter @openrunic/ui storybook        # component workshop on :6007
+pnpm --filter @openrunic/ui build-storybook  # static workshop into storybook-static/
+pnpm --filter @openrunic/ui test             # vitest + coverage floors
+pnpm --filter @openrunic/ui test-storybook   # every story, in a browser, with axe
 pnpm --filter @openrunic/ui type-check
 pnpm --filter @openrunic/ui lint
-pnpm --filter @openrunic/ui build        # dist/index.js, dist/index.d.ts, dist/styles.css
+pnpm --filter @openrunic/ui build            # dist/index.js, dist/index.d.ts, dist/styles.css
 ```
 
-Storybook is the design-sync preview surface as well as the workshop: every component ships a
-`Default`, one story per meaningful variant and state, and a `Responsive` story wherever layout
-changes across a breakpoint. All clinical content in stories and tests is synthetic.
+## Storybook
+
+`pnpm --filter @openrunic/ui storybook` opens the workshop on
+[localhost:6007](http://localhost:6007). It is the design-sync preview surface as well as the
+workshop: every component ships a `Default`, one story per meaningful variant and state, and a
+`Responsive` story wherever layout changes across a breakpoint. All clinical content in stories
+and tests is synthetic.
+
+The main branch publishes the same workshop to **<https://yosemitecrew.github.io/openrunic/>**,
+so the component library is browsable without checking the repository out. The page goes live
+once Pages is enabled for the repository with "GitHub Actions" as the source; until then the
+`Publish to GitHub Pages` job in `.github/workflows/storybook.yml` is the only thing that fails,
+and only on main.
+
+## Story tests
+
+`test-storybook` runs every CSF3 story in this package as a test, in a pinned headless Chromium:
+
+- the story renders, and a render error fails the run;
+- its `play` function runs, so interaction assertions are part of the suite;
+- [axe](https://github.com/dequelabs/axe-core) checks the rendered result, and a violation fails
+  the run (`.storybook/preview.ts` sets `a11y.test: 'error'`).
+
+It is Storybook's Vitest addon, driven by `vitest.storybook.config.ts`, kept apart from
+`vitest.config.ts` so the jsdom unit suite keeps its own coverage floors. First run in a fresh
+checkout needs the browser:
+
+```bash
+pnpm --filter @openrunic/ui exec playwright install chromium
+pnpm --filter @openrunic/ui test-storybook
+```
+
+There is exactly one axe exception in the library, and it is scoped to the disabled rows of the
+five controls that have a disabled state. WCAG 1.4.3 exempts text inside an inactive user
+interface component, and disabled here is 0.42 opacity on the wrapper with no colour change, so
+axe sees ordinary text at 1.77:1 with no `disabled` attribute of its own to go by. The rule stays
+enabled and its selector is narrowed to skip that one subtree; `Checkbox.stories.tsx` carries the
+full reasoning and the other four point at it. Nothing is disabled globally.
+
+## Visual regression
+
+There is deliberately **no** screenshot diffing in this package yet. The library would fail such a
+gate for reasons that have nothing to do with a regression:
+
+- The three OFL families are referenced but not bundled (see [Fonts](#fonts)), so text renders in
+  whatever fallback the host has. macOS falls back to `-apple-system` and Georgia; a Linux CI
+  runner falls back to something else entirely, and every baseline would be a font diff.
+- Every component is pre-alpha and changing weekly. A gate that gets re-baselined on most pull
+  requests stops being a gate and becomes a rubber stamp with binaries attached to it.
+- The axe and interaction suite above already runs in a real browser, so structural and contrast
+  regressions - the ones that actually hurt - are caught without pixel comparison.
+
+What would have to be true before adding it: the font binaries vendored into the package (or a
+pinned font set installed into the CI image), a pinned browser via the Playwright container image
+rather than the runner's own, animations and transitions disabled in the preview, a fixed viewport
+and device scale factor, and a component API stable enough that a diff means a mistake rather than
+progress. When those hold, the natural home is a third job in `.github/workflows/storybook.yml`
+alongside the two that exist.
 
 ## Licence
 

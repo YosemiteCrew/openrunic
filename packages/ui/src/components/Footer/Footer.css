@@ -2,7 +2,14 @@
    alternation itself is the rhythm. Columns sit beside the lockup from md and stack below
    it on a phone, where each link keeps a 44px touch target. */
 
+/* The band is espresso paper, so it re-points the ink roles for its subtree the same way
+   the inverse card does; every quiet role inside then resolves to ink drawn for espresso. */
 .or-footer {
+  --text-ink: var(--text-inverse);
+  --text-heading: var(--text-inverse);
+  --text-secondary: var(--text-inverse-secondary);
+  --text-decorative: var(--text-inverse-decorative);
+
   padding: var(--space-7) var(--space-4);
   background: var(--surface-inverse);
   color: var(--text-inverse);
@@ -79,7 +86,8 @@
   gap: var(--space-3);
 }
 
-/* Caramel is the system's decorative ink and carries the overline in every band. */
+/* Caramel is the system's decorative ink and carries the overline in every band; on this
+   band --text-decorative resolves to the espresso-paper weight of it. */
 .or-footer__column-title {
   color: var(--text-decorative);
 }

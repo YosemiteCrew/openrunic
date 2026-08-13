@@ -1,0 +1,153 @@
+name: Storybook
+
+# The component library's own gate, kept out of ci.yaml on purpose: it needs a real
+# browser, so it is the slowest thing in the repository per changed file, and it is the
+# only stage that publishes anything. Its aggregate below is a separate required check.
+#
+# What runs here:
+#   1. `storybook build`, which is both the compile check and the artifact that Pages
+#      serves.
+#   2. Every CSF3 story executed in a pinned headless Chromium: the story renders, its
+#      play function runs, and axe checks the rendered result. A story error or an axe
+#      violation fails the job (.storybook/preview.ts sets `a11y.test: 'error'`).
+#
+# The suite is Storybook's Vitest addon rather than @storybook/test-runner. The test
+# runner's current release supports Storybook 10 only, and for a Vite-based framework the
+# addon is the path Storybook maintains: same builder, same .storybook config, same
+# preview annotations, so a passing test means the story is correct as the workshop draws
+# it. The trade is that the suite exercises the story modules through Storybook's Vite
+# pipeline rather than the files in storybook-static; both come out of the same builder
+# and the same config, and the build above is what proves the static output compiles.
+
+on:
+  pull_request: {}
+  push:
+    branches: [main, dev]
+  merge_group: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: storybook-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stories:
+    name: Build Storybook and run story tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # The browser binaries are the only large download this job makes, and their
+      # version is pinned by the lockfile, so the lockfile hash is the exact cache key:
+      # a Playwright bump invalidates it and nothing else does. The install step below
+      # is a no-op on a hit, which is why it stays outside the `if`.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      # Chromium only. The suite pins one browser (see vitest.storybook.config.ts) so the
+      # rendering it checks is identical on every run; --with-deps installs the system
+      # libraries the runner image does not carry.
+      - name: Install Chromium
+        run: pnpm --filter @openrunic/ui exec playwright install --with-deps chromium
+
+      - name: Build Storybook
+        run: pnpm --filter @openrunic/ui run build-storybook
+
+      - name: Run story tests (interactions + axe)
+        run: pnpm --filter @openrunic/ui run test-storybook
+
+      # Uploaded on every event, not just main: a reviewer can download the built
+      # workshop from a pull request run, and the deploy job below consumes this same
+      # artifact instead of building the site a second time.
+      - name: Upload built Storybook
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: storybook-static
+          path: packages/ui/storybook-static
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to GitHub Pages
+    needs: stories
+    # Only the released branch is published, so the public component library always
+    # matches main. Pull requests and dev pushes build and test the same Storybook and
+    # stop at the artifact.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # id-token is what deploy-pages exchanges for its short-lived deployment token; pages
+    # is the write scope for the deployment itself. Nothing here needs write access to the
+    # repository contents.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # Storybook builds every asset URL relative to the page, so the site works unchanged
+      # under the /openrunic/ project-pages path. configure-pages still runs: it is what
+      # resolves the site's own URL for the environment link below.
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Download built Storybook
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: storybook-static
+          path: storybook-static
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: storybook-static
+
+      # Fails until Pages is enabled for the repository with "GitHub Actions" as the
+      # source (Settings > Pages). That is a one-time manual step; the aggregate below
+      # treats a skipped publish as a pass, so pull requests are unaffected either way.
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+  storybook-required:
+    name: Storybook Required
+    # The one check to mark required on the branch rulesets for this workflow, following
+    # the same fail-closed shape as `CI Required` in ci.yaml.
+    if: always()
+    needs: [stories, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate stage results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$RESULTS"
+          # `skipped` passes: publish only runs on a push to main, so it is skipped on
+          # every pull request and merge-queue run. `cancelled` fails: an aggregate built
+          # on !cancelled() lets a cancelled dependency through as a pass.
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "Storybook Required: at least one stage failed or was cancelled"
+            exit 1
+          fi
+          echo "Storybook Required: ok"

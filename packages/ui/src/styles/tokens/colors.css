@@ -13,6 +13,17 @@
   --line: #e2d7c3;
   --danger: #b3362b;
 
+  /* --- ink weights ---
+     The warm hues above are drawn for fills, marks and data viz. As text they fall just
+     under WCAG AA 4.5:1 at the 12.5-14px sizes the quiet roles use: --hazelnut is 4.40:1
+     on cream, --olive 4.06:1 on bone, --caramel 3.82:1 on espresso. Each ink weight is
+     the same hue mixed toward the ink of the paper it sits on until it clears 4.5:1, so
+     nothing gets a new colour and nothing gets a grey. Use these when the colour is text;
+     use the raw hue for fills, marks and charts. */
+  --hazelnut-ink: color-mix(in oklab, var(--hazelnut) 92%, var(--espresso));
+  --olive-ink: color-mix(in oklab, var(--olive) 80%, var(--espresso));
+  --caramel-ink-inverse: color-mix(in oklab, var(--caramel) 80%, var(--bone));
+
   /* --- semantic surfaces (paper-steps: bone -> cream -> white) --- */
   --bg-page: var(--bone);
   --surface-card: var(--cream);
@@ -29,10 +40,14 @@
      The design system ships both meanings under one name; this library splits them. */
   --text-ink: var(--espresso);
   --text-heading: var(--espresso);
-  --text-secondary: var(--hazelnut);
+  --text-secondary: var(--hazelnut-ink);
   --text-decorative: var(--caramel);
   --text-inverse: var(--bone);
   --text-inverse-secondary: #b9a791;
+  /* Caramel is the decorative ink everywhere, but on an espresso band it has to be lifted
+     toward bone rather than pushed toward espresso. Inverse surfaces re-point
+     --text-decorative at this, so a component dropped on a band needs no variant. */
+  --text-inverse-decorative: var(--caramel-ink-inverse);
   --text-link: var(--terracotta-deep);
   --text-link-hover: var(--terracotta);
 
@@ -49,9 +64,11 @@
   --border-inverse: rgba(245, 239, 230, 0.22);
 
   /* --- semantic status (never color alone: always pair with label or icon) --- */
-  --status-success: var(--olive);
+  /* Status colours are read as 12.5px words, so the semantic tokens are ink weights; the
+     raw --olive and --hazelnut remain for dots, fills and charts. */
+  --status-success: var(--olive-ink);
   --status-success-wash: #e7e9dc;
-  --status-neutral: var(--hazelnut);
+  --status-neutral: var(--hazelnut-ink);
   --status-neutral-wash: #efe3d5;
   --status-danger: var(--danger);
   --status-danger-wash: #f6dfd9;

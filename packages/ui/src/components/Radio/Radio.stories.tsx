@@ -19,6 +19,13 @@ const stack: CSSProperties = {
   maxWidth: '420px',
 };
 
+/* The disabled-row contrast exemption, explained in full in Checkbox.stories.tsx: WCAG 1.4.3
+   exempts text inside an inactive component, and axe cannot see it because the 0.42 opacity
+   sits on the wrapper. Narrowed to the disabled row's subtree; nothing else is exempt. */
+const disabledRowContrast = {
+  a11y: { config: { rules: [{ id: 'color-contrast', selector: ':not(.or-radio--disabled *)' }] } },
+};
+
 export const Default: Story = {};
 
 export const Selected: Story = {
@@ -31,6 +38,7 @@ export const WithHint: Story = {
 
 /** Disabled is 0.42 opacity with no colour change. */
 export const Disabled: Story = {
+  parameters: disabledRowContrast,
   args: {
     label: 'Imperial (mg/dL)',
     hint: 'Not available for this record source.',

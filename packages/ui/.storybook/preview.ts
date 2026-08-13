@@ -11,6 +11,10 @@ const ESPRESSO = '#2E211A';
 const preview: Preview = {
   parameters: {
     layout: 'padded',
+    /* 'error' turns an axe violation into a failing story test rather than a panel someone
+       has to remember to open. Every story is checked; a story that needs an exception says
+       so in its own `a11y.config.rules` entry with the reason, never here. */
+    a11y: { test: 'error' },
     backgrounds: {
       options: {
         bone: { name: 'Bone (page)', value: BONE },

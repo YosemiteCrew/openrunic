@@ -27,12 +27,12 @@
 
 /* Tones ------------------------------------------------------------------ */
 
-/* The success ink is a darkened olive: plain --olive on the success wash lands at 3.8:1,
-   under AA for 12.5px text. Mixing it toward espresso reproduces the design system's
-   success-wash ink while staying derived from tokens rather than a new literal. */
+/* --status-success is already the ink weight of olive (plain --olive is 3.8:1 on this wash,
+   under AA for 12.5px text), so the pill takes the token rather than re-deriving an ink of
+   its own and drifting from every other success readout. */
 .or-badge--success {
   --or-badge-bg: var(--status-success-wash);
-  --or-badge-ink: color-mix(in oklab, var(--olive) 58%, var(--espresso));
+  --or-badge-ink: var(--status-success);
 }
 
 .or-badge--neutral {
@@ -45,8 +45,10 @@
   --or-badge-ink: var(--status-danger);
 }
 
+/* 11% terracotta, not 14%: the deeper wash reads the same at a glance but drops the ink to
+   4.48:1, and this pill carries 12.5px text. 11% keeps it at 4.63:1. */
 .or-badge--accent {
-  --or-badge-bg: color-mix(in oklab, var(--terracotta) 14%, var(--bone));
+  --or-badge-bg: color-mix(in oklab, var(--terracotta) 11%, var(--bone));
   --or-badge-ink: var(--terracotta-deep);
 }
 

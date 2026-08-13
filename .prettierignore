@@ -3,6 +3,7 @@ dist/
 build/
 .next/
 coverage/
+storybook-static/
 .turbo/
 
 # Storybook build output. Ignored by packages/ui/.gitignore, but Prettier only reads the root

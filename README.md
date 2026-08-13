@@ -16,7 +16,7 @@ The project is organized around three pillars, mirroring Yosemite Crew:
 
 ## What we're building first
 
-A modern, fast, lightweight EMR - an alternative to OpenEMR:
+A modern, fast, lightweight EMR:
 
 - Patient demographics and registration
 - Scheduling and appointment management
@@ -35,10 +35,11 @@ A modern, fast, lightweight EMR - an alternative to OpenEMR:
 | --------------- | ---------------------------------------------------- |
 | Monorepo        | pnpm 10 workspaces + Turborepo                       |
 | Runtime         | Node.js 22                                           |
-| Web app         | Next.js 15 (React)                                   |
+| Web app         | Next.js 16 (React 19)                                |
 | API             | Hono, serving FHIR R4 at the API boundary            |
-| Database        | PostgreSQL via Prisma 6 (relational source of truth) |
+| Database        | PostgreSQL via Prisma 7 (relational source of truth) |
 | Interop         | FHIR R4 types and domain-to-FHIR mappers             |
+| Components      | @openrunic/ui design-system library + Storybook      |
 | Tests           | Vitest                                               |
 | Lint and format | ESLint 9 (flat config) + Prettier                    |
 
@@ -47,12 +48,13 @@ A modern, fast, lightweight EMR - an alternative to OpenEMR:
 ```text
 openrunic/
 ├── apps/
-│   ├── web/          # Next.js 15 app: hospital and patient web experience
+│   ├── web/          # Next.js 16 app: practice-facing EMR
 │   └── api/          # Hono service: FHIR R4 API boundary
 ├── packages/
 │   ├── types/        # Shared TypeScript types
 │   ├── fhir/         # FHIR R4 types + domain<->FHIR mappers (round-trip tested)
-│   └── database/     # Prisma 6 schema, migrations, and client (Postgres)
+│   ├── ui/           # React component library implementing the design system
+│   └── database/     # Prisma 7 schema, migrations, and client (Postgres)
 └── docs/             # ADRs and project documentation
 ```
 

@@ -114,12 +114,13 @@ the moment it is added, and fails the suite by name if it does not carry the pro
 
 - **An answer without its records.** ADR-0005 rule 2 asks that the source be displayed. Here, prose
   whose source ledger never arrived is not shown at all and the page says why.
-- **Anything at all from a turn that failed.** The failure sentences say the answer was thrown
-  away, so leaving the prose up, or a list of records under it, would be the page contradicting
-  itself in the case that matters most. The loop publishes no source ledger for a phase it aborted,
-  and the transcript drops the words and the records together when a turn settles as failed. The
-  sentence and the route to the care team are the whole of what is drawn. What the turn did read is
-  still in the audit record, because that is the question an access report has to answer.
+- **Anything at all from a turn that failed.** No failure sentence here describes an answer the
+  reader can see and several say outright that nothing is shown, so leaving the prose up, or a list
+  of records under it, would be the page contradicting itself in the case that matters most. The
+  loop publishes no source ledger for a phase it aborted, and the transcript drops the words and
+  the records together when a turn settles as failed. The sentence and the route to the care team
+  are the whole of what is drawn. What the turn did read is still in the audit record, because that
+  is the question an access report has to answer.
 - **A draft change.** The page asks for `read` on every turn, so the half of the loop that drafts
   changes never runs. A proposal arriving anyway is treated as a failure, not rendered: a patient
   must never be handed a proposed change to their own chart that nobody at the practice has seen.

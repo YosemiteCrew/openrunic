@@ -40,6 +40,42 @@ jobs:
     with:
       matrix: ${{ needs.core.outputs.matrix }}
 
+  agent-disabled:
+    name: Agent disabled
+    needs: core
+    if: needs.core.outputs.has-any == 'true'
+    # ADR-0005 makes the agent-disabled configuration a first-class CI target
+    # rather than an afterthought. The whole suite runs with every assistant
+    # variable explicitly blank, asserting that the product is complete with no
+    # model configured. If any clinical workflow degrades without one, we have
+    # shipped the dependency we said we would not ship; we would just have
+    # moved it over a socket.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENRUNIC_AGENT_BASE_URL: ''
+      OPENRUNIC_AGENT_MODEL: ''
+      OPENRUNIC_AGENT_API_KEY: ''
+      OPENRUNIC_AGENT_PROVIDER: ''
+      OPENRUNIC_AGENT_PHI_EGRESS: ''
+      OPENRUNIC_AGENT_APPROVAL_SECRET: ''
+      OPENRUNIC_AGENT_API_BASE_URL: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Generate Prisma client
+        run: pnpm --filter @openrunic/database exec prisma generate
+
+      - name: Run the whole suite with no model configured
+        run: pnpm turbo run test
+
   migration:
     needs: core
     # Only when the database workspace is affected - that is what carries
@@ -105,7 +141,7 @@ jobs:
     # The one check to mark required on the branch rulesets. Published first so
     # its behaviour can be observed before it is made required.
     if: always()
-    needs: [core, test, migration, sonar]
+    needs: [core, test, agent-disabled, migration, sonar]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

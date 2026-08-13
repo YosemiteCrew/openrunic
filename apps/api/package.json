@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "openrunic API — the FHIR R4 boundary of the EMR",
+  "description": "openrunic API \u2014 the FHIR R4 boundary of the EMR",
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
+    "@openrunic/agent": "workspace:*",
+    "@openrunic/agent-tools": "workspace:*",
     "@openrunic/database": "workspace:*",
     "@openrunic/fhir": "workspace:*",
     "hono": "^4.13.1",

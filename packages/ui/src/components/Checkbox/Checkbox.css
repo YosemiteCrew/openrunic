@@ -1,0 +1,103 @@
+/* Checkbox - independent on/off choices and consent rows. The native input carries the
+   behaviour and stays visually hidden; the 18px box beside it carries the look. No hover
+   skin: the design system gives the box a resting, a checked and a focus state only. */
+
+.or-checkbox {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  /* The design system's 2px label/hint gap. */
+  row-gap: 2px;
+  align-items: start;
+  font-family: var(--font-text);
+}
+
+/* Hidden from sight, not from the accessibility tree or the keyboard. Anchored to the row
+   so it never scrolls the page from the top-left corner of the document. */
+.or-checkbox__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.or-checkbox__box {
+  --or-checkbox-box-bg: var(--surface-field);
+  --or-checkbox-box-border: var(--hazelnut);
+
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  /* Base: centres the box on the first line of a label padded out to a 44px touch row. */
+  margin-top: var(--space-4);
+  border: 1.5px solid var(--or-checkbox-box-border);
+  border-radius: var(--radius-sm);
+  background: var(--or-checkbox-box-bg);
+  color: var(--bone);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.or-checkbox__check {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.or-checkbox__label {
+  grid-column: 2;
+  min-width: 0;
+  /* Base: grows the tap target past 44px. The exact resting row returns at md. */
+  padding-block: var(--space-3);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--espresso);
+  cursor: pointer;
+}
+
+.or-checkbox__hint {
+  grid-column: 2;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 768px) {
+  .or-checkbox__box {
+    margin-top: 3px;
+  }
+
+  .or-checkbox__label {
+    padding-block: 0;
+  }
+}
+
+/* States ----------------------------------------------------------------- */
+
+.or-checkbox__input:checked + .or-checkbox__box {
+  --or-checkbox-box-bg: var(--action-primary);
+  --or-checkbox-box-border: var(--action-primary);
+}
+
+.or-checkbox__input:checked + .or-checkbox__box .or-checkbox__check {
+  opacity: 1;
+}
+
+.or-checkbox__input:focus-visible + .or-checkbox__box {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-checkbox--disabled {
+  opacity: 0.42;
+}
+
+.or-checkbox--disabled .or-checkbox__label {
+  cursor: not-allowed;
+}

@@ -1,0 +1,2 @@
+# Storybook build output (dist/, coverage/ and .turbo/ are covered by the root ignore).
+storybook-static/

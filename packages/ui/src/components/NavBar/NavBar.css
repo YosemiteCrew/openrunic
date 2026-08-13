@@ -1,0 +1,237 @@
+/* NavBar - the marketing and docs top bar. Horizontal from md; below md the sections and
+   the call to action collapse behind a menu button. Active section is terracotta ink plus a
+   1.5px terracotta rule. Espresso tone repaints the bar for a dark band, same shape. */
+
+.or-nav-bar {
+  /* Per-tone skin. The tone modifier sets these five and nothing else. */
+  --or-nav-bar-bg: var(--bg-page);
+  --or-nav-bar-ink: var(--espresso);
+  --or-nav-bar-ink-muted: var(--hazelnut);
+  --or-nav-bar-ink-active: var(--terracotta-deep);
+  --or-nav-bar-line: var(--border-hairline);
+  /* Bar height and lockup width come from the design system's top-bar specimen. */
+  --or-nav-bar-h: 72px;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--or-nav-bar-h);
+  padding: 0 var(--space-4);
+  border-bottom: var(--hairline) solid var(--or-nav-bar-line);
+  background: var(--or-nav-bar-bg);
+  color: var(--or-nav-bar-ink);
+  font-family: var(--font-text);
+}
+
+.or-nav-bar > * {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .or-nav-bar {
+    gap: var(--space-6);
+    padding: 0 var(--space-6);
+  }
+}
+
+/* Tones ------------------------------------------------------------------ */
+
+.or-nav-bar--espresso {
+  --or-nav-bar-bg: var(--surface-inverse);
+  --or-nav-bar-ink: var(--bone);
+  --or-nav-bar-ink-muted: var(--text-inverse-secondary);
+  --or-nav-bar-ink-active: var(--bone);
+  --or-nav-bar-line: var(--border-inverse);
+}
+
+/* Lockup ----------------------------------------------------------------- */
+
+.or-nav-bar__home {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+/* Restated on :hover/:visited so base.css's `a:hover` cannot repaint the mark. */
+.or-nav-bar__home,
+.or-nav-bar__home:hover,
+.or-nav-bar__home:visited {
+  color: var(--or-nav-bar-ink);
+  text-decoration: none;
+}
+
+.or-nav-bar__home:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The 'ink' lockup build paints in currentColor, so it is drawn as a mask over the bar's
+   ink rather than as an <img>. 120x33 is the brand's minimum horizontal-lockup width at
+   the 480:132 build ratio; the URL arrives as --or-nav-bar-logo-src from the component. */
+.or-nav-bar__logo {
+  display: block;
+  width: 120px;
+  height: 33px;
+  background: currentcolor;
+  -webkit-mask: var(--or-nav-bar-logo-src) center / contain no-repeat;
+  mask: var(--or-nav-bar-logo-src) center / contain no-repeat;
+}
+
+/* Menu button ------------------------------------------------------------ */
+
+.or-nav-bar__toggle {
+  margin-left: auto;
+}
+
+/* Ghost is an espresso-ink skin by default, which is invisible on the dark band. */
+.or-nav-bar--espresso .or-nav-bar__toggle {
+  --or-btn-ink: var(--bone);
+  --or-btn-bg-hover: var(--surface-inverse-hover);
+}
+
+@media (min-width: 768px) {
+  .or-nav-bar__toggle {
+    display: none;
+  }
+}
+
+/* Panel ------------------------------------------------------------------ */
+
+/* Below md the panel is a sheet under the bar; `display: none` when closed keeps it out
+   of the tab order and out of the accessibility tree, matching aria-expanded. */
+.or-nav-bar__panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 20;
+  display: none;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: var(--hairline) solid var(--or-nav-bar-line);
+  background: var(--or-nav-bar-bg);
+  box-shadow: var(--shadow-raised);
+}
+
+.or-nav-bar__panel--open {
+  display: grid;
+  animation: or-fade-up var(--dur-fast) var(--ease-out);
+}
+
+.or-nav-bar__panel > * {
+  min-width: 0;
+}
+
+/* From md the panel stops being a sheet and becomes the bar's own middle and right. */
+@media (min-width: 768px) {
+  .or-nav-bar__panel,
+  .or-nav-bar__panel--open {
+    position: static;
+    z-index: auto;
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--space-5);
+    padding: 0;
+    border-bottom: 0;
+    background: none;
+    box-shadow: none;
+    animation: none;
+  }
+}
+
+/* Sections --------------------------------------------------------------- */
+
+.or-nav-bar__list {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .or-nav-bar__nav {
+    margin-left: var(--space-2);
+  }
+
+  .or-nav-bar__list {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+  }
+}
+
+.or-nav-bar__link {
+  display: inline-flex;
+  align-items: center;
+  /* Touch-target floor for phones; the row shrinks to its text from md. */
+  min-height: 44px;
+  font-size: var(--text-small);
+  font-weight: var(--wght-regular);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.or-nav-bar__link,
+.or-nav-bar__link:hover,
+.or-nav-bar__link:visited {
+  color: var(--or-nav-bar-ink-muted);
+  text-decoration: none;
+}
+
+.or-nav-bar__link--active,
+.or-nav-bar__link--active:hover,
+.or-nav-bar__link--active:visited {
+  color: var(--or-nav-bar-ink-active);
+}
+
+.or-nav-bar__link--active {
+  font-weight: var(--wght-semibold);
+}
+
+@media (min-width: 768px) {
+  .or-nav-bar__link {
+    min-height: 0;
+  }
+}
+
+/* The rule is 1.5px of terracotta under the label, per the interaction-states spec, so it
+   hugs the text instead of spanning the whole row on a stacked phone menu. */
+.or-nav-bar__link-label {
+  padding-bottom: 2px;
+  border-bottom: 1.5px solid transparent;
+}
+
+.or-nav-bar__link--active .or-nav-bar__link-label {
+  border-bottom-color: var(--terracotta);
+}
+
+/* Hover strengthens the ink toward the band's own: on bone that darkens hazelnut to
+   espresso, on the espresso band it lifts the muted ink to full bone. Never the reverse. */
+@media (hover: hover) {
+  .or-nav-bar__link:not(.or-nav-bar__link--active):hover {
+    color: var(--or-nav-bar-ink);
+  }
+}
+
+.or-nav-bar__link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Actions ---------------------------------------------------------------- */
+
+.or-nav-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .or-nav-bar__actions {
+    margin-left: auto;
+  }
+}

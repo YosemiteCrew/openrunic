@@ -1,0 +1,88 @@
+/* Select - the native menu in brand chrome. White fill, hairline border, one chevron in a
+   right-hand well. No hover skin: the design system gives fields a resting and a focus state
+   only, and a hover-only affordance does not exist on touch. */
+
+.or-select {
+  --or-select-border: var(--border-hairline);
+
+  display: grid;
+  /* 6px is the design system's field rhythm, between --space-1 and --space-2. */
+  gap: 6px;
+  font-family: var(--font-text);
+}
+
+.or-select > * {
+  min-width: 0;
+}
+
+.or-select__label {
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  line-height: var(--lh-small);
+  color: var(--espresso);
+}
+
+.or-select__shell {
+  position: relative;
+  display: block;
+}
+
+.or-select__control {
+  appearance: none;
+  width: 100%;
+  /* Touch-target floor for phones; the exact 40px control height returns at md. */
+  min-height: 44px;
+  /* Right gutter = 12px inset + 17px chevron + 9px clearance: the chevron's well. */
+  padding: 0 38px 0 var(--space-3);
+  border: var(--hairline) solid var(--or-select-border);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  color: var(--espresso);
+  font-family: inherit;
+  /* 16px exactly: any smaller and iOS Safari zooms the page when the field takes focus. */
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-select__control {
+    min-height: 0;
+    height: var(--control-h-md);
+  }
+}
+
+.or-select__chevron {
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  color: var(--text-secondary);
+  transform: translateY(-50%);
+  /* The chevron is decoration over the control; clicks belong to the select. */
+  pointer-events: none;
+}
+
+.or-select__hint {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+/* States ----------------------------------------------------------------- */
+
+.or-select__control:focus-visible {
+  --or-select-border: var(--terracotta);
+
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-select--disabled {
+  opacity: 0.42;
+}
+
+.or-select__control:disabled {
+  cursor: not-allowed;
+}

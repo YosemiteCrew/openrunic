@@ -1,0 +1,114 @@
+/* Glyph - the six-stroke mark on its own. The shipped SVG is masked to the ink colour,
+   so the file is never redrawn and the mark still takes espresso, bone or terracotta.
+   Animated, it is the brand's one signature motion: the six carved strokes come up in
+   turn, --glyph-stroke-stagger apart. Opacity only - nothing scales, spins or bounces. */
+
+.or-glyph {
+  /* Set inline by the component from the basePath and color props. */
+  --or-glyph-src: none;
+  --or-glyph-ink: currentcolor;
+  /* Loop length for the loading affordance. Deliberately not a --dur-* token: those
+     cover the 150-250ms transitions, not a repeating affordance. */
+  --or-glyph-cycle: 1.6s;
+
+  position: relative;
+  display: inline-block;
+  /* Never squeezed by a flex or grid sibling, never wider than its column. */
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-glyph__track,
+.or-glyph__stroke {
+  position: absolute;
+  inset: 0;
+  background: var(--or-glyph-ink);
+  -webkit-mask-image: var(--or-glyph-src);
+  mask-image: var(--or-glyph-src);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* Animated ---------------------------------------------------------------- */
+
+/* The track keeps the whole mark faintly present so the box never reads as empty
+   between cycles. */
+.or-glyph--animate .or-glyph__track {
+  opacity: 0.18;
+}
+
+.or-glyph__stroke {
+  opacity: 0;
+  animation: or-glyph-stroke var(--or-glyph-cycle) var(--ease-out) infinite;
+}
+
+/* Each layer is clipped to a 60deg wedge of the box, so one chord of the mark comes up
+   per step. The wedge corners are where each 60deg ray meets the square: 50 +/- 28.87. */
+.or-glyph__stroke:nth-child(2) {
+  clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 21.13%);
+  animation-delay: 0ms;
+}
+
+.or-glyph__stroke:nth-child(3) {
+  clip-path: polygon(50% 50%, 100% 21.13%, 100% 78.87%);
+  animation-delay: calc(1 * var(--glyph-stroke-stagger));
+}
+
+.or-glyph__stroke:nth-child(4) {
+  clip-path: polygon(50% 50%, 100% 78.87%, 100% 100%, 50% 100%);
+  animation-delay: calc(2 * var(--glyph-stroke-stagger));
+}
+
+.or-glyph__stroke:nth-child(5) {
+  clip-path: polygon(50% 50%, 50% 100%, 0% 100%, 0% 78.87%);
+  animation-delay: calc(3 * var(--glyph-stroke-stagger));
+}
+
+.or-glyph__stroke:nth-child(6) {
+  clip-path: polygon(50% 50%, 0% 78.87%, 0% 21.13%);
+  animation-delay: calc(4 * var(--glyph-stroke-stagger));
+}
+
+.or-glyph__stroke:nth-child(7) {
+  clip-path: polygon(50% 50%, 0% 21.13%, 0% 0%, 50% 0%);
+  animation-delay: calc(5 * var(--glyph-stroke-stagger));
+}
+
+@keyframes or-glyph-stroke {
+  0%,
+  8% {
+    opacity: 0;
+  }
+
+  22%,
+  62% {
+    opacity: 1;
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* motion.css collapses every animation to 0.01ms globally, which would freeze the
+   strokes on their last keyframe - an invisible mark. Drop the sweep instead and show
+   the whole glyph at full strength. */
+@media (prefers-reduced-motion: reduce) {
+  .or-glyph--animate .or-glyph__track {
+    opacity: 1;
+  }
+
+  .or-glyph__stroke {
+    display: none;
+    animation: none;
+  }
+}

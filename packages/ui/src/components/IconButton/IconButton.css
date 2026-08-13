@@ -1,0 +1,95 @@
+/* IconButton - square icon-only control for toolbars, card overflow and dismissals.
+   Same pill shape and hover-darkens rule as Button; the box is the control height. */
+
+.or-icon-btn {
+  /* Per-size box and per-variant skin. The modifiers below set these and nothing else. */
+  --or-icon-btn-box: var(--control-h-md);
+  --or-icon-btn-bg: transparent;
+  --or-icon-btn-bg-hover: transparent;
+  --or-icon-btn-ink: var(--espresso);
+  --or-icon-btn-border: transparent;
+
+  display: inline-grid;
+  place-items: center;
+  width: var(--or-icon-btn-box);
+  height: var(--or-icon-btn-box);
+  /* Touch-target floor for phones: a 32px box is untappable. Exact boxes return at md. */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1.5px solid var(--or-icon-btn-border);
+  border-radius: var(--radius-button);
+  background: var(--or-icon-btn-bg);
+  color: var(--or-icon-btn-ink);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-icon-btn {
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
+/* Sizes ------------------------------------------------------------------ */
+
+.or-icon-btn--sm {
+  --or-icon-btn-box: var(--control-h-sm);
+}
+
+.or-icon-btn--md {
+  --or-icon-btn-box: var(--control-h-md);
+}
+
+.or-icon-btn--lg {
+  --or-icon-btn-box: var(--control-h-lg);
+}
+
+/* Variants --------------------------------------------------------------- */
+
+.or-icon-btn--primary {
+  --or-icon-btn-bg: var(--action-primary);
+  --or-icon-btn-bg-hover: var(--action-primary-hover);
+  --or-icon-btn-ink: var(--action-primary-ink);
+}
+
+.or-icon-btn--secondary {
+  --or-icon-btn-bg-hover: var(--surface-wash);
+  --or-icon-btn-border: var(--border-strong);
+}
+
+.or-icon-btn--ghost {
+  --or-icon-btn-bg-hover: var(--cream);
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* Hover is an enhancement, never the only affordance: it does not exist on touch, and
+   (hover: hover) keeps a tapped control from staying stuck in its hover skin. */
+@media (hover: hover) {
+  .or-icon-btn:not(:disabled):not([aria-disabled='true']):hover {
+    background: var(--or-icon-btn-bg-hover);
+  }
+}
+
+.or-icon-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-icon-btn:disabled,
+.or-icon-btn[aria-disabled='true'] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+/* Block, so the inline SVG cannot pick up a text baseline gap inside the grid cell. */
+.or-icon-btn__icon {
+  display: block;
+}

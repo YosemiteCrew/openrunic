@@ -14,6 +14,11 @@ overrides:
   postcss: 8.5.26
   # GHSA fix: sharp < 0.35.0 (Next optional dep allows only 0.34.x).
   sharp: 0.35.1
+  # esbuild ships a prebuilt Go binary, so its embedded Go stdlib is what
+  # vulnerability scanners see. 0.25.x embeds go1.23.12 (GO-2026-4337,
+  # critical); 0.28.2 embeds go1.26.5. Storybook's esbuild-register pulls the
+  # old line in transitively. Re-check when Storybook updates its own pin.
+  esbuild: 0.28.2
 
 # pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
 onlyBuiltDependencies:

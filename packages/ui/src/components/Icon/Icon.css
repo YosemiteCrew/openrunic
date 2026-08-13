@@ -1,0 +1,19 @@
+/* Icon - a Lucide stroke glyph at the brand weight, inheriting brand ink.
+   The box is set inline because size and colour are runtime props; everything static
+   lives here. No hover, no focus, no disabled: an icon is not a control, and the
+   controls that wrap one (Button, IconButton) own those states. */
+
+.or-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Never let an icon be squeezed by a flex or grid sibling. */
+  flex: 0 0 auto;
+  /* Icons sit on the text baseline grid rather than the line box. */
+  vertical-align: middle;
+}
+
+/* Block display kills the inline-image descender gap under the glyph. */
+.or-icon__svg {
+  display: block;
+}

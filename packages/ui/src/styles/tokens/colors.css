@@ -1,0 +1,72 @@
+:root {
+  /* --- base palette --- */
+  --bone: #f5efe6;
+  --cream: #ede4d3;
+  --white: #ffffff;
+  --espresso: #2e211a;
+  --espresso-2: #3e2c23;
+  --hazelnut: #8c5e3c;
+  --caramel: #a9714b;
+  --terracotta: #c4552d;
+  --terracotta-deep: #a8431f;
+  --olive: #6b7a4f;
+  --line: #e2d7c3;
+  --danger: #b3362b;
+
+  /* --- semantic surfaces (paper-steps: bone -> cream -> white) --- */
+  --bg-page: var(--bone);
+  --surface-card: var(--cream);
+  --surface-field: var(--white);
+  --surface-data: var(--white);
+  --surface-inverse: var(--espresso);
+  --surface-inverse-hover: var(--espresso-2);
+  --surface-wash: rgba(46, 33, 26, 0.05);
+
+  /* --- semantic ink --- */
+  /* Body ink is --text-ink, not --text-body: typography.css owns --text-body as the 16px
+     body size and is imported after this file, so a colour of the same name would lose
+     the cascade and resolve to a length, which is invalid for a colour property.
+     The design system ships both meanings under one name; this library splits them. */
+  --text-ink: var(--espresso);
+  --text-heading: var(--espresso);
+  --text-secondary: var(--hazelnut);
+  --text-decorative: var(--caramel);
+  --text-inverse: var(--bone);
+  --text-inverse-secondary: #b9a791;
+  --text-link: var(--terracotta-deep);
+  --text-link-hover: var(--terracotta);
+
+  /* --- semantic action --- */
+  --action-primary: var(--terracotta-deep);
+  --action-primary-hover: #8e3717;
+  --action-primary-ink: var(--bone);
+  --action-accent: var(--terracotta);
+  --focus-ring: var(--terracotta);
+
+  /* --- borders --- */
+  --border-hairline: var(--line);
+  --border-strong: var(--espresso);
+  --border-inverse: rgba(245, 239, 230, 0.22);
+
+  /* --- semantic status (never color alone: always pair with label or icon) --- */
+  --status-success: var(--olive);
+  --status-success-wash: #e7e9dc;
+  --status-neutral: var(--hazelnut);
+  --status-neutral-wash: #efe3d5;
+  --status-danger: var(--danger);
+  --status-danger-wash: #f6dfd9;
+
+  /* --- data viz: warm-shifted, never library defaults --- */
+  --viz-1: #2e211a;
+  --viz-2: #8c5e3c;
+  --viz-3: #a9714b;
+  --viz-4: #c4552d;
+  --viz-5: #6b7a4f;
+  --viz-6: #b9a791;
+  --viz-seq-0: var(--bone);
+  --viz-seq-1: #e4cfb2;
+  --viz-seq-2: #c99e70;
+  --viz-seq-3: #a9714b;
+  --viz-seq-4: #6b4630;
+  --viz-seq-5: var(--espresso);
+}

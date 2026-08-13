@@ -49,11 +49,12 @@ pnpm turbo run lint --filter=@openrunic/fhir  # one workspace via turbo (full pa
 ## Repository structure
 
 ```text
-apps/web            Next.js 15 app (hospital and patient web)
+apps/web            Next.js 16 app (hospital and patient web)
 apps/api            Hono service (FHIR R4 API boundary)
 packages/types      Shared TypeScript types
 packages/fhir       FHIR R4 types + domain<->FHIR mappers with round-trip tests
-packages/database   Prisma 6 schema, migrations, and client (Postgres)
+packages/database   Prisma 7 schema, migrations, and client (Postgres)
+packages/ui         React component library (design system implementation) + Storybook
 docs/               ADRs and project documentation
 ```
 
@@ -86,7 +87,7 @@ Allowed **types**:
 
 Allowed **scopes**:
 
-`web`, `api`, `database`, `fhir`, `types`, `lib`, `repo`, `ci`, `docs`
+`web`, `api`, `database`, `fhir`, `types`, `ui`, `lib`, `repo`, `ci`, `docs`
 
 Examples:
 

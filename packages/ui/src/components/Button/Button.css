@@ -1,0 +1,134 @@
+/* Button - the action control. One global shape (pill, via --radius-button).
+   Hover always darkens, never lightens. Nothing scales, bounces or lifts. */
+
+.or-btn {
+  /* The mirror's danger hover step. This is the library's only literal colour:
+     colors.css has no --action-danger-hover yet. Replace it the day one lands. */
+  --or-btn-danger-hover: #96291f;
+
+  /* Per-variant skin. The modifiers below set these three and nothing else. */
+  --or-btn-bg: transparent;
+  --or-btn-bg-hover: transparent;
+  --or-btn-ink: var(--espresso);
+  --or-btn-border: transparent;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Touch-target floor for phones; exact control heights return at md. */
+  min-height: 44px;
+  border: 1.5px solid var(--or-btn-border);
+  border-radius: var(--radius-button);
+  background: var(--or-btn-bg);
+  font-family: var(--font-text);
+  font-weight: var(--wght-medium);
+  font-variation-settings: 'opsz' 12;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+/* Ink and underline are restated on :hover/:visited so an <a class="or-btn"> beats
+   base.css's `a:hover` (equal specificity, later in the cascade). A button that turns
+   link-terracotta on hover would be a lightening state, which the brand forbids. */
+.or-btn,
+.or-btn:hover,
+.or-btn:visited {
+  color: var(--or-btn-ink);
+  text-decoration: none;
+}
+
+@media (min-width: 768px) {
+  .or-btn {
+    min-height: 0;
+  }
+}
+
+/* Sizes ------------------------------------------------------------------ */
+/* Control paddings and the 6/10px gaps sit off the 4-step spacing scale on purpose;
+   they come straight from the design system's control specimen. */
+
+.or-btn--sm {
+  height: var(--control-h-sm);
+  gap: 6px;
+  padding: 0 14px;
+  font-size: var(--text-small);
+}
+
+.or-btn--md {
+  height: var(--control-h-md);
+  gap: var(--space-2);
+  padding: 0 20px;
+  font-size: var(--text-body);
+}
+
+.or-btn--lg {
+  height: var(--control-h-lg);
+  gap: 10px;
+  padding: 0 28px;
+  font-size: var(--text-body-lg);
+}
+
+/* Variants --------------------------------------------------------------- */
+
+.or-btn--primary {
+  --or-btn-bg: var(--action-primary);
+  --or-btn-bg-hover: var(--action-primary-hover);
+  --or-btn-ink: var(--action-primary-ink);
+}
+
+.or-btn--secondary {
+  --or-btn-bg-hover: var(--surface-wash);
+  --or-btn-border: var(--border-strong);
+}
+
+.or-btn--ghost {
+  --or-btn-bg-hover: var(--cream);
+}
+
+.or-btn--inverse {
+  --or-btn-bg: var(--bone);
+  --or-btn-bg-hover: var(--cream);
+}
+
+.or-btn--danger {
+  --or-btn-bg: var(--danger);
+  --or-btn-bg-hover: var(--or-btn-danger-hover);
+  --or-btn-ink: var(--bone);
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* Hover is an enhancement, never the only affordance: it does not exist on touch,
+   and (hover: hover) keeps a tapped button from staying stuck in its hover skin. */
+@media (hover: hover) {
+  .or-btn:not(:disabled):not([aria-disabled='true']):hover {
+    background: var(--or-btn-bg-hover);
+  }
+}
+
+.or-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-btn:disabled,
+.or-btn[aria-disabled='true'] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* Layout ----------------------------------------------------------------- */
+
+.or-btn--full {
+  display: flex;
+  width: 100%;
+}
+
+.or-btn__icon {
+  flex: 0 0 auto;
+}

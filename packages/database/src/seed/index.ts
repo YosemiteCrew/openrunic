@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../generated/prisma/client.js';
+import { TENANT_SETTING } from '../rls.js';
 import { buildDemoPractice } from './data.js';
 import type { DemoPractice, DemoPracticeOptions } from './data.js';
 
@@ -18,6 +19,13 @@ export type SeedSummary = Record<string, number>;
  *
  * This takes a root PrismaClient rather than a tenant client on purpose: it
  * creates the tenant, so there is no tenant to scope it to yet.
+ *
+ * It still has to announce that tenant to Postgres. Every table forces
+ * row-level security, which applies to the table owner too, so the seed - which
+ * runs as the owner - is filtered exactly like the application. The first
+ * statement in the transaction below sets the organisation the practice is
+ * about to be written under; without it the very first insert fails the
+ * `Organisation` policy's WITH CHECK and the whole seed rolls back.
  */
 export async function seedDemoPractice(
   client: PrismaClient,
@@ -27,6 +35,7 @@ export async function seedDemoPractice(
   const summary: SeedSummary = {};
 
   await client.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config(${TENANT_SETTING}, ${practice.organisation.id}, true)`;
     await tx.organisation.create({ data: practice.organisation });
     summary.organisation = 1;
 

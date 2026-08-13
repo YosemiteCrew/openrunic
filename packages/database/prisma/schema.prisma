@@ -50,41 +50,65 @@
 // the seed and the CLI legitimately predate any tenant; request paths must not
 // use it, and an ESLint boundary rule enforces that in `apps/api`.
 //
-// Layer 2 (Postgres RLS, intentionally NOT yet in a migration): row-level
-// security is defence in depth for the case where layer 1 fails open. It is
-// documented here so the policy shape is agreed before it ships, and it is
-// deliberately not written yet because enabling RLS before the API's
-// `SET LOCAL` transaction wrapper exists would lock the application out of its
-// own database. The intended policy, applied to every model below except
-// Organisation:
+// Layer 2 (Postgres RLS): ENFORCED as of migration
+// `20260813120000_row_level_security`. Defence in depth for the case where
+// layer 1 fails open - a bug in the extension, a raw query, a Prisma operation
+// the extension does not yet know about. Every table below carries the policy;
+// the migration file is the authority, and this is its shape:
 //
 //     ALTER TABLE "Patient" ENABLE ROW LEVEL SECURITY;
 //     ALTER TABLE "Patient" FORCE ROW LEVEL SECURITY;
 //
-//     CREATE POLICY tenant_isolation ON "Patient"
-//       USING      ("tenantId" = current_setting('app.tenant_id', true)::uuid)
-//       WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::uuid);
+//     CREATE POLICY "tenant_isolation" ON "Patient"
+//       AS PERMISSIVE FOR ALL TO PUBLIC
+//       USING      ("tenantId" = nullif(current_setting('openrunic.tenant_id', true), '')::uuid)
+//       WITH CHECK ("tenantId" = nullif(current_setting('openrunic.tenant_id', true), '')::uuid);
 //
-// and on Organisation itself:
+// and on Organisation itself, which has no `tenantId` because it is the tenant:
 //
-//     CREATE POLICY tenant_isolation ON "Organisation"
-//       USING      ("id" = current_setting('app.tenant_id', true)::uuid)
-//       WITH CHECK ("id" = current_setting('app.tenant_id', true)::uuid);
+//     CREATE POLICY "tenant_isolation" ON "Organisation"
+//       AS PERMISSIVE FOR ALL TO PUBLIC
+//       USING      ("id" = nullif(current_setting('openrunic.tenant_id', true), '')::uuid)
+//       WITH CHECK ("id" = nullif(current_setting('openrunic.tenant_id', true), '')::uuid);
 //
-// Notes on the intended policy:
-//   * `current_setting(..., true)` (missing_ok) returns NULL rather than
-//     raising when the setting is absent, and `"tenantId" = NULL` is NULL, so
-//     an unset session sees zero rows instead of erroring confusingly.
-//   * FORCE is required: the table owner would otherwise bypass its own policy.
-//   * The pg driver adapter wraps each request in a transaction that issues
-//     `SET LOCAL app.tenant_id = $1` before any query. SET LOCAL is
-//     transaction-scoped, so a pooled connection cannot leak a tenant id into
-//     the next request.
-//   * Migrations and the seed run as a separate role granted BYPASSRLS.
+// What is enforced, and why each piece is there:
+//   * FOR ALL: USING filters SELECT, UPDATE and DELETE, WITH CHECK filters the
+//     rows INSERT and UPDATE may produce. One policy covers all four verbs, so
+//     no verb can be the one somebody forgot.
+//   * FORCE: without it the table owner is exempt from its own policies, and
+//     the whole arrangement is theatre. FORCE applies to the owner too. It does
+//     not defeat SUPERUSER or BYPASSRLS - nothing does - so the migration
+//     refuses to grant privileges to an application role holding either.
+//   * Fail closed: `current_setting(..., true)` returns NULL when the setting
+//     was never set, and `"tenantId" = NULL` is NULL, so an undeclared session
+//     reads zero rows rather than every row. The `nullif(..., '')` handles the
+//     other case - a customized option that was set and then reset reads back
+//     as the empty string, and `''::uuid` raises rather than returning nothing,
+//     which would turn the first query on a recycled connection into an error.
+//   * Transaction-scoped: `withTenantSession` (src/rls.ts) issues
+//     `set_config('openrunic.tenant_id', $1, true)` as the first statement of
+//     the transaction that will carry the query. Postgres discards a local
+//     setting at COMMIT, so a pooled connection cannot leak one request's
+//     organisation into the next. Nothing here uses a session-level SET, which
+//     would have exactly that bug.
+//   * Roles: migrations and the seed run as the OWNER; the application connects
+//     as a separate non-owner, non-superuser role (`openrunic_app` by default)
+//     holding only SELECT/INSERT/UPDATE/DELETE, no TRUNCATE, and no UPDATE or
+//     DELETE on AuditEvent. Creating that role is an operator step - a password
+//     cannot live in a migration - and is documented in README.md. BYPASSRLS is
+//     never granted to anything.
+//   * Consequence for future migrations: DDL is unaffected, but a data
+//     statement run by the owner is filtered like anyone else's. A backfill
+//     that has to span tenants must either loop with the setting applied per
+//     organisation, or drop to `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`
+//     and back inside the same transaction. See README.md.
 //
-// Layer 3 (tests, in the API package): a generated suite walks the Prisma DMMF
-// and attempts a cross-tenant read and write through every repository path,
-// asserting denial plus an audit record of the denial.
+// Layer 3 (tests): `src/rls.integration.test.ts` builds a throwaway database
+// owned by a non-superuser role, replays this migration history into it and
+// asserts denial as the application role - reads, updates, deletes and inserts
+// across the boundary, the undeclared session, and FORCE against the owner.
+// `apps/api` additionally attempts a cross-tenant read and write through every
+// repository path.
 //
 // ---------------------------------------------------------------------------
 // AuditEvent hash chain

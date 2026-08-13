@@ -15,6 +15,11 @@ import type { PrismaClient } from './generated/prisma/client.js';
  * all bypass it. That is why the Postgres RLS policy (layer 2) and the
  * cross-tenant test suite (layer 3) exist. Treat this as the thing that makes
  * correct code easy, not as the thing that makes incorrect code safe.
+ *
+ * A client from here still has to reach the database through
+ * `withTenantSession` (see `rls.ts`), which declares the tenant to Postgres for
+ * the transaction. Used on its own it reads nothing, because the policies fail
+ * closed - which is the intended failure mode, but it is a failure.
  */
 
 /**

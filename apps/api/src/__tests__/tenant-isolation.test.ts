@@ -36,7 +36,11 @@ import {
  *   3. A miss is reported as absent, never as forbidden, so ids cannot be
  *      enumerated across the boundary.
  *
- * The fourth layer, Postgres RLS, is the database's and is out of reach here.
+ * The fourth layer, Postgres RLS, is the database's and is out of reach here:
+ * it is proved against a real server by
+ * `packages/database/src/rls.integration.test.ts`, and the wiring that carries
+ * the tenant setting into every query is covered by
+ * `repositories.rls-port.test.ts`.
  */
 
 function twoTenantApp(): ReturnType<typeof createTestApp> {

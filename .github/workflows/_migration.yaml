@@ -1,8 +1,9 @@
 name: Migration
 
 # Reusable migration stage: prove that every Prisma migration applies cleanly to
-# a real Postgres, that the schema is valid, and that schema.prisma and the
-# migration history have not drifted apart.
+# a real Postgres, that the schema is valid, that schema.prisma and the
+# migration history have not drifted apart, and that row-level security is
+# actually enforced by the database the migrations produce.
 #
 # This stage exists so migration SQL is executed by CI from day one. Without it,
 # a schema change merges green and first runs when an operator applies it by
@@ -10,6 +11,13 @@ name: Migration
 # drift check is the part that earns its keep: it catches a schema.prisma
 # change that never got a migration, and a migration that never made it into
 # the schema, before either reaches an environment.
+#
+# The RLS suite runs here rather than in the test stage because it is the only
+# stage with a Postgres. Row-level security cannot be proved against a mock: a
+# policy that was written but never enabled looks identical to one that is
+# enforced until real SQL runs as a real non-superuser role. The suite gates
+# itself on DATABASE_URL and skips silently everywhere else, which is why the
+# same file is harmless in the test stage's database leg.
 
 on:
   workflow_call: {}
@@ -140,3 +148,27 @@ jobs:
           fi
 
           echo "No drift: schema.prisma matches the migration history."
+
+      # The RLS suite imports the generated client to exercise the real data
+      # path (`withTenantSession`), and the client lives in node_modules rather
+      # than in the repository.
+      - name: Generate Prisma client
+        run: pnpm --filter @openrunic/database exec prisma generate
+
+      # Builds its own throwaway database, owned by a purpose-made
+      # NOSUPERUSER/NOBYPASSRLS role, replays the committed migration SQL into
+      # it and asserts isolation as the application role: cross-tenant reads,
+      # updates, deletes and inserts all denied, an undeclared session reading
+      # zero rows rather than every row, and FORCE proved against an owner that
+      # could otherwise ignore it. DATABASE_URL must therefore name a role that
+      # can CREATE DATABASE and CREATE ROLE, which the service container's
+      # `postgres` is.
+      #
+      # Coverage is disabled for this leg: the package's thresholds are measured
+      # over its pure modules and would be evaluated here against one file. The
+      # test stage owns coverage.
+      - name: Prove row-level security against the migrated database
+        run: |
+          pnpm --filter @openrunic/database exec vitest run \
+            src/rls.integration.test.ts \
+            --coverage.enabled=false

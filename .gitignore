@@ -38,3 +38,6 @@ packages/database/src/generated/
 
 # Copied from @openrunic/ui on dev and build (scripts/copy-ui-styles.mjs)
 apps/portal/public/styles.css
+
+# React Doctor report, written by `pnpm run doctor:json` and by CI.
+react-doctor.json

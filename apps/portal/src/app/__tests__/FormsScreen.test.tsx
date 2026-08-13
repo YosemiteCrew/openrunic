@@ -7,7 +7,7 @@ import type { FormTask } from '@/lib/api/types';
 
 async function openFirstForm(api = stubApi()) {
   render(<FormsScreen api={api} />);
-  await screen.findByRole('heading', { level: 3, name: 'Before your thyroid review' });
+  await screen.findByRole('heading', { level: 2, name: 'Before your thyroid review' });
   await userEvent.click(screen.getByRole('button', { name: 'Continue the form' }));
 }
 
@@ -16,7 +16,7 @@ describe('FormsScreen', () => {
     render(<FormsScreen api={stubApi()} />);
 
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'Before your thyroid review' })
+      await screen.findByRole('heading', { level: 2, name: 'Before your thyroid review' })
     ).toBeInTheDocument();
     expect(screen.getByText('Needed by 1 September 2026')).toBeInTheDocument();
     expect(screen.getByText('Saved, not sent')).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe('FormsScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Back to your forms' }));
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'Contact details check' })
+      await screen.findByRole('heading', { level: 2, name: 'Contact details check' })
     ).toBeInTheDocument();
   });
 
@@ -110,13 +110,13 @@ describe('FormsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Back to your forms' }));
 
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'Contact details check' })
+      await screen.findByRole('heading', { level: 2, name: 'Contact details check' })
     ).toBeInTheDocument();
   });
 
   it('opens a not-started form and answers it from the keyboard alone', async () => {
     render(<FormsScreen api={stubApi()} />);
-    await screen.findByRole('heading', { level: 3, name: 'Contact details check' });
+    await screen.findByRole('heading', { level: 2, name: 'Contact details check' });
 
     await userEvent.click(screen.getByRole('button', { name: 'Open the form' }));
 
@@ -140,7 +140,7 @@ describe('FormsScreen', () => {
     };
 
     render(<FormsScreen api={stubApi({ getForms: () => Promise.resolve([broken]) })} />);
-    await screen.findByRole('heading', { level: 3, name: 'Odd form' });
+    await screen.findByRole('heading', { level: 2, name: 'Odd form' });
     await userEvent.click(screen.getByRole('button', { name: 'Open the form' }));
 
     expect(screen.getByText('Pick one')).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe('FormsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'Before your thyroid review' })
+      await screen.findByRole('heading', { level: 2, name: 'Before your thyroid review' })
     ).toBeInTheDocument();
   });
 });

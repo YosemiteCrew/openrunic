@@ -28,7 +28,7 @@ describe('HomeScreen', () => {
     render(<HomeScreen api={stubApi()} />);
 
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'Thyroid review' })
+      await screen.findByRole('heading', { level: 2, name: 'Thyroid review' })
     ).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByText(/Thursday, 3 September 2026 at 09:30/)).toBeInTheDocument();
@@ -114,7 +114,7 @@ describe('HomeScreen', () => {
     );
 
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'You have no appointments booked' })
+      await screen.findByRole('heading', { level: 2, name: 'You have no appointments booked' })
     ).toBeInTheDocument();
     expect(screen.getByText('There is nothing to pay.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See your bills' })).toBeInTheDocument();

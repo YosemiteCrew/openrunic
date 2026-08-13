@@ -16,6 +16,21 @@ describe('AppointmentsScreen', () => {
     expect(within(past).getByText(/Thursday, 11 June 2026 at 11:15/)).toBeInTheDocument();
   });
 
+  it('descends the outline one level at a time from the page heading', async () => {
+    render(<AppointmentsScreen api={stubApi()} />);
+
+    const upcoming = await screen.findByRole('region', { name: 'Upcoming appointments' });
+
+    // This screen is the one place a card is not a direct section of the page: the
+    // "Upcoming" and "Past" headings own that level, so an appointment card sits a
+    // level below them. A screen reader moving by heading should never jump h1 to h3.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(upcoming).getByRole('heading', { level: 2 })).toHaveTextContent('Upcoming');
+    expect(
+      within(upcoming).getByRole('heading', { level: 3, name: 'Thyroid review' })
+    ).toBeInTheDocument();
+  });
+
   it('offers joining, directions, moving and cancelling on a booked visit', async () => {
     render(<AppointmentsScreen api={stubApi()} />);
     await screen.findByRole('region', { name: 'Upcoming appointments' });

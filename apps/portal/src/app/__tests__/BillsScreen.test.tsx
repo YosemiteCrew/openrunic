@@ -6,7 +6,7 @@ import { emptyApi, fails, never, stubApi } from '@/__tests__/support';
 
 async function openFirstStatement(api = stubApi()) {
   render(<BillsScreen api={api} />);
-  await screen.findByRole('heading', { level: 3, name: 'Issued 15 June 2026' });
+  await screen.findByRole('heading', { level: 2, name: 'Issued 15 June 2026' });
   const [first] = screen.getAllByRole('button', { name: 'See what this was for' });
   await userEvent.click(first as HTMLElement);
 }
@@ -16,7 +16,7 @@ describe('BillsScreen', () => {
     render(<BillsScreen api={stubApi()} />);
 
     expect(
-      await screen.findByRole('heading', { level: 3, name: 'Issued 15 June 2026' })
+      await screen.findByRole('heading', { level: 2, name: 'Issued 15 June 2026' })
     ).toBeInTheDocument();
     expect(screen.getByText('Statement ST-2026-0418')).toBeInTheDocument();
     expect(screen.getByText('Due')).toBeInTheDocument();

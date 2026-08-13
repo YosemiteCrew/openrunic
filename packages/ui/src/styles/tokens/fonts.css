@@ -1,0 +1,57 @@
+/* All three families self-hosted, SIL OFL 1.1. Licenses in assets/fonts/OFL-*.txt. */
+/* The font binaries are NOT shipped inside @openrunic/ui. Copy them from the design
+   system's assets/fonts/ into a `fonts/` directory beside the stylesheet you serve
+   (see README, "Fonts"). Until they are there the browser falls back to the stacks in
+   typography.css (-apple-system / Georgia / ui-monospace), so nothing breaks - only the
+   bespoke optical-size axis is lost. local() is listed first so a machine that already
+   has the family installed never downloads anything. */
+/* Bricolage Grotesque - variable (opsz 12-96, wdth 75-100, wght 200-800). Display + UI + body. */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src:
+    local('Bricolage Grotesque'),
+    url('./fonts/BricolageGrotesque-variable.woff2') format('woff2-variations'),
+    url('./fonts/BricolageGrotesque-variable.ttf') format('truetype-variations');
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+/* Fraunces - variable (opsz 9-144, wght 100-900, SOFT + WONK). Editorial longform only. */
+@font-face {
+  font-family: 'Fraunces';
+  src:
+    local('Fraunces'),
+    url('./fonts/Fraunces-variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fraunces';
+  src:
+    local('Fraunces Italic'),
+    url('./fonts/Fraunces-Italic-variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+/* Spline Sans Mono - variable (wght 300-700). Code, FHIR IDs, tabular readouts. */
+@font-face {
+  font-family: 'Spline Sans Mono';
+  src:
+    local('Spline Sans Mono'),
+    url('./fonts/SplineSansMono-variable.woff2') format('woff2-variations');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Spline Sans Mono';
+  src:
+    local('Spline Sans Mono Italic'),
+    url('./fonts/SplineSansMono-Italic-variable.woff2') format('woff2-variations');
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+}

@@ -1,0 +1,102 @@
+/* Radio - one choice from a small set. The native input carries the behaviour and stays
+   visually hidden; the 18px ring beside it carries the look. Unlike the checkbox the fill
+   never changes: only the border darkens to terracotta and the dot appears. */
+
+.or-radio {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  /* The design system's 2px label/hint gap. */
+  row-gap: 2px;
+  align-items: start;
+  font-family: var(--font-text);
+}
+
+/* Hidden from sight, not from the accessibility tree or the keyboard. Anchored to the row
+   so it never scrolls the page from the top-left corner of the document. */
+.or-radio__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.or-radio__box {
+  --or-radio-box-border: var(--hazelnut);
+
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  /* Base: centres the ring on the first line of a label padded out to a 44px touch row. */
+  margin-top: var(--space-4);
+  border: 1.5px solid var(--or-radio-box-border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-field);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.or-radio__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--action-primary);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.or-radio__label {
+  grid-column: 2;
+  min-width: 0;
+  /* Base: grows the tap target past 44px. The exact resting row returns at md. */
+  padding-block: var(--space-3);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--espresso);
+  cursor: pointer;
+}
+
+.or-radio__hint {
+  grid-column: 2;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 768px) {
+  .or-radio__box {
+    margin-top: 3px;
+  }
+
+  .or-radio__label {
+    padding-block: 0;
+  }
+}
+
+/* States ----------------------------------------------------------------- */
+
+.or-radio__input:checked + .or-radio__box {
+  --or-radio-box-border: var(--action-primary);
+}
+
+.or-radio__input:checked + .or-radio__box .or-radio__dot {
+  opacity: 1;
+}
+
+.or-radio__input:focus-visible + .or-radio__box {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-radio--disabled {
+  opacity: 0.42;
+}
+
+.or-radio--disabled .or-radio__label {
+  cursor: not-allowed;
+}

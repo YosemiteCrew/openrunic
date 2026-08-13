@@ -1,0 +1,78 @@
+/* Tooltip - a second reading of something already on the page. Espresso bubble, bone ink,
+   one shadow level. It never carries an affordance of its own: pointer events pass
+   straight through it, so it can never swallow the click it is explaining. */
+
+.or-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.or-tooltip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.or-tooltip__bubble {
+  position: absolute;
+  /* Above cards and sticky chrome, below the modal layer. */
+  z-index: 40;
+  /* Hidden, not unmounted: the trigger's aria-describedby keeps pointing at it, and a
+     referenced element is read out even while it is not drawn. */
+  visibility: hidden;
+  /* Phones wrap the phrase inside the screen; nowrap returns at md, where there is room. */
+  max-width: 220px;
+  /* 6 / 10px is the design system's chip padding, tighter than the 4-step scale. */
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-raised);
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  font-weight: var(--wght-medium);
+  line-height: var(--lh-caption);
+  letter-spacing: var(--track-caption);
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.or-tooltip__bubble--open {
+  visibility: visible;
+}
+
+@media (min-width: 768px) {
+  .or-tooltip__bubble {
+    max-width: none;
+    white-space: nowrap;
+  }
+}
+
+/* Sides ------------------------------------------------------------------ */
+/* The 8px offset is the gap between trigger and bubble; the translate only places the
+   bubble, nothing here animates, scales or bounces. */
+
+.or-tooltip__bubble--top {
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+}
+
+.or-tooltip__bubble--bottom {
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 8px);
+}
+
+.or-tooltip__bubble--left {
+  top: 50%;
+  right: 100%;
+  transform: translate(-8px, -50%);
+}
+
+.or-tooltip__bubble--right {
+  top: 50%;
+  left: 100%;
+  transform: translate(8px, -50%);
+}

@@ -1,0 +1,126 @@
+/* Modal - a centred dialog over the espresso scrim, and a full-screen sheet on phones.
+   Elevation is exactly one layer (--shadow-overlay) and only from md up, where the panel
+   stops filling the viewport. No blur behind the scrim: the system is opaque paper. */
+
+.or-modal {
+  position: fixed;
+  inset: 0;
+  /* Above the app shell's sticky sidebar and top bar; Toast sits above this. */
+  z-index: 60;
+  display: grid;
+  /* Phones get a full-bleed sheet edge to edge; the centred dialog returns at md. */
+  place-items: stretch;
+  padding: 0;
+  background: var(--scrim-espresso);
+  animation: or-modal-scrim-in var(--dur-base) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-modal {
+    place-items: center;
+    padding: var(--space-5);
+  }
+}
+
+.or-modal__dialog {
+  width: 100%;
+  /* Grid items default to min-width:auto, which lets one long mono identifier push the
+     panel wider than the viewport. It is allowed to shrink instead. */
+  min-width: 0;
+  /* The panel never outgrows its grid area: long consent copy scrolls inside the sheet
+     instead of pushing the footer actions off screen. */
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--space-5);
+  border-radius: 0;
+  /* Bone paper over the scrim - deliberately a step lighter than the cream cards it
+     covers, so the dialog reads as a new page rather than another card. */
+  background: var(--bone);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  animation: or-fade-up var(--dur-base) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-modal__dialog {
+    /* --or-modal-width carries the `width` prop; below md it is ignored on purpose. */
+    max-width: var(--or-modal-width, 460px);
+    padding: var(--space-6);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-overlay);
+  }
+}
+
+/* The panel takes programmatic focus on open so a screen reader announces the title and
+   the description. It is not a control, so it never paints the ring; every button inside
+   keeps its own :focus-visible ring. */
+.or-modal__dialog:focus {
+  outline: none;
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* Lets a long title wrap instead of pushing the close control out of the panel. */
+.or-modal__title {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .or-modal__close {
+    /* Optical trim: pulls the 32px box out to the panel padding and the title cap height.
+       Below md the same box is a 44px touch target and needs the room. */
+    margin-top: -4px;
+    margin-right: -6px;
+  }
+}
+
+.or-modal__description {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.or-modal__body {
+  margin-top: var(--space-4);
+}
+
+.or-modal__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+/* Phones: the actions fill the row edge to edge, cancel first and confirm last, so both
+   clear the 44px touch floor without relying on a hover affordance that is not there. */
+.or-modal__footer > * {
+  flex: 1 1 auto;
+}
+
+@media (min-width: 768px) {
+  .or-modal__footer > * {
+    flex: 0 0 auto;
+  }
+}
+
+/* Motion ----------------------------------------------------------------- */
+
+/* The scrim fades and the panel rises (the shared or-fade-up). Running or-fade-up on the
+   scrim instead would translate the fixed layer and expose a 6px strip of the page.
+   prefers-reduced-motion is handled globally in tokens/motion.css. */
+@keyframes or-modal-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,97 @@
+/* VitalStat - the headline measurement. Four stacked rows: overline label, value plus unit,
+   the worded range state, and the capture time. The state ink is decoration on top of the
+   state's words, never instead of them, and the icon shape is a third signal after the two.
+   Not interactive, so there is no hover, focus or disabled block here. */
+
+.or-vital-stat {
+  --or-vital-stat-state-ink: var(--status-neutral);
+
+  display: grid;
+  gap: 6px; /* readout specimen gap, tighter than --space-2 so the rows read as one block */
+  min-width: 0;
+  font-family: var(--font-text);
+}
+
+/* Grid children default to min-width:auto, which lets a long value push a dashboard tile
+   wider than its column. Every row is allowed to shrink instead. */
+.or-vital-stat > * {
+  min-width: 0;
+}
+
+/* States ----------------------------------------------------------------- */
+
+.or-vital-stat--success {
+  --or-vital-stat-state-ink: var(--status-success);
+}
+
+.or-vital-stat--neutral {
+  --or-vital-stat-state-ink: var(--status-neutral);
+}
+
+.or-vital-stat--danger {
+  --or-vital-stat-state-ink: var(--status-danger);
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-vital-stat__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--text-overline);
+  font-weight: var(--wght-semibold);
+  letter-spacing: var(--track-overline);
+  line-height: var(--lh-caption);
+  text-transform: uppercase;
+}
+
+.or-vital-stat__label-icon {
+  flex: 0 0 auto;
+}
+
+.or-vital-stat__reading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.or-vital-stat__value {
+  /* 32px sits between --text-h2 and --text-h1 on purpose: the readout is louder than a
+     card heading and quieter than a page title. It is the design system's readout size. */
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: var(--wght-semibold);
+  font-variation-settings: 'opsz' 48;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: var(--text-heading);
+}
+
+.or-vital-stat__unit {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.or-vital-stat__state {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--or-vital-stat-state-ink);
+  font-size: var(--text-caption);
+  font-weight: var(--wght-medium);
+  letter-spacing: var(--track-caption);
+  line-height: var(--lh-caption);
+}
+
+.or-vital-stat__state-icon {
+  flex: 0 0 auto;
+}
+
+.or-vital-stat__captured {
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+}

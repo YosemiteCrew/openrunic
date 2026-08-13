@@ -1,0 +1,33 @@
+/* Logo - the shipped lockups. The 'ink' builds use currentColor and are drawn through a
+   mask so the mark takes the surrounding ink; the light and dark builds are images with
+   their colours baked in. The box is set inline because height is a runtime prop.
+   No gradients, no shadows, no outlines, no rotation. */
+
+.or-logo {
+  /* Set inline by the component from the basePath, variant and theme props. */
+  --or-logo-src: none;
+
+  display: inline-block;
+  /* A lockup never widens a narrow header past its column. */
+  max-width: 100%;
+}
+
+.or-logo--mask {
+  background: currentcolor;
+  -webkit-mask-image: var(--or-logo-src);
+  mask-image: var(--or-logo-src);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.or-logo--image {
+  display: block;
+  /* max-width can shorten the box on a narrow column; contain keeps the lockup's own
+     proportions rather than squashing the wordmark. */
+  object-fit: contain;
+  object-position: center;
+}

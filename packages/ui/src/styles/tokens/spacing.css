@@ -1,0 +1,22 @@
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+  --content-max: 1120px;
+  --grid-cols: 12; /* @kind other */
+  --grid-gutter: 24px;
+  --section-y: var(--space-9);
+  --hero-y: var(--space-9);
+  --card-pad: var(--space-5);
+  --control-h-sm: 32px;
+  --control-h-md: 40px;
+  --control-h-lg: 48px;
+  --hairline: 1px;
+}

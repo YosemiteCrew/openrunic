@@ -1,0 +1,31 @@
+:root {
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1); /* @kind other */
+  --dur-fast: 150ms; /* @kind other */
+  --dur-base: 200ms; /* @kind other */
+  --dur-slow: 250ms; /* @kind other */
+  --glyph-stroke-stagger: 60ms; /* signature: 6 strokes draw in, 60ms apart */
+}
+@keyframes or-glyph-draw {
+  from {
+    stroke-dashoffset: var(--len, 120);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes or-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

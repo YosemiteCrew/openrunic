@@ -1,0 +1,62 @@
+/* Badge - the status pill. Colour is never the signal on its own: the label is always
+   rendered and the tone icon reinforces it. Not interactive, so there is deliberately no
+   hover, focus or disabled block here - a badge is a readout, not a control. */
+
+.or-badge {
+  --or-badge-bg: var(--status-neutral-wash);
+  --or-badge-ink: var(--status-neutral);
+
+  display: inline-flex;
+  align-items: center;
+  /* 5px gap, 24px height and 10px side padding come from the badge specimen; they sit
+     off the 4-step spacing scale on purpose so the pill stays the size of its text. */
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--or-badge-bg);
+  color: var(--or-badge-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  font-weight: var(--wght-semibold);
+  letter-spacing: var(--track-caption);
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Tones ------------------------------------------------------------------ */
+
+/* The success ink is a darkened olive: plain --olive on the success wash lands at 3.8:1,
+   under AA for 12.5px text. Mixing it toward espresso reproduces the design system's
+   success-wash ink while staying derived from tokens rather than a new literal. */
+.or-badge--success {
+  --or-badge-bg: var(--status-success-wash);
+  --or-badge-ink: color-mix(in oklab, var(--olive) 58%, var(--espresso));
+}
+
+.or-badge--neutral {
+  --or-badge-bg: var(--status-neutral-wash);
+  --or-badge-ink: var(--status-neutral);
+}
+
+.or-badge--danger {
+  --or-badge-bg: var(--status-danger-wash);
+  --or-badge-ink: var(--status-danger);
+}
+
+.or-badge--accent {
+  --or-badge-bg: color-mix(in oklab, var(--terracotta) 14%, var(--bone));
+  --or-badge-ink: var(--terracotta-deep);
+}
+
+.or-badge--ink {
+  --or-badge-bg: var(--surface-inverse);
+  --or-badge-ink: var(--text-inverse);
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-badge__icon {
+  flex: 0 0 auto;
+}

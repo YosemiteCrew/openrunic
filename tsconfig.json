@@ -4,6 +4,7 @@
     { "path": "packages/types" },
     { "path": "packages/fhir" },
     { "path": "packages/database" },
+    { "path": "packages/ui" },
     { "path": "apps/api" },
     { "path": "apps/web" }
   ]

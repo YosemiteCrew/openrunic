@@ -5,6 +5,7 @@
 [![CI](https://github.com/YosemiteCrew/openrunic/actions/workflows/ci.yaml/badge.svg?branch=dev)](https://github.com/YosemiteCrew/openrunic/actions/workflows/ci.yaml)
 [![Supply chain](https://github.com/YosemiteCrew/openrunic/actions/workflows/supply-chain.yml/badge.svg?branch=dev)](https://github.com/YosemiteCrew/openrunic/actions/workflows/supply-chain.yml)
 [![CodeQL](https://github.com/YosemiteCrew/openrunic/actions/workflows/codeql.yml/badge.svg?branch=dev)](https://github.com/YosemiteCrew/openrunic/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/YosemiteCrew/openrunic/badge)](https://scorecard.dev/viewer/?uri=github.com/YosemiteCrew/openrunic)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-4CAF50)](LICENSE)
 [![FHIR R4](https://img.shields.io/badge/FHIR-R4-C4552D)](https://hl7.org/fhir/R4/)
 [![Contribute](https://img.shields.io/badge/Contribute-FF9800)](CONTRIBUTING.md)

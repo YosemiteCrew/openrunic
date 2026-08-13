@@ -6,3 +6,9 @@ coverage/
 .turbo/
 pnpm-lock.yaml
 CHANGELOG.md
+
+# Written by Next.js, which stamps "This file should not be edited" into it, and
+# rewritten with different contents by `next dev` and `next build` (dev points at
+# .next/dev/types and quotes with ", build points at .next/types and quotes with ').
+# Formatting it means whichever command ran last decides whether the repo is clean.
+next-env.d.ts

@@ -10,6 +10,16 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   /** Uppercase 13px eyebrow above the title. */
   overline?: string;
   title?: ReactNode;
+  /**
+   * Heading level for `title`. Defaults to 2: a card is a section of a page, and
+   * the page's own heading is the `<h1>`, so its sections are level 2. Pass 3 or
+   * lower for a card nested inside another card's region, so the outline still
+   * descends one level at a time.
+   *
+   * The visual size does not move with it - `or-h3` is the card-title type ramp
+   * at every level. Heading level is document structure, not a font size.
+   */
+  headingLevel?: 2 | 3 | 4 | 5 | 6;
   /** Content pinned below a hairline. */
   footer?: ReactNode;
   children?: ReactNode;
@@ -27,6 +37,7 @@ export function Card({
   raised = false,
   overline,
   title,
+  headingLevel = 2,
   footer,
   children,
   className,
@@ -35,6 +46,7 @@ export function Card({
 }: CardProps) {
   const cardId = useFieldId(id);
   const titleId = `${cardId}-title`;
+  const Heading = `h${headingLevel}` as const;
 
   return (
     <section
@@ -45,9 +57,9 @@ export function Card({
     >
       {overline ? <p className="or-overline or-card__overline">{overline}</p> : null}
       {title ? (
-        <h3 id={titleId} className="or-h3 or-card__title">
+        <Heading id={titleId} className="or-h3 or-card__title">
           {title}
-        </h3>
+        </Heading>
       ) : null}
       {children}
       {footer ? <div className="or-card__footer">{footer}</div> : null}

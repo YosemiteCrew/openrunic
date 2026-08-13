@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -145,6 +146,25 @@ describe('Table', () => {
     const scroll = container.querySelector('.or-table__scroll');
     expect(screen.queryByRole('region')).not.toBeInTheDocument();
     expect(scroll).toHaveAttribute('tabindex', '0');
+  });
+
+  /**
+   * A CSS assertion, deliberately.
+   *
+   * jsdom does no layout, so the failure this guards - the page itself
+   * scrolling sideways because an absolutely positioned descendant escaped the
+   * scroller - is invisible to every other test here. The declaration reads
+   * like a decorative leftover and is one keystroke from being deleted, so the
+   * stylesheet is asserted directly rather than left to a reviewer's eye.
+   */
+  it('keeps the scroll container a containing block, so its overflow stays its own', () => {
+    // Read from disk: the Vite pipeline hands tests an empty string for a CSS
+    // import, so the file itself is the only source of truth available here.
+    const css = readFileSync('src/components/Table/Table.css', 'utf8');
+    const scrollRule = /\.or-table__scroll\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+
+    expect(scrollRule).toMatch(/overflow-x:\s*auto/);
+    expect(scrollRule).toMatch(/position:\s*relative/);
   });
 
   it('merges className and forwards native attributes', () => {

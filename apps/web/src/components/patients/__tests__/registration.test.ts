@@ -1,0 +1,147 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  BLOCKING_SCORE,
+  EMPTY_DRAFT,
+  findDuplicates,
+  isBlocking,
+  REQUIRED_FIELDS,
+  validateRegistration,
+} from '@/components/patients';
+import type { RegistrationDraft } from '@/components/patients';
+import { MOCK_NOW, MOCK_PATIENTS } from '@/lib/api';
+
+/**
+ * The registration rules. Two things are load-bearing: exactly four fields are
+ * required, and a person who is already in the practice cannot be registered
+ * again by accident.
+ */
+
+const NOW = new Date(MOCK_NOW);
+
+function draft(overrides: Partial<RegistrationDraft> = {}): RegistrationDraft {
+  return {
+    ...EMPTY_DRAFT,
+    given: 'Kai',
+    family: 'Nordstrom',
+    birthDate: '1991-02-17',
+    phoneMobile: '+1 555 0142 900',
+    ...overrides,
+  };
+}
+
+describe('validateRegistration', () => {
+  it('requires exactly the four fields that make a record bookable', () => {
+    const errors = validateRegistration(EMPTY_DRAFT, NOW);
+    expect(Object.keys(errors).sort()).toEqual([...REQUIRED_FIELDS].sort());
+  });
+
+  it('accepts a walk-in with nothing but those four', () => {
+    expect(validateRegistration(draft(), NOW)).toEqual({});
+  });
+
+  it('rejects a date of birth that is not a date', () => {
+    expect(validateRegistration(draft({ birthDate: '17/02/1991' }), NOW).birthDate).toMatch(
+      /YYYY-MM-DD/
+    );
+  });
+
+  it('rejects a date of birth in the future and says which part to check', () => {
+    expect(validateRegistration(draft({ birthDate: '2027-01-01' }), NOW).birthDate).toMatch(
+      /future/
+    );
+  });
+
+  it('rejects an impossible calendar date', () => {
+    expect(validateRegistration(draft({ birthDate: '1991-13-45' }), NOW).birthDate).toBeDefined();
+  });
+
+  it('accepts a phone number in the shapes people actually give', () => {
+    expect(
+      validateRegistration(draft({ phoneMobile: '5550142900' }), NOW).phoneMobile
+    ).toBeUndefined();
+    expect(
+      validateRegistration(draft({ phoneMobile: '+44 (0)20 7946 0999' }), NOW).phoneMobile
+    ).toBeUndefined();
+  });
+
+  it('rejects a phone number that is not one', () => {
+    expect(
+      validateRegistration(draft({ phoneMobile: 'ring the desk' }), NOW).phoneMobile
+    ).toBeDefined();
+  });
+
+  it('leaves an omitted email alone but checks one that is given', () => {
+    expect(validateRegistration(draft(), NOW).email).toBeUndefined();
+    expect(validateRegistration(draft({ email: 'not-an-address' }), NOW).email).toBeDefined();
+  });
+
+  it('asks for an email when the portal invitation needs somewhere to go', () => {
+    expect(validateRegistration(draft({ portalEnabled: true }), NOW).email).toMatch(/Portal/);
+  });
+
+  it('says what to do, not only what is wrong', () => {
+    for (const message of Object.values(validateRegistration(EMPTY_DRAFT, NOW))) {
+      expect(message).toMatch(/^Enter |^Use |^Check /);
+    }
+  });
+});
+
+describe('findDuplicates', () => {
+  it('finds nothing for a person who is genuinely new', () => {
+    expect(findDuplicates(draft(), MOCK_PATIENTS)).toEqual([]);
+  });
+
+  it('finds the existing record for the same name and date of birth', () => {
+    const matches = findDuplicates(
+      draft({ given: 'Testina', family: 'Patientsson', birthDate: '1987-03-14' }),
+      MOCK_PATIENTS
+    );
+    expect(matches[0]?.patient.mrn).toBe('OR-100482');
+    expect(matches[0]?.score).toBeGreaterThanOrEqual(BLOCKING_SCORE);
+  });
+
+  it('matches a preferred name, because that is what the desk is told', () => {
+    const matches = findDuplicates(
+      draft({ given: 'Tess', family: 'Patientsson', birthDate: '1987-03-14' }),
+      MOCK_PATIENTS
+    );
+    expect(matches[0]?.reasons).toContain('Same given name');
+  });
+
+  it('treats a phone number that already exists as the strongest signal', () => {
+    const matches = findDuplicates(
+      draft({ given: 'Different', family: 'Person', phoneMobile: '5550142118' }),
+      MOCK_PATIENTS
+    );
+    expect(matches[0]?.reasons).toContain('Same mobile number');
+    expect(isBlocking(matches)).toBe(true);
+  });
+
+  it('does not block on a shared family name alone', () => {
+    const matches = findDuplicates(
+      draft({
+        given: 'Aiko',
+        family: 'Fernstrom',
+        birthDate: '1995-01-01',
+        phoneMobile: '5550000000',
+      }),
+      MOCK_PATIENTS
+    );
+    expect(isBlocking(matches)).toBe(false);
+  });
+
+  it('gives every candidate a plain-language reason', () => {
+    const matches = findDuplicates(
+      draft({ given: 'Testina', family: 'Patientsson', birthDate: '1987-03-14' }),
+      MOCK_PATIENTS
+    );
+    for (const match of matches) expect(match.reasons.length).toBeGreaterThan(0);
+  });
+
+  it('caps the candidate list so the panel stays readable', () => {
+    expect(
+      findDuplicates(draft({ given: 'Testina', family: 'Patientsson' }), MOCK_PATIENTS, 1)
+    ).toHaveLength(1);
+  });
+});

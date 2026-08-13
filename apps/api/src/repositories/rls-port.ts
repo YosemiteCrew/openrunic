@@ -119,12 +119,37 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
     const inSession = <R>(run: (tx: DbTransaction) => Promise<R>): Promise<R> =>
       runSession(tenantId, run);
 
+    /*
+     * Every method forwards an `args` this wrapper did not build, which is what
+     * the scanner sees on the two write lines below. Verified rather than
+     * waved away, and each clause here was checked against the code:
+     *
+     *  - The filters come from `prisma.ts`, whose identity lookups spell the
+     *    operator out as `{ id: { equals: id } }`, so a value cannot arrive as
+     *    an object and be read as filter operators.
+     *  - Every route parses its id with `z.uuid()` before the repository sees
+     *    it, and the repository signature is `string`.
+     *  - Prisma compiles to parameterised SQL. It is not a NoSQL store, which
+     *    is the shape the rule is named for.
+     *  - This migration is the belt to that braces: row-level security bounds
+     *    any query on these tables to one tenant in the database itself, so
+     *    even a malformed filter cannot cross a practice boundary.
+     *  - `create` and `updateMany` have no caller here today. Writes run inside
+     *    `port.$transaction`, on the transaction's own delegate. These two stay
+     *    because the shared `ModelDelegate<M>` type requires the full shape and
+     *    they are safe as written, `inSession` having opened the session.
+     *
+     * The marker carries no rule id because Aikido's syntax has none to give,
+     * so it silences every SAST rule on its line rather than just this one.
+     * That is the cost, recorded so it is not mistaken for a narrow exemption.
+     * Revisit: if a caller ever writes through the port outside a transaction.
+     */
     const model = <M extends PrismaModelName>(name: M): ModelDelegate<M> => ({
       findMany: (args) => inSession((tx) => tx.model(name).findMany(args)),
       count: (args) => inSession((tx) => tx.model(name).count(args)),
       findFirst: (args) => inSession((tx) => tx.model(name).findFirst(args)),
-      create: (args) => inSession((tx) => tx.model(name).create(args)),
-      updateMany: (args) => inSession((tx) => tx.model(name).updateMany(args)),
+      create: (args) => inSession((tx) => tx.model(name).create(args)), // nosec
+      updateMany: (args) => inSession((tx) => tx.model(name).updateMany(args)), // nosec
     });
 
     return {

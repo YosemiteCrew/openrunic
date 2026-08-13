@@ -24,6 +24,12 @@ export {
 } from './tenant.js';
 export type { TenantClient, TenantContext, TenantScopedModel } from './tenant.js';
 
+// Row-level security. `withTenantSession` is the only supported way to reach
+// Postgres with the tenant setting the policies read; a query issued outside it
+// sees zero rows, because the policies fail closed.
+export { TENANT_SETTING, withTenantSession } from './rls.js';
+export type { TenantTransactionClient } from './rls.js';
+
 // Identity.
 export { createUuidv7, isUuidv7, uuidv7, uuidv7Timestamp } from './uuid.js';
 export type { Uuidv7Options } from './uuid.js';

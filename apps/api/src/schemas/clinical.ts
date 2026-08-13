@@ -340,8 +340,17 @@ export function toNoteAddendumListQuery(
   };
 }
 
-/** The write contract minus the note, which the path already named. */
-export const noteAddendumBodySchema = noteAddendumInput.omit({ noteId: true });
+/**
+ * The write contract minus the note, which the path already named, and minus the
+ * author, which the token already names.
+ *
+ * An addendum's author is a claim about a person, exactly like a signature, and
+ * it is attached to an amendment of a locked clinical record. A client that
+ * could supply it could file a correction in a colleague's name, which is worse
+ * than an unattributed one: it is attributed to the wrong clinician and reads as
+ * theirs forever after. The route stamps it from the verified principal.
+ */
+export const noteAddendumBodySchema = noteAddendumInput.omit({ noteId: true, authorId: true });
 
 export type NoteAddendumBody = z.infer<typeof noteAddendumBodySchema>;
 

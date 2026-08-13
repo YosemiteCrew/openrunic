@@ -211,12 +211,11 @@ export function createHttpChartClient(client: ApiClient): ChartClient {
         return readEncounterNote(client, noteId, signal);
       },
       addAddendum: async (noteId, text, signal) => {
-        const note = await client.notes.get(noteId, signal);
-        await client.notes.addAddendum(
-          noteId,
-          { authorId: note.authorId, blocks: [{ key: 'addendum', text }] },
-          signal
-        );
+        // No author is sent. The API stamps it from the verified token, the way
+        // it stamps a signature, so a correction is always attributed to whoever
+        // actually wrote it rather than to whoever wrote the note being
+        // corrected.
+        await client.notes.addAddendum(noteId, { blocks: [{ key: 'addendum', text }] }, signal);
         return readEncounterNote(client, noteId, signal);
       },
     },

@@ -371,9 +371,15 @@ export interface NoteAddendumDto {
   updatedAt: string;
 }
 
-/** Mirrors `noteAddendumBodySchema`: the addendum input minus the id in the path. */
+/**
+ * Mirrors `noteAddendumBodySchema`: the addendum input minus the note in the
+ * path and minus the author, which the API stamps from the verified token.
+ *
+ * There is deliberately no `authorId` here. An addendum's author is a claim
+ * about a person attached to an amendment of a locked record, and a client that
+ * could state it could file a correction in a colleague's name.
+ */
 export interface NoteAddendumBody {
-  authorId: string;
   blocks: NoteBlockJson[];
   reason?: string;
 }

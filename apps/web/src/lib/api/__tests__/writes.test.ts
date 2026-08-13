@@ -101,7 +101,7 @@ describe('the live client, every write it makes', () => {
 
     await client.encounters.sign('e-1');
     await client.notes.sign('n-1');
-    await client.notes.addAddendum('n-1', { authorId: 'u-1', blocks: [{ text: 'more' }] });
+    await client.notes.addAddendum('n-1', { blocks: [{ text: 'more' }] });
     await client.orders.sign('s-1');
     await client.orders.transmit('s-1');
     await client.orders.cancel('s-1');
@@ -317,7 +317,6 @@ describe('the mock client, the clinical spine', () => {
     const id = signed?.id ?? '';
 
     const addendum = await client.notes.addAddendum(id, {
-      authorId: signed?.authorId ?? '',
       blocks: [{ key: 'addendum', text: 'Home readings received.' }],
       reason: 'Home readings',
     });
@@ -331,9 +330,7 @@ describe('the mock client, the clinical spine', () => {
   it('refuses an addendum against a note nobody has signed', async () => {
     const client = createMockClient();
     const draft = MOCK_NOTES.find((note) => note.state === 'DRAFT' || note.state === 'UNSIGNED');
-    const failure = await refusal(
-      client.notes.addAddendum(draft?.id ?? '', { authorId: 'u-1', blocks: [] })
-    );
+    const failure = await refusal(client.notes.addAddendum(draft?.id ?? '', { blocks: [] }));
 
     expect(failure.status).toBe(409);
     // The refusal names the states it could have moved to, which is the

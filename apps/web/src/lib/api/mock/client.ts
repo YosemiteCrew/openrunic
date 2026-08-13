@@ -702,7 +702,9 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
           assertTransition(NOTE_ADDENDUM, 'clinical note', note.state, 'AMENDED');
           const addendum = addenda.insert({
             noteId,
-            authorId: body.authorId,
+            // Stamped here, not read from the body, mirroring what the API does
+            // with the verified principal.
+            authorId: MOCK_ACTING_USER,
             blocks: body.blocks,
             reason: body.reason ?? null,
             signedAt: clock.now(),

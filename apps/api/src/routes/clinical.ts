@@ -468,7 +468,7 @@ export function clinicalRoutes(): Hono<AppEnv> {
       'SIGNED'
     );
 
-    const signed = await encounters.update(id, { signedById: signerOf(c) });
+    const signed = await encounters.update(id, { signedById: attributedTo(c) });
     return c.json(toEncounterDto(required(signed, MISSING_ENCOUNTER)));
   });
 
@@ -478,7 +478,7 @@ export function clinicalRoutes(): Hono<AppEnv> {
     const row = required(await notes.findById(id), MISSING_NOTE);
     assertTransition(NOTE_SIGN_TRANSITIONS, 'clinical note', row.state, 'SIGNED');
 
-    const signed = await notes.update(id, { signedById: signerOf(c) });
+    const signed = await notes.update(id, { signedById: attributedTo(c) });
     return c.json(toNoteDto(required(signed, MISSING_NOTE)));
   });
 
@@ -502,7 +502,13 @@ export function clinicalRoutes(): Hono<AppEnv> {
     const note = required(await notes.findById(id), MISSING_NOTE);
     assertTransition(NOTE_ADDENDUM_TRANSITIONS, 'clinical note', note.state, 'AMENDED');
 
-    const addendum = await noteAddenda.create({ noteId: id, ...body });
+    // The author comes from the token for the same reason the signer does:
+    // see attributedTo below.
+    const addendum = await noteAddenda.create({
+      noteId: id,
+      authorId: attributedTo(c),
+      ...body,
+    });
     // The note moves with its addendum. A reader who sees `AMENDED` knows to
     // look for one; a reader who does not, does not have to.
     await notes.update(id, { state: 'AMENDED' });
@@ -566,16 +572,18 @@ async function movePrescription(
 }
 
 /**
- * The principal a signature is attributed to.
+ * The principal a signature or an addendum is attributed to.
  *
- * Taken from the verified token and never from the body: a signature is the one
- * value on these aggregates that is a claim about a person, and a client that
- * could supply it could attest in someone else's name. An absent principal
+ * Taken from the verified token and never from the body: these are the values
+ * on these aggregates that are claims about a person, and a client that could
+ * supply one could attest in someone else's name. For an addendum that is the
+ * sharper case, because a correction filed in a colleague's name is worse than
+ * an unattributed one: it reads as theirs, on a locked record, forever after. An absent principal
  * means the route was mounted outside the middleware chain, which is a wiring
  * bug rather than a client error, and it surfaces as a 500 rather than as an
  * unattributed signature.
  */
-function signerOf(c: Context<AppEnv>): string {
+function attributedTo(c: Context<AppEnv>): string {
   const principal = c.get('principal');
   if (principal === undefined) {
     throw new Error(

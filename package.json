@@ -15,7 +15,6 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "type-check": "turbo run type-check",
-    "doctor": "pnpm exec react-doctor",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
     "agent:conform": "pnpm --filter @openrunic/agent run conform",
@@ -30,7 +29,6 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",
-    "react-doctor": "^0.9.11",
     "secretlint": "^13.0.4",
     "turbo": "^2.10.9",
     "typescript": "^5.9.3"

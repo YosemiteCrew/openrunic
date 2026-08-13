@@ -69,3 +69,22 @@ require-license: false
 #   # plain BSD-3-Clause. Owner: ankit-yc. Re-review by: YYYY-MM-DD.
 #   - some-package
 ignore-packages: []
+
+# Precedent, so the next person to hit this does not resolve it the quick way.
+#
+# `react-doctor` was added as a dev-tooling convenience and denied here as
+# SEE-LICENSE-IN-LICENSE. Its LICENSE file was read: it is a "Modified MIT
+# License" that additionally requires written permission to use the software as
+# AI training data, or to offer it as a paid or hosted service. A field-of-use
+# restriction fails the Open Source Definition clause 6, so the licence is not
+# open source and is not on the FSF GPL-compatible list. It therefore cannot
+# join an allow list whose stated basis is "permissive, AGPL-compatible", and
+# the dependency was removed instead.
+#
+# Two shortcuts to avoid specifically. Allow-listing the literal string
+# SEE-LICENSE-IN-LICENSE admits any package shipping any custom licence text,
+# which is an allow-all wearing a specific name. Adding such a package to
+# ignore-packages silences a gate that is firing correctly. If a package with a
+# non-free licence is ever genuinely needed, that is a deliberate licensing
+# decision for the maintainers, recorded with an owner and a re-review date -
+# not a config edit made to turn a pull request green.

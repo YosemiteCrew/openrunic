@@ -15,6 +15,8 @@
  * subsystem, reported loudly, with the rest of the product unaffected.
  */
 
+import { trimTrailingSlashes } from '@openrunic/agent-tools';
+
 /** Where data goes when a turn runs. Validated at load, recorded per turn. */
 export const PHI_EGRESS_POSTURES = ['none', 'configured-baa', 'unreviewed'] as const;
 
@@ -304,7 +306,7 @@ export function isLocalEndpoint(url: URL): boolean {
 }
 
 function normaliseOrigin(value: string): string {
-  return value.replace(/\/+$/, '');
+  return trimTrailingSlashes(value);
 }
 
 function trimmed(value: string | undefined): string | undefined {

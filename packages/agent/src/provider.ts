@@ -1,6 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
+import { trimTrailingSlashes } from '@openrunic/agent-tools';
 import type { AgentModelConfig } from './config.js';
 import type { ExplicitLanguageModel } from './model-profile.js';
 
@@ -45,7 +46,7 @@ export function resolveProvider(
   config: AgentModelConfig,
   options: ResolveProviderOptions = {}
 ): ResolvedProvider {
-  const baseUrl = config.baseUrl.replace(/\/+$/, '');
+  const baseUrl = trimTrailingSlashes(config.baseUrl);
   if (baseUrl === '') {
     throw new Error('resolveProvider: a base URL is required. There is no default endpoint.');
   }

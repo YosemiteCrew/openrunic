@@ -1,5 +1,6 @@
 import { ToolError } from './errors.js';
 import type { AgentCredential, AgentPrincipal } from './principal.js';
+import { trimTrailingSlashes } from './base-url.js';
 
 /**
  * The only way a tool reaches data.
@@ -77,7 +78,7 @@ export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
  * refusal at the boundary rather than a silent success.
  */
 export function createHttpApiClient(options: HttpApiClientOptions): ApiClient {
-  const baseUrl = options.baseUrl.replace(/\/+$/, '');
+  const baseUrl = trimTrailingSlashes(options.baseUrl);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
 
   return {

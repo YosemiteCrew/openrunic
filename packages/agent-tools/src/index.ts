@@ -21,6 +21,8 @@ export type {
   QueryValue,
 } from './api-client.js';
 
+export { trimTrailingSlashes } from './base-url.js';
+
 export { TOOL_ALLOWLIST } from './allowlist.js';
 export type { SurfaceAllowlist, ToolAllowlist } from './allowlist.js';
 

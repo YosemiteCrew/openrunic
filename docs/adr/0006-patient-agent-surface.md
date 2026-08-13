@@ -88,11 +88,16 @@ Three mechanisms, and the third is the one that is new.
    added in the tool layer would be a second implementation of the same rule, and the second one is
    the one that goes wrong. `defineTool` already refuses a patient-surface tool whose input schema
    mentions `patientId`, `patientMrn` or `mrn`.
-2. **A turn with no chart bound reads nothing.** The surface sends the reader's own chart with every
-   question. It can only ever narrow: the API scopes by the token whatever the request says, so a
-   client that sent somebody else's identifier would receive its own rows and then fail the check
-   below. A capability asked to read with no chart bound refuses before it calls the API, because a
-   read whose result cannot be checked is not a smaller answer, it is an unchecked one.
+2. **The chart is taken from the token, and a turn with no chart bound reads nothing.** A portal
+   session is patient-scoped, so the token names the one chart it may reach and the API binds the
+   turn's compartment to that identifier rather than to the one the request carries. The surface
+   still sends the reader's own chart with every question, because the same route serves the staff
+   surface - where it is the chart the clinician has open and can only ever narrow - and because it
+   is what binds a turn on any session whose token left it chart-wide. On this surface it is not
+   consulted: there is no "change chart" to express, and a client that named somebody else's would
+   still be answered from its own. A capability asked to read with no chart bound refuses before it
+   calls the API, because a read whose result cannot be checked is not a smaller answer, it is an
+   unchecked one.
 3. **Every row names the chart it came from.** This is the change from the staff shape. A staff
    record card carries no `patientId`, so the boundary re-check in `compartment.ts` - which walks a
    payload for keys naming a compartment - has nothing to look at and passes trivially. On this
@@ -109,6 +114,12 @@ the moment it is added, and fails the suite by name if it does not carry the pro
 
 - **An answer without its records.** ADR-0005 rule 2 asks that the source be displayed. Here, prose
   whose source ledger never arrived is not shown at all and the page says why.
+- **Anything at all from a turn that failed.** The failure sentences say the answer was thrown
+  away, so leaving the prose up, or a list of records under it, would be the page contradicting
+  itself in the case that matters most. The loop publishes no source ledger for a phase it aborted,
+  and the transcript drops the words and the records together when a turn settles as failed. The
+  sentence and the route to the care team are the whole of what is drawn. What the turn did read is
+  still in the audit record, because that is the question an access report has to answer.
 - **A draft change.** The page asks for `read` on every turn, so the half of the loop that drafts
   changes never runs. A proposal arriving anyway is treated as a failure, not rendered: a patient
   must never be handed a proposed change to their own chart that nobody at the practice has seen.

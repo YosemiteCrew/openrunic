@@ -1,0 +1,198 @@
+name: Repo
+
+# Reusable repo-wide gates: the checks that apply to the whole tree rather than
+# to one workspace.
+#
+# This stage exists because _core.yaml's static matrix is deliberately narrow.
+# It lints and type-checks only the workspaces a change affects, which is right
+# for TypeScript and wrong for everything here: a pull request that touches only
+# .github/workflows, only docs, or only a shell script produces an empty
+# workspace matrix, and before this stage existed such a change was reviewed by
+# no automated check at all. Every job below therefore runs on every event, with
+# no `if:` and no dependency on the detect step's affected list.
+#
+# Nothing here is gated on file paths either. A gate that only runs when its own
+# file type changed cannot catch the case that matters most: a change elsewhere
+# that breaks something it does not appear to touch.
+#
+# The three native binaries are pinned by version and verified by checksum
+# before they execute, the same way supply-chain.yml installs syft and grype and
+# secret-scan.yml installs Gitleaks. No third-party action runs here, so there
+# is no action SHA to keep current and no supply-chain surface beyond the
+# release artefacts themselves. Bump a version and its checksum together; the
+# checksum comes from the release's own published checksums file.
+#
+# Every command below has a matching root package.json script so a contributor
+# can run the identical check locally: format:check, lint:css, lint:workflows,
+# lint:shell and lint:docker.
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Formatting (Prettier)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Reads the checkout and nothing else.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # lint-staged formats staged files on commit, which covers the ordinary
+      # path and nothing else: a `--no-verify` commit, an edit made through the
+      # GitHub web UI, and a bot commit all bypass the hook entirely. This is
+      # the check that sees them.
+      - name: Check formatting
+        run: pnpm run format:check
+
+  styles:
+    name: Stylesheets (stylelint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # This repository is a design system, so its CSS is source code and gets
+      # linted like source code. ESLint never sees a .css file. See
+      # stylelint.config.mjs for what each rule is there to catch.
+      - name: Lint stylesheets
+        run: pnpm run lint:css
+
+  workflows:
+    name: Workflows and shell (actionlint, shellcheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # Installed before actionlint and put on the PATH ahead of the runner
+      # image's own copy, because actionlint shells out to whichever shellcheck
+      # it finds. Pinning it here means the inline `run:` blocks and the
+      # standalone scripts below are judged by the same version, and that the
+      # gate does not change behaviour when GitHub rebuilds the runner image.
+      - name: Install shellcheck (pinned, checksum-verified)
+        env:
+          SHELLCHECK_VERSION: 0.11.0
+          # sha256 of shellcheck-v0.11.0.linux.x86_64.tar.xz from the release.
+          # Verified before extraction so a tampered or swapped release binary
+          # fails the job instead of running on a runner with the repository
+          # checked out.
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            -o "$RUNNER_TEMP/shellcheck.tar.xz"
+          echo "${SHELLCHECK_SHA256}  ${RUNNER_TEMP}/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP" \
+            --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/shellcheck" --version
+
+      - name: Install actionlint (pinned, checksum-verified)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          # sha256 of actionlint_1.7.12_linux_amd64.tar.gz from the release's
+          # published checksums file.
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" --version
+
+      # The pipeline is governance: branch protection, promotion rules and the
+      # required-check aggregate are all expressed in workflow YAML, and until
+      # now none of it was validated by anything. actionlint type-checks every
+      # `${{ }}` expression, rejects an unknown context or a `needs:` reference
+      # to a job that does not exist, flags deprecated syntax, and runs
+      # shellcheck over every inline `run:` block.
+      - name: Lint workflow files
+        run: actionlint
+
+      # actionlint reads inline `run:` blocks only. Standalone scripts, which
+      # are the ones that carry real logic, need their own pass:
+      # scripts/ci/compute-base-sha.sh decides what the affected-workspace
+      # matrix diffs against, so a bug in it silently narrows CI. The list comes
+      # from git rather than a shell glob so untracked and ignored files are
+      # never linted, and `xargs -r` makes the step a clean no-op on a tree with
+      # no scripts at all.
+      - name: Lint tracked shell scripts
+        run: |
+          set -euo pipefail
+          echo "Tracked shell scripts:"
+          git ls-files '*.sh'
+          git ls-files -z '*.sh' | xargs -0 -r shellcheck
+
+  containers:
+    name: Dockerfiles (hadolint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install hadolint (pinned, checksum-verified)
+        env:
+          HADOLINT_VERSION: 2.15.1
+          # sha256 of hadolint-linux-x86_64 from the release's checksums.sha256.
+          HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64" \
+            -o "$RUNNER_TEMP/hadolint"
+          echo "${HADOLINT_SHA256}  ${RUNNER_TEMP}/hadolint" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/hadolint"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/hadolint" --version
+
+      # There is no Dockerfile on this branch yet; the self-hosting work adds
+      # apps/api/Dockerfile and apps/web/Dockerfile. The gate is wired now so
+      # that it is already enforcing on the pull request that introduces them,
+      # rather than being remembered afterwards. With no Dockerfile present
+      # `xargs -r` runs nothing and the step passes, which is the correct
+      # reading of "no container images to get wrong". The two patterns cover
+      # both `Dockerfile` and `Dockerfile.<suffix>` at any depth.
+      - name: Lint tracked Dockerfiles
+        run: |
+          set -euo pipefail
+          echo "Tracked Dockerfiles:"
+          git ls-files '*Dockerfile' '*Dockerfile.*'
+          git ls-files -z '*Dockerfile' '*Dockerfile.*' | xargs -0 -r hadolint

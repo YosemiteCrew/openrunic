@@ -33,6 +33,17 @@ jobs:
     with:
       force_push_base: ${{ inputs.force_push_base }}
 
+  repo:
+    # Repo-wide gates: formatting, stylesheets, workflow YAML, shell scripts and
+    # Dockerfiles. Deliberately not `needs: core` and deliberately unconditional.
+    # Every other stage hangs off the affected-workspace matrix, which is empty
+    # for a change confined to docs, workflows or scripts - exactly the changes
+    # these gates exist to catch. Gating this on `has-any` would reintroduce the
+    # hole it closes.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_repo.yaml
+
   test:
     needs: core
     if: needs.core.outputs.has-any == 'true'
@@ -141,7 +152,7 @@ jobs:
     # The one check to mark required on the branch rulesets. Published first so
     # its behaviour can be observed before it is made required.
     if: always()
-    needs: [core, test, agent-disabled, migration, sonar]
+    needs: [core, repo, test, agent-disabled, migration, sonar]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -156,6 +167,12 @@ jobs:
           # is skipped while DISABLE_SONAR is set. `cancelled` fails: an
           # aggregate built on !cancelled() lets a cancelled dependency through
           # as a pass.
+          #
+          # Because `skipped` passes, a stage that can skip is a stage that can
+          # go quiet. The `repo` stage above is therefore unconditional: it has
+          # no `if:` and none of its jobs do either, so its only outcomes are
+          # success, failure and cancellation. Do not add a condition to it
+          # without first deciding what a skip would be permitting.
           if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
             echo "CI Required: at least one stage failed or was cancelled"
             exit 1

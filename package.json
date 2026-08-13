@@ -17,11 +17,16 @@
     "type-check": "turbo run type-check",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}\"",
+    "lint:css": "stylelint \"**/*.css\"",
+    "lint:css:fix": "stylelint \"**/*.css\" --fix",
+    "lint:workflows": "actionlint",
+    "lint:shell": "git ls-files -z '*.sh' | xargs -0 -r shellcheck",
+    "lint:docker": "git ls-files -z '*Dockerfile' '*Dockerfile.*' | xargs -0 -r hadolint",
     "agent:conform": "pnpm --filter @openrunic/agent run conform",
     "check:secrets": "secretlint --no-gitignore \"**/*\"",
     "doctor": "react-doctor -y",
     "doctor:json": "react-doctor -y --json --json-out react-doctor.json",
-    "verify": "pnpm run lint && pnpm run type-check && pnpm run test && pnpm run build"
+    "verify": "pnpm run format:check && pnpm run lint:css && pnpm run lint && pnpm run type-check && pnpm run check:secrets && pnpm run test && pnpm run build"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
@@ -33,6 +38,8 @@
     "prettier": "^3.9.6",
     "react-doctor": "^0.9.11",
     "secretlint": "^13.0.4",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard": "^40.0.0",
     "turbo": "^2.10.9",
     "typescript": "^5.9.3"
   }

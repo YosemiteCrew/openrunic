@@ -1,0 +1,16 @@
+# Build output and vendored trees. Mirrors .prettierignore: stylelint lints
+# authored stylesheets, never generated ones. node_modules is ignored by
+# stylelint itself and needs no entry.
+dist/
+build/
+.next/
+coverage/
+.turbo/
+storybook-static/
+
+# Copied verbatim from @openrunic/ui by scripts/copy-ui-styles.mjs on portal dev
+# and build. Linting it would report every finding twice and attribute the
+# second copy to the wrong workspace; the source of truth under
+# packages/ui/src/styles is linted instead. Revisit if the copy step ever starts
+# transforming the stylesheet rather than copying it.
+apps/portal/public/styles.css

@@ -1,0 +1,500 @@
+import type { Bundle, FhirResource } from '@openrunic/fhir';
+import { describe, expect, it } from 'vitest';
+
+import { SERVED_MODULES } from '../fhir/resources.js';
+import type { MemoryDataset } from '../repositories/memory.js';
+
+import {
+  bearer,
+  createTestApp,
+  DEMO_FACILITY_A,
+  FIXED_NOW,
+  makeAppointmentRow,
+  makePatientRow,
+  seed,
+  storageColumns,
+  testId,
+  TOKENS,
+} from './support.js';
+
+/**
+ * Every served resource, seeded and read back.
+ *
+ * The conformance suite proves the router answers for each resource type; this
+ * one proves the answer is a resource. They are separate because they fail for
+ * different reasons: a missing route is a wiring mistake, and a projection that
+ * drops a field or hands the mapper a shape it cannot read is a data mistake,
+ * and a suite that only searched empty tables would catch the first and miss
+ * the second entirely.
+ */
+
+const PATIENT = testId(1);
+const PROVIDER = testId(900);
+const ENCOUNTER = testId(20);
+const ORDER = testId(30);
+const REPORT = testId(40);
+
+function seedChart(dataset: MemoryDataset): void {
+  seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+  seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
+
+  seed(dataset, 'User', {
+    ...storageColumns(PROVIDER),
+    email: 'a.okafor@example.invalid',
+    givenName: 'Adaeze',
+    familyName: 'Okafor',
+    credential: 'MD',
+    npi: '1234567893',
+    dea: null,
+    taxonomyCode: null,
+    isProvider: true,
+    locale: 'en-US',
+    status: 'ACTIVE',
+    lastLoginAt: null,
+  });
+
+  seed(dataset, 'Facility', {
+    ...storageColumns(DEMO_FACILITY_A),
+    name: 'Testville Clinic',
+    code: 'TVC',
+    npi: null,
+    posCode: '11',
+    timezone: 'UTC',
+    addressLine1: '1 Test Street',
+    addressLine2: null,
+    city: 'Testville',
+    state: 'TS',
+    postalCode: '00000',
+    country: 'US',
+    phone: '+15550100',
+    active: true,
+  });
+
+  seed(dataset, 'Coverage', {
+    ...storageColumns(testId(10)),
+    patientId: PATIENT,
+    payerId: testId(11),
+    rank: 'PRIMARY',
+    status: 'ACTIVE',
+    memberId: 'TM-0001',
+    groupNumber: 'GRP-1',
+    planName: 'Testline Mutual Standard',
+    subscriberRelationshipCode: 'self',
+    subscriberGivenName: null,
+    subscriberFamilyName: null,
+    subscriberBirthDate: null,
+    effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+    effectiveTo: null,
+    copayCents: 2500,
+    deductibleCents: 100000,
+    acceptAssignment: true,
+  });
+
+  seed(dataset, 'Encounter', {
+    ...storageColumns(ENCOUNTER),
+    facilityId: DEMO_FACILITY_A,
+    patientId: PATIENT,
+    providerId: PROVIDER,
+    appointmentId: null,
+    class: 'AMBULATORY',
+    status: 'COMPLETED',
+    reasonCode: 'R51',
+    reasonText: 'Headache',
+    startedAt: FIXED_NOW,
+    endedAt: null,
+    signedAt: null,
+    signedById: null,
+  });
+
+  seed(dataset, 'Condition', {
+    ...storageColumns(testId(21)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    category: 'PROBLEM_LIST_ITEM',
+    code: 'E11.9',
+    codeSystem: 'http://hl7.org/fhir/sid/icd-10-cm',
+    display: 'Type 2 diabetes mellitus without complications',
+    snomedCode: null,
+    clinicalStatus: 'ACTIVE',
+    verificationStatus: 'CONFIRMED',
+    onsetDate: new Date('2024-05-01T00:00:00.000Z'),
+    abatementDate: null,
+    severityCode: null,
+    bodySiteCode: null,
+    note: null,
+    recordedAt: FIXED_NOW,
+    recordedById: PROVIDER,
+  });
+
+  seed(dataset, 'MedicationRequest', {
+    ...storageColumns(testId(22)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    prescriberId: PROVIDER,
+    rxnormCode: '860975',
+    ndcCode: null,
+    display: 'Metformin 500 mg tablet',
+    sig: {},
+    sigText: 'One tablet twice daily with food',
+    quantity: 60,
+    quantityUnit: 'tablet',
+    refills: 3,
+    daysSupply: 30,
+    dispenseAsWritten: false,
+    controlledSchedule: null,
+    pharmacyName: null,
+    pharmacyNcpdpId: null,
+    status: 'ACTIVE',
+    intent: 'ORDER',
+    erxRef: null,
+    writtenAt: FIXED_NOW,
+    transmittedAt: null,
+  });
+
+  seed(dataset, 'MedicationStatement', {
+    ...storageColumns(testId(23)),
+    patientId: PATIENT,
+    encounterId: null,
+    rxnormCode: null,
+    display: 'Cholecalciferol 1000 unit capsule',
+    sigText: 'One capsule daily',
+    status: 'ACTIVE',
+    source: 'REPORTED',
+    effectiveStart: null,
+    effectiveEnd: null,
+    reportedAt: FIXED_NOW,
+    note: null,
+  });
+
+  seed(dataset, 'AllergyIntolerance', {
+    ...storageColumns(testId(24)),
+    patientId: PATIENT,
+    type: 'ALLERGY',
+    category: 'MEDICATION',
+    criticality: 'HIGH',
+    clinicalStatus: 'ACTIVE',
+    substanceCode: '7980',
+    substanceCodeSystem: 'http://www.nlm.nih.gov/research/umls/rxnorm',
+    substanceDisplay: 'Penicillin',
+    reactionCodes: ['247472004'],
+    reactionText: 'Hives',
+    severity: 'MODERATE',
+    onsetDate: null,
+    note: null,
+    recordedAt: FIXED_NOW,
+    recordedById: PROVIDER,
+  });
+
+  seed(dataset, 'Immunization', {
+    ...storageColumns(testId(25)),
+    patientId: PATIENT,
+    encounterId: null,
+    status: 'COMPLETED',
+    cvxCode: '141',
+    mvxCode: null,
+    ndcCode: null,
+    display: 'Influenza, seasonal, injectable',
+    lotNumber: 'TEST-1',
+    expirationDate: null,
+    siteCode: 'LA',
+    routeCode: 'IM',
+    doseQuantity: 0.5,
+    doseUnit: 'mL',
+    administeredAt: FIXED_NOW,
+    administeredById: PROVIDER,
+    visDate: null,
+    refusalReasonCode: null,
+    reportedToRegistryAt: null,
+  });
+
+  seed(dataset, 'Observation', {
+    ...storageColumns(testId(26)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    category: 'VITAL_SIGNS',
+    status: 'FINAL',
+    loincCode: '8867-4',
+    code: '8867-4',
+    codeSystem: 'http://loinc.org',
+    display: 'Heart rate',
+    valueNumber: 72,
+    valueText: null,
+    valueCode: null,
+    valueBoolean: null,
+    unit: '/min',
+    referenceLow: 60,
+    referenceHigh: 100,
+    interpretationCode: 'N',
+    bodySiteCode: null,
+    effectiveAt: FIXED_NOW,
+    issuedAt: null,
+    performerId: PROVIDER,
+    formSubmissionId: null,
+  });
+
+  seed(dataset, 'ServiceRequest', {
+    ...storageColumns(ORDER),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    orderedById: PROVIDER,
+    category: 'LAB',
+    status: 'TRANSMITTED',
+    intent: 'ORDER',
+    priority: 'ROUTINE',
+    code: '24323-8',
+    codeSystem: 'http://loinc.org',
+    display: 'Comprehensive metabolic panel',
+    specimenTypeCode: null,
+    reasonCodes: ['E11.9'],
+    aoeAnswers: null,
+    note: null,
+    requisitionNumber: 'REQ-1',
+    performingLabName: 'Testville Reference Lab',
+    labRef: null,
+    requestedAt: FIXED_NOW,
+    scheduledFor: null,
+    transmittedAt: FIXED_NOW,
+  });
+
+  seed(dataset, 'Specimen', {
+    ...storageColumns(testId(31)),
+    patientId: PATIENT,
+    serviceRequestId: ORDER,
+    status: 'AVAILABLE',
+    accessionNumber: 'ACC-1',
+    typeCode: '119297000',
+    typeDisplay: 'Blood specimen',
+    collectionMethodCode: null,
+    bodySiteCode: null,
+    collectedAt: FIXED_NOW,
+    collectedById: PROVIDER,
+    receivedAt: null,
+    containerType: null,
+    volumeValue: 5,
+    volumeUnit: 'mL',
+    rejectionReason: null,
+    note: null,
+  });
+
+  seed(dataset, 'DiagnosticReport', {
+    ...storageColumns(REPORT),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    serviceRequestId: ORDER,
+    specimenId: testId(31),
+    status: 'FINAL',
+    category: 'LAB',
+    code: '24323-8',
+    codeSystem: 'http://loinc.org',
+    display: 'Comprehensive metabolic panel',
+    performingLabName: 'Testville Reference Lab',
+    abnormalFlag: 'NORMAL',
+    narrative: null,
+    rawStorageKey: null,
+    effectiveAt: FIXED_NOW,
+    issuedAt: FIXED_NOW,
+    reviewedById: null,
+    reviewedAt: null,
+  });
+
+  seed(dataset, 'ResultObservation', {
+    ...storageColumns(testId(41)),
+    diagnosticReportId: REPORT,
+    patientId: PATIENT,
+    status: 'FINAL',
+    sequence: 1,
+    loincCode: '2345-7',
+    code: '2345-7',
+    codeSystem: 'http://loinc.org',
+    display: 'Glucose',
+    valueNumber: 5.4,
+    valueText: null,
+    valueCode: null,
+    unit: 'mmol/L',
+    referenceLow: 3.9,
+    referenceHigh: 5.8,
+    referenceRangeText: null,
+    interpretationCode: 'N',
+    abnormalFlag: 'NORMAL',
+    effectiveAt: FIXED_NOW,
+  });
+
+  seed(dataset, 'Document', {
+    ...storageColumns(testId(50)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    category: '11488-4',
+    title: 'Consultation note',
+    storageKey: 'documents/2026/08/consultation.pdf',
+    contentType: 'application/pdf',
+    sha256: 'a'.repeat(64),
+    byteSize: 2048,
+    source: 'UPLOAD',
+    status: 'FILED',
+    sensitivityClass: 'NORMAL',
+    receivedAt: FIXED_NOW,
+    filedAt: FIXED_NOW,
+    filedById: PROVIDER,
+    expiresAt: null,
+  });
+
+  seed(dataset, 'Task', {
+    ...storageColumns(testId(60)),
+    type: 'RESULT',
+    status: 'OPEN',
+    priority: 'NORMAL',
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    subjectType: 'DiagnosticReport',
+    subjectId: REPORT,
+    title: 'Review the metabolic panel',
+    description: null,
+    assigneeType: 'USER',
+    assigneeUserId: PROVIDER,
+    assigneeTeamKey: null,
+    dueAt: FIXED_NOW,
+    slaState: 'OK',
+    expiresAt: null,
+    sourceEventId: null,
+    completedAt: null,
+    completedById: null,
+    outcome: null,
+  });
+}
+
+function harness(): ReturnType<typeof createTestApp> {
+  const created = createTestApp();
+  seedChart(created.dataset);
+  return created;
+}
+
+describe('every served resource', () => {
+  it.each(SERVED_MODULES.map((module) => module.type))(
+    '%s comes back from a search as a resource of its own type',
+    async (type) => {
+      const { app } = harness();
+
+      const res = await app.request(`/fhir/${type}`, { headers: bearer(TOKENS.adminA) });
+
+      expect(res.status).toBe(200);
+      const bundle = (await res.json()) as Bundle;
+      expect(bundle.total, `${type} search returned nothing to project`).toBeGreaterThan(0);
+      for (const entry of bundle.entry ?? []) {
+        expect((entry.resource as FhirResource).resourceType).toBe(type);
+        expect(entry.search?.mode).toBe('match');
+      }
+    }
+  );
+
+  it.each(SERVED_MODULES.map((module) => module.type))(
+    '%s comes back from a read as a resource of its own type',
+    async (type) => {
+      const { app } = harness();
+      const bundle = (await (
+        await app.request(`/fhir/${type}`, { headers: bearer(TOKENS.adminA) })
+      ).json()) as Bundle;
+      const id = (bundle.entry?.[0]?.resource as { id?: string } | undefined)?.id;
+      expect(id, `${type} search returned nothing to read`).toBeDefined();
+
+      const res = await app.request(`/fhir/${type}/${String(id)}`, {
+        headers: bearer(TOKENS.adminA),
+      });
+
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as FhirResource).resourceType).toBe(type);
+    }
+  );
+});
+
+describe('the projections', () => {
+  it('carries the clinical detail a chart summary needs', async () => {
+    const { app } = harness();
+
+    const observation = (await (
+      await app.request(`/fhir/Observation/${testId(26)}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { valueQuantity?: { value?: number; unit?: string }; status?: string };
+
+    expect(observation.status).toBe('final');
+    expect(observation.valueQuantity).toMatchObject({ value: 72, unit: '/min' });
+  });
+
+  it('resolves a report to the analytes that hang off it', async () => {
+    const { app } = harness();
+
+    const report = (await (
+      await app.request(`/fhir/DiagnosticReport/${REPORT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { result?: { reference?: string }[] };
+
+    expect(report.result?.map((entry) => entry.reference)).toEqual([`Observation/${testId(41)}`]);
+  });
+
+  it('never publishes the object-storage key of a document', async () => {
+    const { app } = harness();
+
+    const res = await app.request(`/fhir/DocumentReference/${testId(50)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    const body = await res.text();
+    expect(body).not.toContain('documents/2026');
+    expect(body).toContain(`Binary/${testId(50)}`);
+  });
+
+  it('serves a practitioner from the staff directory', async () => {
+    const { app } = harness();
+
+    const practitioner = (await (
+      await app.request(`/fhir/Practitioner/${PROVIDER}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { name?: { family?: string }[]; active?: boolean };
+
+    expect(practitioner.name?.[0]?.family).toBe('Okafor');
+    expect(practitioner.active).toBe(true);
+  });
+
+  it('serves a facility as a Location', async () => {
+    const { app } = harness();
+
+    const location = (await (
+      await app.request(`/fhir/Location/${DEMO_FACILITY_A}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { name?: string; address?: { city?: string } };
+
+    expect(location.name).toBe('Testville Clinic');
+    expect(location.address?.city).toBe('Testville');
+  });
+
+  it('filters a chart search by the patient compartment reference', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request(`/fhir/Condition?patient=Patient/${PATIENT}`, {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(1);
+  });
+
+  it('answers a date window on a chart resource', async () => {
+    const { app } = harness();
+
+    const inside = (await (
+      await app.request('/fhir/Observation?date=2026-08-13', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const outside = (await (
+      await app.request('/fhir/Observation?date=2026-08-14', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    expect(inside.total).toBe(1);
+    expect(outside.total).toBe(0);
+  });
+
+  it('refuses a status token the value set does not contain', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Observation?status=definitely-not-a-status', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+});

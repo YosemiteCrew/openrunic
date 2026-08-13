@@ -30,6 +30,7 @@ const PRINCIPAL: Principal = {
   displayName: 'Dr. Okafor',
   roles: ['clinician'],
   facilityIds: [testId(800)],
+  scopes: ['user/*.read', 'user/*.write'],
   purposeOfUse: 'TREAT',
 };
 

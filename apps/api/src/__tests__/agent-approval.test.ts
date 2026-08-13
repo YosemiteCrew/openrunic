@@ -18,6 +18,7 @@ import {
   DEMO_FACILITY_A,
   jsonBearer,
   makePatientRow,
+  seed,
   testId,
   TOKENS,
 } from './support.js';
@@ -101,7 +102,7 @@ function createAgentApp(script: readonly ScriptedStep[]) {
   if (runtime.status !== 'enabled') throw new Error('expected an enabled runtime');
 
   const built = createTestApp({ agent: runtime, agentAudit: bridge });
-  built.dataset.patients.push(makePatientRow({ id: PATIENT_ID }));
+  seed(built.dataset, 'Patient', makePatientRow({ id: PATIENT_ID }));
   holder.app = built.app;
   return built;
 }
@@ -147,7 +148,7 @@ describe('a proposal, end to end', () => {
     const proposal = await proposeBooking(app);
 
     expect(proposal.toolId).toBe('appointments.propose');
-    expect(dataset.appointments).toHaveLength(0);
+    expect(dataset.table('Appointment')).toHaveLength(0);
   });
 
   it('commits through the endpoint the human interface uses', async () => {
@@ -161,8 +162,8 @@ describe('a proposal, end to end', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(dataset.appointments).toHaveLength(1);
-    expect(dataset.appointments[0]).toMatchObject({
+    expect(dataset.table('Appointment')).toHaveLength(1);
+    expect(dataset.table('Appointment')[0]).toMatchObject({
       patientId: PATIENT_ID,
       typeCode: 'FOLLOWUP',
       // The person who confirmed it is the one who booked it; that the
@@ -198,7 +199,7 @@ describe('a proposal, end to end', () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(409);
-    expect(dataset.appointments).toHaveLength(1);
+    expect(dataset.table('Appointment')).toHaveLength(1);
   });
 
   it('refuses a confirmation whose input was swapped after it was shown', async () => {
@@ -217,7 +218,7 @@ describe('a proposal, end to end', () => {
     });
 
     expect(response.status).toBe(409);
-    expect(dataset.appointments).toHaveLength(0);
+    expect(dataset.table('Appointment')).toHaveLength(0);
   });
 
   it('refuses a confirmation from someone who does not hold the permission', async () => {
@@ -231,7 +232,7 @@ describe('a proposal, end to end', () => {
     });
 
     expect(response.status).toBe(409);
-    expect(dataset.appointments).toHaveLength(0);
+    expect(dataset.table('Appointment')).toHaveLength(0);
   });
 
   it('refuses a confirmation from another organisation', async () => {
@@ -245,7 +246,7 @@ describe('a proposal, end to end', () => {
     });
 
     expect(response.status).toBe(409);
-    expect(dataset.appointments).toHaveLength(0);
+    expect(dataset.table('Appointment')).toHaveLength(0);
   });
 
   it('discards a proposal, and records the discard', async () => {
@@ -258,7 +259,7 @@ describe('a proposal, end to end', () => {
     });
 
     expect(response.status).toBe(204);
-    expect(dataset.appointments).toHaveLength(0);
+    expect(dataset.table('Appointment')).toHaveLength(0);
     expect(sink.events.some((entry) => entry.event.metadata['decision'] === 'rejected')).toBe(true);
 
     // Once discarded, the confirmation cannot be used.
@@ -313,7 +314,7 @@ describe('a proposal, end to end', () => {
     });
 
     expect(response.status).toBe(409);
-    expect(dataset.appointments).toHaveLength(0);
+    expect(dataset.table('Appointment')).toHaveLength(0);
   });
 });
 

@@ -28,6 +28,20 @@ export interface Principal {
   roles: readonly string[];
   /** Facility grants. Empty means "no facility-scoped access" - it is not a wildcard. */
   facilityIds: readonly string[];
+  /**
+   * Raw SMART on FHIR scope strings, exactly as the token carried them.
+   * Parsing and enforcement belong to `auth/scopes.ts`; storing the raw
+   * strings means an audit record shows what was granted, not what this
+   * process understood of it.
+   */
+  scopes: readonly string[];
+  /**
+   * Set when the token is patient-scoped. It is the *only* chart the principal
+   * may ever reach: the tenant-scope middleware passes it to the repository
+   * registry, so the compartment is a binding on the data access rather than a
+   * check a handler performs.
+   */
+  compartmentPatientId?: string;
   /** HL7 PurposeOfUse asserted for the request, e.g. `TREAT`. */
   purposeOfUse: string;
   /** Emergency access outside normal policy; always paired with a reason. */

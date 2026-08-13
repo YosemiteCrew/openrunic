@@ -14,6 +14,7 @@ import {
   TOKENS,
   testId,
   UNPRIVILEGED_TOKEN,
+  seed,
 } from './support.js';
 
 const VALID_BODY = {
@@ -30,7 +31,9 @@ const VALID_BODY = {
 describe('GET /bff/v0/appointments', () => {
   it('serves the schedule day view for one facility', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(
+    seed(
+      dataset,
+      'Appointment',
       makeAppointmentRow({ id: testId(101), start: new Date('2026-08-14T09:00:00.000Z') }),
       makeAppointmentRow({ id: testId(102), start: new Date('2026-08-15T09:00:00.000Z') })
     );
@@ -48,7 +51,9 @@ describe('GET /bff/v0/appointments', () => {
 
   it('serves the flow board by status', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(
+    seed(
+      dataset,
+      'Appointment',
       makeAppointmentRow({ id: testId(101) }),
       makeAppointmentRow({ id: testId(102), status: 'CHECKED_IN' })
     );
@@ -107,7 +112,7 @@ describe('GET /bff/v0/appointments', () => {
 describe('GET /bff/v0/appointments/:id', () => {
   it('reads one appointment', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       headers: bearer(TOKENS.frontDeskA),
@@ -136,7 +141,11 @@ describe('GET /bff/v0/appointments/:id', () => {
 
   it('403s an appointment in a facility the principal cannot see', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101), facilityId: DEMO_FACILITY_B }));
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(101), facilityId: DEMO_FACILITY_B })
+    );
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       headers: bearer(TOKENS.frontDeskA),
@@ -158,7 +167,7 @@ describe('POST /bff/v0/appointments', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AppointmentDto;
     expect(res.headers.get('location')).toBe(`/bff/v0/appointments/${body.id}`);
-    expect(dataset.appointments).toHaveLength(1);
+    expect(dataset.table('Appointment')).toHaveLength(1);
   });
 
   it('422s an appointment that ends before it starts', async () => {
@@ -182,7 +191,7 @@ describe('POST /bff/v0/appointments', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(dataset.appointments).toEqual([]);
+    expect(dataset.table('Appointment')).toEqual([]);
   });
 
   it('denies a role without appointment.write', async () => {
@@ -201,7 +210,7 @@ describe('POST /bff/v0/appointments', () => {
 describe('PATCH /bff/v0/appointments/:id', () => {
   it('advances the status and stamps the check-in time', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       method: 'PATCH',
@@ -218,7 +227,7 @@ describe('PATCH /bff/v0/appointments/:id', () => {
 
   it('requires a reason on a cancellation', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       method: 'PATCH',
@@ -232,7 +241,7 @@ describe('PATCH /bff/v0/appointments/:id', () => {
 
   it('rejects an empty patch', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       method: 'PATCH',
@@ -245,7 +254,7 @@ describe('PATCH /bff/v0/appointments/:id', () => {
 
   it('rejects a reschedule that inverts the window', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       method: 'PATCH',
@@ -258,7 +267,7 @@ describe('PATCH /bff/v0/appointments/:id', () => {
 
   it('refuses to move an appointment to another facility or patient', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101) }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       method: 'PATCH',
@@ -282,7 +291,11 @@ describe('PATCH /bff/v0/appointments/:id', () => {
 
   it('403s a patch to an appointment in an ungranted facility', async () => {
     const { app, dataset } = createTestApp();
-    dataset.appointments.push(makeAppointmentRow({ id: testId(101), facilityId: DEMO_FACILITY_B }));
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(101), facilityId: DEMO_FACILITY_B })
+    );
 
     const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
       method: 'PATCH',
@@ -291,6 +304,6 @@ describe('PATCH /bff/v0/appointments/:id', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(dataset.appointments[0]?.room).toBeNull();
+    expect(dataset.table('Appointment')[0]?.room).toBeNull();
   });
 });

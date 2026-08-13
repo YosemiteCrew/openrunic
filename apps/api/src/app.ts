@@ -6,6 +6,7 @@ import type { AgentRuntime } from '@openrunic/agent';
 
 import { agentRouteContracts, agentRoutes } from './agent/routes.js';
 import { createAuditBridge, loadAgentRuntime, type AuditBridge } from './agent/runtime.js';
+import { createAuditChainStore } from './audit/chain-store.js';
 import { createMemoryAuditSink } from './audit/memory-sink.js';
 import type { AuditSink } from './audit/types.js';
 import type { PrincipalResolver } from './auth/principal.js';
@@ -69,10 +70,14 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
   const isProduction = process.env.NODE_ENV === 'production';
   assertProductionWiring(options, isProduction);
 
-  const repositories = options.repositories ?? createMemoryRepositoryRegistry();
+  // One chain, shared by the default sink and the default store, so a
+  // database-less development run can read back the events it just wrote. A
+  // second, plausible-looking copy of the audit log would be worse than none.
+  const auditStore = createAuditChainStore();
+  const repositories = options.repositories ?? createMemoryRepositoryRegistry({ auditStore });
   const principalResolver =
     options.principalResolver ?? createStaticPrincipalResolver(DEMO_PRINCIPALS);
-  const auditSink = options.auditSink ?? createMemoryAuditSink();
+  const auditSink = options.auditSink ?? createMemoryAuditSink({ store: auditStore });
   const now = options.now ?? ((): Date => new Date());
 
   const app = new Hono<AppEnv>();

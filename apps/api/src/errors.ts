@@ -33,6 +33,13 @@ export const PROBLEM_KINDS = [
   'forbidden',
   'not-found',
   'conflict',
+  /**
+   * A state machine refused the move. Separate from `conflict` because a
+   * client can act on it: the body names the state the record is in and the
+   * states it could go to, so a UI can re-render its buttons instead of
+   * retrying a request that will never succeed.
+   */
+  'invalid-transition',
   'validation-failed',
   'not-implemented',
   'internal-error',
@@ -47,6 +54,7 @@ const STATUS_BY_KIND: Record<ProblemKind, ContentfulStatusCode> = {
   forbidden: 403,
   'not-found': 404,
   conflict: 409,
+  'invalid-transition': 409,
   'validation-failed': 422,
   'not-implemented': 501,
   'internal-error': 500,
@@ -59,6 +67,7 @@ const TITLE_BY_KIND: Record<ProblemKind, string> = {
   forbidden: 'Not permitted',
   'not-found': 'Not found',
   conflict: 'Conflict',
+  'invalid-transition': 'Invalid state transition',
   'validation-failed': 'Validation failed',
   'not-implemented': 'Not implemented',
   'internal-error': 'Internal error',
@@ -135,6 +144,29 @@ export class ApiError extends Error {
   static notImplemented(detail: string, options: ApiErrorOptions = {}): ApiError {
     return new ApiError('not-implemented', { ...options, detail });
   }
+
+  /**
+   * A refused state transition, reported with the states involved.
+   *
+   * The allowed set is part of the body rather than only the prose, because
+   * the caller that gets this is a screen with buttons on it, and "which
+   * buttons should have been there" is the actionable half of the answer.
+   */
+  static invalidTransition(options: {
+    subject: string;
+    from: string;
+    to: string;
+    allowed: readonly string[];
+  }): ApiError {
+    const allowed =
+      options.allowed.length === 0
+        ? 'nothing'
+        : [...options.allowed].sort((a, b) => a.localeCompare(b)).join(', ');
+    return new ApiError('invalid-transition', {
+      detail: `A ${options.subject} in ${options.from} cannot move to ${options.to}. It can move to: ${allowed}.`,
+      issues: [{ path: 'status', message: `expected one of ${allowed}` }],
+    });
+  }
 }
 
 /**
@@ -151,6 +183,7 @@ const DEFAULT_FHIR_ISSUE_CODE: Record<ProblemKind, FhirIssueCode> = {
   forbidden: 'forbidden',
   'not-found': 'not-found',
   conflict: 'duplicate',
+  'invalid-transition': 'business-rule',
   'validation-failed': 'invariant',
   'not-implemented': 'not-supported',
   'internal-error': 'exception',

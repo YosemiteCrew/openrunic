@@ -1,5 +1,6 @@
 import type { AuditCollector } from './audit/collector.js';
 import type { Principal } from './auth/principal.js';
+import type { ScopeCompartment } from './auth/scopes.js';
 import type { PolicyContext } from './policy/policy.js';
 import type { Repositories } from './repositories/types.js';
 
@@ -24,6 +25,12 @@ export interface AppVariables {
   repositories?: Repositories;
   /** Chooses the error representation: problem+json or OperationOutcome. */
   responseFormat: 'problem' | 'fhir';
+  /**
+   * Which SMART compartment granted the current FHIR interaction. Set by the
+   * scope guard; absent everywhere else, because only the FHIR boundary speaks
+   * scopes.
+   */
+  scopeCompartment?: ScopeCompartment;
 }
 
 export interface AppEnv {

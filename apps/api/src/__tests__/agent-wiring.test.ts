@@ -7,6 +7,7 @@ import { agentRoutes } from '../agent/routes.js';
 import { createAuditBridge, loadAgentRuntime, type AuditBridge } from '../agent/runtime.js';
 import { AuditCollector } from '../audit/collector.js';
 import { createMemoryAuditSink, type MemoryAuditSink } from '../audit/memory-sink.js';
+import type { Principal } from '../auth/principal.js';
 import type { AppEnv } from '../context.js';
 import { isApiError } from '../errors.js';
 import { problemResponse } from '../http/problem.js';
@@ -66,12 +67,22 @@ function bareApp(withContext?: ContextInitialiser): BareApp {
   return { app, sink };
 }
 
-const PRINCIPAL = {
+/**
+ * A session of the kind a correctly wired app would serve.
+ *
+ * The token carries the same broad staff grant the demo clinician holds, so
+ * when the routes below still refuse it, that is unambiguously the missing
+ * chain and not a grant which was never there. Typed as `Principal` rather
+ * than inferred, so a field added to the interface fails here once instead of
+ * at each `c.set`.
+ */
+const PRINCIPAL: Principal = {
   subject: testId(900),
   tenantId: DEMO_TENANT_A,
-  actorType: 'user' as const,
+  actorType: 'user',
   roles: [],
   facilityIds: [],
+  scopes: ['user/*.read', 'user/*.write'],
   purposeOfUse: 'TREAT',
 };
 

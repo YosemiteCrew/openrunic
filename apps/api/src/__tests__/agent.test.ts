@@ -366,6 +366,12 @@ describe('the principal handed to the loop', () => {
       actorType: 'user',
       roles: ['biller'],
       facilityIds: [],
+      // The broad grant a real billing token carries, deliberately wider than
+      // the one role above. The assertion that `encounter.write` is absent
+      // therefore shows the loop's capabilities are resolved from the role by
+      // the policy layer, rather than being the token's own breadth carried
+      // across.
+      scopes: ['user/*.read', 'user/*.write'],
       purposeOfUse: 'HPAYMT',
     });
 
@@ -382,6 +388,10 @@ describe('the principal handed to the loop', () => {
       actorType: 'patient',
       roles: [],
       facilityIds: [],
+      // The scope set a portal launch issues. It grants reads at the FHIR
+      // boundary and still buys nothing here, because the surface is decided
+      // by who the actor is rather than by what the token asked for.
+      scopes: ['patient/*.read', 'launch/patient'],
       purposeOfUse: 'TREAT',
     });
     expect(principal.surface).toBe('patient');
@@ -395,6 +405,9 @@ describe('the principal handed to the loop', () => {
         actorType: 'user',
         roles: ['clinician'],
         facilityIds: [],
+        // Chart-wide by the token's own account. That the compartment below is
+        // still one patient is the narrowing this test is named for.
+        scopes: ['user/*.read', 'user/*.write'],
         purposeOfUse: 'TREAT',
       },
       testId(5)

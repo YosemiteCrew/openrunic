@@ -79,7 +79,7 @@ export async function preflight(
       plan.destructive.length === 0
         ? 'every pending migration is additive'
         : `destructive: ${plan.destructive.join(', ')}`,
-    fix: 'Follow "Upgrades with a destructive migration" in docs/ops-runbook.md.',
+    fix: 'Follow "When the plan is destructive" under Upgrades in docs/ops-runbook.md.',
   });
 
   // An upgrade that cannot be undone must not begin without something to go
@@ -103,4 +103,65 @@ export async function preflight(
   });
 
   return { plan, checks };
+}
+
+/** What the command does with a pre-flight result. */
+export type UpgradeAction =
+  /** Report only. Nothing is applied, whatever the checks said. */
+  | 'dry-run'
+  /** A real upgrade was asked for and a check refused it. */
+  | 'blocked'
+  /** Migrations and containers are about to be replaced. */
+  | 'apply';
+
+export interface UpgradeDecision {
+  readonly action: UpgradeAction;
+  readonly exitCode: number;
+  /**
+   * Checks that did not pass, in pre-flight order, each appearing once.
+   *
+   * A destructive plan is one of these rather than a gate of its own: the
+   * 'migration safety' check fails exactly when `planUpgrade` chose the
+   * maintenance-window path, so reporting both would say the same thing twice.
+   */
+  readonly blockers: readonly PreflightCheck[];
+  /** True when --force is carrying a real apply past failed checks. */
+  readonly overridden: boolean;
+}
+
+export interface UpgradeRequest {
+  readonly checks: readonly PreflightCheck[];
+  /** The operator passed --apply. Without it nothing is applied. */
+  readonly apply: boolean;
+  /** The operator passed --force. Only meaningful together with --apply. */
+  readonly force: boolean;
+}
+
+/**
+ * Turns a pre-flight result and the operator's flags into one decision.
+ *
+ * Pure, and separate from the command that prints it, because the ordering here
+ * is the safety property. `openrunic-ops upgrade` with no `--apply` is
+ * documented as a dry run, which means it is the command an operator reaches for
+ * when they are not sure - so it has to be the command that cannot do anything,
+ * including when the checks failed and including when --force is also present.
+ * A gate that ran ahead of that rule would turn the safe command into one that
+ * exits non-zero and advertises --force, which reads as "the way forward is to
+ * override", at the exact moment the operator was being careful.
+ */
+export function decideUpgrade(request: UpgradeRequest): UpgradeDecision {
+  const blockers = request.checks.filter((check) => !check.ok);
+
+  // Before any gate: no --apply, nothing happens. The failed checks are still
+  // reported by the caller - a dry run that hid them would be useless - they
+  // just do not change what this run does or what it exits with.
+  if (!request.apply) {
+    return { action: 'dry-run', exitCode: 0, blockers, overridden: false };
+  }
+
+  if (blockers.length > 0 && !request.force) {
+    return { action: 'blocked', exitCode: 1, blockers, overridden: false };
+  }
+
+  return { action: 'apply', exitCode: 0, blockers, overridden: blockers.length > 0 };
 }

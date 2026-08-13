@@ -11,7 +11,7 @@ import {
   type BackupManifest,
 } from './commands/backup.js';
 import { doctor, ensureEnvFile, type Check } from './commands/setup.js';
-import { preflight } from './commands/upgrade.js';
+import { decideUpgrade, preflight } from './commands/upgrade.js';
 import { copyIntoContainer, restoreInto, rowCounts, type PostgresTarget } from './db/postgres.js';
 import { parseEnvLines } from './env/secrets.js';
 import { lintMigrationDirectory } from './migration-lint/lint.js';
@@ -311,38 +311,52 @@ async function commandUpgrade(argv: readonly string[]): Promise<number> {
   if (plan.path === 'maintenance-window') {
     out();
     out('  Destructive migrations cannot be applied under live traffic. The');
-    out('  procedure is in docs/ops-runbook.md, "Upgrades with a destructive');
-    out('  migration". In short: take and verify a backup, stop the web and api');
-    out('  containers, apply, restart.');
-    if (!argv.includes('--force')) return 1;
-    out();
-    out('  --force given: continuing anyway.');
+    out('  procedure is in docs/ops-runbook.md, "When the plan is destructive".');
+    out('  In short: take and verify a backup, stop the web and api containers,');
+    out('  apply, restart.');
   }
 
-  // The failed checks stop the upgrade here, before anything is applied. The
-  // one that matters is 'data at risk': an upgrade with no backup behind it is
-  // a change with no way back, and the moment to find that out is now rather
-  // than halfway through a migration.
-  const unmet = checks.filter((check) => !check.ok);
-  if (unmet.length > 0) {
+  // The decision is made in `decideUpgrade` rather than here, because the order
+  // of these gates is the safety property and it belongs somewhere it can be
+  // tested. This function only prints it.
+  const decision = decideUpgrade({
+    checks,
+    apply: argv.includes('--apply'),
+    force: argv.includes('--force'),
+  });
+
+  // The one that matters is 'data at risk': an upgrade with no backup behind it
+  // is a change with no way back, and the moment to find that out is now rather
+  // than halfway through a migration. A destructive plan arrives here too, as
+  // the 'migration safety' check, which is why it is not gated separately above.
+  if (decision.blockers.length > 0) {
     out();
-    for (const check of unmet) {
+    for (const check of decision.blockers) {
       out(`  ${check.name} did not pass.`);
       if (check.fix !== undefined) out(`    ${check.fix}`);
     }
-    if (!argv.includes('--force')) {
-      out();
-      out('  Nothing has been applied. Re-run with --force to override.');
-      return 1;
-    }
-    out();
-    out('  --force given: continuing anyway.');
   }
 
-  if (!argv.includes('--apply')) {
+  if (decision.action === 'dry-run') {
     out();
-    out('  Dry run. Re-run with --apply to perform the upgrade.');
-    return 0;
+    out('  Dry run. Nothing has been applied.');
+    out(
+      decision.blockers.length > 0
+        ? '  Clear the failures above, then re-run with --apply.'
+        : '  Re-run with --apply to perform the upgrade.'
+    );
+    return decision.exitCode;
+  }
+
+  if (decision.action === 'blocked') {
+    out();
+    out('  Nothing has been applied. Re-run with --apply --force to override.');
+    return decision.exitCode;
+  }
+
+  if (decision.overridden) {
+    out();
+    out('  --force given: continuing anyway.');
   }
 
   out();
@@ -413,7 +427,7 @@ const USAGE = `openrunic-ops <command>
   backup                    take a verified-shape logical backup
   verify-backup [manifest]  restore the backup into a scratch database and compare
   restore [manifest]        restore a backup  [--into <db>] [--yes]
-  upgrade [--apply]         pre-flight and apply pending migrations  [--force]
+  upgrade [--apply]         pre-flight; applies only with --apply  [--force]
   lint-migrations           report destructive migration statements  [--annotate] [--strict] [--dir <path>]
 `;
 

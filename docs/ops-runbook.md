@@ -210,6 +210,50 @@ window. Its risk is spent; holding a later upgrade for it would be superstition.
 Migrations run before containers are replaced. If they fail, the previous
 containers are still running and still serving, and nothing has been swapped.
 
+### What each flag does
+
+`pnpm ops:upgrade` on its own is a **dry run**. It runs every pre-flight check,
+prints the plan, prints anything that failed, applies nothing and exits 0. That
+is the whole contract, and it holds no matter what the checks said: the command
+an operator reaches for when they are unsure has to be the one that cannot do
+anything.
+
+`--apply` is the only flag that applies an upgrade. A failed check stops an
+`--apply` run before the first migration; `--apply --force` is the deliberate
+override and is recorded in the output as such. `--force` on its own changes
+nothing, because a run without `--apply` is still a dry run.
+
+`decideUpgrade` in `packages/ops/src/commands/upgrade.ts` is that ordering, kept
+separate from the command that prints it so it can be tested - including the
+case where the checks failed and the operator did not ask to apply.
+
+### When the plan is destructive
+
+`path: maintenance-window` means at least one pending migration removes or
+narrows something the running version still reads. There is no ordering of this
+upgrade that keeps serving through it, so the window is not a preference.
+
+```bash
+pnpm ops:backup && pnpm ops:verify-backup   # do not skip the verify
+docker compose stop web api                 # traffic stops before the schema moves
+pnpm ops:upgrade -- --apply --force         # --force: the plan is knowingly destructive
+docker compose up -d --wait api web         # new containers on the new schema
+```
+
+Step 3 needs `--force` because the `migration safety` check fails for exactly
+this plan, and it keeps failing once the containers are stopped: stopping them
+is what makes the window safe, not what makes the migration additive. The check
+is reporting the SQL, not the traffic.
+
+**If step 3 fails**, the database is the thing to fix and the containers are
+already down, so nothing is serving a half-migrated schema. Restore the backup
+from step 1 (`pnpm ops:restore -- --yes`), bring the previous release's
+containers back up, and take the failure to the release notes before trying
+again.
+
+Do this outside clinic hours. The release notes say when a window is needed;
+`pnpm ops:upgrade` says so too, before anything is applied.
+
 ---
 
 ## The full-day clinical drill
@@ -279,6 +323,12 @@ The install and backup legs are by far the slowest in the pipeline. That is a
 deliberate trade: the claims they check are ones a clinic otherwise discovers at
 the worst possible time.
 
+The upgrade gate rides on those two legs rather than getting one of its own: the
+install leg has rows and no backup, so `pnpm ops:upgrade` must refuse to apply
+and must still exit 0 as a dry run; the backup leg has a verified backup, so the
+same command must come back clean. Both assert the exit code, because a gate that
+turns the safe command into a refusal is a regression a passing drill cannot see.
+
 The budgets are asserted, not just measured. If a change makes the install take
 thirty-one minutes, CI says so rather than letting the documentation quietly
 become false.
@@ -326,6 +376,60 @@ makes the banner say "read-only" during a total outage, which is wrong.
 Verified live against the compose stack in all four states: healthy (no banner),
 `docker compose stop postgres` (degraded), `docker compose stop api` (offline),
 and recovery (banner clears by itself).
+
+---
+
+## What the ops CLI is allowed to read
+
+`openrunic-ops` reads and writes files the operator names. That is the job:
+`restore` exists to be pointed at an archive carried in from a different machine.
+So "this path came from an argument" is the design, and the useful question is
+not whether a path is a variable but where the value came from. There are four
+sources, and they are the whole list:
+
+1. **Constants derived from where the code is installed.** `docker-compose.yml`
+   and `packages/database/prisma/migrations`, both resolved from the CLI's own
+   module path in `packages/ops/src/cli.ts`.
+2. **`.env` beside the compose file.** `OPENRUNIC_BACKUP_DIR` is resolved against
+   the repository root, so an absolute value wins. That is deliberate - backups
+   belong on a different disk - and the file is the operator's own, held at mode
+   0600 by `ensureEnvFile` on every run.
+3. **Arguments the operator typed**: the manifest path for `verify-backup` and
+   `restore`, `--dir` for `lint-migrations`.
+4. **A field inside a backup manifest**: `archive`.
+
+Only the fourth crosses a trust boundary. A manifest is a file from somewhere
+else by the time it is read - another disk, removable media, a rebuilt server -
+and the restore turns that field into a path. `readManifest` therefore holds it
+to a plain filename beside the manifest: not absolute, no separator of either
+platform's kind, not `.` or `..`. `commands/manifest.test.ts` is that boundary,
+nine cases of it, including `../../etc/passwd` and a Windows-separated climb.
+
+The first three are the operator, on their own machine, in a shell they already
+have. Constraining those would not remove an ability they lack; it would only
+break restoring a backup that lives somewhere else.
+
+Two related properties, since they are what make the above sufficient: nothing in
+this package runs through a shell (`shell: false` on every spawn in
+`process/run.ts` and `db/postgres.ts`, and no string form anywhere), and the two
+values that reach SQL text rather than a bind parameter - a database name and a
+sample patient id - are held to `SAFE_IDENTIFIER` and a UUID pattern in
+`db/postgres.ts`.
+
+### The scanner's file-inclusion findings
+
+The SAST scanner in CI reports "potential file inclusion attack via reading file"
+against this package, once per call that opens a path held in a variable. Every
+one of them was reviewed against the list above before being accepted, and the
+finding it would have to be for one of them to be real is: a path that reaches
+the filesystem from somewhere other than those four sources, or a manifest field
+that gets there without passing `readManifest`.
+
+**This reasoning expires** if `openrunic-ops` ever gains an entry point that is
+not a local operator - an HTTP trigger, a daemon, a job that takes its arguments
+from a queue - or if a fifth path source appears. Either of those changes who
+supplies the value, which is the only thing this rests on, so the review has to
+be redone rather than the finding re-ignored.
 
 ---
 

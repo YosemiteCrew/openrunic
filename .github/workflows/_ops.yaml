@@ -10,6 +10,12 @@ name: Ops
 #   install          `docker compose up` reaches a working install
 #   backup-restore   the database can be lost and brought back
 #
+# The upgrade gate is exercised inside the last two, because it is the same
+# claim from both sides: it refuses an upgrade that has no backup behind it
+# (install, where none has been taken), and it clears once one exists
+# (backup-restore). Both runs are dry runs, and both assert that a dry run
+# changed nothing - which is a property no unit test of the stack can observe.
+#
 # Every one of them runs the real command. None of them asserts against a mock
 # of the thing being claimed, because the failure mode this stage exists to
 # catch is exactly the one a mock cannot see: the artefact having drifted from
@@ -189,6 +195,42 @@ jobs:
             });
           '
 
+      # The upgrade gate, run where it is used: a real stack, a real migration
+      # history, rows in the database and no backup on disk yet.
+      #
+      # `ops:upgrade` without --apply is documented as a dry run, so the only
+      # correct behaviour here is to report the failed check, apply nothing and
+      # exit 0. Asserting the exit code is the point: a gate that ran ahead of
+      # the dry-run rule would still print the failure, still apply nothing, and
+      # still turn the operator's safe command into a refusal that advertises
+      # --force.
+      - name: Upgrade pre-flight is a dry run, and refuses a backupless upgrade
+        run: |
+          set -uo pipefail
+          # The exit code is the assertion, so it has to survive: the default
+          # shell here is `bash -e`, which would end the step before it is read.
+          set +e
+          output=$(pnpm ops:upgrade 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::ops:upgrade with no --apply exited ${code}; a dry run reports and exits 0."
+            exit 1
+          fi
+          if ! echo "$output" | grep -q 'data at risk did not pass'; then
+            echo "::error::The pre-flight did not refuse an upgrade with no backup behind it."
+            exit 1
+          fi
+          if ! echo "$output" | grep -q 'Dry run. Nothing has been applied.'; then
+            echo "::error::The dry run did not report itself as one."
+            exit 1
+          fi
+          if echo "$output" | grep -q '^Applying'; then
+            echo "::error::A run without --apply began applying the upgrade."
+            exit 1
+          fi
+
       - name: Container logs on failure
         if: failure()
         run: docker compose logs --no-color --tail 200
@@ -243,6 +285,32 @@ jobs:
           echo "restore: ${ELAPSED}s / ${BUDGET}s budget" >> "$GITHUB_STEP_SUMMARY"
           if [ "$ELAPSED" -gt "$BUDGET" ]; then
             echo "::error::Restore took ${ELAPSED}s, over the documented 15-minute budget."
+            exit 1
+          fi
+
+      # The other half of the gate. A check that can never pass is as useless as
+      # one that can never fail, so this proves the same command clears once a
+      # verified backup is on disk - and still applies nothing without --apply.
+      - name: Upgrade pre-flight clears once a verified backup exists
+        run: |
+          set -uo pipefail
+          # The exit code is the assertion, so it has to survive: the default
+          # shell here is `bash -e`, which would end the step before it is read.
+          set +e
+          output=$(pnpm ops:upgrade 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::ops:upgrade exited ${code} with a verified backup on disk."
+            exit 1
+          fi
+          if echo "$output" | grep -q 'did not pass'; then
+            echo "::error::A check still failed after ops:backup and ops:verify-backup."
+            exit 1
+          fi
+          if ! echo "$output" | grep -q 'Re-run with --apply to perform the upgrade.'; then
+            echo "::error::A clean pre-flight did not name --apply as the next step."
             exit 1
           fi
 

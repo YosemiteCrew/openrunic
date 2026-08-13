@@ -159,7 +159,9 @@ export class ApiError extends Error {
     allowed: readonly string[];
   }): ApiError {
     const allowed =
-      options.allowed.length === 0 ? 'nothing' : [...options.allowed].sort().join(', ');
+      options.allowed.length === 0
+        ? 'nothing'
+        : [...options.allowed].sort((a, b) => a.localeCompare(b)).join(', ');
     return new ApiError('invalid-transition', {
       detail: `A ${options.subject} in ${options.from} cannot move to ${options.to}. It can move to: ${allowed}.`,
       issues: [{ path: 'status', message: `expected one of ${allowed}` }],

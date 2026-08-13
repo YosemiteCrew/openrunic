@@ -186,7 +186,7 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
         }),
         delegate.count({ where: filter }),
       ]);
-      const rows = records.map(toPlainRow<'AuditEvent'>);
+      const rows = records.map((record) => toPlainRow<'AuditEvent'>(record));
       recordReads(scope, rows);
       return { rows, total, page: query.page, pageSize: query.pageSize };
     },
@@ -216,7 +216,9 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
       // the hash covers whatever is there either way, so the narrowing is safe
       // and the alternative would be to re-validate every stored event before
       // checking whether it had been tampered with.
-      return verifyAuditChain(records.map(toPlainRow<'AuditEvent'>) as AuditChainedEvent[]);
+      return verifyAuditChain(
+        records.map((record) => toPlainRow<'AuditEvent'>(record)) as AuditChainedEvent[]
+      );
     },
   };
 }

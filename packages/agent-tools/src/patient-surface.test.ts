@@ -6,6 +6,7 @@ import { ALL_TOOLS, PATIENT_TOOLS, V1_TOOLS, createV1Registry } from './catalogu
 import type { AgentTool } from './registry.js';
 import { resolveTools } from './resolve.js';
 import { TEST_PATIENT_ID, recordingApiClient, stubPrincipal } from './testing/index.js';
+import { ownedRetrievalSchema } from './tools/patient-shared.js';
 
 /**
  * A patient may only ever reach their own chart.
@@ -101,6 +102,23 @@ function pageOfOneForeignRow(): unknown {
     ],
     page: { total: 1 },
   };
+}
+
+/** The same row with no chart on it at all, so there is nothing for a tool to copy. */
+function pageOfOneChartlessRow(): unknown {
+  const page = pageOfOneForeignRow() as { data: Record<string, unknown>[]; page: unknown };
+  return {
+    data: page.data.map((row) =>
+      Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'patientId'))
+    ),
+    page: page.page,
+  };
+}
+
+/** The rows a patient-surface result carries, and none when the tool refused. */
+function rowsOf(result: unknown): { patientId: string }[] {
+  const parsed = ownedRetrievalSchema.safeParse(result);
+  return parsed.success ? parsed.data.rows : [];
 }
 
 /** One call per tool, with arguments its own input schema accepts. */
@@ -207,6 +225,11 @@ describe('a patient cannot reach another patient record', () => {
     }
   );
 
+  /**
+   * A schema check, and only a schema check: it says the rows have somewhere to
+   * put a chart, not where the value in it came from. The case below covers the
+   * one way that could be hollow.
+   */
   it.each(granted.map((tool) => [tool.id, tool] as const))(
     '%s carries the chart on every row it returns, so there is something to check',
     (_id, tool) => {
@@ -215,6 +238,43 @@ describe('a patient cannot reach another patient record', () => {
         keys.has('patientId'),
         `${tool.id} returns rows that do not name a chart, so the boundary re-check would pass on anything`
       ).toBe(true);
+    }
+  );
+
+  /**
+   * The chart on a row has to be read from the payload, not filled in from the
+   * principal.
+   *
+   * A tool that stamped `patientId` from `context.principal.compartment` would
+   * satisfy the schema case above while checking the compartment against itself,
+   * and the whole guarantee would be a value comparing equal to where it came
+   * from. So the chart is removed from the payload: there is then nothing to
+   * copy, and a row that comes back naming the reader's chart can only have been
+   * stamped.
+   *
+   * What this pins is the outcome rather than the mechanism. Every tool granted
+   * today reaches it by refusing the page - the row no longer matches the shape
+   * the tool declared - rather than by dropping the row, and a future tool could
+   * reach it either way. Both are the property; a stamped row is not, and that
+   * is the only thing asserted.
+   */
+  it.each(granted.map((tool) => [tool.id, tool] as const))(
+    '%s reads the chart on a row from the payload rather than stamping the reader own',
+    async (_id, tool) => {
+      const api = recordingApiClient(() => pageOfOneChartlessRow());
+
+      const result: unknown = await tool
+        .run(firstValidInput(tool), {
+          principal: patientPrincipal(),
+          credential: { authorization: 'Bearer test-token' },
+          api,
+        })
+        .catch(() => undefined);
+
+      expect(
+        rowsOf(result).map((row) => row.patientId),
+        `${tool.id} named the reader's chart on a row the API sent without one`
+      ).not.toContain(TEST_PATIENT_ID);
     }
   );
 });

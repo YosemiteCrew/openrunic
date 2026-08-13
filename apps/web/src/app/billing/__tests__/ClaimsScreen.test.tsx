@@ -111,6 +111,25 @@ describe('ClaimsScreen', () => {
     expect(await screen.findByText('CLM-24061 rebilled')).toBeInTheDocument();
   });
 
+  it('descends the outline one level at a time inside the drawer', async () => {
+    render(<ClaimsScreen />);
+
+    await filterTo('Denied');
+    fireEvent.click(screen.getByRole('button', { name: 'Open claim CLM-24061' }));
+    const drawer = screen.getByRole('dialog', { name: 'Claim CLM-24061' });
+
+    // The drawer owns the h2, so its cards belong at level 3 alongside the
+    // hand-written sections they sit with. The shared Card defaults to level 2,
+    // which would nest an h2 in an h2 and make the denial card outrank
+    // Lifecycle, its equal.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent('Claim CLM-24061');
+    expect(within(drawer).getByRole('heading', { level: 3, name: 'CO-16' })).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole('heading', { level: 3, name: 'Lifecycle' })
+    ).toBeInTheDocument();
+  });
+
   it('narrows the queue by claim number without refetching', async () => {
     render(<ClaimsScreen />);
 

@@ -282,6 +282,22 @@ describe('UsersScreen, one account and the role editor', () => {
     expect(screen.queryByRole('dialog', { name: 'Nils Farkas' })).not.toBeInTheDocument();
   });
 
+  it('descends the outline one level at a time inside the drawer', async () => {
+    render(<UsersScreen />);
+    await screen.findByText('Ada Okafor');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Nils Farkas' }));
+    const drawer = await screen.findByRole('dialog', { name: 'Nils Farkas' });
+
+    // The drawer owns the h2, so the card inside it is a level below. The
+    // shared Card defaults to level 2, which would nest an h2 in an h2.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent('Nils Farkas');
+    expect(
+      within(drawer).getByRole('heading', { level: 3, name: 'What this person can do' })
+    ).toBeInTheDocument();
+  });
+
   it('cannot deactivate an account that is already deactivated', async () => {
     render(<UsersScreen />);
     await screen.findByText('Ada Okafor');

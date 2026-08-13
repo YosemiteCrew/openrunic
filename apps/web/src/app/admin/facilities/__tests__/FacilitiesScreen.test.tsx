@@ -57,6 +57,23 @@ describe('FacilitiesScreen', () => {
     expect(within(drawer).getByText('Procedure room')).toBeInTheDocument();
   });
 
+  it('descends the outline one level at a time inside the drawer', async () => {
+    render(<FacilitiesScreen />);
+    await listLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Cedar Clinic' }));
+    const drawer = screen.getByRole('dialog', { name: 'Cedar Clinic' });
+
+    // The drawer owns the h2, so the cards inside it are a level below. The
+    // shared Card defaults to level 2, which would nest an h2 in an h2 and let
+    // a reader moving by heading leave the drawer without noticing.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent('Cedar Clinic');
+    for (const name of ['Identity and billing', 'Opening hours', 'Rooms']) {
+      expect(within(drawer).getByRole('heading', { level: 3, name })).toBeInTheDocument();
+    }
+  });
+
   it('closes the drawer with the keyboard alone', async () => {
     render(<FacilitiesScreen />);
     await listLoaded();

@@ -180,8 +180,11 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
         }
       >
         {selected ? (
+          /* Cards in here pass headingLevel={3}: the drawer's own title is the
+             h2 above them, so the Card default of 2 would nest an h2 in an h2
+             and drop a level out of the outline. */
           <div className="or-stack">
-            <Card tone="bone" title="Identity and billing">
+            <Card tone="bone" headingLevel={3} title="Identity and billing">
               <div className="or-formgrid">
                 <Input label="Facility name" defaultValue={selected.name} />
                 <Input label="Phone" defaultValue={selected.phone} />
@@ -200,7 +203,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
               </div>
             </Card>
 
-            <Card tone="bone" title="Opening hours">
+            <Card tone="bone" headingLevel={3} title="Opening hours">
               <p className="or-small">
                 The slot engine offers appointments inside these hours only. Closed days show no
                 slots at all rather than empty ones.
@@ -217,7 +220,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
               />
             </Card>
 
-            <Card tone="bone" title="Rooms">
+            <Card tone="bone" headingLevel={3} title="Rooms">
               {selected.rooms.length === 0 ? (
                 <p className="or-body">
                   No rooms yet. The Flow Board needs at least one room before it can show where a

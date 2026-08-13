@@ -79,6 +79,23 @@ describe('DeveloperScreen', () => {
     expect(within(drawer).getByText('Refused')).toBeInTheDocument();
   });
 
+  it('descends the outline one level at a time inside the drawer', async () => {
+    render(<DeveloperScreen />);
+    await screen.findByRole('table', { name: 'API keys' });
+
+    fireEvent.click(screen.getByRole('tab', { name: /SMART apps/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open RiskScope' }));
+    const drawer = screen.getByRole('dialog', { name: 'RiskScope' });
+
+    // The drawer owns the h2, so the card inside it is a level below. The
+    // shared Card defaults to level 2, which would nest an h2 in an h2.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent('RiskScope');
+    expect(
+      within(drawer).getByRole('heading', { level: 3, name: 'Launch history' })
+    ).toBeInTheDocument();
+  });
+
   it('test-launches an app against the demo tenant from the drawer', async () => {
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });

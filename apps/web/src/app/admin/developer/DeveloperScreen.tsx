@@ -254,6 +254,12 @@ function LaunchHistory({ app }: Readonly<{ app: SmartApp }>): ReactElement {
   );
 }
 
+/**
+ * The drawer body for one app.
+ *
+ * The card passes `headingLevel={3}`: the drawer's own title is the h2 above it,
+ * and the Card default of 2 would nest an h2 inside an h2.
+ */
 function AppDetail({ app }: Readonly<{ app: SmartApp }>): ReactElement {
   return (
     <div className="or-stack">
@@ -267,7 +273,7 @@ function AppDetail({ app }: Readonly<{ app: SmartApp }>): ReactElement {
         ]}
       />
 
-      <Card tone="bone" title="Launch history">
+      <Card tone="bone" headingLevel={3} title="Launch history">
         <LaunchHistory app={app} />
       </Card>
     </div>

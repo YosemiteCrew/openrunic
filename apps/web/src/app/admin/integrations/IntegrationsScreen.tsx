@@ -162,13 +162,19 @@ interface SeamDetailProps {
   testResult: string | undefined;
 }
 
-/** The drawer body: why this seam is in the state it is, and what it did. */
+/**
+ * The drawer body: why this seam is in the state it is, and what it did.
+ *
+ * Cards here pass `headingLevel={3}`. The drawer renders its own title as the h2,
+ * so a card inside it is a level below; leaving the Card default would put an h2
+ * inside an h2 and flatten the outline a screen reader moves through.
+ */
 function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): ReactElement {
   return (
     <div className="or-stack">
       <SeamNotice integration={integration} />
 
-      <Card tone="bone" title="Credentials">
+      <Card tone="bone" headingLevel={3} title="Credentials">
         <p className="or-small">
           openrunic stores a reference, not the secret. The value is never displayed, logged or
           exported, including here.
@@ -182,7 +188,7 @@ function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): Rea
       </Card>
 
       {testResult ? (
-        <Card tone="bone" title="Test result">
+        <Card tone="bone" headingLevel={3} title="Test result">
           <output className="or-body">{testResult}</output>
         </Card>
       ) : null}
@@ -199,7 +205,7 @@ function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): Rea
         ]}
       />
 
-      <Card tone="bone" title="Recent activity">
+      <Card tone="bone" headingLevel={3} title="Recent activity">
         <ActivityLog integration={integration} />
       </Card>
     </div>

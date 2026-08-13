@@ -147,7 +147,13 @@ function auditRow(event: AuditEvent, onOpen: (id: string) => void): Record<strin
   };
 }
 
-/** The drawer body: the full event, plus the hash chain that makes it trustworthy. */
+/**
+ * The drawer body: the full event, plus the hash chain that makes it trustworthy.
+ *
+ * Cards here pass `headingLevel={3}`. The drawer renders its own title as the h2,
+ * so a card inside it is a level below; leaving the Card default would put an h2
+ * inside an h2 and flatten the outline a screen reader moves through.
+ */
 function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElement {
   return (
     <div className="or-stack">
@@ -175,7 +181,7 @@ function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElem
         ]}
       />
 
-      <Card tone="bone" title="Hash chain">
+      <Card tone="bone" headingLevel={3} title="Hash chain">
         <p className="or-small">
           Each event is hashed together with the hash of the event before it. Changing or removing
           any event breaks every hash after it, which is what makes this trail tamper-evident rather

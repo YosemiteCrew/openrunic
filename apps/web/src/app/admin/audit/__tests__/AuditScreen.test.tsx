@@ -67,6 +67,22 @@ describe('AuditScreen', () => {
     expect(within(drawer).getByText(/Covering for Dr. Okafor/)).toBeInTheDocument();
   });
 
+  it('descends the outline one level at a time inside the drawer', async () => {
+    render(<AuditScreen />);
+    await screen.findByRole('table', { name: /Audit events/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open event 48208' }));
+    const drawer = screen.getByRole('dialog', { name: 'Breakglass read' });
+
+    // The drawer owns the h2, so the card inside it is a level below. The
+    // shared Card defaults to level 2, which would nest an h2 in an h2.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent('Breakglass read');
+    expect(
+      within(drawer).getByRole('heading', { level: 3, name: 'Hash chain' })
+    ).toBeInTheDocument();
+  });
+
   it('closes the detail drawer with Escape', async () => {
     render(<AuditScreen />);
     await screen.findByRole('table', { name: /Audit events/ });

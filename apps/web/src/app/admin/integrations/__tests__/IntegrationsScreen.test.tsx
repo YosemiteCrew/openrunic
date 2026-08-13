@@ -69,6 +69,28 @@ describe('IntegrationsScreen', () => {
     expect(screen.getAllByText(/answered in 142 ms/).length).toBeGreaterThan(0);
   });
 
+  it('descends the outline one level at a time inside the drawer', async () => {
+    render(<IntegrationsScreen />);
+    await screen.findByText('Claims clearinghouse');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Claims clearinghouse' }));
+    // Adds the third card, so the assertion covers the conditional one too.
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Claims clearinghouse' });
+
+    // The drawer owns the h2, so the cards inside it are a level below. The
+    // shared Card defaults to level 2, which would nest an h2 in an h2 and let
+    // a reader moving by heading leave the drawer without noticing.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Claims clearinghouse'
+    );
+    for (const name of ['Credentials', 'Test result', 'Recent activity']) {
+      expect(within(drawer).getByRole('heading', { level: 3, name })).toBeInTheDocument();
+    }
+  });
+
   it('marks demo adapters unmistakably', async () => {
     render(<IntegrationsScreen />);
     await screen.findByText('Prescribing');

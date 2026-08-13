@@ -243,7 +243,12 @@ interface UserDetailProps {
   roleSummary: string;
 }
 
-/** The drawer body: who this person is, and what the system lets them do. */
+/**
+ * The drawer body: who this person is, and what the system lets them do.
+ *
+ * The card passes `headingLevel={3}`: the drawer's own title is the h2 above it,
+ * and the Card default of 2 would nest an h2 inside an h2.
+ */
 function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElement {
   return (
     <div className="or-stack">
@@ -262,7 +267,7 @@ function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElem
         ]}
       />
 
-      <Card tone="bone" title="What this person can do">
+      <Card tone="bone" headingLevel={3} title="What this person can do">
         <p className="or-body">{roleSummary}</p>
         <RoleExceptions user={user} />
       </Card>

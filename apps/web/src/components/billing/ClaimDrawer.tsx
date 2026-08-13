@@ -174,14 +174,23 @@ export function ClaimDrawer({
           </dl>
         </div>
 
+        {/* headingLevel={3} on both cards: the drawer's own title is the h2, and
+            the lifecycle section below already sits at h3. Without it the Card
+            default of 2 would put an h2 inside an h2 and make these two cards
+            outrank a sibling that is their equal. */}
         {claim.denialReason ? (
-          <Card tone="cream" overline="Denial" title={claim.denialCode ?? 'Denied'}>
+          <Card
+            tone="cream"
+            headingLevel={3}
+            overline="Denial"
+            title={claim.denialCode ?? 'Denied'}
+          >
             <p className="or-body">{claim.denialReason}</p>
           </Card>
         ) : null}
 
         {claim.scrubErrors.length > 0 ? (
-          <Card tone="cream" overline="Scrub" title="Fix before submitting">
+          <Card tone="cream" headingLevel={3} overline="Scrub" title="Fix before submitting">
             <ul className="or-scrub-list">
               {claim.scrubErrors.map((error) => (
                 <li key={error.code} className="or-scrub-list__item">

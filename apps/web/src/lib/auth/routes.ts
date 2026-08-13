@@ -48,9 +48,9 @@ export function isPublicPath(pathname: string): boolean {
 /** Why the sign-in screen is being shown, so it can say so rather than sit blank. */
 export type SignInReason = 'idle' | 'expired';
 
-/** The largest code point a control character occupies below the printable range. */
-const LAST_C0_CONTROL = 0x1f;
-const DELETE_CHARACTER = 0x7f;
+/** The space, which is the first printable character: everything below it is a C0 control. */
+const FIRST_PRINTABLE = ' ';
+const DELETE_CHARACTER = '\u007f';
 
 /**
  * Validates a `?next=` value before anything navigates to it.
@@ -68,9 +68,13 @@ export function safeReturnPath(value: string | null | undefined): string | null 
   if (!value.startsWith('/')) return null;
   if (value.startsWith('//') || value.startsWith('/\\')) return null;
 
+  // Compared as characters rather than as code points, because `codePointAt`
+  // is typed as possibly undefined and the `?? 0` that satisfies it is a branch
+  // no input can take: iterating a string yields non-empty characters. Every C0
+  // control sorts below the space, so this says the same thing with nothing
+  // unreachable in it.
   for (const character of value) {
-    const code = character.codePointAt(0) ?? 0;
-    if (code <= LAST_C0_CONTROL || code === DELETE_CHARACTER) return null;
+    if (character < FIRST_PRINTABLE || character === DELETE_CHARACTER) return null;
   }
 
   return value;

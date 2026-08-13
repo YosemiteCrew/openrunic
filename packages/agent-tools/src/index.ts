@@ -26,7 +26,7 @@ export { trimTrailingSlashes } from './base-url.js';
 export { TOOL_ALLOWLIST } from './allowlist.js';
 export type { SurfaceAllowlist, ToolAllowlist } from './allowlist.js';
 
-export { V1_TOOLS, createV1Registry } from './catalogue.js';
+export { ALL_TOOLS, PATIENT_TOOLS, V1_TOOLS, createV1Registry } from './catalogue.js';
 
 export { assertWithinCompartment, countRows } from './compartment.js';
 export type { CompartmentCheck } from './compartment.js';
@@ -73,6 +73,17 @@ export {
 export type { AgentSurface, ApprovalPolicy, SideEffect, ToolTier, TrustClass } from './tiers.js';
 
 export {
+  assertChartBound,
+  dayOf,
+  ownedRecordSchema,
+  ownedRetrieval,
+  ownedRetrievalSchema,
+  parseOwnedPage,
+  plainStatus,
+} from './tools/patient-shared.js';
+export type { OwnedRecord, OwnedRetrieval } from './tools/patient-shared.js';
+
+export {
   apiListSchema,
   authoredText,
   codedValueSchema,
@@ -102,6 +113,7 @@ export {
 } from './tools/appointments-propose.js';
 export type { AppointmentEnvelope } from './tools/appointments-propose.js';
 export { AUDIT_QUERY_SCOPE, auditQuery } from './tools/audit-query.js';
+export { billsList } from './tools/bills-list.js';
 export { chartSearch } from './tools/chart-search.js';
 export { codingSuggest } from './tools/coding-suggest.js';
 export { denialDraftAppeal } from './tools/denial-draft-appeal.js';
@@ -111,3 +123,5 @@ export { formsDraftDefinition } from './tools/forms-draft-definition.js';
 export { INBOX_CATEGORIES, inboxClassify } from './tools/inbox-classify.js';
 export { messagesDraftReply } from './tools/messages-draft-reply.js';
 export { PRIOR_AUTH_FIELDS, priorauthAssemblePacket } from './tools/priorauth-assemble-packet.js';
+export { RECORD_PARTS, recordList } from './tools/record-list.js';
+export { createVisitsList, visitsList } from './tools/visits-list.js';

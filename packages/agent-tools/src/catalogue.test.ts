@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { TOOL_ALLOWLIST } from './allowlist.js';
-import { V1_TOOLS, createV1Registry } from './catalogue.js';
+import { ALL_TOOLS, V1_TOOLS, createV1Registry } from './catalogue.js';
 import { collectSchemaKeys } from './registry.js';
 import type { AgentTool } from './registry.js';
 import { AUDIT_QUERY_SCOPE } from './tools/audit-query.js';
@@ -155,9 +155,19 @@ describe('the v1 catalogue', () => {
     }
   });
 
-  it('grants the patient surface nothing at all', () => {
-    expect(TOOL_ALLOWLIST.patient).toEqual({});
+  /**
+   * The patient surface is now decided (ADR-0006) and granted three read
+   * capabilities of its own. What must stay true here is that none of them is
+   * one of these: a staff capability reaching a patient would be the failure
+   * this separation exists to prevent. `patient-surface.test.ts` owns the other
+   * direction and the compartment itself.
+   */
+  it('puts no staff capability on the patient surface', () => {
     expect(V1_TOOLS.every((tool) => !tool.surfaces.includes('patient'))).toBe(true);
+    const staffIds = new Set(V1_TOOLS.map((tool) => tool.id));
+    for (const ids of Object.values(TOOL_ALLOWLIST.patient)) {
+      for (const id of ids) expect(staffIds.has(id), id).toBe(false);
+    }
   });
 
   it('grants nothing that is not a registered tool', () => {
@@ -198,7 +208,7 @@ describe('the v1 catalogue', () => {
 
   it('builds a registry with every tool reachable by id', () => {
     const registry = createV1Registry();
-    expect(registry.tools).toHaveLength(V1_TOOLS.length);
+    expect(registry.tools).toHaveLength(ALL_TOOLS.length);
     for (const tool of V1_TOOLS) {
       expect(registry.byId(tool.id)).toBeDefined();
     }

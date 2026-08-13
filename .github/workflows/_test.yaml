@@ -26,9 +26,14 @@ env:
   # Per-app merged-coverage floors.
   #
   # Both apps are new code, so the floors are set as day-one targets rather
-  # than ratchets over a legacy suite: web at the Next.js app's bar, api
-  # slightly higher because a Hono service is cheap to cover. Raise them as the
-  # suites grow; never lower one to get a PR through.
+  # than ratchets over a legacy suite. Raise them as the suites grow; never
+  # lower one to get a PR through.
+  #
+  # Branches sit below the other three on purpose. Both apps carry defensive
+  # code whose second arm is unreachable through the product - an index
+  # fallback behind a bounds check, a component prop default React always
+  # supplies - and a branch floor level with the rest would only be reachable
+  # by writing tests that call functions no user path calls.
   #
   # Shared packages run their tests without coverage (see test-matrix.mjs), so
   # they need no entry here. The merge job below FAILS when a coverage-reporting
@@ -36,8 +41,8 @@ env:
   # default pass.
   COVERAGE_FLOORS: >-
     {
-      "web": "statements=80,branches=70,functions=75,lines=80",
-      "api": "statements=85,branches=75,functions=85,lines=85"
+      "web": "statements=95,branches=90,functions=95,lines=95",
+      "api": "statements=95,branches=95,functions=95,lines=95"
     }
 
 jobs:

@@ -2,6 +2,58 @@
 
 **Open-source operating system for human health.**
 
+[![CI](https://github.com/YosemiteCrew/openrunic/actions/workflows/ci.yaml/badge.svg?branch=dev)](https://github.com/YosemiteCrew/openrunic/actions/workflows/ci.yaml)
+[![Supply chain](https://github.com/YosemiteCrew/openrunic/actions/workflows/supply-chain.yml/badge.svg?branch=dev)](https://github.com/YosemiteCrew/openrunic/actions/workflows/supply-chain.yml)
+[![CodeQL](https://github.com/YosemiteCrew/openrunic/actions/workflows/codeql.yml/badge.svg?branch=dev)](https://github.com/YosemiteCrew/openrunic/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/YosemiteCrew/openrunic/badge)](https://scorecard.dev/viewer/?uri=github.com/YosemiteCrew/openrunic)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-4CAF50)](LICENSE)
+[![FHIR R4](https://img.shields.io/badge/FHIR-R4-C4552D)](https://hl7.org/fhir/R4/)
+[![Contribute](https://img.shields.io/badge/Contribute-FF9800)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-2E211A)](CODE_OF_CONDUCT.md)
+
+[![Stars](https://img.shields.io/github/stars/YosemiteCrew/openrunic?style=flat&color=C4552D&logo=github)](https://github.com/YosemiteCrew/openrunic/stargazers)
+[![Forks](https://img.shields.io/github/forks/YosemiteCrew/openrunic?style=flat&color=8C5E3C&logo=github)](https://github.com/YosemiteCrew/openrunic/network/members)
+[![Contributors](https://img.shields.io/github/contributors/YosemiteCrew/openrunic?color=6B7A4F)](https://github.com/YosemiteCrew/openrunic/graphs/contributors)
+[![Open issues](https://img.shields.io/github/issues/YosemiteCrew/openrunic?color=A9714B)](https://github.com/YosemiteCrew/openrunic/issues)
+[![Good first issues](https://img.shields.io/github/issues/YosemiteCrew/openrunic/good%20first%20issue?color=6B7A4F&label=good%20first%20issues)](https://github.com/YosemiteCrew/openrunic/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-C4552D)](CONTRIBUTING.md)
+[![Discussions](https://img.shields.io/github/discussions/YosemiteCrew/openrunic?color=2E211A&logo=github)](https://github.com/YosemiteCrew/openrunic/discussions)
+[![Last commit](https://img.shields.io/github/last-commit/YosemiteCrew/openrunic/dev?color=8C5E3C)](https://github.com/YosemiteCrew/openrunic/commits/dev)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/YosemiteCrew/openrunic)
+
+[![Node](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](.nvmrc)
+[![pnpm](https://img.shields.io/badge/pnpm-10-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](tsconfig.base.json)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![Hono](https://img.shields.io/badge/Hono-4-E36002?logo=hono&logoColor=white)](https://hono.dev/)
+[![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Vitest](https://img.shields.io/badge/Vitest-4-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Storybook](https://img.shields.io/badge/Storybook-9-FF4785?logo=storybook&logoColor=white)](packages/ui)
+[![Prettier](https://img.shields.io/badge/code%20style-prettier-F7B93E?logo=prettier&logoColor=white)](.prettierrc.json)
+
+[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-white.svg)](https://sonarcloud.io/organizations/yosemitecrew/projects?search=openrunic)
+
+## Code quality
+
+Every pull request is analysed by SonarQube Cloud, CodeQL, Gitleaks, dependency review, and an SBOM
+supply-chain scan. Nothing merges on a green tick alone: the bar is a clean board.
+
+| Metric            | Web                                                                                                                                                                                                                  | API                                                                                                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Quality gate      | [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)              | [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)              |
+| Coverage          | [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=coverage)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)                             | [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=coverage)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)                             |
+| Bugs              | [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=bugs)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)                                     | [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=bugs)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)                                     |
+| Code smells       | [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)                       | [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)                       |
+| Vulnerabilities   | [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)               | [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)               |
+| Security hotspots | [![Security Hotspots](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=security_hotspots)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)           | [![Security Hotspots](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=security_hotspots)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)           |
+| Reliability       | [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)         | [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)         |
+| Security          | [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)               | [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)               |
+| Maintainability   | [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)           | [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)           |
+| Duplication       | [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web) | [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api) |
+| Technical debt    | [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)                    | [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)                    |
+| Lines of code     | [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Web&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Web)                           | [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=yosemitecrew_openrunic_Api&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=yosemitecrew_openrunic_Api)                           |
+
 openrunic is a modern, open platform for healthcare software. It is built by
 [Yosemite Crew](https://github.com/YosemiteCrew), the team behind the open-source operating system
 for animal health, and applies the same philosophy to human healthcare: open standards, a fast and
@@ -16,7 +68,7 @@ The project is organized around three pillars, mirroring Yosemite Crew:
 
 ## What we're building first
 
-A modern, fast, lightweight EMR - an alternative to OpenEMR:
+A modern, fast, lightweight EMR:
 
 - Patient demographics and registration
 - Scheduling and appointment management
@@ -35,10 +87,11 @@ A modern, fast, lightweight EMR - an alternative to OpenEMR:
 | --------------- | ---------------------------------------------------- |
 | Monorepo        | pnpm 10 workspaces + Turborepo                       |
 | Runtime         | Node.js 22                                           |
-| Web app         | Next.js 15 (React)                                   |
+| Web app         | Next.js 16 (React 19)                                |
 | API             | Hono, serving FHIR R4 at the API boundary            |
-| Database        | PostgreSQL via Prisma 6 (relational source of truth) |
+| Database        | PostgreSQL via Prisma 7 (relational source of truth) |
 | Interop         | FHIR R4 types and domain-to-FHIR mappers             |
+| Components      | @openrunic/ui design-system library + Storybook      |
 | Tests           | Vitest                                               |
 | Lint and format | ESLint 9 (flat config) + Prettier                    |
 
@@ -47,12 +100,13 @@ A modern, fast, lightweight EMR - an alternative to OpenEMR:
 ```text
 openrunic/
 ├── apps/
-│   ├── web/          # Next.js 15 app: hospital and patient web experience
+│   ├── web/          # Next.js 16 app: practice-facing EMR
 │   └── api/          # Hono service: FHIR R4 API boundary
 ├── packages/
 │   ├── types/        # Shared TypeScript types
 │   ├── fhir/         # FHIR R4 types + domain<->FHIR mappers (round-trip tested)
-│   └── database/     # Prisma 6 schema, migrations, and client (Postgres)
+│   ├── ui/           # React component library implementing the design system
+│   └── database/     # Prisma 7 schema, migrations, and client (Postgres)
 └── docs/             # ADRs and project documentation
 ```
 

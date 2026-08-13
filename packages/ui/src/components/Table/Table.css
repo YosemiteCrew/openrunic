@@ -13,6 +13,15 @@
 .or-table__scroll {
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* Load bearing, not decoration. `overflow` only clips descendants for which this
+     element is in the containing-block chain, so while it is `static` an absolutely
+     positioned descendant escapes the scroller entirely and extends the PAGE. That is
+     not hypothetical: every money cell carries a `.or-visually-hidden` span ("41.00 US
+     dollars") for screen readers, those spans are `position: absolute`, and in a wide
+     table they sit hundreds of pixels beyond the fold - which dragged the whole
+     document sideways on the claim and remittance workbenches, at 1440 as well as 768.
+     Making the scroller a containing block keeps its overflow its own. */
+  position: relative;
   /* Named so the caption can size itself to the visible width rather than the full table
      width; without this the caption is as wide as the widest row and scrolls out of sight. */
   container-type: inline-size;

@@ -1,108 +1,3874 @@
-:root {
-  --background: #fcfbf9;
-  --foreground: #1c1c1c;
-  --muted: #64615c;
-  --border: #e6e2da;
-  --card: #ffffff;
-  --accent: #2f6f5e;
+/* apps/web application layer.
+ *
+ * Everything here is composed from @openrunic/ui tokens. No hex values, no
+ * off-scale spacing, no invented shadows: if a rule seems to need one, it is a
+ * proposed token addition, raised in the pull request rather than inlined.
+ *
+ * Layout order matches the file: fonts, utilities, shell, top bar, breadcrumb,
+ * palette, data states, landing page.
+ */
+
+/* --- Fonts ---------------------------------------------------------------
+ * NOT VENDORED. The three families are self-hosted by policy (no hotlinking,
+ * no third-party font CDN on a surface that renders PHI), but the binaries are
+ * not committed to this repo and are not shipped inside @openrunic/ui.
+ *
+ * To install them: copy the variable builds from the design system's
+ * `assets/fonts/` into `apps/web/public/fonts/`, keeping these filenames. The
+ * declarations below then resolve; until they do, `local()` picks up a machine
+ * that already has the family, and otherwise the fallback stacks carry the UI.
+ * Nothing breaks without them: only the optical-size axis is lost.
+ *
+ * Licences: SIL OFL 1.1 for all three (Bricolage Grotesque, Fraunces, Spline
+ * Sans Mono). Copy the OFL files alongside the binaries.
+ */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src:
+    local('Bricolage Grotesque'),
+    url('/fonts/BricolageGrotesque-variable.woff2') format('woff2-variations');
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #141414;
-    --foreground: #ececec;
-    --muted: #a3a09b;
-    --border: #2b2b2b;
-    --card: #1c1c1c;
-    --accent: #7db8a5;
+@font-face {
+  font-family: 'Spline Sans Mono';
+  src:
+    local('Spline Sans Mono'),
+    url('/fonts/SplineSansMono-variable.woff2') format('woff2-variations');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Widen the library's fallback stacks so a Linux or Windows workstation
+     without the family still gets a humanist sans rather than Times. The named
+     family and its order are unchanged. */
+  --font-display:
+    'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-text: var(--font-display);
+  --font-mono: 'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  /* Shell geometry. Local to this app, derived from the spacing scale. */
+  --shell-gutter: var(--space-5);
+  --shell-rail-w: 320px;
+  --shell-topbar-h: 56px;
+
+  /* --- Caution tier: a local stand-in for a missing design-system token -----
+   *
+   * The guidelines call for four status tiers, the third being Caution: a
+   * caramel wash carrying espresso ink. `@openrunic/ui` ships only three pairs
+   * (--status-success / --status-neutral / --status-danger), so four surfaces
+   * in this app invented their own caution treatment independently and
+   * disagreed: the note banner and the flow board used the hazelnut
+   * --status-neutral-wash, the order alert mixed its own caramel wash, and the
+   * notice drew a caramel edge with no wash at all. One tier, three colours.
+   *
+   * These two properties are the app's single answer until the real tokens
+   * land. They are MIXED FROM SHIPPED TOKENS rather than set to a new hex,
+   * because picking the hex is the design system's call, not this app's - the
+   * caramel and hazelnut washes sit close enough together that the value wants
+   * a designer's eye, not arithmetic.
+   *
+   * PROPOSED ADDITIONS to packages/ui tokens/colors.css:
+   *   --status-caution: var(--caramel);
+   *   --status-caution-wash: <a caramel tint, tuned beside the other three>;
+   * When they exist, delete these two lines and swap the four call sites.
+   */
+  --or-status-caution: var(--caramel);
+  --or-status-caution-wash: color-mix(in srgb, var(--caramel) 16%, var(--bone));
+}
+
+/* --- Utilities ------------------------------------------------------------ */
+
+/* `<output>` is the element for a polite status line, and every status line in
+   this app owns its line. The UA default is `inline`, so reset it once here
+   rather than in each of the seven places one appears. */
+output {
+  display: block;
+  margin: 0;
+}
+
+/* `<dialog>` is the element for a modal surface, so drawers and the command
+   palette use it rather than `role="dialog"` on a div. They are rendered with
+   the `open` attribute rather than opened through `showModal()`, which keeps
+   them inside the page's own layout and scrim instead of the top layer; the UA
+   box (absolute positioning, auto margins, fit-content sizing, a border and a
+   padding) has to come off for that to work. Each panel's own class supplies
+   the geometry. */
+dialog {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: transparent;
+}
+
+/* `<fieldset>` is the element for a named set of related controls, so filter
+   bars and chip rows use it rather than `role="group"` on a div. The UA gives
+   it a border, padding and `min-inline-size: min-content`; that last one stops
+   it shrinking inside a flex or grid parent, which is why it is reset here and
+   not just visually. Layout comes from the class on each fieldset. */
+fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.or-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Hidden until focused, then a real, visible control at the top-left. */
+.or-skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 90;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  text-decoration: none;
+  box-shadow: var(--shadow-overlay);
+  transform: translateY(calc(-100% - var(--space-4)));
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.or-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- App shell ------------------------------------------------------------ */
+
+.or-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--bg-page);
+}
+
+/* Below the rail breakpoint the SideNav collapses to its Menu button, so it
+   gets a row of its own rather than a narrow gutter beside the content. */
+.or-app__nav {
+  padding: var(--space-3) var(--shell-gutter) 0;
+}
+
+.or-app__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .or-app {
+    flex-direction: row;
+  }
+
+  .or-app__nav {
+    padding: 0;
   }
 }
 
-* {
-  box-sizing: border-box;
+.or-app__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--shell-gutter) var(--space-8);
 }
 
-html,
-body {
+/* The main landmark takes focus from the skip link; it is not an interactive
+   control, so it gets no ring of its own. */
+.or-app__main:focus {
+  outline: none;
+}
+
+/* The right rail becomes a column at 1280px, which is the same width the
+   patient context rail collapses at. Below that it stacks under the content
+   rather than disappearing: nothing in the rail is unreachable on a laptop. */
+@media (min-width: 1280px) {
+  .or-app__main {
+    grid-template-columns: minmax(0, 1fr) var(--shell-rail-w);
+    gap: var(--space-6);
+  }
+}
+
+.or-app__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.or-app__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.or-app__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.or-app__description {
+  max-width: 68ch;
+  color: var(--text-secondary);
+}
+
+.or-app__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.or-app__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.or-app__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* --- Top bar -------------------------------------------------------------- */
+
+.or-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--shell-topbar-h);
+  padding: var(--space-2) var(--shell-gutter);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+  background: var(--bg-page);
+}
+
+.or-topbar__context,
+.or-topbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.or-topbar__area {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+  color: var(--text-ink);
+}
+
+.or-topbar__user {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* The palette's visible entry point. A field-shaped button on white, because
+   that is what it opens: a place to type. */
+.or-topbar__command {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  color: var(--text-secondary);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .or-topbar__command:hover {
+    background: var(--surface-card);
+    color: var(--text-ink);
+  }
+}
+
+.or-topbar__command:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-topbar__kbd {
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-page);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 767px) {
+  .or-topbar__command-label {
+    /* The label would push the bar to two rows on a narrow dock; the kbd hint
+       and the accessible name still say what the control does. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* --- Breadcrumb ----------------------------------------------------------- */
+
+.or-breadcrumb__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
+  list-style: none;
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    sans-serif;
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
+.or-breadcrumb__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
+
+.or-breadcrumb__link,
+.or-breadcrumb__link:visited {
+  color: var(--text-link);
+  text-decoration: none;
+}
+
+.or-breadcrumb__link:hover {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+}
+
+.or-breadcrumb__separator {
+  color: var(--text-decorative);
+}
+
+.or-breadcrumb [aria-current='page'] {
+  color: var(--text-ink);
+}
+
+/* --- Command palette ------------------------------------------------------ */
+
+.or-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-7) var(--space-4) var(--space-4);
+}
+
+.or-palette__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim-espresso);
+}
+
+.or-palette__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(640px, 100%);
+  max-height: min(560px, 80vh);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-overlay);
+  animation: or-fade-up var(--dur-fast) var(--ease-out);
+}
+
+.or-palette__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.or-palette__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-palette__group-label {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+}
+
+.or-palette__count {
+  font-weight: var(--wght-regular);
+}
+
+.or-palette__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  color: var(--text-ink);
+  cursor: pointer;
+}
+
+/* Hover darkens, and the active row is marked by a terracotta edge as well as
+   the wash, so the highlight is never colour alone. */
+.or-palette__option--active {
+  border-left-color: var(--action-accent);
+  background: var(--surface-wash);
+}
+
+.or-palette__icon {
+  flex: 0 0 auto;
+  width: 16px;
+  color: var(--text-secondary);
+}
+
+.or-palette__option--active .or-palette__icon {
+  color: var(--terracotta-deep);
+}
+
+.or-palette__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-palette__meta,
+.or-palette__hint {
+  display: inline-flex;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.or-palette__empty {
+  padding: var(--space-4) var(--space-2);
+  color: var(--text-secondary);
+}
+
+.or-palette__footer {
+  padding-top: var(--space-2);
+  border-top: var(--hairline) solid var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+/* --- Loading, error ------------------------------------------------------- */
+
+.or-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.or-loading__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Skeletons keep the final layout's dimensions exactly, so nothing shifts when
+   the data lands. The shimmer is opacity only, and reduced motion stops it. */
+.or-loading__head,
+.or-loading__row {
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  animation: or-skeleton-pulse 1.4s var(--ease-out) infinite;
+}
+
+.or-loading__head {
+  height: 32px;
+}
+
+.or-loading__row {
+  height: 40px;
+}
+
+.or-loading[data-variant='cards'] .or-loading__row {
+  height: 132px;
+}
+
+.or-loading[data-variant='text'] .or-loading__row {
+  height: 18px;
+}
+
+.or-loading[data-variant='cards'] .or-loading__skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+
+.or-loading__status {
+  color: var(--text-secondary);
+}
+
+@keyframes or-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .or-loading__head,
+  .or-loading__row {
+    animation: none;
+  }
+}
+
+.or-error-state__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 68ch;
+  margin-bottom: var(--space-4);
+}
+
+.or-error-state__meta {
+  color: var(--text-secondary);
+}
+
+/* --- Landing page --------------------------------------------------------- */
 
 .landing {
-  max-width: 60rem;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 6rem 1.5rem 4rem;
+  padding: var(--space-9) var(--space-5) var(--space-7);
 }
 
 .hero {
+  margin-bottom: var(--space-7);
   text-align: center;
-  margin-bottom: 4rem;
 }
 
 .hero h1 {
-  margin: 0 0 0.75rem;
-  font-size: 3rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--text-hero);
+  font-weight: var(--wght-semibold);
+  line-height: var(--lh-hero);
+  letter-spacing: var(--track-tight);
+  color: var(--text-heading);
 }
 
 .tagline {
   margin: 0;
-  font-size: 1.25rem;
-  color: var(--muted);
+  font-size: var(--text-body-lg);
+  color: var(--text-secondary);
 }
 
 .pillars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
 }
 
 .pillar-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
+  padding: var(--card-pad);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
 }
 
 .pillar-card h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.125rem;
-  color: var(--accent);
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: var(--wght-medium);
+  color: var(--text-heading);
 }
 
 .pillar-card p {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.9375rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
 }
 
 .site-footer {
-  max-width: 60rem;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-  border-top: 1px solid var(--border);
+  padding: var(--space-6) var(--space-5) var(--space-7);
+  border-top: var(--hairline) solid var(--border-hairline);
   text-align: center;
 }
 
 .site-footer p {
   margin: 0;
-  font-size: 0.8125rem;
-  color: var(--muted);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+/* --- Chart: tabs and panel ------------------------------------------------ */
+
+.or-chart-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+/* Tabs follow the top-bar rule for active navigation: terracotta ink and a
+   1.5px terracotta underline. aria-selected carries the same fact for anyone
+   the colour does not reach. */
+.or-chart-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .or-chart-tabs__tab:hover {
+    color: var(--text-ink);
+  }
+}
+
+.or-chart-tabs__tab--selected {
+  border-bottom-color: var(--action-accent);
+  color: var(--text-link);
+  font-weight: var(--wght-semibold);
+}
+
+.or-chart-tabs__tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-chart-tabs__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.or-chart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-chart-panel:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- Chart: patient context rail ------------------------------------------ */
+
+.or-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-rail__identity {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.or-rail__avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+}
+
+/* A deceased patient's block is deliberately quiet: hazelnut ink, no accent
+   anywhere, and the date of death written out in full. */
+.or-rail__identity--deceased .or-rail__avatar {
+  background: var(--hazelnut);
+}
+
+.or-rail__identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-rail__name {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  font-weight: var(--wght-semibold);
+  color: var(--text-ink);
+}
+
+.or-rail__meta {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-rail__deceased {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.or-rail__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-rail__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-rail__heading,
+.or-rail__heading-static {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.or-rail__heading-static {
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .or-rail__heading:hover {
+    color: var(--text-link-hover);
+  }
+}
+
+.or-rail__heading:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-rail__list,
+.or-rail__allergy-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-rail__line {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.or-rail__reaction {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+}
+
+/* "Not recorded" is a prompt, not a status: it gets the danger wash because an
+   unasked allergy question is a risk, and the words say so too. */
+.or-rail__prompt {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--status-danger-wash);
+}
+
+.or-rail__prompt-text {
+  margin: var(--space-2) 0 0;
+  color: var(--text-ink);
+}
+
+.or-rail__link {
+  color: var(--text-link);
+}
+
+.or-rail__balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.or-rail__balance--due {
+  background: var(--status-neutral-wash);
+}
+
+.or-rail__amount {
+  font-size: var(--text-body-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-ink);
+}
+
+/* --- Chart: summary and record panels ------------------------------------- */
+
+.or-chart-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.or-chart-strip__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-chart-strip__link,
+.or-chart-item__link {
+  color: var(--text-link);
+}
+
+.or-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 1024px) {
+  .or-chart-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.or-chart-grid__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.or-chart-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Hairlines between rows, never zebra stripes. */
+.or-chart-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-chart-item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.or-chart-item__title {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  color: var(--text-ink);
+}
+
+.or-chart-item__meta {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-chart-item__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-chart-readings {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.or-chart-cell__sub {
+  display: block;
+  color: var(--text-secondary);
+}
+
+/* --- Visit note ----------------------------------------------------------- */
+
+.or-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Caution is a caramel wash with espresso ink; signed is the olive wash. Both
+   carry a badge with a word in it, so neither is colour alone. */
+.or-note__banner--caution {
+  background: var(--or-status-caution-wash);
+  color: var(--text-ink);
+}
+
+.or-note__banner--signed {
+  background: var(--status-success-wash);
+}
+
+.or-note__banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-note__banner-row p {
+  flex: 1;
+  min-width: 260px;
+  margin: 0;
+  max-width: 68ch;
+}
+
+.or-note__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-note__footnote {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-note__addendum-label {
+  display: block;
+  margin: var(--space-3) 0 var(--space-2);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  color: var(--text-ink);
+}
+
+.or-note__addendum-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.or-note__toast {
+  position: fixed;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  z-index: 70;
+  max-width: 380px;
+}
+
+.or-note-block__hint {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+}
+
+.or-note-block__margin {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* White, because a field is one of the two places white is correct. */
+.or-note-block__field {
+  width: 100%;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  resize: vertical;
+}
+
+.or-note-block__field:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-note-block__locked {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+}
+
+/* The signed text is rendered exactly as it was signed, line breaks included. */
+.or-note-block__text {
+  max-width: 68ch;
+  margin: 0;
+  white-space: pre-line;
+}
+
+.or-note-block__absent {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-note-block__emitted {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- Visit note: slash commands ------------------------------------------- */
+
+/* In the flow rather than floating: a menu that overlaps the line being written
+   is a menu that hides the sentence it is meant to finish. */
+.or-slash {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  overflow-y: auto;
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  list-style: none;
+}
+
+.or-slash__option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.or-slash__option--active {
+  border-left-color: var(--action-accent);
+  background: var(--surface-wash);
+}
+
+.or-slash__icon {
+  grid-row: span 2;
+  color: var(--text-secondary);
+}
+
+.or-slash__group {
+  grid-column: 3;
+  color: var(--text-secondary);
+}
+
+.or-slash__preview {
+  grid-column: 2 / span 2;
+  color: var(--text-secondary);
+}
+
+.or-slash__empty {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+}
+
+/* --- Visit note: signature ------------------------------------------------ */
+
+.or-signature__attestation {
+  max-width: 68ch;
+  margin: 0 0 var(--space-3);
+}
+
+.or-signature__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.or-signature__pair dt {
+  color: var(--text-secondary);
+}
+
+.or-signature__pair dd {
+  margin: var(--space-1) 0 0;
+}
+
+.or-signature__addenda {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-signature__addenda-title {
+  margin: 0 0 var(--space-3);
+}
+
+.or-signature__addenda-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-signature__addendum {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.or-signature__addendum-text {
+  max-width: 68ch;
+  margin: 0;
+}
+
+/* --- Print ---------------------------------------------------------------- */
+
+/* The chart offers "Print summary", so the chrome has to get out of the way:
+   navigation, the top bar and the tab strip are screen affordances and mean
+   nothing on paper. */
+@media print {
+  .or-app__nav,
+  .or-topbar,
+  .or-app__actions,
+  .or-chart-tabs,
+  .or-note__toast {
+    display: none;
+  }
+
+  .or-app__main {
+    display: block;
+    padding: 0;
+  }
+}
+
+/* --- Orders and results: shared utilities --------------------------------- */
+
+.or-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.or-stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.or-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-cluster-tight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.or-muted {
+  color: var(--text-secondary);
+}
+
+.or-plainlist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-keyvalues {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  margin: 0 0 var(--space-4);
+}
+
+.or-keyvalues dt {
+  color: var(--text-secondary);
+}
+
+.or-keyvalues dd {
+  margin: 0 0 var(--space-3);
+  color: var(--text-ink);
+}
+
+/* Bottom-left, one at a time, never for an error that needs an action. When
+   more than one is queued they stack upward in the order they arrived. */
+.or-toast-dock {
+  position: fixed;
+  bottom: var(--space-5);
+  left: var(--space-5);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(420px, calc(100vw - var(--space-8)));
+}
+
+/* --- Tiered alert --------------------------------------------------------- */
+
+.or-alert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border-left: 3px solid transparent;
+}
+
+.or-alert__tier {
+  color: var(--text-ink);
+}
+
+.or-alert__title {
+  font-weight: var(--wght-semibold);
+  color: var(--text-ink);
+}
+
+.or-alert__detail,
+.or-alert__reason {
+  max-width: 68ch;
+  color: var(--text-ink);
+}
+
+.or-alert__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.or-alert--info {
+  background: var(--status-neutral-wash);
+  border-left-color: var(--status-neutral);
+}
+
+/* Caution: caramel wash, espresso ink. See the caution-tier note in :root. */
+.or-alert--caution {
+  background: var(--or-status-caution-wash);
+  border-left-color: var(--or-status-caution);
+  color: var(--text-ink);
+}
+
+.or-alert--critical {
+  background: var(--status-danger-wash);
+  border-left-color: var(--status-danger);
+}
+
+/* --- Order composer ------------------------------------------------------- */
+
+.or-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-steps__step {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* The current step is named by aria-current and marked by weight and an
+   underline, so the state survives grayscale. */
+.or-steps__step[aria-current='step'] {
+  color: var(--text-ink);
+  font-weight: var(--wght-semibold);
+  box-shadow: inset 0 -2px 0 var(--action-accent);
+}
+
+.or-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-picker__favourites {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-picker__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-picker__option {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--control-h-sm);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .or-picker__option:hover {
+    background: var(--surface-wash);
+  }
+}
+
+/* The active option is marked by a terracotta edge as well as the wash: the
+   highlight is never colour alone. */
+.or-picker__option[data-active='true'] {
+  border-left-color: var(--action-accent);
+  background: var(--surface-wash);
+}
+
+.or-picker__option:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-picker__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.or-picker__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.or-picker__empty {
+  padding: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.or-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-draft__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.or-draft__code {
+  color: var(--text-secondary);
+}
+
+.or-draft__meta {
+  margin-bottom: var(--space-4);
+}
+
+.or-draft__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.or-draft__note {
+  align-self: end;
+  color: var(--text-secondary);
+}
+
+.or-blockers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--status-danger-wash);
+}
+
+.or-blockers:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-blockers__list {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-ink);
+}
+
+/* --- Results: queue and reading pane -------------------------------------- */
+
+.or-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+/* Two panes from 1280px, which is where the shell gives the page its own
+   column. Below that the reading pane stacks under the queue rather than
+   disappearing. */
+@media (min-width: 1280px) {
+  .or-results {
+    grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr);
+  }
+}
+
+.or-results__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-result-row:last-child {
+  border-bottom: 0;
+}
+
+.or-result-row__open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .or-result-row__open:hover {
+    background: var(--surface-wash);
+  }
+}
+
+.or-result-row[data-selected='true'] .or-result-row__open {
+  border-left-color: var(--action-accent);
+  background: var(--surface-wash);
+}
+
+.or-result-row__open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-result-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.or-result-row__patient {
+  font-weight: var(--wght-semibold);
+}
+
+.or-result-row__panel {
+  color: var(--text-ink);
+}
+
+.or-result-row__headline {
+  color: var(--text-secondary);
+}
+
+.or-result-row__flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.or-reading__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.or-reading__note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-wash);
+}
+
+.or-reading__narrative {
+  max-width: 68ch;
+  margin-bottom: var(--space-4);
+}
+
+/* Multi-line note field. Proposed @openrunic/ui addition: Textarea. */
+.or-textarea {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-textarea__label {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  color: var(--text-ink);
+}
+
+.or-textarea__control {
+  width: 100%;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  resize: vertical;
+}
+
+.or-textarea__control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-textarea__hint {
+  color: var(--text-secondary);
+}
+
+/* --- Inbox ---------------------------------------------------------------- */
+
+.or-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.or-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .or-filter:hover {
+    background: var(--surface-wash);
+  }
+}
+
+/* Pressed state carries a border and weight change as well as the fill, so the
+   selected stream survives grayscale. */
+.or-filter[aria-pressed='true'] {
+  border-color: var(--action-accent);
+  font-weight: var(--wght-semibold);
+  background: var(--surface-wash);
+}
+
+.or-filter:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-filter__count {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-inbox__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-inbox__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-inbox__row:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 1024px) {
+  .or-inbox__row {
+    grid-template-columns: 96px minmax(0, 1fr) 220px 260px;
+    align-items: start;
+  }
+}
+
+.or-inbox__stream {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.or-inbox__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.or-inbox__summary {
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  color: var(--text-ink);
+}
+
+/* Unread is weight, not a coloured dot on its own. */
+.or-inbox__row[data-unread='true'] .or-inbox__summary {
+  font-weight: var(--wght-semibold);
+}
+
+.or-inbox__state,
+.or-inbox__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* --- Front desk: shared --------------------------------------------------- */
+
+.or-fd-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Bottom-left, per the toast canon. Fixed is allowed here: a toast that scrolls
+   away is a confirmation nobody sees. */
+.or-fd-toast-host {
+  position: fixed;
+  z-index: 80;
+  bottom: var(--space-5);
+  left: var(--space-5);
+  max-width: 420px;
+}
+
+.or-fd-mock-note {
+  margin-top: var(--space-4);
+  color: var(--text-secondary);
+}
+
+/* --- Schedule day view ---------------------------------------------------- */
+
+.or-day-pager {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.or-sched {
+  /* Ten minutes of clinic time. Compact density: a 20-minute visit is 44px. */
+  --or-slot-h: 22px;
+}
+
+.or-sched__scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border-radius: var(--radius-card);
+  background: var(--surface-data);
+}
+
+.or-sched__scroll:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-sched__grid {
+  display: grid;
+  grid-template-rows: auto repeat(var(--or-sched-rows), var(--or-slot-h));
+  grid-template-columns: 72px repeat(var(--or-sched-cols), minmax(200px, 1fr));
+}
+
+.or-sched__corner,
+.or-sched__column-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+  background: var(--surface-card);
+}
+
+.or-sched__corner {
+  left: 0;
+  z-index: 5;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.or-sched__provider {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: var(--wght-semibold);
+  color: var(--text-heading);
+}
+
+.or-sched__provider-role {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-sched__hour {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  padding: var(--space-1) var(--space-3);
+  border-top: var(--hairline) solid var(--border-hairline);
+  background: var(--surface-data);
+}
+
+.or-sched__hour-label {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.or-sched__rule {
+  z-index: 0;
+  border-top: var(--hairline) solid var(--border-hairline);
+  pointer-events: none;
+}
+
+.or-sched__block {
+  z-index: 1;
+  display: flex;
+  justify-self: start;
+  width: calc(100% / var(--or-lanes));
+  margin-left: calc(var(--or-lane) * 100% / var(--or-lanes));
+  padding: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* Hover darkens: an espresso wash over the cream, never a lighter tint. */
+@media (hover: hover) {
+  .or-sched__block:hover {
+    box-shadow: inset 0 0 0 999px var(--surface-wash);
+  }
+}
+
+.or-sched__block:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Selection is an active state, which is the one non-action use of terracotta. */
+.or-sched__block[data-selected] {
+  border-color: var(--action-accent);
+  box-shadow: inset 0 0 0 1px var(--action-accent);
+}
+
+.or-sched__block[data-double-booked] {
+  border-color: var(--status-danger);
+}
+
+.or-sched__block-edge {
+  flex: 0 0 4px;
+  background: var(--or-block-edge);
+}
+
+.or-sched__block-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2);
+}
+
+.or-sched__block-time {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.or-sched__block-name {
+  overflow: hidden;
+  font-weight: var(--wght-medium);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.or-sched__block[data-done] .or-sched__block-name {
+  color: var(--text-secondary);
+}
+
+.or-sched__block-type {
+  overflow: hidden;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.or-sched__block-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.or-sched__now {
+  position: relative;
+  z-index: 3;
+  align-self: start;
+  height: 0;
+  border-top: 2px solid var(--border-strong);
+  transform: translateY(calc(var(--or-now-offset) * var(--or-slot-h)));
+  pointer-events: none;
+}
+
+.or-sched__now-label {
+  position: absolute;
+  top: -10px;
+  left: var(--space-2);
+  padding: 0 var(--space-1);
+  background: var(--bg-page);
+  color: var(--text-ink);
+  font-size: var(--text-caption);
+}
+
+.or-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-slots__item {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* --- Schedule right rail -------------------------------------------------- */
+
+.or-day-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-day-rail__counts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.or-day-rail__count {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding-bottom: var(--space-1);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-day-rail__count dt,
+.or-day-rail__count dd {
+  margin: 0;
+}
+
+.or-day-rail__count-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.or-day-rail__visit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-day-rail__patient {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+}
+
+.or-day-rail__meta {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-day-rail__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.or-day-rail__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-2);
+}
+
+/* --- Flow Board ----------------------------------------------------------- */
+
+.or-flow-sync {
+  color: var(--text-secondary);
+}
+
+.or-flow-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  align-items: end;
+}
+
+.or-flow-board {
+  display: grid;
+  grid-auto-columns: minmax(260px, 1fr);
+  grid-auto-flow: column;
+  gap: var(--space-4);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.or-flow-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.or-flow-column[data-done] {
+  border-style: dashed;
+}
+
+.or-flow-column__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: var(--space-2);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-flow-column__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: var(--wght-semibold);
+  color: var(--text-heading);
+}
+
+.or-flow-column__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.or-flow-column__empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-flow-column__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-flow-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+
+/* The delay treatment is a static wash plus a counted, worded badge. Nothing
+   here blinks, pulses or moves; the legacy blink is deliberately not rebuilt.
+   See the caution-tier note in :root. */
+.or-flow-card[data-tier='caution'] {
+  border-color: var(--or-status-caution);
+  background: var(--or-status-caution-wash);
+  color: var(--text-ink);
+}
+
+.or-flow-card[data-tier='delayed'] {
+  border-color: var(--status-danger);
+  background: var(--status-danger-wash);
+  color: var(--text-ink);
+}
+
+.or-flow-card[data-done] .or-flow-card__meta,
+.or-flow-card[data-done] .or-flow-card__name {
+  color: var(--text-secondary);
+}
+
+.or-flow-card__head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.or-flow-card__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+  color: var(--text-heading);
+}
+
+.or-flow-card__time {
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.or-flow-card__meta {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-flow-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.or-flow-card__timers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.or-flow-card__timers dt,
+.or-flow-card__timers dd {
+  margin: 0;
+}
+
+.or-flow-card__timers dt {
+  color: var(--text-secondary);
+}
+
+.or-flow-card__timers dd {
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-flow-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+  justify-content: space-between;
+}
+
+.or-flow-card__done {
+  color: var(--text-secondary);
+}
+
+/* --- Patient roster ------------------------------------------------------- */
+
+.or-roster__views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.or-roster__view-note {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.or-roster__link {
+  color: var(--text-link);
+  font-weight: var(--wght-medium);
+}
+
+.or-roster__link:hover {
+  color: var(--action-primary-hover);
+}
+
+.or-roster__count {
+  margin-top: var(--space-3);
+  color: var(--text-secondary);
+}
+
+/* --- Registration --------------------------------------------------------- */
+
+.or-register__errors {
+  border: var(--hairline) solid var(--status-danger);
+}
+
+.or-register__error-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.or-register__blocked {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--status-danger-wash);
+  color: var(--text-ink);
+}
+
+.or-duplicates {
+  border: var(--hairline) solid var(--status-danger);
+}
+
+.or-duplicates__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-duplicates__item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+}
+
+.or-duplicates__identity p {
+  margin: 0 0 var(--space-1);
+}
+
+.or-duplicates__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+/* --- Insurance and eligibility -------------------------------------------- */
+
+.or-coverages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-coverage__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.or-coverage__head p {
+  margin: 0;
+}
+
+.or-coverage__reorder {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.or-coverage__facts,
+.or-coverage__benefits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+
+.or-coverage__facts dt,
+.or-coverage__facts dd,
+.or-coverage__benefits dt,
+.or-coverage__benefits dd {
+  margin: 0;
+}
+
+.or-coverage__facts dt,
+.or-coverage__benefits dt {
+  color: var(--text-secondary);
+}
+
+.or-coverage__facts dd,
+.or-coverage__benefits dd {
+  font-size: var(--text-small);
+}
+
+.or-coverage__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+}
+
+.or-coverage__status p {
+  margin: 0;
+}
+
+.or-coverage[data-degraded] .or-coverage__status {
+  background: var(--status-neutral-wash);
+}
+
+.or-coverage__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.or-coverage__benefits {
+  margin-bottom: 0;
+}
+
+.or-coverage__history {
+  margin-top: var(--space-3);
+}
+
+.or-coverage__history ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+.or-coverage__history summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.or-coverage__history summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-coverage__actions {
+  margin-top: var(--space-4);
+}
+
+.or-coverage__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-4);
+}
+
+.or-coverage__summary-line {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .or-sched__block {
+    transition: none;
+  }
+}
+
+/* --- Admin, developer platform and reports --------------------------------
+ * Owned by the admin/reports screens. Tokens only: every colour, space, radius
+ * and duration below resolves to a @openrunic/ui custom property. If a rule
+ * here looks like it needs a new value, it is a proposed token addition rather
+ * than a hex code.
+ */
+
+/* Hub and card grids ------------------------------------------------------- */
+
+.or-hub,
+.or-cardgrid,
+.or-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-hub__card,
+.or-facility,
+.or-adapter,
+.or-hub__card > *,
+.or-facility > *,
+.or-adapter > * {
+  min-width: 0;
+}
+
+.or-hub__card,
+.or-facility,
+.or-adapter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+}
+
+.or-hub__icon,
+.or-catalog__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--surface-wash);
+  color: var(--terracotta-deep);
+}
+
+.or-hub__title {
+  margin: 0;
+}
+
+.or-hub__link,
+.or-link {
+  color: var(--text-link);
+  text-decoration: none;
+}
+
+.or-hub__link:hover,
+.or-link:hover {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+}
+
+.or-hub__link:focus-visible,
+.or-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.or-hub__description {
+  color: var(--text-secondary);
+  max-width: 48ch;
+}
+
+.or-facility__head,
+.or-adapter__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.or-facility__head h2,
+.or-adapter__head h2 {
+  margin: 0;
+}
+
+.or-adapter__state {
+  color: var(--text-secondary);
+}
+
+/* Cells, chips and small layout helpers ------------------------------------ */
+
+.or-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-cell-stack .or-caption {
+  color: var(--text-secondary);
+}
+
+.or-cell-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.or-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.or-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  border: 0;
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-fieldset legend {
+  padding: 0 var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.or-formgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Notices ------------------------------------------------------------------ */
+
+.or-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-left: 3px solid var(--border-hairline);
+}
+
+.or-notice p {
+  margin: 0;
+  max-width: 68ch;
+}
+
+/* Tone is carried by a word in the copy as well as the edge: never colour
+   alone. Caution ("serious") is a caramel wash with espresso ink. See the
+   caution-tier note in :root. */
+.or-notice[data-tone='serious'] {
+  border-left-color: var(--or-status-caution);
+  background: var(--or-status-caution-wash);
+  color: var(--text-ink);
+}
+
+.or-notice[data-tone='critical'] {
+  border-left-color: var(--status-danger);
+}
+
+.or-notice[data-tone='info'] {
+  border-left-color: var(--hazelnut);
+}
+
+.or-notice[data-tone='read-only'] {
+  border-left-color: var(--espresso);
+}
+
+/* Toasts ------------------------------------------------------------------- */
+
+.or-toast-region {
+  position: fixed;
+  bottom: var(--space-5);
+  left: var(--space-5);
+  z-index: 70;
+  max-width: min(420px, calc(100vw - var(--space-6)));
+}
+
+/* Drawer (proposed library addition) ---------------------------------------
+ *
+ * One block, used by both drawer components (admin and billing). They were
+ * written as two identically-named blocks in two sections of this file, which
+ * meant the cascade silently resolved each property to whichever section came
+ * last, rather than to what either author intended. The values below are that
+ * resolved set, written down once.
+ *
+ * Width is the one geometry that genuinely differs: 720px suits a claim or a
+ * composer, and the admin drawer narrows itself to 480 by passing an inline
+ * width, which beats this rule.
+ */
+
+.or-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.or-drawer__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim-espresso);
+}
+
+.or-drawer__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-overlay);
+  /* Enters from the right and leaves to the right: a surface exits the way it
+     entered. */
+  animation: or-drawer-in var(--dur-base) var(--ease-out);
+}
+
+.or-drawer__panel:focus {
+  outline: none;
+}
+
+.or-drawer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-drawer__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.or-drawer__heading h2 {
+  margin: 0;
+}
+
+/* The line under the title: `description` on the admin drawer, `subtitle` on
+   the billing one. Same role, so the same rule. */
+.or-drawer__description,
+.or-drawer__subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  max-width: 60ch;
+}
+
+.or-drawer__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.or-drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5);
+}
+
+.or-drawer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: var(--hairline) solid var(--border-hairline);
+  background: var(--bg-page);
+}
+
+/* The consequence sentence, left of the buttons that carry it out. */
+.or-drawer__confirm {
+  flex: 1;
+  min-width: 24ch;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+@keyframes or-drawer-in {
+  from {
+    transform: translateX(var(--space-8));
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .or-drawer__panel {
+    animation: none;
+  }
+}
+
+/* Tabs (proposed library addition) ----------------------------------------- */
+
+.or-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-1) var(--space-2);
+  border: 0;
+  /* The underline is the selected marker; the transparent one keeps the row
+     from moving when selection changes. */
+  border-bottom: 1.5px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.or-tabs__tab:hover {
+  color: var(--text-ink);
+}
+
+.or-tabs__tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.or-tabs__tab[data-selected='true'] {
+  color: var(--text-link);
+  border-bottom-color: var(--action-accent);
+  font-weight: var(--wght-semibold);
+}
+
+.or-tabs__hint {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+}
+
+.or-tabs__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+}
+
+.or-tabs__panel:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Detail lists -------------------------------------------------------------- */
+
+.or-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .or-details[data-columns='2'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-5);
+  }
+}
+
+.or-details__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-details__label {
+  color: var(--text-secondary);
+}
+
+.or-details__value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Filter bar ---------------------------------------------------------------- */
+
+.or-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+
+.or-filterbar__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.or-filterbar__fields > * {
+  min-width: 160px;
+}
+
+.or-filterbar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-filterbar__summary {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-filterbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Permission matrix --------------------------------------------------------- */
+
+.or-matrix {
+  overflow-x: auto;
+}
+
+.or-matrix__grid {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-data);
+  border-radius: var(--radius-md);
+}
+
+.or-matrix__grid th,
+.or-matrix__grid td {
+  padding: var(--space-3);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.or-matrix__role {
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  font-weight: var(--wght-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.or-matrix__capability {
+  display: table-cell;
+  min-width: 220px;
+  font-weight: var(--wght-regular);
+}
+
+.or-matrix__capability .or-body {
+  display: block;
+}
+
+.or-matrix__description {
+  display: block;
+  color: var(--text-secondary);
+  max-width: 40ch;
+}
+
+.or-matrix__cell {
+  text-align: center;
+}
+
+/* Form builder -------------------------------------------------------------- */
+
+.or-builder__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.or-builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 1280px) {
+  .or-builder {
+    grid-template-columns: 260px minmax(0, 1fr) 300px;
+  }
+}
+
+.or-builder__pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.or-builder__canvas {
+  background: var(--bg-page);
+}
+
+.or-builder__preview-switch {
+  max-width: 260px;
+  margin-bottom: var(--space-4);
+}
+
+.or-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-catalog__item,
+.or-canvas__field {
+  display: flex;
+  width: 100%;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.or-catalog__item:hover,
+.or-canvas__field:hover {
+  background: var(--surface-wash);
+}
+
+.or-catalog__item:focus-visible,
+.or-canvas__field:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-catalog__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-catalog__text .or-caption {
+  color: var(--text-secondary);
+}
+
+.or-canvas__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.or-canvas__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-canvas__field {
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Selected is marked by the terracotta edge and by aria-pressed, so selection
+   survives greyscale and screen readers alike. */
+.or-canvas__field[aria-pressed='true'] {
+  border-color: var(--action-accent);
+  background: var(--surface-wash);
+}
+
+.or-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 640px;
+}
+
+.or-preview[data-surface='portal'] {
+  max-width: 420px;
+}
+
+.or-preview__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.or-preview__section h3 {
+  margin: 0;
+}
+
+.or-preview__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Activity and delivery logs ------------------------------------------------ */
+
+.or-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-log__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-log__row .or-small {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Reports ------------------------------------------------------------------- */
+
+.or-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-report h2 {
+  margin: 0;
+}
+
+.or-report__description,
+.or-report__asof {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-secondary);
+}
+
+.or-report__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 1024px) {
+  .or-report__pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.or-report__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+
+.or-report__totals div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-report__totals dt {
+  color: var(--text-secondary);
+}
+
+.or-report__totals dd {
+  margin: 0;
+  font-size: var(--text-body-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+}
+
+.or-stat__label {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-stat__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.or-stat__number {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: var(--wght-semibold);
+  line-height: var(--lh-h2);
+  color: var(--text-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-stat__unit,
+.or-stat__detail,
+.or-stat__trend-label {
+  color: var(--text-secondary);
+}
+
+.or-stat__detail {
+  margin: 0;
+  min-height: 2lh;
+}
+
+.or-stat__trend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-stat__link {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  color: var(--text-link);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  text-decoration: none;
+}
+
+.or-stat__link:hover {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+}
+
+.or-stat__link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.or-sparkline {
+  color: var(--action-accent);
+  stroke: currentcolor;
+}
+
+/* A breached threshold tints the number and nothing else, and the tile also
+   carries the state as a word in its badge. */
+.or-stat[data-state='danger'] .or-stat__number {
+  color: var(--status-danger);
+}
+
+.or-stat[data-state='danger'] .or-sparkline {
+  color: var(--status-danger);
+}
+
+.or-meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-meter__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.or-meter__label {
+  color: var(--text-secondary);
+}
+
+.or-meter__track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-wash);
+  overflow: hidden;
+}
+
+.or-meter__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--viz-3);
+}
+
+.or-meter__row[data-attention='true'] .or-meter__fill {
+  background: var(--status-danger);
+}
+
+.or-meter__value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.or-meter__detail {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+}
+
+/* --- Billing: shared ------------------------------------------------------ */
+
+/* One quiet explanatory line under a heading or above a control group. */
+.or-billing__hint {
+  max-width: 68ch;
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+}
+
+.or-billing__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Why the primary action is disabled, beside it rather than in a tooltip. */
+.or-billing__action-hint {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-billing__search,
+.or-billing__visit-select {
+  min-width: 220px;
+}
+
+/* A row of readouts: money by age, a posting summary, an AR split. */
+.or-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.or-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+}
+
+.or-totals__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+}
+
+.or-totals__row dt {
+  color: var(--text-secondary);
+}
+
+.or-totals__row dd {
+  margin: 0;
+}
+
+/* Money is right-aligned tabular figures, and its negative label sits with it. */
+.or-money {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.or-money--total {
+  font-size: var(--text-body-lg);
+  font-weight: var(--wght-semibold);
+}
+
+.or-money__label {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.or-visit-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.or-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.or-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* State filter chips. Pressed is a cream fill plus a terracotta edge and the
+   pressed state itself, never colour on its own. */
+.or-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.or-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--surface-field);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .or-filter-chip:hover {
+    background: var(--surface-card);
+  }
+}
+
+.or-filter-chip[aria-pressed='true'] {
+  border-color: var(--action-accent);
+  background: var(--surface-card);
+  color: var(--action-primary);
+  font-weight: var(--wght-semibold);
+}
+
+.or-filter-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- Billing: fee sheet --------------------------------------------------- */
+
+.or-code-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-code-picker__results {
+  padding-top: var(--space-1);
+}
+
+.or-code-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-code-picker__display {
+  flex: 1;
+  text-align: left;
+}
+
+.or-code-picker__fee {
+  color: var(--text-secondary);
+}
+
+.or-code-picker__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-code-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.or-dx-list,
+.or-scrub-list,
+.or-fact-list,
+.or-era-list,
+.or-area-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-dx-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-dx-list__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* The pointer letter, the same mark the charge line carries. */
+.or-dx-list__pointer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-wash);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+}
+
+.or-dx-list__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.or-dx-list__code {
+  font-size: var(--text-small);
+}
+
+.or-dx-list__display {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.or-scrub-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.or-justify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-justify__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.or-justify__summary {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dx-to-charge toggle. Composed here because the library has no toggle
+   chip; raised as a proposed addition rather than forked from Button. */
+.or-justify-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .or-justify-chip:hover {
+    background: var(--surface-card);
+    color: var(--text-ink);
+  }
+}
+
+.or-justify-chip[aria-pressed='true'] {
+  border-color: var(--action-accent);
+  background: var(--surface-card);
+  color: var(--action-primary);
+  font-weight: var(--wght-semibold);
+}
+
+.or-justify-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-justify-chip:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+/* A removed line stays on the sheet, struck through and restorable. */
+.or-charge-line--deleted {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+
+.or-units-field {
+  width: 72px;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  color: var(--text-ink);
+  font-size: var(--text-small);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.or-units-field:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- Billing: claims ------------------------------------------------------ */
+
+.or-claim-patient,
+.or-claim-age {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-claim-age {
+  font-variant-numeric: tabular-nums;
+}
+
+.or-claim-age .or-small,
+.or-claim-patient .or-caption {
+  color: var(--text-secondary);
+}
+
+.or-claim-state,
+.or-claim-line,
+.or-variance,
+.or-escalation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.or-variance {
+  max-width: 42ch;
+}
+
+.or-claim-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.or-claim-detail__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The lifecycle stepper: a horizontal row of named states, each saying whether
+   it has happened. Done is marked by weight and a word, not by colour alone. */
+.or-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-stepper__step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 120px;
+  padding: var(--space-2) var(--space-3);
+  border-top: 2px solid var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.or-stepper__step--done {
+  border-top-color: var(--action-accent);
+  color: var(--text-ink);
+}
+
+.or-stepper__label {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+}
+
+.or-stepper__state {
+  color: var(--text-secondary);
+}
+
+.or-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-3) 0 0;
+  padding: 0 0 0 var(--space-4);
+  border-left: var(--hairline) solid var(--border-hairline);
+  list-style: none;
+}
+
+.or-timeline__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-timeline__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.or-timeline__label {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+  color: var(--text-ink);
+}
+
+.or-timeline__head .or-caption,
+.or-timeline__actor {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* --- Billing: drawer ------------------------------------------------------
+ *
+ * Intentionally empty. The billing drawer uses the shared `.or-drawer` block
+ * in the admin section above; it used to restate it here, which made the
+ * cascade, rather than either author, decide what a drawer looked like.
+ */
+
+/* --- Billing: remittance, statements, payments ---------------------------- */
+
+.or-era-list__button {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+  color: var(--text-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .or-era-list__button:hover {
+    background: var(--surface-card);
+  }
+}
+
+.or-era-list__button[aria-current='true'] {
+  border-left-color: var(--action-accent);
+  background: var(--surface-card);
+}
+
+.or-era-list__button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-era-list__payer {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+}
+
+.or-era-list__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-statement {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* The sentence the patient will read, in the portal register. */
+.or-statement__sentence {
+  max-width: 60ch;
+  margin: 0;
+}
+
+.or-fact-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-small);
+}
+
+.or-fact-list__term {
+  min-width: 14ch;
+  color: var(--text-secondary);
+}
+
+.or-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.or-method-set {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+}
+
+/* The remainder is the loudest number on the payment desk, by design. */
+.or-remainder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.or-area-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-area-list__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.or-area-list__body {
+  min-width: 0;
+}
+
+.or-area-list__title {
+  margin: 0 0 2px;
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+  color: var(--text-ink);
+}
+
+.or-area-list__body .or-small {
+  margin: 0;
+  color: var(--text-secondary);
 }

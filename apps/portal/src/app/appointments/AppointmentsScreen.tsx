@@ -143,8 +143,12 @@ export function AppointmentsScreen({ api = getPortalApi() }: AppointmentsScreenP
                 <p className="or-body">You have nothing booked.</p>
               ) : (
                 data.upcoming.map((appointment) => (
+                  /* Unlike the other screens, these cards sit inside a section that
+                     already has its own heading, so each appointment is a level below
+                     "Upcoming" rather than a sibling of it. */
                   <Card
                     key={appointment.id}
+                    headingLevel={3}
                     overline={appointment.mode === 'video' ? 'Video call' : 'In person'}
                     title={appointment.reason}
                   >
@@ -186,7 +190,12 @@ export function AppointmentsScreen({ api = getPortalApi() }: AppointmentsScreenP
                 <p className="or-body">You have no past appointments on record.</p>
               ) : (
                 data.past.map((appointment) => (
-                  <Card key={appointment.id} overline="Past" title={appointment.reason}>
+                  <Card
+                    key={appointment.id}
+                    headingLevel={3}
+                    overline="Past"
+                    title={appointment.reason}
+                  >
                     <AppointmentFacts appointment={appointment} />
                     {appointment.cancelledReason ? (
                       <p className="portal-record__meta">

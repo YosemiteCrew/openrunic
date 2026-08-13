@@ -1,16 +1,43 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+
+// Order matters: the design system first, then the app's own layer, so the
+// shell can win ties against the library's element selectors.
+import '@openrunic/ui/styles.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'openrunic',
+  title: {
+    default: 'openrunic',
+    /**
+     * Screens set their own `title`. Chart screens use "PATIENTSSON, Testina -
+     * Chart": two browser tabs on two patients must be impossible to confuse.
+     */
+    template: '%s - openrunic',
+  },
   description: 'Open-source operating system for human health',
+  applicationName: 'openrunic',
+  // The staff EMR is an internal tool behind auth; it has no business in a
+  // search index, and a chart URL certainly does not.
+  robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  // Bone, so the browser chrome matches the page rather than flashing white.
+  themeColor: '#f5efe6',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/* First stop in the tab order on every page. It is visually hidden
+            until focused, then it lands on the shell's <main>. */}
+        <a className="or-skip-link" href="#main-content">
+          Skip to content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

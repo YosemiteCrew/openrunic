@@ -1,2 +1,15 @@
 * text=auto eol=lf
-pnpm-lock.yaml -diff
+
+# Lockfiles are machine-written: no diffs in review, and excluded from the
+# repository language statistics so they do not drown out the source.
+pnpm-lock.yaml -diff linguist-generated=true
+
+# Generated Prisma client output, when it is present in a working tree.
+packages/database/src/generated/** linguist-generated=true
+
+# Migration SQL is authored by Prisma, not hand-written source.
+packages/database/prisma/migrations/** linguist-generated=true
+
+# CI plumbing is real code, but it is not the product; keep it out of the
+# language stats so they describe the application.
+scripts/ci/** linguist-vendored=true

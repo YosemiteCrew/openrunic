@@ -50,17 +50,22 @@ describe('NavBar', () => {
     expect(onNavigate).toHaveBeenCalledWith('Docs');
   });
 
-  it('sends the lockup link to the first section, and does nothing without sections', async () => {
+  it('sends the lockup link to the first section, by its real fragment', async () => {
     const onNavigate = vi.fn();
-    const { rerender } = render(<NavBar items={ITEMS} onNavigate={onNavigate} />);
+    render(<NavBar items={ITEMS} onNavigate={onNavigate} />);
 
-    await userEvent.click(screen.getByRole('link', { name: 'OpenRunic home' }));
+    const lockup = screen.getByRole('link', { name: 'OpenRunic home' });
+    expect(lockup).toHaveAttribute('href', '#Product');
+
+    await userEvent.click(lockup);
     expect(onNavigate).toHaveBeenCalledWith('Product');
+  });
 
-    onNavigate.mockClear();
-    rerender(<NavBar onNavigate={onNavigate} />);
-    await userEvent.click(screen.getByRole('link', { name: 'OpenRunic home' }));
-    expect(onNavigate).not.toHaveBeenCalled();
+  it('draws the lockup as artwork, not a dead link, when there are no sections', () => {
+    const { container } = render(<NavBar onNavigate={vi.fn()} />);
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(container.querySelector('.or-nav-bar__logo')).toBeInTheDocument();
   });
 
   it('survives a missing onNavigate on both the sections and the lockup', async () => {

@@ -1,0 +1,73 @@
+# OpenSSF Scorecard: an independent, automated audit of this repository's
+# supply-chain posture (branch protection, pinned dependencies, token
+# permissions, SAST, security policy, dangerous workflow patterns, and more).
+#
+# Results are published to the public OpenSSF API, which is what backs the
+# badge in the README. Publishing is deliberate: an open-source health project
+# asking clinics to trust it should show its own security homework.
+#
+# Note on the Branch-Protection check: with the default GITHUB_TOKEN it reads as
+# inconclusive, because that token cannot read branch-protection or ruleset
+# settings. To score it, create a fine-grained PAT with read access to
+# "Administration" and store it as the repository secret SCORECARD_TOKEN; the
+# workflow picks it up automatically when present.
+name: Scorecard
+
+on:
+  # The default branch is what the badge reflects.
+  push:
+    branches: [main]
+  # Re-score when protection rules change, which is exactly when the score moves.
+  branch_protection_rule:
+  schedule:
+    - cron: '17 4 * * 2'
+  workflow_dispatch:
+
+# Deny by default. The upstream template says `read-all` here, but that hands
+# the token read access to every scope in the repository - packages, actions,
+# deployments, the lot - when the single job below already declares exactly what
+# it needs. An empty map is the tighter spelling of the same intent, and it is
+# what keeps this workflow honest with the token-permissions check it runs.
+permissions: {}
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Upload the SARIF result to the code-scanning dashboard.
+      security-events: write
+      # Publish the result to the OpenSSF API (OIDC, no long-lived secret).
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Optional; only needed for the Branch-Protection check (see header).
+          repo_token: ${{ secrets.SCORECARD_TOKEN }}
+          # Publishing is what makes the README badge resolve.
+          publish_results: true
+
+      - name: Upload the raw result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: results.sarif

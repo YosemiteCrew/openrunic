@@ -18,7 +18,7 @@ const pillars = [
 export default function HomePage() {
   return (
     <>
-      <main className="landing">
+      <main id="main-content" className="landing" tabIndex={-1}>
         <section className="hero">
           <h1>openrunic</h1>
           <p className="tagline">Open-source operating system for human health</p>

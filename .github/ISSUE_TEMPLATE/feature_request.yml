@@ -62,6 +62,6 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Links, prior art (e.g. how OpenEMR or other EMRs handle this), mockups.
+      description: Links, prior art (how other systems handle this), mockups.
     validations:
       required: false

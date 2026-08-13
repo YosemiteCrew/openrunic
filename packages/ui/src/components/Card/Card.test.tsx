@@ -28,7 +28,7 @@ describe('Card', () => {
       </Card>
     );
     const region = screen.getByRole('region', { name: 'Blood pressure' });
-    const heading = screen.getByRole('heading', { level: 3, name: 'Blood pressure' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'Blood pressure' });
     expect(region).toContainElement(heading);
     expect(region).toHaveAttribute('aria-labelledby', heading.id);
     expect(screen.getByText('Vitals')).toHaveClass('or-overline', 'or-card__overline');
@@ -76,6 +76,34 @@ describe('Card', () => {
         118 / 74 mmHg
       </Card>
     );
-    expect(screen.getByRole('heading', { level: 3 })).toHaveAttribute('id', 'vitals-card-title');
+    expect(screen.getByRole('heading', { level: 2 })).toHaveAttribute('id', 'vitals-card-title');
+  });
+
+  it('titles a card at level 2, so a page outline never skips from h1 to h3', () => {
+    render(<Card title="Blood pressure">118 / 74 mmHg</Card>);
+    expect(screen.getByRole('heading', { level: 2, name: 'Blood pressure' })).toBeInTheDocument();
+  });
+
+  it('takes a deeper level for a card nested inside another card', () => {
+    render(
+      <Card title="Vitals">
+        <Card headingLevel={3} title="Blood pressure">
+          118 / 74 mmHg
+        </Card>
+      </Card>
+    );
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Vitals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Blood pressure' })).toBeInTheDocument();
+  });
+
+  it('keeps the card-title type ramp whatever the heading level', () => {
+    render(
+      <Card headingLevel={4} title="Blood pressure">
+        118 / 74 mmHg
+      </Card>
+    );
+
+    expect(screen.getByRole('heading', { level: 4 })).toHaveClass('or-h3', 'or-card__title');
   });
 });

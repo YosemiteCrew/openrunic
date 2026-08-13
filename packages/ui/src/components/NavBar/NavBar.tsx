@@ -61,12 +61,11 @@ export function NavBar({
     onNavigate?.(item);
   };
 
-  const handleHome = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    setMenuOpen(false);
-    const home = items[0];
-    if (home !== undefined) onNavigate?.(home);
-  };
+  /* The lockup goes wherever the first section goes, so it carries that
+     section's real fragment rather than a bare "#". With no sections there is
+     nowhere to go, and the lockup is then drawn as plain artwork rather than as
+     a focus stop that leads nowhere. */
+  const home = items[0];
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape' && menuOpen) setMenuOpen(false);
@@ -79,9 +78,20 @@ export function NavBar({
       onKeyDown={handleKeyDown}
       {...rest}
     >
-      <a className="or-nav-bar__home" href="#" aria-label="OpenRunic home" onClick={handleHome}>
-        <span className="or-nav-bar__logo" style={logoStyle} aria-hidden="true" />
-      </a>
+      {home === undefined ? (
+        <span className="or-nav-bar__home" aria-hidden="true">
+          <span className="or-nav-bar__logo" style={logoStyle} />
+        </span>
+      ) : (
+        <a
+          className="or-nav-bar__home"
+          href={`#${encodeURIComponent(home)}`}
+          aria-label="OpenRunic home"
+          onClick={navigate(home)}
+        >
+          <span className="or-nav-bar__logo" style={logoStyle} aria-hidden="true" />
+        </a>
+      )}
 
       <Button
         className="or-nav-bar__toggle"

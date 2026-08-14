@@ -12,13 +12,32 @@ config; formatting is Prettier (repo config).
 ## Layout
 
 ```text
-apps/web            Next.js 16 (hospital and patient web)
-apps/api            Hono (FHIR R4 API boundary)
-packages/types      Shared TypeScript types
-packages/fhir       FHIR R4 types + domain<->FHIR mappers; every mapper needs round-trip tests
-packages/database   Prisma 7 + Postgres; relational source of truth
-docs/adr            Architecture decisions; read 0002 before touching FHIR or schema code
+apps/web              Next.js 16, the staff EMR. Sign-in, schedule, chart, orders, results,
+                      billing, admin, plus the public marketing pages and the clinician assistant
+apps/portal           Next.js 16, the patient portal, including the patient assistant surface
+apps/api              Hono, the FHIR R4 API boundary and the BFF the apps call
+
+packages/types        Shared TypeScript types
+packages/fhir         FHIR R4 types and domain<->FHIR mappers; EVERY mapper needs round-trip tests
+packages/database     Prisma 7 + Postgres, the relational source of truth, plus row-level security
+packages/ui           The design system: tokens, components, Storybook
+packages/agent        The assistant loop and provider wiring (ADR-0005)
+packages/agent-tools  The tool catalogue, allowlist and compartment rules the loop may reach
+packages/x12          X12 eligibility, claims and remittance codecs
+packages/forms-engine The form definition and rendering engine
+packages/terminology  Bring-your-own terminology; nothing licence-restricted is ever committed
+packages/adapters     Partner seams (eRx, payments, video, clearinghouse), demo implementations
+
+docs/adr              Architecture decisions. Read them before the code they govern:
+                      0002 relational Postgres with FHIR at the boundary (schema and FHIR work)
+                      0004 no ML runtime in the core deployment
+                      0005 the agentic layer, and its binding rules
+                      0006 the patient assistant surface
+docs/quality-gates.md Every gate CI enforces, what it is for, and where its exceptions live
 ```
+
+Each app and most packages carry their own `AGENTS.md` with the rules specific to it. Read the one
+for the directory you are working in; it says the things that are true there and nowhere else.
 
 ## Commands
 
@@ -53,6 +72,39 @@ thing.
 
 `pnpm run lint:css:fix` applies the stylelint fixes that are safe to automate. Read the diff: a fix
 that changes the cascade is not safe to automate, and stylelint does not know the difference.
+
+## The bar
+
+Numbers, not adjectives. CI enforces all of these, so a change that lowers one is a change that
+needs an argument rather than a nudge.
+
+- **Coverage floors**: `web` and `api` at statements 95, branches 90, functions 95, lines 95. Set in
+  `COVERAGE_FLOORS` in `.github/workflows/_test.yaml`. Raise them as suites grow; never lower one to
+  land a change.
+- **Sonar**: zero code smells, zero duplication, and the reliability, security and maintainability
+  ratings at A. The gate measures NEW code, so a passing gate is not the same as a clean project:
+  check the issue count too.
+- **React Doctor**: 95 minimum, run with `pnpm run doctor`. Note that the score comes from a remote
+  service while the diagnostics are computed locally; `docs/quality-gates.md` explains the
+  trade-off.
+- **Accessibility**: every Storybook story passes axe in CI. `apps/web` has no stories, so its
+  accessibility evidence is keyboard-driven tests, named in the file that relies on them.
+
+## Writing for the next reader
+
+This codebase is commented unusually heavily and deliberately so. Match it.
+
+- A comment says **why**, in full sentences. What the code does is already on the screen.
+- **A comment must be true of the code it sits on.** More review rounds have been spent here on
+  comments that described the code as it used to be than on any other class of defect: a header
+  saying "from the three routes that exist" after a fourth was added, a doc claiming a hash proved
+  something it never compared, a security note promising a property the code did not have. A stale
+  comment is worse than none, because the next reader trusts it.
+- The same applies to a PR body, an ADR and a README. If you change what the code does, find every
+  sentence that described the old behaviour.
+- When you suppress a finding, the rationale goes next to the suppression, names what was verified,
+  and carries a revisit condition. `apps/web/sonar-project.properties` and `.github/zizmor.yml` are
+  the worked examples.
 
 ## Definition of done
 

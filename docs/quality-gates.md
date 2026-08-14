@@ -68,3 +68,21 @@ field. It carries an owner and a re-review date.
 
 `CI Required` and `Supply Chain Required` are fail-closed aggregates: a skipped dependency passes,
 a cancelled one fails. Do not edit an aggregate to make a branch green.
+
+## Where each gate's exceptions live
+
+A suppression is only defensible if the next reader can find it and see why. Every exception in
+this repository sits beside the gate it applies to, names what was verified, and carries a revisit
+condition.
+
+| Gate                    | Exceptions file                                                          |
+| ----------------------- | ------------------------------------------------------------------------ |
+| Sonar                   | `apps/web/sonar-project.properties`, `apps/api/sonar-project.properties` |
+| Licence policy (grant)  | `.grant.yaml`                                                            |
+| Workflow audit (zizmor) | `.github/zizmor.yml`                                                     |
+| GitGuardian             | `.gitguardian.yaml`                                                      |
+| Trivy / IaC             | `.trivyignore`                                                           |
+
+`.gitguardian.yaml` ignores **matches, never paths**. Path-ignoring a file means a real credential
+pasted there later goes unreported, and the file we would most be tempted to ignore is a test about
+credential handling: exactly where a real one is most likely to land by accident.

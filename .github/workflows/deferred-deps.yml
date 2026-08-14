@@ -1,0 +1,72 @@
+name: Deferred dependencies
+
+# Answers the revisit conditions in .github/dependabot.yml, instead of leaving
+# them to be answered by nobody.
+#
+# Several majors are held back there, each with a reason and a "revisit when
+# ..." note. Those notes are the honest way to carry a blocked upgrade, and they
+# are also how a repository quietly stops upgrading: the blocker gets fixed
+# upstream, nobody re-reads the note, and a temporary hold becomes permanent.
+#
+# So this tries them. Monthly, it installs the newest version of each held
+# package and runs the gate that failed, then writes what it found into one
+# tracking issue. It opens no pull request and changes no ignore entry: a green
+# result is evidence that an upgrade is worth attempting, not permission to take
+# it unread.
+
+on:
+  schedule:
+    # Monthly. These are majors: they do not appear weekly, and a job that
+    # re-runs the whole suite five times over deserves a cadence that matches
+    # how often the answer can actually change.
+    - cron: '41 4 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: deferred-deps
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  retry:
+    name: Retry deferred majors
+    runs-on: ubuntu-latest
+    # Five gate runs, each of which may install a fresh dependency tree.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Try each held upgrade
+        run: node .github/scripts/retry-deferred.mjs
+
+      - name: Record the findings in the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TITLE: 'Deferred major upgrades: are they adoptable yet?'
+        run: |
+          set -euo pipefail
+          BODY="$(cat deferred-report.md)"
+          # One issue, reused. A new issue every month would be a subscription to
+          # noise, and the interesting thing is the latest answer rather than the
+          # history of answers.
+          EXISTING="$(gh issue list --repo "$REPO" --state open --search "$TITLE in:title" \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --repo "$REPO" --body "$BODY"
+            gh issue comment "$EXISTING" --repo "$REPO" \
+              --body "Re-checked on $(date -u +%Y-%m-%d). See the issue body for the current table."
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" --label dependencies
+          fi

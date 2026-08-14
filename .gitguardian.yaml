@@ -13,27 +13,17 @@
 version: 2
 
 secret:
-  ignored-matches:
-    # Two canaries in packages/adapters/src/registry.test.ts, at the top of a
-    # suite named "call records never carry a payload". The test drives
-    # obviously sensitive values through three partner seams and then asserts
-    # that none of them appears anywhere in the emitted call records, which is
-    # how the adapter layer proves it does not log payloads.
-    #
-    # The values are invented, and the file says so on the line above them:
-    # "Values chosen to be unmistakable if they ever appear in a log. All
-    # invented." Their whole design is to look like a credential, because a
-    # canary that looked innocuous would not prove anything when it leaked.
-    # GitGuardian's Generic High Entropy Secret detector reads that shape and
-    # reports it, which is the detector working rather than failing.
-    #
-    # Verified: neither value exists in any deployment, any environment file, or
-    # any partner account. They are string literals in a test fixture and are
-    # referenced nowhere else in the repository.
-    #
-    # Revisit: delete an entry if its literal ever stops appearing in that test,
-    # and never extend this list to a value that is used outside a test.
-    - name: 'adapters redaction test: card token canary'
-      match: 'tok-DO-NOT-LOG-9911'
-    - name: 'adapters redaction test: consent reference canary'
-      match: 'consent-DO-NOT-LOG-4471'
+  # Intentionally empty.
+  #
+  # It held two entries for the canaries in packages/adapters/src/registry.test.ts.
+  # Those values have been reworded as prose rather than shaped like the
+  # credentials they stand in for, so no detector reports them and no exception
+  # is needed. An allowlist that outlives its reason is how a real leak later
+  # gets waved through, so the entries are deleted rather than kept "just in
+  # case".
+  #
+  # Note for whoever meets a GitGuardian failure on an OLD commit range: this
+  # file is read by the ggshield CLI, and the GitHub App decides from dashboard
+  # incidents instead. An entry here will not clear a check; tagging the
+  # incident will.
+  ignored-matches: []

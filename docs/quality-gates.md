@@ -69,6 +69,38 @@ field. It carries an owner and a re-review date.
 `CI Required` and `Supply Chain Required` are fail-closed aggregates: a skipped dependency passes,
 a cancelled one fails. Do not edit an aggregate to make a branch green.
 
+## Which gates block a merge
+
+A gate that cannot block is a gate that reports. Both are useful, but only one of them stops
+something reaching a clinic, and the difference has to be a decision rather than an accident of which
+integration happened to be wired first.
+
+These are **required** on both `dev` and `main`, and a red one makes a pull request unmergeable:
+
+| Check                               | What it stops                                                                                            |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `CI Required`                       | The aggregate: lint, types, tests, coverage floors, migrations, the agent-disabled build, the ops drills |
+| `Detect secrets (Gitleaks)`         | A credential entering the history                                                                        |
+| `GitGuardian Security Checks`       | A credential entering the history, from a second vendor with different detectors                         |
+| `Aikido Security: check code`       | SAST findings in application and infrastructure code                                                     |
+| `Promotion source` (on `main` only) | Anything reaching `main` other than a promotion of `dev`                                                 |
+
+Two scanners for secrets is deliberate rather than redundant. They disagree: Gitleaks matches
+patterns, GitGuardian scores entropy and validates some findings against live services, and each has
+caught things the other did not. In a repository that will hold clinical records, the cost of running
+both is a few seconds per pull request and the cost of running one is finding out later which one
+had the blind spot.
+
+**Aikido and GitGuardian were advisory until 2026-08-14.** That was wrong for what this project is:
+"the security scanner is red but the merge went through" is a sentence that should not be possible in
+a health record system, whatever the finding turns out to be. Making them required means a false
+positive now blocks a merge until somebody looks at it, which is the intended cost - the alternative
+is a red badge nobody has to answer for.
+
+The exception process below is what keeps that cost bounded: a verified false positive is recorded,
+with its reasoning and a revisit condition, and stops blocking. What it does not do is stop being
+read.
+
 ## Where each gate's exceptions live
 
 A suppression is only defensible if the next reader can find it and see why. Every exception in

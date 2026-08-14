@@ -14,6 +14,10 @@ out/
 # Test coverage
 coverage/
 
+# Sonar scanner working directory. CI reads report-task.txt out of it (see
+# scripts/ci/sonar-thresholds.mjs), and a local scan leaves one behind too.
+.scannerwork/
+
 # Environment — never commit secrets
 .env
 .env.*

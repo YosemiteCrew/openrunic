@@ -1,11 +1,18 @@
 name: Sonar
 
-# Reusable Sonar stage: scan only.
+# Reusable Sonar stage: scan, then hold the result to this repository's numbers.
 #
 # The test stage already produces merged coverage, so this stage downloads it
-# and does nothing else. There is no pnpm install, no prisma generate and no
-# vitest run here by design - a scan job that reinstalls and reruns the suites
-# just to measure them pays for everything twice.
+# and scans. There is no pnpm install, no prisma generate and no vitest run here
+# by design - a scan job that reinstalls and reruns the suites just to measure
+# them pays for everything twice.
+#
+# The scan waits on SonarCloud's built-in "Sonar way" gate, which is the only
+# gate this organisation's plan allows. That gate passes at 80% coverage and 3%
+# duplication on new code and carries no issue condition, so the final step
+# reads the published measures and enforces 95% coverage, zero duplication and
+# zero open issues over the whole branch. See scripts/ci/sonar-thresholds.mjs
+# for why that is a separate step rather than a gate configured on the server.
 #
 # The cost of scanning without an install is that rules needing type resolution
 # from node_modules see less than they would (projects that set
@@ -27,6 +34,8 @@ on:
       SONAR_TOKEN_WEB:
         required: false
       SONAR_TOKEN_API:
+        required: false
+      SONAR_TOKEN_PORTAL:
         required: false
 
 permissions:
@@ -60,6 +69,14 @@ jobs:
           # artifact, so the only cost here is clone time.
           fetch-depth: 0
           persist-credentials: false
+
+      # Node only, no install: the two scripts this job runs are dependency-free
+      # by design, and pinning the major means they behave here exactly as they
+      # do everywhere else rather than on whatever the runner image ships.
+      - name: Setup
+        uses: ./.github/actions/setup
+        with:
+          install: 'false'
 
       - name: Download merged coverage
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -102,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ matrix.app_key }}" in
-            web | api) ;;
+            web | api | portal) ;;
             *)
               echo "No Sonar token is mapped for app '${{ matrix.app_key }}'."
               echo "Add it to the selection in _sonar.yaml and to the caller's secrets block."
@@ -119,6 +136,29 @@ jobs:
           # only Sonar signal a merge queue gets: the caller skips this stage on
           # merge_group refs (the SonarCloud plan analyzes each project's main
           # branch only, so a queue's ephemeral ref can never publish).
+          #
+          # The gate waited on is the built-in "Sonar way", because this
+          # organisation's plan will not attach a custom one - see the step
+          # below, which is where this repository's actual numbers are enforced.
           args: -Dsonar.qualitygate.wait=true
         env:
-          SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || '' }}
+          SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
+
+      # The bar, enforced. "Sonar way" passes at 80% coverage and 3% duplication
+      # on new code and has no issue condition at all, so the step above proves
+      # much less than it looks like it proves. This one reads the whole-branch
+      # measures the analysis just published and holds the project to the numbers
+      # docs/quality-gates.md states. `always()` is deliberately absent: if the
+      # scan itself failed there are no measures to read, and the job is already
+      # red.
+      - name: Enforce the openrunic Sonar bar
+        env:
+          APP_DIR: ${{ matrix.dir }}
+          SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/sonar-thresholds.mjs \
+            --base-dir "$APP_DIR" \
+            --coverage 95 \
+            --duplication 0 \
+            --issues 0

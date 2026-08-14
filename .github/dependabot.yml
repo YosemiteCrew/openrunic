@@ -101,10 +101,17 @@ updates:
     # Same cooldown reasoning as the npm pool above. A freshly-published action
     # tag is exactly what a compromised maintainer account pushes first, and
     # every action here is pinned to a commit SHA that Dependabot rewrites.
+    #
+    # No semver-major-days here, unlike the npm pool: Dependabot rejects that
+    # property for the github-actions ecosystem, and it rejects the FILE rather
+    # than the property, so one unsupported key switches off npm updates too.
+    # default-days applies to every bump regardless of semver rank, which is the
+    # behaviour we wanted from the major setting anyway - actions are pinned to
+    # commit SHAs, so Dependabot is rewriting a digest and the semver rank of the
+    # tag behind it is not what decides the risk.
     # Revisit: shorten only if a security fix is ever delayed by this.
     cooldown:
       default-days: 5
-      semver-major-days: 14
     commit-message:
       prefix: 'ci(repo)'
     labels:

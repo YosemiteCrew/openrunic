@@ -227,8 +227,8 @@ export function minimalDocument(): CcdDocument {
     patient: {
       id: 'patient-0002',
       mrn: 'OR-100999',
-      givenName: 'Minimal',
-      familyName: 'Recordsson',
+      givenName: 'Placeholder',
+      familyName: 'Nullsson',
       birthDate: '1970-01-15',
       gender: 'unknown',
     },

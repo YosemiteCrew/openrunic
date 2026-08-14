@@ -1,0 +1,97 @@
+name: Traffic
+
+# Keeps a permanent record of repository traffic.
+#
+# GitHub's traffic API serves a rolling 14-day window and discards everything
+# older, and no setting changes that. So "how many clones since we opened the
+# repository" is a question neither the API nor the Insights graphs can answer -
+# by the time anyone thinks to ask, the data is gone.
+#
+# This job answers it by snapshotting the window daily and folding each snapshot
+# into a history keyed by DATE. Keying by date is what makes overlapping windows
+# safe: today's run and yesterday's report thirteen days in common, and summing
+# snapshots would count those twice. Re-recording a date overwrites it with the
+# later, more complete figure instead.
+#
+# The history and the badge payloads live on the `traffic-data` branch, which no
+# ruleset covers, so this never writes to `dev` or `main`. Two checkouts, not
+# one: the script comes from the code branch, the history from the data branch,
+# because a single checkout of `traffic-data` would not contain the script that
+# maintains it.
+
+on:
+  schedule:
+    # Daily, well inside the 14-day window. A missed day costs nothing; only
+    # fifteen consecutive misses could lose data, and the symptom would be a
+    # visibly stale badge.
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Two runs appending to one branch would race, and the loser's push is
+  # rejected. Queue them rather than cancel: each run carries real data.
+  group: traffic
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  collect:
+    name: Collect traffic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The traffic API requires push-level access to the repository it reads,
+      # and the data branch is written with the same token.
+      contents: write
+    steps:
+      - name: Checkout the code branch for the script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out the data branch beside it, creating it if new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if git ls-remote --exit-code --heads "$REMOTE" traffic-data >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch traffic-data "$REMOTE" traffic-data
+          else
+            # First run. An orphan branch, so the history carries no application
+            # code and cannot be confused for a fork of it.
+            mkdir traffic-data
+            git -C traffic-data init -q
+            git -C traffic-data checkout -q --orphan traffic-data
+            git -C traffic-data remote add origin "$REMOTE"
+          fi
+          mkdir -p traffic-data/history traffic-data/badges
+
+      - name: Fetch the window and fold it into the history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPO}/traffic/clones" > "$RUNNER_TEMP/clones.json"
+          gh api "repos/${REPO}/traffic/views" > "$RUNNER_TEMP/views.json"
+          node .github/scripts/fold-traffic.mjs \
+            --clones "$RUNNER_TEMP/clones.json" \
+            --views "$RUNNER_TEMP/views.json" \
+            --out traffic-data
+
+      - name: Commit only when something changed
+        working-directory: traffic-data
+        run: |
+          set -euo pipefail
+          git add history badges
+          if git diff --cached --quiet; then
+            echo "Nothing new to record."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -qm "chore(repo): record traffic through $(date -u +%Y-%m-%d)"
+          git push -q origin HEAD:traffic-data

@@ -117,6 +117,15 @@ function fromBase64Url(value: string): Uint8Array<ArrayBuffer> | null {
   try {
     const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/'));
     const decoded = new Uint8Array(binary.length);
+    /* `charCodeAt` rather than `codePointAt`, deliberately. `atob` returns a
+       binary string, in which every character is one UTF-16 code unit in the
+       range 0-255, and what this loop wants at each index is that unit as a
+       byte. The two calls agree on all 256 values `atob` can produce and differ
+       only above 0xFFFF, which is precisely where reading a byte per index is
+       already wrong: such a code point spans two indices, and storing it in a
+       `Uint8Array` slot truncates it to zero rather than to its low byte. These
+       bytes are the signature `crypto.subtle.verify` checks, so the accessor
+       here stays the one that reads code units. */
     for (let index = 0; index < binary.length; index += 1) {
       decoded[index] = binary.charCodeAt(index);
     }
@@ -166,8 +175,11 @@ export async function unsealSessionCookie(
   const separator = value.indexOf('.');
   if (separator <= 0) return null;
 
+  /* A prefix that would not decode reads as `undefined` here rather than as a
+     length, and `undefined` is not `SIGNATURE_BYTES` either. Not base64 at all
+     and the wrong number of bytes are the same answer: not a cookie we wrote. */
   const signature = fromBase64Url(value.slice(0, separator));
-  if (signature === null || signature.length !== SIGNATURE_BYTES) return null;
+  if (signature?.length !== SIGNATURE_BYTES) return null;
 
   const payload = value.slice(separator + 1);
   const authentic = await globalThis.crypto.subtle.verify(

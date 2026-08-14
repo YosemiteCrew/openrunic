@@ -3,7 +3,7 @@
 import { IconButton } from '@openrunic/ui';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
+import type { ReactElement } from 'react';
 
 import { chartPatientIdFromPath } from '@/lib/agent';
 import type { AgentModelIdentity } from '@/lib/agent';
@@ -38,7 +38,10 @@ export function AssistantPanel(): ReactElement | null {
   const pathname = usePathname();
   const chartPatientId = chartPatientIdFromPath(pathname);
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
+  const panelRef = useRef<HTMLElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
+
+  const onScreen = availability.status === 'enabled' && capabilities !== null && isOpen;
 
   /* Focus goes to the field on open and back to whatever opened the panel on
      close. Both live in one effect so the grab and the restore cannot drift
@@ -53,21 +56,38 @@ export function AssistantPanel(): ReactElement | null {
     };
   }, [isOpen]);
 
-  if (availability.status !== 'enabled' || capabilities === null || !isOpen) return null;
+  /* Escape dismisses the panel, registered on the region rather than declared
+     as a prop on it. The two drawers already write their Escape this way; the
+     difference here is the node it is bound to. A drawer is modal and listens
+     on the document, which is right when nothing behind it is operable. This
+     panel is not modal - the chart beside it stays live, and a clinician who
+     has clicked back into a note is typing in the note, where Escape means
+     whatever the note says it means. Binding to the panel keeps the key inside
+     the surface that owns it, which is what the `<aside>` was doing by
+     catching its children's bubbles, without asking a landmark to read as
+     something a person can operate. */
+  useEffect(() => {
+    /* `onScreen` is a dependency rather than a guard: it is what changes when
+       the panel mounts and unmounts, and the ref holds the node for exactly as
+       long as it is true, so the one null check below covers both. */
+    const panel = panelRef.current;
+    if (panel === null) return;
 
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Escape') return;
-    event.stopPropagation();
-    close();
-  };
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      // Consumed here: the innermost open surface is the one Escape closes.
+      event.stopPropagation();
+      close();
+    };
+
+    panel.addEventListener('keydown', dismiss);
+    return () => panel.removeEventListener('keydown', dismiss);
+  }, [close, onScreen]);
+
+  if (!onScreen) return null;
 
   return (
-    <aside
-      id={ASSISTANT_PANEL_ID}
-      className="or-assistant"
-      aria-label="Assistant"
-      onKeyDown={onKeyDown}
-    >
+    <aside ref={panelRef} id={ASSISTANT_PANEL_ID} className="or-assistant" aria-label="Assistant">
       <header className="or-assistant__head">
         <h2 className="or-h3">Assistant</h2>
         <IconButton icon="x" label="Close the assistant" onClick={close} />

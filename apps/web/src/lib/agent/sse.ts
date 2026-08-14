@@ -31,7 +31,7 @@ export interface DecodedFrames {
  * fragment at end of stream.
  */
 export function decodeSseFrames(buffer: string): DecodedFrames {
-  const normalised = buffer.replace(/\r\n/g, '\n');
+  const normalised = buffer.replaceAll('\r\n', '\n');
   const lastBreak = normalised.lastIndexOf(FRAME_SEPARATOR);
   if (lastBreak === -1) return { payloads: [], rest: normalised };
 

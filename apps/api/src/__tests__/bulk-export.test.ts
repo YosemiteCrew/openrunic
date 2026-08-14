@@ -542,6 +542,21 @@ describe('the bounds, which are reported rather than silent', () => {
     expect(manifest.output.find((file) => file.type === 'Patient')?.count).toBe(600);
   });
 
+  /**
+   * A count that lands exactly on a page boundary is the case where "the page
+   * was short, so it was the last one" says nothing. The repository's own total
+   * is what ends the loop instead, and without it this would cost an extra round
+   * trip on every export whose count divides evenly.
+   */
+  it('stops on a count that lands exactly on a page boundary', async () => {
+    const { app, dataset } = createTestApp();
+    seedPatients(dataset, 500);
+
+    const { manifest } = await exportAndPoll(app);
+
+    expect(manifest.output.find((file) => file.type === 'Patient')?.count).toBe(500);
+  });
+
   it('keeps only the most recent jobs, and forgets the oldest', () => {
     const store = createExportStore(2);
     const job = (id: string): ExportJob => ({

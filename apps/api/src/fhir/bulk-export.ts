@@ -229,11 +229,10 @@ export function createExportStore(capacity: number = MAX_RETAINED_JOBS): ExportS
  */
 export function jobFor(store: ExportStore, id: string, principal: Principal): ExportJob {
   const job = store.get(id);
-  if (
-    job === undefined ||
-    job.tenantId !== principal.tenantId ||
-    job.subject !== principal.subject
-  ) {
+  // An absent job compares unequal here, which is the answer it should get: a
+  // job that is not this principal's and a job that does not exist are the same
+  // 404 on purpose.
+  if (job?.tenantId !== principal.tenantId || job.subject !== principal.subject) {
     throw ApiError.notFound(
       'No export by that id. A restarted server, and one that has run several exports since, both forget finished ones.'
     );
@@ -454,23 +453,7 @@ export async function runExport(
   for (const module of modules) {
     if (!types.includes(module.type)) continue;
 
-    const collected: FhirResource[] = [];
-    let total = 0;
-    for (let offset = 0; offset < limit; offset += EXPORT_PAGE_SIZE) {
-      const page = await module.search(c, {}, { offset, count: EXPORT_PAGE_SIZE });
-      total = page.total;
-      collected.push(...page.rows);
-      // Both conditions are needed. A page shorter than the one asked for is the
-      // last one; a repository reporting a total it cannot deliver would
-      // otherwise spin here until the ceiling.
-      if (page.rows.length < EXPORT_PAGE_SIZE || collected.length >= total) break;
-      if (collected.length >= limit) break;
-    }
-
-    // Trimmed rather than left as fetched, so the ceiling means the same thing
-    // whatever the page size divides into: a page is allowed to overshoot it,
-    // the export is not.
-    const kept = collected.length > limit ? collected.slice(0, limit) : collected;
+    const { kept, total } = await collectType(c, module, limit);
     if (total > kept.length) {
       truncations.push({ type: module.type, exported: kept.length, total });
     }
@@ -486,6 +469,41 @@ export async function runExport(
   }
 
   return { files, truncations };
+}
+
+/**
+ * Every row of one type this export may take, and the repository's own count of
+ * how many there were.
+ *
+ * The two are not the same number when the ceiling bites, and returning both is
+ * what lets the caller report a truncation instead of handing back a short file
+ * that reads as complete.
+ */
+async function collectType(
+  c: Context<AppEnv>,
+  module: FhirResourceModule,
+  limit: number
+): Promise<{ kept: readonly FhirResource[]; total: number }> {
+  const collected: FhirResource[] = [];
+  let total = 0;
+
+  for (let offset = 0; offset < limit; offset += EXPORT_PAGE_SIZE) {
+    const page = await module.search(c, {}, { offset, count: EXPORT_PAGE_SIZE });
+    total = page.total;
+    collected.push(...page.rows);
+    // All three conditions are needed. A page shorter than the one asked for is
+    // the last one; a repository reporting a total it cannot deliver would
+    // otherwise spin until the ceiling; and a page may carry the export past the
+    // ceiling in one step.
+    if (page.rows.length < EXPORT_PAGE_SIZE) break;
+    if (collected.length >= total) break;
+    if (collected.length >= limit) break;
+  }
+
+  // Trimmed rather than left as fetched, so the ceiling means the same thing
+  // whatever the page size divides into: a page is allowed to overshoot it, the
+  // export is not.
+  return { kept: collected.length > limit ? collected.slice(0, limit) : collected, total };
 }
 
 /**

@@ -73,7 +73,7 @@ describe('usePatients', () => {
     const { rerender } = render(<Probe client={createMockClient()} />);
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('success'));
 
-    rerender(<Probe client={createMockClient()} q="oyelaran" />);
+    rerender(<Probe client={createMockClient()} q="testperson" />);
     expect(screen.getByTestId('status')).toHaveTextContent('loading');
     expect(screen.getByTestId('count')).toHaveTextContent('none');
 

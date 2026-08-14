@@ -23,7 +23,7 @@ describe('toCsv', () => {
   it('quotes cells containing a comma, a quote or a newline', () => {
     const csv = toCsv(COLUMNS, [
       { name: 'Patientsson, Testina', amount: 38, note: 'Said "fine"' },
-      { name: 'Oyelaran', amount: -12.5, note: 'Two\nlines' },
+      { name: 'Testperson', amount: -12.5, note: 'Two\nlines' },
     ]);
 
     expect(csv).toContain('"Patientsson, Testina"');

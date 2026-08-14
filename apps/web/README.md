@@ -52,7 +52,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 The mock client implements the same contract as the live one, applies the same filters, sorts and
 pagination, and fails the same way (an `ApiError` carrying an RFC 9457 problem document). Its
 fixtures are deterministic and obviously synthetic: fixed ids, a fixed clinic day
-(`MOCK_CLINIC_DAY`), Synthea-style names, `OR-` MRNs. Never seed them from a real record.
+(`MOCK_CLINIC_DAY`), Syntheta-style names, `OR-` MRNs. Never seed them from a real record.
 
 ## Sessions
 

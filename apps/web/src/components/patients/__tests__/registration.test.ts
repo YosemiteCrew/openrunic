@@ -27,8 +27,8 @@ const PROPOSED: RegistrationDraft = { ...EMPTY_DRAFT, mrn: proposeMrn(NOW) };
 function draft(overrides: Partial<RegistrationDraft> = {}): RegistrationDraft {
   return {
     ...PROPOSED,
-    given: 'Kai',
-    family: 'Nordstrom',
+    given: 'Verifia',
+    family: 'Assertson',
     birthDate: '1991-02-17',
     phoneMobile: '+1 555 0142 900',
     ...overrides,
@@ -89,7 +89,10 @@ describe('validateRegistration', () => {
   });
 
   it('accepts the address shapes a front desk actually types', () => {
-    for (const email of ['tess@example.com', 'a.b+tag@sub.example.co.uk', 'x@y.z']) {
+    // Reserved domains only (RFC 2606), keeping the three shapes this proves: a
+    // plain address, a dotted local part with a plus tag on a subdomain, and a
+    // single-character local part.
+    for (const email of ['tess@example.com', 'a.b+tag@sub.example.com', 'x@example.invalid']) {
       expect(validateRegistration(draft({ email }), NOW).email).toBeUndefined();
     }
   });
@@ -145,8 +148,8 @@ describe('findDuplicates', () => {
   it('does not block on a shared family name alone', () => {
     const matches = findDuplicates(
       draft({
-        given: 'Aiko',
-        family: 'Fernstrom',
+        given: 'Demonstra',
+        family: 'Fixtureby',
         birthDate: '1995-01-01',
         phoneMobile: '5550000000',
       }),
@@ -187,8 +190,8 @@ describe('toPatientCreateBody', () => {
     const body = toPatientCreateBody(draft());
 
     expect(body).toMatchObject({
-      givenName: 'Kai',
-      familyName: 'Nordstrom',
+      givenName: 'Verifia',
+      familyName: 'Assertson',
       birthDate: '1991-02-17',
       phoneMobile: '+1 555 0142 900',
     });

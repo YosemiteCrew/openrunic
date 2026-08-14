@@ -680,7 +680,7 @@ function digest(sequence: number): string {
    is total, so a seed can never point at a row that is not there. */
 type AuditActorKey = 'okafor' | 'lindqvist' | 'mbeki' | 'halvorsen' | 'ramanathan' | 'farkas';
 
-type AuditPatientKey = 'patientsson' | 'oyelaran' | 'fernstrom' | 'rungard';
+type AuditPatientKey = 'patientsson' | 'testperson' | 'fixtureby' | 'nullsson';
 
 interface AuditSeed {
   sequence: number;
@@ -729,17 +729,21 @@ const AUDIT_PATIENTS: Record<AuditPatientKey, { id: string; mrn: string; name: s
     mrn: 'OR-100482',
     name: 'Testina Patientsson',
   },
-  oyelaran: {
+  testperson: {
     id: '0192f1a0-0000-7000-8000-00000000p002',
     mrn: 'OR-100517',
-    name: 'Marek Oyelaran',
+    name: 'Exampla Testperson',
   },
-  fernstrom: {
+  fixtureby: {
     id: '0192f1a0-0000-7000-8000-00000000p003',
     mrn: 'OR-100608',
-    name: 'Aiko Fernstrom',
+    name: 'Demonstra Fixtureby',
   },
-  rungard: { id: '0192f1a0-0000-7000-8000-00000000p004', mrn: 'OR-100641', name: 'Demo Rungard' },
+  nullsson: {
+    id: '0192f1a0-0000-7000-8000-00000000p004',
+    mrn: 'OR-100641',
+    name: 'Placeholder Nullsson',
+  },
 };
 
 const AUDIT_SEEDS: readonly AuditSeed[] = [
@@ -761,7 +765,7 @@ const AUDIT_SEEDS: readonly AuditSeed[] = [
     action: 'NOTE_SIGN',
     targetType: 'DocumentReference',
     targetLabel: 'Acute visit note, 12 Aug 2026',
-    patient: 'rungard',
+    patient: 'nullsson',
     purposeOfUse: 'TREATMENT',
     detail: [
       { label: 'Signature', value: 'Ada Okafor, MD' },
@@ -775,7 +779,7 @@ const AUDIT_SEEDS: readonly AuditSeed[] = [
     action: 'CLAIM_SUBMIT',
     targetType: 'Claim',
     targetLabel: 'CLM-2026-0774 to Northwind Health',
-    patient: 'oyelaran',
+    patient: 'testperson',
     purposeOfUse: 'PAYMENT',
     detail: [{ label: 'Batch', value: '12 claims, $4,318.00' }],
   },
@@ -786,7 +790,7 @@ const AUDIT_SEEDS: readonly AuditSeed[] = [
     action: 'BREAKGLASS_READ',
     targetType: 'Patient',
     targetLabel: 'Restricted chart opened outside care team',
-    patient: 'rungard',
+    patient: 'nullsson',
     purposeOfUse: 'BREAKGLASS',
     breakglassReason: 'Covering for Dr. Okafor; patient called with chest pain.',
     detail: [{ label: 'Reviewed by', value: 'Pending compliance review' }],
@@ -798,7 +802,7 @@ const AUDIT_SEEDS: readonly AuditSeed[] = [
     action: 'PATIENT_UPDATE',
     targetType: 'Patient',
     targetLabel: 'Allergy added: penicillin, severe',
-    patient: 'fernstrom',
+    patient: 'fixtureby',
     purposeOfUse: 'TREATMENT',
     detail: [{ label: 'Field', value: 'AllergyIntolerance' }],
   },
@@ -822,7 +826,7 @@ const AUDIT_SEEDS: readonly AuditSeed[] = [
     action: 'ORDER_SIGN',
     targetType: 'ServiceRequest',
     targetLabel: 'HbA1c, routine',
-    patient: 'oyelaran',
+    patient: 'testperson',
     purposeOfUse: 'TREATMENT',
   },
   {
@@ -871,7 +875,7 @@ const AUDIT_SEEDS: readonly AuditSeed[] = [
     action: 'NOTE_SIGN',
     targetType: 'DocumentReference',
     targetLabel: 'Well-child visit note, 11 Aug 2026',
-    patient: 'fernstrom',
+    patient: 'fixtureby',
     purposeOfUse: 'TREATMENT',
   },
 ];
@@ -1374,7 +1378,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: MOCK_CLINIC_DAY,
     time: '08:20',
-    patient: 'Marek Oyelaran',
+    patient: 'Exampla Testperson',
     mrn: 'OR-100517',
     providerIndex: 0,
     visitType: 'Chronic care',
@@ -1386,7 +1390,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: MOCK_CLINIC_DAY,
     time: '08:40',
-    patient: 'Aiko Fernstrom',
+    patient: 'Demonstra Fixtureby',
     mrn: 'OR-100608',
     providerIndex: 1,
     visitType: 'Well-child visit',
@@ -1398,7 +1402,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: MOCK_CLINIC_DAY,
     time: '09:00',
-    patient: 'Demo Rungard',
+    patient: 'Placeholder Nullsson',
     mrn: 'OR-100641',
     providerIndex: 0,
     visitType: 'Acute visit',
@@ -1410,7 +1414,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: MOCK_CLINIC_DAY,
     time: '09:20',
-    patient: 'Synthea Marwick',
+    patient: 'Syntheta Fakeley',
     mrn: 'OR-100702',
     providerIndex: 0,
     visitType: 'Follow-up',
@@ -1422,7 +1426,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: MOCK_CLINIC_DAY,
     time: '09:30',
-    patient: 'Bram Voskuijlen',
+    patient: 'Sampleton Mockford',
     mrn: 'OR-100744',
     providerIndex: 1,
     visitType: 'Annual physical',
@@ -1435,7 +1439,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: '2026-08-11',
     time: '10:40',
-    patient: 'Noor Haddadin',
+    patient: 'Fictitia Notreal',
     mrn: 'OR-100810',
     providerIndex: 0,
     visitType: 'Acute visit',
@@ -1447,7 +1451,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: '2026-08-11',
     time: '11:20',
-    patient: 'Ivo Petrescu',
+    patient: 'Dummonde Stubbins',
     mrn: 'OR-100866',
     providerIndex: 1,
     visitType: 'Chronic care',
@@ -1459,7 +1463,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: '2026-08-11',
     time: '14:00',
-    patient: 'Halla Gunnarsdottir',
+    patient: 'Prototypo Sandboxer',
     mrn: 'OR-100913',
     providerIndex: 0,
     visitType: 'Telehealth',
@@ -1472,7 +1476,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: '2026-08-10',
     time: '09:10',
-    patient: 'Tobias Ekwueme',
+    patient: 'Simula Testarossa',
     mrn: 'OR-100978',
     providerIndex: 1,
     visitType: 'Immunisation',
@@ -1484,7 +1488,7 @@ const VISIT_ROW_SEEDS: readonly VisitRowSeed[] = [
   {
     date: '2026-08-10',
     time: '13:30',
-    patient: 'Rafael Quispe',
+    patient: 'Quinta Examplebury',
     mrn: 'OR-101088',
     providerIndex: 0,
     visitType: 'Minor procedure',

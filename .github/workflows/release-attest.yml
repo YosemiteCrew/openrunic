@@ -1,0 +1,222 @@
+name: Release Provenance
+
+# Build provenance for the images a clinic installs.
+#
+# An open-source EMR distributed as container images only has a supply-chain
+# story if the person installing it can verify what they are running. Provenance
+# attestation answers the question an operator actually has: was this image
+# built by this repository, from this commit, by this workflow - or by someone
+# who pushed a tag to a registry and hoped nobody looked.
+#
+# `actions/attest-build-provenance` produces a signed, in-toto SLSA provenance
+# statement bound to the image DIGEST, signed through Sigstore's keyless flow
+# (an ephemeral certificate from Fulcio, logged in Rekor) and pushed to the
+# registry alongside the image. `gh attestation verify` is the operator-facing
+# check; docs/verifying-releases.md has the exact command.
+#
+# SCOPE, HONESTLY STATED:
+#
+#  * This runs ON RELEASE ONLY. Nothing here touches a pull request, and there
+#    is nothing to attest until an image exists.
+#  * Nothing is released or tagged yet and the Dockerfiles arrive with the
+#    self-hosting work, so the discovery job exits 0 with an explanatory message
+#    when there is nothing to build. The workflow cannot fail a release that has
+#    no images.
+#  * Provenance is not the same as signing the image itself. The provenance
+#    statement is signed; a detached signature over the image is a separate
+#    thing, and adding one is deferred deliberately - see the "What this does
+#    not do" section of docs/verifying-releases.md.
+#
+# RELEASING.md specifies component-scoped tags (`api-vX.Y.Z`, `web-vX.Y.Z`), so
+# a component-scoped tag publishes only that component's image. An unscoped tag
+# publishes every image.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Release tag to build, publish and attest. Run the dispatch FROM that
+          tag so the images are built from the released code.
+        type: string
+        required: true
+
+concurrency:
+  # Never cancel: a half-published set of images with no attestation is worse
+  # than a slow release.
+  group: release-attest-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  discover:
+    name: Find images to publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the tree to find the Dockerfiles
+    outputs:
+      found: ${{ steps.discover.outputs.found }}
+      matrix: ${{ steps.discover.outputs.matrix }}
+      tag: ${{ steps.discover.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # this job reads the tree and nothing else
+
+      - name: Ensure the dispatched ref is the release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF: ${{ github.ref }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          # The images are built from the DISPATCHED ref while TAG names the
+          # release they are published under, so a dispatch from any other ref
+          # would attest code that is not in the release. Fail closed - the same
+          # guard supply-chain.yml applies to its release SBOMs.
+          if [ "${REF}" != "refs/tags/${TAG}" ]; then
+            echo "dispatch ref ${REF} does not match refs/tags/${TAG} - run this workflow FROM the release tag" >&2
+            exit 1
+          fi
+
+      - name: Discover Dockerfiles for this tag
+        id: discover
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          # RELEASING.md tags components independently ("api-v1.2.3"). A
+          # component-scoped tag publishes only that component; anything else
+          # publishes every image found.
+          COMPONENT=""
+          case "$TAG" in
+            api-v*) COMPONENT="api" ;;
+            web-v*) COMPONENT="web" ;;
+          esac
+
+          FOUND=$(git ls-files -- '**/Dockerfile' 'Dockerfile' | sort)
+          if [ -n "$COMPONENT" ]; then
+            FOUND=$(printf '%s\n' "$FOUND" | grep -E "(^|/)apps/${COMPONENT}/Dockerfile$" || true)
+          fi
+
+          if [ -z "$FOUND" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile matches tag ${TAG} - nothing to publish or attest."
+            echo "No image was published for \`${TAG}\`: the tree contains no matching Dockerfile." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # apps/api/Dockerfile -> openrunic-api. Anything outside apps/ keeps a
+          # path-derived name, so a new image is never published anonymously.
+          ROWS=""
+          while IFS= read -r dockerfile; do
+            [ -n "$dockerfile" ] || continue
+            dir=$(dirname "$dockerfile")
+            case "$dir" in
+              apps/*) image="openrunic-$(basename "$dir")" ;;
+              .) image="openrunic" ;;
+              *) image="openrunic-$(printf '%s' "$dir" | tr '/' '-')" ;;
+            esac
+            ROWS="${ROWS}${ROWS:+,}{\"dockerfile\":\"${dockerfile}\",\"image\":\"${image}\"}"
+          done <<< "$FOUND"
+          MATRIX="{\"include\":[${ROWS}]}"
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Publishing: ${MATRIX}"
+
+  publish:
+    name: Publish and attest ${{ matrix.image }}
+    needs: discover
+    if: needs.discover.outputs.found == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    permissions:
+      contents: read # read the tree to build the image
+      packages: write # push the image to GitHub Container Registry
+      id-token: write # Sigstore keyless signing needs an OIDC token
+      attestations: write # record the provenance attestation for the image
+    steps:
+      - name: Checkout the released code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.discover.outputs.tag }}
+          # The registry login below is explicit; the checkout credential must
+          # not linger in .git/config where a build layer could capture it.
+          persist-credentials: false
+
+      - name: Log in to the container registry
+        # Plain `docker login` rather than a third-party action: one fewer
+        # dependency to pin in the job that publishes what clinics install.
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Build and push
+        id: build
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          TAG: ${{ needs.discover.outputs.tag }}
+          DOCKER_BUILDKIT: '1'
+        run: |
+          set -euo pipefail
+          # Repository root as the build context: these are pnpm workspace
+          # images and need the lockfile and the sibling packages.
+          docker build --file "$DOCKERFILE" --tag "${IMAGE}:${TAG}" .
+          docker push "${IMAGE}:${TAG}"
+          # The attestation binds to the DIGEST, not the tag: a tag can be moved
+          # afterwards, a digest cannot. Match the digest for THIS repository
+          # rather than taking the first entry, which would be the wrong one if
+          # the image is ever also tagged elsewhere.
+          DIGEST=$(docker image inspect "${IMAGE}:${TAG}" \
+            --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            | grep "^${IMAGE}@" | head -n 1 | cut -d@ -f2)
+          if [ -z "$DIGEST" ]; then
+            echo "no digest for ${IMAGE}:${TAG} after push - refusing to attest an image we cannot name" >&2
+            exit 1
+          fi
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Published ${IMAGE}:${TAG} @ ${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.build.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          # Store the attestation in the registry next to the image, so an
+          # operator can verify from the image reference alone.
+          push-to-registry: true
+
+      - name: Record the verification command
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "### ${IMAGE}"
+            echo
+            echo "Digest: \`${DIGEST}\`"
+            echo
+            echo 'Verify before installing:'
+            echo
+            echo '```bash'
+            echo "gh attestation verify oci://${IMAGE}@${DIGEST} --repo ${REPO}"
+            echo '```'
+            echo
+            echo 'See docs/verifying-releases.md.'
+          } >> "$GITHUB_STEP_SUMMARY"

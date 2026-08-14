@@ -33,7 +33,10 @@ describe('PatientsScreen', () => {
     render(<PatientsScreen client={createMockClient()} />);
 
     const link = await screen.findByRole('link', { name: 'Patientsson, Tess' });
-    expect(link).toHaveAttribute('href', `/patients/${MOCK_PATIENTS[7]?.id}`);
+    expect(link).toHaveAttribute(
+      'href',
+      `/patients/${MOCK_PATIENTS.find((p) => p.mrn === 'OR-100482')?.id}`
+    );
   });
 
   it('states the record status in words, never colour alone', async () => {
@@ -49,7 +52,7 @@ describe('PatientsScreen', () => {
 
     await screen.findByRole('table');
     fireEvent.change(screen.getByLabelText('Name, preferred name or MRN'), {
-      target: { value: 'Oyelaran' },
+      target: { value: 'Testperson' },
     });
 
     expect(await screen.findByText('1 patient in this view')).toBeInTheDocument();

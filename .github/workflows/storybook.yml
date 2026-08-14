@@ -92,13 +92,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # id-token is what deploy-pages exchanges for its short-lived deployment token; pages
-    # is the write scope for the deployment itself. Nothing here needs write access to the
-    # repository contents.
     permissions:
-      contents: read
-      pages: write
-      id-token: write
+      contents: read # read-only: nothing here writes to the repository
+      pages: write # the write scope for the deployment itself
+      id-token: write # exchanged by deploy-pages for a short-lived deployment token
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

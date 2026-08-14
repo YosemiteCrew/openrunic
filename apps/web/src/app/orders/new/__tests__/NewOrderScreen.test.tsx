@@ -185,7 +185,7 @@ describe('NewOrderScreen', () => {
     fireEvent.click(favourite(/Lipid panel/));
     await screen.findByRole('list', { name: 'Drafted orders' });
 
-    choosePatient('Oyelaran');
+    choosePatient('Testperson');
 
     expect(await screen.findByText('Draft cleared')).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Drafted orders' })).not.toBeInTheDocument();

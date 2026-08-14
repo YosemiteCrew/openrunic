@@ -1,0 +1,236 @@
+name: Infrastructure Scan
+
+# Misconfiguration scanning for the files that define how a clinic runs this
+# software: Dockerfiles, Compose files and any Kubernetes or Terraform that
+# lands later.
+#
+# Nothing else in this repository looks at them. CodeQL reads application code,
+# grype reads packages, actionlint reads workflows - none of them notices a
+# container running as root, a missing USER directive, a writable root
+# filesystem, an unpinned base image tag, a database port published to the host,
+# a missing healthcheck, privileged mode, or a secret baked into a layer. Those
+# are the defaults that turn a self-hosted EMR into an incident.
+#
+# TWO SCANNERS, FOR A REASON WORTH WRITING DOWN.
+#
+#  * Trivy in config mode handles Dockerfiles, and Kubernetes, Terraform, Helm
+#    and CloudFormation if any of those land later. Its policy set is
+#    maintained, it needs no runtime and no cloud account, and it is installed
+#    here the same way syft, grype and grant are installed in supply-chain.yml -
+#    a pinned release archive with a verified checksum, not a third-party
+#    action.
+#  * scripts/ci/compose-guard.mjs handles the Compose file, because Trivy has no
+#    Docker Compose policy set (`trivy config docker-compose.yml` reports the
+#    file as "not scanned") and neither does Checkov, which has no
+#    docker_compose framework. The Compose file is the thing that decides
+#    whether a clinic's Postgres is reachable from the internet, so leaving it
+#    to nothing was not an option. The guard's checks are explicit, severity-
+#    rated and unit-tested in scripts/ci/compose-guard.test.mjs; its tests run
+#    here before it does.
+#
+# NO DOCKERFILES OR COMPOSE FILES ON THIS BRANCH YET. They arrive with the
+# self-hosting work. Discovery exits 0 with an explanatory message when the set
+# is empty, and the gate starts doing real work the moment the first one lands.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: iac-scan-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  misconfiguration:
+    name: Scan infrastructure files (Trivy config + Compose guard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read # read the tree; this job writes nothing back
+      # Surfacing findings in the Security tab. The job still gates the pull
+      # request through its own exit code if this upload is unavailable.
+      security-events: write # upload the Trivy SARIF to code scanning
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job only reads the tree, so the default GITHUB_TOKEN must not
+          # be left behind in .git/config.
+          persist-credentials: false
+
+      - name: Discover infrastructure files
+        id: discover
+        run: |
+          set -euo pipefail
+          # Tracked files only, and only the formats Trivy's config scanner
+          # understands. Pointing the scanner at explicit paths rather than the
+          # whole tree keeps it from guessing at unrelated YAML.
+          FOUND=$(git ls-files -- \
+            'Dockerfile' '**/Dockerfile' 'Dockerfile.*' '**/Dockerfile.*' \
+            'docker-compose*.yml' '**/docker-compose*.yml' \
+            'docker-compose*.yaml' '**/docker-compose*.yaml' \
+            'compose*.yml' '**/compose*.yml' \
+            'compose*.yaml' '**/compose*.yaml' \
+            '*.tf' '**/*.tf' \
+            'deploy/**' 'k8s/**' 'kubernetes/**' 'charts/**' \
+            | grep -v '\.dockerignore$' || true)
+          # Compose files go to the Compose guard; everything else to Trivy.
+          COMPOSE=$(printf '%s\n' "$FOUND" | grep -E '(^|/)(docker-)?compose[^/]*\.ya?ml$' || true)
+          TRIVY=$(printf '%s\n' "$FOUND" | grep -vE '(^|/)(docker-)?compose[^/]*\.ya?ml$' || true)
+
+          if [ -z "$FOUND" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "compose_found=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile, Compose file or infrastructure manifest in the tree - nothing to scan."
+            echo "This gate activates automatically when the first one lands." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            [ -n "$COMPOSE" ] && echo "compose_found=true" >> "$GITHUB_OUTPUT" \
+              || echo "compose_found=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "files<<EOF"
+              echo "$TRIVY"
+              echo "EOF"
+              echo "compose<<EOF"
+              echo "$COMPOSE"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "Infrastructure files to scan:"
+            echo "$FOUND"
+          fi
+
+      - name: Install Trivy (pinned, checksum-verified)
+        if: steps.discover.outputs.found == 'true'
+        env:
+          TRIVY_VERSION: 0.73.0
+          # sha256 of trivy_0.73.0_Linux-64bit.tar.gz from the release's
+          # published checksums file. Verified before extraction so a tampered
+          # or swapped release binary fails the job instead of running on a
+          # runner with the repository checked out.
+          TRIVY_SHA256: 2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o "$RUNNER_TEMP/trivy.tar.gz"
+          echo "${TRIVY_SHA256}  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/trivy" --version
+
+      # The gate is MEDIUM and above. That threshold is chosen against the
+      # specific failures this gate exists to catch: running as root, a missing
+      # USER directive, privileged mode and an unpinned base image tag are all
+      # HIGH, and an unpinned tag in particular is what makes a "clean" image
+      # rebuild into a vulnerable one. A missing HEALTHCHECK is LOW and is
+      # reported below without failing the build.
+      #
+      # Revisit condition: once the Compose file ships healthchecks, tighten
+      # this to LOW so the whole policy set is enforced rather than advisory.
+      #
+      # Accepted findings go in .trivyignore at the repository root, each with a
+      # reason, an owner and a re-review date - see the header of that file.
+      - name: Scan for misconfiguration, fail on MEDIUM and above
+        if: steps.discover.outputs.found == 'true'
+        env:
+          FILES: ${{ steps.discover.outputs.files }}
+        run: |
+          set -euo pipefail
+          mkdir -p security/reports/iac
+          FAILED=0
+          if [ -z "${FILES//[[:space:]]/}" ]; then
+            echo "Only Compose files in the tree - nothing for Trivy to scan."
+            exit 0
+          fi
+          while IFS= read -r target; do
+            [ -n "$target" ] || continue
+            slug=$(printf '%s' "$target" | tr '/.' '--' | tr '[:upper:]' '[:lower:]')
+            echo "::group::trivy config ${target}"
+            # Full report first, every severity, informational only.
+            trivy config --severity LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 \
+              --format table "$target"
+            # Then the gate.
+            if ! trivy config --severity MEDIUM,HIGH,CRITICAL --exit-code 1 \
+              --format sarif --output "security/reports/iac/${slug}.sarif" "$target"; then
+              echo "::error file=${target}::misconfiguration at MEDIUM or above"
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done <<< "$FILES"
+          exit "$FAILED"
+
+      # The Compose half of the gate. Its tests run unconditionally, even when
+      # the tree has no Compose file yet: that way a regression in the guard is
+      # caught on the pull request that causes it, not months later on the first
+      # pull request that happens to touch a Compose file.
+      - name: Test the Compose guard
+        run: node --test scripts/ci/compose-guard.test.mjs
+
+      - name: Install yq (pinned, checksum-verified)
+        if: steps.discover.outputs.compose_found == 'true'
+        env:
+          YQ_VERSION: 4.53.3
+          # sha256 of yq_linux_amd64 from the release's published `checksums`
+          # file (SHA-256 is column 19 there, per checksums_hashes_order).
+          # Verified before the binary is made executable, so a tampered or
+          # swapped release fails the job rather than running on a runner with
+          # the repository checked out.
+          YQ_SHA256: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
+            -o "$RUNNER_TEMP/yq"
+          echo "${YQ_SHA256}  ${RUNNER_TEMP}/yq" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/yq"
+          "$RUNNER_TEMP/yq" --version
+
+      # yq only converts YAML to JSON. Parsing the Compose file by hand is how
+      # static analysis quietly starts passing files it never understood, so the
+      # guard reads JSON produced by a real parser and nothing else.
+      - name: Scan Compose files, fail on MEDIUM and above
+        if: steps.discover.outputs.compose_found == 'true'
+        env:
+          COMPOSE_FILES: ${{ steps.discover.outputs.compose }}
+        run: |
+          set -euo pipefail
+          FAILED=0
+          while IFS= read -r target; do
+            [ -n "$target" ] || continue
+            echo "::group::compose-guard ${target}"
+            "$RUNNER_TEMP/yq" -o=json '.' "$target" > "$RUNNER_TEMP/compose.json"
+            if ! node scripts/ci/compose-guard.mjs "$RUNNER_TEMP/compose.json" --fail-on medium; then
+              echo "::error file=${target}::misconfiguration at MEDIUM or above"
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done <<< "$COMPOSE_FILES"
+          exit "$FAILED"
+
+      - name: Upload scan reports
+        if: always() && steps.discover.outputs.found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: iac-scan-reports
+          path: security/reports/iac/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload SARIF to code scanning
+        # Dependabot-actor runs cannot write security events; the gate above
+        # still applies to them through the job's exit code.
+        if: always() && steps.discover.outputs.found == 'true' && github.actor != 'dependabot[bot]'
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: security/reports/iac/
+          category: iac-scan

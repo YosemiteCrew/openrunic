@@ -42,7 +42,7 @@ describe('ResultsScreen', () => {
     const rows = within(
       await screen.findByRole('list', { name: 'Results to review' })
     ).getAllByRole('listitem');
-    expect(at(rows)).toHaveTextContent('Oyelaran, Marek');
+    expect(at(rows)).toHaveTextContent('Testperson, Exampla');
     expect(at(rows)).toHaveTextContent('Critical value');
     expect(at(rows)).toHaveTextContent(/Potassium 6.2 mmol\/L, above range/);
   });
@@ -171,7 +171,7 @@ describe('ResultsScreen, driven from the command palette', () => {
     await runCommand(/Sign the open result(?! with)/);
     const dialog = await screen.findByRole('dialog');
     expect(
-      within(dialog).getByText(/Signing Full blood count with differential for Noor Haddadin/)
+      within(dialog).getByText(/Signing Full blood count with differential for Fictitia Notreal/)
     ).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Sign result' }));
 

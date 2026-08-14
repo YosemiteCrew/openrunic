@@ -27,10 +27,10 @@ const testina: PatientName = {
   preferred: 'Tess',
 };
 
-const marek: PatientName = {
-  given: 'Marek',
+const exampla: PatientName = {
+  given: 'Exampla',
   middle: null,
-  family: 'Oyelaran',
+  family: 'Testperson',
   prefix: null,
   suffix: null,
   preferred: null,
@@ -42,15 +42,15 @@ describe('formatName', () => {
   });
 
   it('falls back to the given name when there is no preferred name', () => {
-    expect(formatName(marek)).toBe('Marek Oyelaran');
+    expect(formatName(exampla)).toBe('Exampla Testperson');
   });
 
   it('renders family-first for sorted listings', () => {
-    expect(formatName(marek, 'listing')).toBe('Oyelaran, Marek');
+    expect(formatName(exampla, 'listing')).toBe('Testperson, Exampla');
   });
 
   it('renders an initial for dense columns', () => {
-    expect(formatName(marek, 'short')).toBe('M. Oyelaran');
+    expect(formatName(exampla, 'short')).toBe('E. Testperson');
   });
 });
 

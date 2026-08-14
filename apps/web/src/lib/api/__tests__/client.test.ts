@@ -31,7 +31,9 @@ describe('resolveApiMode', () => {
 
 describe('toSearchParams', () => {
   it('drops undefined so a query string never carries the string "undefined"', () => {
-    expect(toSearchParams({ q: 'oye', page: undefined, active: true })).toBe('?q=oye&active=true');
+    expect(toSearchParams({ q: 'testp', page: undefined, active: true })).toBe(
+      '?q=testp&active=true'
+    );
   });
 
   it('returns nothing for an empty query', () => {
@@ -97,9 +99,9 @@ describe('createHttpClient', () => {
   it('builds the list path with its query string', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: [], page: {} }));
     const client = createHttpClient({ baseUrl: 'http://api.test', fetchImpl });
-    await client.patients.list({ q: 'oye', pageSize: 5 });
+    await client.patients.list({ q: 'testp', pageSize: 5 });
 
-    expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://api.test/bff/v0/patients?q=oye&pageSize=5');
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://api.test/bff/v0/patients?q=testp&pageSize=5');
   });
 });
 
@@ -126,13 +128,13 @@ describe('mock fixtures', () => {
 
 describe('filterPatients', () => {
   it('searches free text over name and MRN, as the API does', () => {
-    expect(filterPatients(MOCK_PATIENTS, { q: 'oyelaran' })).toHaveLength(1);
+    expect(filterPatients(MOCK_PATIENTS, { q: 'testperson' })).toHaveLength(1);
     expect(filterPatients(MOCK_PATIENTS, { q: 'or-100482' })).toHaveLength(1);
   });
 
   it('matches family and given as case-insensitive prefixes', () => {
     expect(filterPatients(MOCK_PATIENTS, { family: 'patient' })).toHaveLength(1);
-    expect(filterPatients(MOCK_PATIENTS, { given: 'AIK' })).toHaveLength(1);
+    expect(filterPatients(MOCK_PATIENTS, { given: 'DEM' })).toHaveLength(1);
   });
 
   it('filters on active', () => {
@@ -144,7 +146,7 @@ describe('filterPatients', () => {
   it('sorts by family name by default and honours the order flag', () => {
     const ascending = filterPatients(MOCK_PATIENTS, {});
     const descending = filterPatients(MOCK_PATIENTS, { order: 'desc' });
-    expect(ascending[0]?.name.family).toBe('Ahlgren');
+    expect(ascending[0]?.name.family).toBe('Examplebury');
     expect(descending[0]?.name.family).toBe(ascending.at(-1)?.name.family);
   });
 });

@@ -35,6 +35,15 @@ updates:
       timezone: 'UTC'
     target-branch: dev
     open-pull-requests-limit: 10
+    # Supply-chain cooldown: do not adopt a release until it has been public
+    # long enough for a compromised publish to be spotted and yanked. Account
+    # takeovers on npm are usually caught within hours, so a few days is the
+    # difference between pulling one in and never seeing it. Dependabot SECURITY
+    # updates ignore cooldown, so a real advisory still lands immediately.
+    # Revisit: shorten only if a security fix is ever delayed by this.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
     # Only labels that exist in the repo. Dependabot cannot create labels, so an
     # unknown name makes it post a config error on every PR it opens instead of
     # applying the label.
@@ -89,6 +98,13 @@ updates:
       timezone: 'UTC'
     target-branch: dev
     open-pull-requests-limit: 10
+    # Same cooldown reasoning as the npm pool above. A freshly-published action
+    # tag is exactly what a compromised maintainer account pushes first, and
+    # every action here is pinned to a commit SHA that Dependabot rewrites.
+    # Revisit: shorten only if a security fix is ever delayed by this.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
     commit-message:
       prefix: 'ci(repo)'
     labels:

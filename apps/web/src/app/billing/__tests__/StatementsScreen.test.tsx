@@ -36,7 +36,7 @@ describe('StatementsScreen', () => {
     render(<StatementsScreen />);
 
     const table = await screen.findByRole('table', { name: 'Patient balances' });
-    expect(within(table).getByText('Petrescu, Ivo')).toBeInTheDocument();
+    expect(within(table).getByText('Stubbins, Dummonde')).toBeInTheDocument();
     expect(within(table).getAllByText('91 days and over').length).toBeGreaterThan(0);
   });
 
@@ -53,7 +53,7 @@ describe('StatementsScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^91 days and over/ }));
 
     const table = screen.getByRole('table', { name: 'Patient balances' });
-    expect(within(table).getByText('Petrescu, Ivo')).toBeInTheDocument();
+    expect(within(table).getByText('Stubbins, Dummonde')).toBeInTheDocument();
     expect(within(table).queryByText('Patientsson, Tess')).not.toBeInTheDocument();
   });
 
@@ -87,7 +87,7 @@ describe('StatementsScreen', () => {
     render(<StatementsScreen />);
 
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Patientsson, Tess' }));
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Oyelaran, Marek' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Testperson, Exampla' }));
     fireEvent.click(screen.getByRole('button', { name: 'Preview statement run' }));
 
     const drawer = screen.getByRole('dialog', { name: 'Statement run' });
@@ -148,7 +148,7 @@ describe('StatementsScreen, driven from the command palette', () => {
     render(<StatementsScreen />);
     await screen.findByLabelText('Search balances');
 
-    fireEvent.change(screen.getByLabelText('Search balances'), { target: { value: 'petrescu' } });
+    fireEvent.change(screen.getByLabelText('Search balances'), { target: { value: 'stubbins' } });
     await runCommand('Select every account in this view');
 
     // A statement run has to mean what the filter says it means: one account
@@ -156,7 +156,7 @@ describe('StatementsScreen, driven from the command palette', () => {
     expect(screen.getByRole('button', { name: 'Preview statement run' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview statement run' }));
     expect(
-      within(await screen.findByRole('dialog')).getAllByText(/Petrescu/).length
+      within(await screen.findByRole('dialog')).getAllByText(/Stubbins/).length
     ).toBeGreaterThan(0);
     expect(within(screen.getByRole('dialog')).queryByText(/Patientsson/)).not.toBeInTheDocument();
   });
@@ -166,7 +166,7 @@ describe('StatementsScreen, driven from the command palette', () => {
     await screen.findByLabelText('Search balances');
 
     await runCommand('Show balances over 90 days');
-    expect(await screen.findByText('Petrescu, Ivo')).toBeInTheDocument();
+    expect(await screen.findByText('Stubbins, Dummonde')).toBeInTheDocument();
     expect(screen.queryByText('Patientsson, Tess')).not.toBeInTheDocument();
 
     await runCommand('Show every balance');
@@ -202,7 +202,7 @@ describe('StatementsScreen, running statements', () => {
     render(<StatementsScreen />);
     await screen.findByLabelText('Search balances');
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Petrescu, Ivo' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Stubbins, Dummonde' }));
     fireEvent.click(screen.getByRole('button', { name: 'Preview statement run' }));
 
     const dialog = await screen.findByRole('dialog');
@@ -214,14 +214,14 @@ describe('StatementsScreen, running statements', () => {
     ).toBeInTheDocument();
     // Selection cleared, so the same run cannot be sent twice by accident.
     expect(screen.getByRole('button', { name: 'Preview statement run' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: 'Select Petrescu, Ivo' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Stubbins, Dummonde' })).not.toBeChecked();
   });
 
   it('unticks an account that was ticked by mistake', async () => {
     render(<StatementsScreen />);
     await screen.findByLabelText('Search balances');
 
-    const box = screen.getByRole('checkbox', { name: 'Select Petrescu, Ivo' });
+    const box = screen.getByRole('checkbox', { name: 'Select Stubbins, Dummonde' });
     fireEvent.click(box);
     expect(box).toBeChecked();
 
@@ -236,7 +236,7 @@ describe('StatementsScreen, running statements', () => {
 
     fireEvent.change(screen.getByLabelText('Search balances'), { target: { value: 'OR-100866' } });
 
-    expect(await screen.findByText('Petrescu, Ivo')).toBeInTheDocument();
+    expect(await screen.findByText('Stubbins, Dummonde')).toBeInTheDocument();
     expect(screen.queryByText('Patientsson, Tess')).not.toBeInTheDocument();
   });
 });

@@ -1,13 +1,20 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  // No @vitejs/plugin-react here on purpose: its transform runs a second pass over every
-  // file, which double-instruments them under coverage and roughly halves the reported
-  // numbers. Tests only need the automatic JSX runtime, and esbuild provides that
-  // directly. The plugin belongs in vite.config.ts and .storybook, nowhere else.
-  esbuild: {
-    jsx: 'automatic',
-    jsxDev: false,
+  // Vite 8 transforms with oxc, not esbuild, and ignores `esbuild` options
+  // entirely - it says so on startup and then fails every TSX file with
+  // "Unexpected JSX expression". The setting has to be spelled for the
+  // transformer actually in use.
+  //
+  // Still no @vitejs/plugin-react: its second transform pass double-instruments
+  // files under istanbul coverage and halves the reported figure. Tests need the
+  // automatic JSX runtime and nothing else, which oxc provides directly; the
+  // plugin's fast refresh is a dev-server concern.
+  oxc: {
+    jsx: {
+      runtime: 'automatic',
+      development: false,
+    },
   },
   test: {
     environment: 'jsdom',

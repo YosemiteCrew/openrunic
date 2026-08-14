@@ -36,8 +36,8 @@ function entryFor(
   resource: fhir4.FhirResource,
   mode: 'match' | 'include',
   baseUrl: string | undefined
-): fhir4.BundleEntry {
-  return compact<fhir4.BundleEntry>({
+): fhir4.BundleEntry<fhir4.FhirResource> {
+  return compact<fhir4.BundleEntry<fhir4.FhirResource>>({
     fullUrl: fullUrl(resource, baseUrl),
     resource,
     search: { mode },
@@ -58,13 +58,13 @@ function link(relation: string, url: string | undefined): fhir4.BundleLink | und
 export function searchsetBundle(
   matches: readonly fhir4.FhirResource[],
   options: SearchsetOptions = {}
-): fhir4.Bundle {
+): fhir4.Bundle<fhir4.FhirResource> {
   const entries = [
     ...matches.map((resource) => entryFor(resource, 'match', options.baseUrl)),
     ...(options.includes ?? []).map((resource) => entryFor(resource, 'include', options.baseUrl)),
   ];
 
-  return compact<fhir4.Bundle>({
+  return compact<fhir4.Bundle<fhir4.FhirResource>>({
     resourceType: 'Bundle',
     id: options.id,
     type: 'searchset',
@@ -103,12 +103,14 @@ export interface TransactionEntry {
  * write verbs carry a `resource`, and an entry without one omits the key
  * rather than sending `null`.
  */
-export function transactionBundle(entries: readonly TransactionEntry[]): fhir4.Bundle {
-  return compact<fhir4.Bundle>({
+export function transactionBundle(
+  entries: readonly TransactionEntry[]
+): fhir4.Bundle<fhir4.FhirResource> {
+  return compact<fhir4.Bundle<fhir4.FhirResource>>({
     resourceType: 'Bundle',
     type: 'transaction',
     entry: entries.map((entry) =>
-      compact<fhir4.BundleEntry>({
+      compact<fhir4.BundleEntry<fhir4.FhirResource>>({
         fullUrl: entry.fullUrl,
         resource: entry.resource,
         request: compact<fhir4.BundleEntryRequest>({
@@ -126,7 +128,11 @@ export function transactionBundle(entries: readonly TransactionEntry[]): fhir4.B
 
 /** Reads the resources of a bundle, optionally filtered by search mode. */
 export function bundleResources(
-  bundle: fhir4.Bundle,
+  // `fhir4.Bundle<fhir4.FhirResource>` now defaults its entries to the `Resource` base rather than
+  // the `FhirResource` union, so the parameter says which it wants. Reading a
+  // resource out of a bundle is only useful once it can be discriminated on
+  // `resourceType`, and that is what the union provides.
+  bundle: fhir4.Bundle<fhir4.FhirResource>,
   mode?: 'match' | 'include'
 ): fhir4.FhirResource[] {
   return present(

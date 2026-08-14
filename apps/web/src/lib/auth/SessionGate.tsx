@@ -79,22 +79,24 @@ export function SessionGate({
   const guarded = pathname !== null && !isPublicPath(pathname);
   const blocked = guarded && session === null;
 
+  // One effect, not two. Setting state and then redirecting from a second
+  // effect keyed on that state costs a render nobody sees: the answer is
+  // already known the moment the restore resolves to nothing. `restoreFailed`
+  // still exists to stop a second attempt, because the injected `navigate` in
+  // tests leaves the component mounted where a document navigation would not.
   useEffect(() => {
     if (!blocked || restoreFailed) return;
 
     let cancelled = false;
     void restoreSession().then((restored) => {
-      if (!cancelled && restored === null) setRestoreFailed(true);
+      if (cancelled || restored !== null) return;
+      setRestoreFailed(true);
+      if (pathname !== null) navigate(signInUrl(currentTarget(pathname), 'expired'));
     });
 
     return () => {
       cancelled = true;
     };
-  }, [blocked, restoreFailed]);
-
-  useEffect(() => {
-    if (!blocked || !restoreFailed || pathname === null) return;
-    navigate(signInUrl(currentTarget(pathname), 'expired'));
   }, [blocked, restoreFailed, navigate, pathname]);
 
   /**

@@ -34,7 +34,7 @@ describe('reading a record', () => {
    */
 
   it('takes a record that is one', () => {
-    expect(readSessionRecord(JSON.parse(JSON.stringify(record())))).toEqual(record());
+    expect(readSessionRecord(structuredClone(record()))).toEqual(record());
   });
 
   it('refuses anything that is not an object', () => {
@@ -99,9 +99,7 @@ describe('what the browser is handed', () => {
   });
 
   it('reads that payload back off the wire', () => {
-    expect(readSessionPayload(JSON.parse(JSON.stringify(toSession(record()))))).toEqual(
-      toSession(record())
-    );
+    expect(readSessionPayload(structuredClone(toSession(record())))).toEqual(toSession(record()));
   });
 
   it('refuses a payload that is missing any of the three', () => {

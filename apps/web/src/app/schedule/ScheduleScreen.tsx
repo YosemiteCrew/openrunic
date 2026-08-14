@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Button, IconButton, Select, Toast } from '@openrunic/ui';
+import { Alert, Button, IconButton, Select } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
@@ -8,8 +8,6 @@ import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import {
   awaitsCheckIn,
-  BookingModal,
-  CheckInDialog,
   clinicNow,
   clinicToday,
   DayRail,
@@ -21,6 +19,7 @@ import {
   useClinicDay,
 } from '@/components/schedule';
 import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
+import { ScheduleOverlays } from './ScheduleOverlays';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { api, useMutation } from '@/lib/api';
@@ -402,46 +401,24 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
         )}
       </AsyncBoundary>
 
-      {confirming ? (
-        <CheckInDialog
-          appointment={confirming}
-          patient={confirmingPatient}
-          pending={checkIn.pending}
-          error={refusalOf(checkIn.error)}
-          onCancel={() => setConfirming(null)}
-          onConfirm={confirmCheckIn}
-        />
-      ) : null}
-
-      {bookingSlot && facility !== null ? (
-        <BookingModal
-          slot={bookingSlot}
-          providers={columns}
-          patients={[...patientsById.values()]}
-          pending={booking.pending}
-          error={refusalOf(booking.error)}
-          onCancel={() => setBookingSlot(null)}
-          onConfirm={(details) => void confirmBooking(facility, details)}
-        />
-      ) : null}
-
-      {toast ? (
-        <div className="or-fd-toast-host">
-          <Toast
-            tone="success"
-            title={toast.title}
-            message={toast.message}
-            action={
-              toast.href ? (
-                <Button variant="ghost" size="sm" href={toast.href}>
-                  {toast.hrefLabel}
-                </Button>
-              ) : null
-            }
-            onClose={() => setToast(null)}
-          />
-        </div>
-      ) : null}
+      <ScheduleOverlays
+        confirming={confirming}
+        confirmingPatient={confirmingPatient}
+        checkInPending={checkIn.pending}
+        checkInError={refusalOf(checkIn.error)}
+        onCancelCheckIn={() => setConfirming(null)}
+        onConfirmCheckIn={(appointment) => void confirmCheckIn(appointment)}
+        bookingSlot={bookingSlot}
+        facility={facility}
+        providers={columns}
+        patients={[...patientsById.values()]}
+        bookingPending={booking.pending}
+        bookingError={refusalOf(booking.error)}
+        onCancelBooking={() => setBookingSlot(null)}
+        onConfirmBooking={(bookAt, details) => void confirmBooking(bookAt, details)}
+        toast={toast}
+        onDismissToast={() => setToast(null)}
+      />
     </AppShell>
   );
 }

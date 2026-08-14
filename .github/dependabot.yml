@@ -97,6 +97,22 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: '@vitejs/plugin-react'
         update-types: ['version-update:semver-major']
+      # jsdom 30 changed accessible-name computation: it no longer inserts a
+      # separator between the text of adjacent child elements, so a filter
+      # rendered as <span>Everything</span><span>11</span> computes as
+      # "Everything11" rather than "Everything 11".
+      #
+      # The tests that broke are the ones asserting what a screen reader
+      # announces, and they are held to the spaced form on purpose. Rewriting
+      # them to expect the run-together string would encode a change in the test
+      # environment as a claim about the product, and this application's
+      # accessibility evidence IS its keyboard and accessible-name tests - there
+      # are no Storybook stories for the axe pass to cover it.
+      # Revisit: when the spaced form is confirmed against a real browser, at
+      # which point either jsdom moves or the markup gains the separator
+      # explicitly. (2026-08-14)
+      - dependency-name: 'jsdom'
+        update-types: ['version-update:semver-major']
     groups:
       # ONE pooled pull request for every npm update, majors included.
       # Deliberate trade-off, recorded so the next person does not "fix" it:

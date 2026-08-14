@@ -63,6 +63,17 @@ updates:
       # Revisit: when typescript-eslint's peer range admits >=7. (2026-08-12)
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
+      # @types/node describes the runtime, so it is pinned to the runtime rather
+      # than to the newest release. This project runs Node 22 (.nvmrc, and
+      # engines.node >=22.12), and types from a later line describe APIs that
+      # version does not have: code compiles, ships, and fails at runtime with
+      # "is not a function". The failure lands wherever the API was used rather
+      # than at the upgrade, which is the worst place to find it in a system
+      # holding clinical records.
+      # Revisit: raise this together with .nvmrc and engines.node, never before.
+      # (2026-08-14)
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       # ONE pooled pull request for every npm update, majors included.
       # Deliberate trade-off, recorded so the next person does not "fix" it:

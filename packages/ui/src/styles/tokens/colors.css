@@ -12,6 +12,12 @@
   --olive: #6b7a4f;
   --line: #e2d7c3;
   --danger: #b3362b;
+  /* A deeper danger, for a surface that carries inverse text rather than ink.
+     --danger under bone reads 6.0:1, which clears AA but looks like an ordinary
+     alert; this reads 9.0:1, which looks like a stop. Paired the same way
+     --terracotta-deep pairs with --terracotta. */
+  --danger-deep: #7a1f1f;
+  --danger-deep-edge: #4d1212;
 
   /* --- ink weights ---
      The warm hues above are drawn for fills, marks and data viz. As text they fall just
@@ -80,6 +86,10 @@
   --status-neutral-wash: #efe3d5;
   --status-danger: var(--danger);
   --status-danger-wash: #f6dfd9;
+  /* The wash above takes ink on top; this pair takes --text-inverse. Reach for
+     it when the message must be unmissable rather than merely present. */
+  --status-danger-solid: var(--danger-deep);
+  --status-danger-solid-edge: var(--danger-deep-edge);
 
   /* --- data viz: warm-shifted, never library defaults --- */
   --viz-1: #2e211a;

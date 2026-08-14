@@ -19,11 +19,16 @@ name: Container Scan
 # rather than invented here. If that threshold is ever tightened, tighten it in
 # both places.
 #
-# NO DOCKERFILES ON THIS BRANCH YET. They arrive with the self-hosting work.
-# The discovery step therefore exits 0 with an explanatory message when it finds
-# none, and the gate starts doing real work the moment the first Dockerfile
-# lands. Nothing here is conditional on a branch name or a date, so there is
-# nothing to remember to turn on.
+# Discovery drives everything: the gate scans whatever Dockerfiles are tracked,
+# and exits 0 with an explanatory message when there are none. Nothing here is
+# conditional on a branch name or a date, so there is nothing to remember to
+# turn on, and an image added later is picked up without editing this file.
+#
+# One job per image, rather than a loop inside one job. Code scanning stopped
+# combining SARIF runs uploaded under a single category, so a loop that scanned
+# two images could upload only one of their reports; the findings for the other
+# were built, paid for, and silently dropped. A matrix gives each image its own
+# category, which is the unit code scanning actually tracks.
 
 on:
   pull_request:
@@ -48,10 +53,62 @@ concurrency:
 permissions: {}
 
 jobs:
+  discover:
+    name: Discover Dockerfiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      found: ${{ steps.discover.outputs.found }}
+      images: ${{ steps.discover.outputs.images }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Discover Dockerfiles
+        id: discover
+        run: |
+          set -euo pipefail
+          # Tracked files only: an untracked Dockerfile left in a working tree
+          # is not part of what this repository ships.
+          FOUND=$(git ls-files -- '**/Dockerfile' 'Dockerfile' '**/Dockerfile.*' 'Dockerfile.*' \
+            | grep -v '\.dockerignore$' || true)
+          if [ -z "$FOUND" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "images=[]" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile in the tree - nothing to build or scan."
+            echo "This gate activates automatically when the first Dockerfile lands." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          # The slug is both the report filename and the code-scanning category,
+          # so it has to be stable across runs: derived from the path, never from
+          # a matrix index that would shift when a Dockerfile is added.
+          IMAGES=$(printf '%s\n' "$FOUND" | jq -R -s -c '
+            split("\n") | map(select(length > 0)) | map({
+              dockerfile: .,
+              slug: (. | ascii_downcase | gsub("[/.]"; "-"))
+            })')
+          echo "images=${IMAGES}" >> "$GITHUB_OUTPUT"
+          echo "Dockerfiles to scan:"
+          printf '%s\n' "$FOUND"
+
   scan:
     name: Scan container images (grype)
+    needs: discover
+    if: needs.discover.outputs.found == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      # One vulnerable image must not hide the state of another: every image
+      # gets scanned and reported even when a sibling has already failed.
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.discover.outputs.images) }}
     permissions:
       contents: read # read the tree so the images can be built from it
       # Surfacing findings in the Security tab. The job still gates the pull
@@ -65,32 +122,7 @@ jobs:
           # a `docker build` context could pick it up and bake it into a layer.
           persist-credentials: false
 
-      - name: Discover Dockerfiles
-        id: discover
-        run: |
-          set -euo pipefail
-          # Tracked files only: an untracked Dockerfile left in a working tree
-          # is not part of what this repository ships.
-          FOUND=$(git ls-files -- '**/Dockerfile' 'Dockerfile' '**/Dockerfile.*' 'Dockerfile.*' \
-            | grep -v '\.dockerignore$' || true)
-          if [ -z "$FOUND" ]; then
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "No Dockerfile in the tree - nothing to build or scan."
-            echo "This gate activates automatically when the first Dockerfile lands." \
-              >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "found=true" >> "$GITHUB_OUTPUT"
-            {
-              echo "dockerfiles<<EOF"
-              echo "$FOUND"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-            echo "Dockerfiles to scan:"
-            echo "$FOUND"
-          fi
-
       - name: Install grype (pinned, checksum-verified)
-        if: steps.discover.outputs.found == 'true'
         env:
           # Kept in lockstep with supply-chain.yml so both gates resolve the
           # same vulnerability database and the same severity vocabulary.
@@ -112,45 +144,38 @@ jobs:
       # Accepted findings live in .grype.yaml at the repository root (grype
       # auto-discovers it), each with a reason, an owner and a re-review date -
       # the same exception process the dependency scan uses.
-      - name: Build and scan each image
-        if: steps.discover.outputs.found == 'true'
+      - name: Build and scan the image
         env:
-          DOCKERFILES: ${{ steps.discover.outputs.dockerfiles }}
+          DOCKERFILE: ${{ matrix.image.dockerfile }}
+          SLUG: ${{ matrix.image.slug }}
           DOCKER_BUILDKIT: '1'
         run: |
           set -euo pipefail
           mkdir -p security/reports/container
-          FAILED=0
-          while IFS= read -r dockerfile; do
-            [ -n "$dockerfile" ] || continue
-            # A stable, path-derived tag so the report names say which image
-            # a finding belongs to.
-            slug=$(printf '%s' "$dockerfile" | tr '/.' '--' | tr '[:upper:]' '[:lower:]')
-            tag="openrunic-scan/${slug}:ci"
-            echo "::group::build ${dockerfile}"
-            # Repository root as the build context: these are pnpm workspace
-            # images and need the lockfile and the sibling packages. If an image
-            # ever needs a narrower context, this is the line to change.
-            docker build --file "$dockerfile" --tag "$tag" .
-            echo "::endgroup::"
+          tag="openrunic-scan/${SLUG}:ci"
+          echo "::group::build ${DOCKERFILE}"
+          # Repository root as the build context: these are pnpm workspace
+          # images and need the lockfile and the sibling packages. If an image
+          # ever needs a narrower context, this is the line to change.
+          docker build --file "$DOCKERFILE" --tag "$tag" .
+          echo "::endgroup::"
 
-            echo "::group::scan ${tag}"
-            if ! grype "docker:${tag}" \
-              --fail-on critical \
-              -o table \
-              -o "sarif=security/reports/container/${slug}.sarif"; then
-              echo "::error file=${dockerfile}::critical vulnerabilities in the image built from ${dockerfile}"
-              FAILED=1
-            fi
+          echo "::group::scan ${tag}"
+          if ! grype "docker:${tag}" \
+            --fail-on critical \
+            -o table \
+            -o "sarif=security/reports/container/${SLUG}.sarif"; then
+            echo "::error file=${DOCKERFILE}::critical vulnerabilities in the image built from ${DOCKERFILE}"
             echo "::endgroup::"
-          done <<< "$DOCKERFILES"
-          exit "$FAILED"
+            exit 1
+          fi
+          echo "::endgroup::"
 
-      - name: Upload scan reports
-        if: always() && steps.discover.outputs.found == 'true'
+      - name: Upload scan report
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: container-scan-reports
+          name: container-scan-report-${{ matrix.image.slug }}
           path: security/reports/container/
           retention-days: 90
           if-no-files-found: warn
@@ -158,9 +183,11 @@ jobs:
       - name: Upload SARIF to code scanning
         # Dependabot-actor runs cannot write security events; the gate above
         # still applies to them through the job's exit code.
-        if: always() && steps.discover.outputs.found == 'true' && github.actor != 'dependabot[bot]'
+        if: always() && github.actor != 'dependabot[bot]'
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
-          sarif_file: security/reports/container/
-          category: container-scan
+          sarif_file: security/reports/container/${{ matrix.image.slug }}.sarif
+          # One category per image. A shared category would mean code scanning
+          # keeps one report and drops the rest.
+          category: container-scan-${{ matrix.image.slug }}

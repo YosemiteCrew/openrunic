@@ -98,6 +98,22 @@ jobs:
       contains(needs.core.outputs.matrix, '@openrunic/database')
     uses: ./.github/workflows/_migration.yaml
 
+  # Runs the artefacts an operator runs: the migration-safety linter, the
+  # full-day clinical drill, a timed `docker compose up`, and a real
+  # backup-and-restore. Gated on the same affected check as the rest of the
+  # pipeline so a docs-only pull request does not spend forty minutes booting
+  # containers, and independent of `test` because none of its legs consumes the
+  # coverage artifact.
+  #
+  # These are the slowest legs in the pipeline by a wide margin. That is the
+  # trade being made deliberately: the claims they check - install in under
+  # thirty minutes, restore in under fifteen, a clinic can get through a day -
+  # are ones a clinic finds out about at the worst possible time if CI does not.
+  ops:
+    needs: core
+    if: needs.core.outputs.has-any == 'true'
+    uses: ./.github/workflows/_ops.yaml
+
   sonar:
     needs: [core, test]
     # Gated on the test stage's own output rather than on the affected booleans,
@@ -152,7 +168,7 @@ jobs:
     # The one check to mark required on the branch rulesets. Published first so
     # its behaviour can be observed before it is made required.
     if: always()
-    needs: [core, repo, test, agent-disabled, migration, sonar]
+    needs: [core, repo, test, agent-disabled, migration, ops, sonar]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

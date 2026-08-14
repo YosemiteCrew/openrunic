@@ -13,9 +13,20 @@ export interface AuthnOptions {
   publicPaths?: Iterable<string>;
 }
 
-/** Routes that must answer before anyone has a token. */
+/**
+ * Routes that must answer before anyone has a token.
+ *
+ * `/readyz` is here for the same reason as `/healthz`: it is read by the
+ * container runtime's healthcheck, which has no credentials and never will. An
+ * authenticated readiness probe answers 401 forever, the container never turns
+ * healthy, and nothing that depends on it ever starts.
+ *
+ * Neither endpoint reveals anything: both return a fixed shape saying whether
+ * this process can serve, with no counts, no versions and no error detail.
+ */
 export const DEFAULT_PUBLIC_PATHS: readonly string[] = [
   '/healthz',
+  '/readyz',
   '/fhir/metadata',
   '/openapi.json',
 ];

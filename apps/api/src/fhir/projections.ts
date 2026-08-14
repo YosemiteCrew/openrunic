@@ -1,6 +1,7 @@
 import {
   toFhirAllergyIntolerance,
   toFhirAppointment,
+  toFhirClaim,
   toFhirCondition,
   toFhirCoverage,
   toFhirDiagnosticReport,
@@ -18,6 +19,7 @@ import {
   toFhirTask,
   type AllergyIntolerance,
   type Appointment,
+  type Claim,
   type Condition,
   type Coverage,
   type DiagnosticReport,
@@ -464,6 +466,56 @@ export function provenanceResource(row: ScopedRow<'AuditEvent'>): Provenance {
       purposeOfUse: absent(row.purposeOfUse),
       breakglass: row.breakglass,
       outcome: row.outcome,
+    })
+  );
+}
+
+/**
+ * A claim as submitted, with its lines.
+ *
+ * The lines arrive through `prepared` rather than being fetched here: a bundle
+ * of claims would otherwise be one query per claim, which is fine with the three
+ * fixtures a test seeds and not fine on a payer's page of fifty.
+ *
+ * The billing provider is passed in for the same reason. A Claim row has no
+ * provider column - it carries an encounter, and the provider is the
+ * encounter's - so resolving it here would be a second query per claim on top
+ * of the lines.
+ *
+ * `units` is a Decimal in the database because a claim can bill a fraction of a
+ * unit, and DomainClaimLine wants a number, so it is converted once here rather
+ * than left for the mapper to guess at.
+ */
+export function claimResource(
+  row: ScopedRow<'Claim'>,
+  lines: readonly ScopedRow<'ClaimLine'>[],
+  providerId: string
+): Claim {
+  return toFhirClaim(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      coverageId: row.coverageId,
+      payerId: row.payerId,
+      providerId: providerId,
+      status: row.status,
+      frequency: row.frequency,
+      diagnosisCodes: row.diagnosisCodes,
+      totalChargedCents: row.totalChargedCents,
+      createdAt: row.createdAt.toISOString(),
+      lines: lines.map((line) => ({
+        sequence: line.sequence,
+        code: line.code,
+        codeSystem: line.codeSystem,
+        modifiers: line.modifiers,
+        units: Number(line.units),
+        chargedCents: line.chargedCents,
+        diagnosisPointers: line.diagnosisPointers,
+        serviceDateFrom: line.serviceDateFrom.toISOString().slice(0, 10),
+        ...(line.serviceDateTo === null
+          ? {}
+          : { serviceDateTo: line.serviceDateTo.toISOString().slice(0, 10) }),
+      })),
     })
   );
 }

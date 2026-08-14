@@ -18,6 +18,7 @@ import {
   checkMeasures,
   measuresQuery,
   parseReportTask,
+  reportCandidates,
 } from './sonar-thresholds.mjs';
 
 /** The limits the workflow passes, spelled once. */
@@ -74,6 +75,31 @@ describe('choosing which analysis to read back', () => {
       kind: 'branch',
       value: null,
     });
+  });
+});
+
+describe('choosing which files to read a report from', () => {
+  it('looks under the app directory first, then the checkout root', () => {
+    assert.deepEqual(reportCandidates('/repo', 'apps/web'), [
+      '/repo/apps/web/.scannerwork/report-task.txt',
+      '/repo/.scannerwork/report-task.txt',
+    ]);
+  });
+
+  it('refuses a base directory that climbs out of the checkout', () => {
+    assert.equal(reportCandidates('/repo', '../elsewhere'), null);
+    assert.equal(reportCandidates('/repo', '../../etc'), null);
+  });
+
+  it('refuses an absolute base directory outside the checkout', () => {
+    assert.equal(reportCandidates('/repo', '/etc'), null);
+  });
+
+  it('accepts an absolute base directory inside the checkout', () => {
+    assert.deepEqual(reportCandidates('/repo', '/repo/apps/api'), [
+      '/repo/apps/api/.scannerwork/report-task.txt',
+      '/repo/.scannerwork/report-task.txt',
+    ]);
   });
 });
 

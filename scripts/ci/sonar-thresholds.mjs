@@ -35,9 +35,31 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { resolveWithin } from './safe-path.mjs';
 
 /** The three measures the bar is written in. Whole-branch, not new code. */
 export const METRICS = ['coverage', 'duplicated_lines_density', 'violations'];
+
+/** Where the scanner leaves the receipt for the analysis it just published. */
+export const REPORT_TASK = path.join('.scannerwork', 'report-task.txt');
+
+/**
+ * The paths this will read a report from, or null if `--base-dir` escapes `root`.
+ *
+ * The scanner writes its working directory under projectBaseDir; the root is
+ * checked too, so this still works if a caller ever scans from there. Both go
+ * through resolveWithin, the same guard lcov-check.mjs puts on coverage paths.
+ * The argument reaches this script from the workflow's own matrix rather than
+ * from anything a contributor writes, but a check that reads whatever path it is
+ * handed is one flag away from being a way to read any file on the runner, and
+ * refusing is cheaper than arguing about who can set the flag.
+ */
+export function reportCandidates(root, baseDir) {
+  const candidates = [path.join(baseDir, REPORT_TASK), REPORT_TASK].map((candidate) =>
+    resolveWithin(root, candidate)
+  );
+  return candidates.includes(null) ? null : candidates;
+}
 
 /**
  * Parse the scanner's report-task.txt.
@@ -253,12 +275,14 @@ async function main(argv) {
     issues: readOption(argv, 'issues', 0),
   };
 
-  // The scanner writes its working directory under projectBaseDir. The repo
-  // root is checked too so this still works if a caller ever scans from there.
-  const candidates = [
-    path.join(baseDir, '.scannerwork', 'report-task.txt'),
-    path.join('.scannerwork', 'report-task.txt'),
-  ];
+  const candidates = reportCandidates(process.cwd(), baseDir);
+  if (candidates === null) {
+    process.stderr.write(
+      `sonar-thresholds: --base-dir '${baseDir}' resolves outside the checkout at ` +
+        `${process.cwd()}, so it is refused rather than read.\n`
+    );
+    return 1;
+  }
   const reportPath = candidates.find((candidate) => existsSync(candidate));
   if (!reportPath) {
     process.stderr.write(

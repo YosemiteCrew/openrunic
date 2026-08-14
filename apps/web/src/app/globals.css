@@ -2167,14 +2167,18 @@ fieldset {
   }
 }
 
-.or-result-row[data-selected='true'] .or-result-row__open {
-  border-left-color: var(--action-accent);
-  background: var(--surface-wash);
-}
-
+/* The focus ring is declared before the selected-state rule, not after it. The
+   two do not fight over a property today (outline versus background), but the
+   selected rule is the more specific of the pair, so writing it first is how a
+   focus ring quietly stops winning the day someone adds an outline to it. */
 .or-result-row__open:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+.or-result-row[data-selected='true'] .or-result-row__open {
+  border-left-color: var(--action-accent);
+  background: var(--surface-wash);
 }
 
 .or-result-row__head {

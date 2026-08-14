@@ -35,7 +35,14 @@ pnpm lint              # ESLint across the repo
 pnpm type-check        # TypeScript across the repo
 pnpm test              # Vitest across the repo
 pnpm build             # build all workspaces
-pnpm verify            # lint + type-check + test + build in one shot
+pnpm verify            # every gate that runs from this repo's own dependencies, in one shot
+```
+
+Optional native tools, needed only for the three gates that lint workflow YAML, shell scripts and
+Dockerfiles (see [Repo-wide gates](#repo-wide-gates)):
+
+```bash
+brew install actionlint shellcheck hadolint   # or your distribution's equivalent
 ```
 
 Prefer scoped commands while iterating; they are much faster:
@@ -69,13 +76,55 @@ Before opening a PR, make sure the following pass locally:
 2. `pnpm type-check`
 3. Targeted tests for what you changed, e.g. `pnpm --filter fhir test`
 4. `pnpm build` if you touched build-relevant code
+5. The repo-wide gates below that your change touches
 
 CI runs the full matrix, including sharded Vitest with coverage floors. New code should come with
 tests; changes to `packages/fhir` mappers must keep the round-trip tests passing and cover any new
 resource fields.
 
+### Repo-wide gates
+
+Steps 1 to 4 above are per-workspace: CI works out which workspaces a change affects and runs them
+only for those. That leaves a gap, because a pull request touching only documentation, only a
+workflow file or only a shell script affects no workspace at all. The gates in this section close
+it. They run on every pull request whatever changed, and their results are folded into the
+`CI Required` check alongside everything else.
+
+| Gate       | Local command             | What it is there for                                          |
+| ---------- | ------------------------- | ------------------------------------------------------------- |
+| Prettier   | `pnpm run format:check`   | Formatting, whole tree                                        |
+| stylelint  | `pnpm run lint:css`       | CSS correctness and the design-token rules                    |
+| secretlint | `pnpm run check:secrets`  | Secret scanning, including a committed `.env` of any content  |
+| actionlint | `pnpm run lint:workflows` | Workflow YAML, plus shellcheck over every inline `run:` block |
+| shellcheck | `pnpm run lint:shell`     | Tracked `.sh` scripts, which actionlint does not see          |
+| hadolint   | `pnpm run lint:docker`    | Tracked Dockerfiles                                           |
+
+`pnpm verify` runs the first three, since they need nothing beyond `pnpm install`. The last three
+need native binaries; install them once (see [Development setup](#development-setup)) and run them
+when you touch the files they cover. CI installs its own pinned, checksum-verified copies of all
+three, so it never depends on what happens to be on a contributor's machine.
+
 Formatting is handled by Prettier (repo config). A pre-commit hook formats staged files and runs
-secret scanning; do not bypass it.
+secret scanning; do not bypass it. The Prettier and secretlint gates above exist because the hook
+only sees an ordinary local commit: a `--no-verify` commit, an edit made through the GitHub web UI
+and a bot commit all go straight past it.
+
+### CSS and the design system
+
+`packages/ui` is a design system, so its CSS is source code and is linted as such. The full rule
+set and the reasoning behind every choice live in `stylelint.config.mjs`; the two rules worth
+knowing before you write any CSS are:
+
+- **No colour literals.** A hex value or a named colour is rejected in any property that is not a
+  custom property definition. Colour reaches a component through a token. If you need a colour that
+  no token provides, propose the token in `packages/ui/src/styles/tokens/colors.css` as part of your
+  PR rather than inlining the value.
+- **BEM class names**: `block`, `block__element`, `block--modifier`, kebab-case within each part.
+
+If a stylelint rule is wrong for this codebase, say so in your PR and turn it off in
+`stylelint.config.mjs` with the reason and the condition that would bring it back, which is what
+every other entry in that file does. Do not scatter `stylelint-disable` comments. A single
+`stylelint-disable-next-line` with a `--` reason attached is fine for a genuine one-off exception.
 
 CI also holds the React surface to a **React Doctor score of 95**. Run `pnpm run doctor` to see
 where you stand, or `pnpm run doctor:json` for the full report. Note that the score is calculated

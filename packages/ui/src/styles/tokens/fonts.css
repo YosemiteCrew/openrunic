@@ -32,7 +32,7 @@
 
 /* Fraunces - variable (opsz 9-144, wght 100-900, SOFT + WONK). Editorial longform only. */
 @font-face {
-  font-family: 'Fraunces';
+  font-family: Fraunces;
   src:
     local('Fraunces'),
     url('./fonts/Fraunces-variable.woff2') format('woff2-variations');
@@ -41,7 +41,7 @@
   font-display: swap;
 }
 @font-face {
-  font-family: 'Fraunces';
+  font-family: Fraunces;
   src:
     local('Fraunces Italic'),
     url('./fonts/Fraunces-Italic-variable.woff2') format('woff2-variations');

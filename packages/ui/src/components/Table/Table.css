@@ -119,6 +119,12 @@
   z-index: 3;
 }
 
+/* stylelint-disable-next-line no-descending-specificity -- The higher-specificity
+   `.or-table__row:not(:last-child) .or-table__td` rule above sets only
+   border-bottom, and this rule sets only z-index and background, so neither can
+   override the other and the source order is free. Reordering to satisfy the
+   rule would split the pinned-column block away from the responsive section it
+   documents. */
 .or-table__td:first-child {
   z-index: 1;
   background: var(--surface-data);

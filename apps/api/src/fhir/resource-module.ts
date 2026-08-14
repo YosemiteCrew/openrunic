@@ -103,7 +103,9 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       // than assumed to produce promises.
       const prepared = await prepareFor(page.rows, repositories);
       const rows = await Promise.all(
-        page.rows.map(async (row) => descriptor.toResource(row, { repositories, prepared }))
+        page.rows.map(async (row) =>
+          stampLastUpdated(row, await descriptor.toResource(row, { repositories, prepared }))
+        )
       );
       return { ...page, rows };
     },
@@ -116,8 +118,31 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       // that only worked on search would be the kind of gap nobody notices
       // until a client fetches by id.
       const prepared = await prepareFor([row], repositories);
-      return descriptor.toResource(row, { repositories, prepared });
+      return stampLastUpdated(row, await descriptor.toResource(row, { repositories, prepared }));
     },
+  };
+}
+
+/**
+ * Stamps `meta.lastUpdated` from the row's own `updatedAt`.
+ *
+ * Central rather than per-mapper, and derived rather than mapped, because it is
+ * the one field on a resource that no mapper should have an opinion about: it
+ * says when the record behind it last changed, and the record is the only thing
+ * that knows. A mapper that forgot it would produce a resource a client cannot
+ * cache, cannot reconcile against a previous copy, and cannot ask for
+ * incrementally - and forgetting it is invisible, because the resource is still
+ * valid FHIR.
+ *
+ * A row without an `updatedAt` gets no stamp rather than a fabricated one. An
+ * invented timestamp is worse than a missing field: a client will believe it.
+ */
+function stampLastUpdated(row: unknown, resource: FhirResource): FhirResource {
+  const updatedAt = (row as { updatedAt?: unknown }).updatedAt;
+  if (!(updatedAt instanceof Date)) return resource;
+  return {
+    ...resource,
+    meta: { ...resource.meta, lastUpdated: updatedAt.toISOString() },
   };
 }
 

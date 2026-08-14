@@ -1,4 +1,5 @@
-import { Hono } from 'hono';
+import { uuidv7 } from '@openrunic/database';
+import { Hono, type Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -8,6 +9,16 @@ import { requirePermission } from '../middleware/policy.js';
 import { idParamSchema, repositories, required } from '../routes/helpers.js';
 
 import { buildSearchsetBundle } from './bundle.js';
+import {
+  assertNotCompartmentBound,
+  BULK_EXPORT_OPERATIONS,
+  createExportStore,
+  exportableTypes,
+  manifestFor,
+  parseSince,
+  parseTypeFilter,
+  runExport,
+} from './bulk-export.js';
 import { buildCapabilityStatement } from './metadata.js';
 import { parsePaging, rejectUnsupportedParams } from './params.js';
 import { fhirPatientToCreateInput, patientRowToFhir } from './patient.js';
@@ -68,6 +79,114 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
   const modules = options.modules ?? SERVED_MODULES;
   const served = servedResources(modules);
   const router = new Hono<AppEnv>();
+
+  /**
+   * BULK DATA EXPORT.
+   *
+   * Kick-off answers 202 with a `Content-Location` the client polls, which is
+   * what the specification requires and what every conformant client expects.
+   * The work happens before the poll is answered rather than in a queue, so the
+   * limits here are memory and process lifetime rather than the contract - see
+   * bulk-export.ts, which also explains why a job carries no status.
+   *
+   * `facility.all` is the gate rather than `patient.read`. Every other route
+   * honours a principal's facility grants by asking about one facility at a
+   * time; a whole-organisation read never gets that opportunity, so it demands
+   * the permission that means organisation-wide access outright.
+   */
+  const exports = createExportStore();
+  const available = exportableTypes(modules);
+
+  const kickOff = async (c: Context<AppEnv>): Promise<Response> => {
+    assertNotCompartmentBound(c.get('principal'));
+
+    // `Prefer: respond-async` is required by the specification. Refusing without
+    // it is what stops a client assuming a synchronous body is coming.
+    if (!(c.req.header('prefer') ?? '').includes('respond-async')) {
+      throw ApiError.malformed('Bulk export requires the header `Prefer: respond-async`.', {
+        fhirIssueCode: 'required',
+        issues: [{ path: 'Prefer', message: 'expected respond-async' }],
+      });
+    }
+
+    const types = parseTypeFilter(c.req.query('_type'), available);
+    const since = parseSince(c.req.query('_since'));
+    const id = uuidv7();
+
+    // Any failure below propagates to the kick-off response as an
+    // OperationOutcome, which the specification allows and which tells the
+    // client now rather than at a poll it has not made yet.
+    const files = await runExport(c, modules, types, since);
+    exports.create({ id, requestUrl: c.req.url, transactionTime: now().toISOString(), files });
+
+    const base = new URL(c.req.url).origin;
+    c.header('Content-Location', `${base}${FHIR_BASE_PATH}/$export-status/${id}`);
+    return c.body(null, 202);
+  };
+
+  // Mounted from the same list the CapabilityStatement declares, so an entry
+  // point cannot be advertised without being served or served without being
+  // advertised.
+  for (const operation of BULK_EXPORT_OPERATIONS) {
+    router.get(
+      operation.path,
+      requireScope('Patient', 'read'),
+      requirePermission('facility.all'),
+      kickOff
+    );
+  }
+
+  /**
+   * The poll. The manifest, or 404 for a job this server never had or has
+   * already forgotten - a restart loses finished exports, and a client that
+   * cannot tell "gone" from "still working" would wait forever.
+   */
+  router.get(
+    '/$export-status/:id',
+    requireScope('Patient', 'read'),
+    requirePermission('facility.all'),
+    (c) => {
+      const job = exports.get(c.req.param('id'));
+      if (job === undefined) {
+        throw ApiError.notFound(
+          'No export by that id. A restarted server forgets finished exports.'
+        );
+      }
+      return c.json(manifestFor(job, new URL(c.req.url).origin));
+    }
+  );
+
+  /**
+   * One file. `application/fhir+ndjson` because that is what the manifest
+   * promised, and a client streaming it line by line will not tolerate a JSON
+   * array pretending.
+   */
+  router.get(
+    '/$export-file/:id/:type',
+    requireScope('Patient', 'read'),
+    requirePermission('facility.all'),
+    (c) => {
+      const job = exports.get(c.req.param('id'));
+      const file = job?.files.find((candidate) => candidate.type === c.req.param('type'));
+      if (file === undefined) {
+        throw ApiError.notFound('No such export file.');
+      }
+      return c.body(file.ndjson, 200, { 'content-type': 'application/fhir+ndjson' });
+    }
+  );
+
+  /** Cancelling frees the memory the job is holding. */
+  router.delete(
+    '/$export-status/:id',
+    requireScope('Patient', 'read'),
+    requirePermission('facility.all'),
+    (c) => {
+      if (!exports.delete(c.req.param('id'))) {
+        throw ApiError.notFound('No export by that id.');
+      }
+      return c.body(null, 202);
+    }
+  );
 
   router.get('/metadata', (c) =>
     fhirResponse(c, buildCapabilityStatement(now(), options.softwareVersion, modules))

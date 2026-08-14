@@ -44,7 +44,7 @@ Three kinds of gap appear below, and they are not the same kind of work:
 | X12 eligibility (270/271)                                    | **Done**    | `packages/x12`                                                                                  |
 | X12 claims (837P), remittance (835), status (277), ack (999) | **Done**    | Same package                                                                                    |
 | Prior authorisation (278)                                    | **Missing** | _Buildable_                                                                                     |
-| Bulk FHIR export (`$export`)                                 | **Missing** | _Buildable_                                                                                     |
+| **Bulk FHIR export (`$export`)**                             | **Done**    | System and Patient level, `_type` and `_since`, ndjson manifest; gated on `facility.all`        |
 | C-CDA generate and import                                    | **Missing** | _Buildable_ - format work, no licence needed                                                    |
 | HL7 v2 interfaces (ADT, ORU, ORM, VXU)                       | **Missing** | _Buildable_ - the format is open; each interface is per-partner configuration                   |
 | Direct secure messaging                                      | **Missing** | _Needs certification_ - requires a HISP                                                         |

@@ -82,11 +82,11 @@ COPY --from=build --chown=openrunic:openrunic /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=openrunic:openrunic /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=openrunic:openrunic /repo/apps/web/public ./apps/web/public
 
-USER openrunic
+USER 10001:10001
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
-    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # The tracing root is the monorepo root, so the server lands at the path it
 # occupies in the repository rather than at the root of the output.

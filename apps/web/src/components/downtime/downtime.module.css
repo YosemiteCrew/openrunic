@@ -14,9 +14,9 @@
   justify-content: space-between;
   flex-wrap: wrap;
   padding: 1rem 1.25rem;
-  background: #7a1f1f;
-  color: #fff;
-  border-bottom: 3px solid #4d1212;
+  background: var(--status-danger-solid);
+  color: var(--text-inverse);
+  border-bottom: 3px solid var(--status-danger-solid-edge);
   font-size: 0.95rem;
   line-height: 1.5;
 }
@@ -54,11 +54,11 @@
 }
 
 .retry:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in oklab, var(--text-inverse) 12%, transparent);
 }
 
 .retry:focus-visible {
-  outline: 3px solid #fff;
+  outline: 3px solid var(--text-inverse);
   outline-offset: 2px;
 }
 
@@ -75,12 +75,12 @@
   color: var(--foreground);
 }
 
-.fallbackTitle {
+.fallback__title {
   margin: 0 0 0.75rem;
   font-size: 1.4rem;
 }
 
-.fallbackBody {
+.fallback__body {
   margin: 0 0 0.75rem;
   line-height: 1.6;
 }

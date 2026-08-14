@@ -134,3 +134,43 @@ updates:
         applies-to: security-updates
         patterns:
           - '*'
+
+  # Docker lives on this branch rather than on dev, because Dependabot rejects
+  # the whole file when a directory it names has no manifest in it. Pointing at
+  # these paths before the Dockerfiles existed took the npm and actions pools
+  # down with it: an invalid dependabot.yml is not partially applied, it is
+  # ignored entirely, and the only symptom is updates quietly stopping.
+  #
+  # So this block belongs with the Dockerfiles it describes, and the two must be
+  # promoted together. `directories` takes the list in one entry, which keeps the
+  # two images in a single pull request rather than opening one each.
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:30'
+      timezone: 'UTC'
+    target-branch: dev
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: 'build(repo)'
+    labels:
+      - dependencies
+      - docker
+    groups:
+      # Base images move together or the runtime and builder stages drift apart.
+      all-docker:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
+          - minor
+          - patch
+      all-docker-security:
+        applies-to: security-updates
+        patterns:
+          - '*'

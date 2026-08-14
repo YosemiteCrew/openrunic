@@ -109,7 +109,7 @@ RUN chmod 0755 /usr/local/bin/openrunic-migrate \
     && chown openrunic:openrunic /home/openrunic
 
 ENV HOME=/home/openrunic
-USER openrunic
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/openrunic-migrate"]
 
 # ---------------------------------------------------------------------------
@@ -157,12 +157,13 @@ RUN pnpm --filter=api --prod --legacy deploy /out
 # not an assertion - the compose smoke drill boots this image against a real
 # Postgres and reads seeded rows through this client, so a future Prisma release
 # that starts needing one of them fails the drill instead of failing a clinic.
-RUN cd /out/node_modules/.pnpm \
-    && rm -rf prisma@* @prisma+studio-core@* @prisma+dev@* @prisma+engines@* \
-              @prisma+get-platform@* @electric-sql+pglite@* effect@* elkjs@* \
-              typescript@* react-dom@* react@* \
-    && cd /out \
-    && find node_modules -name '*.d.ts' -delete \
+WORKDIR /out/node_modules/.pnpm
+RUN rm -rf prisma@* @prisma+studio-core@* @prisma+dev@* @prisma+engines@* \
+           @prisma+get-platform@* @electric-sql+pglite@* effect@* elkjs@* \
+           typescript@* react-dom@* react@*
+
+WORKDIR /out
+RUN find node_modules -name '*.d.ts' -delete \
     && find node_modules -name '*.d.mts' -delete \
     && find node_modules -name '*.map' -delete \
     && find . -name '*.tsbuildinfo' -delete \
@@ -186,7 +187,7 @@ RUN addgroup -g 10001 -S openrunic \
 WORKDIR /app
 COPY --from=prune --chown=openrunic:openrunic /out /app
 
-USER openrunic
+USER 10001:10001
 EXPOSE 4000
 
 # Readiness, not liveness. `/healthz` only proves the process is running, and a
@@ -194,6 +195,6 @@ EXPOSE 4000
 # Checking /readyz means a database outage shows up as an unhealthy container
 # instead of a green one. No curl or wget dependency: node is already here.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
-    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 CMD ["node", "dist/index.js"]

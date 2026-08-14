@@ -74,12 +74,12 @@ export class DowntimeBoundary extends Component<DowntimeBoundaryProps, DowntimeB
 
     return (
       <section role="alert" data-testid="downtime-fallback" className={styles.fallback}>
-        <h1 className={styles.fallbackTitle}>{area} could not be displayed</h1>
-        <p className={styles.fallbackBody}>
+        <h1 className={styles.fallback__title}>{area} could not be displayed</h1>
+        <p className={styles.fallback__body}>
           Something went wrong while loading this page. No patient information has been changed or
           lost by this - anything you saved before now is safe.
         </p>
-        <p className={styles.fallbackBody}>
+        <p className={styles.fallback__body}>
           Try reloading the page. If it happens again, use a different screen for now and tell
           whoever looks after your server, quoting the reference below.
         </p>

@@ -189,6 +189,14 @@ jobs:
             -H "Authorization: Bearer $DEMO_PRINCIPAL_TOKEN" \
             'http://localhost:4000/bff/v0/patients?pageSize=1')
           echo "$patients" | head -c 400; echo
+          # The only expression below is ${rows.length}, a JavaScript template
+          # literal that node evaluates. Single quotes are what keep the shell's
+          # hands off it: with double quotes the shell would substitute an empty
+          # string first, and the drill would cheerfully report "reachable:
+          # patient(s)" with the count missing. Revisit if this block ever needs
+          # a real shell variable, and pass it in the environment rather than by
+          # reaching for double quotes.
+          # shellcheck disable=SC2016
           echo "$patients" | node -e '
             let raw = "";
             process.stdin.on("data", (chunk) => { raw += chunk; });

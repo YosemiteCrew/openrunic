@@ -24,10 +24,16 @@ interface StatementParam {
   type: string;
 }
 
+interface StatementOperation {
+  name: string;
+  definition: string;
+}
+
 interface StatementResource {
   type: string;
   interaction: { code: string }[];
   searchParam: StatementParam[];
+  operation?: StatementOperation[];
 }
 
 /** A token whose roles hold every read permission the mounted resources need. */
@@ -191,5 +197,70 @@ describe('a resource this server does not serve', () => {
     expect(res.headers.get('content-type')).toBe('application/fhir+json');
     const outcome = (await res.json()) as OperationOutcome;
     expect(outcome.issue?.[0]?.diagnostics).toContain('does not serve');
+  });
+});
+
+/**
+ * Operations get the same treatment as parameters: a declared operation must be
+ * callable, and a mounted one must be declared. A client planning an
+ * integration reads `/metadata` and nothing else, so an operation that is
+ * advertised and refuses is a day lost to debugging the wrong system - and one
+ * that works but is undeclared is a capability nobody will ever use.
+ */
+describe('the declared operations', () => {
+  it('advertises the bulk export entry points at the scope each belongs to', async () => {
+    const statement = await capabilityStatement();
+
+    const system = (statement.rest?.[0] as { operation?: StatementOperation[] } | undefined)
+      ?.operation;
+    const patient = resourcesOf(statement).find((resource) => resource.type === 'Patient');
+
+    expect(system?.map((operation) => operation.definition)).toEqual([
+      'http://hl7.org/fhir/uv/bulkdata/OperationDefinition/export',
+    ]);
+    expect(patient?.operation?.map((operation) => operation.definition)).toEqual([
+      'http://hl7.org/fhir/uv/bulkdata/OperationDefinition/patient-export',
+    ]);
+  });
+
+  /**
+   * Derived from the published statement rather than from the constant the
+   * router mounts. Reading the constant would test the router against itself:
+   * this asks the question a client asks, which is whether the thing `/metadata`
+   * described can actually be called.
+   */
+  it('serves every entry point it declares', async () => {
+    const statement = await capabilityStatement();
+    const { app } = createTestApp();
+
+    const declared = [
+      ...(
+        (statement.rest?.[0] as { operation?: StatementOperation[] } | undefined)?.operation ?? []
+      ).map((operation) => `/fhir/$${operation.name}`),
+      ...resourcesOf(statement).flatMap((resource) =>
+        (resource.operation ?? []).map((operation) => `/fhir/${resource.type}/$${operation.name}`)
+      ),
+    ];
+
+    expect(declared).toHaveLength(2);
+    for (const path of declared) {
+      const res = await app.request(path, {
+        headers: { ...bearer(READER), prefer: 'respond-async' },
+      });
+
+      expect(res.status, path).toBe(202);
+      expect(res.headers.get('content-location'), path).toContain('/$export-status/');
+    }
+  });
+
+  /** A resource with no operations declares none, rather than an empty array. */
+  it('does not attach an empty operation list to resources that have none', async () => {
+    const statement = await capabilityStatement();
+
+    const withoutOperations = resourcesOf(statement).filter(
+      (resource) => resource.type !== 'Patient'
+    );
+
+    expect(withoutOperations.every((resource) => resource.operation === undefined)).toBe(true);
   });
 });

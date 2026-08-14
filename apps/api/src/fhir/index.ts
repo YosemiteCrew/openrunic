@@ -1,5 +1,7 @@
-import { Hono } from 'hono';
+import { uuidv7 } from '@openrunic/database';
+import { Hono, type Context } from 'hono';
 
+import type { Principal } from '../auth/principal.js';
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { fhirResponse } from '../http/fhir.js';
@@ -8,11 +10,25 @@ import { requirePermission } from '../middleware/policy.js';
 import { idParamSchema, repositories, required } from '../routes/helpers.js';
 
 import { buildSearchsetBundle } from './bundle.js';
+import {
+  BULK_EXPORT_OPERATIONS,
+  type BulkExportEntry,
+  createExportStore,
+  exportableTypes,
+  jobFor,
+  manifestFor,
+  parseSince,
+  parseTypeFilter,
+  permittedModules,
+  requireOrganisationWideToken,
+  runExport,
+  truncationOutcomes,
+} from './bulk-export.js';
 import { buildCapabilityStatement } from './metadata.js';
 import { parsePaging, rejectUnsupportedParams } from './params.js';
 import { fhirPatientToCreateInput, patientRowToFhir } from './patient.js';
 import { acceptedSearchParams, type ServedResource } from './registry.js';
-import type { FhirResourceModule } from './resource-module.js';
+import { stampLastUpdated, type FhirResourceModule } from './resource-module.js';
 import { SERVED_MODULES } from './resources.js';
 import { requireScope } from './scope-guard.js';
 
@@ -63,11 +79,176 @@ export function servedResources(
   }));
 }
 
+/**
+ * Query parameters the kick-off implements. Anything else is refused rather than
+ * ignored, so `_typeFilter` and `_elements` - both real Bulk Data parameters
+ * this server does not implement - fail loudly instead of producing an export
+ * that is wider than the client asked for.
+ */
+const EXPORT_PARAMS: ReadonlySet<string> = new Set(['_type', '_since']);
+
 export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
   const now = options.now ?? ((): Date => new Date());
   const modules = options.modules ?? SERVED_MODULES;
   const served = servedResources(modules);
   const router = new Hono<AppEnv>();
+
+  /**
+   * BULK DATA EXPORT.
+   *
+   * Kick-off answers 202 with a `Content-Location` the client polls, which is
+   * what the specification requires and what every conformant client expects.
+   * The work happens before the poll is answered rather than in a queue, which
+   * is why a job carries no status and why the bounds it runs under are memory
+   * rather than time - all of that is in bulk-export.ts, along with who may run
+   * an export and why a finished one is bound to the principal that ran it.
+   *
+   * Every route below shares one guard chain, applied in the order the failures
+   * should be reported: the SMART scope, then the role permission, then the
+   * refusal of a patient-scoped token. `facility.all` is the permission because
+   * every other route honours a principal's facility grants by asking about one
+   * facility at a time, and a whole-organisation read never gets that
+   * opportunity.
+   */
+  const exports = createExportStore();
+  const servedTypes = exportableTypes(modules);
+  const bulkGuards = [
+    requireScope('Patient', 'read'),
+    requirePermission('facility.all'),
+    requireOrganisationWideToken(),
+  ] as const;
+
+  /** The principal, which every guard above has already proven is present. */
+  const principalOf = (c: Context<AppEnv>): Principal => {
+    const principal = c.get('principal');
+    if (principal === undefined) {
+      throw new Error('bulk export route reached outside the middleware chain');
+    }
+    return principal;
+  };
+
+  const kickOff =
+    (entry: BulkExportEntry) =>
+    async (c: Context<AppEnv>): Promise<Response> => {
+      // `Prefer: respond-async` is required by the specification. Refusing without
+      // it is what stops a client assuming a synchronous body is coming.
+      if (!(c.req.header('prefer') ?? '').includes('respond-async')) {
+        throw ApiError.malformed('Bulk export requires the header `Prefer: respond-async`.', {
+          fhirIssueCode: 'required',
+          issues: [{ path: 'Prefer', message: 'expected respond-async' }],
+        });
+      }
+
+      const principal = principalOf(c);
+      // Unknown parameters are refused for the reason params.ts gives about
+      // search: `_typeFilter` or a misspelled `_since` that is quietly ignored
+      // produces a complete export the client believes is narrowed.
+      rejectUnsupportedParams('$export', c.req.query(), EXPORT_PARAMS);
+
+      const permitted = permittedModules(modules, principal, c.get('policy'), entry);
+      const types = parseTypeFilter(
+        c.req.queries('_type') ?? [],
+        servedTypes,
+        permitted.map((module) => module.type)
+      );
+      const since = parseSince(c.req.query('_since'));
+
+      // Stamped before the first read, not after the last. A client sends this
+      // value back as the next `_since`, so a timestamp taken at the end would
+      // skip every row written while the export was running - permanently, and
+      // invisibly, in whatever system consumes it.
+      const transactionTime = now().toISOString();
+      const id = uuidv7();
+
+      // Any failure below propagates to the kick-off response as an
+      // OperationOutcome, which the specification allows and which tells the
+      // client now rather than at a poll it has not made yet.
+      const { files, truncations } = await runExport(c, permitted, types, since);
+      exports.create({
+        id,
+        tenantId: principal.tenantId,
+        subject: principal.subject,
+        requestUrl: c.req.url,
+        transactionTime,
+        files,
+        errors: truncationOutcomes(truncations),
+      });
+
+      // The export itself is audited, not only the rows it read. The batched
+      // read event the repositories produce lists at most 500 targets and counts
+      // the rest, which on an export is nearly all of them; this one says what
+      // actually left, by type and count, which is the question asked after a
+      // breach.
+      await c.get('audit')?.write({
+        action: 'export.created',
+        targetType: 'Export',
+        targetId: id,
+        metadata: {
+          entry: entry.path,
+          transactionTime,
+          exported: Object.fromEntries(files.map((file) => [file.type, file.count])),
+          ...(truncations.length === 0 ? {} : { truncated: truncations }),
+        },
+      });
+
+      const base = new URL(c.req.url).origin;
+      c.header('Content-Location', `${base}${FHIR_BASE_PATH}/$export-status/${id}`);
+      return c.body(null, 202);
+    };
+
+  // Mounted from the same list the CapabilityStatement declares, so an
+  // advertised entry point is always a served one. The reverse direction is not
+  // structural - nothing stops a future route being added beside these - so
+  // `fhir.conformance.test.ts` walks the published statement and calls what it
+  // finds rather than trusting this loop.
+  for (const operation of BULK_EXPORT_OPERATIONS) {
+    router.get(operation.path, ...bulkGuards, kickOff(operation));
+  }
+
+  /**
+   * The poll. The manifest, or 404 for a job this server never had, has already
+   * forgotten, or did not run for this principal - a client that cannot tell
+   * "gone" from "still working" would wait forever.
+   */
+  router.get('/$export-status/:id', ...bulkGuards, (c) => {
+    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    return c.json(manifestFor(job, new URL(c.req.url).origin));
+  });
+
+  /**
+   * One file. `application/fhir+ndjson` because that is what the manifest
+   * promised, and a client streaming it line by line will not tolerate a JSON
+   * array pretending.
+   */
+  router.get('/$export-file/:id/:type', ...bulkGuards, async (c) => {
+    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const type = c.req.param('type');
+    const file = [...job.files, ...job.errors].find((candidate) => candidate.type === type);
+    if (file === undefined) {
+      throw ApiError.notFound('No such export file.');
+    }
+
+    // This route touches no repository, so it emits none of the read events
+    // that make auditing structural everywhere else - and it is the request
+    // where the data actually leaves. Recorded explicitly for that reason.
+    await c.get('audit')?.write({
+      action: 'export.downloaded',
+      targetType: 'Export',
+      targetId: job.id,
+      metadata: { type, count: file.count },
+    });
+
+    return c.body(file.ndjson, 200, { 'content-type': 'application/fhir+ndjson' });
+  });
+
+  /** Cancelling frees the memory the job is holding. */
+  router.delete('/$export-status/:id', ...bulkGuards, (c) => {
+    // Resolved through the same binding as a read: a caller may not delete a job
+    // it could not have polled.
+    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    exports.delete(job.id);
+    return c.body(null, 202);
+  });
 
   router.get('/metadata', (c) =>
     fhirResponse(c, buildCapabilityStatement(now(), options.softwareVersion, modules))
@@ -169,7 +350,11 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
       }
       const input = fhirPatientToCreateInput(payload);
       const row = await repositories(c).patients.create(input);
-      return fhirResponse(c, patientRowToFhir(row), 201, {
+      // Stamped here as well as in `defineFhirResource`, because a create does
+      // not go through a module: without this, the one resource a client is
+      // handed at the moment it cares most about caching would be the only one
+      // with no `meta.lastUpdated` on it.
+      return fhirResponse(c, stampLastUpdated(row, patientRowToFhir(row)), 201, {
         Location: `${fhirBaseUrl(c.req.url)}/Patient/${row.id}`,
       });
     }

@@ -23,6 +23,7 @@ import { fromFhirGender, patientRowToFhir } from './patient.js';
 import {
   allergyResource,
   appointmentResource,
+  claimResource,
   conditionResource,
   coverageResource,
   diagnosticReportResource,
@@ -39,6 +40,12 @@ import {
   specimenResource,
   taskResource,
 } from './projections.js';
+import { CLAIM_STATUSES } from '@openrunic/database';
+
+import type { ScopedRow } from '../repositories/rows.js';
+import type { ClaimStatus } from '../repositories/specs/financial.js';
+import type { Repositories } from '../repositories/types.js';
+
 import { defineFhirResource, type FhirResourceModule } from './resource-module.js';
 
 /**
@@ -473,6 +480,107 @@ const provenanceModule = defineFhirResource({
   toResource: provenanceResource,
 });
 
+/**
+ * A FHIR `status` token as the collection's enum, or a refusal.
+ *
+ * The search parameter is a free string and the column is an enum, so an
+ * unmapped value has to fail loudly. Passing it through would filter on
+ * something the database cannot hold and return an empty bundle, which reads to
+ * a client as "no claims" rather than "that is not a status".
+ */
+function claimStatusToken(value: string): ClaimStatus {
+  const upper = value.toUpperCase();
+  if (!(CLAIM_STATUSES as readonly string[]).includes(upper)) {
+    throw ApiError.malformed(`status must be one of ${CLAIM_STATUSES.join(', ')}.`, {
+      issues: [{ path: 'status', message: `unknown claim status ${value}` }],
+    });
+  }
+  return upper as ClaimStatus;
+}
+
+/** What a page of Claims needs loading before any of it can be mapped. */
+interface ClaimPageData {
+  readonly linesByClaim: ReadonlyMap<string, ScopedRow<'ClaimLine'>[]>;
+  readonly providerByEncounter: ReadonlyMap<string, string>;
+}
+
+/**
+ * Two queries for the page, not two per claim.
+ *
+ * A Claim resource needs its lines, and its billing provider, which lives on
+ * the encounter rather than on the claim. Fetching either inside the mapper
+ * would be one round trip per row: unnoticeable against the three fixtures a
+ * test seeds, and quadratic on a real page.
+ */
+async function prepareClaims(
+  rows: readonly ScopedRow<'Claim'>[],
+  repositories: Repositories
+): Promise<ClaimPageData> {
+  const linesByClaim = new Map<string, ScopedRow<'ClaimLine'>[]>();
+  const providerByEncounter = new Map<string, string>();
+  if (rows.length === 0) return { linesByClaim, providerByEncounter };
+
+  const claimIds = rows.map((row) => row.id);
+  const lines = await repositories.claimLines.list({
+    page: 1,
+    // Every line of every claim on this page. Fifty a claim is far past what a
+    // clearinghouse accepts on a professional claim, so this is a ceiling
+    // rather than a limit anyone reaches.
+    pageSize: 50 * rows.length,
+    sort: 'sequence',
+    order: 'asc',
+    claimIds,
+  });
+  for (const line of lines.rows) {
+    const existing = linesByClaim.get(line.claimId);
+    if (existing === undefined) linesByClaim.set(line.claimId, [line]);
+    else existing.push(line);
+  }
+
+  // findById per encounter rather than a list: the encounter collection narrows
+  // by patient, not by a set of ids, and a claim page spans patients. These are
+  // primary-key reads and they run together.
+  const encounterIds = [...new Set(rows.map((row) => row.encounterId))];
+  const encounters = await Promise.all(
+    encounterIds.map(async (id) => repositories.encounters.findById(id))
+  );
+  for (const encounter of encounters) {
+    if (encounter !== null) providerByEncounter.set(encounter.id, encounter.providerId);
+  }
+
+  return { linesByClaim, providerByEncounter };
+}
+
+const claimModule = defineFhirResource({
+  type: 'Claim',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'status', 'created'],
+  permission: 'claim.read',
+  collection: (repositories) => repositories.claims,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.status === undefined ? {} : { status: claimStatusToken(tokenValue(query.status)) }),
+    ...(query.created === undefined ? {} : dateWindow(query.created, 'created')),
+    // A claim has two instants that matter and the collection makes the caller
+    // say which. `created` is the one FHIR names, so it is the one this maps.
+    window: 'createdAt' as const,
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  prepare: prepareClaims,
+  toResource: (row: ScopedRow<'Claim'>, context) =>
+    claimResource(
+      row,
+      context.prepared.linesByClaim.get(row.id) ?? [],
+      // Falls back to the tenant when the encounter is unreadable in this
+      // scope. A claim naming no biller at all would fail validation at the
+      // clearinghouse, and the organisation is the truthful answer: the
+      // practice billed it.
+      context.prepared.providerByEncounter.get(row.encounterId) ?? row.tenantId
+    ),
+});
+
 export const SERVED_MODULES: readonly FhirResourceModule[] = [
   patientModule,
   practitionerModule,
@@ -492,6 +600,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   documentReferenceModule,
   taskModule,
   provenanceModule,
+  claimModule,
 ];
 
 export { booleanToken } from './params.js';

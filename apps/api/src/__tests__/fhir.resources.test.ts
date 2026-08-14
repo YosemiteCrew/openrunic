@@ -33,6 +33,7 @@ import {
 const PATIENT = testId(1);
 const PROVIDER = testId(900);
 const ENCOUNTER = testId(20);
+const CLAIM = testId(940);
 const ORDER = testId(30);
 const REPORT = testId(40);
 
@@ -378,6 +379,63 @@ function seedChart(dataset: MemoryDataset): void {
  * `prevHash`, so this fixture cannot drift from the shape the running system
  * produces.
  */
+/**
+ * A claim with two lines, so the Claim projection has both a claim and the
+ * child list it is supposed to batch.
+ *
+ * Two lines rather than one on purpose: a single line cannot tell the
+ * difference between "grouped the lines correctly" and "returned whatever came
+ * back first", and the sequence ordering has nothing to prove with one row.
+ */
+function seedClaim(dataset: MemoryDataset): void {
+  seed(dataset, 'Claim', {
+    ...storageColumns(CLAIM),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    coverageId: testId(10),
+    payerId: testId(11),
+    status: 'SUBMITTED',
+    frequency: 'ORIGINAL',
+    diagnosisCodes: ['E11.9'],
+    totalChargedCents: 24_500,
+    totalPaidCents: 0,
+    totalAdjustedCents: 0,
+    patientResponsibilityCents: 0,
+    secondaryOfId: null,
+    priorClaimId: null,
+    controlNumbers: {},
+    snapshot: {},
+    statusReason: null,
+    submittedAt: FIXED_NOW,
+    acknowledgedAt: null,
+    adjudicatedAt: null,
+  });
+
+  for (const [index, code] of [
+    ['99213', 15_000],
+    ['85025', 9_500],
+  ].entries()) {
+    seed(dataset, 'ClaimLine', {
+      ...storageColumns(testId(950 + index)),
+      claimId: CLAIM,
+      chargeItemId: testId(960 + index),
+      sequence: index + 1,
+      code: String(code[0]),
+      codeSystem: 'http://www.ama-assn.org/go/cpt',
+      modifiers: [],
+      units: 1,
+      chargedCents: Number(code[1]),
+      allowedCents: null,
+      paidCents: 0,
+      adjustedCents: 0,
+      diagnosisPointers: [1],
+      serviceDateFrom: FIXED_NOW,
+      serviceDateTo: null,
+      statusReason: null,
+    });
+  }
+}
+
 function seedAuditEvent(store: AuditChainStore): void {
   store.append(
     DEMO_TENANT_A,
@@ -400,6 +458,7 @@ function seedAuditEvent(store: AuditChainStore): void {
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seedChart(created.dataset);
+  seedClaim(created.dataset);
   seedAuditEvent(created.auditStore);
   return created;
 }
@@ -630,5 +689,76 @@ describe('Provenance', () => {
     const res = await app.request('/fhir/Provenance', { headers: bearer(TOKENS.portalA) });
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe('Claim', () => {
+  it('carries every line of the claim, in sequence order', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request(`/fhir/Claim/${CLAIM}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as {
+      item?: { sequence?: number; productOrService?: { coding?: { code?: string }[] } }[];
+    };
+
+    expect(bundle.item?.map((line) => line.sequence)).toEqual([1, 2]);
+    expect(bundle.item?.map((line) => line.productOrService?.coding?.[0]?.code)).toEqual([
+      '99213',
+      '85025',
+    ]);
+  });
+
+  /**
+   * Adjudicated money belongs to ClaimResponse and to the remittance ledger, not
+   * to the claim as submitted; `snapshot` and `controlNumbers` are the as-built
+   * X12 payload. CLAIM_DROPPED_FIELDS in packages/fhir lists them, and this is
+   * the assertion that the list is obeyed rather than merely written down.
+   */
+  it('does not leak adjudicated money or the X12 payload', async () => {
+    const { app } = harness();
+
+    const body = await (
+      await app.request(`/fhir/Claim/${CLAIM}`, { headers: bearer(TOKENS.adminA) })
+    ).text();
+
+    const resource = JSON.parse(body) as Record<string, unknown>;
+    for (const field of [
+      'totalPaidCents',
+      'totalAdjustedCents',
+      'patientResponsibilityCents',
+      'snapshot',
+      'controlNumbers',
+      'tenantId',
+    ]) {
+      expect(resource, `${field} reached the Claim boundary`).not.toHaveProperty(field);
+    }
+  });
+
+  /**
+   * The search parameter is a free string and the column is an enum. Passing an
+   * unmapped value through would filter on something the database cannot hold
+   * and return an empty bundle, which a client reads as "no claims" rather than
+   * "that is not a status".
+   */
+  it('refuses a status the column cannot hold, rather than returning nothing', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Claim?status=not-a-status', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a known status, in either case', async () => {
+    const { app } = harness();
+
+    for (const value of ['SUBMITTED', 'submitted']) {
+      const bundle = (await (
+        await app.request(`/fhir/Claim?status=${value}`, { headers: bearer(TOKENS.adminA) })
+      ).json()) as Bundle;
+      expect(bundle.total, `status=${value}`).toBe(1);
+    }
   });
 });

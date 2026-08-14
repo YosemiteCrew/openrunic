@@ -363,9 +363,13 @@ describe('the proper-noun test', () => {
     // fixture is a gate that can be switched off by the very change it exists
     // to catch, so linearity is pinned here rather than assumed.
     const pathological = `A${'a-'.repeat(40)}!`;
+    // The separated-group form too: an optional capital in front of a class
+    // that also matches capitals parses every part two ways.
+    const alsoPathological = `A${' Bc'.repeat(26)}!`;
 
     const started = performance.now();
     assert.deepEqual(properNouns(`'${pathological}'`), []);
+    assert.deepEqual(properNouns(`'${alsoPathological}'`), []);
     assert.ok(performance.now() - started < 1000);
   });
 

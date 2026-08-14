@@ -455,15 +455,24 @@ const QUERY_CONTEXT =
  * lowercase letter. Rejects the ordering literals ('asc', 'desc') and the
  * shouted partial-match terms ('SAM') that appear in query fixtures.
  *
- * The hyphen belongs to the separator class and NOT to the first character
- * class, which is what keeps this linear. With it in both, a name like
- * Anne-Marie-Claire could be parsed with the hyphens taken either by the
- * leading run or by the separator, and the number of parses doubles with each
- * one: exponential backtracking on a value that arrives from a file
+ * Two ambiguities were removed to keep this linear, and the second is the one
+ * that is easy to miss.
+ *
+ * The hyphen belongs to the separator class and NOT to the leading character
+ * class. With it in both, the hyphens in Anne-Marie-Claire could be taken by
+ * either, and the number of parses doubles with each one.
+ *
+ * The separated group is `[A-Za-z'’]+` with no optional `[A-Z]?` in front. An
+ * optional uppercase followed by a class that also matches uppercase is the
+ * same ambiguity wearing a different hat: every part of Van Der Berg parses two
+ * ways, and 22 parts took 756ms before this was removed. It accepts exactly the
+ * same names either way, because the following class already admits a capital.
+ *
+ * Both are exponential backtracking on a value that arrives from a file
  * (CodeQL js/redos). A guard that can be hung by a crafted fixture is a gate
  * that can be switched off by the change it exists to catch.
  */
-const PROPER_NOUN = /^[A-Z][A-Za-z'’]*(?:[ -][A-Z]?[A-Za-z'’]+)*$/;
+const PROPER_NOUN = /^[A-Z][A-Za-z'’]*(?:[ -][A-Za-z'’]+)*$/;
 
 /** Lines of context searched around a date-of-birth key for an identity. */
 const DOB_WINDOW = 6;

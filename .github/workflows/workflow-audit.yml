@@ -85,6 +85,13 @@ jobs:
         continue-on-error: true
         run: |
           set -uo pipefail
+
+          # The backticks below are Markdown, written into a step summary, and
+          # the single quotes keep them literal. shellcheck reads a backtick
+          # inside quotes as a command substitution that will not expand. Same
+          # false positive and same scoped answer as pr-governance.yml and
+          # react-doctor.yml.
+          # shellcheck disable=SC2016
           {
             echo '## zizmor: unfiltered audit (advisory)'
             echo

@@ -22,19 +22,27 @@ rules:
       # but the correct fix is still to pass them through `env:` so that stays
       # true by construction rather than by inspection.
       #
-      # Not fixed here because a concurrent pull request (chore/lint-gates) owns
+      # Not fixed here because a concurrent pull request (chore/lint-gates) owned
       # ci.yaml and the reusable _*.yaml set; editing them from this branch
-      # would guarantee a merge conflict.
-      # Revisit condition: once chore/lint-gates has landed, move these three
-      # interpolations into `env:` and DELETE this ignore block.
+      # would have guaranteed a merge conflict.
+      #
+      # THAT CONDITION IS NOW MET: chore/lint-gates landed as #35. Moving these
+      # interpolations into `env:` is unblocked and is the next change to make
+      # here. It is deliberately not folded into this pull request, which is
+      # already a large security-gate addition and would become harder to review
+      # for a fix that touches five unrelated workflow files.
+      # Revisit condition: DELETE this whole ignore block once that follow-up
+      # lands. If you are reading this and #35 is merged, the follow-up is
+      # overdue rather than optional.
       - _core.yaml
       - _test.yaml
-      # ci.yaml interpolates `contains(needs.*.result, ...)` into the aggregate
-      # gate's `run:` block. The expression evaluates to a bare `true`/`false`
-      # produced by GitHub, not by any user, so there is nothing to inject -
-      # but the same `env:` fix applies.
+      # ci.yaml and storybook.yml interpolate `contains(needs.*.result, ...)`
+      # into their aggregate gates' `run:` blocks. The expression evaluates to a
+      # bare `true`/`false` produced by GitHub, not by any user, so there is
+      # nothing to inject - but the same `env:` fix applies.
       # Revisit condition: same as above - fix on chore/lint-gates, then delete.
       - ci.yaml
+      - storybook.yml
       # `matrix.app_key` is interpolated into the Sonar stage's token-selection
       # `run:` block. Its values come from the matrix literal in ci.yaml, never
       # from pull-request input; the `env:` fix applies here too.
@@ -61,5 +69,6 @@ rules:
       # than ci.yaml, it needs its own concurrency group and this entry must go.
       - _core.yaml
       - _migration.yaml
+      - _repo.yaml
       - _sonar.yaml
       - _test.yaml

@@ -17,7 +17,7 @@ export interface MoneyProps {
   showCode?: boolean;
 }
 
-export function Money({ value, showCode = false }: MoneyProps) {
+export function Money({ value, showCode = false }: Readonly<MoneyProps>) {
   const isCredit = value.amountMinor < 0;
 
   return (

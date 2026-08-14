@@ -57,7 +57,7 @@ export function AssistantProvider({
   children,
   probe = defaultProbe,
   runTurn = defaultRunTurn,
-}: AssistantProviderProps) {
+}: Readonly<AssistantProviderProps>) {
   const [state, setState] = useState<{ availability: AssistantAvailability; settled: boolean }>({
     availability: ABSENT,
     settled: false,

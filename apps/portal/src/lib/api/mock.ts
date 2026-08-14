@@ -13,7 +13,6 @@
 
 import { buildFixtures, buildHomeSummary, type Fixtures } from './fixtures';
 import type {
-  AppointmentRequest,
   Appointments,
   HealthRecord,
   HomeSummary,
@@ -42,9 +41,6 @@ function nextId(prefix: string, counter: number): string {
 }
 
 export function createMockApi(fixtures: Fixtures = buildFixtures()): PortalApi {
-  /** Requests made this session, so a test can assert the practice was actually told. */
-  const requests: AppointmentRequest[] = [];
-
   return {
     getPatient(): Promise<Patient> {
       return Promise.resolve(fixtures.patient);
@@ -86,9 +82,10 @@ export function createMockApi(fixtures: Fixtures = buildFixtures()): PortalApi {
       return Promise.resolve(fixtures.appointments);
     },
 
-    requestAppointment(request: AppointmentRequest): Promise<void> {
-      // A request is not a booking: nothing joins `upcoming` until the practice confirms.
-      requests.push({ ...request });
+    requestAppointment(): Promise<void> {
+      // A request is not a booking: nothing joins `upcoming` until the practice confirms,
+      // and the practice is not in this process, so the mock has nowhere to put it. It
+      // accepts and forgets, which is exactly what the screens need to render against.
       return Promise.resolve();
     },
 

@@ -28,7 +28,7 @@ interface ConversationProps {
   api: PortalApi;
 }
 
-function Conversation({ thread, api }: ConversationProps) {
+function Conversation({ thread, api }: Readonly<ConversationProps>) {
   const [draft, setDraft] = useState('');
   const send = useAction((body: string) => api.sendMessage(thread.id, body));
 
@@ -77,9 +77,9 @@ function Conversation({ thread, api }: ConversationProps) {
         </div>
 
         {send.status === 'done' ? (
-          <p className="portal-record__meta" role="status">
+          <output className="portal-record__meta">
             Message sent. It is at the bottom of the conversation above.
-          </p>
+          </output>
         ) : null}
 
         {send.status === 'failed' ? (
@@ -93,7 +93,7 @@ function Conversation({ thread, api }: ConversationProps) {
   );
 }
 
-export function MessagesScreen({ api = getPortalApi() }: MessagesScreenProps) {
+export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreenProps>) {
   const load = useCallback(() => api.getThreads(), [api]);
   const { state, reload } = useAsync(load);
   const [selectedId, setSelectedId] = useState<string | null>(null);

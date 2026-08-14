@@ -15,43 +15,17 @@ import { useCallback, useState } from 'react';
 import { Badge, Button, Card, EmptyState, Input, Modal } from '@openrunic/ui';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
 import { PageHeader } from '@/components/PageHeader';
+import { AppointmentFacts } from '@/components/appointments/AppointmentFacts';
 import { getPortalApi } from '@/lib/api';
 import type { Appointment, PortalApi } from '@/lib/api/types';
-import { formatDateTime, formatDuration } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
 export interface AppointmentsScreenProps {
   api?: PortalApi;
 }
 
-function AppointmentFacts({ appointment }: { appointment: Appointment }) {
-  return (
-    <dl className="portal-data-list">
-      <div className="portal-data-list__row">
-        <dt className="portal-data-list__term">When</dt>
-        <dd className="portal-data-list__value">
-          {formatDateTime(appointment.startsAt)}, {formatDuration(appointment.durationMinutes)}
-        </dd>
-      </div>
-      <div className="portal-data-list__row">
-        <dt className="portal-data-list__term">Who with</dt>
-        <dd className="portal-data-list__value">
-          {appointment.clinician}, {appointment.department}
-        </dd>
-      </div>
-      <div className="portal-data-list__row">
-        <dt className="portal-data-list__term">Where</dt>
-        <dd className="portal-data-list__value">
-          {appointment.mode === 'video'
-            ? 'A video call'
-            : (appointment.location ?? 'The practice will confirm the room.')}
-        </dd>
-      </div>
-    </dl>
-  );
-}
-
-export function AppointmentsScreen({ api = getPortalApi() }: AppointmentsScreenProps) {
+export function AppointmentsScreen({ api = getPortalApi() }: Readonly<AppointmentsScreenProps>) {
   const load = useCallback(() => api.getAppointments(), [api]);
   const { state, reload } = useAsync(load);
 
@@ -104,10 +78,10 @@ export function AppointmentsScreen({ api = getPortalApi() }: AppointmentsScreenP
       </div>
 
       {request.status === 'done' ? (
-        <p className="portal-record__meta" role="status">
+        <output className="portal-record__meta">
           Your request has gone to the practice. They will confirm by message. Nothing is booked
           until they do.
-        </p>
+        </output>
       ) : null}
 
       {cancel.status === 'failed' ? (

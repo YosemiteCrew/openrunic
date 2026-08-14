@@ -14,7 +14,7 @@ export interface PageHeaderProps {
   lede: string;
 }
 
-export function PageHeader({ overline, title, lede }: PageHeaderProps) {
+export function PageHeader({ overline, title, lede }: Readonly<PageHeaderProps>) {
   return (
     <div className="portal-page-header">
       <p className="or-overline portal-page-header__overline">{overline}</p>

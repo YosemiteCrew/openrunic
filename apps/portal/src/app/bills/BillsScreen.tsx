@@ -53,7 +53,7 @@ interface StatementDetailProps {
   onClose: () => void;
 }
 
-function StatementDetail({ statement, api, onClose }: StatementDetailProps) {
+function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailProps>) {
   const [confirming, setConfirming] = useState(false);
   const pay = useAction((id: string) => api.payStatement(id));
   const receipt: Receipt | undefined = pay.value;
@@ -100,14 +100,14 @@ function StatementDetail({ statement, api, onClose }: StatementDetailProps) {
       </div>
 
       {receipt ? (
-        <div className="portal-confirmation" role="status">
+        <output className="portal-confirmation">
           <p className="portal-confirmation__title">Payment received</p>
           <p className="or-small">
             You paid <Money value={receipt.amount} /> on {formatDateTime(receipt.paidOn)} with the
             card ending {receipt.cardLast4}. Your receipt reference is {receipt.id}. Keep it if you
             need to query the payment.
           </p>
-        </div>
+        </output>
       ) : null}
 
       {pay.status === 'failed' ? (
@@ -148,7 +148,7 @@ function StatementDetail({ statement, api, onClose }: StatementDetailProps) {
   );
 }
 
-export function BillsScreen({ api = getPortalApi() }: BillsScreenProps) {
+export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>) {
   const load = useCallback(() => api.getStatements(), [api]);
   const { state, reload } = useAsync(load);
   const [openId, setOpenId] = useState<string | null>(null);

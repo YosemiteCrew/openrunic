@@ -17,7 +17,7 @@ export interface NoticeProps {
   children: ReactNode;
 }
 
-export function Notice({ title, children }: NoticeProps) {
+export function Notice({ title, children }: Readonly<NoticeProps>) {
   return (
     <aside className="portal-notice" aria-label={title}>
       <Icon className="portal-notice__icon" name="triangle-alert" size={20} />

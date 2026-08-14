@@ -43,7 +43,7 @@ function isRecordEmpty(record: HealthRecord): boolean {
  * reading an unexpected number usually wants to know what to do before deciding to write,
  * and the panel says that in plain words before offering the message box.
  */
-function ResultRow({ result }: { result: Result }) {
+function ResultRow({ result }: Readonly<{ result: Result }>) {
   const [askOpen, setAskOpen] = useState(false);
   const panelId = `result-${result.id}-ask`;
 
@@ -96,7 +96,7 @@ function ResultRow({ result }: { result: Result }) {
   );
 }
 
-export function HealthRecordScreen({ api = getPortalApi() }: HealthRecordScreenProps) {
+export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthRecordScreenProps>) {
   const load = useCallback(() => api.getHealthRecord(), [api]);
   const { state, reload } = useAsync(load);
 

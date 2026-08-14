@@ -23,6 +23,6 @@ export interface RangeBadgeProps {
   label: string;
 }
 
-export function RangeBadge({ range, label }: RangeBadgeProps) {
+export function RangeBadge({ range, label }: Readonly<RangeBadgeProps>) {
   return <Badge tone={TONE[range]}>{label}</Badge>;
 }

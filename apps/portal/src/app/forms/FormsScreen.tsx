@@ -37,7 +37,7 @@ interface QuestionFieldProps {
   onChange: (value: string) => void;
 }
 
-function QuestionField({ question, value, onChange }: QuestionFieldProps) {
+function QuestionField({ question, value, onChange }: Readonly<QuestionFieldProps>) {
   if (question.kind === 'text') {
     return (
       <>
@@ -82,7 +82,7 @@ interface QuestionnaireProps {
   onClose: () => void;
 }
 
-function Questionnaire({ task, api, onClose }: QuestionnaireProps) {
+function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
   const [answers, setAnswers] = useState<Record<string, string>>(task.answers);
   const save = useAction((next: Record<string, string>) => api.saveForm(task.id, next));
   const submit = useAction((next: Record<string, string>) => api.submitForm(task.id, next));
@@ -141,9 +141,9 @@ function Questionnaire({ task, api, onClose }: QuestionnaireProps) {
       </div>
 
       {save.status === 'done' ? (
-        <p className="portal-record__meta" role="status">
+        <output className="portal-record__meta">
           Your answers are saved. You can close this and come back to it later.
-        </p>
+        </output>
       ) : null}
 
       {save.status === 'failed' ? (
@@ -163,7 +163,7 @@ function Questionnaire({ task, api, onClose }: QuestionnaireProps) {
   );
 }
 
-export function FormsScreen({ api = getPortalApi() }: FormsScreenProps) {
+export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>) {
   const load = useCallback(() => api.getForms(), [api]);
   const { state, reload } = useAsync(load);
   const [openId, setOpenId] = useState<string | null>(null);

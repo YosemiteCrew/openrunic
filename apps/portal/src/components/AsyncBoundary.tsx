@@ -42,13 +42,9 @@ export function AsyncBoundary<T>({
   empty,
   onRetry,
   children,
-}: AsyncBoundaryProps<T>) {
+}: Readonly<AsyncBoundaryProps<T>>) {
   if (state.status === 'loading') {
-    return (
-      <p className="portal-async__loading" role="status">
-        Loading {what}.
-      </p>
-    );
+    return <output className="portal-async__loading">Loading {what}.</output>;
   }
 
   if (state.status === 'error') {

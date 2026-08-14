@@ -17,8 +17,8 @@ export function resolveApiMode(value: string | undefined): ApiMode {
 }
 
 export interface ApiEnv {
-  mode?: string | undefined;
-  baseUrl?: string | undefined;
+  mode?: string;
+  baseUrl?: string;
 }
 
 /**

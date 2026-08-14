@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 // Enforce openrunic's Sonar bar in CI, because SonarCloud will not.
 //
-// Usage:
-//   node scripts/ci/sonar-thresholds.mjs --base-dir <app dir> \
-//     [--coverage 95] [--duplication 0] [--issues 0]
+// Usage, from the directory that was scanned:
+//   node scripts/ci/sonar-thresholds.mjs [--coverage 95] [--duplication 0] [--issues 0]
+//
+// It takes no path. The scanner writes `.scannerwork/report-task.txt` under the
+// directory it scanned, so the caller sets the working directory and this reads
+// a constant relative path. That is deliberate rather than incidental: an
+// earlier version took `--base-dir`, and a path assembled from an argument and
+// then read is a file-inclusion sink whether or not anything hostile can reach
+// the argument. Bounding it was not enough - the sink is the shape, not the
+// value - so the argument is gone and there is nothing left to bound.
 //
 // The scan step already passes `sonar.qualitygate.wait=true`, so a red gate reds
 // the job. The trouble is which gate it waits for. Attaching a custom quality
@@ -35,31 +42,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { resolveWithin } from './safe-path.mjs';
 
 /** The three measures the bar is written in. Whole-branch, not new code. */
 export const METRICS = ['coverage', 'duplicated_lines_density', 'violations'];
 
-/** Where the scanner leaves the receipt for the analysis it just published. */
-export const REPORT_TASK = path.join('.scannerwork', 'report-task.txt');
-
-/**
- * The paths this will read a report from, or null if `--base-dir` escapes `root`.
- *
- * The scanner writes its working directory under projectBaseDir; the root is
- * checked too, so this still works if a caller ever scans from there. Both go
- * through resolveWithin, the same guard lcov-check.mjs puts on coverage paths.
- * The argument reaches this script from the workflow's own matrix rather than
- * from anything a contributor writes, but a check that reads whatever path it is
- * handed is one flag away from being a way to read any file on the runner, and
- * refusing is cheaper than arguing about who can set the flag.
- */
-export function reportCandidates(root, baseDir) {
-  const candidates = [path.join(baseDir, REPORT_TASK), REPORT_TASK].map((candidate) =>
-    resolveWithin(root, candidate)
-  );
-  return candidates.includes(null) ? null : candidates;
-}
+// A literal, and it stays a literal. Node accepts forward slashes on every
+// platform, so there is no reason to assemble this from path.join and every
+// reason not to: the only read in this file has to be visibly constant.
+const REPORT_TASK = '.scannerwork/report-task.txt';
 
 /**
  * Parse the scanner's report-task.txt.
@@ -250,13 +240,6 @@ function readOption(argv, name, fallback) {
 }
 
 async function main(argv) {
-  const baseIndex = argv.indexOf('--base-dir');
-  if (baseIndex === -1 || !argv[baseIndex + 1]) {
-    process.stderr.write('sonar-thresholds: usage: --base-dir <app dir> [--coverage n] ...\n');
-    return 2;
-  }
-  const baseDir = argv[baseIndex + 1];
-
   // Checked up front because the failure it prevents is unreadable. The measures
   // API serves these public projects to anyone, but `api/ce/task` does not: it
   // answers an unauthenticated caller with 404 "Project doesn't exist", which
@@ -275,27 +258,18 @@ async function main(argv) {
     issues: readOption(argv, 'issues', 0),
   };
 
-  const candidates = reportCandidates(process.cwd(), baseDir);
-  if (candidates === null) {
+  if (!existsSync(REPORT_TASK)) {
     process.stderr.write(
-      `sonar-thresholds: --base-dir '${baseDir}' resolves outside the checkout at ` +
-        `${process.cwd()}, so it is refused rather than read.\n`
-    );
-    return 1;
-  }
-  const reportPath = candidates.find((candidate) => existsSync(candidate));
-  if (!reportPath) {
-    process.stderr.write(
-      `sonar-thresholds: no report-task.txt at ${candidates.join(' or ')}. The scan did not run, ` +
-        'so there is nothing to check and this is not a pass.\n'
+      `sonar-thresholds: no ${REPORT_TASK} under ${process.cwd()}. Either the scan did not run, or ` +
+        'this was not called from the directory it scanned. Neither is a pass.\n'
     );
     return 1;
   }
 
-  const report = parseReportTask(readFileSync(reportPath, 'utf8'));
+  const report = parseReportTask(readFileSync(REPORT_TASK, 'utf8'));
   for (const key of ['serverUrl', 'projectKey', 'ceTaskId', 'dashboardUrl']) {
     if (!report[key]) {
-      process.stderr.write(`sonar-thresholds: ${reportPath} has no ${key}\n`);
+      process.stderr.write(`sonar-thresholds: ${REPORT_TASK} has no ${key}\n`);
       return 1;
     }
   }
@@ -309,7 +283,7 @@ async function main(argv) {
   // prevents is a green check measured against the wrong project.
   if (task.componentKey && task.componentKey !== report.projectKey) {
     process.stderr.write(
-      `sonar-thresholds: ${reportPath} names ${report.projectKey}, but its analysis task belongs ` +
+      `sonar-thresholds: ${REPORT_TASK} names ${report.projectKey}, but its analysis task belongs ` +
         `to ${task.componentKey}. That report is not this scan's.\n`
     );
     return 1;

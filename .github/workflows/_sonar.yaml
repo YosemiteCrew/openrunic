@@ -151,14 +151,19 @@ jobs:
       # docs/quality-gates.md states. `always()` is deliberately absent: if the
       # scan itself failed there are no measures to read, and the job is already
       # red.
+      # Run FROM the scanned directory rather than passing it in. The scanner
+      # leaves report-task.txt under the directory it scanned, so this way the
+      # script reads a constant relative path and takes no path argument at all -
+      # a path assembled from an argument and then read is a file-inclusion sink
+      # whether or not anything hostile can reach the argument, and bounding it
+      # does not change that. Aikido said so twice; the second time it was right.
       - name: Enforce the openrunic Sonar bar
+        working-directory: ${{ matrix.dir }}
         env:
-          APP_DIR: ${{ matrix.dir }}
           SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
         run: |
           set -euo pipefail
-          node scripts/ci/sonar-thresholds.mjs \
-            --base-dir "$APP_DIR" \
+          node "$GITHUB_WORKSPACE/scripts/ci/sonar-thresholds.mjs" \
             --coverage 95 \
             --duplication 0 \
             --issues 0

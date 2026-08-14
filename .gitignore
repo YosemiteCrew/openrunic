@@ -53,3 +53,8 @@ apps/portal/public/styles.css
 
 # React Doctor report, written by `pnpm run doctor:json` and by CI.
 react-doctor.json
+
+# The drill's minted session cookie. Not a secret - it seals a fixture identity
+# against a mock-mode server - but it is a credential shaped thing with a clock
+# in it, and a stale one committed here would fail as a confusing redirect.
+apps/e2e/.auth/

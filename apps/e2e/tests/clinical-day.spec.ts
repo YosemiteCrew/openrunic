@@ -109,17 +109,31 @@ test.describe('the full clinical day', () => {
     await clinicalStep('2. Check the patient in', context, async () => {
       await visit(context, '/schedule', 'Schedule (check-in)', KNOWN_SHELL_ISSUES);
 
-      await page
-        .getByRole('button', { name: new RegExp(`${PATIENT}, Follow-up`) })
-        .first()
-        .click();
+      // Chosen by STATE, not by name. Only a booked appointment can be checked
+      // in, and which fixture patient happens to hold one is not what this step
+      // is about. Naming a patient here is how this test broke before: the
+      // fixtures moved, the appointment it named became Fulfilled, and the step
+      // sat waiting for a button the screen was right not to offer.
+      const booked = page.getByRole('button', { name: /, Booked$/ }).first();
+      const appointment = (await booked.getAttribute('aria-label')) ?? '';
+      await booked.click();
+
+      // "HH:MM to HH:MM, Given Family, Reason, Clinician, Booked"
+      const patient = appointment.split(', ')[1] ?? '';
+      const given = patient.split(' ')[0] ?? '';
+      expect(given, `no patient name in "${appointment}"`).not.toBe('');
 
       const rail = page.getByRole('complementary', { name: 'Page context' });
-      await rail.getByRole('button', { name: 'Check in Tess' }).click();
+      await rail.getByRole('button', { name: `Check in ${given}` }).click();
 
+      // Asserts what the confirmation has to get right - whose visit this is,
+      // and what confirming will do - rather than one exact sentence. The
+      // wording here has already drifted once; naming the person and the
+      // consequence is the part that would be a defect if it went missing.
       const confirm = page.getByRole('alertdialog', { name: 'Check in this patient' });
-      await expect(confirm).toContainText("This creates today's visit");
-      await confirm.getByRole('button', { name: 'Check in Tess' }).click();
+      await expect(confirm).toContainText(given);
+      await expect(confirm).toContainText('Flow Board');
+      await confirm.getByRole('button', { name: `Check in ${given}` }).click();
 
       await expectToast(page, 'Checked in');
     });
@@ -133,19 +147,35 @@ test.describe('the full clinical day', () => {
     // Steps 3 and 12 share this test on purpose: the flow board's status
     // overrides survive within one visit, so rooming and checking out the same
     // patient is a genuine chain rather than two unrelated clicks.
+    // Whoever the board offers, rather than a patient named here. The board
+    // only shows "Move X to roomed" for someone who has arrived and is not yet
+    // roomed, so taking the first one asks the question this step means: can an
+    // arrived patient be roomed? A hard-coded name asks a question about the
+    // fixtures instead, and answers it wrongly the moment they change.
+    let given = '';
+
     await clinicalStep('3. Room the patient', context, async () => {
       await visit(context, '/schedule/flow-board', 'Flow board', KNOWN_SHELL_ISSUES);
 
-      await page.getByRole('button', { name: 'Move Bram to roomed' }).click();
+      const toRoom = page.getByRole('button', { name: /^Move .+ to roomed$/ }).first();
+      const label = (await toRoom.getAttribute('aria-label')) ?? '';
+      given = label.replace(/^Move /, '').replace(/ to roomed$/, '');
+      expect(given, 'the flow board offered nobody to room').not.toBe('');
+
+      await toRoom.click();
       await expectToast(page, 'Roomed');
 
-      await page.getByRole('combobox', { name: 'Room for Bram Voskuijlen' }).selectOption('Room 1');
+      // The select carries the full name where the button carries the given
+      // one, so this matches on the prefix rather than assuming the two agree.
+      await page
+        .getByRole('combobox', { name: new RegExp(`^Room for ${given}\\b`) })
+        .selectOption('Room 1');
       await expectToast(page, 'Room assigned');
     });
 
     await clinicalStep('12. Check the patient out', context, async () => {
-      await page.getByRole('button', { name: 'Move Bram to in progress' }).click();
-      await page.getByRole('button', { name: 'Move Bram to checked out' }).click();
+      await page.getByRole('button', { name: `Move ${given} to in progress` }).click();
+      await page.getByRole('button', { name: `Move ${given} to checked out` }).click();
       await expectToast(page, 'Checked out');
     });
   });

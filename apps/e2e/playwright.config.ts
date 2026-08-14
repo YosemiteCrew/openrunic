@@ -1,5 +1,7 @@
 import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
 
+import { DRILL_COOKIE_SECRET, STORAGE_STATE } from './global-setup.js';
+
 /**
  * The full-day clinical drill.
  *
@@ -44,8 +46,14 @@ export default defineConfig({
 
   reporter,
 
+  // Mints the session cookie the proxy insists on, once, before any scenario.
+  // global-setup.ts explains why the drill carries a real credential rather than
+  // the proxy learning to make an exception for tests.
+  globalSetup: './global-setup.ts',
+
   use: {
     baseURL: BASE_URL,
+    storageState: STORAGE_STATE,
     // Traces and screenshots only for failures: this suite is read when it
     // breaks, and an artefact for every passing run buries the one that matters.
     trace: 'retain-on-failure',
@@ -86,6 +94,13 @@ export default defineConfig({
     reuseExistingServer: process.env.CI !== 'true',
     timeout: 120_000,
     cwd: '../..',
-    env: { NEXT_PUBLIC_API_MODE: 'mock' },
+    env: {
+      NEXT_PUBLIC_API_MODE: 'mock',
+      // `next start` is NODE_ENV=production, and outside development the seal
+      // key has no fallback: without this the server would mint no sessions and
+      // recognise none, which is the correct production behaviour and would
+      // reject the drill's cookie along with everything else.
+      SESSION_COOKIE_SECRET: DRILL_COOKIE_SECRET,
+    },
   },
 });

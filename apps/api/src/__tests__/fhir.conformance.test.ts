@@ -1,7 +1,6 @@
 import type { Bundle, CapabilityStatement, OperationOutcome } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
-import { BULK_EXPORT_OPERATIONS } from '../fhir/bulk-export.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
 
 import { bearer, createTestApp, TOKENS, testId } from './support.js';
@@ -224,16 +223,33 @@ describe('the declared operations', () => {
     ]);
   });
 
+  /**
+   * Derived from the published statement rather than from the constant the
+   * router mounts. Reading the constant would test the router against itself:
+   * this asks the question a client asks, which is whether the thing `/metadata`
+   * described can actually be called.
+   */
   it('serves every entry point it declares', async () => {
+    const statement = await capabilityStatement();
     const { app } = createTestApp();
 
-    for (const operation of BULK_EXPORT_OPERATIONS) {
-      const res = await app.request(`/fhir${operation.path}`, {
+    const declared = [
+      ...(
+        (statement.rest?.[0] as { operation?: StatementOperation[] } | undefined)?.operation ?? []
+      ).map((operation) => `/fhir/$${operation.name}`),
+      ...resourcesOf(statement).flatMap((resource) =>
+        (resource.operation ?? []).map((operation) => `/fhir/${resource.type}/$${operation.name}`)
+      ),
+    ];
+
+    expect(declared).toHaveLength(2);
+    for (const path of declared) {
+      const res = await app.request(path, {
         headers: { ...bearer(READER), prefer: 'respond-async' },
       });
 
-      expect(res.status, operation.path).toBe(202);
-      expect(res.headers.get('content-location'), operation.path).toContain('/$export-status/');
+      expect(res.status, path).toBe(202);
+      expect(res.headers.get('content-location'), path).toContain('/$export-status/');
     }
   });
 

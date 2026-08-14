@@ -36,19 +36,19 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Interoperability
 
-| Capability                                                   | State       | Note                                                                                            |
-| ------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------- |
-| FHIR R4 boundary                                             | **Done**    | 19 resources with US Core profiles, search parameters validated against the CapabilityStatement |
-| **SMART on FHIR discovery**                                  | **Done**    | `.well-known/smart-configuration`, unauthenticated, claiming only implemented launch modes      |
-| SMART app launch and token exchange                          | **Partial** | Discovery is served; the authorisation server itself arrives with OIDC                          |
-| X12 eligibility (270/271)                                    | **Done**    | `packages/x12`                                                                                  |
-| X12 claims (837P), remittance (835), status (277), ack (999) | **Done**    | Same package                                                                                    |
-| Prior authorisation (278)                                    | **Missing** | _Buildable_                                                                                     |
-| **Bulk FHIR export (`$export`)**                             | **Done**    | System and Patient level, `_type` and `_since`, ndjson manifest; gated on `facility.all`        |
-| C-CDA generate and import                                    | **Missing** | _Buildable_ - format work, no licence needed                                                    |
-| HL7 v2 interfaces (ADT, ORU, ORM, VXU)                       | **Missing** | _Buildable_ - the format is open; each interface is per-partner configuration                   |
-| Direct secure messaging                                      | **Missing** | _Needs certification_ - requires a HISP                                                         |
-| Immunisation registry submission                             | **Missing** | _Buildable_, but each jurisdiction has its own onboarding                                       |
+| Capability                                                   | State       | Note                                                                                                                          |
+| ------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| FHIR R4 boundary                                             | **Done**    | 19 resources with US Core profiles, search parameters validated against the CapabilityStatement                               |
+| **SMART on FHIR discovery**                                  | **Done**    | `.well-known/smart-configuration`, unauthenticated, claiming only implemented launch modes                                    |
+| SMART app launch and token exchange                          | **Partial** | Discovery is served; the authorisation server itself arrives with OIDC                                                        |
+| X12 eligibility (270/271)                                    | **Done**    | `packages/x12`                                                                                                                |
+| X12 claims (837P), remittance (835), status (277), ack (999) | **Done**    | Same package                                                                                                                  |
+| Prior authorisation (278)                                    | **Missing** | _Buildable_                                                                                                                   |
+| **Bulk FHIR export (`$export`)**                             | **Done**    | System and Patient-compartment level, `_type`/`_since`, ndjson manifest; `facility.all` plus the caller's own per-type scopes |
+| C-CDA generate and import                                    | **Missing** | _Buildable_ - format work, no licence needed                                                                                  |
+| HL7 v2 interfaces (ADT, ORU, ORM, VXU)                       | **Missing** | _Buildable_ - the format is open; each interface is per-partner configuration                                                 |
+| Direct secure messaging                                      | **Missing** | _Needs certification_ - requires a HISP                                                                                       |
+| Immunisation registry submission                             | **Missing** | _Buildable_, but each jurisdiction has its own onboarding                                                                     |
 
 ## Prescribing
 

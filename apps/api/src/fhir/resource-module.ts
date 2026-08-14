@@ -137,7 +137,7 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
  * A row without an `updatedAt` gets no stamp rather than a fabricated one. An
  * invented timestamp is worse than a missing field: a client will believe it.
  */
-function stampLastUpdated(row: unknown, resource: FhirResource): FhirResource {
+export function stampLastUpdated(row: unknown, resource: FhirResource): FhirResource {
   const updatedAt = (row as { updatedAt?: unknown }).updatedAt;
   if (!(updatedAt instanceof Date)) return resource;
   return {

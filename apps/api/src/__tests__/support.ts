@@ -42,6 +42,14 @@ export const TOKENS = {
   /** A portal login, pinned to one chart by its launch context. */
   portalA: 'dev-portal-a',
   adminA: 'test-admin-a',
+  /** A second administrator in the same organisation as `adminA`. */
+  secondAdminA: 'test-second-admin-a',
+  /** An administrator in the other organisation. */
+  adminB: 'test-admin-b',
+  /** Every permission, and a token pinned to one chart all the same. */
+  compartmentAdminA: 'test-compartment-admin-a',
+  /** Every permission, and a token authorised for Patients only. */
+  patientScopeAdminA: 'test-patient-scope-admin-a',
   /** Holds every permission but no SMART scope at all. */
   noScopeA: 'test-no-scope-a',
   /** Holds a patient scope with no launch context to honour it. */
@@ -216,6 +224,48 @@ export const DANGLING_PATIENT_SCOPE_PRINCIPAL: Principal = {
 };
 
 /**
+ * A second administrator in the same organisation.
+ *
+ * Exists so a test can ask what one privileged principal may do with something
+ * another one produced. Same tenant, same role, different subject: everything a
+ * tenant check would let through.
+ */
+export const SECOND_ADMIN_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(954),
+  displayName: 'Second Administrator',
+};
+
+/** An administrator in the other organisation, for cross-tenant refusals. */
+export const ADMIN_B_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(955),
+  tenantId: DEMO_TENANT_B,
+  facilityIds: [DEMO_FACILITY_B],
+  displayName: 'Other Practice Administrator',
+};
+
+/**
+ * An administrator whose token is nonetheless pinned to one chart.
+ *
+ * Not a configuration the seeded roles produce - it is what a tenant that forks
+ * them could produce - and it is the only way to test a compartment refusal
+ * separately from the permission that usually fires first.
+ */
+export const COMPARTMENT_ADMIN_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(956),
+  compartmentPatientId: DEMO_PORTAL_PATIENT,
+};
+
+/** Every permission, but a token authorised to ask about Patients and nothing else. */
+export const PATIENT_SCOPE_ADMIN_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(957),
+  scopes: ['user/Patient.read'],
+};
+
+/**
  * The demo resolver plus the fixtures above. Kept out of `static-resolver.ts`
  * because that table ships with the application, and a principal that exists
  * only for a denial test does not belong in it.
@@ -226,6 +276,10 @@ export function testPrincipalResolver(): PrincipalResolver {
       ...DEMO_PRINCIPALS,
       [UNPRIVILEGED_TOKEN, UNPRIVILEGED_PRINCIPAL],
       [TOKENS.adminA, ADMIN_PRINCIPAL],
+      [TOKENS.secondAdminA, SECOND_ADMIN_PRINCIPAL],
+      [TOKENS.adminB, ADMIN_B_PRINCIPAL],
+      [TOKENS.compartmentAdminA, COMPARTMENT_ADMIN_PRINCIPAL],
+      [TOKENS.patientScopeAdminA, PATIENT_SCOPE_ADMIN_PRINCIPAL],
       [TOKENS.noScopeA, NO_SCOPE_PRINCIPAL],
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
     ])

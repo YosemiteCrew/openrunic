@@ -22,25 +22,33 @@ export default defineConfig({
        * The floors the suite must clear on a full run.
        *
        * They are set here as well as in CI because a threshold that only exists
-       * in CI is a threshold nobody sees until their branch is red. Branches
-       * sit lower than the rest on purpose: a good deal of the branching in
-       * this package is the `x === undefined ? {} : { x }` spread that keeps an
-       * absent value out of a payload, and chasing the last few of those buys
-       * assertions about nothing.
+       * in CI is a threshold nobody sees until their branch is red. That only
+       * works if the two agree, so these are exactly the numbers in
+       * COVERAGE_FLOORS for `api` in `.github/workflows/_test.yaml`. Move them
+       * together or the local run stops meaning anything: branches sat at 90
+       * here while CI required 95, which made a green local run consistent with
+       * a red CI one - the failure this block exists to prevent.
+       *
+       * Branches once sat lower than the rest on the argument that much of the
+       * branching in this package is the `x === undefined ? {} : { x }` spread
+       * that keeps an absent value out of a payload. The suite has since gone
+       * past that: it measures 97.9% branches, so the allowance was buying
+       * nothing except the disagreement above.
        *
        * The agent surface (ADR-0005) carries its own entry as well as the
-       * global one. It is new code held to the bar its own packages are held
-       * to, and a per-glob floor keeps that promise from being diluted as the
-       * rest of the app grows around it.
+       * global one. A per-glob entry REPLACES the global for the files it
+       * matches, so it has to be restated at the same numbers rather than left
+       * behind - otherwise the entry that exists to hold that surface to the
+       * bar would be the one thing exempting it.
        */
       thresholds: {
         statements: 95,
         lines: 95,
         functions: 95,
-        branches: 90,
+        branches: 95,
         'src/agent/**': {
           statements: 95,
-          branches: 90,
+          branches: 95,
           functions: 95,
           lines: 95,
         },

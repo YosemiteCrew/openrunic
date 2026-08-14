@@ -155,6 +155,12 @@ updates:
       timezone: 'UTC'
     target-branch: dev
     open-pull-requests-limit: 10
+    # Only default-days, deliberately. The github-actions pool above lost every
+    # Dependabot update to an unsupported cooldown property, because the file is
+    # rejected whole rather than per-key, so this uses the one property every
+    # ecosystem accepts rather than the richest set that might work.
+    cooldown:
+      default-days: 5
     commit-message:
       prefix: 'build(repo)'
     labels:

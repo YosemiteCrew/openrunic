@@ -480,6 +480,34 @@ describe('from the keyboard alone', () => {
     expect(launcher).toHaveFocus();
   });
 
+  /*
+   * Escape belongs to the panel, which is neither the field alone nor the whole
+   * document. These two fence it on both sides: a handler that shrank to the
+   * composer would strand somebody who had tabbed to the close control, and one
+   * that grew to the document would take the key away from the chart beside it,
+   * where a clinician mid-edit means something else by it. The panel is not
+   * modal, so that chart is still live and still owns its own keys.
+   */
+  it('dismisses from anywhere inside the panel, not only from the field', async () => {
+    const { launcher } = await openPanel();
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Close the assistant' }), {
+      key: 'Escape',
+    });
+
+    expect(screen.queryByRole('complementary', { name: 'Assistant' })).toBeNull();
+    expect(launcher).toHaveFocus();
+  });
+
+  it('leaves Escape alone outside the panel, because what is out there is still live', async () => {
+    await openPanel();
+    await waitFor(() => expect(composer()).toHaveFocus());
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    expect(screen.getByRole('complementary', { name: 'Assistant' })).toBeInTheDocument();
+  });
+
   it('asks with Enter and leaves Shift and Enter to start a new line', async () => {
     const channel = openChannel();
     await openPanel({ runTurn: channel.run });

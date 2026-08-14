@@ -521,32 +521,18 @@ export function clinicalRoutes(): Hono<AppEnv> {
     });
   });
 
-  router.post(
-    '/medications/prescriptions/:id/sign',
-    requirePermission('encounter.write'),
-    async (c) => {
-      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-      return c.json(toPrescriptionDto(await movePrescription(c, id, 'SIGNED')));
-    }
-  );
-
-  router.post(
-    '/medications/prescriptions/:id/transmit',
-    requirePermission('encounter.write'),
-    async (c) => {
-      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-      return c.json(toPrescriptionDto(await movePrescription(c, id, 'TRANSMITTED')));
-    }
-  );
-
-  router.post(
-    '/medications/prescriptions/:id/cancel',
-    requirePermission('encounter.write'),
-    async (c) => {
-      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-      return c.json(toPrescriptionDto(await movePrescription(c, id, 'CANCELLED')));
-    }
-  );
+  // See ROUTED_PRESCRIPTION_MOVES: three routes that differed only by segment and
+  // status, declared once instead of written three times.
+  for (const [segment, status] of ROUTED_PRESCRIPTION_MOVES) {
+    router.post(
+      `/medications/prescriptions/:id/${segment}`,
+      requirePermission('encounter.write'),
+      async (c) => {
+        const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+        return c.json(toPrescriptionDto(await movePrescription(c, id, status)));
+      }
+    );
+  }
 
   return router;
 }
@@ -558,6 +544,21 @@ export function clinicalRoutes(): Hono<AppEnv> {
  * prescription that could not be transmitted is not left carrying a
  * transmission stamp.
  */
+/**
+ * The prescription moves that have a ROUTE, as `[url segment, resulting status]`.
+ *
+ * Not to be confused with PRESCRIPTION_TRANSITIONS, the legal-transition graph
+ * a move is checked against: this says what a client may ask for, that says
+ * what is allowed from where.
+ * `as const` keeps each status a literal so the call below still type-checks
+ * against MedicationRequestStatus rather than a widened string.
+ */
+const ROUTED_PRESCRIPTION_MOVES = [
+  ['sign', 'SIGNED'],
+  ['transmit', 'TRANSMITTED'],
+  ['cancel', 'CANCELLED'],
+] as const satisfies readonly (readonly [string, MedicationRequestStatus])[];
+
 async function movePrescription(
   c: Context<AppEnv>,
   id: string,

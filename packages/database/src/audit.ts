@@ -122,7 +122,22 @@ function canonicalize(value: unknown, path: string): JsonValue {
   }
   if (typeof value === 'object') {
     const source = value as Record<string, unknown>;
-    const result: Record<string, JsonValue> = {};
+    // Object.create(null), not {}, and this is the load-bearing kind of detail.
+    //
+    // JSON.parse gives an object an OWN "__proto__" property, and Object.keys
+    // reports it. Assigning that key to a normal object literal does not create
+    // a property: it runs the __proto__ setter and changes the object's
+    // prototype instead. The key then vanishes from the output, because
+    // JSON.stringify serialises own properties only.
+    //
+    // For a hash chain that is not an inconvenience, it is a hole. An event
+    // carrying {"a":1,"__proto__":{...}} canonicalised to exactly {"a":1} - the
+    // same string, and therefore the same hash, as an event that never carried
+    // the second field at all. The chain would be attesting content it had not
+    // seen, and two distinct events would collide. A null-prototype object has
+    // no __proto__ setter to trigger, so the key lands as an ordinary property
+    // and is hashed like every other one.
+    const result: Record<string, JsonValue> = Object.create(null) as Record<string, JsonValue>;
     for (const key of Object.keys(source).sort()) {
       const child = source[key];
       // Absent and explicitly-undefined must hash identically, otherwise the

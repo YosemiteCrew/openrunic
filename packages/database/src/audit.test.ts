@@ -114,6 +114,34 @@ describe('auditEventInput', () => {
 });
 
 describe('canonicalJson', () => {
+  /**
+   * The hash has to cover everything the event carried.
+   *
+   * `JSON.parse` gives an object an own "__proto__" property, and assigning that
+   * key to a plain object literal runs the prototype setter instead of creating
+   * a property - so the field used to disappear from the canonical form. Two
+   * events that differed by exactly that field hashed identically, which is the
+   * one thing a hash chain must never do.
+   */
+  it('carries a __proto__ key into the canonical form instead of losing it', () => {
+    const hostile: unknown = JSON.parse('{"a":1,"__proto__":{"injected":true}}');
+
+    expect(canonicalJson(hostile)).toBe('{"__proto__":{"injected":true},"a":1}');
+  });
+
+  it('does not collide with the event that lacks that field', () => {
+    const hostile: unknown = JSON.parse('{"a":1,"__proto__":{"injected":true}}');
+    const plain: unknown = JSON.parse('{"a":1}');
+
+    expect(canonicalJson(hostile)).not.toBe(canonicalJson(plain));
+  });
+
+  it('leaves Object.prototype alone', () => {
+    canonicalJson(JSON.parse('{"__proto__":{"polluted":true}}'));
+
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('sorts object keys at every depth', () => {
     expect(canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe('{"a":{"c":3,"d":2},"b":1}');
   });

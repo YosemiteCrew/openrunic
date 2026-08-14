@@ -116,6 +116,26 @@ import { idParamSchema, repositories, required } from './helpers.js';
  * retracting a record is a status transition and never a delete: the row an
  * auditor needs to see is the one that says it should not have existed.
  */
+/**
+ * The order moves that have a ROUTE, as opposed to ORDER_TRANSITIONS below,
+ * which is the graph saying which of them are legal from where. Both exist and
+ * they answer different questions.
+ *
+ * `stamp` is why this is a list of objects rather than pairs: transmit records
+ * when it happened, and that column is stamped where the move happens rather
+ * than by the labs adapter later, because an order that says TRANSMITTED and
+ * cannot say when is an order nobody can chase.
+ */
+const ROUTED_ORDER_MOVES: readonly {
+  readonly segment: string;
+  readonly status: ServiceRequestStatus;
+  readonly stamp?: () => Record<string, unknown>;
+}[] = [
+  { segment: 'sign', status: 'SIGNED' },
+  { segment: 'transmit', status: 'TRANSMITTED', stamp: () => ({ transmittedAt: new Date() }) },
+  { segment: 'cancel', status: 'CANCELLED' },
+];
+
 const ORDER_TRANSITIONS: Readonly<Record<ServiceRequestStatus, readonly ServiceRequestStatus[]>> = {
   DRAFT: ['PENDED', 'SIGNED', 'CANCELLED', 'ENTERED_IN_ERROR'],
   PENDED: ['SIGNED', 'CANCELLED', 'ENTERED_IN_ERROR'],
@@ -385,41 +405,23 @@ function transitionRoutes(): Hono<AppEnv> {
 
   /* orders */
 
-  router.post('/orders/:id/sign', requirePermission('order.write'), async (c) => {
-    const id = pathId(c.req.param('id'));
-    await parseTransitionBody(c, emptyBodySchema);
-    const orders = repositories(c).orders;
-    const before = required(await orders.findById(id), NO_ORDER);
-    assertTransition(ORDER_TRANSITIONS, 'order', before.status, 'SIGNED');
-    const row = required(await orders.update(id, { status: 'SIGNED' }), NO_ORDER);
-    return c.json(toServiceRequestDto(row));
-  });
-
-  router.post('/orders/:id/transmit', requirePermission('order.write'), async (c) => {
-    const id = pathId(c.req.param('id'));
-    await parseTransitionBody(c, emptyBodySchema);
-    const orders = repositories(c).orders;
-    const before = required(await orders.findById(id), NO_ORDER);
-    assertTransition(ORDER_TRANSITIONS, 'order', before.status, 'TRANSMITTED');
-    // Stamped where the move happens rather than by the labs adapter later: an
-    // order that says TRANSMITTED and cannot say when is an order nobody can
-    // chase.
-    const row = required(
-      await orders.update(id, { status: 'TRANSMITTED', transmittedAt: new Date() }),
-      NO_ORDER
-    );
-    return c.json(toServiceRequestDto(row));
-  });
-
-  router.post('/orders/:id/cancel', requirePermission('order.write'), async (c) => {
-    const id = pathId(c.req.param('id'));
-    await parseTransitionBody(c, emptyBodySchema);
-    const orders = repositories(c).orders;
-    const before = required(await orders.findById(id), NO_ORDER);
-    assertTransition(ORDER_TRANSITIONS, 'order', before.status, 'CANCELLED');
-    const row = required(await orders.update(id, { status: 'CANCELLED' }), NO_ORDER);
-    return c.json(toServiceRequestDto(row));
-  });
+  // Declared once. The three routes agreed on everything except the status they
+  // move to and, for transmit, one extra column - which is exactly the shape
+  // where a fourth gets pasted in and edited in two of its three places.
+  for (const move of ROUTED_ORDER_MOVES) {
+    router.post(`/orders/:id/${move.segment}`, requirePermission('order.write'), async (c) => {
+      const id = pathId(c.req.param('id'));
+      await parseTransitionBody(c, emptyBodySchema);
+      const orders = repositories(c).orders;
+      const before = required(await orders.findById(id), NO_ORDER);
+      assertTransition(ORDER_TRANSITIONS, 'order', before.status, move.status);
+      const row = required(
+        await orders.update(id, { status: move.status, ...move.stamp?.() }),
+        NO_ORDER
+      );
+      return c.json(toServiceRequestDto(row));
+    });
+  }
 
   /* specimens */
 

@@ -60,12 +60,17 @@ export function requirePermission(permission: Permission) {
 /**
  * Route guard for facility-scoped rows: the principal must hold a grant for
  * `facilityId`, or the organisation-wide `facility.all` permission.
+ *
+ * Absence denies, the same way {@link requirePermission} treats it: the
+ * optional call yields `undefined` when there is no policy context at all, and
+ * that is a 403 rather than a pass, so a route mounted outside the chain
+ * refuses instead of exposing.
  */
 export function assertFacilityAccess(
   policy: ReturnType<typeof buildPolicyContext> | undefined,
   facilityId: string
 ): void {
-  if (policy === undefined || !policy.canAccessFacility(facilityId)) {
+  if (!policy?.canAccessFacility(facilityId)) {
     throw ApiError.forbidden('This principal has no grant for that facility.');
   }
 }

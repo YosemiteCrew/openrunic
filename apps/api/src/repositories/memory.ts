@@ -3,7 +3,7 @@ import { uuidv7 } from '@openrunic/database';
 import { createAuditChainStore, type AuditChainStore } from '../audit/chain-store.js';
 import { ApiError } from '../errors.js';
 
-import { createMemoryAuditQuery, type AuditQueryRepository } from './audit-query.js';
+import { createMemoryAuditQuery } from './audit-query.js';
 import {
   paginate,
   type BaseQuery,
@@ -291,4 +291,4 @@ export function encounterOf<M extends PrismaModelName, TCreate, TPatch, TQuery e
   return encounterId === undefined ? {} : { encounterId };
 }
 
-export type { AuditQueryRepository };
+export type { AuditQueryRepository } from './audit-query.js';

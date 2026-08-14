@@ -21,7 +21,7 @@ import { ApiError, type FieldIssue } from '../errors.js';
 
 function toFieldIssues(error: z.ZodError): FieldIssue[] {
   return error.issues.map((issue) => ({
-    path: issue.path.map((segment) => String(segment)).join('.'),
+    path: issue.path.map(String).join('.'),
     message: issue.message,
   }));
 }

@@ -16,7 +16,7 @@ describe('IntegrationsScreen', () => {
 
     expect(await screen.findByText('Claims clearinghouse')).toBeInTheDocument();
     expect(screen.getAllByText('Connected').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Placeholder mode').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Demo mode').length).toBeGreaterThan(0);
     expect(screen.getByText('Not working')).toBeInTheDocument();
     expect(screen.getByText('Not connected')).toBeInTheDocument();
   });

@@ -88,11 +88,11 @@ describe('deterministic mocks', () => {
   });
 
   it('names the vendor and the supported features it was built with', async () => {
-    const adapter = new MockErxAdapter({ vendorId: 'demo-erx', displayName: 'Placeholder eRx' });
+    const adapter = new MockErxAdapter({ vendorId: 'demo-erx', displayName: 'Demo eRx' });
     await adapter.init(MOCK_CONFIGS.erx, createTestDeps());
     expect(adapter.descriptor).toMatchObject({
       vendorId: 'demo-erx',
-      displayName: 'Placeholder eRx',
+      displayName: 'Demo eRx',
       supports: CONTRACTS.erx.features,
     });
   });

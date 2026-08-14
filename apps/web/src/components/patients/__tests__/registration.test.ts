@@ -190,8 +190,8 @@ describe('toPatientCreateBody', () => {
     const body = toPatientCreateBody(draft());
 
     expect(body).toMatchObject({
-      givenName: 'Kai',
-      familyName: 'Nordstrom',
+      givenName: 'Verifia',
+      familyName: 'Assertson',
       birthDate: '1991-02-17',
       phoneMobile: '+1 555 0142 900',
     });

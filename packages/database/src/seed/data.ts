@@ -258,7 +258,7 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
   const organisation: Prisma.OrganisationCreateManyInput = {
     id: organisationId,
     slug: 'runic-demo-practice',
-    name: 'Runic Placeholder Family Practice',
+    name: 'Runic Demo Family Practice',
     mode: 'SELF_HOST',
     status: 'ACTIVE',
     timezone: 'America/Los_Angeles',

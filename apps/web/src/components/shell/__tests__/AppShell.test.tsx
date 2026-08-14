@@ -137,7 +137,7 @@ describe('AppShell', () => {
 
   it('says when the screen is reading demo data', () => {
     render(<AppShell title="Schedule">content</AppShell>);
-    expect(screen.getByText('Placeholder data')).toBeInTheDocument();
+    expect(screen.getByText('Demo data')).toBeInTheDocument();
   });
 });
 

@@ -45,7 +45,7 @@ function rail(): HTMLElement {
 }
 
 /** The 09:40 acute visit: arrived, not yet checked in, so check-in is the next act. */
-const ANKLE_INJURY = /09:40 to 10:00, Noor Haddadin/;
+const ANKLE_INJURY = /09:40 to 10:00, Fictitia Notreal/;
 
 describe('ScheduleScreen', () => {
   it('renders the day as a grid with a column per provider', async () => {
@@ -76,8 +76,8 @@ describe('ScheduleScreen', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
 
-    expect(within(rail()).getByText('Noor Haddadin')).toBeInTheDocument();
-    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeInTheDocument();
+    expect(within(rail()).getByText('Fictitia Notreal')).toBeInTheDocument();
+    expect(within(rail()).getByRole('button', { name: 'Check in Fictitia' })).toBeInTheDocument();
     expect(within(rail()).getByRole('link', { name: 'Open chart' })).toBeInTheDocument();
     expect(
       within(rail()).getByRole('link', { name: 'Insurance and eligibility' })
@@ -88,16 +88,16 @@ describe('ScheduleScreen', () => {
     render(<ScheduleScreen client={createMockClient()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
-    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Fictitia' }));
 
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent(/moves them onto the Flow Board/);
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Fictitia' }));
 
     const toast = await screen.findByRole('status');
     expect(toast).toHaveTextContent('Checked in');
-    expect(toast).toHaveTextContent('Noor Haddadin is on the Flow Board.');
+    expect(toast).toHaveTextContent('Fictitia Notreal is on the Flow Board.');
   });
 
   it('records the check-in, so the rail stops offering it on the next read', async () => {
@@ -105,9 +105,9 @@ describe('ScheduleScreen', () => {
     render(<ScheduleScreen client={client} />);
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
-    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Fictitia' }));
     fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Check in Noor' })
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Check in Fictitia' })
     );
     await screen.findByRole('status');
 
@@ -123,11 +123,11 @@ describe('ScheduleScreen', () => {
     render(<ScheduleScreen client={createMockClient()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
-    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Fictitia' }));
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeEnabled();
+    expect(within(rail()).getByRole('button', { name: 'Check in Fictitia' })).toBeEnabled();
   });
 
   it('makes every visit a real button in the tab order, activated from the keyboard', async () => {
@@ -143,7 +143,7 @@ describe('ScheduleScreen', () => {
     fireEvent.click(document.activeElement as HTMLElement);
 
     expect(block).toHaveAttribute('aria-pressed', 'true');
-    expect(within(rail()).getByText('Noor Haddadin')).toBeInTheDocument();
+    expect(within(rail()).getByText('Fictitia Notreal')).toBeInTheDocument();
   });
 
   it('answers Find available with five real open slots', async () => {
@@ -326,10 +326,10 @@ describe('ScheduleScreen, driven from the command palette', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: ANKLE_INJURY }));
-    await runCommand('Check in Noor');
+    await runCommand('Check in Fictitia');
 
     const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Fictitia' }));
     await screen.findByRole('status');
 
     // Once she is in, the verb is gone: the palette never offers a second
@@ -344,14 +344,14 @@ describe('ScheduleScreen, backing out of an action', () => {
     render(<ScheduleScreen client={createMockClient()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
-    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Fictitia' }));
     fireEvent.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
     );
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeEnabled();
+    expect(within(rail()).getByRole('button', { name: 'Check in Fictitia' })).toBeEnabled();
   });
 
   it('cancels a booking and leaves the day as it was', async () => {
@@ -378,9 +378,9 @@ describe('ScheduleScreen, backing out of an action', () => {
     render(<ScheduleScreen client={createMockClient()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
-    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Fictitia' }));
     fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Check in Noor' })
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Check in Fictitia' })
     );
 
     const toast = await screen.findByRole('status');
@@ -516,9 +516,9 @@ describe('ScheduleScreen, when a write is refused', () => {
     render(<ScheduleScreen client={refusesWrites()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
-    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Fictitia' }));
     const dialog = screen.getByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Fictitia' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'This facility is not granted to your role.'
@@ -526,7 +526,7 @@ describe('ScheduleScreen, when a write is refused', () => {
     // The one thing this screen must never do: confirm a check-in that did not
     // happen. The patient is still standing at the desk.
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeEnabled();
+    expect(within(rail()).getByRole('button', { name: 'Check in Fictitia' })).toBeEnabled();
   });
 
   it('keeps the booking dialog open with the reason rather than closing on a refusal', async () => {

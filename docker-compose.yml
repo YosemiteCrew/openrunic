@@ -24,6 +24,15 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    # The alpine image's postgres account is uid/gid 70, and a fresh named volume
+    # inherits the image's ownership of /var/lib/postgresql/data, so the server
+    # can start straight as that account instead of entering as root and dropping
+    # privileges. Stated here because the compose file is what an operator reads,
+    # and "root unless the image says otherwise" is not a thing to leave implicit
+    # on the one container that holds the data.
+    user: '70:70'
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-openrunic}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openrunic-evaluation-only}
@@ -70,6 +79,14 @@ services:
       target: migrate
     image: openrunic-migrate:${OPENRUNIC_IMAGE_TAG:-local}
     restart: 'no'
+    # Same identity the image already sets. Repeating it is not redundancy: a
+    # compose file that says nothing about `user` runs as whatever the image
+    # happens to default to, so an image rebuilt without its USER line would
+    # silently start running as root here. This makes that a startup failure
+    # instead.
+    user: '10001:10001'
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,6 +111,14 @@ services:
       target: runtime
     image: openrunic-api:${OPENRUNIC_IMAGE_TAG:-local}
     restart: unless-stopped
+    # Same identity the image already sets. Repeating it is not redundancy: a
+    # compose file that says nothing about `user` runs as whatever the image
+    # happens to default to, so an image rebuilt without its USER line would
+    # silently start running as root here. This makes that a startup failure
+    # instead.
+    user: '10001:10001'
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +160,14 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
     image: openrunic-web:${OPENRUNIC_IMAGE_TAG:-local}
     restart: unless-stopped
+    # Same identity the image already sets. Repeating it is not redundancy: a
+    # compose file that says nothing about `user` runs as whatever the image
+    # happens to default to, so an image rebuilt without its USER line would
+    # silently start running as root here. This makes that a startup failure
+    # instead.
+    user: '10001:10001'
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       api:
         condition: service_healthy
@@ -155,6 +188,22 @@ services:
           memory: ${WEB_MEMORY_LIMIT:-1g}
         reservations:
           memory: ${WEB_MEMORY_RESERVATION:-256m}
+
+# compose-guard reports three low-severity findings this file does not act on,
+# recorded here rather than left to look like an oversight:
+#
+#   no-healthcheck on api and web - both images carry a HEALTHCHECK instruction,
+#   which a container inherits. `depends_on: api: condition: service_healthy`
+#   below only works because of it, so the healthcheck demonstrably exists; the
+#   guard reads the compose file alone and cannot see it. On migrate the finding
+#   is not applicable: it runs to completion and exits.
+#
+#   writable-root-filesystem on all four - `read_only: true` needs a tmpfs for
+#   every path the process still writes, and getting that list wrong turns a
+#   hardening measure into a stack that will not boot. Postgres needs its socket
+#   directory, and Next.js writes its cache at runtime. Revisit as a change of
+#   its own, with the clinical-day drill as the proof it still starts, rather
+#   than folded into a pull request about something else.
 
 volumes:
   pgdata:

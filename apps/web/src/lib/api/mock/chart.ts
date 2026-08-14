@@ -14,6 +14,7 @@ import type {
   SlashCommand,
   Visit,
 } from '../chart/types';
+import { ATTESTATION, contentHash } from '../chart/signature';
 
 import { MOCK_CLINIC_DAY, MOCK_PATIENTS } from './fixtures';
 
@@ -720,6 +721,34 @@ const TESTINA_SIGNED_ADDENDA: Addendum[] = [
   },
 ];
 
+const TESTINA_SIGNED_SECTIONS: NoteSection[] = [
+  section(
+    'subjective',
+    'Subjective',
+    'What the patient reports, in their words where it matters.',
+    'Reports steady tiredness for about six months, worse in the afternoons. No bleeding noticed. Periods heavy for two to three days each cycle.'
+  ),
+  section(
+    'objective',
+    'Objective',
+    'Measurements and examination. Vitals flow in from rooming.',
+    'BP 124/76 mmHg. Pulse 76 bpm. Conjunctivae pale. Abdomen soft and non-tender.'
+  ),
+  section(
+    'assessment',
+    'Assessment',
+    'The clinical picture, and the coded problems it maps to.',
+    'Iron deficiency anaemia, likely menstrual loss. Hypertension controlled.'
+  ),
+  section(
+    'plan',
+    'Plan',
+    'What happens next, and what it writes to the chart.',
+    'Full blood count and iron studies today. Start ferrous sulfate 325 mg twice daily with food. Review in three months.',
+    [{ id: 'em-m-001', kind: 'PRESCRIPTION', label: 'Ferrous sulfate 325 mg, twice daily' }]
+  ),
+];
+
 const TESTINA_SIGNED_NOTE: EncounterNote = {
   id: MOCK_ENCOUNTER_IDS.testinaSigned,
   patientId: PATIENT_IDS.testina,
@@ -729,42 +758,51 @@ const TESTINA_SIGNED_NOTE: EncounterNote = {
   providerCredential: 'MD',
   reason: 'Anaemia recheck',
   state: 'SIGNED',
-  sections: [
-    section(
-      'subjective',
-      'Subjective',
-      'What the patient reports, in their words where it matters.',
-      'Reports steady tiredness for about six months, worse in the afternoons. No bleeding noticed. Periods heavy for two to three days each cycle.'
-    ),
-    section(
-      'objective',
-      'Objective',
-      'Measurements and examination. Vitals flow in from rooming.',
-      'BP 124/76 mmHg. Pulse 76 bpm. Conjunctivae pale. Abdomen soft and non-tender.'
-    ),
-    section(
-      'assessment',
-      'Assessment',
-      'The clinical picture, and the coded problems it maps to.',
-      'Iron deficiency anaemia, likely menstrual loss. Hypertension controlled.'
-    ),
-    section(
-      'plan',
-      'Plan',
-      'What happens next, and what it writes to the chart.',
-      'Full blood count and iron studies today. Start ferrous sulfate 325 mg twice daily with food. Review in three months.',
-      [{ id: 'em-m-001', kind: 'PRESCRIPTION', label: 'Ferrous sulfate 325 mg, twice daily' }]
-    ),
-  ],
+  sections: TESTINA_SIGNED_SECTIONS,
   signature: {
     signerName: 'Dr. Okafor',
     credential: 'MD',
     signedAt: '2026-05-14T16:42:00.000Z',
-    attestation: 'I attest that this note records the care I provided at this visit.',
-    hash: '9f2c-41ab-77de',
+    attestation: ATTESTATION,
+    // Computed from this note's own text rather than typed in, because the
+    // field is a fingerprint of the text: a hand-written value would describe
+    // nothing, and the screen would render it as though it described this.
+    fingerprint: contentHash(TESTINA_SIGNED_SECTIONS),
   },
   addenda: TESTINA_SIGNED_ADDENDA,
 };
+
+const MAREK_SIGNED_SECTIONS: NoteSection[] = [
+  section(
+    'subjective',
+    'Subjective',
+    'What the patient reports, in their words where it matters.',
+    'Three-monthly diabetes review. Taking metformin twice daily. Home glucose readings mostly 9 to 11 mmol/L before breakfast. Walking twice a week. No foot ulcers or numbness.'
+  ),
+  section(
+    'objective',
+    'Objective',
+    'Measurements and examination. Vitals flow in from rooming.',
+    'BP 138/84 mmHg. Weight 91.2 kg. Feet examined: pulses present, monofilament intact at all sites. HbA1c 7.9% on 9 Feb, above range.'
+  ),
+  section(
+    'assessment',
+    'Assessment',
+    'The clinical picture, and the coded problems it maps to.',
+    'Type 2 diabetes above target. Hypertension at the upper limit. Eye screening due in July.',
+    [{ id: 'em-k-001', kind: 'PROBLEM', label: 'Type 2 diabetes mellitus (E11.9)' }]
+  ),
+  section(
+    'plan',
+    'Plan',
+    'What happens next, and what it writes to the chart.',
+    'Continue metformin. Refer for retinal screening. Repeat HbA1c in three months and review medication then.',
+    [
+      { id: 'em-k-002', kind: 'ORDER', label: 'Retinal screening referral' },
+      { id: 'em-k-003', kind: 'FOLLOW_UP', label: 'Follow-up in 3 months' },
+    ]
+  ),
+];
 
 const MAREK_SIGNED_NOTE: EncounterNote = {
   id: MOCK_ENCOUNTER_IDS.marekSigned,
@@ -775,43 +813,13 @@ const MAREK_SIGNED_NOTE: EncounterNote = {
   providerCredential: 'MD',
   reason: 'Diabetes review',
   state: 'SIGNED',
-  sections: [
-    section(
-      'subjective',
-      'Subjective',
-      'What the patient reports, in their words where it matters.',
-      'Three-monthly diabetes review. Taking metformin twice daily. Home glucose readings mostly 9 to 11 mmol/L before breakfast. Walking twice a week. No foot ulcers or numbness.'
-    ),
-    section(
-      'objective',
-      'Objective',
-      'Measurements and examination. Vitals flow in from rooming.',
-      'BP 138/84 mmHg. Weight 91.2 kg. Feet examined: pulses present, monofilament intact at all sites. HbA1c 7.9% on 9 Feb, above range.'
-    ),
-    section(
-      'assessment',
-      'Assessment',
-      'The clinical picture, and the coded problems it maps to.',
-      'Type 2 diabetes above target. Hypertension at the upper limit. Eye screening due in July.',
-      [{ id: 'em-k-001', kind: 'PROBLEM', label: 'Type 2 diabetes mellitus (E11.9)' }]
-    ),
-    section(
-      'plan',
-      'Plan',
-      'What happens next, and what it writes to the chart.',
-      'Continue metformin. Refer for retinal screening. Repeat HbA1c in three months and review medication then.',
-      [
-        { id: 'em-k-002', kind: 'ORDER', label: 'Retinal screening referral' },
-        { id: 'em-k-003', kind: 'FOLLOW_UP', label: 'Follow-up in 3 months' },
-      ]
-    ),
-  ],
+  sections: MAREK_SIGNED_SECTIONS,
   signature: {
     signerName: 'Dr. Okafor',
     credential: 'MD',
     signedAt: '2026-02-11T09:04:00.000Z',
-    attestation: 'I attest that this note records the care I provided at this visit.',
-    hash: '4b81-2c09-e5aa',
+    attestation: ATTESTATION,
+    fingerprint: contentHash(MAREK_SIGNED_SECTIONS),
   },
   addenda: [],
 };

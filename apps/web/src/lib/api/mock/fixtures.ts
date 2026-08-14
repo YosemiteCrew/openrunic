@@ -1,4 +1,4 @@
-import type { Appointment, Patient } from '../types';
+import type { Appointment, FacilityDto, Patient, UserDto } from '../types';
 import type {
   InboxItem,
   Order,
@@ -28,27 +28,130 @@ export const MOCK_CLINIC_DAY = '2026-08-12';
 /** A fixed "now" inside that clinic day, for elapsed timers and current-time rules. */
 export const MOCK_NOW = '2026-08-12T10:20:00.000Z';
 
+const CREATED_AT = '2026-01-06T09:00:00.000Z';
+const UPDATED_AT = '2026-08-11T16:40:00.000Z';
+
+/* -------------------------------------------------------------------------- */
+/* The directory: what `/bff/v0/facilities` and `/bff/v0/users` answer with    */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Fixture-only, not an API type: there is no facility or practitioner endpoint
- * yet. When those aggregates land, delete these and read them from the client.
+ * The demo clinic's one site, in the shape `facilityDtoSchema` answers with.
+ *
+ * These rows are wire shapes rather than convenience objects because a booking
+ * names a facility and a provider, and the API checks both against the token's
+ * grants and against its own foreign keys before it writes. A screen that
+ * invented either id would look right here and be refused there, so the ids a
+ * screen books with are read through the client in both modes.
  */
-export const MOCK_FACILITY = {
+const CEDAR_CLINIC: FacilityDto = {
   id: '0192f1a0-0000-7000-8000-00000000f001',
   name: 'Cedar Clinic',
-} as const;
+  code: 'CEDAR',
+  npi: '9999999979',
+  posCode: '11',
+  timezone: 'UTC',
+  address: {
+    line1: '18 Cedar Row',
+    line2: null,
+    city: 'Cedar Falls',
+    state: 'IA',
+    postalCode: '50613',
+    country: 'US',
+  },
+  phone: '+1 555 0142 000',
+  active: true,
+  createdAt: CREATED_AT,
+  updatedAt: UPDATED_AT,
+};
 
+/** The facility directory, as one page of the list route. */
+export const MOCK_DIRECTORY_FACILITIES: readonly FacilityDto[] = [CEDAR_CLINIC];
+
+const DIRECTORY_USER_DEFAULTS = {
+  npi: null,
+  taxonomyCode: null,
+  locale: 'en-US',
+  status: 'ACTIVE',
+  lastLoginAt: null,
+  createdAt: CREATED_AT,
+  updatedAt: UPDATED_AT,
+} as const satisfies Partial<UserDto>;
+
+const OKAFOR: UserDto = {
+  ...DIRECTORY_USER_DEFAULTS,
+  id: '0192f1a0-0000-7000-8000-00000000d001',
+  email: 'a.okafor@cedar.clinic.invalid',
+  givenName: 'Ada',
+  familyName: 'Okafor',
+  credential: 'MD',
+  npi: '9999999995',
+  taxonomyCode: '207Q00000X',
+  isProvider: true,
+  lastLoginAt: '2026-08-12T10:04:00.000Z',
+};
+
+const LINDQVIST: UserDto = {
+  ...DIRECTORY_USER_DEFAULTS,
+  id: '0192f1a0-0000-7000-8000-00000000d002',
+  email: 'i.lindqvist@cedar.clinic.invalid',
+  givenName: 'Ingrid',
+  familyName: 'Lindqvist',
+  credential: 'MD',
+  npi: '9999999987',
+  taxonomyCode: '208000000X',
+  isProvider: true,
+  lastLoginAt: '2026-08-12T09:41:00.000Z',
+};
+
+/** A front-desk account: in the directory, and never a schedule column. */
+const MBEKI: UserDto = {
+  ...DIRECTORY_USER_DEFAULTS,
+  id: '0192f1a0-0000-7000-8000-00000000u003',
+  email: 'r.mbeki@cedar.clinic.invalid',
+  givenName: 'Rosa',
+  familyName: 'Mbeki',
+  credential: null,
+  isProvider: false,
+  lastLoginAt: '2026-08-12T10:18:00.000Z',
+};
+
+/**
+ * The staff directory, as one page of the list route.
+ *
+ * It holds a non-clinician on purpose: `isProvider` is the filter every
+ * provider picker sends, and a directory where everyone is a provider would let
+ * a screen that forgot the filter pass anyway.
+ */
+export const MOCK_DIRECTORY_USERS: readonly UserDto[] = [OKAFOR, LINDQVIST, MBEKI];
+
+/**
+ * The one facility the rest of the fixtures are written against.
+ *
+ * Derived from the directory row rather than restated, so a fixture appointment
+ * and the facility a screen books into can never drift apart.
+ */
+export const MOCK_FACILITY = { id: CEDAR_CLINIC.id, name: CEDAR_CLINIC.name };
+
+/**
+ * The two clinicians, as the fixture-only screens display them.
+ *
+ * Separate from {@link MOCK_DIRECTORY_USERS} because it is a different thing:
+ * the reports screen reads an aggregate `apps/api` does not serve yet, and it
+ * needs a display name and a specialty that no directory row carries. Orders
+ * and results read through the client and no longer come here. The ids are the directory's, so the two never disagree about who
+ * these people are. Screens that write, and screens that can read the
+ * directory, use the client instead.
+ */
 export const MOCK_PROVIDERS = [
-  { id: '0192f1a0-0000-7000-8000-00000000d001', name: 'Dr. Okafor', role: 'Family medicine' },
-  { id: '0192f1a0-0000-7000-8000-00000000d002', name: 'Dr. Lindqvist', role: 'Paediatrics' },
+  { id: OKAFOR.id, name: 'Dr. Okafor', role: 'Family medicine' },
+  { id: LINDQVIST.id, name: 'Dr. Lindqvist', role: 'Paediatrics' },
 ] as const;
 
-/** Reads a provider name for a fixture id, so a schedule column is never a UUID. */
+/** Reads a provider name for a fixture id, so a fixture screen is never a UUID. */
 export function mockProviderName(providerId: string): string {
   return MOCK_PROVIDERS.find((provider) => provider.id === providerId)?.name ?? 'Unassigned';
 }
-
-const CREATED_AT = '2026-01-06T09:00:00.000Z';
-const UPDATED_AT = '2026-08-11T16:40:00.000Z';
 
 interface PatientSeed {
   id: string;
@@ -515,10 +618,18 @@ export function mockPatientById(patientId: string | null): Patient | undefined {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Everything below is fixture-only, exactly like {@link MOCK_FACILITY}: there is
- * no rooms, flow-status or coverage endpoint yet, so these shapes live here
- * rather than in `types.ts`, which mirrors real wire schemas only. When those
- * aggregates land, delete the fixture and read them from the client.
+ * Everything below is fixture-only, for two different reasons worth keeping
+ * apart.
+ *
+ * Rooms and flow-status history have no route at all: `apps/api` serves no
+ * segment for either, and `facilityDtoSchema` carries no room list. Coverage
+ * does have one, `/bff/v0/coverage`, and the fixture stays only because these
+ * view types are not mapped onto it yet, which is a change of its own.
+ *
+ * Either way the shapes live here rather than in `types.ts`, which mirrors real
+ * wire schemas only. When each is wired, delete the fixture and read it from
+ * the client, exactly as the schedule now reads its facility and its
+ * clinicians.
  */
 
 /** The rooms a front desk can assign on the flow board. Admin-configured in reality. */
@@ -766,10 +877,11 @@ export function mockVerifyEligibility(coverageId: string): Promise<MockEligibili
 /* -------------------------------------------------------------------------- */
 /* Orders, results and the typed inbox                                         */
 /*                                                                             */
-/* Appended by the orders-and-results screens. `apps/api` answers               */
-/* NotImplemented for these three aggregates, so the fixtures below are the     */
-/* only source they have; the types live in `../worklist`, which is where they  */
-/* move to `types.ts` once the endpoints exist.                                 */
+/* Appended by the orders-and-results screens. `apps/api` serves orders and     */
+/* results but nothing maps them into the worklist view types yet, and the      */
+/* inbox is a composition it has no segment for, so the fixtures below are the  */
+/* only source those screens have today. The types live in `../worklist`,       */
+/* which is where they move to `types.ts` once that mapping is written.         */
 /*                                                                             */
 /* Synthetic by construction, deterministic by construction: every instant is   */
 /* written against MOCK_CLINIC_DAY and MOCK_NOW, and nothing reads the clock.   */

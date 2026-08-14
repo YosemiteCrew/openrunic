@@ -6,7 +6,7 @@ import type { ReactElement } from 'react';
 import type { Appointment, AppointmentStatus, Patient } from '@/lib/api';
 import { formatAge, formatMrn, formatName, formatTime } from '@/lib/format';
 
-import { givenName, presentStatus } from './schedule';
+import { awaitsCheckIn, givenName, presentStatus } from './schedule';
 
 /**
  * The day's right rail: what the day looks like, and what to do about the one
@@ -22,8 +22,12 @@ export interface DayRailProps {
   appointments: readonly Appointment[];
   patientsById: ReadonlyMap<string, Patient>;
   selected: Appointment | null;
-  /** Ids checked in during this session, so the rail reflects the action taken. */
-  checkedIn: ReadonlySet<string>;
+  /**
+   * False when the day has no facility or no clinician to book against. The
+   * walk-in verb is then disabled rather than left live and refused; the page
+   * carries the reason in an alert, so the rail does not repeat it.
+   */
+  canBook?: boolean;
   onCheckIn: (appointment: Appointment) => void;
   onWalkIn: () => void;
 }
@@ -74,8 +78,11 @@ function VisitActions({
 }>): ReactElement {
   return (
     <div className="or-day-rail__actions">
+      {/* Once the visit has moved past arrival the button says so rather than
+          staying on the verb: a disabled "Check in" reads as a permission
+          problem, and this is the opposite, a job already done. */}
       <Button iconLeft="log-in" disabled={alreadyIn} onClick={() => onCheckIn(appointment)}>
-        {patient ? `Check in ${givenName(patient.name)}` : 'Check in'}
+        {checkInLabel(patient, alreadyIn)}
       </Button>
       {patient ? (
         <>
@@ -93,6 +100,11 @@ function VisitActions({
       ) : null}
     </div>
   );
+}
+
+function checkInLabel(patient: Patient | undefined, alreadyIn: boolean): string {
+  if (alreadyIn) return 'Already checked in';
+  return patient ? `Check in ${givenName(patient.name)}` : 'Check in';
 }
 
 interface SelectedVisitProps {
@@ -144,7 +156,7 @@ export function DayRail({
   appointments,
   patientsById,
   selected,
-  checkedIn,
+  canBook = true,
   onCheckIn,
   onWalkIn,
 }: Readonly<DayRailProps>): ReactElement {
@@ -163,7 +175,13 @@ export function DayRail({
             </div>
           ))}
         </dl>
-        <Button variant="secondary" iconLeft="user-plus" fullWidth onClick={onWalkIn}>
+        <Button
+          variant="secondary"
+          iconLeft="user-plus"
+          fullWidth
+          disabled={!canBook}
+          onClick={onWalkIn}
+        >
           Add walk-in
         </Button>
       </Card>
@@ -176,7 +194,7 @@ export function DayRail({
           <SelectedVisit
             appointment={selected}
             patient={patient}
-            alreadyIn={checkedIn.has(selected.id)}
+            alreadyIn={!awaitsCheckIn(selected.status)}
             onCheckIn={onCheckIn}
           />
         ) : (

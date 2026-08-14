@@ -17,11 +17,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 function failing(error: ApiError): ApiClient {
-  return {
-    mode: 'mock',
-    patients: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-    appointments: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-  };
+  return createMockClient({ failure: error });
 }
 
 function type(label: string, value: string): void {
@@ -77,12 +73,49 @@ describe('RegisterPatientScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
 
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('An MRN is assigned on save');
+    // The number the record will be filed under is stated before the save, not
+    // after it: the front desk can still change it while the dialog is open.
+    expect(dialog).toHaveTextContent('The record becomes bookable immediately');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Register patient' }));
 
     const toast = await screen.findByRole('status');
     expect(toast).toHaveTextContent('Patient registered');
-    expect(toast).toHaveTextContent('Kai Nordstrom is in the practice and can be booked.');
+    expect(toast).toHaveTextContent(/Kai Nordstrom is in the practice under OR-\d{6}/);
+  });
+
+  it('files the walk-in under a number the practice can read back', async () => {
+    const client = createMockClient();
+    render(<RegisterPatientScreen client={client} />);
+
+    fillWalkIn();
+    const mrn = (screen.getByLabelText('Medical record number') as HTMLInputElement).value;
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Register patient',
+      })
+    );
+    await screen.findByRole('status');
+
+    // The write survives the screen: the next read of the practice finds it.
+    const found = await client.patients.list({ mrn });
+    expect(found.data[0]?.name.family).toBe('Nordstrom');
+  });
+
+  it('keeps the form intact and says why when the record number is already taken', async () => {
+    render(<RegisterPatientScreen client={createMockClient()} />);
+
+    fillWalkIn();
+    // OR-100482 belongs to Testina Patientsson in the demo clinic.
+    type('Medical record number', 'OR-100482');
+    fireEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Register patient' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That MRN is taken.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // Nothing typed is lost: the patient is still standing at the desk.
+    expect(screen.getByLabelText('Given name')).toHaveValue('Kai');
   });
 
   it('clears the form once the patient is registered', async () => {
@@ -198,7 +231,7 @@ describe('RegisterPatientScreen, the fields beyond the required four', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Register patient' }));
 
     expect(
-      await screen.findByText('Kai-Lee Nordstrom is in the practice and can be booked.')
+      await screen.findByText(/Kai-Lee Nordstrom is in the practice under OR-\d{6}/)
     ).toBeInTheDocument();
   });
 
@@ -319,9 +352,11 @@ describe('RegisterPatientScreen, backing out', () => {
     );
 
     const toast = await screen.findByRole('status');
-    expect(within(toast).getByRole('link', { name: 'Book an appointment' })).toHaveAttribute(
+    // The link goes to the record that now exists, which is the thing the
+    // front desk wants next and the proof that it was actually created.
+    expect(within(toast).getByRole('link', { name: 'Open the chart' })).toHaveAttribute(
       'href',
-      '/schedule'
+      expect.stringMatching(/^\/patients\/.+/) as unknown as string
     );
 
     fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));

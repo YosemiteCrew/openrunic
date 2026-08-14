@@ -1,0 +1,84 @@
+'use client';
+
+import { Button, Modal } from '@openrunic/ui';
+import type { ReactElement } from 'react';
+
+import type { Appointment, Patient } from '@/lib/api';
+import { formatName, formatTime } from '@/lib/format';
+
+import { givenName } from './schedule';
+
+/**
+ * Check-in, confirmed in one deliberate step.
+ *
+ * Checking a patient in moves them onto a board other people are working, so
+ * it states the consequence in a sentence and names the verb on the button.
+ * It is not made harder than that: friction on a routine, correct action is
+ * how a system trains a front desk to click through warnings.
+ *
+ * The dialog stays open while the write is outstanding and stays open if it is
+ * refused, with the server's own sentence above the buttons. Closing on a
+ * refusal would leave the desk believing a patient was checked in when the
+ * board will not show them.
+ */
+
+export interface CheckInDialogProps {
+  appointment: Appointment;
+  /** Absent for a held slot: bookable time with nobody attached to it yet. */
+  patient: Patient | undefined;
+  /** True while the check-in is with the server. */
+  pending?: boolean;
+  /** What the server said when it refused. */
+  error?: string | null;
+  onCancel: () => void;
+  onConfirm: (appointment: Appointment) => void;
+}
+
+/** The verb names the patient, so the button says who it is about to check in. */
+function confirmLabel(patient: Patient | undefined, pending: boolean): string {
+  if (pending) return 'Checking in...';
+  return patient ? `Check in ${givenName(patient.name)}` : 'Check in visit';
+}
+
+function describe(appointment: Appointment, patient: Patient | undefined): string {
+  if (!patient) return 'Check in this visit. This moves it onto the Flow Board.';
+  return `Check in ${formatName(patient.name)} for the ${formatTime(
+    appointment.start
+  )} ${appointment.type.display.toLowerCase()}. This moves them onto the Flow Board.`;
+}
+
+export function CheckInDialog({
+  appointment,
+  patient,
+  pending = false,
+  error = null,
+  onCancel,
+  onConfirm,
+}: Readonly<CheckInDialogProps>): ReactElement {
+  return (
+    <Modal
+      open
+      role="alertdialog"
+      width={520}
+      title="Check in this patient"
+      description={describe(appointment, patient)}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button variant="secondary" disabled={pending} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button disabled={pending} onClick={() => onConfirm(appointment)}>
+            {confirmLabel(patient, pending)}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p className="or-body" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </Modal>
+  );
+}

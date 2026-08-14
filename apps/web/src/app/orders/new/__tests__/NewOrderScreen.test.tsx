@@ -19,12 +19,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 function failing(): ApiClient {
-  const error = new ApiError('offline', { kind: 'network' });
-  return {
-    mode: 'mock',
-    patients: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-    appointments: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-  };
+  return createMockClient({ failure: new ApiError('offline', { kind: 'network' }) });
 }
 
 async function renderComposer() {

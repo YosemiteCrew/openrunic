@@ -16,9 +16,10 @@ import {
   presentStatus,
   rowForInstant,
   SLOT_MINUTES,
+  toScheduleProvider,
 } from '@/components/schedule';
-import { MOCK_APPOINTMENTS, MOCK_NOW, MOCK_PROVIDERS } from '@/lib/api';
-import type { Appointment } from '@/lib/api';
+import { MOCK_APPOINTMENTS, MOCK_DIRECTORY_USERS, MOCK_NOW, MOCK_PROVIDERS } from '@/lib/api';
+import type { Appointment, UserDto } from '@/lib/api';
 
 /**
  * The grid's arithmetic. Everything asserted here is what a front desk sees as
@@ -311,5 +312,24 @@ describe('givenName', () => {
         preferred: null,
       })
     ).toBe('Marek');
+  });
+});
+
+describe('toScheduleProvider', () => {
+  const okafor = MOCK_DIRECTORY_USERS[0] as UserDto;
+
+  it('heads the column with the name the directory carries', () => {
+    expect(toScheduleProvider(okafor)).toEqual({
+      id: okafor.id,
+      name: 'Ada Okafor',
+      role: 'MD',
+    });
+  });
+
+  it('says nothing where the directory says nothing', () => {
+    // `credential` is nullable on the wire, and plenty of people who hold a
+    // column hold no letters after their name. The sub-line is then empty
+    // rather than filled in with a guess.
+    expect(toScheduleProvider({ ...okafor, credential: null }).role).toBe('');
   });
 });

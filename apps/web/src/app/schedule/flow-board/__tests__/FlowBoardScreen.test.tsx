@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FlowBoardScreen } from '@/app/schedule/flow-board/FlowBoardScreen';
@@ -18,11 +18,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 function failing(error: ApiError): ApiClient {
-  return {
-    mode: 'mock',
-    patients: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-    appointments: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-  };
+  return createMockClient({ failure: error });
 }
 
 function column(label: string): HTMLElement {
@@ -68,10 +64,25 @@ describe('FlowBoardScreen', () => {
     const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
     fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
 
-    expect(screen.getByRole('region', { name: /^Arrived, 0 patients$/ })).toBeInTheDocument();
+    // The card moves once the server has agreed, not on the click.
+    expect(
+      await screen.findByRole('region', { name: /^Arrived, 0 patients$/ })
+    ).toBeInTheDocument();
     const toast = await screen.findByRole('status');
     expect(toast).toHaveTextContent('Checked in');
     expect(within(toast).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+  });
+
+  it('records the advance, so a fresh read of the day finds the patient moved', async () => {
+    const client = createMockClient();
+    render(<FlowBoardScreen client={client} />);
+
+    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
+    fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
+    await screen.findByRole('region', { name: /^Arrived, 0 patients$/ });
+
+    const board = await client.appointments.list({ status: 'ARRIVED' });
+    expect(board.data).toHaveLength(0);
   });
 
   it('puts the patient back where they were when the undo is taken', async () => {
@@ -83,7 +94,9 @@ describe('FlowBoardScreen', () => {
       within(await screen.findByRole('status')).getByRole('button', { name: 'Undo' })
     );
 
-    expect(screen.getByRole('region', { name: /^Arrived, 1 patients$/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('region', { name: /^Arrived, 1 patients$/ })
+    ).toBeInTheDocument();
   });
 
   it('assigns a room from the board and says where the patient went', async () => {
@@ -150,7 +163,9 @@ describe('FlowBoardScreen', () => {
     expect(advance).toHaveFocus();
 
     fireEvent.click(document.activeElement as HTMLElement);
-    expect(screen.getByRole('region', { name: /^Checked in, 2 patients$/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('region', { name: /^Checked in, 2 patients$/ })
+    ).toBeInTheDocument();
   });
 });
 
@@ -229,33 +244,45 @@ describe('FlowBoardScreen, driven from the command palette', () => {
 });
 
 describe('FlowBoardScreen, rooms and undo', () => {
-  it('clears a room, saying so in words rather than blanking the card', async () => {
+  it('does not claim to have cleared a room the API will not clear', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
     const inProgress = await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
 
     const roomSelect = within(inProgress).getByRole('combobox', { name: /^Room for / });
+    const before = (roomSelect as HTMLSelectElement).value;
     fireEvent.change(roomSelect, { target: { value: '' } });
 
-    const toast = await screen.findByRole('status');
-    expect(toast).toHaveTextContent('Room cleared');
-    expect(toast).toHaveTextContent('has no room');
+    // The empty entry is the select's placeholder, not a "no room" instruction:
+    // the appointment patch takes a room of at least one character, so there is
+    // nothing to send and nothing to announce.
+    await waitFor(() => expect(roomSelect).toHaveValue(before));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('puts a patient back in the room the undo came from', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    const inProgress = await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
-    const roomSelect = within(inProgress).getByRole('combobox', { name: /^Room for / });
-    const before = (roomSelect as HTMLSelectElement).value;
+    await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
 
-    fireEvent.change(roomSelect, { target: { value: 'Room 4' } });
-    expect(roomSelect).toHaveValue('Room 4');
+    /* Re-queried on each assertion rather than held: a re-read of the day
+       replaces the card, so a reference captured before the write is a node
+       that is no longer on the board. */
+    const roomSelect = (): HTMLElement =>
+      within(screen.getByRole('region', { name: /^In progress, \d+ patients$/ })).getByRole(
+        'combobox',
+        { name: /^Room for / }
+      );
+    const before = (roomSelect() as HTMLSelectElement).value;
+
+    fireEvent.change(roomSelect(), { target: { value: 'Room 4' } });
+    await waitFor(() => expect(roomSelect()).toHaveValue('Room 4'));
 
     fireEvent.click(
       within(await screen.findByRole('status')).getByRole('button', { name: 'Undo' })
     );
 
-    expect(roomSelect).toHaveValue(before);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // The undo is a second write back, so the room returns from the server
+    // rather than from a remembered value on this screen.
+    await waitFor(() => expect(roomSelect()).toHaveValue(before));
   });
 
   it('dismisses the confirmation without undoing the move it confirmed', async () => {
@@ -267,6 +294,64 @@ describe('FlowBoardScreen, rooms and undo', () => {
     fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /^Arrived, 0 patients$/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('region', { name: /^Arrived, 0 patients$/ })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('FlowBoardScreen, when the server refuses a move', () => {
+  /** Reads the day normally and refuses every write, as a lost grant would. */
+  function refusesWrites(): ApiClient {
+    const client = createMockClient();
+    return {
+      ...client,
+      appointments: {
+        ...client.appointments,
+        update: () =>
+          Promise.reject(
+            new ApiError('forbidden', {
+              kind: 'http',
+              status: 403,
+              problem: {
+                type: 'https://openrunic.org/problems/forbidden',
+                title: 'Not permitted',
+                status: 403,
+                detail: 'This facility is not granted to your role.',
+                instance: '/bff/v0/appointments',
+                requestId: 'req-7',
+              },
+            })
+          ),
+      },
+    };
+  }
+
+  it('leaves the card where it is and repeats the reason it was given', async () => {
+    render(<FlowBoardScreen client={refusesWrites()} />);
+
+    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
+    fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
+
+    // A refusal interrupts rather than waiting for a pause, which is what the
+    // alert role is for: the clinician is about to walk off with the patient.
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent('That move was refused');
+    // The server's own sentence, because a generic failure is not the answer.
+    expect(toast).toHaveTextContent('This facility is not granted to your role.');
+    // Nothing to undo: the board never claimed the card had moved.
+    expect(within(toast).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Arrived, 1 patients$/ })).toBeInTheDocument();
+  });
+
+  it('says so for a refused room assignment too, not only for an advance', async () => {
+    render(<FlowBoardScreen client={refusesWrites()} />);
+
+    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    fireEvent.change(within(arrived).getByRole('combobox', { name: /^Room for / }), {
+      target: { value: 'Room 4' },
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That move was refused');
   });
 });

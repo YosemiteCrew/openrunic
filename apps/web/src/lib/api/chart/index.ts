@@ -6,6 +6,7 @@
  * merge and no screen changes.
  */
 export { chartApi, createHttpChartClient, createMockChartClient } from './client';
+export { ATTESTATION, contentHash } from './signature';
 export type { ChartClient, MockChartClientOptions } from './client';
 export { clinicNow } from './clock';
 /**

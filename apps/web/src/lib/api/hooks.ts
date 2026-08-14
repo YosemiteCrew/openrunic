@@ -130,6 +130,88 @@ export function queryKey(name: string, query: Record<string, unknown> = {}): str
   return `${name}:${JSON.stringify(entries)}`;
 }
 
+/**
+ * What a write did, as one value the caller can branch on.
+ *
+ * A discriminated result rather than a value-or-null, because the failure has
+ * to be readable at the moment it happens. A screen that answered "did it
+ * work?" with null and then read the hook's `error` would read the render
+ * before last: React has not re-rendered yet at the point a click handler
+ * resumes, so the error it finds is the previous one, or none at all. That is
+ * how a refused write ends up reporting the wrong reason, or no reason.
+ */
+export type MutationOutcome<T> = { ok: true; value: T } | { ok: false; error: ApiError };
+
+/**
+ * A write in flight, and what it left behind.
+ *
+ * `run` resolves rather than rejects: a click handler is not a promise chain,
+ * and a rejected one from an `onClick` is an unhandled rejection in the console
+ * of a clinician's browser. `error` holds the same failure for a surface that
+ * renders it in place, such as a dialog that stays open on a refusal.
+ */
+export interface MutationState<TArgs extends readonly unknown[], TResult> {
+  run: (...args: TArgs) => Promise<MutationOutcome<TResult>>;
+  /** True while the request is outstanding. Wire it to the button's disabled state. */
+  pending: boolean;
+  error: ApiError | null;
+  /** Clears the error, for a dialog that is being reopened. */
+  reset: () => void;
+}
+
+/**
+ * The one place a write is turned into render state.
+ *
+ * There is no optimistic layer here on purpose. Every write this app makes is
+ * a clinical or financial state change, and the screens that make them already
+ * confirm first; showing a result before the server has agreed to it is how a
+ * refused transition ends up looking like a completed one. What the hook does
+ * give a screen is the thing it needs to stay honest: a `pending` flag while
+ * the answer is outstanding, and the server's own problem document when the
+ * answer is no.
+ */
+export function useMutation<TArgs extends readonly unknown[], TResult>(
+  perform: (...args: TArgs) => Promise<TResult>
+): MutationState<TArgs, TResult> {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const performRef = useRef(perform);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    performRef.current = perform;
+  });
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const run = useCallback(async (...args: TArgs): Promise<MutationOutcome<TResult>> => {
+    setPending(true);
+    setError(null);
+    try {
+      return { ok: true, value: await performRef.current(...args) };
+    } catch (cause) {
+      const failure = toApiError(cause);
+      if (mounted.current) setError(failure);
+      return { ok: false, error: failure };
+    } finally {
+      // Cleared on both paths, and cleared here so a `return` added to either
+      // branch later cannot leave a button disabled forever. A screen the
+      // clinician has already left is not re-rendered; the write still
+      // happened, which is what matters.
+      if (mounted.current) setPending(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => setError(null), []);
+
+  return useMemo(() => ({ run, pending, error, reset }), [error, pending, reset, run]);
+}
+
 export interface HookOptions {
   /** Injectable for tests and stories. Defaults to the app's `api`. */
   client?: ApiClient;

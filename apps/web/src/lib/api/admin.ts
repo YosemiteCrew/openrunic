@@ -10,12 +10,17 @@ import type { ListResponse } from './types';
 /**
  * The admin, developer-platform and reports read surface.
  *
- * `apps/api` implements patients and appointments; every route behind this file
- * still answers NotImplemented, so the shapes here are written the way the API
- * will answer rather than the way a screen happens to want them: list responses
- * carry a `page`, ids are opaque strings, instants are ISO, and nothing is
- * pre-formatted. When those routes land, `createAdminHttpClient` slots in beside
- * the mock one and no screen changes.
+ * Half of what this file describes is already served. Audit events, facilities,
+ * staff users, roles, form definitions and terminology all have routes in
+ * `apps/api`; those screens are fixture-backed because nothing maps those
+ * payloads into the view types here yet. API keys, API scopes, integrations,
+ * webhooks, SMART apps, the permission matrix, the practice dashboard and the
+ * visit report have no route at all.
+ *
+ * Either way the shapes here are written the way the API answers rather than
+ * the way a screen happens to want them: list responses carry a `page`, ids are
+ * opaque strings, instants are ISO, and nothing is pre-formatted. When a live
+ * client is written, it slots in beside the mock one and no screen changes.
  *
  * Screens import from `@/lib/api` and never from here directly.
  */
@@ -463,10 +468,11 @@ export interface AdminClient {
 /**
  * The admin client every screen reads through.
  *
- * Mock-only for now, and deliberately so: there is no live endpoint behind any
- * of these routes yet, and a client that pretended otherwise would fail with a
- * 501 that says nothing useful. When the routes land this becomes the same
- * mode switch `api` already makes.
+ * Mock-only for now, and deliberately so: no live implementation of this
+ * interface exists, and half of what it promises has no route to read from at
+ * all. A client that pretended otherwise would 404 on the missing half while
+ * looking fine on the rest. When one is written this becomes the same mode
+ * switch `api` already makes.
  */
 export const adminApi: AdminClient = createAdminMockClient();
 

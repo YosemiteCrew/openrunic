@@ -115,6 +115,19 @@ export function formatName(name: PatientName, style: NameStyle = 'full'): string
   return [name.prefix, given, family, name.suffix].filter(Boolean).join(' ');
 }
 
+/**
+ * A staff member as "Ada Okafor, MD", or just "Ada Okafor" when the directory
+ * carries no credential for them.
+ *
+ * The separator is conditional because the credential is: `userDtoSchema` makes
+ * it nullable, and plenty of people who write in a chart hold none. Joining
+ * unconditionally would print a trailing comma after the name of everyone who
+ * does not, which reads as a field the screen failed to load.
+ */
+export function formatCredentialed(name: string, credential: string): string {
+  return credential ? `${name}, ${credential}` : name;
+}
+
 /** Two letters for an avatar. Decorative: never the only identification on screen. */
 export function formatInitials(name: PatientName): string {
   const given = name.preferred ?? name.given;

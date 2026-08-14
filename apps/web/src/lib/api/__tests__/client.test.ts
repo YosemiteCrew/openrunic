@@ -357,6 +357,27 @@ describe('createHttpClient, every route it exposes', () => {
     }
   });
 
+  it('asks for the directory on the routes the API actually serves', async () => {
+    // A fresh Response per call: a body can only be read once.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ data: [], page: {} })));
+    const client = createHttpClient({ baseUrl: 'http://api.test', fetchImpl });
+
+    // The two reads a booking depends on. `active` and `isProvider` go over the
+    // wire as the strings the route's enums accept, which is what
+    // `toSearchParams` does with a boolean.
+    await client.facilities.list({ active: true, pageSize: 100 });
+    await client.users.list({ isProvider: true, status: 'ACTIVE', pageSize: 100 });
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'http://api.test/bff/v0/facilities?active=true&pageSize=100'
+    );
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+      'http://api.test/bff/v0/users?isProvider=true&status=ACTIVE&pageSize=100'
+    );
+  });
+
   it('says it is the live client, which is how a screen labels its data', () => {
     expect(createHttpClient({ baseUrl: 'http://api.test' }).mode).toBe('live');
   });

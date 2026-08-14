@@ -1,4 +1,4 @@
-import type { AdministrativeGender, Patient, SensitivityClass } from '@/lib/api';
+import type { AdministrativeGender, Patient, PatientCreateBody, SensitivityClass } from '@/lib/api';
 
 /**
  * Registration rules, with no React in them.
@@ -11,6 +11,16 @@ import type { AdministrativeGender, Patient, SensitivityClass } from '@/lib/api'
  */
 
 export interface RegistrationDraft {
+  /**
+   * The medical record number the practice is assigning.
+   *
+   * The API takes an MRN rather than minting one, because which number a
+   * patient gets is a practice's decision and is often carried in from a
+   * system that came before this one. So the form proposes one and the front
+   * desk may overwrite it; a number already in use comes back as a refusal
+   * from the server, which is the only place that can know.
+   */
+  mrn: string;
   given: string;
   family: string;
   preferred: string;
@@ -30,6 +40,7 @@ export interface RegistrationDraft {
 }
 
 export const EMPTY_DRAFT: RegistrationDraft = {
+  mrn: '',
   given: '',
   family: '',
   preferred: '',
@@ -59,6 +70,61 @@ export const REQUIRED_FIELDS: readonly RegistrationField[] = [
   'phoneMobile',
 ];
 
+const MRN_PREFIX = 'OR-';
+const MRN_DIGITS = 6;
+
+/**
+ * A medical record number to start from.
+ *
+ * Derived from the clinic clock rather than from the roster, because the roster
+ * this screen can see is one page of a search and the next free number is not
+ * a question a client can answer. The proposal only has to be plausible and
+ * usually free; the organisation-wide uniqueness check belongs to the server,
+ * which answers a collision with "That MRN is taken." and does so before
+ * anything is written.
+ */
+export function proposeMrn(asOf: Date): string {
+  const minutes = Math.floor(asOf.getTime() / 60_000);
+  const suffix = String(minutes % 10 ** MRN_DIGITS).padStart(MRN_DIGITS, '0');
+  return `${MRN_PREFIX}${suffix}`;
+}
+
+/** Trimmed, or absent. An empty optional field must not be sent as an empty string. */
+function optional(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * The draft, as the API's registration body.
+ *
+ * The two shapes differ in more than field names: the form holds every field as
+ * a string because that is what an input gives it, and the API rejects an empty
+ * string where it expects a missing value. So every optional field is trimmed
+ * and dropped rather than sent blank, which is the difference between "no
+ * middle name" and "a middle name that is one space".
+ */
+export function toPatientCreateBody(draft: RegistrationDraft): PatientCreateBody {
+  return {
+    mrn: draft.mrn.trim(),
+    givenName: draft.given.trim(),
+    familyName: draft.family.trim(),
+    birthDate: draft.birthDate.trim(),
+    ...(draft.preferred.trim() ? { preferredName: draft.preferred.trim() } : {}),
+    ...(draft.sexAtBirth ? { sexAtBirth: draft.sexAtBirth } : {}),
+    ...(optional(draft.pronouns) ? { pronouns: draft.pronouns.trim() } : {}),
+    ...(optional(draft.phoneMobile) ? { phoneMobile: draft.phoneMobile.trim() } : {}),
+    ...(optional(draft.email) ? { email: draft.email.trim() } : {}),
+    ...(optional(draft.line1) ? { line1: draft.line1.trim() } : {}),
+    ...(optional(draft.city) ? { city: draft.city.trim() } : {}),
+    ...(optional(draft.state) ? { state: draft.state.trim() } : {}),
+    ...(optional(draft.postalCode) ? { postalCode: draft.postalCode.trim() } : {}),
+    languageCode: draft.languageCode,
+    sensitivityClass: draft.sensitivityClass,
+    portalEnabled: draft.portalEnabled,
+  };
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /* Deliberately loose: a phone number that a person can be reached on takes many
    shapes, and rejecting a valid one at the desk is worse than storing an odd one. */
@@ -83,6 +149,9 @@ export function validateRegistration(
 
   if (!draft.given.trim()) errors.given = 'Enter the given name.';
   if (!draft.family.trim()) errors.family = 'Enter the family name.';
+  // Not one of the four required fields, because the form proposes it: this
+  // only fires when somebody has cleared the proposal by hand.
+  if (!draft.mrn.trim()) errors.mrn = 'Enter the medical record number to file this record under.';
 
   if (!draft.birthDate.trim()) {
     errors.birthDate = 'Enter the date of birth as YYYY-MM-DD.';

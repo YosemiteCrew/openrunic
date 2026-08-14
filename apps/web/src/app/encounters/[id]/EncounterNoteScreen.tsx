@@ -11,7 +11,7 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { SLASH_COMMANDS, useEncounterNote } from '@/lib/api/chart';
 import type { ChartClient, SlashCommand } from '@/lib/api/chart';
-import { formatDate } from '@/lib/format';
+import { formatCredentialed, formatDate } from '@/lib/format';
 
 /**
  * CH-02 Visit workspace.
@@ -55,7 +55,7 @@ export function EncounterNoteScreen({
   );
 
   const description = note.data
-    ? `${note.data.visitType}, ${formatDate(note.data.visitDate)}, ${note.data.providerName}, ${note.data.providerCredential}`
+    ? `${note.data.visitType}, ${formatDate(note.data.visitDate)}, ${formatCredentialed(note.data.providerName, note.data.providerCredential)}`
     : undefined;
 
   return (
@@ -85,7 +85,13 @@ export function EncounterNoteScreen({
           message: 'Notes are created when a visit starts. Open the chart to see the visit list.',
         }}
       >
-        {(loaded) => <NoteEditor note={loaded} commands={commands} />}
+        {(loaded) => (
+          <NoteEditor
+            note={loaded}
+            commands={commands}
+            {...(chartClient ? { client: chartClient } : {})}
+          />
+        )}
       </AsyncBoundary>
     </AppShell>
   );

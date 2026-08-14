@@ -4,7 +4,6 @@
  * `SlashCommandMenu` is a proposed addition to `@openrunic/ui`: the library has
  * no popover or combobox primitive, and this one is written to move across.
  */
-export { contentHash } from './content-hash';
 export { optionId } from './ids';
 export { NoteEditor } from './NoteEditor';
 export type { NoteEditorProps } from './NoteEditor';

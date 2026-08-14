@@ -26,15 +26,7 @@ const testina = patientByMrn('OR-100482');
 
 /** A chart read that fails the way a dropped connection fails. */
 function chartThatFails(): ChartClient {
-  return {
-    mode: 'mock',
-    summary: {
-      get: () => Promise.reject(new ApiError('offline', { kind: 'network' })),
-    },
-    notes: {
-      get: () => Promise.reject(new ApiError('offline', { kind: 'network' })),
-    },
-  };
+  return createMockChartClient({ failure: new ApiError('offline', { kind: 'network' }) });
 }
 
 beforeEach(() => {

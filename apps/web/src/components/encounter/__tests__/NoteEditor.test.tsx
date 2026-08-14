@@ -3,8 +3,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CommandPalette, CommandProvider } from '@/components/command';
-import { contentHash, NoteEditor } from '@/components/encounter';
-import { SLASH_COMMANDS } from '@/lib/api/chart';
+import { NoteEditor } from '@/components/encounter';
+import { ApiError } from '@/lib/api';
+import { contentHash, createMockChartClient, SLASH_COMMANDS } from '@/lib/api/chart';
+import type { ChartClient } from '@/lib/api/chart';
 import type { EncounterNote } from '@/lib/api/chart';
 import { MOCK_ENCOUNTER_IDS, mockEncounterNote } from '@/lib/api/mock/chart';
 
@@ -22,10 +24,12 @@ function noteById(id: string): EncounterNote {
 const unsigned = noteById(MOCK_ENCOUNTER_IDS.testinaUnsigned);
 const signed = noteById(MOCK_ENCOUNTER_IDS.testinaSigned);
 
-function renderEditor(note: EncounterNote) {
+/* A client per render, so a signature written by one test is invisible to the
+   next: the mock chart client keeps its writes for the life of the client. */
+function renderEditor(note: EncounterNote, client = createMockChartClient()) {
   return render(
     <CommandProvider>
-      <NoteEditor note={note} commands={SLASH_COMMANDS} />
+      <NoteEditor note={note} commands={SLASH_COMMANDS} client={client} />
     </CommandProvider>
   );
 }
@@ -174,12 +178,16 @@ describe('NoteEditor signing', () => {
 });
 
 describe('NoteEditor, signed', () => {
-  it('renders signed content as text, with its signature and hash', () => {
+  it('renders signed content as text, with its signature and fingerprint', () => {
     renderEditor(signed);
 
     expect(screen.getByText('Signed and locked')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.getByText('9f2c-41ab-77de')).toBeInTheDocument();
+    // The label says what the value is. It was "Content hash" beside a comment
+    // calling it proof that the locked text is the signed text, which it never
+    // was: nothing on the wire carries the hash taken at signing time.
+    expect(screen.getByText('Note fingerprint')).toBeInTheDocument();
+    expect(screen.getByText(contentHash(signed.sections))).toBeInTheDocument();
     expect(
       screen.getByText('I attest that this note records the care I provided at this visit.')
     ).toBeInTheDocument();
@@ -213,6 +221,33 @@ describe('NoteEditor, signed', () => {
     expect(await screen.findByText(/Ferritin repeated on 20 May/)).toBeInTheDocument();
     expect(screen.getAllByText('Addendum')).toHaveLength(2);
     expect(screen.getByText('Addendum signed')).toBeInTheDocument();
+  });
+
+  it('records the addendum, so a fresh read of the note carries it', async () => {
+    const client = createMockChartClient();
+    renderEditor(signed, client);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add addendum' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Addendum text' }), {
+      target: { value: 'Repeat ferritin within range.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign addendum' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Sign addendum' })
+    );
+    await screen.findByText(/Repeat ferritin within range/);
+
+    const stored = await client.notes.get(signed.id);
+    expect(stored.addenda.at(-1)?.text).toBe('Repeat ferritin within range.');
+  });
+
+  it('refuses a second signature and says so instead of stamping one', async () => {
+    const client = createMockChartClient();
+    // Signed already, so the editor's own lock is bypassed here on purpose: the
+    // point is that the server refuses even if a screen asks.
+    await expect(client.notes.sign(signed.id, signed.sections)).rejects.toMatchObject({
+      status: 409,
+    });
   });
 });
 
@@ -491,7 +526,10 @@ describe('NoteEditor, signing and its confirmations', () => {
       fireEvent.click(
         within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Sign note' })
       );
-      const toastMessage = /This build keeps note changes in the browser/;
+      const toastMessage = /Recorded against this visit/;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
       expect(screen.getByText(toastMessage)).toBeInTheDocument();
 
       await act(async () => {
@@ -503,5 +541,64 @@ describe('NoteEditor, signing and its confirmations', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('NoteEditor, when the server refuses a signature', () => {
+  /** Reads the note normally and refuses every write. */
+  function refusesWrites(): ChartClient {
+    const client = createMockChartClient();
+    const refused = () =>
+      Promise.reject(
+        new ApiError('forbidden', {
+          kind: 'http',
+          status: 403,
+          problem: {
+            type: 'https://openrunic.org/problems/forbidden',
+            title: 'Not permitted',
+            status: 403,
+            detail: 'Only the author may sign this note.',
+            instance: '/bff/v0/notes',
+            requestId: 'req-3',
+          },
+        })
+      );
+    return { ...client, notes: { ...client.notes, sign: refused, addAddendum: refused } };
+  }
+
+  it('leaves the note unsigned and says why, rather than showing a signature block', async () => {
+    renderEditor(unsigned, refusesWrites());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign note' }));
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign note' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Only the author may sign this note.'
+    );
+    // The one thing this screen must never do: render a signature for a
+    // signature that did not happen.
+    expect(screen.getByText('Unsigned')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Plan' })).toBeInTheDocument();
+    expect(screen.queryByText('Note signed')).not.toBeInTheDocument();
+  });
+
+  it('keeps the addendum text when the addendum is refused', async () => {
+    renderEditor(signed, refusesWrites());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add addendum' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Addendum text' }), {
+      target: { value: 'Typed once, and not lost.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign addendum' }));
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign addendum' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Only the author may sign this note.'
+    );
+    expect(screen.getByRole('textbox', { name: 'Addendum text' })).toHaveValue(
+      'Typed once, and not lost.'
+    );
   });
 });

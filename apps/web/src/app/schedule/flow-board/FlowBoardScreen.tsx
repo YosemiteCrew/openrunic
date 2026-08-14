@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, Card, Select, Switch, Toast } from '@openrunic/ui';
+import type { ToastTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
@@ -17,10 +18,11 @@ import {
   nextStatus,
   useClinicDay,
 } from '@/components/schedule';
+import type { ScheduleProvider } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
-import { MOCK_PROVIDERS, MOCK_ROOMS, mockStatusSince } from '@/lib/api';
-import type { ApiClient, Appointment, AppointmentStatus, Patient } from '@/lib/api';
+import { api, MOCK_ROOMS, mockStatusSince, useMutation } from '@/lib/api';
+import type { ApiClient, ApiError, Appointment, AppointmentStatus, Patient } from '@/lib/api';
 import { formatEnumLabel, formatName, formatTime } from '@/lib/format';
 
 /**
@@ -32,9 +34,11 @@ import { formatEnumLabel, formatName, formatTime } from '@/lib/format';
  * scrolls or reorders itself while someone is reading it.
  *
  * There is no push channel yet, so the board says when it last read the server
- * instead of implying it is live. Advancing a status and assigning a room are
- * held for this session, with an undo on the toast, until the write endpoints
- * land.
+ * instead of implying it is live. Advancing a status and assigning a room both
+ * patch the appointment and then re-read the board, and the undo on the toast
+ * is a second write back to where the card was rather than a local rollback: a
+ * card that says ROOMED because this browser remembers moving it, on a board
+ * two other people are also working, is worse than no board.
  */
 
 export interface FlowBoardScreenProps {
@@ -45,11 +49,22 @@ export interface FlowBoardScreenProps {
 interface ToastMessage {
   title: string;
   message: string;
+  /** A refusal reads as a failure, never as the confirmation it is not. */
+  tone?: ToastTone;
   undo?: () => void;
+}
+
+/** The two moves this board makes: along the flow, and between rooms. */
+type AppointmentPatch = { status: AppointmentStatus } | { room: string };
+
+/** The server's own words for a refusal, falling back to why it never answered. */
+function refusalOf(error: ApiError): string {
+  return error.problem?.detail ?? error.message;
 }
 
 const NO_APPOINTMENTS: readonly Appointment[] = [];
 const NO_PATIENTS: ReadonlyMap<string, Patient> = new Map();
+const NO_PROVIDERS: readonly ScheduleProvider[] = [];
 
 /** Every status that puts a card on the board, in any column. */
 const ON_BOARD: ReadonlySet<AppointmentStatus> = new Set(
@@ -60,8 +75,6 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
   const [providerId, setProviderId] = useState('');
   const [room, setRoom] = useState('');
   const [delayedOnly, setDelayedOnly] = useState(false);
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, AppointmentStatus>>({});
-  const [roomOverrides, setRoomOverrides] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const [now] = useState<Date>(() => clinicNow());
@@ -70,62 +83,112 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
   const state = useClinicDay({ day, providerId: providerId || undefined, client });
   const appointments = state.data?.appointments ?? NO_APPOINTMENTS;
   const patientsById = state.data?.patientsById ?? NO_PATIENTS;
+  /* The filter narrows a server-side query, so its options have to be ids the
+     server knows. A fixture id here would quietly empty the board. */
+  const providers = state.data?.providers ?? NO_PROVIDERS;
 
-  const statusOf = useCallback(
-    (appointment: Appointment): AppointmentStatus =>
-      statusOverrides[appointment.id] ?? appointment.status,
-    [statusOverrides]
-  );
+  const writes = client ?? api;
+  const refetch = state.refetch;
 
-  const roomOf = useCallback(
-    (appointment: Appointment): string | null => roomOverrides[appointment.id] ?? appointment.room,
-    [roomOverrides]
+  const move = useMutation((id: string, patch: AppointmentPatch) =>
+    writes.appointments.update(id, patch)
   );
 
   const onBoard = useMemo(
     () =>
       appointments.filter((appointment) => {
-        if (!ON_BOARD.has(statusOf(appointment))) return false;
-        if (room && roomOf(appointment) !== room) return false;
+        if (!ON_BOARD.has(appointment.status)) return false;
+        if (room && appointment.room !== room) return false;
         if (delayedOnly) {
           const waited = minutesBetween(mockStatusSince(appointment), now);
-          if (delayTier(statusOf(appointment), waited) === 'none') return false;
+          if (delayTier(appointment.status, waited) === 'none') return false;
         }
         return true;
       }),
-    [appointments, delayedOnly, now, room, roomOf, statusOf]
+    [appointments, delayedOnly, now, room]
+  );
+
+  /* One write, one re-read, one toast. The undo is another write rather than a
+     rollback of local state, because the board is shared and the server is the
+     only thing that knows where a card actually is. */
+  const apply = useCallback(
+    async (id: string, patch: AppointmentPatch, message: ToastMessage): Promise<void> => {
+      const outcome = await move.run(id, patch);
+      if (outcome.ok) {
+        refetch();
+        setToast(message);
+        return;
+      }
+      // The card has not moved, so the board must not say it has. The refusal
+      // comes back with the outcome rather than being read off the hook, which
+      // at this point still holds the previous render's error.
+      setToast({
+        title: 'That move was refused',
+        message: refusalOf(outcome.error),
+        tone: 'danger',
+      });
+    },
+    [move, refetch]
   );
 
   const advance = (appointment: Appointment) => {
-    const from = statusOf(appointment);
+    const from = appointment.status;
     const to = nextStatus(from);
     if (!to) return;
     const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
 
-    setStatusOverrides((previous) => ({ ...previous, [appointment.id]: to }));
-    setToast({
-      title: formatEnumLabel(to),
-      message: `${patient ? formatName(patient.name) : 'This visit'} moved from ${formatEnumLabel(
-        from
-      ).toLowerCase()} to ${formatEnumLabel(to).toLowerCase()}.`,
-      undo: () => setStatusOverrides((previous) => ({ ...previous, [appointment.id]: from })),
-    });
+    void apply(
+      appointment.id,
+      { status: to },
+      {
+        title: formatEnumLabel(to),
+        message: `${patient ? formatName(patient.name) : 'This visit'} moved from ${formatEnumLabel(
+          from
+        ).toLowerCase()} to ${formatEnumLabel(to).toLowerCase()}.`,
+        undo: () => {
+          void apply(
+            appointment.id,
+            { status: from },
+            {
+              title: formatEnumLabel(from),
+              message: `Moved back to ${formatEnumLabel(from).toLowerCase()}.`,
+            }
+          );
+        },
+      }
+    );
   };
 
   const assignRoom = (appointment: Appointment, next: string) => {
-    const previousRoom = roomOf(appointment);
+    const previousRoom = appointment.room;
     const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
 
     // Named once: the toast says the same "who" whichever branch it takes.
     const who = patient ? givenName(patient.name) : 'This visit';
+    // The API's patch schema takes a room of at least one character, so
+    // clearing one is not a write it accepts. Until it does, the board offers
+    // moving a patient between rooms and not emptying one.
+    if (!next) return;
 
-    setRoomOverrides((previous) => ({ ...previous, [appointment.id]: next }));
-    setToast({
-      title: next ? 'Room assigned' : 'Room cleared',
-      message: next ? `${who} is in ${next}.` : `${who} has no room.`,
-      undo: () =>
-        setRoomOverrides((previous) => ({ ...previous, [appointment.id]: previousRoom ?? '' })),
-    });
+    void apply(
+      appointment.id,
+      { room: next },
+      {
+        title: 'Room assigned',
+        message: `${who} is in ${next}.`,
+        ...(previousRoom
+          ? {
+              undo: () => {
+                void apply(
+                  appointment.id,
+                  { room: previousRoom },
+                  { title: 'Room assigned', message: `${who} is back in ${previousRoom}.` }
+                );
+              },
+            }
+          : {}),
+      }
+    );
   };
 
   const commands = useMemo<Command[]>(
@@ -187,7 +250,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
             onChange={(event) => setProviderId(event.target.value)}
             options={[
               { value: '', label: 'All providers' },
-              ...MOCK_PROVIDERS.map((provider) => ({
+              ...providers.map((provider) => ({
                 value: provider.id,
                 label: provider.name,
               })),
@@ -233,7 +296,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
           <div className="or-flow-board">
             {FLOW_COLUMNS.map((column) => {
               const cards = onBoard.filter((appointment) =>
-                column.statuses.includes(statusOf(appointment))
+                column.statuses.includes(appointment.status)
               );
               return (
                 <section
@@ -254,7 +317,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
                       {cards.map((appointment) => (
                         <li key={appointment.id}>
                           <FlowCard
-                            appointment={{ ...appointment, status: statusOf(appointment) }}
+                            appointment={appointment}
                             patient={
                               appointment.patientId
                                 ? patientsById.get(appointment.patientId)
@@ -262,7 +325,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
                             }
                             statusSince={mockStatusSince(appointment)}
                             now={now}
-                            room={roomOverrides[appointment.id] ?? null}
+                            room={appointment.room}
                             onAdvance={advance}
                             onAssignRoom={assignRoom}
                           />
@@ -280,7 +343,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
       {toast ? (
         <div className="or-fd-toast-host">
           <Toast
-            tone="success"
+            tone={toast.tone ?? 'success'}
             title={toast.title}
             message={toast.message}
             action={

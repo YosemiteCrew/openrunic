@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   filterAppointments,
   filterAuditEvents,
+  filterDirectoryUsers,
+  filterFacilities,
   filterClaims,
   filterFeeSheets,
   filterPatients,
@@ -14,6 +16,8 @@ import {
   MOCK_APPOINTMENTS,
   MOCK_AUDIT_EVENTS,
   MOCK_CLAIMS,
+  MOCK_DIRECTORY_FACILITIES,
+  MOCK_DIRECTORY_USERS,
   MOCK_FEE_SHEETS,
   MOCK_PATIENTS,
   MOCK_PAYERS,
@@ -382,5 +386,98 @@ describe('filterAppointments, the clauses the day views lean on', () => {
       order: 'desc',
     });
     expect(latestBookedFirst[0]!.createdAt >= latestBookedFirst.at(-1)!.createdAt).toBe(true);
+  });
+});
+
+/**
+ * The directory filters.
+ *
+ * They matter for the same reason the rest of this file does, and for one more:
+ * these two lists are where the ids a booking is written with come from. A
+ * provider picker that ignored `isProvider` would offer the receptionist as a
+ * clinician, and the booking that followed would name a user the API will not
+ * accept as a provider.
+ */
+describe('filterFacilities', () => {
+  const ANNEX = {
+    ...(MOCK_DIRECTORY_FACILITIES[0] as (typeof MOCK_DIRECTORY_FACILITIES)[number]),
+    id: 'f-closed',
+    name: 'Birchwood Annex',
+    code: 'BIRCH',
+    active: false,
+  };
+  const rows = [...MOCK_DIRECTORY_FACILITIES, ANNEX];
+
+  it('drops a closed site, which is not somewhere anyone can be booked', () => {
+    expect(filterFacilities(rows, { active: true }).map((row) => row.id)).not.toContain('f-closed');
+  });
+
+  it('keeps a closed site when nothing was asked about status', () => {
+    expect(filterFacilities(rows)).toHaveLength(rows.length);
+  });
+
+  it('searches the name and the short code, which is what is on the door', () => {
+    expect(filterFacilities(rows, { q: 'birch' }).map((row) => row.id)).toEqual(['f-closed']);
+    expect(filterFacilities(rows, { q: 'CEDAR' })).toHaveLength(1);
+  });
+
+  it('sorts by name by default, and by code or creation when asked', () => {
+    expect(filterFacilities(rows).map((row) => row.name)).toEqual([
+      'Birchwood Annex',
+      'Cedar Clinic',
+    ]);
+    expect(filterFacilities(rows, { sort: 'code' }).map((row) => row.code)).toEqual([
+      'BIRCH',
+      'CEDAR',
+    ]);
+    expect(filterFacilities(rows, { sort: 'createdAt', order: 'desc' })).toHaveLength(2);
+  });
+});
+
+describe('filterDirectoryUsers', () => {
+  it('answers the clinician picker with clinicians only', () => {
+    const picked = filterDirectoryUsers(MOCK_DIRECTORY_USERS, { isProvider: true });
+
+    expect(picked.length).toBeGreaterThan(0);
+    expect(picked.every((row) => row.isProvider)).toBe(true);
+    // The fixture directory holds a front-desk account, so this is a real cut
+    // rather than a filter that happened to match everything.
+    expect(picked.length).toBeLessThan(MOCK_DIRECTORY_USERS.length);
+  });
+
+  it('answers the inverse cut as well, so the flag is applied and not merely read', () => {
+    const staff = filterDirectoryUsers(MOCK_DIRECTORY_USERS, { isProvider: false });
+    expect(staff.every((row) => !row.isProvider)).toBe(true);
+  });
+
+  it('drops an account that is no longer active', () => {
+    const leaver = { ...(MOCK_DIRECTORY_USERS[0] as (typeof MOCK_DIRECTORY_USERS)[number]) };
+    const rows = [
+      { ...leaver, id: 'u-gone', status: 'DEACTIVATED' as const },
+      ...MOCK_DIRECTORY_USERS,
+    ];
+
+    expect(filterDirectoryUsers(rows, { status: 'ACTIVE' }).map((row) => row.id)).not.toContain(
+      'u-gone'
+    );
+  });
+
+  it('searches given name, family name and email', () => {
+    expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS, { q: 'lindqvist' })).toHaveLength(1);
+    expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS, { q: 'ada' })).toHaveLength(1);
+    expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS, { q: 'r.mbeki@' })).toHaveLength(1);
+    expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS, { q: 'nobody here' })).toHaveLength(0);
+  });
+
+  it('sorts by family name by default, and by email or creation when asked', () => {
+    expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS).map((row) => row.familyName)).toEqual([
+      'Lindqvist',
+      'Mbeki',
+      'Okafor',
+    ]);
+    expect(
+      filterDirectoryUsers(MOCK_DIRECTORY_USERS, { sort: 'email', order: 'desc' })[0]?.email
+    ).toBe('r.mbeki@cedar.clinic.invalid');
+    expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS, { sort: 'createdAt' })).toHaveLength(3);
   });
 });

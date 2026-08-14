@@ -6,10 +6,18 @@ import {
   ApiError,
   createMockClient,
   MOCK_APPOINTMENTS,
+  MOCK_DIRECTORY_FACILITIES,
+  MOCK_DIRECTORY_USERS,
   MOCK_PATIENTS,
   MOCK_PROVIDERS,
 } from '@/lib/api';
-import type { ApiClient, Appointment } from '@/lib/api';
+import type {
+  ApiClient,
+  Appointment,
+  AppointmentCreateBody,
+  FacilityDto,
+  UserDto,
+} from '@/lib/api';
 
 /**
  * The day view, driven the way a front desk drives it: look at the day, click a
@@ -29,11 +37,7 @@ beforeEach(() => {
 });
 
 function failing(error: ApiError): ApiClient {
-  return {
-    mode: 'mock',
-    patients: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-    appointments: { list: () => Promise.reject(error), get: () => Promise.reject(error) },
-  };
+  return createMockClient({ failure: error });
 }
 
 function rail(): HTMLElement {
@@ -48,8 +52,8 @@ describe('ScheduleScreen', () => {
     render(<ScheduleScreen client={createMockClient()} />);
 
     expect(await screen.findByRole('region', { name: 'Day view grid' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: /Dr\. Okafor/ })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Ada Okafor/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Ingrid Lindqvist/ })).toBeInTheDocument();
   });
 
   it('puts a status word on every visit, never colour alone', async () => {
@@ -87,13 +91,32 @@ describe('ScheduleScreen', () => {
     fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
 
     const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent(/creates today's visit and moves them onto the Flow Board/);
+    expect(dialog).toHaveTextContent(/moves them onto the Flow Board/);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Noor' }));
 
     const toast = await screen.findByRole('status');
     expect(toast).toHaveTextContent('Checked in');
     expect(toast).toHaveTextContent('Noor Haddadin is on the Flow Board.');
+  });
+
+  it('records the check-in, so the rail stops offering it on the next read', async () => {
+    const client = createMockClient();
+    render(<ScheduleScreen client={client} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Check in Noor' })
+    );
+    await screen.findByRole('status');
+
+    // The visit moved on the server, not just on this screen.
+    const day = await client.appointments.list({ status: 'CHECKED_IN' });
+    expect(day.data.some((entry) => entry.checkedInAt !== null)).toBe(true);
+    await waitFor(() =>
+      expect(within(rail()).getByRole('button', { name: 'Already checked in' })).toBeDisabled()
+    );
   });
 
   it('lets Escape abandon the check-in without changing anything', async () => {
@@ -238,15 +261,15 @@ describe('ScheduleScreen, moving around the day', () => {
     });
 
     expect(
-      await screen.findByRole('heading', { level: 2, name: /Dr\. Okafor/ })
+      await screen.findByRole('heading', { level: 2, name: /Ada Okafor/ })
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })
+      screen.queryByRole('heading', { level: 2, name: /Ingrid Lindqvist/ })
     ).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: '' } });
     expect(
-      await screen.findByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })
+      await screen.findByRole('heading', { level: 2, name: /Ingrid Lindqvist/ })
     ).toBeInTheDocument();
   });
 });
@@ -369,7 +392,7 @@ describe('ScheduleScreen, backing out of an action', () => {
     fireEvent.click(within(toast).getByRole('button', { name: /Dismiss|Close/ }));
 
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
-    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeDisabled();
+    expect(within(rail()).getByRole('button', { name: 'Already checked in' })).toBeDisabled();
   });
 
   it('books from the rail walk-in button as well as the page action', async () => {
@@ -387,7 +410,11 @@ describe('ScheduleScreen, a slot with no patient on it', () => {
   function unassignedDay(): ApiClient {
     const first = MOCK_APPOINTMENTS[0] as Appointment;
     return createMockClient({
-      appointments: [{ ...first, id: 'held-slot', patientId: null, reasonText: null }],
+      // Booked rather than fulfilled: a visit that already happened cannot be
+      // checked in, and the rail reads that off the status now.
+      appointments: [
+        { ...first, id: 'held-slot', patientId: null, reasonText: null, status: 'BOOKED' },
+      ],
       patients: MOCK_PATIENTS,
     });
   }
@@ -410,14 +437,12 @@ describe('ScheduleScreen, a slot with no patient on it', () => {
     fireEvent.click(within(rail()).getByRole('button', { name: 'Check in' }));
 
     const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent(
-      "Check in this visit. This creates today's visit and moves it onto the Flow Board."
-    );
+    expect(dialog).toHaveTextContent('Check in this visit. This moves it onto the Flow Board.');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Check in visit' }));
 
     const toast = await screen.findByRole('status');
-    expect(toast).toHaveTextContent('The visit was created and is on the Flow Board.');
+    expect(toast).toHaveTextContent('The visit is on the Flow Board.');
   });
 
   it('offers a check-in verb with no name in it when the slot has no patient', async () => {
@@ -450,7 +475,7 @@ describe('ScheduleScreen, a slot with no patient on it', () => {
     });
     await waitFor(() =>
       expect(
-        screen.queryByRole('heading', { level: 2, name: /Dr\. Lindqvist/ })
+        screen.queryByRole('heading', { level: 2, name: /Ingrid Lindqvist/ })
       ).not.toBeInTheDocument()
     );
 
@@ -459,5 +484,278 @@ describe('ScheduleScreen, a slot with no patient on it', () => {
     expect(screen.queryByRole('dialog', { name: 'Book appointment' })).not.toBeInTheDocument();
     // The open-slot panel opens instead and says there is nothing to offer.
     expect(await screen.findByText(/No slot fits 20 minutes on this day/)).toBeInTheDocument();
+  });
+});
+
+describe('ScheduleScreen, when a write is refused', () => {
+  /** Reads the day normally and refuses every write, as a lost grant would. */
+  function refusesWrites(): ApiClient {
+    const client = createMockClient();
+    const refused = () =>
+      Promise.reject(
+        new ApiError('forbidden', {
+          kind: 'http',
+          status: 403,
+          problem: {
+            type: 'https://openrunic.org/problems/forbidden',
+            title: 'Not permitted',
+            status: 403,
+            detail: 'This facility is not granted to your role.',
+            instance: '/bff/v0/appointments',
+            requestId: 'req-9',
+          },
+        })
+      );
+    return {
+      ...client,
+      appointments: { ...client.appointments, create: refused, update: refused },
+    };
+  }
+
+  it('keeps the check-in dialog open with the reason, and toasts nothing', async () => {
+    render(<ScheduleScreen client={refusesWrites()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: ANKLE_INJURY }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Check in Noor' }));
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Check in Noor' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This facility is not granted to your role.'
+    );
+    // The one thing this screen must never do: confirm a check-in that did not
+    // happen. The patient is still standing at the desk.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(within(rail()).getByRole('button', { name: 'Check in Noor' })).toBeEnabled();
+  });
+
+  it('keeps the booking dialog open with the reason rather than closing on a refusal', async () => {
+    render(<ScheduleScreen client={refusesWrites()} />);
+
+    await screen.findByRole('region', { name: 'Day view grid' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add walk-in' })[0]!);
+    const dialog = await screen.findByRole('dialog', { name: 'Book appointment' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Book / }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This facility is not granted to your role.'
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('disables the booking verb while the slot is being held', async () => {
+    let release: ((value: never) => void) | undefined;
+    const client = createMockClient();
+    const holding: ApiClient = {
+      ...client,
+      appointments: {
+        ...client.appointments,
+        create: () =>
+          new Promise((_, reject) => {
+            release = reject as (value: never) => void;
+          }),
+      },
+    };
+    render(<ScheduleScreen client={holding} />);
+
+    await screen.findByRole('region', { name: 'Day view grid' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add walk-in' })[0]!);
+    const dialog = await screen.findByRole('dialog', { name: 'Book appointment' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Book / }));
+
+    // A second click would book the slot twice, so the verb says what it is
+    // doing and stops accepting.
+    expect(await within(dialog).findByRole('button', { name: 'Booking...' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(release).toBeInstanceOf(Function);
+  });
+});
+
+/**
+ * The ids a booking is written with.
+ *
+ * This screen used to post `MOCK_FACILITY.id` and a provider id off the fixture
+ * list. Against the real API that is a 403 from the facility check before the
+ * write, and a foreign key violation behind it, while the screen showed a
+ * success toast. So the directory below deliberately shares no id with the
+ * fixtures: anything this screen posts has to have come from the client it
+ * posts through, and a screen that reached for a constant fails here.
+ */
+describe('ScheduleScreen, the ids a booking is written with', () => {
+  const ANNEX: FacilityDto = {
+    ...(MOCK_DIRECTORY_FACILITIES[0] as FacilityDto),
+    id: '0192f1a0-0000-7000-8000-00000000f009',
+    name: 'Birchwood Annex',
+    code: 'BIRCH',
+  };
+
+  const FERREIRA: UserDto = {
+    ...(MOCK_DIRECTORY_USERS[0] as UserDto),
+    id: '0192f1a0-0000-7000-8000-00000000d009',
+    email: 'n.ferreira@birchwood.clinic.invalid',
+    givenName: 'Nils',
+    familyName: 'Ferreira',
+    credential: 'NP',
+  };
+
+  /** Records every create body, and still writes it to the store underneath. */
+  function recording(): { client: ApiClient; created: AppointmentCreateBody[] } {
+    const client = createMockClient({
+      facilities: [ANNEX],
+      users: [FERREIRA],
+      // One visit at this site, so the grid draws rather than the empty state,
+      // and the rest of the day is open for the walk-in to land in.
+      appointments: [
+        {
+          ...(MOCK_APPOINTMENTS[0] as Appointment),
+          facilityId: ANNEX.id,
+          providerId: FERREIRA.id,
+        },
+      ],
+    });
+    const created: AppointmentCreateBody[] = [];
+    return {
+      created,
+      client: {
+        ...client,
+        appointments: {
+          ...client.appointments,
+          create: (body, signal) => {
+            created.push(body);
+            return client.appointments.create(body, signal);
+          },
+        },
+      },
+    };
+  }
+
+  it('draws the columns from the directory, name and credential', async () => {
+    const { client } = recording();
+    render(<ScheduleScreen client={client} />);
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /Nils Ferreira/ })
+    ).toBeInTheDocument();
+    // And the fixture clinicians are nowhere on the screen, because this
+    // organisation does not employ them.
+    expect(screen.queryByRole('heading', { name: /Okafor/ })).not.toBeInTheDocument();
+  });
+
+  it('names the facility it is about to book into, in the page description', async () => {
+    const { client } = recording();
+    render(<ScheduleScreen client={client} />);
+
+    expect(await screen.findByText(/at Birchwood Annex/)).toBeInTheDocument();
+  });
+
+  it('posts the facility and the provider the directory returned, not a fixture', async () => {
+    const { client, created } = recording();
+    render(<ScheduleScreen client={client} />);
+
+    await screen.findByRole('region', { name: 'Day view grid' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add walk-in' })[0] as HTMLElement);
+    const dialog = await screen.findByRole('dialog', { name: 'Book appointment' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Book \w/ }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Appointment booked');
+    expect(created).toHaveLength(1);
+    expect(created[0]?.facilityId).toBe(ANNEX.id);
+    expect(created[0]?.providerId).toBe(FERREIRA.id);
+  });
+});
+
+describe('ScheduleScreen, when there is nothing to book against', () => {
+  it('says why rather than offering a booking that would be refused', async () => {
+    // An organisation with no facility on file. A booking has to name one, so
+    // there is no honest way to open the dialog.
+    render(<ScheduleScreen client={createMockClient({ facilities: [] })} />);
+
+    expect(await screen.findByText('This day cannot be booked into')).toBeInTheDocument();
+    expect(screen.getByText(/No active facility came back/)).toBeInTheDocument();
+    // Both walk-in controls refuse to start something that cannot finish.
+    for (const button of screen.getAllByRole('button', { name: 'Add walk-in' })) {
+      expect(button).toBeDisabled();
+    }
+    expect(screen.getByRole('button', { name: 'Find available' })).toBeDisabled();
+  });
+
+  it('withholds the booking verbs from the palette as well as from the page', async () => {
+    render(<ScheduleScreen client={createMockClient({ facilities: [] })} />);
+    await screen.findByText('This day cannot be booked into');
+
+    fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+
+    expect(screen.queryByRole('option', { name: /Add walk-in/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Find available slots/ })).not.toBeInTheDocument();
+    // The verbs that do not need a facility are still there.
+    expect(await screen.findByRole('option', { name: /Go to today/ })).toBeInTheDocument();
+  });
+
+  it('names the facility when it is the clinician list that came back empty', async () => {
+    render(<ScheduleScreen client={createMockClient({ users: [] })} />);
+
+    expect(await screen.findByText('This day cannot be booked into')).toBeInTheDocument();
+    expect(screen.getByText(/No active clinician came back for Cedar Clinic/)).toBeInTheDocument();
+  });
+
+  it('leaves the day itself readable, because reading it is not booking', async () => {
+    render(<ScheduleScreen client={createMockClient({ users: [] })} />);
+
+    // No columns to draw, so no grid, but the counts and the refusal both show.
+    expect(await screen.findByText('This day cannot be booked into')).toBeInTheDocument();
+    expect(within(rail()).getByText('Day at a glance')).toBeInTheDocument();
+  });
+});
+
+describe('ScheduleScreen, more than one facility', () => {
+  const CEDAR = MOCK_DIRECTORY_FACILITIES[0] as FacilityDto;
+  const ANNEX: FacilityDto = {
+    ...CEDAR,
+    id: '0192f1a0-0000-7000-8000-00000000f002',
+    name: 'Birchwood Annex',
+    code: 'BIRCH',
+  };
+
+  /** One visit at each site, at different times, so the day visibly changes. */
+  function twoSites(): ApiClient {
+    const cedarVisit = MOCK_APPOINTMENTS[0] as Appointment;
+    return createMockClient({
+      facilities: [CEDAR, ANNEX],
+      appointments: [
+        cedarVisit,
+        {
+          ...cedarVisit,
+          id: 'annex-1',
+          facilityId: ANNEX.id,
+          start: '2026-08-12T13:00:00.000Z',
+          end: '2026-08-12T13:20:00.000Z',
+        },
+      ],
+    });
+  }
+
+  it('offers the choice, and scopes the day to the facility chosen', async () => {
+    render(<ScheduleScreen client={twoSites()} />);
+
+    await screen.findByRole('region', { name: 'Day view grid' });
+    // The list arrives sorted by name, which is the route's own default, and
+    // the first row is what the day opens on until someone chooses otherwise.
+    expect(screen.getByLabelText('Facility')).toHaveValue(ANNEX.id);
+    expect(screen.getByRole('button', { name: /13:00 to 13:20/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /08:00 to 08:20/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Facility'), { target: { value: CEDAR.id } });
+
+    // The day is now the other site's: its visit, and not the one next door.
+    expect(await screen.findByRole('button', { name: /08:00 to 08:20/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /13:00 to 13:20/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/at Cedar Clinic/)).toBeInTheDocument();
+  });
+
+  it('hides the picker when there is only one facility to pick', async () => {
+    render(<ScheduleScreen client={createMockClient()} />);
+
+    await screen.findByRole('region', { name: 'Day view grid' });
+    expect(screen.queryByLabelText('Facility')).not.toBeInTheDocument();
   });
 });

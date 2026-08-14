@@ -4,6 +4,8 @@
  */
 export { BookingModal } from './BookingModal';
 export type { BookingDetails, BookingModalProps } from './BookingModal';
+export { CheckInDialog } from './CheckInDialog';
+export type { CheckInDialogProps } from './CheckInDialog';
 export { clinicNow, clinicToday, dayBounds, shiftDay } from './clock';
 export type { DayBounds } from './clock';
 export { DayRail } from './DayRail';
@@ -14,6 +16,7 @@ export { FlowCard } from './FlowCard';
 export type { FlowCardProps } from './FlowCard';
 export {
   assignLanes,
+  awaitsCheckIn,
   CAUTION_MINUTES,
   categoryViz,
   countByColumn,
@@ -31,6 +34,7 @@ export {
   presentStatus,
   rowForInstant,
   SLOT_MINUTES,
+  toScheduleProvider,
 } from './schedule';
 export type {
   DayWindow,

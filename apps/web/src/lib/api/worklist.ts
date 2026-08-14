@@ -15,13 +15,17 @@ import type { ListResponse } from './types';
 /**
  * Orders, results and the typed inbox.
  *
- * `apps/api` answers `NotImplemented` for all three today, so this module is the
- * seam that lets the screens exist anyway: the same `AsyncState` shape the rest
- * of the data layer returns, the same injectable-client convention as
+ * `apps/api` serves `/bff/v0/orders` and `/bff/v0/results`, transitions
+ * included. What is missing is not the routes but the mapping from those
+ * payloads into the view types below, which is a change of its own; the inbox
+ * is the exception, a composition across results, messages and tasks that the
+ * API does not assemble and has no segment for. So this module is the seam that
+ * lets the screens exist meanwhile: the same `AsyncState` shape the rest of the
+ * data layer returns, the same injectable-client convention as
  * {@link HookOptions}, and fixtures that live in the one mock module rather
- * than a parallel one. When the aggregates land in the API, the types below
- * move to `types.ts`, `createWorklistClient` becomes an HTTP client, and no
- * screen changes.
+ * than a parallel one. When the mapping is written, the types below move to
+ * `types.ts`, `createWorklistClient` becomes an HTTP client, and no screen
+ * changes.
  *
  * Everything here is pure and deterministic. Nothing reads the clock: SLA and
  * age are always computed against an explicit `now`, so a test and a screenshot

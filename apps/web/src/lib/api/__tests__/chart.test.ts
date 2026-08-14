@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ApiError } from '@/lib/api';
+import { ApiError, createMockClient } from '@/lib/api';
 import { createHttpChartClient, createMockChartClient } from '@/lib/api/chart';
 import type { ChartSummary } from '@/lib/api/chart';
 import {
@@ -67,8 +67,8 @@ describe('mock chart client', () => {
     await expect(client.notes.get('nope')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('builds a live client against the chart routes the API has yet to implement', () => {
-    expect(createHttpChartClient('http://localhost:4000').mode).toBe('live');
+  it('builds a live client over the same transport every other screen writes through', () => {
+    expect(createHttpChartClient(createMockClient()).mode).toBe('live');
   });
 });
 

@@ -11,14 +11,22 @@ import {
   EMPTY_DRAFT,
   findDuplicates,
   isBlocking,
+  proposeMrn,
+  toPatientCreateBody,
   validateRegistration,
 } from '@/components/patients';
 import type { FieldErrors, RegistrationDraft, RegistrationField } from '@/components/patients';
 import { clinicNow } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
-import { ADMINISTRATIVE_GENDERS, IS_MOCK_MODE, SENSITIVITY_CLASSES, usePatients } from '@/lib/api';
+import {
+  ADMINISTRATIVE_GENDERS,
+  api,
+  SENSITIVITY_CLASSES,
+  useMutation,
+  usePatients,
+} from '@/lib/api';
 import type { AdministrativeGender, ApiClient, Patient, SensitivityClass } from '@/lib/api';
-import { formatEnumLabel } from '@/lib/format';
+import { formatEnumLabel, formatMrn } from '@/lib/format';
 
 /**
  * FD-06 Register a patient: four required fields, and no duplicate.
@@ -32,6 +40,12 @@ import { formatEnumLabel } from '@/lib/format';
  * Everything else is deliberately optional. Legacy registration demanded fields the
  * workflow did not need and the front desk typed rubbish into them; a walk-in
  * here becomes bookable with a name, a date of birth and a phone number.
+ *
+ * Registration posts to `/patients` and the toast names the record the server
+ * answered with, not the one that was typed. The difference matters: the MRN in
+ * the confirmation is the one the practice now files this patient under, and a
+ * refused save leaves the form exactly as it was rather than clearing it and
+ * claiming success.
  */
 
 export interface RegisterPatientScreenProps {
@@ -47,6 +61,7 @@ function fieldId(field: RegistrationField): string {
 }
 
 const FIELD_LABEL: Record<string, string> = {
+  mrn: 'Medical record number',
   given: 'Given name',
   family: 'Family name',
   birthDate: 'Date of birth',
@@ -73,6 +88,16 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
   return (
     <Card overline="Required" title="Identity">
       <div className="or-fd-form-grid">
+        <Input
+          id={fieldId('mrn')}
+          label="Medical record number"
+          mono
+          hint="Proposed by the practice. Overwrite it if this patient already has a number."
+          value={draft.mrn}
+          error={showError('mrn')}
+          onChange={(event) => set('mrn', event.target.value)}
+          onBlur={() => markTouched('mrn')}
+        />
         <Input
           id={fieldId('given')}
           label="Given name"
@@ -242,18 +267,28 @@ function AccessFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactEle
   );
 }
 
+/** What the toast says once the record exists, taken from the server's answer. */
+interface Registered {
+  id: string;
+  name: string;
+  mrn: string;
+}
+
 export function RegisterPatientScreen({
   client,
 }: Readonly<RegisterPatientScreenProps>): ReactElement {
-  const [draft, setDraft] = useState<RegistrationDraft>(EMPTY_DRAFT);
+  const [asOf] = useState<Date>(() => clinicNow());
+  const [draft, setDraft] = useState<RegistrationDraft>(() => ({
+    ...EMPTY_DRAFT,
+    mrn: proposeMrn(asOf),
+  }));
   const [touched, setTouched] = useState<ReadonlySet<RegistrationField>>(
     () => new Set<RegistrationField>()
   );
   const [submitted, setSubmitted] = useState(false);
   const [overridden, setOverridden] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [registered, setRegistered] = useState<string | null>(null);
-  const [asOf] = useState<Date>(() => clinicNow());
+  const [registered, setRegistered] = useState<Registered | null>(null);
 
   function set<K extends RegistrationField>(field: K, value: RegistrationDraft[K]): void {
     setDraft((previous) => ({ ...previous, [field]: value }));
@@ -297,16 +332,29 @@ export function RegisterPatientScreen({
   }, [blocked, hasErrors]);
 
   const reset = useCallback(() => {
-    setDraft(EMPTY_DRAFT);
+    setDraft({ ...EMPTY_DRAFT, mrn: proposeMrn(asOf) });
     setTouched(new Set<RegistrationField>());
     setSubmitted(false);
     setOverridden(false);
-  }, []);
+  }, [asOf]);
 
-  const confirmRegistration = () => {
-    const name = `${draft.preferred || draft.given} ${draft.family}`.trim();
+  const registration = useMutation((body: Parameters<ApiClient['patients']['create']>[0]) =>
+    (client ?? api).patients.create(body)
+  );
+
+  const confirmRegistration = async () => {
+    const outcome = await registration.run(toPatientCreateBody(draft));
+    // The form is only cleared once the record exists. A refused save leaves
+    // everything typed exactly where it was, because the person at the desk
+    // still has the patient in front of them.
+    if (!outcome.ok) return;
+    const saved = outcome.value;
     setConfirming(false);
-    setRegistered(name);
+    setRegistered({
+      id: saved.id,
+      name: `${saved.name.preferred ?? saved.name.given} ${saved.name.family}`.trim(),
+      mrn: saved.mrn,
+    });
     reset();
   };
 
@@ -384,29 +432,35 @@ export function RegisterPatientScreen({
         </output>
       ) : null}
 
-      {IS_MOCK_MODE ? (
-        <p className="or-caption or-fd-mock-note">
-          Mock mode: registration is not written to a database yet.
-        </p>
-      ) : null}
-
       {confirming ? (
         <Modal
           open
           role="alertdialog"
           width={520}
           title="Register this patient"
-          description={`Create a record for ${draft.preferred || draft.given} ${draft.family}, born ${draft.birthDate}. An MRN is assigned on save and the record becomes bookable immediately.`}
+          description={`Create a record for ${draft.preferred || draft.given} ${draft.family}, born ${draft.birthDate}, under ${formatMrn(draft.mrn)}. The record becomes bookable immediately.`}
           onClose={() => setConfirming(false)}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setConfirming(false)}>
+              <Button
+                variant="secondary"
+                disabled={registration.pending}
+                onClick={() => setConfirming(false)}
+              >
                 Cancel
               </Button>
-              <Button onClick={confirmRegistration}>Register patient</Button>
+              <Button disabled={registration.pending} onClick={confirmRegistration}>
+                {registration.pending ? 'Registering...' : 'Register patient'}
+              </Button>
             </>
           }
-        />
+        >
+          {registration.error ? (
+            <p className="or-body" role="alert">
+              {registration.error.problem?.detail ?? registration.error.message}
+            </p>
+          ) : null}
+        </Modal>
       ) : null}
 
       {registered ? (
@@ -414,10 +468,10 @@ export function RegisterPatientScreen({
           <Toast
             tone="success"
             title="Patient registered"
-            message={`${registered} is in the practice and can be booked.`}
+            message={`${registered.name} is in the practice under ${formatMrn(registered.mrn)} and can be booked.`}
             action={
-              <Button variant="ghost" size="sm" href="/schedule">
-                Book an appointment
+              <Button variant="ghost" size="sm" href={`/patients/${registered.id}`}>
+                Open the chart
               </Button>
             }
             onClose={() => setRegistered(null)}

@@ -1,7 +1,9 @@
 import type { BadgeTone } from '@openrunic/ui';
 
-import type { Appointment, AppointmentStatus, PatientName } from '@/lib/api';
+import type { Appointment, AppointmentStatus, PatientName, UserDto } from '@/lib/api';
 import { formatEnumLabel, formatTime } from '@/lib/format';
+
+import type { ScheduleProvider } from './ScheduleGrid';
 
 /**
  * The schedule's arithmetic, with no React in it.
@@ -55,6 +57,23 @@ export function presentStatus(status: AppointmentStatus): StatusPresentation {
  */
 export function givenName(name: PatientName): string {
   return name.preferred ?? name.given;
+}
+
+/**
+ * A directory row, as a column heading.
+ *
+ * The name and the credential are everything `/bff/v0/users` publishes about a
+ * clinician that a person can read: there is no display name and no specialty
+ * label on the wire, and `taxonomyCode` is a NUCC code rather than a word. So
+ * the column says the name and, under it, the credential the record actually
+ * carries, and says nothing where the record is silent.
+ */
+export function toScheduleProvider(user: UserDto): ScheduleProvider {
+  return {
+    id: user.id,
+    name: `${user.givenName} ${user.familyName}`,
+    role: user.credential ?? '',
+  };
 }
 
 /** Visit categories draw from the viz ramp at fixed lightness, never a free colour. */
@@ -230,6 +249,24 @@ export const FLOW_COLUMNS: readonly FlowColumn[] = [
   { id: 'IN_PROGRESS', label: 'In progress', statuses: ['IN_PROGRESS'], done: false },
   { id: 'DONE', label: 'Checked out', statuses: ['CHECKED_OUT', 'FULFILLED'], done: true },
 ];
+
+/**
+ * Statuses a front desk can still check a patient in from.
+ *
+ * Read off the appointment rather than remembered per session, so two people
+ * working the same desk see the same answer and a reload does not offer to
+ * check somebody in twice.
+ */
+const AWAITING_CHECK_IN: ReadonlySet<AppointmentStatus> = new Set<AppointmentStatus>([
+  'PROPOSED',
+  'PENDING',
+  'BOOKED',
+  'ARRIVED',
+]);
+
+export function awaitsCheckIn(status: AppointmentStatus): boolean {
+  return AWAITING_CHECK_IN.has(status);
+}
 
 /** The next status a one-click advance moves to, or null at the end of the line. */
 export function nextStatus(status: AppointmentStatus): AppointmentStatus | null {

@@ -1382,7 +1382,6 @@ describe('GET /bff/v0/notes, the signing debt board', () => {
 
 describe('/bff/v0/notes/:id/addenda', () => {
   const ADDENDUM_BODY = {
-    authorId: PROVIDER_ID,
     blocks: [{ type: 'text', text: 'The dose was 500 mg, not 250 mg.' }],
     reason: 'Transcription error',
   };
@@ -1407,7 +1406,6 @@ describe('/bff/v0/notes/:id/addenda', () => {
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'AMENDED' }));
 
     const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, {
-      authorId: PROVIDER_ID,
       blocks: [{ type: 'text', text: 'Also reviewed the allergy list.' }],
     });
 
@@ -1482,12 +1480,30 @@ describe('/bff/v0/notes/:id/addenda', () => {
     );
   });
 
-  it('422s an addendum with no author', async () => {
+  it('attributes an addendum to the acting principal, never to the note it corrects', async () => {
+    const { app, dataset } = createTestApp();
+    // The note was written and signed by someone else. A correction filed
+    // against it must carry the corrector's name, not the original author's.
+    seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED', authorId: PROVIDER_ID }));
+
+    const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, {
+      blocks: [{ type: 'text', text: 'Corrected the laterality.' }],
+    });
+
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as NoteAddendumDto).authorId).toBe(CLINICIAN_A);
+  });
+
+  it('refuses an addendum that tries to name its own author', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
+    // Authorship is a claim about a person on an amendment to a locked record.
+    // A body that states it is refused outright rather than quietly ignored, so
+    // a client cannot believe it succeeded in filing under another name.
     const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, {
-      blocks: [{ type: 'text', text: 'Anonymous.' }],
+      authorId: PROVIDER_ID,
+      blocks: [{ type: 'text', text: 'Filed as somebody else.' }],
     });
 
     expect(res.status).toBe(422);

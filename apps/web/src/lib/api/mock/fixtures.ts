@@ -137,9 +137,9 @@ export const MOCK_FACILITY = { id: CEDAR_CLINIC.id, name: CEDAR_CLINIC.name };
  * The two clinicians, as the fixture-only screens display them.
  *
  * Separate from {@link MOCK_DIRECTORY_USERS} because it is a different thing:
- * the orders, results and reports screens read aggregates that `apps/api` does
- * not serve yet, and they need a display name and a specialty that no directory
- * row carries. The ids are the directory's, so the two never disagree about who
+ * the reports screen reads an aggregate `apps/api` does not serve yet, and it
+ * needs a display name and a specialty that no directory row carries. Orders
+ * and results read through the client and no longer come here. The ids are the directory's, so the two never disagree about who
  * these people are. Screens that write, and screens that can read the
  * directory, use the client instead.
  */

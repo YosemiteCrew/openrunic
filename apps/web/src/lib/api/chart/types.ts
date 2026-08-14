@@ -1,12 +1,14 @@
 /**
  * The chart aggregate, as the screens read it.
  *
- * These are view shapes rather than wire shapes. `apps/api` serves every
- * aggregate a chart shows - allergies, problems, medications, results,
- * documents and notes each have a segment - and `./live.ts` composes the visit
- * list and the note itself out of encounters, notes and the staff directory.
- * The rest are not mapped into these types yet, which is why the chart tabs
- * report them as absent rather than as empty. So this file is the contract the
+ * These are view shapes rather than wire shapes. `apps/api` serves most of what
+ * a chart shows - allergies, problems, medications, results, documents and
+ * notes each have a segment - and `./live.ts` composes the visit list and the
+ * note itself out of encounters, notes and the staff directory. Care gaps, the
+ * care team and the account balance have no segment at all. Those segments that
+ * do exist are not mapped into these types yet either, which is why the chart
+ * tabs report them as absent rather than as empty: absent is the honest answer
+ * for a value this app has not read. So this file is the contract the
  * chart screens were built against; as each mapping is written the shape here
  * stops needing to differ from the wire and moves to `../types.ts` beside
  * `Patient` and `Appointment`, and nothing in the screens changes.

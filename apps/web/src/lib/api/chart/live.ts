@@ -206,7 +206,7 @@ function toVisit(
 }
 
 /**
- * The chart summary, from the three routes that exist.
+ * The chart summary, from the four routes that exist.
  *
  * Allergies, problems, medications, results and documents each have a segment
  * in `apps/api` already; mapping those payloads into this screen's view types

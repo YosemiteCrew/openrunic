@@ -178,6 +178,25 @@ FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=4000
 
+# Strip the package manager out of the runtime.
+#
+# This stage runs one command - `node` on a built bundle - and never installs
+# anything. npm ships inside the Node image with its own vendored dependency
+# tree (tar, sigstore, ip-address, brace-expansion, picomatch), and those carry
+# advisories that have nothing to do with this application: they are not in our
+# lockfile, they are not reachable from our code, and no change to package.json
+# can fix them. The container scan reads the whole filesystem, so it reported
+# them as vulnerabilities in an image serving patient data, which is technically
+# accurate and exactly the sort of finding that trains people to ignore scanners.
+#
+# Deleting it answers the finding honestly rather than muting it, and a runtime
+# with no package manager is a runtime an attacker cannot install anything into.
+# corepack goes for the same reason: nothing here resolves a package manager.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    && ! command -v npm
+
 # A fixed high uid/gid rather than an auto-assigned one: the number is what a
 # bind-mounted host directory has to be owned by, so it has to be stable and
 # documented (docs/self-hosting.md quotes it).

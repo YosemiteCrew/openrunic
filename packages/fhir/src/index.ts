@@ -32,7 +32,18 @@ export type Task = fhir4.Task;
 export type Claim = fhir4.Claim;
 export type Consent = fhir4.Consent;
 export type Provenance = fhir4.Provenance;
-export type Bundle<T = fhir4.FhirResource> = fhir4.Bundle<T>;
+/**
+ * A bundle of concrete resources.
+ *
+ * `@types/fhir` 0.0.44 changed this shape twice over: the parameter gained an
+ * `extends Resource` constraint, and its default moved from the `FhirResource`
+ * union to the bare `Resource` base. The constraint is repeated here because it
+ * has to be, and the default is deliberately kept as the union: a bundle whose
+ * entries are typed `Resource` has no `resourceType` to discriminate on, so
+ * every read of one becomes a cast at the call site. Keeping the union here
+ * means one declaration carries the narrowing instead of every consumer.
+ */
+export type Bundle<T extends fhir4.Resource = fhir4.FhirResource> = fhir4.Bundle<T>;
 export type OperationOutcome = fhir4.OperationOutcome;
 export type Reference = fhir4.Reference;
 export type FhirResource = fhir4.FhirResource;

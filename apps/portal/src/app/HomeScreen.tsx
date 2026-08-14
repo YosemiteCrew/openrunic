@@ -11,12 +11,13 @@
 
 import { useCallback } from 'react';
 import { Badge, Button, Card, EmptyState } from '@openrunic/ui';
+import { AppointmentFacts } from '@/components/appointments/AppointmentFacts';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
 import { Money } from '@/components/Money';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
 import type { Appointment, HomeSummary, PortalApi } from '@/lib/api/types';
-import { formatDate, formatDateTime, formatDuration, pluralise } from '@/lib/format';
+import { formatDate, pluralise } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 export interface HomeScreenProps {
@@ -41,7 +42,7 @@ function hasNothingToShow(home: HomeSummary): boolean {
   );
 }
 
-function NextAppointmentCard({ appointment }: { appointment: Appointment | null }) {
+function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointment | null }>) {
   if (!appointment) {
     return (
       <Card overline="Next appointment" title="You have no appointments booked">
@@ -57,28 +58,10 @@ function NextAppointmentCard({ appointment }: { appointment: Appointment | null 
 
   return (
     <Card overline="Next appointment" title={appointment.reason}>
-      <dl className="portal-data-list">
-        <div className="portal-data-list__row">
-          <dt className="portal-data-list__term">When</dt>
-          <dd className="portal-data-list__value">
-            {formatDateTime(appointment.startsAt)}, {formatDuration(appointment.durationMinutes)}
-          </dd>
-        </div>
-        <div className="portal-data-list__row">
-          <dt className="portal-data-list__term">Who with</dt>
-          <dd className="portal-data-list__value">
-            {appointment.clinician}, {appointment.department}
-          </dd>
-        </div>
-        <div className="portal-data-list__row">
-          <dt className="portal-data-list__term">Where</dt>
-          <dd className="portal-data-list__value">
-            {appointment.mode === 'video'
-              ? 'A video call. The link opens in this browser.'
-              : (appointment.location ?? 'The practice will confirm the room.')}
-          </dd>
-        </div>
-      </dl>
+      <AppointmentFacts
+        appointment={appointment}
+        videoLocation="A video call. The link opens in this browser."
+      />
       <div className="portal-actions">
         {appointment.joinUrl ? (
           <Button href={appointment.joinUrl} iconLeft="video">
@@ -98,7 +81,7 @@ function NextAppointmentCard({ appointment }: { appointment: Appointment | null 
   );
 }
 
-export function HomeScreen({ api = getPortalApi() }: HomeScreenProps) {
+export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) {
   const load = useCallback(() => api.getHome(), [api]);
   const { state, reload } = useAsync(load);
 

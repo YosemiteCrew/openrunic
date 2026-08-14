@@ -5,6 +5,18 @@
    danger red for out of range, hazelnut for secondary text, caramel wash for caution.
    No gradients, no backdrop filters, no hover-only affordances. */
 
+/* ---------------------------------------------------------------- elements */
+
+/* `<output>` is the element for a polite status line, and every status line in this
+   app owns its line: the saved-answers note, the sent-message note, the request
+   confirmation, the payment receipt and the loading line. The UA default is `inline`
+   and carries no margin, so reset it once here rather than in each of the five places
+   one appears. Matches the same rule in apps/web. */
+output {
+  display: block;
+  margin: 0;
+}
+
 /* ---------------------------------------------------------------- shell */
 
 .portal {
@@ -548,20 +560,35 @@
   color: var(--text-secondary);
 }
 
+/* A native <progress> paints its own track and value, and each engine exposes them
+   through a different pseudo-element, so the same two declarations are spelled three
+   times: the WebKit/Blink pair and Firefox's single bar. `appearance: none` is what
+   makes the UA rendering give way to them. */
 .portal-progress__track {
-  height: 8px;
+  appearance: none;
+  display: block;
+  inline-size: 100%;
+  block-size: 8px;
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--surface-wash);
   overflow: hidden;
+  background: var(--surface-wash);
 }
 
-.portal-progress__fill {
-  display: block;
-  height: 100%;
-  width: var(--portal-progress-fill, 0%);
+.portal-progress__track::-webkit-progress-bar {
+  background: var(--surface-wash);
+  border-radius: var(--radius-pill);
+}
+
+.portal-progress__track::-webkit-progress-value {
   background: var(--status-success);
   border-radius: var(--radius-pill);
-  transition: width var(--dur-base) var(--ease-out);
+  transition: inline-size var(--dur-base) var(--ease-out);
+}
+
+.portal-progress__track::-moz-progress-bar {
+  background: var(--status-success);
+  border-radius: var(--radius-pill);
 }
 
 /* ---------------------------------------------------------------- messages */

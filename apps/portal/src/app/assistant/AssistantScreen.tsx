@@ -49,7 +49,7 @@ export interface AssistantScreenProps {
   api?: PortalApi;
 }
 
-export function AssistantScreen({ api = getPortalApi() }: AssistantScreenProps) {
+export function AssistantScreen({ api = getPortalApi() }: Readonly<AssistantScreenProps>) {
   const { availability, settled } = useAssistant();
 
   /* Nothing while the answer is still coming. Guessing either way is worse:
@@ -70,7 +70,7 @@ interface ConfiguredAssistantProps {
   capabilities: AssistantCapabilities;
 }
 
-function ConfiguredAssistant({ api, capabilities }: ConfiguredAssistantProps) {
+function ConfiguredAssistant({ api, capabilities }: Readonly<ConfiguredAssistantProps>) {
   const load = useCallback(() => api.getPatient(), [api]);
   const { state, reload } = useAsync(load);
 
@@ -104,7 +104,7 @@ interface ConversationProps {
   chartPatientId: string;
 }
 
-function Conversation({ capabilities, chartPatientId }: ConversationProps) {
+function Conversation({ capabilities, chartPatientId }: Readonly<ConversationProps>) {
   const { runTurn } = useAssistant();
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
 
@@ -159,7 +159,7 @@ function Conversation({ capabilities, chartPatientId }: ConversationProps) {
  * that sentence, and it is on this page rather than in a settings screen
  * because the person whose words are being sent is the one reading here.
  */
-function ServiceLine({ capabilities }: { capabilities: AssistantCapabilities }) {
+function ServiceLine({ capabilities }: Readonly<{ capabilities: AssistantCapabilities }>) {
   const { service } = capabilities;
 
   return (

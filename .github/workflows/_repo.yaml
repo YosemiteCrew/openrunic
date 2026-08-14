@@ -23,8 +23,8 @@ name: Repo
 # checksum comes from the release's own published checksums file.
 #
 # Every command below has a matching root package.json script so a contributor
-# can run the identical check locally: format:check, lint:css, lint:workflows,
-# lint:shell and lint:docker.
+# can run the identical check locally: format:check, check:ci-scripts:test,
+# lint:css, lint:workflows, lint:shell and lint:docker.
 
 on:
   workflow_call: {}
@@ -57,6 +57,37 @@ jobs:
       # the check that sees them.
       - name: Check formatting
         run: pnpm run format:check
+
+  ci-scripts:
+    name: CI scripts (node --test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Reads the checkout and nothing else.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # No install: every script under scripts/ci is dependency-free, and their
+      # tests use node:test rather than Vitest for the same reason.
+      - name: Setup
+        uses: ./.github/actions/setup
+        with:
+          install: 'false'
+
+      # The glob is the point. These scripts decide whether other gates pass, and
+      # some of them run in jobs that skip on most refs - sonar-thresholds only
+      # runs on a pull request or a push to main - so their own tests must run
+      # somewhere unconditional. Matching `scripts/ci/*.test.mjs` means a script
+      # added later is covered by having a test rather than by remembering to
+      # wire one up here.
+      - name: Run the CI script tests
+        run: pnpm run check:ci-scripts:test
 
   styles:
     name: Stylesheets (stylelint)

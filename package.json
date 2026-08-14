@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@10.30.1",
   "engines": {
-    "node": ">=22.12"
+    "node": "^22.12"
   },
   "scripts": {
     "prepare": "husky",
@@ -47,7 +47,7 @@
     "@secretlint/secretlint-rule-no-dotenv": "^13.0.4",
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.9.6",
     "react-doctor": "^0.9.11",
     "secretlint": "^13.0.4",

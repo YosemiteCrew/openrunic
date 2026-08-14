@@ -63,24 +63,88 @@ updates:
       # Revisit: when typescript-eslint's peer range admits >=7. (2026-08-12)
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
+      # @types/node describes the runtime, so it is pinned to the runtime rather
+      # than to the newest release. This project runs Node 22 (.nvmrc, and
+      # engines.node >=22.12), and types from a later line describe APIs that
+      # version does not have: code compiles, ships, and fails at runtime with
+      # "is not a function". The failure lands wherever the API was used rather
+      # than at the upgrade, which is the worst place to find it in a system
+      # holding clinical records.
+      # Revisit: raise this together with .nvmrc and engines.node, never before.
+      # (2026-08-14)
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # ESLint 10 has no working React plugin yet. eslint-plugin-react 7.37.5 is
+      # the latest release and peers at `^9.7`; under ESLint 10 it throws
+      # `contextOrFilename.getFilename is not a function` from detectReactVersion
+      # and takes the whole lint run with it. It reaches both apps through
+      # eslint-config-next, so neither can move alone.
+      # Revisit: when eslint-plugin-react ships a release peering on >=10, which
+      # eslint-config-next then has to pick up. (2026-08-14)
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
+      # Vite 8 replaces Rollup with Rolldown, and Rolldown cannot parse the TSX
+      # test files: every suite in web and portal dies with a RolldownError
+      # parse failure. Vite is a direct dependency of packages/ui only, but
+      # vitest resolves it from the workspace, so one package taking Vite 8
+      # takes the whole test suite down with it. @vitejs/plugin-react 6 is held
+      # with it because it pairs to Vite 8.
+      # Revisit: when Rolldown parses the repository's TSX, which is worth
+      # re-testing on each Vite 8 minor rather than assuming. (2026-08-14)
+      - dependency-name: 'vite'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: ['version-update:semver-major']
+      # jsdom 30 changed accessible-name computation: it no longer inserts a
+      # separator between the text of adjacent child elements, so a filter
+      # rendered as <span>Everything</span><span>11</span> computes as
+      # "Everything11" rather than "Everything 11".
+      #
+      # The tests that broke are the ones asserting what a screen reader
+      # announces, and they are held to the spaced form on purpose. Rewriting
+      # them to expect the run-together string would encode a change in the test
+      # environment as a claim about the product, and this application's
+      # accessibility evidence IS its keyboard and accessible-name tests - there
+      # are no Storybook stories for the axe pass to cover it.
+      # Revisit: when the spaced form is confirmed against a real browser, at
+      # which point either jsdom moves or the markup gains the separator
+      # explicitly. (2026-08-14)
+      - dependency-name: 'jsdom'
+        update-types: ['version-update:semver-major']
     groups:
-      # ONE pooled pull request for every npm update, majors included.
-      # Deliberate trade-off, recorded so the next person does not "fix" it:
-      # a grouped major is harder to review and harder to revert in isolation
-      # than an individual one. We accept that because a dozen separate bot
-      # pull requests a week is its own failure mode, and because the full gate
-      # (build, lint, type-check, tests with coverage floors, Sonar, SBOM,
-      # grype, licence policy) runs on the pooled branch. If a single dependency
-      # in the pool breaks the gate, add it to `ignore` above with a rationale
-      # and a revisit condition, then let the rest land.
+      # TWO pools, split by blast radius rather than by package.
+      #
+      # It was one pool including majors, and the comment here said that if a
+      # single dependency broke the gate we would ignore it and let the rest
+      # land. That worked, and it cost more than it looked like it would: one
+      # pull request carried thirteen updates and four independent breaks, and
+      # because a failing build skips the test stage the breaks surfaced one CI
+      # cycle at a time rather than together. Meanwhile every routine patch in
+      # the pool waited on the slowest major.
+      #
+      # Minor and patch updates are the ones that are nearly always safe and
+      # nearly always worth taking quickly, including the security fixes that
+      # arrive as patches. They keep the single pooled pull request.
+      #
+      # Majors are the ones that break, and they now arrive in their own pull
+      # request so a broken one blocks nothing but itself. Still grouped rather
+      # than one-per-package: a dozen bot pull requests a week is its own
+      # failure mode, and the point is to separate risk, not to maximise volume.
       all-dependencies:
         applies-to: version-updates
         patterns:
           - '*'
         update-types:
-          - major
           - minor
           - patch
+      all-majors:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
       # Inert while security updates are disabled in settings (see the header).
       # Present so that re-enabling them yields one pull request rather than one
       # per advisory. It would still be aimed at the default branch, which the
@@ -126,9 +190,17 @@ updates:
         patterns:
           - '*'
         update-types:
-          - major
           - minor
           - patch
+      # Split for the same reason as the npm pools above: an action major that
+      # breaks a workflow should not hold back the digest bumps that carry the
+      # security fixes.
+      all-actions-majors:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
       # Same reasoning as all-security above.
       all-actions-security:
         applies-to: security-updates

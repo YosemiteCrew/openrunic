@@ -28,6 +28,10 @@ export const DEFAULT_PUBLIC_PATHS: readonly string[] = [
   '/healthz',
   '/readyz',
   '/fhir/metadata',
+  // SMART discovery. An app reads this BEFORE it has a token - that is what it
+  // is for - so requiring one would make the document unreachable by every
+  // client that needs it. It names no patient and reveals no counts.
+  '/fhir/.well-known/smart-configuration',
   '/openapi.json',
 ];
 

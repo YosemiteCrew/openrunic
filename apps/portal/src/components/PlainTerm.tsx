@@ -18,7 +18,7 @@ export interface PlainTermProps {
   plain: string;
 }
 
-export function PlainTerm({ term, code, plain }: PlainTermProps) {
+export function PlainTerm({ term, code, plain }: Readonly<PlainTermProps>) {
   return (
     <span className="portal-term">
       <span className="portal-term__clinical">{code ? `${term}, ${code}` : term}</span>

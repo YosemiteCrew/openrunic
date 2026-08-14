@@ -23,7 +23,7 @@ export interface AppShellProps {
    * patient resolves rather than holding a placeholder: chrome that flickers a fake name
    * is worse than chrome that arrives a moment late.
    */
-  patient?: Patient | undefined;
+  patient?: Patient;
   /**
    * Whether this practice configured an assistant. Defaults to no, so the navigation a
    * portal renders before anything has been asked is the one it has always had.
@@ -32,7 +32,7 @@ export interface AppShellProps {
   children: ReactNode;
 }
 
-export function AppShell({ patient, assistantEnabled = false, children }: AppShellProps) {
+export function AppShell({ patient, assistantEnabled = false, children }: Readonly<AppShellProps>) {
   const pathname = usePathname();
   const items = navItemsFor(assistantEnabled);
 

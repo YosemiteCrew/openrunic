@@ -57,7 +57,7 @@ field. It carries an owner and a re-review date.
 | -------------------------------------- | ------------------------------------ | --------------------------------------------------- |
 | ESLint, `tsc`                          | `_core.yaml`, per affected workspace | Correctness and types                               |
 | Vitest with coverage floors            | `_test.yaml`, `COVERAGE_FLOORS`      | Test coverage per app                               |
-| SonarCloud                             | `_sonar.yaml`                        | Smells, duplication, reliability, security ratings  |
+| SonarCloud                             | `_sonar.yaml`                        | 95% coverage, zero duplication, zero open issues    |
 | CodeQL                                 | `codeql.yml`                         | Semantic security analysis                          |
 | Gitleaks, GitGuardian, secret scanning | `secret-scan.yml`, apps              | Committed secrets                                   |
 | syft, grype, grant                     | `supply-chain.yml`                   | SBOM, dependency vulnerabilities, licence policy    |
@@ -68,6 +68,48 @@ field. It carries an owner and a re-review date.
 
 `CI Required` and `Supply Chain Required` are fail-closed aggregates: a skipped dependency passes,
 a cancelled one fails. Do not edit an aggregate to make a branch green.
+
+## The Sonar bar, and why it is not a quality gate
+
+Every scanned app is held to three numbers, measured over the whole branch rather than over the
+change:
+
+| Measure                                | Limit  |
+| -------------------------------------- | ------ |
+| `coverage`                             | >= 95% |
+| `duplicated_lines_density`             | 0%     |
+| `violations` (open issues of any kind) | 0      |
+
+Three projects are scanned: `yosemitecrew_openrunic_Web`, `_Api` and `_Portal`, each configured by
+the `sonar-project.properties` in its app directory.
+
+The obvious place to state those numbers is a SonarCloud quality gate, and that is not where they
+live. Attaching a custom gate to a project needs a plan this organisation does not have -
+`api/qualitygates/select` answers `Organization ... is not allowed to modify Quality gates` - so the
+only verdict SonarCloud will produce is the built-in **Sonar way**: 80% coverage and 3% duplication
+on new code, ratings at A, hotspots reviewed, and no condition on the issue count at all.
+
+`_sonar.yaml` still waits on that gate, because ratings and hotspot review are real checks and cost
+nothing to keep. The three numbers above are then enforced by `scripts/ci/sonar-thresholds.mjs`,
+which reads the measures the analysis just published and fails the job when any of them is missed.
+
+Enforcing them in the job rather than on the server also closes two gaps that any gate written
+against new code has by construction:
+
+- A pull request analysis evaluates **new-code conditions only**, and drops even those when the
+  pull request introduces no new lines. A change can pass a green gate while the project as a whole
+  sits well below the bar.
+- Sonar way has no issue condition, so a project accumulating smells passes it indefinitely as long
+  as each individual change is clean.
+
+A measure the analysis did not publish fails the check rather than passing it. Sonar publishes no
+`coverage` at all when it resolved no coverage report, and reading that absence as either zero or as
+fine would turn a broken pipeline into a verdict.
+
+To move a number, edit the flags in the "Enforce the openrunic Sonar bar" step and this table
+together. To exempt a specific finding, the exclusion goes in the app's `sonar-project.properties`
+with its rationale and revisit condition, the way the entries there already do - never by lowering
+one of these three.
 
 ## Which gates block a merge
 
@@ -101,19 +143,44 @@ The exception process below is what keeps that cost bounded: a verified false po
 with its reasoning and a revisit condition, and stops blocking. What it does not do is stop being
 read.
 
+## Dependency upgrades
+
+Three rules, each learned from a grouped bump that carried thirteen updates and four independent
+breaks.
+
+**`engines.node` states what CI tests, not what happens to work.** It reads `^22.12`, matching
+`.nvmrc` and the Node the workflows install. It used to read `>=22.12`, which admitted Node 25 and
+26 - versions nothing here has ever run. A contributor on one of those gets a local result that
+disagrees with CI, and the disagreement is invisible: during that bump a failure was diagnosed twice
+as "an artifact of my local Node" and was neither time. Say the supported range and let the install
+refuse rather than let the drift happen quietly.
+
+**Majors arrive in their own pull request.** Minor and patch updates - which are nearly always safe,
+and which carry most security fixes - stay pooled and land quickly. Majors are the ones that break,
+and pooling them meant one broken major held every routine patch behind it, while a failing build
+skipped the test stage so the breaks surfaced one CI cycle at a time. Separated by blast radius, a
+broken major now blocks only itself.
+
+**A held major is re-tested monthly, not just annotated.** Every `ignore` entry in
+`.github/dependabot.yml` carries a reason and a revisit condition. A revisit condition nobody
+evaluates is not a plan - it is how a repository stops upgrading without deciding to.
+`.github/workflows/deferred-deps.yml` installs the newest version of each held package, runs the gate
+that failed, and writes the answer into one tracking issue. It opens no pull request: a green result
+is evidence that an upgrade is worth attempting, not permission to take it unread.
+
 ## Where each gate's exceptions live
 
 A suppression is only defensible if the next reader can find it and see why. Every exception in
 this repository sits beside the gate it applies to, names what was verified, and carries a revisit
 condition.
 
-| Gate                    | Exceptions file                                                          |
-| ----------------------- | ------------------------------------------------------------------------ |
-| Sonar                   | `apps/web/sonar-project.properties`, `apps/api/sonar-project.properties` |
-| Licence policy (grant)  | `.grant.yaml`                                                            |
-| Workflow audit (zizmor) | `.github/zizmor.yml`                                                     |
-| GitGuardian             | `.gitguardian.yaml`                                                      |
-| Trivy / IaC             | `.trivyignore`                                                           |
+| Gate                    | Exceptions file                                            |
+| ----------------------- | ---------------------------------------------------------- |
+| Sonar                   | `apps/<app>/sonar-project.properties`, one per scanned app |
+| Licence policy (grant)  | `.grant.yaml`                                              |
+| Workflow audit (zizmor) | `.github/zizmor.yml`                                       |
+| GitGuardian             | `.gitguardian.yaml`                                        |
+| Trivy / IaC             | `.trivyignore`                                             |
 
 `.gitguardian.yaml` ignores **matches, never paths**. Path-ignoring a file means a real credential
 pasted there later goes unreported, and the file we would most be tempted to ignore is a test about

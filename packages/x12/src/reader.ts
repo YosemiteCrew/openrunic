@@ -97,8 +97,12 @@ export function readInterchange(raw: string): Result<X12Interchange, X12Error> {
     if (current === undefined) break;
 
     if (current.tag === 'IEA') {
+      // Nothing advances the cursor here, deliberately. IEA closes the
+      // interchange, so the loop is finished and no later line reads `index` -
+      // the trailer checks below work from `iea` and `groups`. The increment
+      // that used to sit here looked like bookkeeping and was dead, which is
+      // what `no-useless-assignment` reports.
       iea = current;
-      index += 1;
       break;
     }
 

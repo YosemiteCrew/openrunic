@@ -28,7 +28,7 @@ export interface AssistantComposerProps {
   onStop: () => void;
 }
 
-export function AssistantComposer({ answering, onAsk, onStop }: AssistantComposerProps) {
+export function AssistantComposer({ answering, onAsk, onStop }: Readonly<AssistantComposerProps>) {
   const [question, setQuestion] = useState('');
 
   const send = () => {

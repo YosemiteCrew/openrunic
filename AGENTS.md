@@ -78,12 +78,15 @@ that changes the cascade is not safe to automate, and stylelint does not know th
 Numbers, not adjectives. CI enforces all of these, so a change that lowers one is a change that
 needs an argument rather than a nudge.
 
-- **Coverage floors**: `web` and `api` at statements 95, branches 90, functions 95, lines 95. Set in
-  `COVERAGE_FLOORS` in `.github/workflows/_test.yaml`. Raise them as suites grow; never lower one to
-  land a change.
-- **Sonar**: zero code smells, zero duplication, and the reliability, security and maintainability
-  ratings at A. The gate measures NEW code, so a passing gate is not the same as a clean project:
-  check the issue count too.
+- **Coverage floors**: `web`, `api` and `portal` at statements 95, functions 95, lines 95, with
+  branches at 90 for the two Next.js apps and 95 for `api`. Set in `COVERAGE_FLOORS` in
+  `.github/workflows/_test.yaml`. Raise them as suites grow; never lower one to land a change.
+- **Sonar**: 95% coverage, zero duplication and zero open issues, measured over the WHOLE branch
+  rather than over the change. Enforced by `scripts/ci/sonar-thresholds.mjs` in `_sonar.yaml`,
+  because this organisation's SonarCloud plan will not accept a custom quality gate;
+  `docs/quality-gates.md` has the detail. A finding that is genuinely wrong gets a narrow exclusion
+  in the app's `sonar-project.properties`, with rationale and a revisit condition - never a lower
+  number.
 - **React Doctor**: 95 minimum, run with `pnpm run doctor`. Note that the score comes from a remote
   service while the diagnostics are computed locally; `docs/quality-gates.md` explains the
   trade-off.
@@ -122,7 +125,8 @@ Before declaring a task finished, run and pass, scoped to what you changed:
 
 - Conventional Commits, enforced by commitlint. Types:
   `build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test`. Scopes:
-  `web|api|database|fhir|types|ui|lib|repo|ci|docs`.
+  `web|portal|api|database|fhir|types|ui|lib|repo|ci|docs`. `commitlint.config.cjs` is the
+  list CI reads; keep this line matching it.
 - **PR titles require a scope**: `type(scope): subject`. A scopeless title fails the "Validate PR
   title" CI check even though commitlint accepts scopeless commits locally.
 - **All PRs target `dev`**, never `main`. Releases are promotion PRs (see RELEASING.md).

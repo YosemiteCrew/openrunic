@@ -37,7 +37,7 @@ export interface AssistantTurnViewProps {
   answering: boolean;
 }
 
-export function AssistantTurnView({ turn, answering }: AssistantTurnViewProps) {
+export function AssistantTurnView({ turn, answering }: Readonly<AssistantTurnViewProps>) {
   const paragraphs = turn.answer.split(/\n{2,}/).filter((piece) => piece.trim() !== '');
 
   return (
@@ -129,7 +129,7 @@ function CareTeamRoute() {
   );
 }
 
-function SourceList({ sources }: { sources: readonly AssistantSource[] }) {
+function SourceList({ sources }: Readonly<{ sources: readonly AssistantSource[] }>) {
   return (
     <div className="portal-assistant__sources">
       <p className="or-overline portal-assistant__sources-head">Where this came from</p>
@@ -156,7 +156,7 @@ function SourceList({ sources }: { sources: readonly AssistantSource[] }) {
   );
 }
 
-function SourceLine({ source }: { source: AssistantSource }) {
+function SourceLine({ source }: Readonly<{ source: AssistantSource }>) {
   const href = citationHref(source);
   const name = citationName(source);
 

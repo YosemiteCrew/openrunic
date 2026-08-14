@@ -120,13 +120,12 @@ jobs:
     # so this can never ask for a coverage artifact that was not produced.
     # vars.DISABLE_SONAR is a kill switch that works on every trigger, unlike a
     # workflow_dispatch input, which is null on pull_request and would silently
-    # skip the stage on exactly the events that matter most. The SonarCloud
-    # projects for this repository do not exist yet, so DISABLE_SONAR is set to
-    # 'true' at the repo level for now; the aggregate below counts the skipped
-    # stage as a pass. Turning the stage on takes more than deleting the
-    # variable: create the SonarCloud projects, add sonar-project.properties to
-    # each app, and set the SONAR_TOKEN_* secrets - only then remove the
-    # variable.
+    # skip the stage on exactly the events that matter most. It is currently
+    # unset, so the stage runs; the aggregate below counts a skipped stage as a
+    # pass, which is exactly what makes setting it a decision rather than a
+    # convenience. Adding an app to the stage takes three things: a SonarCloud
+    # project, a sonar-project.properties in the app directory, and a
+    # SONAR_TOKEN_* secret wired through the secrets block below.
     #
     # Dependabot PRs run with the Dependabot secret store, which does not carry
     # the SONAR_TOKEN* values, so the scan can only fail with "Not authorized".
@@ -162,6 +161,7 @@ jobs:
     secrets:
       SONAR_TOKEN_WEB: ${{ secrets.SONAR_TOKEN_WEB }}
       SONAR_TOKEN_API: ${{ secrets.SONAR_TOKEN_API }}
+      SONAR_TOKEN_PORTAL: ${{ secrets.SONAR_TOKEN_PORTAL }}
 
   ci-required:
     name: CI Required

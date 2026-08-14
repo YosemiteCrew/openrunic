@@ -8,8 +8,9 @@ import {
   medicationStatementInput,
   observationInput,
 } from '@openrunic/database';
+import { createBuiltInSafetyPort, missingCapabilities } from '@openrunic/clinical-safety';
 import { Hono, type Context } from 'hono';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -450,6 +451,7 @@ function assertNoteIsEditable(body: NotePatchBody, row: ClinicalNoteRow): void {
 
 export function clinicalRoutes(): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
+  registerMedicationSafety(router);
 
   for (const module of crudModules()) {
     router.route('/', module.routes);
@@ -559,6 +561,97 @@ const ROUTED_PRESCRIPTION_MOVES = [
   ['cancel', 'CANCELLED'],
 ] as const satisfies readonly (readonly [string, MedicationRequestStatus])[];
 
+/** What order entry sends to be screened. */
+const medicationScreenInput = z.object({
+  patientId: z.uuid(),
+  rxnormCode: z.string().min(1).max(32).optional(),
+  display: z.string().min(1).max(300),
+});
+
+const safetyFindingSchema = z.object({
+  allergyId: z.string(),
+  kind: z.enum(['code', 'name', 'cross-sensitivity']),
+  criticality: z.enum(['LOW', 'HIGH', 'UNABLE_TO_ASSESS']),
+  action: z.enum(['inform', 'acknowledge']),
+  message: z.string(),
+});
+
+const medicationScreenResultSchema = z.object({
+  findings: z.array(safetyFindingSchema),
+  requiresAcknowledgement: z.boolean(),
+  /** What this build checked. An empty finding list means nothing found in THESE. */
+  checked: z.array(z.string()),
+  /** And what it did not, so the empty list cannot be read as a clean bill. */
+  notChecked: z.array(z.string()),
+});
+
+/**
+ * The safety port this build screens through.
+ *
+ * Built in and allergy-only. A deployer with a licensed interaction service
+ * swaps this for one whose `capabilities` list is longer; nothing else here
+ * changes, which is the point of the port existing.
+ */
+const safetyPort = createBuiltInSafetyPort();
+
+/** Enough of a page of allergies to screen against; a chart with more is a chart with a problem. */
+const ALLERGY_SCREEN_LIMIT = 200;
+
+function registerMedicationSafety(router: Hono<AppEnv>): void {
+  /**
+   * Screens a proposed medication against the patient's recorded allergies.
+   *
+   * A separate call rather than a check inside the create, because screening
+   * belongs at order entry: the prescriber needs the answer while deciding,
+   * not as a rejection after committing. Prescribing itself stays a plain
+   * write - this endpoint informs the human who signs it.
+   *
+   * `checked` is returned alongside the findings and is the load-bearing half.
+   * An empty finding list means "nothing found in THESE checks", and a
+   * prescriber reading a safety panel will otherwise assume it covered the
+   * checks safety panels usually cover. Naming what was not checked is what
+   * keeps the empty result honest.
+   */
+  router.post('/medications/screen', requirePermission('encounter.write'), async (c) => {
+    const body = await parseJsonBody(c, medicationScreenInput);
+    const repos = repositories(c);
+
+    // ACTIVE only, and filtered in the query rather than in memory: a resolved
+    // or refuted allergy is not a reason to warn, and re-warning on one someone
+    // has already disproved is how a prescriber learns to dismiss the panel.
+    const page = await repos.allergies.list({
+      page: 1,
+      pageSize: ALLERGY_SCREEN_LIMIT,
+      sort: 'recordedAt',
+      order: 'desc',
+      patientId: body.patientId,
+      clinicalStatus: 'ACTIVE',
+    });
+
+    const result = await safetyPort.screen({
+      medication: { rxnormCode: body.rxnormCode, display: body.display },
+      allergies: page.rows
+        // Medication allergies only. A latex or food allergy is real and is not
+        // a reason to warn about an antibiotic.
+        .filter((row) => row.category === 'MEDICATION')
+        .map((row) => ({
+          id: row.id,
+          substanceCode: row.substanceCode ?? undefined,
+          substanceDisplay: row.substanceDisplay,
+          criticality: row.criticality,
+          reactionText: row.reactionText ?? undefined,
+        })),
+    });
+
+    return c.json({
+      findings: result.findings,
+      requiresAcknowledgement: result.requiresAcknowledgement,
+      checked: safetyPort.capabilities,
+      notChecked: missingCapabilities(safetyPort),
+    });
+  });
+}
+
 async function movePrescription(
   c: Context<AppEnv>,
   id: string,
@@ -634,6 +727,30 @@ function transitionContract(operation: {
 export function clinicalRouteContracts(): RouteContract[] {
   return [
     ...crudModules().flatMap((module) => module.contracts),
+
+    {
+      method: 'post',
+      path: '/bff/v0/medications/screen',
+      operationId: 'screenMedication',
+      summary: 'Screen a proposed medication before prescribing it.',
+      description:
+        'Compares a proposed medication against the patient ACTIVE medication allergies and, when the caller supplies them, against what they are already taking. Returns findings rather than refusing: a prescriber may knowingly prescribe against a recorded allergy, and refusing outright would be clinically wrong. `checked` and `notChecked` name the screens this build performs and the ones it does not, so an empty finding list reads as "nothing found in these checks" rather than as a clean bill.',
+      tags: ['medications'],
+      permission: 'encounter.write',
+      body: medicationScreenInput,
+      responses: [
+        {
+          status: 200,
+          description: 'The findings, and what was and was not checked to produce them.',
+          schema: medicationScreenResultSchema,
+        },
+        {
+          status: 400,
+          description: 'The request body is not valid.',
+          schema: problemDocumentSchema,
+        },
+      ],
+    },
 
     transitionContract({
       path: '/bff/v0/encounters/{id}/sign',

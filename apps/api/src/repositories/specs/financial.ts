@@ -539,6 +539,16 @@ export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInpu
 /* --------------------------------------------------------------- claim lines */
 
 export interface ClaimLineListQuery extends BaseQuery {
+  /**
+   * Every line for a set of claims, in one query.
+   *
+   * The FHIR boundary projects a page of Claims with their lines, and asking
+   * per claim is one round trip per row - fine against three fixtures, and
+   * quietly quadratic on a payer's page of fifty. `claimId` stays for the
+   * single-claim routes, which read better with it.
+   */
+  claimIds?: readonly string[];
+
   claimId?: string;
   chargeItemId?: string;
   sort: 'sequence' | 'chargedCents' | 'createdAt';
@@ -598,12 +608,17 @@ export const claimLineSpec: CollectionSpec<
 
   matches(row: ScopedRow<'ClaimLine'>, query: ClaimLineListQuery): boolean {
     if (query.claimId !== undefined && row.claimId !== query.claimId) return false;
+    // An empty list means "no claims", not "every claim". The distinction
+    // matters because a page with no rows would otherwise widen to the whole
+    // table, which is the opposite of what the caller asked for.
+    if (query.claimIds !== undefined && !query.claimIds.includes(row.claimId)) return false;
     return query.chargeItemId === undefined || row.chargeItemId === query.chargeItemId;
   },
 
   where(query: ClaimLineListQuery) {
     return {
       ...(query.claimId === undefined ? {} : { claimId: query.claimId }),
+      ...(query.claimIds === undefined ? {} : { claimId: { in: [...query.claimIds] } }),
       ...(query.chargeItemId === undefined ? {} : { chargeItemId: query.chargeItemId }),
     };
   },

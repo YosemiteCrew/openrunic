@@ -258,13 +258,27 @@ describe('call recording', () => {
 });
 
 describe('call records never carry a payload', () => {
-  /** Values chosen to be unmistakable if they ever appear in a log. All invented. */
+  /**
+   * Values chosen to be unmistakable if they ever appear in a log. All invented.
+   *
+   * Deliberately worded as prose rather than shaped like the credentials they
+   * stand in for. The earlier spelling - `tok-...` and `consent-...` followed by
+   * digits - was the format a real card token takes, and secret scanners read
+   * format and entropy rather than meaning, so every scan of this repository
+   * reported two leaked secrets in a test whose entire purpose is proving
+   * secrets do not leak. That is the worst possible place for a false positive:
+   * it trains the reader to wave through exactly the file where a real
+   * credential is most likely to be pasted by accident.
+   *
+   * A canary needs to be unique and greppable, not plausible. These are both,
+   * and no detector can mistake them for anything issued by a payment processor.
+   */
   const SENSITIVE = {
     patientName: 'Testina Patientsson',
     memberId: 'MEMBER-8827-SENSITIVE',
     messageBody: 'Testina Patientsson, your biopsy result is ready to discuss.',
-    cardToken: 'tok-DO-NOT-LOG-9911',
-    consentRef: 'consent-DO-NOT-LOG-4471',
+    cardToken: 'invented-card-token-that-must-never-be-logged',
+    consentRef: 'invented-consent-reference-that-must-never-be-logged',
     sigText: 'Take one tablet by mouth twice daily for anxiety',
   } as const;
 

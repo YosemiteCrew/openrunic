@@ -1,10 +1,17 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
+import { SessionGate } from '@/lib/auth/SessionGate';
+
 // Order matters: the design system first, then the app's own layer, so the
 // shell can win ties against the library's element selectors.
 import '@openrunic/ui/styles.css';
 import './globals.css';
+/* The sign-in surface. It is imported here rather than in the `(auth)` group
+   because `SessionGate` renders its holding notice on protected routes, which
+   never pass through that group's layout, and a notice that arrives unstyled is
+   a flash of unstyled text on every reload of a chart. */
+import './(auth)/auth.css';
 
 export const metadata: Metadata = {
   title: {
@@ -36,7 +43,10 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <a className="or-skip-link" href="#main-content">
           Skip to content
         </a>
-        {children}
+        {/* Holds a clinical screen back until the token from the session cookie
+            is in memory, and takes both away when the workstation goes quiet.
+            Public routes pass straight through it. */}
+        <SessionGate>{children}</SessionGate>
       </body>
     </html>
   );

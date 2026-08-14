@@ -100,7 +100,14 @@ export async function takeBackup(options: BackupOptions): Promise<BackupResult> 
     rowCounts(options.target),
   ]);
 
-  const samplePatientId = await busiestPatient(options.target).catch(() => null);
+  // No .catch here, deliberately. busiestPatient already returns null when the
+  // database has no encounters, so the only thing a catch could swallow is a
+  // real failure - and a failure is not an empty database. Swallowing it writes
+  // a manifest with no chart fingerprint, and a manifest with no fingerprint
+  // verifies vacuously: the sample-chart check is skipped and the backup is
+  // reported sound on the strength of evidence that was never collected. The
+  // same shape of bug was already fixed once in docker-migrate-helper.mjs.
+  const samplePatientId = await busiestPatient(options.target);
   const sampleChartDigests =
     samplePatientId === null ? {} : await chartFingerprint(options.target, samplePatientId);
 
@@ -227,7 +234,55 @@ export async function readManifest(manifestPath: string): Promise<BackupManifest
     throw new Error(`${manifestPath} has no archive checksum, so its archive cannot be verified`);
   }
 
+  // Everything verification compares against, checked here rather than trusted.
+  //
+  // The cast this replaces was the dangerous kind: not a crash risk, a silence
+  // risk. `verifyBackup` iterates `rowCounts` and `sampleChartDigests` and
+  // reports a check as passing when nothing mismatched - so a manifest whose
+  // rowCounts was absent, or an empty object, produced zero mismatches and a
+  // green "row counts" line. A restore proved sound by comparing nothing
+  // against nothing is worse than an unverified one, because someone believes
+  // it.
+  if (!isCountRecord(candidate.rowCounts)) {
+    throw new Error(
+      `${manifestPath} has no usable rowCounts, so a restore of it cannot be checked against anything`
+    );
+  }
+  if (!Array.isArray(candidate.appliedMigrations) || !candidate.appliedMigrations.every(isString)) {
+    throw new Error(`${manifestPath} has no usable migration history`);
+  }
+  if (candidate.samplePatientId !== null && typeof candidate.samplePatientId !== 'string') {
+    throw new Error(`${manifestPath} has a malformed samplePatientId`);
+  }
+  // A sample patient without digests is the vacuous case in miniature: the
+  // check would run, compare an empty set, and pass.
+  if (!isDigestRecord(candidate.sampleChartDigests)) {
+    throw new Error(`${manifestPath} has malformed sampleChartDigests`);
+  }
+  if (
+    candidate.samplePatientId !== null &&
+    Object.keys(candidate.sampleChartDigests).length === 0
+  ) {
+    throw new Error(
+      `${manifestPath} names a sample patient but carries no chart digests for them, so the sample-chart check would pass without comparing anything`
+    );
+  }
+
   return parsed as BackupManifest;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isCountRecord(value: unknown): value is Record<string, number> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === 'number');
+}
+
+function isDigestRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every(isString);
 }
 
 /** The newest backup in a directory, by manifest timestamp. */

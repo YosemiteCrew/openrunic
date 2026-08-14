@@ -114,4 +114,50 @@ describe('readManifest', () => {
   it('refuses JSON that is not an object at all', async () => {
     await expect(readManifest(await write('backup'))).rejects.toThrow(/not a backup manifest/);
   });
+  /**
+   * The vacuous pass.
+   *
+   * `verifyBackup` reports a check as passing when nothing MISMATCHED, so a
+   * manifest missing the fields it compares produces a green line having
+   * compared nothing. That is worse than an unverified backup, because somebody
+   * reads the green line and believes it. These fields were previously waved
+   * through by `parsed as BackupManifest`.
+   */
+  it('refuses a manifest with no row counts, which would verify against nothing', async () => {
+    const withoutCounts: Record<string, unknown> = { ...valid };
+    delete withoutCounts.rowCounts;
+    await expect(readManifest(await write(withoutCounts))).rejects.toThrow(/rowCounts/);
+  });
+
+  it('refuses row counts that are not numbers', async () => {
+    await expect(
+      readManifest(await write({ ...valid, rowCounts: { Patient: 'twenty' } }))
+    ).rejects.toThrow(/rowCounts/);
+  });
+
+  it('refuses a migration history that is not a list of names', async () => {
+    await expect(
+      readManifest(await write({ ...valid, appliedMigrations: '20260101000000_init' }))
+    ).rejects.toThrow(/migration history/);
+  });
+
+  it('refuses a sample patient carrying no chart digests', async () => {
+    await expect(
+      readManifest(await write({ ...valid, samplePatientId: 'p-1', sampleChartDigests: {} }))
+    ).rejects.toThrow(/without comparing anything/);
+  });
+
+  it('refuses chart digests that are not digests', async () => {
+    await expect(
+      readManifest(
+        await write({ ...valid, samplePatientId: 'p-1', sampleChartDigests: { Encounter: 7 } })
+      )
+    ).rejects.toThrow(/sampleChartDigests/);
+  });
+
+  it('accepts a database with no encounters, which legitimately has no sample', async () => {
+    await expect(
+      readManifest(await write({ ...valid, samplePatientId: null, sampleChartDigests: {} }))
+    ).resolves.toMatchObject({ samplePatientId: null });
+  });
 });

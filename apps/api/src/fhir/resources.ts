@@ -34,6 +34,7 @@ import {
   medicationStatementResource,
   observationResource,
   practitionerResource,
+  provenanceResource,
   serviceRequestResource,
   specimenResource,
   taskResource,
@@ -431,6 +432,47 @@ const taskModule = defineFhirResource({
  * workstream. Serving either half-formed would be worse than not serving it,
  * and the CapabilityStatement says so by not listing them.
  */
+/**
+ * `target` accepts any resource type, unlike every other reference parameter
+ * here.
+ *
+ * Provenance is the one resource whose subject is another resource of unknown
+ * type, so `referenceId(value, 'Patient', ...)` - which refuses a reference to
+ * anything else - would be wrong. A bare id is accepted too, and narrows on the
+ * id alone: a caller who knows the id but not the type gets the right events
+ * rather than an error about a type they never mentioned.
+ */
+function provenanceTarget(raw: string | undefined): { targetType?: string; targetId?: string } {
+  if (raw === undefined) return {};
+  const separator = raw.indexOf('/');
+  if (separator === -1) return { targetId: raw };
+  return { targetType: raw.slice(0, separator), targetId: raw.slice(separator + 1) };
+}
+
+const provenanceModule = defineFhirResource({
+  type: 'Provenance',
+  interactions: ['read', 'search-type'],
+  params: ['target', 'recorded', 'agent'],
+  // The audit log is readable only by a role that may read the audit log. A
+  // SMART app holding patient scopes does not acquire the practice's activity
+  // history by asking for it as Provenance.
+  permission: 'audit.read',
+  collection: (repositories) => repositories.audit,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...provenanceTarget(query.target),
+    ...(query.agent === undefined
+      ? {}
+      : { actorId: referenceId(query.agent, 'Practitioner', 'agent') }),
+    ...(query.recorded === undefined ? {} : dateWindow(query.recorded, 'recorded')),
+    // Newest first: a provenance search is nearly always "what happened to this
+    // recently", and `seq` would order by write rather than by event time.
+    sort: 'occurredAt' as const,
+    order: 'desc' as const,
+  }),
+  toResource: provenanceResource,
+});
+
 export const SERVED_MODULES: readonly FhirResourceModule[] = [
   patientModule,
   practitionerModule,
@@ -449,6 +491,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   specimenModule,
   documentReferenceModule,
   taskModule,
+  provenanceModule,
 ];
 
 export { booleanToken } from './params.js';

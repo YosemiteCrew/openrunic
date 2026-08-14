@@ -25,15 +25,22 @@ permissions:
 env:
   # Per-app merged-coverage floors.
   #
-  # Both apps are new code, so the floors are set as day-one targets rather
+  # Every app here is new code, so the floors are set as day-one targets rather
   # than ratchets over a legacy suite. Raise them as the suites grow; never
   # lower one to get a PR through.
   #
-  # Branches sit below the other three on purpose. Both apps carry defensive
-  # code whose second arm is unreachable through the product - an index
-  # fallback behind a bounds check, a component prop default React always
-  # supplies - and a branch floor level with the rest would only be reachable
-  # by writing tests that call functions no user path calls.
+  # Branches sit below the other three for the two Next.js apps on purpose. Both
+  # carry defensive code whose second arm is unreachable through the product -
+  # an index fallback behind a bounds check, a component prop default React
+  # always supplies - and a branch floor level with the rest would only be
+  # reachable by writing tests that call functions no user path calls. These
+  # floors, not the thresholds in each app's vitest config, are the authority:
+  # the two do not currently agree everywhere, so a green local run is not by
+  # itself evidence that this gate will pass.
+  #
+  # These are per-metric istanbul floors, and they are not the whole coverage
+  # story: _sonar.yaml separately holds each app to 95% on Sonar's blended
+  # `coverage` measure for the project as a whole.
   #
   # Shared packages run their tests without coverage (see test-matrix.mjs), so
   # they need no entry here. The merge job below FAILS when a coverage-reporting
@@ -42,7 +49,8 @@ env:
   COVERAGE_FLOORS: >-
     {
       "web": "statements=95,branches=90,functions=95,lines=95",
-      "api": "statements=95,branches=95,functions=95,lines=95"
+      "api": "statements=95,branches=95,functions=95,lines=95",
+      "portal": "statements=95,branches=90,functions=95,lines=95"
     }
 
 jobs:

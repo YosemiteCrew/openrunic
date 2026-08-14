@@ -1,7 +1,7 @@
 <!--
 Title format (required, CI-enforced): type(scope): subject
   types:  build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test
-  scopes: web|api|database|fhir|types|lib|repo|ci|docs
+  scopes: web|portal|api|database|fhir|types|ui|lib|repo|ci|docs
 PRs target the dev branch.
 -->
 

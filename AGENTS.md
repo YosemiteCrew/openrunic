@@ -125,7 +125,8 @@ Before declaring a task finished, run and pass, scoped to what you changed:
 
 - Conventional Commits, enforced by commitlint. Types:
   `build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test`. Scopes:
-  `web|api|database|fhir|types|ui|lib|repo|ci|docs`.
+  `web|portal|api|database|fhir|types|ui|lib|repo|ci|docs`. `commitlint.config.cjs` is the
+  list CI reads; keep this line matching it.
 - **PR titles require a scope**: `type(scope): subject`. A scopeless title fails the "Validate PR
   title" CI check even though commitlint accepts scopeless commits locally.
 - **All PRs target `dev`**, never `main`. Releases are promotion PRs (see RELEASING.md).

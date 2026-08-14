@@ -2,9 +2,11 @@ import type { Bundle, FhirResource } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
 import { SERVED_MODULES } from '../fhir/resources.js';
+import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 
 import {
+  DEMO_TENANT_A,
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
@@ -362,9 +364,43 @@ function seedChart(dataset: MemoryDataset): void {
   });
 }
 
+/**
+ * One audit event, so Provenance has something to project.
+ *
+ * Appended to the chain store rather than seeded into the dataset, and the
+ * distinction is the point: the audit log is not a table the API writes through
+ * its repositories, it is a hash-chained store the sink appends to and the API
+ * can only read. Pushing a row into `dataset.table('AuditEvent')` puts it
+ * somewhere nothing reads - which is exactly what the first attempt at this
+ * fixture did, and the search kept returning nothing.
+ *
+ * Going through `append` also means the row carries a real `seq` and a real
+ * `prevHash`, so this fixture cannot drift from the shape the running system
+ * produces.
+ */
+function seedAuditEvent(store: AuditChainStore): void {
+  store.append(
+    DEMO_TENANT_A,
+    {
+      actorType: 'user',
+      actorId: PROVIDER,
+      actorDisplay: 'Adaeze Okafor',
+      action: 'PATIENT_READ',
+      targetType: 'Patient',
+      targetId: PATIENT,
+      patientId: PATIENT,
+      purposeOfUse: 'TREAT',
+      outcome: 'success',
+      metadata: {},
+    },
+    FIXED_NOW
+  );
+}
+
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seedChart(created.dataset);
+  seedAuditEvent(created.auditStore);
   return created;
 }
 
@@ -496,5 +532,103 @@ describe('the projections', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe('Provenance', () => {
+  it('is advertised in the CapabilityStatement', async () => {
+    const { app } = harness();
+
+    const statement = (await (await app.request('/fhir/metadata')).json()) as {
+      rest?: { resource?: { type?: string }[] }[];
+    };
+
+    expect(statement.rest?.[0]?.resource?.map((entry) => entry.type)).toContain('Provenance');
+  });
+
+  /**
+   * The security property, asserted rather than assumed.
+   *
+   * The audit row carries the columns that make the log tamper-evident - `seq`,
+   * `prevHash`, `hash` - plus the request forensics `sourceIp` and `userAgent`.
+   * None of them belongs in a resource any SMART app with audit scope can read:
+   * the chain is verified through the audit export, and the forensics would hand
+   * a third party a picture of staff network layout.
+   *
+   * The mapper takes a DomainProvenance, which has no field for any of them, so
+   * this is structural. The test exists because "structural" is a claim about
+   * today's shape, and the cost of it quietly stopping being true is a leak.
+   */
+  it('carries no chain column and no request forensics', async () => {
+    const created = harness();
+    const stored = created.auditStore.chain(DEMO_TENANT_A)[0];
+    expect(stored, 'the fixture appended no event').toBeDefined();
+
+    const body = await (
+      await created.app.request('/fhir/Provenance', { headers: bearer(TOKENS.adminA) })
+    ).text();
+
+    // Two different checks, because the two kinds of leak look different.
+    //
+    // The hashes are long and unique, so their VALUES are worth searching the
+    // payload for - and they are read from the store rather than typed here,
+    // because an assertion against a hash this test invented would pass whether
+    // or not the boundary leaks.
+    for (const [name, value] of [
+      ['hash', stored?.hash],
+      ['prevHash', stored?.prevHash],
+    ] as const) {
+      expect(value, `${name} was empty, so the assertion below proves nothing`).toBeTruthy();
+      expect(body, `${name} reached the Provenance boundary`).not.toContain(String(value));
+    }
+
+    // `seq` is a small integer: searching the payload for "1" would match an id,
+    // a date or a page count and fail for reasons that have nothing to do with a
+    // leak. The question for these is whether the FIELD exists on the resource,
+    // which is a structural check rather than a textual one.
+    const bundle = JSON.parse(body) as Bundle;
+    for (const entry of bundle.entry ?? []) {
+      const resource = entry.resource as unknown as Record<string, unknown>;
+      for (const field of ['seq', 'hash', 'prevHash', 'sourceIp', 'userAgent', 'tenantId']) {
+        expect(resource, `${field} reached the Provenance boundary`).not.toHaveProperty(field);
+      }
+    }
+    expect(bundle.total).toBeGreaterThan(0);
+  });
+
+  it('narrows on target, and accepts a bare id as well as a typed reference', async () => {
+    const { app } = harness();
+
+    const typed = (await (
+      await app.request(`/fhir/Provenance?target=Patient/${PATIENT}`, {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+    const bare = (await (
+      await app.request(`/fhir/Provenance?target=${PATIENT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const other = (await (
+      await app.request(`/fhir/Provenance?target=Patient/${testId(777)}`, {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    expect(typed.total).toBe(1);
+    expect(bare.total).toBe(1);
+    expect(other.total).toBe(0);
+  });
+
+  /**
+   * A patient's own token must not become a window onto the practice's activity
+   * log. The audit permission is what stops it, and it is checked here rather
+   * than trusted because Provenance is the one served resource whose rows are
+   * about staff rather than about the patient reading them.
+   */
+  it('refuses a principal without the audit permission', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Provenance', { headers: bearer(TOKENS.portalA) });
+
+    expect(res.status).toBe(403);
   });
 });

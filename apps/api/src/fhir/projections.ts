@@ -12,6 +12,7 @@ import {
   toFhirMedicationStatement,
   toFhirObservation,
   toFhirPractitioner,
+  toFhirProvenance,
   toFhirServiceRequest,
   toFhirSpecimen,
   toFhirTask,
@@ -28,6 +29,7 @@ import {
   type MedicationStatement,
   type Observation,
   type Practitioner,
+  type Provenance,
   type ServiceRequest,
   type Specimen,
   type Task,
@@ -427,6 +429,41 @@ export function taskResource(row: ScopedRow<'Task'>): Task {
       dueAt: instant(row.dueAt),
       completedAt: instant(row.completedAt),
       outcome: absent(row.outcome),
+    })
+  );
+}
+
+/**
+ * An audit event as US Core Provenance.
+ *
+ * The audit log is the right source for this and not merely a convenient one:
+ * it is append-only, hash-chained, and written by the same code path that
+ * performs the action, so a Provenance derived from it cannot claim an author
+ * the record does not have. Deriving it from the target row instead would give
+ * an answer assembled after the fact.
+ *
+ * What is deliberately NOT carried across is listed in PROVENANCE_DROPPED_FIELDS
+ * in `packages/fhir`: the chain columns (`seq`, `prevHash`, `hash`) are the
+ * tamper-evidence mechanism and belong to the audit export rather than to a
+ * resource any SMART app can read, and `sourceIp` and `userAgent` are request
+ * forensics that would hand a third-party app a map of staff network layout.
+ * The mapper takes a DomainProvenance, which has no field for either, so this
+ * is enforced by the shape rather than by remembering.
+ */
+export function provenanceResource(row: ScopedRow<'AuditEvent'>): Provenance {
+  return toFhirProvenance(
+    compactDomain({
+      id: row.id,
+      targetType: row.targetType,
+      targetId: absent(row.targetId),
+      occurredAt: row.occurredAt.toISOString(),
+      actorType: row.actorType,
+      actorId: row.actorId,
+      actorDisplay: absent(row.actorDisplay),
+      action: row.action,
+      purposeOfUse: absent(row.purposeOfUse),
+      breakglass: row.breakglass,
+      outcome: row.outcome,
     })
   );
 }

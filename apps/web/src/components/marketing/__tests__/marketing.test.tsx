@@ -75,6 +75,14 @@ describe('PILLARS', () => {
 });
 
 describe('Lockup', () => {
+  /*
+   * The mark is a labelled box rather than an `<img>` so that one shipped file
+   * can take espresso on the bone masthead and bone on the espresso footer,
+   * which only a mask can do. What that must not cost is the mark's place in
+   * the reading order, so these two pin the pair a screen reader actually uses:
+   * the role, and the name. An `<img alt="openrunic">` would expose the same
+   * two, and swapping to one would trade the band ink away for nothing.
+   */
   it('is artwork with a name, not a decorative box', () => {
     render(<Lockup />);
 

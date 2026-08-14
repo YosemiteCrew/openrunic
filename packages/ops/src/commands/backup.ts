@@ -277,7 +277,15 @@ function isString(value: unknown): value is string {
 
 function isCountRecord(value: unknown): value is Record<string, number> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  return Object.values(value).every((entry) => typeof entry === 'number');
+  const entries = Object.values(value);
+  // Non-empty, and that is the whole point rather than a tidiness check.
+  // "every value is a number" is vacuously true of {}, so an empty object
+  // satisfied the type guard, reached verifyBackup, and produced a green
+  // "row counts, all matching" line having compared zero tables - which is the
+  // exact failure this validation exists to prevent, arriving through the
+  // validation itself. A backup of a real database always has tables in it.
+  if (entries.length === 0) return false;
+  return entries.every((entry) => typeof entry === 'number');
 }
 
 function isDigestRecord(value: unknown): value is Record<string, string> {

@@ -129,6 +129,17 @@ describe('readManifest', () => {
     await expect(readManifest(await write(withoutCounts))).rejects.toThrow(/rowCounts/);
   });
 
+  /**
+   * The empty object is the case the first version of this validation let
+   * through: `every` is vacuously true of no entries, so `{}` type-guarded
+   * cleanly and verified against nothing. Raised in review of the fix itself.
+   */
+  it('refuses empty row counts, which would verify against zero tables', async () => {
+    await expect(readManifest(await write({ ...valid, rowCounts: {} }))).rejects.toThrow(
+      /rowCounts/
+    );
+  });
+
   it('refuses row counts that are not numbers', async () => {
     await expect(
       readManifest(await write({ ...valid, rowCounts: { Patient: 'twenty' } }))

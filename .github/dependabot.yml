@@ -74,6 +74,17 @@ updates:
       # (2026-08-14)
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # ESLint 10 has no working React plugin yet. eslint-plugin-react 7.37.5 is
+      # the latest release and peers at `^9.7`; under ESLint 10 it throws
+      # `contextOrFilename.getFilename is not a function` from detectReactVersion
+      # and takes the whole lint run with it. It reaches both apps through
+      # eslint-config-next, so neither can move alone.
+      # Revisit: when eslint-plugin-react ships a release peering on >=10, which
+      # eslint-config-next then has to pick up. (2026-08-14)
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
     groups:
       # ONE pooled pull request for every npm update, majors included.
       # Deliberate trade-off, recorded so the next person does not "fix" it:

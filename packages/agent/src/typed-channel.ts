@@ -64,7 +64,14 @@ export function toTypedChannel(value: unknown, depth = 0): JsonValue | undefined
   }
 
   if (typeof value === 'object') {
-    const result: Record<string, JsonValue> = {};
+    // Object.create(null) for the same reason as canonicalJson in
+    // packages/database/src/audit.ts: assigning a "__proto__" key to a plain
+    // object literal sets the prototype instead of creating a property, so the
+    // field disappears from the result rather than being carried through it.
+    // Here the payload is on its way to a model, and a field that silently
+    // vanishes between what was recorded and what was sent is the kind of gap
+    // nobody finds by reading either side.
+    const result: Record<string, JsonValue> = Object.create(null) as Record<string, JsonValue>;
     for (const [key, child] of Object.entries(value)) {
       const kept = toTypedChannel(child, depth + 1);
       if (kept !== undefined) result[key] = kept;

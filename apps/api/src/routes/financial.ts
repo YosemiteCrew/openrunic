@@ -517,6 +517,24 @@ async function moveClaim(c: Context<AppEnv>, id: string, move: ClaimMove): Promi
 
 /* ----------------------------------------------------------- payment moves */
 
+/**
+ * The payment moves that have a ROUTE, as `[url segment, resulting status]`.
+ *
+ * Distinct from PAYMENT_TRANSITIONS above, which is the legal-transition graph
+ * the move is checked against. This one says which moves a client can ask for;
+ * that one says which are allowed from where. Both are needed and they are not
+ * the same list.
+ *
+ * `as const` is load-bearing: it keeps each status a literal so `movePayment`
+ * still takes a `PaymentStatus` rather than a widened `string`, and a typo in
+ * this table fails to compile instead of failing at runtime.
+ */
+const ROUTED_PAYMENT_MOVES = [
+  ['post', 'POSTED'],
+  ['void', 'VOIDED'],
+  ['refund', 'REFUNDED'],
+] as const satisfies readonly (readonly [string, PaymentStatus])[];
+
 async function movePayment(
   c: Context<AppEnv>,
   id: string,
@@ -684,23 +702,17 @@ function transitionRoutes(): Hono<AppEnv> {
     return c.json(toListResponse(page, toClaimStatusHistoryDto));
   });
 
-  router.post('/payments/:id/post', requirePermission('payment.write'), async (c) => {
-    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-    const body = await parseTransitionBody(c, paymentTransitionSchema);
-    return c.json(await movePayment(c, id, 'POSTED', body.note));
-  });
-
-  router.post('/payments/:id/void', requirePermission('payment.write'), async (c) => {
-    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-    const body = await parseTransitionBody(c, paymentTransitionSchema);
-    return c.json(await movePayment(c, id, 'VOIDED', body.note));
-  });
-
-  router.post('/payments/:id/refund', requirePermission('payment.write'), async (c) => {
-    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-    const body = await parseTransitionBody(c, paymentTransitionSchema);
-    return c.json(await movePayment(c, id, 'REFUNDED', body.note));
-  });
+  // Declared rather than copied. The three routes differed by a URL segment and
+  // a status and agreed on everything else, which is the shape that invites a
+  // fourth to be pasted in and then edited in only two of its three places.
+  // Reading them as a table also puts the payment state machine on one screen.
+  for (const [segment, status] of ROUTED_PAYMENT_MOVES) {
+    router.post(`/payments/:id/${segment}`, requirePermission('payment.write'), async (c) => {
+      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+      const body = await parseTransitionBody(c, paymentTransitionSchema);
+      return c.json(await movePayment(c, id, status, body.note));
+    });
+  }
 
   router.get('/payments/:id/allocations', requirePermission('payment.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');

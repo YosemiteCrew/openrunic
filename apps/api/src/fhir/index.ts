@@ -73,6 +73,52 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
     fhirResponse(c, buildCapabilityStatement(now(), options.softwareVersion, modules))
   );
 
+  /**
+   * SMART on FHIR discovery.
+   *
+   * A third-party app cannot launch against a FHIR server it cannot interrogate:
+   * before asking for a token it fetches this document to learn where to
+   * authorise, what it may ask for, and which launch shapes the server supports.
+   * Without it the boundary is reachable only by clients configured by hand,
+   * which is not an app ecosystem.
+   *
+   * Served under `.well-known` off the FHIR base, as SMART requires, and left
+   * unauthenticated on purpose: it is discovery metadata, it names no patient,
+   * and a client that has not authenticated yet is exactly who needs to read it.
+   *
+   * `capabilities` claims only what the server implements. Listing a launch mode
+   * that does not work would send an app down a flow that fails after the user
+   * has already been redirected, which is the worst place to discover it.
+   */
+  router.get('/.well-known/smart-configuration', (c) => {
+    const base = new URL(c.req.url);
+    const issuer = `${base.origin}${FHIR_BASE_PATH}`;
+    return c.json(
+      {
+        issuer,
+        // The token endpoint is the API's own session route: this deployment
+        // authenticates through it and has no separate authorisation server
+        // yet. When OIDC lands (see lib/auth in the web app) these two move to
+        // the provider and this document is where an app finds out.
+        authorization_endpoint: `${base.origin}/authorize`,
+        token_endpoint: `${base.origin}/token`,
+        capabilities: [
+          'launch-standalone',
+          'client-public',
+          'context-standalone-patient',
+          'permission-patient',
+          'permission-user',
+        ],
+        code_challenge_methods_supported: ['S256'],
+        grant_types_supported: ['authorization_code'],
+        scopes_supported: ['openid', 'fhirUser', 'launch/patient', 'patient/*.read', 'user/*.read'],
+        response_types_supported: ['code'],
+      },
+      200,
+      { 'cache-control': 'public, max-age=300' }
+    );
+  });
+
   for (const module of modules) {
     router.get(
       `/${module.type}`,

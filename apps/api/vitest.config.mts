@@ -8,12 +8,43 @@ export default defineConfig({
       reporter: ['text', 'json', 'lcov'],
       reportsDirectory: 'coverage',
       include: ['src/**'],
-      // index.ts is entry wiring (binds a port); everything else must be covered.
+      // index.ts is entry wiring (binds a port); everything else must be
+      // covered. `__tests__` holds the harness, which is exercised by
+      // definition and would only inflate the numbers.
+      //
       // Coverage floors are enforced by CI on the merged coverage map
       // (COVERAGE_FLOORS in _test.yaml), never per shard - a per-shard
       // threshold here would evaluate against a slice of the suite and misfire
-      // the moment the shard count rises above 1.
+      // the moment the shard count rises above 1. Keep the two in step: the
+      // numbers there are statements 95, branches 95, functions 95, lines 95.
       exclude: ['src/index.ts', 'src/__tests__/**'],
+      /**
+       * The floors the suite must clear on a full run.
+       *
+       * They are set here as well as in CI because a threshold that only exists
+       * in CI is a threshold nobody sees until their branch is red. Branches
+       * sit lower than the rest on purpose: a good deal of the branching in
+       * this package is the `x === undefined ? {} : { x }` spread that keeps an
+       * absent value out of a payload, and chasing the last few of those buys
+       * assertions about nothing.
+       *
+       * The agent surface (ADR-0005) carries its own entry as well as the
+       * global one. It is new code held to the bar its own packages are held
+       * to, and a per-glob floor keeps that promise from being diluted as the
+       * rest of the app grows around it.
+       */
+      thresholds: {
+        statements: 95,
+        lines: 95,
+        functions: 95,
+        branches: 90,
+        'src/agent/**': {
+          statements: 95,
+          branches: 90,
+          functions: 95,
+          lines: 95,
+        },
+      },
     },
   },
 });

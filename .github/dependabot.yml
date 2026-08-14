@@ -2,6 +2,28 @@
 # target-branch below only aims the PRs at dev. Any change here must land on
 # main to take effect, so keep the copies on dev and main byte-identical, or a
 # config change sits silently inert until the next promotion.
+#
+# EVERY DEPENDENCY CHANGE ARRIVES IN ONE PULL REQUEST, ON dev. Advisories
+# included. Two settings hold that, and they are not both in this file:
+#
+#  1. The groups below pool version updates into a single pull request, aimed at
+#     dev. A weekly version bump fixes an advisory as a side effect of moving to
+#     a current release, so the pooled run is the normal path for security work.
+#
+#  2. Dependabot SECURITY updates are disabled in repository settings, and must
+#     stay disabled. They ignore `target-branch` entirely and always open against
+#     the DEFAULT branch, one pull request per advisory - which is both a swarm
+#     and a swarm aimed at main, the branch a clinic installs.
+#
+# Dependabot ALERTS remain on: detection is not the thing being turned off. The
+# alert still fires the moment an advisory lands, it is visible in the Security
+# tab, and it is fixed by the pooled pull request. If one cannot wait for
+# Monday, raise it by hand on a branch off dev rather than re-enabling security
+# updates.
+#
+# The `security-updates` groups below are deliberate belt-and-braces: they do
+# nothing while the setting is off, and if a future maintainer turns it back on,
+# advisories pool into one pull request instead of arriving one at a time.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -13,6 +35,15 @@ updates:
       timezone: 'UTC'
     target-branch: dev
     open-pull-requests-limit: 10
+    # Supply-chain cooldown: do not adopt a release until it has been public
+    # long enough for a compromised publish to be spotted and yanked. Account
+    # takeovers on npm are usually caught within hours, so a few days is the
+    # difference between pulling one in and never seeing it. Dependabot SECURITY
+    # updates ignore cooldown, so a real advisory still lands immediately.
+    # Revisit: shorten only if a security fix is ever delayed by this.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
     # Only labels that exist in the repo. Dependabot cannot create labels, so an
     # unknown name makes it post a config error on every PR it opens instead of
     # applying the label.
@@ -33,47 +64,31 @@ updates:
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
     groups:
-      # Every group is minor-and-patch only, including the named ones below. A
-      # named group without `update-types` silently swallows MAJORS too, which
-      # is how breaking major bumps end up inside an unreviewable group PR
-      # instead of the individual PR a breaking major needs. Majors always get
-      # their own PR and their own review.
-      typescript-eslint:
-        patterns:
-          - 'typescript'
-          - '@types/*'
-          - 'eslint*'
-          - '@typescript-eslint/*'
-        update-types:
-          - minor
-          - patch
-      testing:
-        patterns:
-          - 'vitest*'
-          - '@vitest/*'
-          - '@testing-library/*'
-        update-types:
-          - minor
-          - patch
-      build-tooling:
-        patterns:
-          - 'turbo'
-          - 'prettier'
-          - 'husky'
-          - 'lint-staged'
-        update-types:
-          - minor
-          - patch
-      # Catch-all. Must stay LAST: a dependency joins the first group it
-      # matches, so an earlier '*' would swallow the named groups above.
-      # Minor and patch only, so major bumps still get an individual PR
-      # and an individual review.
-      minor-and-patch:
+      # ONE pooled pull request for every npm update, majors included.
+      # Deliberate trade-off, recorded so the next person does not "fix" it:
+      # a grouped major is harder to review and harder to revert in isolation
+      # than an individual one. We accept that because a dozen separate bot
+      # pull requests a week is its own failure mode, and because the full gate
+      # (build, lint, type-check, tests with coverage floors, Sonar, SBOM,
+      # grype, licence policy) runs on the pooled branch. If a single dependency
+      # in the pool breaks the gate, add it to `ignore` above with a rationale
+      # and a revisit condition, then let the rest land.
+      all-dependencies:
+        applies-to: version-updates
         patterns:
           - '*'
         update-types:
+          - major
           - minor
           - patch
+      # Inert while security updates are disabled in settings (see the header).
+      # Present so that re-enabling them yields one pull request rather than one
+      # per advisory. It would still be aimed at the default branch, which the
+      # promotion guard refuses, so re-enabling is a deliberate act either way.
+      all-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -83,17 +98,85 @@ updates:
       timezone: 'UTC'
     target-branch: dev
     open-pull-requests-limit: 10
+    # Same cooldown reasoning as the npm pool above. A freshly-published action
+    # tag is exactly what a compromised maintainer account pushes first, and
+    # every action here is pinned to a commit SHA that Dependabot rewrites.
+    #
+    # No semver-major-days here, unlike the npm pool: Dependabot rejects that
+    # property for the github-actions ecosystem, and it rejects the FILE rather
+    # than the property, so one unsupported key switches off npm updates too.
+    # default-days applies to every bump regardless of semver rank, which is the
+    # behaviour we wanted from the major setting anyway - actions are pinned to
+    # commit SHAs, so Dependabot is rewriting a digest and the semver rank of the
+    # tag behind it is not what decides the risk.
+    # Revisit: shorten only if a security fix is ever delayed by this.
+    cooldown:
+      default-days: 5
     commit-message:
       prefix: 'ci(repo)'
     labels:
       - dependencies
       - github_actions
     groups:
-      # Action majors are routinely breaking, so keep them out of the group
-      # and let each land on its own.
-      actions:
+      # One pooled pull request for GitHub Actions too. Dependabot cannot merge
+      # across ecosystems, so this is a separate pull request from the npm pool
+      # by design, not by oversight.
+      all-actions:
+        applies-to: version-updates
         patterns:
           - '*'
         update-types:
+          - major
           - minor
           - patch
+      # Same reasoning as all-security above.
+      all-actions-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+
+  # Docker lives on this branch rather than on dev, because Dependabot rejects
+  # the whole file when a directory it names has no manifest in it. Pointing at
+  # these paths before the Dockerfiles existed took the npm and actions pools
+  # down with it: an invalid dependabot.yml is not partially applied, it is
+  # ignored entirely, and the only symptom is updates quietly stopping.
+  #
+  # So this block belongs with the Dockerfiles it describes, and the two must be
+  # promoted together. `directories` takes the list in one entry, which keeps the
+  # two images in a single pull request rather than opening one each.
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:30'
+      timezone: 'UTC'
+    target-branch: dev
+    open-pull-requests-limit: 10
+    # Only default-days, deliberately. The github-actions pool above lost every
+    # Dependabot update to an unsupported cooldown property, because the file is
+    # rejected whole rather than per-key, so this uses the one property every
+    # ecosystem accepts rather than the richest set that might work.
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: 'build(repo)'
+    labels:
+      - dependencies
+      - docker
+    groups:
+      # Base images move together or the runtime and builder stages drift apart.
+      all-docker:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
+          - minor
+          - patch
+      all-docker-security:
+        applies-to: security-updates
+        patterns:
+          - '*'

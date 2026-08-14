@@ -1,0 +1,150 @@
+/* Textarea - multi-line text field, Input's sibling. White fill on bone: white is reserved
+   for input fields and data tables. No hover skin, for the same reason Input has none - the
+   design system gives fields a resting, a focus and an error state only, and a hover-only
+   affordance does not exist on touch. */
+
+.or-textarea {
+  --or-textarea-border: var(--border-hairline);
+  --or-textarea-message-ink: var(--text-secondary);
+  --or-textarea-counter-ink: var(--text-secondary);
+
+  display: grid;
+  /* 6px and the 5px message gap are the design system's field rhythm, sitting between
+     --space-1 and --space-2. */
+  gap: 6px;
+  font-family: var(--font-text);
+}
+
+/* A long mono identifier must not push the field past its column. */
+.or-textarea > * {
+  min-width: 0;
+}
+
+.or-textarea__label {
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  line-height: var(--lh-small);
+  color: var(--espresso);
+}
+
+.or-textarea__shell {
+  display: flex;
+  /* Touch-target floor for phones; the control's own rows take over from there up. */
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--hairline) solid var(--or-textarea-border);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-textarea__shell {
+    min-height: var(--control-h-md);
+  }
+}
+
+.or-textarea__control {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--espresso);
+  font-family: inherit;
+  /* 16px exactly: any smaller and iOS Safari zooms the page when the field takes focus. */
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  /* The handle drags down only. A wider field would break the form's column. */
+  resize: vertical;
+}
+
+.or-textarea__control--mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-textarea__control::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+/* The message keeps the left edge and the counter keeps the right, whether or not they
+   share the row. */
+.or-textarea__footer {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.or-textarea__message {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--or-textarea-message-ink);
+}
+
+.or-textarea__message-icon {
+  flex: 0 0 auto;
+}
+
+.or-textarea__counter {
+  flex: 0 0 auto;
+  margin: 0 0 0 auto;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  /* Tabular figures so the number holds its place instead of jittering as it counts. */
+  font-variant-numeric: tabular-nums;
+  color: var(--or-textarea-counter-ink);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* The ring belongs to the whole field, not to the borderless inner control, so it is drawn
+   on the shell through :has(). The inner outline is only suppressed where :has() works,
+   which leaves the base.css focus ring standing in on anything older. */
+.or-textarea__shell:has(.or-textarea__control:focus-visible) {
+  --or-textarea-border: var(--terracotta);
+
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@supports selector(:has(*)) {
+  .or-textarea__control:focus-visible {
+    outline: none;
+  }
+}
+
+/* Auto-grow writes the height inline from the content, so the manual handle and the
+   scrollbar both step aside rather than fight it. */
+.or-textarea--grow .or-textarea__control {
+  resize: none;
+  overflow: hidden;
+}
+
+/* At the ceiling the count turns red, next to a field that has quietly stopped accepting
+   characters. The number itself still carries the meaning; the colour only points at it. */
+.or-textarea__counter--near {
+  --or-textarea-counter-ink: var(--danger);
+
+  font-weight: var(--wght-medium);
+}
+
+.or-textarea--error {
+  --or-textarea-border: var(--danger);
+  --or-textarea-message-ink: var(--danger);
+}
+
+.or-textarea--disabled {
+  opacity: 0.42;
+}
+
+.or-textarea--disabled .or-textarea__shell,
+.or-textarea__control:disabled {
+  cursor: not-allowed;
+}

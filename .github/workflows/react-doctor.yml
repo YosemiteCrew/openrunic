@@ -1,0 +1,125 @@
+# React codebase health, held at a floor rather than reported and ignored.
+#
+# react-doctor scores the React surface (apps/web, apps/portal, packages/ui) and
+# reports diagnostics: dead code, unreachable exports, circular imports, and a
+# set of React and accessibility rules. The score is a gate here, not a
+# dashboard, because a number nobody has to clear is a number that only ever
+# goes down.
+#
+# Standalone rather than folded into ci.yaml's "CI Required" aggregate, matching
+# codeql.yml and supply-chain.yml. It runs on its own schedule of triggers and
+# reports its own required check.
+#
+# NETWORK BEHAVIOUR, stated plainly because this repository cares about it:
+# the SCORE is computed by a remote service operated by the tool's authors, not
+# on the runner. Passing `--no-score` (alias `--no-telemetry`) disables that
+# call along with the share URL and crash reporting, and the score then comes
+# back null - so the score gate and the no-network posture are mutually
+# exclusive, and this workflow deliberately chooses the gate.
+#
+# The DIAGNOSTICS are computed locally. A repository that later decides the
+# remote call is unacceptable can keep most of the value by switching the run to
+# `--no-score --blocking error` and deleting the threshold step: that keeps
+# every rule and the dead-code analysis, and gives up only the numeric score.
+# See docs/quality-gates.md for the trade-off in full.
+name: React Doctor
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  # The floor. Raise it as the codebase improves; never lower it to land a
+  # change. A drop below this is a regression in React health, and the report
+  # names the rules responsible.
+  MINIMUM_SCORE: 95
+
+jobs:
+  score:
+    name: React Doctor score
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # `-y` skips the interactive project picker, which would otherwise hang a
+      # runner forever waiting for a keystroke nobody is there to press.
+      - name: Run react-doctor
+        run: pnpm exec react-doctor -y --json --json-out react-doctor.json
+
+      - name: Enforce the score floor
+        env:
+          MINIMUM: ${{ env.MINIMUM_SCORE }}
+        run: |
+          set -euo pipefail
+
+          # The program below is JavaScript held in single quotes so the shell
+          # hands it to node untouched. shellcheck, which actionlint runs over
+          # every `run:` block, sees `${...}` inside single quotes and assumes
+          # the author wanted shell expansion. Same false positive, same scoped
+          # answer as pr-governance.yml.
+          # shellcheck disable=SC2016
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+
+            const report = JSON.parse(readFileSync("react-doctor.json", "utf8"));
+            const minimum = Number(process.env.MINIMUM);
+            const { score, scoreLabel, errorCount, warningCount } = report.summary ?? {};
+
+            // A null score means the remote scoring call did not happen or did
+            // not answer. Treat that as a failure rather than a pass: a gate
+            // that silently disappears when a dependency is unreachable is not
+            // a gate. If this fires repeatedly, the honest fix is to switch to
+            // the local-only posture described at the top of this workflow.
+            if (typeof score !== "number") {
+              console.error("::error::react-doctor returned no score. The scoring service may be unreachable.");
+              console.error("::error::Refusing to pass on a missing score. See the note in .github/workflows/react-doctor.yml.");
+              process.exit(1);
+            }
+
+            for (const project of report.projects ?? []) {
+              const name = project.project?.projectName ?? project.directory;
+              console.log(`  ${name}: ${project.score?.score ?? "n/a"}`);
+            }
+            console.log(`overall: ${score} (${scoreLabel}), ${errorCount} errors, ${warningCount} warnings`);
+
+            if (score < minimum) {
+              // Name the rules, so the failure is actionable from the log alone
+              // rather than only from the artifact.
+              for (const project of report.projects ?? []) {
+                for (const rule of Object.keys(project.score?.rules ?? {})) {
+                  console.error(`::error::${rule} is costing score in ${project.project?.projectName ?? project.directory}`);
+                }
+              }
+              console.error(`::error::React Doctor score ${score} is below the ${minimum} floor.`);
+              process.exit(1);
+            }
+
+            console.log(`React Doctor score ${score} meets the ${minimum} floor.`);
+          '
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: react-doctor-report
+          path: react-doctor.json
+          retention-days: 14

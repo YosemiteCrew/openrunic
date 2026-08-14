@@ -10,6 +10,14 @@ This document describes openrunic's branching and release model. The rationale i
 - **`dev`** is the integration branch. **All feature and fix PRs target `dev`.**
 - Both branches are protected by rulesets; the "CI Required" aggregate check must pass before
   merge.
+- **Only `dev` may merge into `main`.** The "Promotion source" check refuses any pull request into
+  `main` whose head is another branch, and the `main` ruleset requires that check. Rulesets cannot
+  express "only this branch may be the source", so the rule lives in
+  `.github/workflows/promotion-guard.yaml`.
+- **Dependency updates never reach `main` directly.** Dependabot targets `dev` and pools every
+  update into one pull request. Dependabot _security_ updates are disabled in repository settings
+  and must stay that way: they ignore `target-branch` and open one pull request per advisory
+  against the default branch. Alerts stay on, and the pooled pull request carries the fix.
 
 ```text
 feature branch ──PR──> dev ──promotion PR──> main ──tag──> release
@@ -33,12 +41,21 @@ When `dev` is in a state we want to release:
 
 ## Hotfixes
 
-For urgent fixes that cannot wait for the next promotion:
+Urgent fixes take the same route as everything else, because there is only one route:
 
-1. Branch from `main` (for example `hotfix/audit-event-timestamps`).
-2. Open a PR targeting `main` with a normal conventional title, e.g. `fix(api): ...`.
-3. After merging to `main`, **back-merge `main` into `dev`** promptly so the fix is not lost or
-   reintroduced by the next promotion.
+1. Branch from `dev` (for example `hotfix/audit-event-timestamps`).
+2. Open a PR targeting `dev` with a normal conventional title, e.g. `fix(api): ...`.
+3. Merge it, then open a promotion PR immediately.
+
+The cost is stated rather than hidden: a promotion carries **everything** on `dev`, so an urgent
+fix also ships whatever else is sitting there unreleased. The older model - branch from `main`,
+merge to `main`, back-merge into `dev` - avoided that, at the price of a second way into `main`
+that skips integration. We chose the single route, and the guard enforces it.
+
+If a genuine emergency ever needs the other shape, it is a deliberate, reviewed change rather than
+a workaround: add the branch pattern to the allowed heads in
+`.github/workflows/promotion-guard.yaml`, and say in the PR why this fix cannot wait for a
+promotion. Do not disable the check.
 
 ## Versioning and tags
 

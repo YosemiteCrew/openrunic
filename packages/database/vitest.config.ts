@@ -6,14 +6,16 @@ export default defineConfig({
     coverage: {
       enabled: true,
       provider: 'v8',
-      // client.ts and the barrel need a generated Prisma client and a real
-      // database; they are exercised by integration tests in the apps, not here.
-      include: ['src/audit.ts'],
+      // The pure modules only. `client.ts`, `tenant.ts`'s extension factory and
+      // `seed/` all need a generated Prisma client and a real database; they
+      // are covered by the API package's integration tests. `enums.ts` is a
+      // data table checked at compile time, and `generated/` is not ours.
+      include: ['src/audit.ts', 'src/uuid.ts', 'src/forms.ts', 'src/schemas/**/*.ts'],
       thresholds: {
-        statements: 90,
-        branches: 90,
-        functions: 90,
-        lines: 90,
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
       },
     },
   },

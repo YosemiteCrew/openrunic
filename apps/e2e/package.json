@@ -1,0 +1,23 @@
+{
+  "name": "@openrunic/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The full-day clinical drill: the acceptance test for the whole product.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "drill": "node scripts/run-drill.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.2",
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.58.1",
+    "@types/node": "^22.20.1",
+    "axe-core": "^4.11.2",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.66.0"
+  }
+}

@@ -18,5 +18,15 @@ export default defineConfig(
   {
     files: ['**/*.mjs'],
     extends: [eslint.configs.recommended],
+    // Plain ESM JavaScript gets no type information, so nothing tells ESLint
+    // that Node's globals exist and `no-undef` flags every use of `process`.
+    // The .ts files learn the same thing from @types/node.
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
   }
 );

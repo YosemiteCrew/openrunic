@@ -1,0 +1,9 @@
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --radius-card: var(--radius-md);
+  --radius-field: var(--radius-md);
+  --radius-button: var(--radius-pill); /* one global button shape - pill */
+}

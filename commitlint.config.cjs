@@ -23,7 +23,7 @@ module.exports = {
     'scope-enum': [
       2,
       'always',
-      ['web', 'api', 'database', 'fhir', 'types', 'lib', 'repo', 'ci', 'docs'],
+      ['web', 'portal', 'api', 'database', 'fhir', 'types', 'ui', 'lib', 'repo', 'ci', 'docs'],
     ],
     'subject-case': [0],
     'header-max-length': [2, 'always', 100],

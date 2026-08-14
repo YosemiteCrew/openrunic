@@ -1,0 +1,142 @@
+/* Toast - transient confirmation on the espresso surface. The component draws; the
+   consumer positions. One shadow level (--shadow-overlay), no scrim, no blur, and the
+   only motion is the system's 6px fade-up. */
+
+.or-toast {
+  --or-toast-icon: var(--text-decorative);
+
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  /* Phones: the toast fills whatever rail the consumer gives it. The design system's
+     420px cap returns at md. */
+  max-width: 100%;
+  /* 14 / 16px come from the design system's toast specimen, not the 4-step scale: the
+     extra 2px on the left balances the tone icon's optical weight. */
+  padding: 14px 14px 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-overlay);
+  font-family: var(--font-text);
+  animation: or-fade-up var(--dur-slow) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-toast {
+    max-width: 420px;
+  }
+}
+
+/* Tones ------------------------------------------------------------------ */
+
+.or-toast--info {
+  --or-toast-icon: var(--text-decorative);
+}
+
+/* Olive and danger are ink for bone, not for espresso: on the inverse surface both sit
+   under 3:1. Lifting each toward the inverse ink keeps the icon legible and keeps the
+   status hues in colors.css rather than re-declared here. */
+.or-toast--success {
+  --or-toast-icon: color-mix(in oklab, var(--status-success) 65%, var(--bone));
+}
+
+.or-toast--danger {
+  --or-toast-icon: color-mix(in oklab, var(--status-danger) 55%, var(--bone));
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-toast__icon {
+  flex: 0 0 auto;
+  /* Optical alignment with the 14px title cap-height. */
+  margin-top: 2px;
+  color: var(--or-toast-icon);
+}
+
+/* The tone word, for screen readers only: tone is never carried by colour alone, and the
+   icon is decorative. Sighted readers get the same signal from the title. */
+.or-toast__tone {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.or-toast__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.or-toast__body > * {
+  min-width: 0;
+}
+
+.or-toast__title {
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+  line-height: var(--lh-small);
+}
+
+.or-toast__message {
+  color: var(--text-inverse-secondary);
+  font-size: var(--text-small);
+  line-height: var(--lh-small);
+}
+
+/* Dismiss ---------------------------------------------------------------- */
+
+.or-toast__close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  /* Touch-target floor for phones; the 32px chrome box returns at md. */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--text-inverse);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-toast__close {
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
+    min-width: 0;
+    min-height: 0;
+    /* Pulls the box back onto the toast's optical padding, as the design system does. */
+    margin: -3px -4px 0 0;
+  }
+}
+
+/* On espresso the darkening step is the system's own inverse hover surface; a cream wash
+   would lighten, which the brand forbids. */
+@media (hover: hover) {
+  .or-toast__close:not(:disabled):not([aria-disabled='true']):hover {
+    background: var(--surface-inverse-hover);
+  }
+}
+
+.or-toast__close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-toast__close:disabled,
+.or-toast__close[aria-disabled='true'] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}

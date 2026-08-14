@@ -1,0 +1,141 @@
+/* Table - density surfaces. White paper inside the bone page, a cream header band, and
+   hairlines doing the work a border would: rows are separated, columns never are. */
+
+.or-table {
+  overflow: hidden;
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-data);
+}
+
+/* The scroll container is the table's own, not the page's: columns keep their width and
+   the row scrolls sideways instead of every cell being squeezed to nothing. */
+.or-table__scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Load bearing, not decoration. `overflow` only clips descendants for which this
+     element is in the containing-block chain, so while it is `static` an absolutely
+     positioned descendant escapes the scroller entirely and extends the PAGE. That is
+     not hypothetical: every money cell carries a `.or-visually-hidden` span ("41.00 US
+     dollars") for screen readers, those spans are `position: absolute`, and in a wide
+     table they sit hundreds of pixels beyond the fold - which dragged the whole
+     document sideways on the claim and remittance workbenches, at 1440 as well as 768.
+     Making the scroller a containing block keeps its overflow its own. */
+  position: relative;
+  /* Named so the caption can size itself to the visible width rather than the full table
+     width; without this the caption is as wide as the widest row and scrolls out of sight. */
+  container-type: inline-size;
+}
+
+.or-table__grid {
+  /* `separate` with zero spacing, not `collapse`: sticky cells are unreliable inside a
+     collapsed border model. Only bottom borders are drawn, so the two render identically. */
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+}
+
+/* The caption names the table, so it has to stay legible while the rows scroll sideways:
+   pinned to the left edge of the scroll box and sized to the width actually on screen. */
+.or-table__caption {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 100cqw;
+  caption-side: top;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  text-align: left;
+}
+
+.or-table__th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* 10px/12px row padding against the 16px gutter comes from the table specimen; the
+     header band is a touch tighter than the body rows. */
+  padding: 10px var(--space-4);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+  background: var(--cream);
+  color: var(--text-secondary);
+  font-size: var(--text-overline);
+  font-weight: var(--wght-semibold);
+  letter-spacing: var(--track-overline);
+  line-height: var(--lh-caption);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.or-table__td {
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-ink);
+  white-space: nowrap;
+}
+
+/* Hairline between rows, never after the last one - the container's border closes it. */
+.or-table__row:not(:last-child) .or-table__td {
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+/* Column treatments ------------------------------------------------------ */
+
+.or-table__cell--left {
+  text-align: left;
+}
+
+.or-table__cell--center {
+  text-align: center;
+}
+
+.or-table__cell--right {
+  text-align: right;
+}
+
+.or-table__cell--mono {
+  font-family: var(--font-mono);
+}
+
+.or-table__cell--numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Responsive ------------------------------------------------------------- */
+
+/* Below md the first column is pinned, so a value scrolled into view still belongs to a
+   visible test name. The pinned cells carry their own opaque paper rather than a vertical
+   rule or a shadow: this system separates columns with space, not lines. */
+.or-table__th:first-child,
+.or-table__td:first-child {
+  position: sticky;
+  left: 0;
+}
+
+.or-table__th:first-child {
+  /* Above the pinned body cells as well as the scrolling rows. */
+  z-index: 3;
+}
+
+/* stylelint-disable-next-line no-descending-specificity -- The higher-specificity
+   `.or-table__row:not(:last-child) .or-table__td` rule above sets only
+   border-bottom, and this rule sets only z-index and background, so neither can
+   override the other and the source order is free. Reordering to satisfy the
+   rule would split the pinned-column block away from the responsive section it
+   documents. */
+.or-table__td:first-child {
+  z-index: 1;
+  background: var(--surface-data);
+}
+
+@media (min-width: 768px) {
+  .or-table__th:first-child {
+    left: auto;
+  }
+
+  .or-table__td:first-child {
+    position: static;
+  }
+}

@@ -1,0 +1,126 @@
+/* Input - single-line text field. White fill on bone: white is reserved for input fields
+   and data tables. No hover skin on purpose - the design system gives fields a resting,
+   a focus and an error state only, and a hover-only affordance does not exist on touch. */
+
+.or-input {
+  --or-input-border: var(--border-hairline);
+  --or-input-message-ink: var(--text-secondary);
+
+  display: grid;
+  /* 6px and the 5px message gap are the design system's field rhythm, sitting between
+     --space-1 and --space-2. */
+  gap: 6px;
+  font-family: var(--font-text);
+}
+
+/* A long mono identifier must not push the field past its column. */
+.or-input > * {
+  min-width: 0;
+}
+
+.or-input__label {
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  line-height: var(--lh-small);
+  color: var(--espresso);
+}
+
+.or-input__shell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Touch-target floor for phones; the exact 40px control height returns at md. */
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--or-input-border);
+  border-radius: var(--radius-field);
+  background: var(--surface-field);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-input__shell {
+    min-height: 0;
+    height: var(--control-h-md);
+  }
+}
+
+.or-input__icon {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.or-input__control {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--espresso);
+  font-family: inherit;
+  /* 16px exactly: any smaller and iOS Safari zooms the page when the field takes focus. */
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+}
+
+.or-input__control--mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.or-input__control::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.or-input__suffix {
+  flex: 0 0 auto;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.or-input__message {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--or-input-message-ink);
+}
+
+.or-input__message-icon {
+  flex: 0 0 auto;
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* The ring belongs to the whole field, not to the borderless inner input, so it is drawn
+   on the shell through :has(). The inner outline is only suppressed where :has() works,
+   which leaves the base.css focus ring standing in on anything older. */
+.or-input__shell:has(.or-input__control:focus-visible) {
+  --or-input-border: var(--terracotta);
+
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@supports selector(:has(*)) {
+  .or-input__control:focus-visible {
+    outline: none;
+  }
+}
+
+.or-input--error {
+  --or-input-border: var(--danger);
+  --or-input-message-ink: var(--danger);
+}
+
+.or-input--disabled {
+  opacity: 0.42;
+}
+
+.or-input--disabled .or-input__shell,
+.or-input__control:disabled {
+  cursor: not-allowed;
+}

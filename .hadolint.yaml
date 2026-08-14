@@ -1,0 +1,22 @@
+# hadolint configuration.
+#
+# Findings are fixed rather than ignored here as a rule. The one exception is
+# below, and it is a case where the tool's advice and this image's goal genuinely
+# point in opposite directions.
+ignored:
+  # DL3059 - "multiple consecutive RUN instructions, consider consolidation".
+  #
+  # The advice is about layer count. These builds care about layer *reuse*: the
+  # dependency install, the Prisma generate and the turbo build are separate
+  # layers precisely so that editing a source file re-runs the build without
+  # re-running the install, which is the difference between a fast rebuild and a
+  # slow one on every developer machine and every CI run.
+  #
+  # The layers are also discarded. Each of these is in a builder stage, and the
+  # runtime images copy a tree out of them, so consolidating would trade real
+  # cache hits for a saving that never reaches the shipped image.
+  - DL3059
+
+# Trust only the registry the base images are actually pinned to.
+trustedRegistries:
+  - docker.io

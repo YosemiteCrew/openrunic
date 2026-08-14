@@ -1,0 +1,160 @@
+/* Alert - the in-page notice. The toast passes by a corner; the alert sits in the content
+   flow and keeps its place. Warm paper throughout: a tone wash mixed toward bone, espresso
+   ink, one hairline. No saturated fill, no gradient, no frosted glass, and the only motion
+   is the system's 6px fade-up. */
+
+.or-alert {
+  --or-alert-wash: var(--status-neutral-wash);
+  --or-alert-edge: color-mix(in oklab, var(--hazelnut) 26%, var(--bone));
+  --or-alert-icon: var(--status-neutral);
+
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  /* The banner takes the width of the column it is given; the consumer owns that column. */
+  width: 100%;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--or-alert-edge);
+  border-radius: var(--radius-md);
+  background: var(--or-alert-wash);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  /* Arriving inside the page rather than over it, so the fade-up runs at the shorter
+     duration the overlay animation uses. */
+  animation: or-fade-up var(--dur-base) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-alert {
+    padding: var(--space-4);
+  }
+}
+
+/* Tones ------------------------------------------------------------------ */
+
+/* Hazelnut is the informational ink of the system, and its wash already exists as a
+   token. */
+.or-alert--info {
+  --or-alert-wash: var(--status-neutral-wash);
+  --or-alert-edge: color-mix(in oklab, var(--hazelnut) 26%, var(--bone));
+  --or-alert-icon: var(--status-neutral);
+}
+
+/* Caramel tints the paper and draws the icon; it never becomes the body ink. Caramel on
+   the wash lands under AA for text, so the ink stays espresso and the hue does decoration
+   only. There is no caramel wash token, so it is mixed toward bone here. */
+.or-alert--caution {
+  --or-alert-wash: color-mix(in oklab, var(--caramel) 14%, var(--bone));
+  --or-alert-edge: color-mix(in oklab, var(--caramel) 32%, var(--bone));
+  --or-alert-icon: var(--caramel);
+}
+
+.or-alert--danger {
+  --or-alert-wash: var(--status-danger-wash);
+  --or-alert-edge: color-mix(in oklab, var(--status-danger) 30%, var(--bone));
+  --or-alert-icon: var(--status-danger);
+}
+
+.or-alert--success {
+  --or-alert-wash: var(--status-success-wash);
+  --or-alert-edge: color-mix(in oklab, var(--status-success) 30%, var(--bone));
+  --or-alert-icon: var(--status-success);
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-alert__icon {
+  flex: 0 0 auto;
+  /* Optical alignment with the 14px title cap-height, as the toast does. */
+  margin-top: 2px;
+  color: var(--or-alert-icon);
+}
+
+/* The tone word, for screen readers only: tone is never carried by colour alone, and the
+   icon is decorative. Sighted readers get the same signal from the title. */
+.or-alert__tone {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.or-alert__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A long identifier must not push the banner past its column. */
+.or-alert__body > * {
+  min-width: 0;
+}
+
+.or-alert__title {
+  font-size: var(--text-small);
+  font-weight: var(--wght-semibold);
+  line-height: var(--lh-small);
+}
+
+/* Espresso, like the title: on these washes it is the only ink that clears AA at 14px.
+   The weight, not the colour, is what separates the fact from the detail. */
+.or-alert__message {
+  font-size: var(--text-small);
+  line-height: var(--lh-small);
+}
+
+/* Dismiss ---------------------------------------------------------------- */
+
+.or-alert__close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  /* Touch-target floor for phones; the 32px chrome box returns at md. */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--text-ink);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .or-alert__close {
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
+    min-width: 0;
+    min-height: 0;
+    /* Pulls the box back onto the banner's optical padding, as the toast does. */
+    margin: 0 calc(var(--space-1) * -1) 0 0;
+  }
+}
+
+/* The wash is espresso at 5%, so the hover step darkens the paper. A lighter step would
+   lift the control off the tone wash, which the brand forbids. */
+@media (hover: hover) {
+  .or-alert__close:not(:disabled):not([aria-disabled='true']):hover {
+    background: var(--surface-wash);
+  }
+}
+
+.or-alert__close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-alert__close:disabled,
+.or-alert__close[aria-disabled='true'] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}

@@ -10,7 +10,7 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: read # the semantic-title action reads the pull request's title
 
 jobs:
   pr-title:
@@ -31,6 +31,12 @@ jobs:
       - name: Read allowed types and scopes from commitlint config
         id: enums
         run: |
+          # The single quotes around the node program are load-bearing: the
+          # `${...}` sequences inside it are JavaScript template literals, and
+          # the shell must hand them to node untouched. shellcheck, which
+          # actionlint runs over every `run:` block, sees `${...}` inside single
+          # quotes and assumes the author wanted shell expansion.
+          # shellcheck disable=SC2016
           node -e '
             const c = require("./commitlint.config.cjs");
             const r = c.rules || {};

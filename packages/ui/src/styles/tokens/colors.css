@@ -1,0 +1,107 @@
+:root {
+  /* --- base palette --- */
+  --bone: #f5efe6;
+  --cream: #ede4d3;
+  --white: #ffffff;
+  --espresso: #2e211a;
+  --espresso-2: #3e2c23;
+  --hazelnut: #8c5e3c;
+  --caramel: #a9714b;
+  --terracotta: #c4552d;
+  --terracotta-deep: #a8431f;
+  --olive: #6b7a4f;
+  --line: #e2d7c3;
+  --danger: #b3362b;
+  /* A deeper danger, for a surface that carries inverse text rather than ink.
+     --danger under bone reads 6.0:1, which clears AA but looks like an ordinary
+     alert; this reads 9.0:1, which looks like a stop. Paired the same way
+     --terracotta-deep pairs with --terracotta. */
+  --danger-deep: #7a1f1f;
+  --danger-deep-edge: #4d1212;
+
+  /* --- ink weights ---
+     The warm hues above are drawn for fills, marks and data viz. As text they fall just
+     under WCAG AA 4.5:1 at the 12.5-14px sizes the quiet roles use: --hazelnut is 4.40:1
+     on cream, --olive 4.06:1 on bone, --caramel 3.82:1 on espresso. Each ink weight is
+     the same hue mixed toward the ink of the paper it sits on until it clears 4.5:1, so
+     nothing gets a new colour and nothing gets a grey.
+     Nothing outside this file names an ink weight. They exist to back the semantic tokens
+     below, and the re-point is per token rather than per usage: --text-secondary,
+     --status-success and --status-neutral resolve here for every role they serve, so the
+     progress fill and the alert icon drawn from --status-success are the ink weight too,
+     not the raw hue. Reaching the untinted hue means naming --hazelnut / --olive /
+     --caramel directly, which a few component borders and washes do, or using the --viz-*
+     ramp, which carries its own copies of them. */
+  --hazelnut-ink: color-mix(in oklab, var(--hazelnut) 92%, var(--espresso));
+  --olive-ink: color-mix(in oklab, var(--olive) 80%, var(--espresso));
+  --caramel-ink-inverse: color-mix(in oklab, var(--caramel) 80%, var(--bone));
+
+  /* --- semantic surfaces (paper-steps: bone -> cream -> white) --- */
+  --bg-page: var(--bone);
+  --surface-card: var(--cream);
+  --surface-field: var(--white);
+  --surface-data: var(--white);
+  --surface-inverse: var(--espresso);
+  --surface-inverse-hover: var(--espresso-2);
+  --surface-wash: rgba(46, 33, 26, 0.05);
+
+  /* --- semantic ink --- */
+  /* Body ink is --text-ink, not --text-body: typography.css owns --text-body as the 16px
+     body size and is imported after this file, so a colour of the same name would lose
+     the cascade and resolve to a length, which is invalid for a colour property.
+     The design system ships both meanings under one name; this library splits them. */
+  --text-ink: var(--espresso);
+  --text-heading: var(--espresso);
+  --text-secondary: var(--hazelnut-ink);
+  --text-decorative: var(--caramel);
+  --text-inverse: var(--bone);
+  --text-inverse-secondary: #b9a791;
+  /* Caramel is the decorative ink everywhere, but on an espresso band it has to be lifted
+     toward bone rather than pushed toward espresso. Inverse surfaces re-point
+     --text-decorative at this, so a component dropped on a band needs no variant. */
+  --text-inverse-decorative: var(--caramel-ink-inverse);
+  --text-link: var(--terracotta-deep);
+  --text-link-hover: var(--terracotta);
+
+  /* --- semantic action --- */
+  --action-primary: var(--terracotta-deep);
+  --action-primary-hover: #8e3717;
+  --action-primary-ink: var(--bone);
+  --action-accent: var(--terracotta);
+  --focus-ring: var(--terracotta);
+
+  /* --- borders --- */
+  --border-hairline: var(--line);
+  --border-strong: var(--espresso);
+  --border-inverse: rgba(245, 239, 230, 0.22);
+
+  /* --- semantic status (never color alone: always pair with label or icon) --- */
+  /* Success and neutral are read as 12.5px words often enough that the token itself is an
+     ink weight rather than the raw hue. That applies to every role the token serves, not
+     just the text ones, so the badge label, the progress fill and the alert icon are all
+     the same ink weight. Charts take their olive and hazelnut from --viz-* instead. */
+  --status-success: var(--olive-ink);
+  --status-success-wash: #e7e9dc;
+  --status-neutral: var(--hazelnut-ink);
+  --status-neutral-wash: #efe3d5;
+  --status-danger: var(--danger);
+  --status-danger-wash: #f6dfd9;
+  /* The wash above takes ink on top; this pair takes --text-inverse. Reach for
+     it when the message must be unmissable rather than merely present. */
+  --status-danger-solid: var(--danger-deep);
+  --status-danger-solid-edge: var(--danger-deep-edge);
+
+  /* --- data viz: warm-shifted, never library defaults --- */
+  --viz-1: #2e211a;
+  --viz-2: #8c5e3c;
+  --viz-3: #a9714b;
+  --viz-4: #c4552d;
+  --viz-5: #6b7a4f;
+  --viz-6: #b9a791;
+  --viz-seq-0: var(--bone);
+  --viz-seq-1: #e4cfb2;
+  --viz-seq-2: #c99e70;
+  --viz-seq-3: #a9714b;
+  --viz-seq-4: #6b4630;
+  --viz-seq-5: var(--espresso);
+}

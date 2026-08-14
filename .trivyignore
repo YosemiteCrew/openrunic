@@ -1,0 +1,18 @@
+# Infrastructure misconfiguration exceptions for the Infrastructure Scan gate.
+# .github/workflows/iac-scan.yml runs `trivy config` over every Dockerfile,
+# Compose file and infrastructure manifest in the tree and fails on MEDIUM and
+# above; Trivy auto-discovers this file at the repository root, so a local run
+# of the same command applies the same policy.
+#
+# EXCEPTION PROCESS - accepted findings go below, one check id per line. Every
+# entry MUST carry a comment with: the reason it is acceptable, an owner, and an
+# expiry date at which it must be re-reviewed. An exception without all three is
+# not an exception, it is a hole. Example:
+#
+#   # AVD-DS-0026 (no HEALTHCHECK) on the migration image: it is a one-shot job
+#   # that exits, so a healthcheck has nothing to report. Owner: ankit-yc.
+#   # Re-review by: YYYY-MM-DD.
+#   AVD-DS-0026
+#
+# Prefer fixing the manifest over adding an entry here. This file is empty on
+# purpose: nothing has needed an exception yet.

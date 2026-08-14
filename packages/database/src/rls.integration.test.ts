@@ -1,0 +1,698 @@
+import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { Client } from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { createPrismaClient } from './client.js';
+import type { PrismaClient } from './generated/prisma/client.js';
+import { TENANT_SETTING, withTenantSession } from './rls.js';
+import { TENANT_SCOPED_MODELS, createTenantClient } from './tenant.js';
+
+/**
+ * Row-level security, against a real Postgres.
+ *
+ * This suite exists because the alternative proves nothing. A test that mocks
+ * the database cannot tell an enforced policy from one that was written,
+ * reviewed, committed and never enabled - and that is precisely how RLS fails:
+ * everything looks right and nothing is enforced. So every assertion below runs
+ * SQL against a live server, as the roles that will run it in production.
+ *
+ * The fixture builds its own world rather than borrowing the database it is
+ * pointed at:
+ *
+ *   * A throwaway database owned by a purpose-made NOSUPERUSER, NOBYPASSRLS
+ *     role. This is what makes the FORCE assertions mean anything. CI's
+ *     Postgres service runs as `postgres`, a superuser, and a superuser
+ *     bypasses row-level security unconditionally - so "the owner sees nothing"
+ *     asserted against `postgres` would be a test that can never fail for the
+ *     right reason and always fails for the wrong one.
+ *   * The real migration files, replayed in order, so what is under test is the
+ *     SQL that will be applied to production rather than a paraphrase of it.
+ *   * A separate application role holding only the privileges the migration
+ *     grants it.
+ *
+ * Everything is dropped afterwards, and every identifier and password is
+ * generated per run, so two runs against the same cluster cannot collide.
+ *
+ * To run it:
+ *
+ *     docker run --rm -d --name openrunic-pg -p 5432:5432 \
+ *       -e POSTGRES_PASSWORD="$PGPASSWORD" postgres:17-alpine
+ *     DATABASE_URL="postgresql://postgres:$PGPASSWORD@localhost:5432/postgres" \
+ *       pnpm --filter @openrunic/database test
+ *
+ * `DATABASE_URL` must name a role that can CREATE DATABASE and CREATE ROLE. The
+ * suite skips itself entirely when the variable is absent, which is the same
+ * gate the migration workflow uses.
+ */
+
+const ADMIN_URL = process.env.DATABASE_URL ?? '';
+
+/** Synthetic throughout: invented ids, an invented clinic, an invented patient. */
+const TENANT_A = '01924f00-0000-7000-8000-00000000000a';
+const TENANT_B = '01924f00-0000-7000-8000-00000000000b';
+const PATIENT_A = '01924f00-0000-7000-8000-0000000000a1';
+const PATIENT_B = '01924f00-0000-7000-8000-0000000000b1';
+const UNKNOWN_TENANT = '01924f00-0000-7000-8000-0000000000ff';
+
+const MIGRATIONS_DIR = fileURLToPath(new URL('../prisma/migrations', import.meta.url));
+
+/**
+ * Prisma's migration ledger, created here because the fixture replays the
+ * migration SQL directly instead of going through `prisma migrate deploy`,
+ * which is what would normally create it. The migration's GRANT block revokes
+ * the application's access to it, and that revoke is one of the things under
+ * test, so the table has to be present for the test to mean anything.
+ */
+const PRISMA_LEDGER_DDL = `
+  CREATE TABLE "_prisma_migrations" (
+    "id" VARCHAR(36) PRIMARY KEY NOT NULL,
+    "checksum" VARCHAR(64) NOT NULL,
+    "finished_at" TIMESTAMPTZ,
+    "migration_name" VARCHAR(255) NOT NULL,
+    "logs" TEXT,
+    "rolled_back_at" TIMESTAMPTZ,
+    "started_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "applied_steps_count" INTEGER NOT NULL DEFAULT 0
+  )`;
+
+/** Hex-only by construction; the guards below are what let these be interpolated. */
+function token(): string {
+  return randomUUID().replace(/-/gu, '');
+}
+
+function ident(name: string): string {
+  if (!/^[A-Za-z0-9_]+$/u.test(name)) {
+    throw new Error(`Refusing to interpolate an unexpected identifier: ${name}`);
+  }
+  return `"${name}"`;
+}
+
+function literal(value: string): string {
+  if (!/^[A-Za-z0-9_]+$/u.test(value)) {
+    throw new Error('Refusing to interpolate an unexpected literal');
+  }
+  return `'${value}'`;
+}
+
+function urlFor(role: string, password: string, database: string): string {
+  const url = new URL(ADMIN_URL);
+  url.username = role;
+  url.password = password;
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+/** The committed migration history, in the order `migrate deploy` applies it. */
+function migrationSql(): string[] {
+  return readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right))
+    .map((name) => readFileSync(join(MIGRATIONS_DIR, name, 'migration.sql'), 'utf8'));
+}
+
+interface Fixture {
+  /** Connected as the non-superuser role that owns every table. */
+  owner: Client;
+  /** Connected as the role the application uses. */
+  app: Client;
+  /** Prisma, also as the application role: the real data path. */
+  prisma: PrismaClient;
+}
+
+describe.skipIf(ADMIN_URL === '')('row-level security, against a real database', () => {
+  const suffix = token().slice(0, 12);
+  const database = `openrunic_rls_${suffix}`;
+  const ownerRole = `openrunic_rls_owner_${suffix}`;
+  const appRole = `openrunic_rls_app_${suffix}`;
+
+  let fixture: Fixture | undefined;
+
+  /** Narrows the fixture once, so no assertion in this file needs a `!`. */
+  function db(): Fixture {
+    if (fixture === undefined) {
+      throw new Error('The database fixture failed to build; see the beforeAll failure.');
+    }
+    return fixture;
+  }
+
+  beforeAll(async () => {
+    const ownerPassword = token();
+    const appPassword = token();
+
+    const admin = new Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    try {
+      await admin.query(
+        `CREATE ROLE ${ident(ownerRole)} LOGIN PASSWORD ${literal(ownerPassword)}
+           NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`
+      );
+      await admin.query(
+        `CREATE ROLE ${ident(appRole)} LOGIN PASSWORD ${literal(appPassword)}
+           NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`
+      );
+      await admin.query(`CREATE DATABASE ${ident(database)} OWNER ${ident(ownerRole)}`);
+    } finally {
+      await admin.end();
+    }
+
+    const owner = new Client({ connectionString: urlFor(ownerRole, ownerPassword, database) });
+    await owner.connect();
+
+    // The migration's GRANT block reads this to learn which role the
+    // application connects as. Operators supply it the same way, through the
+    // connection string: `?options=-c%20openrunic.app_role%3D<role>`.
+    await owner.query(`SET openrunic.app_role = ${literal(appRole)}`);
+    await owner.query(PRISMA_LEDGER_DDL);
+    for (const sql of migrationSql()) {
+      await owner.query(sql);
+    }
+
+    // Two tenants, written by the owner. FORCE means the owner is subject to
+    // its own policies, so even seeding has to declare which organisation it is
+    // writing - which is itself part of what this suite proves.
+    for (const [tenant, patient, mrn] of [
+      [TENANT_A, PATIENT_A, 'OR-100482'],
+      [TENANT_B, PATIENT_B, 'OR-200001'],
+    ] as const) {
+      await owner.query('BEGIN');
+      await owner.query('SELECT set_config($1, $2, true)', [TENANT_SETTING, tenant]);
+      await owner.query(
+        `INSERT INTO "Organisation" ("id", "slug", "name", "updatedAt")
+           VALUES ($1, $2, $3, now())`,
+        [tenant, `testville-${tenant.slice(-1)}`, `Testville Clinic ${tenant.slice(-1)}`]
+      );
+      await owner.query(
+        `INSERT INTO "Patient"
+           ("id", "tenantId", "mrn", "givenName", "familyName", "birthDate", "updatedAt")
+           VALUES ($1, $2, $3, 'Testina', 'Patientsson', DATE '1994-03-02', now())`,
+        [patient, tenant, mrn]
+      );
+      await owner.query('COMMIT');
+    }
+
+    const app = new Client({ connectionString: urlFor(appRole, appPassword, database) });
+    await app.connect();
+
+    fixture = {
+      owner,
+      app,
+      prisma: createPrismaClient({ datasourceUrl: urlFor(appRole, appPassword, database) }),
+    };
+  }, 180_000);
+
+  afterAll(async () => {
+    if (fixture !== undefined) {
+      await fixture.prisma.$disconnect();
+      await fixture.app.end();
+      await fixture.owner.end();
+      fixture = undefined;
+    }
+
+    const admin = new Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS ${ident(database)} WITH (FORCE)`);
+      await admin.query(`DROP ROLE IF EXISTS ${ident(appRole)}`);
+      await admin.query(`DROP ROLE IF EXISTS ${ident(ownerRole)}`);
+    } finally {
+      await admin.end();
+    }
+  }, 60_000);
+
+  /** Runs `sql` in a transaction that has declared `tenantId`, or has not. */
+  async function asTenant<T extends Record<string, unknown>>(
+    client: Client,
+    tenantId: string | null,
+    sql: string,
+    params: unknown[] = []
+  ): Promise<{ rows: T[]; rowCount: number }> {
+    await client.query('BEGIN');
+    try {
+      if (tenantId !== null) {
+        await client.query('SELECT set_config($1, $2, true)', [TENANT_SETTING, tenantId]);
+      }
+      const result = await client.query<T>(sql, params);
+      await client.query('COMMIT');
+      return { rows: result.rows, rowCount: result.rowCount ?? 0 };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* The application role: the premise every other assertion rests on.       */
+  /* ---------------------------------------------------------------------- */
+
+  describe('the application role', () => {
+    it('is neither a superuser nor a BYPASSRLS role', async () => {
+      const { rows } = await db().app.query<{ rolsuper: boolean; rolbypassrls: boolean }>(
+        'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = $1',
+        [appRole]
+      );
+
+      // Either attribute would make every policy in this file decorative, so
+      // this is not a nicety: it is the assumption the suite tests under.
+      expect(rows[0]).toEqual({ rolsuper: false, rolbypassrls: false });
+    });
+
+    it('owns none of the tables it reads, so it cannot turn FORCE off', async () => {
+      const { rows } = await db().app.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relkind = 'r'
+            AND pg_get_userbyid(c.relowner) = $1`,
+        [appRole]
+      );
+
+      expect(rows[0]?.count).toBe('0');
+    });
+
+    it('holds the four DML privileges on a clinical table and no more', async () => {
+      const { rows } = await db().app.query<Record<string, boolean>>(
+        `SELECT has_table_privilege($1, '"Patient"', 'SELECT')   AS sel,
+                has_table_privilege($1, '"Patient"', 'INSERT')   AS ins,
+                has_table_privilege($1, '"Patient"', 'UPDATE')   AS upd,
+                has_table_privilege($1, '"Patient"', 'DELETE')   AS del,
+                has_table_privilege($1, '"Patient"', 'TRUNCATE') AS trunc`,
+        [appRole]
+      );
+
+      // TRUNCATE is the one that matters: row-level security does not filter
+      // it, so a role holding it could empty a table across every tenant.
+      expect(rows[0]).toEqual({ sel: true, ins: true, upd: true, del: true, trunc: false });
+    });
+
+    it('can append to the audit log but cannot rewrite it', async () => {
+      const { rows } = await db().app.query<Record<string, boolean>>(
+        `SELECT has_table_privilege($1, '"AuditEvent"', 'SELECT') AS sel,
+                has_table_privilege($1, '"AuditEvent"', 'INSERT') AS ins,
+                has_table_privilege($1, '"AuditEvent"', 'UPDATE') AS upd,
+                has_table_privilege($1, '"AuditEvent"', 'DELETE') AS del`,
+        [appRole]
+      );
+
+      expect(rows[0]).toEqual({ sel: true, ins: true, upd: false, del: false });
+    });
+
+    it("cannot reach Prisma's migration ledger at all", async () => {
+      const { rows } = await db().app.query<{ allowed: boolean }>(
+        `SELECT has_table_privilege($1, '"_prisma_migrations"', 'SELECT') AS allowed`,
+        [appRole]
+      );
+
+      // The one table with no policy, so the only defence is that the
+      // application holds no privilege on it.
+      expect(rows[0]?.allowed).toBe(false);
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* Coverage: which tables are protected, and how.                          */
+  /* ---------------------------------------------------------------------- */
+
+  describe('policy coverage', () => {
+    it('enables AND forces row-level security on every table but the migration ledger', async () => {
+      const { rows } = await db().owner.query<{
+        relname: string;
+        relrowsecurity: boolean;
+        relforcerowsecurity: boolean;
+      }>(
+        `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public' AND c.relkind = 'r'
+          ORDER BY c.relname`
+      );
+
+      const unprotected = rows
+        .filter((row) => !row.relrowsecurity || !row.relforcerowsecurity)
+        .map((row) => row.relname);
+
+      // Phrased as "everything except this one" rather than as a list of
+      // expected names, so a table added by a future migration without a policy
+      // fails here instead of quietly sitting outside the model.
+      expect(unprotected).toEqual(['_prisma_migrations']);
+      expect(rows).toHaveLength(TENANT_SCOPED_MODELS.length + 2);
+    });
+
+    it('gives every protected table one tenant_isolation policy covering all four verbs', async () => {
+      const { rows } = await db().owner.query<{
+        tablename: string;
+        policyname: string;
+        cmd: string;
+        qual: string | null;
+        with_check: string | null;
+      }>(`SELECT tablename, policyname, cmd, qual, with_check
+            FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename`);
+
+      expect(rows).toHaveLength(TENANT_SCOPED_MODELS.length + 1);
+      expect(rows.every((row) => row.policyname === 'tenant_isolation')).toBe(true);
+      // FOR ALL is what makes one policy cover SELECT, INSERT, UPDATE and
+      // DELETE; a set of per-command policies would leave whichever verb was
+      // forgotten wide open.
+      expect(rows.every((row) => row.cmd === 'ALL')).toBe(true);
+      // Both halves on every table: USING alone would let a write create a row
+      // belonging to somebody else.
+      expect(rows.every((row) => row.qual !== null && row.with_check !== null)).toBe(true);
+
+      const tables = new Set(rows.map((row) => row.tablename));
+      for (const model of TENANT_SCOPED_MODELS) {
+        expect(tables.has(model)).toBe(true);
+      }
+      expect(tables.has('Organisation')).toBe(true);
+    });
+
+    it('keys the Organisation policy on its own id, since it carries no tenantId', async () => {
+      const { rows } = await db().owner.query<{ qual: string | null }>(
+        `SELECT qual FROM pg_policies WHERE schemaname = 'public' AND tablename = 'Organisation'`
+      );
+
+      expect(rows[0]?.qual).toContain('id =');
+      expect(rows[0]?.qual).toContain(TENANT_SETTING);
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* The headline: A cannot reach B.                                         */
+  /* ---------------------------------------------------------------------- */
+
+  describe('as the application role, tenant A cannot reach tenant B', () => {
+    it('sees only its own patients', async () => {
+      const { rows } = await asTenant<{ id: string }>(
+        db().app,
+        TENANT_A,
+        'SELECT "id" FROM "Patient" ORDER BY "id"'
+      );
+
+      expect(rows.map((row) => row.id)).toEqual([PATIENT_A]);
+    });
+
+    it("cannot read tenant B's patient even knowing the id", async () => {
+      const { rows } = await asTenant(
+        db().app,
+        TENANT_A,
+        'SELECT "id" FROM "Patient" WHERE "id" = $1',
+        [PATIENT_B]
+      );
+
+      expect(rows).toEqual([]);
+    });
+
+    it("cannot update tenant B's patient", async () => {
+      const { rowCount } = await asTenant(
+        db().app,
+        TENANT_A,
+        `UPDATE "Patient" SET "familyName" = 'Rewritten' WHERE "id" = $1`,
+        [PATIENT_B]
+      );
+
+      expect(rowCount).toBe(0);
+
+      const after = await asTenant<{ familyName: string }>(
+        db().app,
+        TENANT_B,
+        'SELECT "familyName" FROM "Patient" WHERE "id" = $1',
+        [PATIENT_B]
+      );
+      expect(after.rows[0]?.familyName).toBe('Patientsson');
+    });
+
+    it("cannot delete tenant B's patient", async () => {
+      const { rowCount } = await asTenant(
+        db().app,
+        TENANT_A,
+        'DELETE FROM "Patient" WHERE "id" = $1',
+        [PATIENT_B]
+      );
+
+      expect(rowCount).toBe(0);
+
+      const after = await asTenant(
+        db().app,
+        TENANT_B,
+        'SELECT "id" FROM "Patient" WHERE "id" = $1',
+        [PATIENT_B]
+      );
+      expect(after.rows).toHaveLength(1);
+    });
+
+    it("refuses an insert that carries tenant B's id", async () => {
+      await expect(
+        asTenant(
+          db().app,
+          TENANT_A,
+          `INSERT INTO "Patient"
+             ("id", "tenantId", "mrn", "givenName", "familyName", "birthDate", "updatedAt")
+             VALUES ($1, $2, 'OR-900001', 'Testina', 'Patientsson', DATE '1994-03-02', now())`,
+          [randomUUID(), TENANT_B]
+        )
+        // 42501 is insufficient_privilege: the WITH CHECK clause rejected the
+        // row. An error, not a silent no-op, which is the right outcome for a
+        // write that was asked to cross the boundary.
+      ).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('accepts the same insert when it carries its own tenant id', async () => {
+      const id = randomUUID();
+      const { rowCount } = await asTenant(
+        db().app,
+        TENANT_A,
+        `INSERT INTO "Patient"
+           ("id", "tenantId", "mrn", "givenName", "familyName", "birthDate", "updatedAt")
+           VALUES ($1, $2, 'OR-900002', 'Testina', 'Patientsson', DATE '1994-03-02', now())`,
+        [id, TENANT_A]
+      );
+
+      // The control. Without it, the refusal above could just mean "inserts
+      // never work".
+      expect(rowCount).toBe(1);
+
+      await asTenant(db().app, TENANT_A, 'DELETE FROM "Patient" WHERE "id" = $1', [id]);
+    });
+
+    it('cannot hand one of its own rows to another tenant', async () => {
+      await expect(
+        asTenant(db().app, TENANT_A, 'UPDATE "Patient" SET "tenantId" = $1 WHERE "id" = $2', [
+          TENANT_B,
+          PATIENT_A,
+        ])
+      ).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('sees exactly one organisation: its own', async () => {
+      const { rows } = await asTenant<{ id: string }>(
+        db().app,
+        TENANT_A,
+        'SELECT "id" FROM "Organisation"'
+      );
+
+      expect(rows.map((row) => row.id)).toEqual([TENANT_A]);
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* Fail closed.                                                            */
+  /* ---------------------------------------------------------------------- */
+
+  describe('a session that never declared a tenant', () => {
+    it('reads zero rows rather than every row', async () => {
+      const patients = await db().app.query('SELECT "id" FROM "Patient"');
+      const organisations = await db().app.query('SELECT "id" FROM "Organisation"');
+
+      // The whole design rests on this: a caller that forgets the setting
+      // causes an outage, not a breach.
+      expect(patients.rows).toEqual([]);
+      expect(organisations.rows).toEqual([]);
+    });
+
+    it('writes nothing rather than everything', async () => {
+      const update = await db().app.query(`UPDATE "Patient" SET "familyName" = 'Rewritten'`);
+      const remove = await db().app.query('DELETE FROM "Patient"');
+
+      expect(update.rowCount).toBe(0);
+      expect(remove.rowCount).toBe(0);
+
+      for (const [tenant, patient] of [
+        [TENANT_A, PATIENT_A],
+        [TENANT_B, PATIENT_B],
+      ] as const) {
+        const { rows } = await asTenant<{ familyName: string }>(
+          db().app,
+          tenant,
+          'SELECT "familyName" FROM "Patient" WHERE "id" = $1',
+          [patient]
+        );
+        expect(rows[0]?.familyName).toBe('Patientsson');
+      }
+    });
+
+    it('survives the empty string a reset setting leaves behind', async () => {
+      // A customized option that has been set and then reset reads back as ''
+      // rather than as NULL, and ''::uuid raises `invalid input syntax`. This
+      // is what the `nullif(..., '')` in every policy is for: without it the
+      // first query on a recycled connection would fail with a cast error
+      // instead of returning nothing.
+      await db().app.query('BEGIN');
+      await db().app.query('SELECT set_config($1, $2, true)', [TENANT_SETTING, TENANT_A]);
+      await db().app.query('COMMIT');
+
+      const reset = await db().app.query<{ value: string | null }>(
+        'SELECT current_setting($1, true) AS value',
+        [TENANT_SETTING]
+      );
+      expect(reset.rows[0]?.value).toBe('');
+
+      await expect(db().app.query('SELECT "id" FROM "Patient"')).resolves.toMatchObject({
+        rows: [],
+      });
+    });
+
+    it('reads zero rows for an organisation that does not exist', async () => {
+      const { rows } = await asTenant(db().app, UNKNOWN_TENANT, 'SELECT "id" FROM "Patient"');
+
+      expect(rows).toEqual([]);
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* FORCE.                                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  describe('FORCE ROW LEVEL SECURITY, checked against the table owner', () => {
+    it('is being asserted against a role that could otherwise ignore it', async () => {
+      const { rows } = await db().owner.query<{
+        rolsuper: boolean;
+        rolbypassrls: boolean;
+        owns: boolean;
+      }>(
+        `SELECT r.rolsuper,
+                r.rolbypassrls,
+                (SELECT pg_get_userbyid(c.relowner) = $1
+                   FROM pg_class c
+                   JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public' AND c.relname = 'Patient') AS owns
+           FROM pg_roles r WHERE r.rolname = $1`,
+        [ownerRole]
+      );
+
+      // Without this, the assertions below would also pass on a database where
+      // RLS had never been enabled: a superuser sees everything either way.
+      expect(rows[0]).toEqual({ rolsuper: false, rolbypassrls: false, owns: true });
+    });
+
+    it('filters the owner exactly like anybody else', async () => {
+      const undeclared = await db().owner.query('SELECT "id" FROM "Patient"');
+      // ENABLE alone would return both patients here, because the owner is
+      // exempt from its own policies until FORCE says otherwise.
+      expect(undeclared.rows).toEqual([]);
+
+      const declared = await asTenant<{ id: string }>(
+        db().owner,
+        TENANT_A,
+        'SELECT "id" FROM "Patient" ORDER BY "id"'
+      );
+      expect(declared.rows.map((row) => row.id)).toEqual([PATIENT_A]);
+    });
+
+    it("stops the owner deleting another tenant's row", async () => {
+      const { rowCount } = await asTenant(
+        db().owner,
+        TENANT_A,
+        'DELETE FROM "Patient" WHERE "id" = $1',
+        [PATIENT_B]
+      );
+
+      expect(rowCount).toBe(0);
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* Connection reuse.                                                       */
+  /* ---------------------------------------------------------------------- */
+
+  describe('a reused connection', () => {
+    it("does not carry one transaction's tenant into the next statement", async () => {
+      const first = await asTenant<{ id: string }>(
+        db().app,
+        TENANT_A,
+        'SELECT "id" FROM "Patient"'
+      );
+      expect(first.rows.map((row) => row.id)).toEqual([PATIENT_A]);
+
+      // Same physical connection, no BEGIN, no setting: the local value went
+      // away at COMMIT. This is what makes a pool safe, and it is why nothing
+      // in this codebase issues a session-level SET.
+      const after = await db().app.query('SELECT "id" FROM "Patient"');
+      expect(after.rows).toEqual([]);
+    });
+
+    it('would carry it if the setting were session-scoped, which is why it is not', async () => {
+      // Demonstrates the bug being avoided rather than merely asserting its
+      // absence: is_local => false is what a plain `SET openrunic.tenant_id`
+      // does, and the leak it causes appears only under connection reuse - in
+      // production, under load, as one organisation reading another's chart.
+      await db().app.query('SELECT set_config($1, $2, false)', [TENANT_SETTING, TENANT_A]);
+      const leaked = await db().app.query('SELECT "id" FROM "Patient"');
+      expect(leaked.rows).toHaveLength(1);
+
+      await db().app.query('SELECT set_config($1, $2, false)', [TENANT_SETTING, '']);
+      expect((await db().app.query('SELECT "id" FROM "Patient"')).rows).toEqual([]);
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* The path the application actually takes.                                */
+  /* ---------------------------------------------------------------------- */
+
+  describe('withTenantSession, through Prisma, as the application role', () => {
+    it('shows each tenant only its own patients', async () => {
+      const seenByA = await withTenantSession(db().prisma, { tenantId: TENANT_A }, (tx) =>
+        tx.patient.findMany({ select: { id: true } })
+      );
+      const seenByB = await withTenantSession(db().prisma, { tenantId: TENANT_B }, (tx) =>
+        tx.patient.findMany({ select: { id: true } })
+      );
+
+      expect(seenByA.map((row) => row.id)).toEqual([PATIENT_A]);
+      expect(seenByB.map((row) => row.id)).toEqual([PATIENT_B]);
+    });
+
+    it('declares the tenant inside the transaction', async () => {
+      const inside = await withTenantSession(
+        db().prisma,
+        { tenantId: TENANT_A },
+        (tx) =>
+          tx.$queryRaw<
+            { value: string | null }[]
+          >`SELECT current_setting(${TENANT_SETTING}, true) AS value`
+      );
+
+      expect(inside[0]?.value).toBe(TENANT_A);
+    });
+
+    it('reads nothing when the tenant client is used without a session', async () => {
+      // The failure mode of the wiring, exercised deliberately: a caller that
+      // reaches past `withTenantSession` for `createTenantClient` alone gets an
+      // empty result set, never another organisation's chart.
+      const unscoped = createTenantClient(db().prisma, { tenantId: TENANT_A });
+
+      await expect(unscoped.patient.findMany({ select: { id: true } })).resolves.toEqual([]);
+    });
+
+    it("cannot amend another tenant's row", async () => {
+      await expect(
+        withTenantSession(db().prisma, { tenantId: TENANT_A }, (tx) =>
+          tx.patient.updateMany({ where: { id: PATIENT_B }, data: { familyName: 'Rewritten' } })
+        )
+      ).resolves.toEqual({ count: 0 });
+    });
+  });
+});

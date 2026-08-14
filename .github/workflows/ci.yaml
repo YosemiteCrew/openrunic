@@ -33,12 +33,59 @@ jobs:
     with:
       force_push_base: ${{ inputs.force_push_base }}
 
+  repo:
+    # Repo-wide gates: formatting, stylesheets, workflow YAML, shell scripts and
+    # Dockerfiles. Deliberately not `needs: core` and deliberately unconditional.
+    # Every other stage hangs off the affected-workspace matrix, which is empty
+    # for a change confined to docs, workflows or scripts - exactly the changes
+    # these gates exist to catch. Gating this on `has-any` would reintroduce the
+    # hole it closes.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_repo.yaml
+
   test:
     needs: core
     if: needs.core.outputs.has-any == 'true'
     uses: ./.github/workflows/_test.yaml
     with:
       matrix: ${{ needs.core.outputs.matrix }}
+
+  agent-disabled:
+    name: Agent disabled
+    needs: core
+    if: needs.core.outputs.has-any == 'true'
+    # ADR-0005 makes the agent-disabled configuration a first-class CI target
+    # rather than an afterthought. The whole suite runs with every assistant
+    # variable explicitly blank, asserting that the product is complete with no
+    # model configured. If any clinical workflow degrades without one, we have
+    # shipped the dependency we said we would not ship; we would just have
+    # moved it over a socket.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENRUNIC_AGENT_BASE_URL: ''
+      OPENRUNIC_AGENT_MODEL: ''
+      OPENRUNIC_AGENT_API_KEY: ''
+      OPENRUNIC_AGENT_PROVIDER: ''
+      OPENRUNIC_AGENT_PHI_EGRESS: ''
+      OPENRUNIC_AGENT_APPROVAL_SECRET: ''
+      OPENRUNIC_AGENT_API_BASE_URL: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Generate Prisma client
+        run: pnpm --filter @openrunic/database exec prisma generate
+
+      - name: Run the whole suite with no model configured
+        run: pnpm turbo run test
 
   migration:
     needs: core
@@ -50,6 +97,22 @@ jobs:
       needs.core.outputs.has-any == 'true' &&
       contains(needs.core.outputs.matrix, '@openrunic/database')
     uses: ./.github/workflows/_migration.yaml
+
+  # Runs the artefacts an operator runs: the migration-safety linter, the
+  # full-day clinical drill, a timed `docker compose up`, and a real
+  # backup-and-restore. Gated on the same affected check as the rest of the
+  # pipeline so a docs-only pull request does not spend forty minutes booting
+  # containers, and independent of `test` because none of its legs consumes the
+  # coverage artifact.
+  #
+  # These are the slowest legs in the pipeline by a wide margin. That is the
+  # trade being made deliberately: the claims they check - install in under
+  # thirty minutes, restore in under fifteen, a clinic can get through a day -
+  # are ones a clinic finds out about at the worst possible time if CI does not.
+  ops:
+    needs: core
+    if: needs.core.outputs.has-any == 'true'
+    uses: ./.github/workflows/_ops.yaml
 
   sonar:
     needs: [core, test]
@@ -105,7 +168,7 @@ jobs:
     # The one check to mark required on the branch rulesets. Published first so
     # its behaviour can be observed before it is made required.
     if: always()
-    needs: [core, test, migration, sonar]
+    needs: [core, repo, test, agent-disabled, migration, ops, sonar]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -120,6 +183,12 @@ jobs:
           # is skipped while DISABLE_SONAR is set. `cancelled` fails: an
           # aggregate built on !cancelled() lets a cancelled dependency through
           # as a pass.
+          #
+          # Because `skipped` passes, a stage that can skip is a stage that can
+          # go quiet. The `repo` stage above is therefore unconditional: it has
+          # no `if:` and none of its jobs do either, so its only outcomes are
+          # success, failure and cancellation. Do not add a condition to it
+          # without first deciding what a skip would be permitting.
           if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
             echo "CI Required: at least one stage failed or was cancelled"
             exit 1

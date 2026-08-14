@@ -1,0 +1,210 @@
+# openrunic, self-hosted.
+#
+#   docker compose up --build
+#
+# That is the whole install. It builds three images, starts Postgres, applies
+# every migration, seeds a demo practice, and serves the application. No file
+# needs editing first: every value below has a working default.
+#
+# Those defaults are for an evaluation on a machine you control. Before this is
+# reachable from any network, run `pnpm setup:selfhost`, which writes a .env
+# with generated secrets, and read docs/self-hosting.md.
+#
+# Nothing here publishes the database port. Postgres is reachable only from the
+# other containers on this network, and the backup and restore tooling works
+# through `compose exec`, so there is no reason to open it.
+
+name: openrunic
+
+services:
+  # ---------------------------------------------------------------------------
+  # The database. The only stateful thing in the stack, and the only thing whose
+  # loss cannot be fixed by rebuilding an image.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # The alpine image's postgres account is uid/gid 70, and a fresh named volume
+    # inherits the image's ownership of /var/lib/postgresql/data, so the server
+    # can start straight as that account instead of entering as root and dropping
+    # privileges. Stated here because the compose file is what an operator reads,
+    # and "root unless the image says otherwise" is not a thing to leave implicit
+    # on the one container that holds the data.
+    user: '70:70'
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openrunic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openrunic-evaluation-only}
+      POSTGRES_DB: ${POSTGRES_DB:-openrunic}
+      # Data checksums cost a few percent of throughput and are the difference
+      # between silent bit rot and an error naming the corrupt page. They can
+      # only be chosen at initdb time, which means now or never.
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      # A named volume, not a bind mount: the file ownership and permissions
+      # Postgres insists on are the single most common reason a bind-mounted
+      # data directory refuses to start.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` alone answers true while the server is still in its initdb
+      # bootstrap and about to restart, so the check names the real database and
+      # the real user. start_period covers first boot, when initdb runs.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-openrunic} -d ${POSTGRES_DB:-openrunic}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: ${POSTGRES_CPU_LIMIT:-2.0}
+          memory: ${POSTGRES_MEMORY_LIMIT:-2g}
+        reservations:
+          memory: ${POSTGRES_MEMORY_RESERVATION:-512m}
+    # Postgres uses shared memory for parallel query and hash joins. Docker's
+    # 64 MB default is small enough that a report query fails with a confusing
+    # "could not resize shared memory segment".
+    shm_size: 256mb
+
+  # ---------------------------------------------------------------------------
+  # Schema and demo data. Runs to completion, then exits; the API and web
+  # containers are gated on it succeeding, so they can never come up against a
+  # database whose schema is older than they are.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    image: openrunic-migrate:${OPENRUNIC_IMAGE_TAG:-local}
+    restart: 'no'
+    # Same identity the image already sets. Repeating it is not redundancy: a
+    # compose file that says nothing about `user` runs as whatever the image
+    # happens to default to, so an image rebuilt without its USER line would
+    # silently start running as root here. This makes that a startup failure
+    # instead.
+    user: '10001:10001'
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openrunic}:${POSTGRES_PASSWORD:-openrunic-evaluation-only}@postgres:5432/${POSTGRES_DB:-openrunic}?schema=public
+      DIRECT_URL: postgresql://${POSTGRES_USER:-openrunic}:${POSTGRES_PASSWORD:-openrunic-evaluation-only}@postgres:5432/${POSTGRES_DB:-openrunic}?schema=public
+      # if-empty seeds a demo practice into a database with no organisations and
+      # does nothing otherwise. `never` turns it off for a real clinic.
+      OPENRUNIC_SEED: ${OPENRUNIC_SEED:-if-empty}
+    deploy:
+      resources:
+        limits:
+          memory: ${MIGRATE_MEMORY_LIMIT:-1g}
+
+  # ---------------------------------------------------------------------------
+  # The API. The FHIR R4 boundary and the only process that talks to Postgres.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    image: openrunic-api:${OPENRUNIC_IMAGE_TAG:-local}
+    restart: unless-stopped
+    # Same identity the image already sets. Repeating it is not redundancy: a
+    # compose file that says nothing about `user` runs as whatever the image
+    # happens to default to, so an image rebuilt without its USER line would
+    # silently start running as root here. This makes that a startup failure
+    # instead.
+    user: '10001:10001'
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openrunic}:${POSTGRES_PASSWORD:-openrunic-evaluation-only}@postgres:5432/${POSTGRES_DB:-openrunic}?schema=public
+      # There is no identity provider yet. This mode maps a handful of public
+      # demo tokens to demo users and prints a warning saying so on every boot.
+      # See docs/self-hosting.md before pointing anything real at this.
+      OPENRUNIC_AUTH_MODE: ${OPENRUNIC_AUTH_MODE:-demo-tokens}
+    ports:
+      - '${API_PORT:-4000}:4000'
+    deploy:
+      resources:
+        limits:
+          cpus: ${API_CPU_LIMIT:-2.0}
+          memory: ${API_MEMORY_LIMIT:-1g}
+        reservations:
+          memory: ${API_MEMORY_RESERVATION:-256m}
+
+  # ---------------------------------------------------------------------------
+  # The web application.
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Next.js inlines NEXT_PUBLIC_* at build time, so these are build
+        # arguments and not runtime environment. Changing either one means
+        # rebuilding the image, which is why they are named here rather than
+        # quietly set in the environment block below.
+        NEXT_PUBLIC_API_MODE: ${NEXT_PUBLIC_API_MODE:-live}
+        # The browser resolves this, not the container, so it is the address the
+        # operator reaches the API on - never the compose service name.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
+    image: openrunic-web:${OPENRUNIC_IMAGE_TAG:-local}
+    restart: unless-stopped
+    # Same identity the image already sets. Repeating it is not redundancy: a
+    # compose file that says nothing about `user` runs as whatever the image
+    # happens to default to, so an image rebuilt without its USER line would
+    # silently start running as root here. This makes that a startup failure
+    # instead.
+    user: '10001:10001'
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      # Server-side only, and deliberately not the browser's address: the
+      # health route runs inside the network and reaches the API by service
+      # name, which is what keeps the probe free of CORS.
+      OPENRUNIC_API_INTERNAL_URL: http://api:4000
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+    deploy:
+      resources:
+        limits:
+          cpus: ${WEB_CPU_LIMIT:-2.0}
+          memory: ${WEB_MEMORY_LIMIT:-1g}
+        reservations:
+          memory: ${WEB_MEMORY_RESERVATION:-256m}
+
+# compose-guard reports three low-severity findings this file does not act on,
+# recorded here rather than left to look like an oversight:
+#
+#   no-healthcheck on api and web - both images carry a HEALTHCHECK instruction,
+#   which a container inherits. `depends_on: api: condition: service_healthy`
+#   below only works because of it, so the healthcheck demonstrably exists; the
+#   guard reads the compose file alone and cannot see it. On migrate the finding
+#   is not applicable: it runs to completion and exits.
+#
+#   writable-root-filesystem on all four - `read_only: true` needs a tmpfs for
+#   every path the process still writes, and getting that list wrong turns a
+#   hardening measure into a stack that will not boot. Postgres needs its socket
+#   directory, and Next.js writes its cache at runtime. Revisit as a change of
+#   its own, with the clinical-day drill as the proof it still starts, rather
+#   than folded into a pull request about something else.
+
+volumes:
+  pgdata:
+    name: openrunic-pgdata

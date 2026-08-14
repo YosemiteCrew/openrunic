@@ -1,0 +1,106 @@
+/**
+ * Every destination the public pages point at, in one place.
+ *
+ * Off-site links are written out rather than assembled from a base constant:
+ * a reviewer checking that a marketing page links to the real security policy
+ * should be able to read the URL, not reconstruct it. They are also the only
+ * thing on these pages that can rot silently, so keeping them in one module
+ * makes the whole set checkable in one sitting.
+ *
+ * Repository links point at `dev` rather than `main`: `dev` is the branch the
+ * project develops on, and `main` currently trails it.
+ */
+export const OFFSITE = {
+  repo: 'https://github.com/YosemiteCrew/openrunic',
+  wiki: 'https://github.com/YosemiteCrew/openrunic/wiki',
+  gettingStarted: 'https://github.com/YosemiteCrew/openrunic/wiki/Getting-Started',
+  architecture: 'https://github.com/YosemiteCrew/openrunic/wiki/Architecture-Overview',
+  roadmap: 'https://github.com/YosemiteCrew/openrunic/wiki/Roadmap',
+  selfHosting: 'https://github.com/YosemiteCrew/openrunic/wiki/Self-Hosting',
+  apiDesign: 'https://github.com/YosemiteCrew/openrunic/wiki/API-Design',
+  patientPortal: 'https://github.com/YosemiteCrew/openrunic/wiki/Patient-Portal',
+  discussions: 'https://github.com/YosemiteCrew/openrunic/discussions',
+  goodFirstIssues:
+    'https://github.com/YosemiteCrew/openrunic/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22',
+  contributing: 'https://github.com/YosemiteCrew/openrunic/blob/dev/CONTRIBUTING.md',
+  conduct: 'https://github.com/YosemiteCrew/openrunic/blob/dev/CODE_OF_CONDUCT.md',
+  security: 'https://github.com/YosemiteCrew/openrunic/blob/dev/SECURITY.md',
+  licence: 'https://github.com/YosemiteCrew/openrunic/blob/dev/LICENSE',
+  compliance: 'https://github.com/YosemiteCrew/openrunic/blob/dev/docs/compliance.md',
+  decisions: 'https://github.com/YosemiteCrew/openrunic/tree/dev/docs/adr',
+} as const;
+
+/** A public route, so `aria-current` can be set without reading the URL at runtime. */
+export type PublicRoute = '/' | '/for/hospitals' | '/for/patients' | '/for/developers';
+
+export interface NavItem {
+  readonly label: string;
+  readonly href: PublicRoute;
+}
+
+/**
+ * The masthead sections, in pillar order: the same order the README and the
+ * wiki list them in, so someone arriving from either finds them where they
+ * expect. Home is reached through the lockup rather than a fourth link.
+ */
+export const SITE_NAV: readonly NavItem[] = [
+  { label: 'Hospitals', href: '/for/hospitals' },
+  { label: 'Patients', href: '/for/patients' },
+  { label: 'Developers', href: '/for/developers' },
+];
+
+export interface Pillar {
+  readonly title: string;
+  readonly href: PublicRoute;
+  readonly summary: string;
+  /** What this audience actually gets today. Three at most: a card is not a list. */
+  readonly points: readonly string[];
+}
+
+/**
+ * The three audiences the project is organised around.
+ *
+ * A fourth pillar covering research data-sharing is planned and unbuilt, so it
+ * is deliberately absent: nothing on these pages describes something that does
+ * not exist yet.
+ */
+export const PILLARS: readonly Pillar[] = [
+  {
+    title: 'Hospitals and clinics',
+    href: '/for/hospitals',
+    summary:
+      'Run scheduling, charts, orders, results and billing on software your practice controls, on a database you can read.',
+    points: [
+      'A staff application covering the clinical day, from the schedule to the claim',
+      'Postgres you own, with no per-seat licence and no vendor holding the export',
+      'An audit trail the repositories cannot serve a record without writing to',
+    ],
+  },
+  {
+    title: 'Patients',
+    href: '/for/patients',
+    summary:
+      'Your record belongs to you. openrunic keeps it in an open standard so it can travel with you between providers.',
+    points: [
+      'A portal for appointments, results, messages, forms and bills',
+      'FHIR R4 at the boundary, so the record is not locked in a private format',
+      'No interpretation of your results by software, by design',
+    ],
+  },
+  {
+    title: 'Developers',
+    href: '/for/developers',
+    summary:
+      'An open platform with a typed monorepo, a generated FHIR conformance statement and no edition holding features back.',
+    points: [
+      'FHIR R4 at the service boundary, advertising only what it can answer',
+      'Typed workspace packages for FHIR mapping, the data model and the UI',
+      'AGPL-3.0-only, no open core, decisions recorded as ADRs in the repository',
+    ],
+  },
+];
+
+/** The pillars other than the one being read, in the order above. */
+export function otherPillars(current: PublicRoute): readonly Pillar[] {
+  return PILLARS.filter((pillar) => pillar.href !== current);
+}

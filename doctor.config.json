@@ -1,0 +1,12 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "ignore": {
+    "files": [
+      "**/coverage/**",
+      "**/dist/**",
+      "**/.next/**",
+      "**/storybook-static/**",
+      "packages/database/src/generated/**"
+    ]
+  }
+}

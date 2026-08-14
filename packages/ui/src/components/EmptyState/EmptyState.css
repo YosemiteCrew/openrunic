@@ -1,0 +1,61 @@
+/* EmptyState - the calm nothing-here panel. Centred, generous, one action at most.
+   The mark is caramel: decorative weight, never terracotta competing with the button. */
+
+.or-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  /* Phones get the tighter rhythm; the design system's 64/24px returns at md. */
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  text-align: center;
+}
+
+.or-empty-state > * {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .or-empty-state {
+    padding: var(--space-8) var(--space-5);
+  }
+}
+
+/* Mark ------------------------------------------------------------------- */
+
+.or-empty-state__icon {
+  color: var(--text-decorative);
+}
+
+/* The brand glyph, drawn through a mask so the shipped SVG takes CSS ink. The mask URL
+   itself is set inline from `glyphBasePath`; 40px is the design system's empty-state
+   size and sits above the 16px glyph minimum. */
+.or-empty-state__glyph {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  background: var(--text-decorative);
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+}
+
+/* Copy ------------------------------------------------------------------- */
+
+.or-empty-state__title {
+  margin-top: var(--space-1);
+}
+
+.or-empty-state__message {
+  /* 420px keeps the sentence near 60 characters, the design system's reading measure. */
+  max-width: 420px;
+  color: var(--text-secondary);
+}
+
+.or-empty-state__action {
+  margin-top: var(--space-2);
+}

@@ -1,0 +1,82 @@
+/* Card - the default container. Depth is paper first (bone -> cream -> white), shadow
+   second: --shadow-raised is opt-in and at most one layer per screen should use it.
+   No coloured left-border accents, no gradients, no stacked shadows. */
+
+.or-card {
+  --or-card-hairline: var(--border-hairline);
+  --or-card-overline-ink: var(--text-secondary);
+
+  display: grid;
+  gap: var(--space-3);
+  /* Phones get the tighter step; the design system's 24px --card-pad returns at md. */
+  padding: var(--space-4);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+}
+
+/* Grid children default to min-width:auto, which lets a long mono identifier push the
+   card wider than its column. Every card child is allowed to shrink instead. */
+.or-card > * {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .or-card {
+    padding: var(--card-pad);
+  }
+}
+
+/* Tones ------------------------------------------------------------------ */
+
+.or-card--cream {
+  background: var(--surface-card);
+}
+
+.or-card--bone {
+  background: var(--bg-page);
+  border-color: var(--border-hairline);
+}
+
+.or-card--white {
+  background: var(--surface-field);
+  border-color: var(--border-hairline);
+}
+
+/* Espresso is a different paper, so the inverse card re-points the ink roles for its whole
+   subtree rather than recolouring its own parts. Anything dropped inside - an EmptyState,
+   a VitalStat, a paragraph of --text-secondary - then inherits ink drawn for espresso and
+   needs no inverse variant of its own. */
+.or-card--inverse {
+  --or-card-hairline: var(--border-inverse);
+  --or-card-overline-ink: var(--text-inverse-decorative);
+  --text-ink: var(--text-inverse);
+  --text-heading: var(--text-inverse);
+  --text-secondary: var(--text-inverse-secondary);
+  --text-decorative: var(--text-inverse-decorative);
+
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-card--raised {
+  box-shadow: var(--shadow-raised);
+}
+
+.or-card__overline {
+  color: var(--or-card-overline-ink);
+}
+
+.or-card__title {
+  color: inherit;
+}
+
+.or-card__footer {
+  margin-top: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--or-card-hairline);
+}

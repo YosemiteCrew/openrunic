@@ -1,0 +1,133 @@
+:root {
+  --font-display: 'Bricolage Grotesque', -apple-system, 'Segoe UI', sans-serif;
+  --font-text: 'Bricolage Grotesque', -apple-system, 'Segoe UI', sans-serif;
+  --font-editorial: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* optical size axis, wired to the type scale */
+  --opsz-hero: 96; /* @kind other */
+  --opsz-heading: 48; /* @kind other */
+  --opsz-h3: 24; /* @kind other */
+  --opsz-ui: 12; /* @kind other */
+
+  --text-hero: clamp(44px, 6vw, 72px);
+  --text-h1: 40px;
+  --text-h2: 30px;
+  --text-h3: 22px;
+  --text-body-lg: 18px;
+  --text-body: 16px;
+  --text-small: 14px;
+  --text-caption: 12.5px;
+  --text-overline: 13px;
+
+  --lh-hero: 1.05; /* @kind other */
+  --lh-h1: 1.1; /* @kind other */
+  --lh-h2: 1.15; /* @kind other */
+  --lh-h3: 1.25; /* @kind other */
+  --lh-body: 1.6; /* @kind other */
+  --lh-small: 1.5; /* @kind other */
+  --lh-caption: 1.4; /* @kind other */
+
+  --wght-regular: 400; /* @kind other */
+  --wght-medium: 500; /* @kind other */
+  --wght-semibold: 600; /* @kind other */
+
+  --track-tight: -0.02em; /* @kind other */
+  --track-normal: 0; /* @kind other */
+  --track-caption: 0.01em; /* @kind other */
+  --track-overline: 0.14em; /* @kind other */
+}
+/* Type roles - apply the opsz axis with the size. */
+.or-hero {
+  font-family: var(--font-display);
+  font-size: var(--text-hero);
+  font-weight: 600;
+  line-height: var(--lh-hero);
+  letter-spacing: var(--track-tight);
+  font-variation-settings: 'opsz' 96;
+  color: var(--text-heading);
+  text-wrap: balance;
+  margin: 0;
+}
+.or-h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  line-height: var(--lh-h1);
+  letter-spacing: var(--track-tight);
+  font-variation-settings: 'opsz' 48;
+  color: var(--text-heading);
+  margin: 0;
+}
+.or-h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 600;
+  line-height: var(--lh-h2);
+  letter-spacing: -0.01em;
+  font-variation-settings: 'opsz' 48;
+  color: var(--text-heading);
+  margin: 0;
+}
+.or-h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 500;
+  line-height: var(--lh-h3);
+  font-variation-settings: 'opsz' 24;
+  color: var(--text-heading);
+  margin: 0;
+}
+.or-body-lg {
+  font-family: var(--font-text);
+  font-size: var(--text-body-lg);
+  line-height: var(--lh-body);
+  font-variation-settings: 'opsz' 14;
+  margin: 0;
+  text-wrap: pretty;
+}
+.or-body {
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  font-variation-settings: 'opsz' 12;
+  margin: 0;
+  text-wrap: pretty;
+}
+.or-small {
+  font-family: var(--font-text);
+  font-size: var(--text-small);
+  line-height: var(--lh-small);
+  font-variation-settings: 'opsz' 12;
+  margin: 0;
+}
+.or-caption {
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: var(--lh-caption);
+  letter-spacing: var(--track-caption);
+  margin: 0;
+}
+.or-overline {
+  font-family: var(--font-text);
+  font-size: var(--text-overline);
+  font-weight: 600;
+  letter-spacing: var(--track-overline);
+  text-transform: uppercase;
+  font-variation-settings: 'opsz' 12;
+  margin: 0;
+}
+.or-editorial {
+  font-family: var(--font-editorial);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.or-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}

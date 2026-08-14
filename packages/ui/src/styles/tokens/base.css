@@ -1,0 +1,37 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg-page);
+  color: var(--text-ink);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  font-variation-settings: 'opsz' 12;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--text-link);
+  text-decoration-color: color-mix(in oklab, var(--text-link) 40%, transparent);
+  text-underline-offset: 2px;
+}
+a:hover {
+  color: var(--text-link-hover);
+  text-decoration-color: currentColor;
+}
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+hr {
+  border: 0;
+  border-top: var(--hairline) solid var(--border-hairline);
+  margin: var(--space-6) 0;
+}
+::selection {
+  background: color-mix(in oklab, var(--terracotta) 28%, transparent);
+}

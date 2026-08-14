@@ -1,0 +1,82 @@
+/* Tag - metadata and filters. 6px corners (--radius-sm) keep it square-ish so it can never
+   be mistaken for a Badge pill. Bone fill on a cream card, hairline border, no fill tones:
+   a tag carries no status, so it carries no colour. */
+
+.or-tag {
+  display: inline-flex;
+  align-items: center;
+  /* 6px gap, 26px height and 10px side padding come from the tag specimen. */
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bone);
+  color: var(--espresso);
+  font-family: var(--font-text);
+  font-size: var(--text-caption);
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.or-tag--mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Remove affordance ------------------------------------------------------ */
+
+/* Below md the chip grows to hold a 44px target. Expanding the button's hit area with a
+   pseudo-element instead would reach into the chips above and below in a wrapped filter
+   row and steal their taps, so the chip itself takes the height. */
+.or-tag--removable {
+  min-height: 44px;
+  padding-right: 0;
+}
+
+.or-tag__remove {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+@media (min-width: 768px) {
+  .or-tag--removable {
+    min-height: 26px;
+    padding-right: 6px;
+  }
+
+  .or-tag__remove {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* Hover darkens the cross from hazelnut to espresso; it is an enhancement on top of a
+   control that already works by tap and by keyboard. */
+@media (hover: hover) {
+  .or-tag__remove:not(:disabled):hover {
+    color: var(--espresso);
+  }
+}
+
+.or-tag__remove:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-tag__remove:disabled,
+.or-tag__remove[aria-disabled='true'] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}

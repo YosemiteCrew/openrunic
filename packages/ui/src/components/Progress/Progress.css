@@ -1,0 +1,151 @@
+/* Progress - the determinate and indeterminate bar. One flat band of ink on a wash track:
+   the fill grows in width and the indeterminate band slides, and nothing scales, bounces
+   or lifts. Colour is never the signal on its own - the label names what is running and
+   the percentage is visible text whenever showValue is on. A readout rather than a
+   control, so there is deliberately no hover, focus or disabled block here. */
+
+.or-progress {
+  /* Set inline by the component: the percentage is a runtime value. */
+  --or-progress-value: 0%;
+  --or-progress-ink: var(--action-accent);
+  /* Phone track height, restated per size below. Bare px on purpose: the track is a rule
+     thinner than the 4px spacing step, so no spacing token reaches this size. The exact
+     desktop heights return at md. */
+  --or-progress-track-h: 8px;
+  /* One pass of the indeterminate slide. Deliberately not a --dur-* token, for the same
+     reason Glyph keeps its own cycle: those tokens cover the 150-250ms transitions, not a
+     repeating affordance. */
+  --or-progress-cycle: 1.4s;
+
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  font-family: var(--font-text);
+}
+
+/* A long label must not push the bar wider than its column. */
+.or-progress > * {
+  min-width: 0;
+}
+
+/* Sizes ------------------------------------------------------------------ */
+
+.or-progress--sm {
+  --or-progress-track-h: 6px;
+}
+
+.or-progress--md {
+  --or-progress-track-h: 8px;
+}
+
+.or-progress--lg {
+  --or-progress-track-h: 12px;
+}
+
+@media (min-width: 768px) {
+  .or-progress--sm {
+    --or-progress-track-h: 4px;
+  }
+
+  .or-progress--md {
+    --or-progress-track-h: 6px;
+  }
+
+  .or-progress--lg {
+    --or-progress-track-h: 10px;
+  }
+}
+
+/* Tones ------------------------------------------------------------------ */
+
+.or-progress--accent {
+  --or-progress-ink: var(--action-accent);
+}
+
+.or-progress--success {
+  --or-progress-ink: var(--status-success);
+}
+
+.or-progress--danger {
+  --or-progress-ink: var(--status-danger);
+}
+
+/* Parts ------------------------------------------------------------------ */
+
+.or-progress__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.or-progress__label {
+  color: var(--espresso);
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  line-height: var(--lh-small);
+}
+
+.or-progress__value {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  /* The number changes every frame of the fill; tabular figures keep the row still. */
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-small);
+}
+
+.or-progress__track {
+  overflow: hidden;
+  width: 100%;
+  height: var(--or-progress-track-h);
+  border-radius: var(--radius-pill);
+  /* The wash darkens whatever paper step the bar sits on, so one track colour works on
+     bone, cream and white alike. */
+  background: var(--surface-wash);
+}
+
+.or-progress__fill {
+  display: block;
+  width: var(--or-progress-value);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--or-progress-ink);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+/* Indeterminate ---------------------------------------------------------- */
+
+/* No value means no amount to draw, so a short band travels the length of the track
+   instead. Transform only: the band never scales, bounces or changes colour. */
+.or-progress--indeterminate .or-progress__fill {
+  width: 40%;
+  animation: or-progress-slide var(--or-progress-cycle) var(--ease-out) infinite;
+}
+
+/* -100% is the band's own width, so it starts just off the left edge; 250% of a 40% band
+   is a full track width, so it ends just off the right one. */
+@keyframes or-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* States ----------------------------------------------------------------- */
+
+/* motion.css collapses every animation to 0.01ms globally, which would strand the band
+   past the right edge and leave an empty track. Drop the slide instead and hold a quieter
+   full-width band: the label still says what is running, and the bar reports no
+   aria-valuenow, so nothing reads it as finished. */
+@media (prefers-reduced-motion: reduce) {
+  .or-progress--indeterminate .or-progress__fill {
+    width: 100%;
+    transform: none;
+    background: color-mix(in oklab, var(--or-progress-ink) 45%, transparent);
+    animation: none;
+  }
+}

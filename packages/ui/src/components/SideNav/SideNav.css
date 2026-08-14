@@ -1,0 +1,201 @@
+/* SideNav - primary navigation in the product shell. An off-canvas drawer behind a Menu
+   button below lg, a persistent rail from lg. The active row is a cream fill with a
+   terracotta icon; hover on the others is an espresso wash, so hover only ever darkens. */
+
+.or-side-nav {
+  /* Rail width and drawer width; a consumer can retune either without touching the rules.
+     244px is the design system's sidebar specimen; the drawer is capped against the
+     viewport so it never covers a whole phone screen. */
+  --or-side-nav-w: 244px;
+  --or-side-nav-drawer-w: min(280px, 86vw);
+
+  font-family: var(--font-text);
+}
+
+/* Drawer, below lg ------------------------------------------------------- */
+
+.or-side-nav__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim-espresso);
+  animation: or-fade-up var(--dur-fast) var(--ease-out);
+}
+
+/* `display: none` while shut keeps the drawer out of the tab order and out of the
+   accessibility tree, which is what aria-expanded on the Menu button promises. */
+.or-side-nav__panel {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: var(--or-side-nav-drawer-w);
+  padding: var(--space-5) var(--space-4);
+  overflow-y: auto;
+  border-right: var(--hairline) solid var(--border-hairline);
+  background: var(--bg-page);
+  box-shadow: var(--shadow-overlay);
+}
+
+.or-side-nav--open .or-side-nav__panel {
+  display: flex;
+  animation: or-fade-up var(--dur-fast) var(--ease-out);
+}
+
+.or-side-nav__panel > * {
+  min-width: 0;
+}
+
+/* Rail, from lg ---------------------------------------------------------- */
+
+@media (min-width: 1024px) {
+  /* The hairline moves to the root so it runs the full height of the shell row even when
+     the rail's own content is short. */
+  .or-side-nav {
+    align-self: stretch;
+    border-right: var(--hairline) solid var(--border-hairline);
+  }
+
+  .or-side-nav__toggle,
+  .or-side-nav__close,
+  .or-side-nav__scrim {
+    display: none;
+  }
+
+  .or-side-nav__panel,
+  .or-side-nav--open .or-side-nav__panel {
+    /* Clear the drawer's off-canvas anchoring before pinning the rail, or the leftover
+       bottom/left offsets fight the sticky constraint. */
+    position: sticky;
+    inset: auto;
+    top: 0;
+    z-index: auto;
+    display: flex;
+    width: var(--or-side-nav-w);
+    max-height: 100vh;
+    border-right: 0;
+    box-shadow: none;
+    animation: none;
+  }
+}
+
+/* Lockup ----------------------------------------------------------------- */
+
+.or-side-nav__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+  color: var(--text-heading);
+}
+
+/* The 'ink' lockup build paints in currentColor, so it is drawn as a mask over the rail's
+   ink rather than as an <img>. 120x33 is the brand's minimum horizontal-lockup width at
+   the 480:132 build ratio; the URL arrives as --or-side-nav-logo-src from the component. */
+.or-side-nav__logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 120px;
+  height: 33px;
+  background: currentcolor;
+  -webkit-mask: var(--or-side-nav-logo-src) center / contain no-repeat;
+  mask: var(--or-side-nav-logo-src) center / contain no-repeat;
+}
+
+/* Rows ------------------------------------------------------------------- */
+
+.or-side-nav__list {
+  display: grid;
+  /* 2px keeps the rows reading as one block rather than a spaced list. */
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-side-nav__link {
+  display: flex;
+  align-items: center;
+  /* 10px gap and 12px inset come from the design system's sidebar row. */
+  gap: 10px;
+  /* Touch-target floor; the rail tightens to its 38px row from lg. */
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+  font-weight: var(--wght-regular);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+/* Restated on :hover/:visited so base.css's `a:hover` cannot repaint the row. */
+.or-side-nav__link,
+.or-side-nav__link:hover,
+.or-side-nav__link:visited {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+@media (min-width: 1024px) {
+  .or-side-nav__link {
+    min-height: 38px;
+  }
+}
+
+.or-side-nav__link--active,
+.or-side-nav__link--active:hover,
+.or-side-nav__link--active:visited {
+  color: var(--text-ink);
+}
+
+.or-side-nav__link--active {
+  background: var(--surface-card);
+  font-weight: var(--wght-semibold);
+}
+
+/* Hover darkens: an espresso wash over the bone rail, ink to full espresso. The active row
+   is already at its darkest, so it does not move. */
+@media (hover: hover) {
+  .or-side-nav__link:not(.or-side-nav__link--active):hover {
+    background: var(--surface-wash);
+    color: var(--text-ink);
+  }
+}
+
+.or-side-nav__link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-side-nav__icon {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.or-side-nav__link--active .or-side-nav__icon {
+  color: var(--terracotta-deep);
+}
+
+.or-side-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-side-nav__badge {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Footer ----------------------------------------------------------------- */
+
+.or-side-nav__footer {
+  margin-top: auto;
+}

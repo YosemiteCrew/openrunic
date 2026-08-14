@@ -3,6 +3,22 @@ dist/
 build/
 .next/
 coverage/
+storybook-static/
 .turbo/
+
+# Storybook build output. Ignored by packages/ui/.gitignore, but Prettier only reads the root
+# .gitignore, so `pnpm run format:check` fails on any tree that has run `build-storybook`.
+storybook-static/
+
 pnpm-lock.yaml
 CHANGELOG.md
+
+# Written by Next.js, which stamps "This file should not be edited" into it, and
+# rewritten with different contents by `next dev` and `next build` (dev points at
+# .next/dev/types and quotes with ", build points at .next/types and quotes with ').
+# Formatting it means whichever command ran last decides whether the repo is clean,
+# so every build dirtied the working tree and every `format:check` after a build
+# failed. It is tracked because Next.js expects it in the repository, and ignored
+# here because Prettier does not own a file no human writes.
+# Revisit if Next.js starts emitting it already formatted to this repo's config.
+next-env.d.ts

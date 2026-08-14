@@ -1,0 +1,234 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { MOCK_ENCOUNTER_IDS } from '@/lib/api/mock/chart';
+
+import { AdminScreen } from '../admin/AdminScreen';
+import AdminPage, { metadata as adminMetadata } from '../admin/page';
+import { AuditScreen } from '../admin/audit/AuditScreen';
+import AuditPage, { metadata as auditMetadata } from '../admin/audit/page';
+import { DeveloperScreen } from '../admin/developer/DeveloperScreen';
+import DeveloperPage, { metadata as developerMetadata } from '../admin/developer/page';
+import { FacilitiesScreen } from '../admin/facilities/FacilitiesScreen';
+import FacilitiesPage, { metadata as facilitiesMetadata } from '../admin/facilities/page';
+import { FormsScreen } from '../admin/forms/FormsScreen';
+import FormsPage, { metadata as formsMetadata } from '../admin/forms/page';
+import { IntegrationsScreen } from '../admin/integrations/IntegrationsScreen';
+import IntegrationsPage, { metadata as integrationsMetadata } from '../admin/integrations/page';
+import { UsersScreen } from '../admin/users/UsersScreen';
+import UsersPage, { metadata as usersMetadata } from '../admin/users/page';
+import { BillingScreen } from '../billing/BillingScreen';
+import BillingPage, { metadata as billingMetadata } from '../billing/page';
+import { ChargesScreen } from '../billing/charges/ChargesScreen';
+import ChargesPage, { metadata as chargesMetadata } from '../billing/charges/page';
+import { ClaimsScreen } from '../billing/claims/ClaimsScreen';
+import ClaimsPage, { metadata as claimsMetadata } from '../billing/claims/page';
+import { PaymentsScreen } from '../billing/payments/PaymentsScreen';
+import PaymentsPage, { metadata as paymentsMetadata } from '../billing/payments/page';
+import { RemittanceScreen } from '../billing/remittance/RemittanceScreen';
+import RemittancePage, { metadata as remittanceMetadata } from '../billing/remittance/page';
+import { StatementsScreen } from '../billing/statements/StatementsScreen';
+import StatementsPage, { metadata as statementsMetadata } from '../billing/statements/page';
+import { EncounterNoteScreen } from '../encounters/[id]/EncounterNoteScreen';
+import EncounterPage, { generateMetadata as encounterMetadata } from '../encounters/[id]/page';
+import { InboxScreen } from '../inbox/InboxScreen';
+import InboxPage, { metadata as inboxMetadata } from '../inbox/page';
+import { OrdersScreen } from '../orders/OrdersScreen';
+import OrdersPage, { metadata as ordersMetadata } from '../orders/page';
+import { NewOrderScreen } from '../orders/new/NewOrderScreen';
+import NewOrderPage, { metadata as newOrderMetadata } from '../orders/new/page';
+import { PatientsScreen } from '../patients/PatientsScreen';
+import PatientsPage, { metadata as patientsMetadata } from '../patients/page';
+import { PatientChartScreen } from '../patients/[id]/PatientChartScreen';
+import PatientChartPage, { generateMetadata as chartMetadata } from '../patients/[id]/page';
+import { InsuranceScreen } from '../patients/[id]/insurance/InsuranceScreen';
+import InsurancePage, { metadata as insuranceMetadata } from '../patients/[id]/insurance/page';
+import { RegisterPatientScreen } from '../patients/new/RegisterPatientScreen';
+import RegisterPatientPage, { metadata as registerMetadata } from '../patients/new/page';
+import { ReportsScreen } from '../reports/ReportsScreen';
+import ReportsPage, { metadata as reportsMetadata } from '../reports/page';
+import { ResultsScreen } from '../results/ResultsScreen';
+import ResultsPage, { metadata as resultsMetadata } from '../results/page';
+import { ScheduleScreen } from '../schedule/ScheduleScreen';
+import SchedulePage, { metadata as scheduleMetadata } from '../schedule/page';
+import { FlowBoardScreen } from '../schedule/flow-board/FlowBoardScreen';
+import FlowBoardPage, { metadata as flowBoardMetadata } from '../schedule/flow-board/page';
+
+/**
+ * The route layer: what each URL is called in the browser tab, and which screen
+ * it actually mounts.
+ *
+ * Two failures this guards against, both of which a screen test cannot see.
+ * First, a copy-pasted route file that renders the neighbouring screen: the
+ * page still renders something plausible, so nothing goes red until a clinician
+ * opens Payments and gets the claim workbench. Second, two routes sharing a tab
+ * title, which is how someone with nine tabs open documents in the wrong place.
+ *
+ * The route files are server components, so they are called rather than
+ * rendered: what is asserted is the element each returns, which is exactly the
+ * wiring the file exists to declare.
+ */
+
+const CHART_PATIENT_ID = '0192f1a0-0000-7000-8000-00000000p001';
+const ENCOUNTER_ID = MOCK_ENCOUNTER_IDS.testinaUnsigned;
+
+const STATIC_ROUTES = [
+  { title: 'Admin', Page: AdminPage, metadata: adminMetadata, Screen: AdminScreen },
+  { title: 'Audit trail', Page: AuditPage, metadata: auditMetadata, Screen: AuditScreen },
+  {
+    title: 'Developer platform',
+    Page: DeveloperPage,
+    metadata: developerMetadata,
+    Screen: DeveloperScreen,
+  },
+  {
+    title: 'Facilities',
+    Page: FacilitiesPage,
+    metadata: facilitiesMetadata,
+    Screen: FacilitiesScreen,
+  },
+  { title: 'Form builder', Page: FormsPage, metadata: formsMetadata, Screen: FormsScreen },
+  {
+    title: 'Integrations',
+    Page: IntegrationsPage,
+    metadata: integrationsMetadata,
+    Screen: IntegrationsScreen,
+  },
+  { title: 'Users and roles', Page: UsersPage, metadata: usersMetadata, Screen: UsersScreen },
+  { title: 'Billing', Page: BillingPage, metadata: billingMetadata, Screen: BillingScreen },
+  { title: 'Fee sheet', Page: ChargesPage, metadata: chargesMetadata, Screen: ChargesScreen },
+  { title: 'Claim workbench', Page: ClaimsPage, metadata: claimsMetadata, Screen: ClaimsScreen },
+  { title: 'Payments', Page: PaymentsPage, metadata: paymentsMetadata, Screen: PaymentsScreen },
+  {
+    title: 'Remittance',
+    Page: RemittancePage,
+    metadata: remittanceMetadata,
+    Screen: RemittanceScreen,
+  },
+  {
+    title: 'Statements and AR',
+    Page: StatementsPage,
+    metadata: statementsMetadata,
+    Screen: StatementsScreen,
+  },
+  { title: 'Inbox', Page: InboxPage, metadata: inboxMetadata, Screen: InboxScreen },
+  { title: 'Orders', Page: OrdersPage, metadata: ordersMetadata, Screen: OrdersScreen },
+  { title: 'New order', Page: NewOrderPage, metadata: newOrderMetadata, Screen: NewOrderScreen },
+  { title: 'Patients', Page: PatientsPage, metadata: patientsMetadata, Screen: PatientsScreen },
+  {
+    title: 'Register patient',
+    Page: RegisterPatientPage,
+    metadata: registerMetadata,
+    Screen: RegisterPatientScreen,
+  },
+  { title: 'Reports', Page: ReportsPage, metadata: reportsMetadata, Screen: ReportsScreen },
+  { title: 'Results', Page: ResultsPage, metadata: resultsMetadata, Screen: ResultsScreen },
+  { title: 'Schedule', Page: SchedulePage, metadata: scheduleMetadata, Screen: ScheduleScreen },
+  {
+    title: 'Flow Board',
+    Page: FlowBoardPage,
+    metadata: flowBoardMetadata,
+    Screen: FlowBoardScreen,
+  },
+] as const;
+
+describe('route wiring', () => {
+  it.each(STATIC_ROUTES)('$title mounts its own screen and nothing else', ({ Page, Screen }) => {
+    expect(Page().type).toBe(Screen);
+  });
+
+  it.each(STATIC_ROUTES)('$title names the browser tab', ({ title, metadata }) => {
+    expect(metadata.title).toBe(title);
+  });
+
+  it('gives every route a tab title no other route shares', () => {
+    const titles = STATIC_ROUTES.map((route) => route.title);
+
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+
+  it('passes the patient id from the URL through to the chart screen', async () => {
+    const element = await PatientChartPage({ params: Promise.resolve({ id: CHART_PATIENT_ID }) });
+
+    expect(element.type).toBe(PatientChartScreen);
+    expect(element.props.patientId).toBe(CHART_PATIENT_ID);
+  });
+
+  it('passes the patient id through to the insurance screen and titles the tab', async () => {
+    const element = await InsurancePage({ params: Promise.resolve({ id: CHART_PATIENT_ID }) });
+
+    expect(element.type).toBe(InsuranceScreen);
+    expect(element.props.patientId).toBe(CHART_PATIENT_ID);
+    expect(insuranceMetadata.title).toBe('Insurance');
+  });
+
+  it('passes the encounter id from the URL through to the note screen', async () => {
+    const element = await EncounterPage({ params: Promise.resolve({ id: ENCOUNTER_ID }) });
+
+    expect(element.type).toBe(EncounterNoteScreen);
+    expect(element.props.encounterId).toBe(ENCOUNTER_ID);
+  });
+});
+
+describe('route titles that name the patient', () => {
+  /*
+   * Two chart tabs open on two patients must be impossible to confuse, so the
+   * chart and the note put the patient in the tab title rather than the word
+   * "Chart" twice. The family name is upper-cased because that is the form a
+   * clinician scans a tab strip for.
+   */
+
+  it('titles the chart tab with the patient, family name first', async () => {
+    await expect(
+      chartMetadata({ params: Promise.resolve({ id: CHART_PATIENT_ID }) })
+    ).resolves.toEqual({
+      // "Tess" rather than "Testina": the tab says what she is called.
+      title: 'PATIENTSSON, Tess - Chart',
+    });
+  });
+
+  it('falls back to a plain title rather than guessing at an unknown patient', async () => {
+    await expect(
+      chartMetadata({ params: Promise.resolve({ id: 'no-such-patient' }) })
+    ).resolves.toEqual({ title: 'Chart' });
+  });
+
+  it('titles the note tab with the patient the note belongs to', async () => {
+    const title = (await encounterMetadata({ params: Promise.resolve({ id: ENCOUNTER_ID }) }))
+      .title;
+
+    expect(title).toMatch(/^[A-Z]+, .+ - Visit note$/);
+  });
+
+  it('falls back to a plain note title when the encounter has no chart behind it', async () => {
+    await expect(
+      encounterMetadata({ params: Promise.resolve({ id: 'no-such-encounter' }) })
+    ).resolves.toEqual({ title: 'Visit note' });
+  });
+
+  it('reads no fixture at all once the app is pointed at the live API', async () => {
+    /*
+     * The tab title is the one place a server component reads the fixtures
+     * directly, because the hooks beside it are client modules. Against a real
+     * deployment that read has to stop: demo names in a browser tab would be
+     * indistinguishable from real ones, and the route has no server-side
+     * patient read to replace it with yet. A generic title is honest; a
+     * fixture name would not be.
+     */
+    vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_API_MODE', 'live');
+    try {
+      const chart = await import('../patients/[id]/page');
+      const encounter = await import('../encounters/[id]/page');
+
+      await expect(
+        chart.generateMetadata({ params: Promise.resolve({ id: CHART_PATIENT_ID }) })
+      ).resolves.toEqual({ title: 'Chart' });
+      await expect(
+        encounter.generateMetadata({ params: Promise.resolve({ id: ENCOUNTER_ID }) })
+      ).resolves.toEqual({ title: 'Visit note' });
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+});

@@ -1,0 +1,915 @@
+/* Portal layout and in-app compositions.
+   Every value here is a design-system token. The palette rules the portal holds itself to:
+   bone page, cream cards, white for fields and data tables only, espresso ink; terracotta
+   for actions, links, focus and the active nav row and nothing else; olive for in range,
+   danger red for out of range, hazelnut for secondary text, caramel wash for caution.
+   No gradients, no backdrop filters, no hover-only affordances. */
+
+/* ---------------------------------------------------------------- shell */
+
+.portal {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* First tab stop on every page. Off-screen until focused, never display:none, or it would
+   be unreachable by the keyboard it exists for. */
+.portal__skip {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 40;
+  transform: translateY(-200%);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+}
+
+.portal__skip:focus-visible {
+  transform: translateY(0);
+}
+
+.portal__masthead {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.portal__eyebrow {
+  color: var(--text-secondary);
+}
+
+.portal__identity {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.portal__identity-name {
+  font-weight: var(--wght-semibold);
+  color: var(--text-heading);
+}
+
+.portal__identity-mrn {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------- navigation
+   One <nav> at every width. Below 768px it is a fixed bottom tab bar, to 1023px a strip
+   under the masthead, and from 1024px a left rail. The markup never changes. */
+
+.portal__nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--surface-card);
+  border-top: var(--hairline) solid var(--border-hairline);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.portal__nav-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal__nav-item {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.portal__nav-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  /* Comfortably past the 44px floor once the two-line labels are accounted for. */
+  min-height: 60px;
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-ink);
+  text-decoration: none;
+  font-size: var(--text-caption);
+  line-height: 1.15;
+  text-align: center;
+  hyphens: auto;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.portal__nav-link:hover {
+  background: var(--surface-wash);
+  color: var(--text-link-hover);
+}
+
+/* Terracotta plus a weight change plus the bar: never the colour on its own. */
+.portal__nav-link--current {
+  color: var(--action-accent);
+  font-weight: var(--wght-semibold);
+}
+
+.portal__nav-link--current::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--action-accent);
+}
+
+.portal__nav-icon {
+  flex: none;
+}
+
+.portal__main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  /* Clears the fixed tab bar so the last card is never trapped behind it. */
+  padding: var(--space-5) var(--space-4) calc(60px + var(--space-7));
+}
+
+.portal__footer {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-4) calc(60px + var(--space-5));
+  border-top: var(--hairline) solid var(--border-hairline);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.portal__footer-text {
+  color: var(--text-secondary);
+  max-width: 62ch;
+}
+
+@media (min-width: 768px) {
+  .portal__nav {
+    position: static;
+    background: transparent;
+    border-top: 0;
+    border-bottom: var(--hairline) solid var(--border-hairline);
+    padding-bottom: 0;
+  }
+
+  .portal__nav-list {
+    max-width: var(--content-max);
+    margin-inline: auto;
+    padding-inline: var(--space-5);
+    gap: var(--space-1);
+    flex-wrap: wrap;
+  }
+
+  .portal__nav-item {
+    flex: 0 0 auto;
+  }
+
+  .portal__nav-link {
+    flex-direction: row;
+    min-height: 48px;
+    padding-inline: var(--space-3);
+    font-size: var(--text-small);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .portal__nav-link--current::before {
+    top: auto;
+    bottom: 0;
+  }
+
+  .portal__main {
+    padding: var(--space-6) var(--space-5) var(--space-8);
+  }
+
+  .portal__footer {
+    padding: var(--space-6) var(--space-5) var(--space-7);
+  }
+}
+
+@media (min-width: 1024px) {
+  .portal {
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'nav masthead'
+      'nav main'
+      'nav footer';
+  }
+
+  .portal__masthead {
+    grid-area: masthead;
+    padding-inline: var(--space-6);
+  }
+
+  .portal__nav {
+    grid-area: nav;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100dvh;
+    background: var(--surface-card);
+    border-bottom: 0;
+    border-inline-end: var(--hairline) solid var(--border-hairline);
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .portal__nav-list {
+    flex-direction: column;
+    padding-inline: 0;
+    gap: var(--space-1);
+  }
+
+  .portal__nav-item {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .portal__nav-link {
+    justify-content: flex-start;
+    gap: var(--space-3);
+    text-align: left;
+    border-radius: var(--radius-md);
+  }
+
+  .portal__nav-link--current::before {
+    inset: 0 auto 0 0;
+    width: 3px;
+    height: auto;
+    border-radius: var(--radius-pill);
+  }
+
+  .portal__main {
+    grid-area: main;
+    padding: var(--space-6) var(--space-6) var(--space-9);
+  }
+
+  .portal__footer {
+    grid-area: footer;
+    padding: var(--space-6) var(--space-6) var(--space-7);
+  }
+}
+
+/* ---------------------------------------------------------------- touch floor
+
+   @openrunic/ui grows every control to a 44px touch target below its md breakpoint and
+   then relaxes to the exact control heights (32 / 40 / 48px) above it. That is right for
+   a desktop back-office and wrong here: a patient reads their own record on a phone, on a
+   tablet propped in a waiting room, and on a laptop with a trackpad, and the portal is
+   touch-first at every one of those widths. The library's README points at size="lg" for
+   exactly this case; a floor states the rule once instead of relying on every screen to
+   remember it. Composition, not a fork: the components are untouched and the constraint
+   lives in the consuming app, where the decision belongs. */
+
+.portal .or-btn,
+.portal .or-icon-btn,
+.portal .or-input__control,
+.portal .or-select__control {
+  min-height: 44px;
+}
+
+/* ---------------------------------------------------------------- page furniture */
+
+.portal-page-header {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.portal-page-header__overline {
+  color: var(--text-secondary);
+}
+
+.portal-page-header__lede {
+  color: var(--text-ink);
+  max-width: 62ch;
+}
+
+.portal-stack {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.portal-stack--tight {
+  gap: var(--space-3);
+}
+
+.portal-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .portal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.portal-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-section__heading {
+  margin: 0;
+}
+
+.portal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.portal-async__loading {
+  color: var(--text-secondary);
+  padding: var(--space-6) 0;
+}
+
+.portal-async__error {
+  padding-block: var(--space-4);
+}
+
+/* ---------------------------------------------------------------- terms and values */
+
+.portal-term {
+  display: grid;
+  gap: 2px;
+}
+
+.portal-term__clinical {
+  font-weight: var(--wght-medium);
+  color: var(--text-heading);
+}
+
+.portal-term__plain {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-money {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.portal-money__figure {
+  font-family: var(--font-mono);
+  font-weight: var(--wght-medium);
+}
+
+.portal-money__credit {
+  font-size: var(--text-caption);
+  font-weight: var(--wght-semibold);
+  color: var(--status-success);
+}
+
+.portal-figure {
+  font-family: var(--font-mono);
+  font-size: var(--text-h2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-heading);
+}
+
+/* Data lists sit on white: the paper step reserved for fields and tabular data. */
+.portal-data-list {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+  background: var(--surface-data);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.portal-data-list__row {
+  display: grid;
+  gap: var(--space-1);
+}
+
+@media (min-width: 768px) {
+  .portal-data-list__row {
+    grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
+  }
+}
+
+.portal-data-list__term {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-data-list__value {
+  margin: 0;
+}
+
+.portal-record {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.portal-record:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.portal-record__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.portal-record__meta {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-record__reading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+
+.portal-record__value {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-heading);
+}
+
+/* ---------------------------------------------------------------- caution notice */
+
+.portal-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  background: var(--status-neutral-wash);
+  color: var(--text-ink);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.portal-notice__icon {
+  flex: none;
+  color: var(--text-ink);
+}
+
+.portal-notice__body {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.portal-notice__title {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+}
+
+.portal-notice__text {
+  color: var(--text-ink);
+}
+
+/* Explainer panel: plain white paper, not the caramel caution wash. An explanation of a
+   result is information, and dressing information as caution is how a portal teaches
+   people to be frightened of their own record. */
+.portal-explainer {
+  background: var(--surface-data);
+  color: var(--text-ink);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.portal-explainer__title {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+}
+
+/* Confirmation: olive, the success tone, with the words carrying the meaning as always. */
+.portal-confirmation {
+  background: var(--status-success-wash);
+  color: var(--text-ink);
+  border: var(--hairline) solid var(--border-hairline);
+  border-left: 3px solid var(--status-success);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.portal-confirmation__title {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+}
+
+/* ---------------------------------------------------------------- progress */
+
+.portal-progress {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.portal-progress__label {
+  color: var(--text-secondary);
+}
+
+.portal-progress__track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-wash);
+  overflow: hidden;
+}
+
+.portal-progress__fill {
+  display: block;
+  height: 100%;
+  width: var(--portal-progress-fill, 0%);
+  background: var(--status-success);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+/* ---------------------------------------------------------------- messages */
+
+.portal-threads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.portal-thread-button {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  gap: var(--space-1);
+  text-align: left;
+  background: var(--surface-data);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font: inherit;
+  color: var(--text-ink);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.portal-thread-button:hover {
+  background: var(--surface-wash);
+}
+
+.portal-thread-button[aria-pressed='true'] {
+  border-color: var(--action-accent);
+  box-shadow: inset 3px 0 0 var(--action-accent);
+}
+
+.portal-thread-button__subject {
+  font-weight: var(--wght-semibold);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-thread-button__meta {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* Stacked on a phone, list beside conversation once there is room for both. */
+.portal-messages {
+  display: grid;
+  gap: var(--space-5);
+}
+
+@media (min-width: 1024px) {
+  .portal-messages {
+    grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.portal-conversation {
+  list-style: none;
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-message {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: var(--hairline) solid var(--border-hairline);
+  background: var(--surface-data);
+}
+
+.portal-message--patient {
+  background: var(--surface-wash);
+  border-color: transparent;
+}
+
+.portal-message__who {
+  font-size: var(--text-caption);
+  font-weight: var(--wght-semibold);
+  color: var(--text-secondary);
+}
+
+.portal-message__body {
+  margin: 0;
+}
+
+.portal-compose {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-field-label {
+  font-size: var(--text-small);
+  font-weight: var(--wght-medium);
+  color: var(--text-ink);
+}
+
+.portal-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font: inherit;
+  color: var(--text-ink);
+  background: var(--surface-field);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-field);
+  padding: var(--space-3);
+}
+
+.portal-textarea:hover {
+  border-color: var(--border-strong);
+}
+
+/* ---------------------------------------------------------------- forms */
+
+.portal-question {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.portal-question:last-of-type {
+  border-bottom: 0;
+}
+
+.portal-question__legend {
+  padding: 0;
+  font-weight: var(--wght-medium);
+  color: var(--text-heading);
+}
+
+.portal-question__help {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-question__fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- tables and money */
+
+.portal-table-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-total-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--border-hairline);
+  margin-top: var(--space-4);
+}
+
+.portal-total-row__label {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+}
+
+/* ---------------------------------------------------------------- misc */
+
+.portal-inline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- assistant */
+
+/* A section of the page, drawn like every other one. No panel, no bubble, no floating
+   control: on a phone the bottom of the screen belongs to the tab bar, and a feature most
+   deployments will never configure does not get to compete for it. */
+.portal-assistant {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.portal-assistant__service {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-assistant__service-name {
+  font-family: var(--font-mono);
+  color: var(--text-ink);
+}
+
+.portal-assistant__reach > summary {
+  cursor: pointer;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  padding-block: var(--space-2);
+}
+
+.portal-assistant__reach > ul {
+  padding-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-ink);
+}
+
+.portal-assistant__intro {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.portal-assistant__turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-5);
+}
+
+.portal-assistant__turn {
+  display: grid;
+  gap: var(--space-3);
+  padding-bottom: var(--space-5);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.portal-assistant__turn:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* The question is set apart by weight rather than by a coloured bubble. A transcript of
+   somebody asking about their own health does not need decoration. */
+.portal-assistant__question {
+  margin: 0;
+  font-weight: var(--wght-semibold);
+  color: var(--text-heading);
+}
+
+.portal-assistant__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.portal-assistant__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-assistant__step-icon {
+  flex: none;
+}
+
+.portal-assistant__answer {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.portal-assistant__withheld {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.portal-assistant__sources {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.portal-assistant__sources-head {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.portal-assistant__source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.portal-assistant__source {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.portal-assistant__source-note {
+  color: var(--text-secondary);
+}
+
+/* The route out. Drawn the same way whatever went wrong, because varying it would be the
+   page telling somebody how worried to be about their own record. */
+.portal-assistant__care-team {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  background: var(--surface-data);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.portal-assistant__care-team-icon {
+  flex: none;
+  color: var(--text-ink);
+}
+
+.portal-assistant__care-team-text {
+  margin: 0;
+  color: var(--text-ink);
+}
+
+.portal-assistant__compose {
+  padding-top: var(--space-2);
+}

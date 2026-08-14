@@ -1,0 +1,94 @@
+/* Switch - a setting that applies the moment it changes. Label on the left, track on the
+   right. The thumb slides; nothing scales, bounces or lifts. No hover skin: the design
+   system gives the track an off, an on and a focus state only. */
+
+.or-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-family: var(--font-text);
+}
+
+.or-switch__text {
+  display: grid;
+  /* The design system's 2px label/hint gap. */
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-switch__label {
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--espresso);
+}
+
+.or-switch__hint {
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+.or-switch__control {
+  /* The off track: the design system's warm mid-tone, mixed from tokens rather than
+     pinned to a literal so a repalette carries it. */
+  --or-switch-track: color-mix(in srgb, var(--hazelnut) 32%, var(--cream));
+
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 24px;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--or-switch-track);
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease-out);
+}
+
+/* Below md a 42x24 track is under the 44px touch floor, so a transparent ::after grows the
+   hit area without changing anything you can see. It goes away at md. */
+.or-switch__control::after {
+  content: '';
+  position: absolute;
+  inset: -10px -1px;
+}
+
+@media (min-width: 768px) {
+  .or-switch__control::after {
+    content: none;
+  }
+}
+
+.or-switch__thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--bone);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+/* States ----------------------------------------------------------------- */
+
+.or-switch__control[aria-checked='true'] {
+  --or-switch-track: var(--action-primary);
+}
+
+/* 18px of travel: the track's inner width less the thumb. The switch's whole affordance. */
+.or-switch__control[aria-checked='true'] .or-switch__thumb {
+  transform: translateX(18px);
+}
+
+.or-switch__control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-switch--disabled {
+  opacity: 0.42;
+}
+
+.or-switch__control:disabled {
+  cursor: not-allowed;
+}

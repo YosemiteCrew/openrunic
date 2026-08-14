@@ -1,0 +1,164 @@
+/* Footer - the closing espresso band. Flat warm paper, no gradient and no shadow: the band
+   alternation itself is the rhythm. Columns sit beside the lockup from md and stack below
+   it on a phone, where each link keeps a 44px touch target. */
+
+/* The band is espresso paper, so it re-points the ink roles for its subtree the same way
+   the inverse card does; every quiet role inside then resolves to ink drawn for espresso. */
+.or-footer {
+  --text-ink: var(--text-inverse);
+  --text-heading: var(--text-inverse);
+  --text-secondary: var(--text-inverse-secondary);
+  --text-decorative: var(--text-inverse-decorative);
+
+  padding: var(--space-7) var(--space-4);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  font-family: var(--font-text);
+}
+
+@media (min-width: 768px) {
+  .or-footer {
+    padding: var(--space-8) var(--space-6);
+  }
+}
+
+.or-footer__inner {
+  display: grid;
+  gap: var(--space-6);
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.or-footer__inner > * {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .or-footer__inner {
+    grid-template-columns: minmax(200px, 1fr) 2fr;
+    gap: var(--space-8);
+  }
+}
+
+/* Lockup and note -------------------------------------------------------- */
+
+.or-footer__brand {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+/* The 'ink' lockup build paints in currentColor, so it is drawn as a mask over the band's
+   bone ink rather than as an <img>. 120x33 is the brand's minimum horizontal-lockup width
+   at the 480:132 build ratio; the URL arrives as --or-footer-logo-src from the component. */
+.or-footer__logo {
+  display: block;
+  width: 120px;
+  height: 33px;
+  background: currentcolor;
+  -webkit-mask: var(--or-footer-logo-src) center / contain no-repeat;
+  mask: var(--or-footer-logo-src) center / contain no-repeat;
+}
+
+.or-footer__note {
+  max-width: 40ch;
+  color: var(--text-inverse-secondary);
+}
+
+/* Columns ---------------------------------------------------------------- */
+
+.or-footer__columns {
+  display: grid;
+  gap: var(--space-5);
+}
+
+@media (min-width: 768px) {
+  .or-footer__columns {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-6);
+  }
+}
+
+.or-footer__column {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+}
+
+/* Caramel is the system's decorative ink and carries the overline in every band; on this
+   band --text-decorative resolves to the espresso-paper weight of it. */
+.or-footer__column-title {
+  color: var(--text-decorative);
+}
+
+.or-footer__links {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .or-footer__links {
+    gap: var(--space-2);
+  }
+}
+
+.or-footer__link {
+  display: inline-flex;
+  align-items: center;
+  /* Touch-target floor for phones; the row shrinks to its text from md. */
+  min-height: 44px;
+  font-size: var(--text-small);
+  transition: text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+/* Restated on :hover/:visited so base.css's `a:hover` cannot repaint bone to terracotta,
+   which has no contrast against the espresso band. The rule is always drawn and simply
+   transparent until hover, so the ink itself never moves and the fade has something to
+   animate. */
+.or-footer__link,
+.or-footer__link:hover,
+.or-footer__link:visited {
+  color: var(--text-inverse);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .or-footer__link {
+    min-height: 0;
+  }
+}
+
+/* On a dark band, dimming the ink would be the wrong hover: the rule comes up instead. */
+@media (hover: hover) {
+  .or-footer__link:hover {
+    text-decoration-color: currentcolor;
+  }
+}
+
+.or-footer__link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Sibling note ----------------------------------------------------------- */
+
+.or-footer__sibling {
+  max-width: var(--content-max);
+  margin: var(--space-6) auto 0;
+  padding-top: var(--space-5);
+  border-top: var(--hairline) solid var(--border-inverse);
+  color: var(--text-inverse-secondary);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+}
+
+@media (min-width: 768px) {
+  .or-footer__sibling {
+    margin-top: var(--space-7);
+  }
+}

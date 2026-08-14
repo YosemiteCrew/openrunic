@@ -1,0 +1,29 @@
+# GitGuardian secret-detection policy.
+#
+# EXCEPTION PROCESS, the same one .grant.yaml and .github/zizmor.yml follow:
+# every entry below MUST name what was verified, why the value is not a secret,
+# and the condition under which the entry should be deleted. An allowlist that
+# accumulates entries without reasons is worse than no scanner, because it reads
+# like diligence while doing nothing.
+#
+# Ignore a MATCH, never a path. Path-ignoring a file means a real credential
+# pasted into that file later goes unreported, and the one file we would be
+# tempted to ignore here is a test about credential handling: exactly where a
+# real one is most likely to be pasted by accident.
+version: 2
+
+secret:
+  # Intentionally empty.
+  #
+  # It held two entries for the canaries in packages/adapters/src/registry.test.ts.
+  # Those values have been reworded as prose rather than shaped like the
+  # credentials they stand in for, so no detector reports them and no exception
+  # is needed. An allowlist that outlives its reason is how a real leak later
+  # gets waved through, so the entries are deleted rather than kept "just in
+  # case".
+  #
+  # Note for whoever meets a GitGuardian failure on an OLD commit range: this
+  # file is read by the ggshield CLI, and the GitHub App decides from dashboard
+  # incidents instead. An entry here will not clear a check; tagging the
+  # incident will.
+  ignored-matches: []

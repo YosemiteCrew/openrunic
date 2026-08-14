@@ -27,8 +27,17 @@ understand not just what was decided, but why, and what alternatives were reject
 
 ## Index
 
-| ADR                                               | Title                                                               | Status   |
-| ------------------------------------------------- | ------------------------------------------------------------------- | -------- |
-| [0001](0001-monorepo-pnpm-turbo-node22.md)        | Monorepo with pnpm, Turborepo, and Node 22                          | Accepted |
-| [0002](0002-relational-postgres-fhir-boundary.md) | Relational Postgres as source of truth, FHIR R4 at the API boundary | Accepted |
-| [0003](0003-branch-model-main-dev.md)             | Branch model: main plus dev with a single aggregate check           | Accepted |
+| ADR                                               | Title                                                                        | Status   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- | -------- |
+| [0001](0001-monorepo-pnpm-turbo-node22.md)        | Monorepo with pnpm, Turborepo, and Node 22                                   | Accepted |
+| [0002](0002-relational-postgres-fhir-boundary.md) | Relational Postgres as source of truth, FHIR R4 at the API boundary          | Accepted |
+| [0003](0003-branch-model-main-dev.md)             | Branch model: main plus dev with a single aggregate check                    | Accepted |
+| [0004](0004-no-ml-runtime-in-core.md)             | No ML runtime in the core deployment                                         | Accepted |
+| [0005](0005-agentic-layer.md)                     | An optional agentic layer over a deployer-configured inference endpoint      | Accepted |
+| [0006](0006-patient-agent-surface.md)             | A patient-facing assistant surface, bound to one chart and to retrieval only | Accepted |
+
+ADR-0005 supplements ADR-0004 and amends one clause of it. An amendment is not a supersession: both
+are Accepted, and ADR-0004 carries a note at the top naming the clause that moved.
+
+ADR-0006 discharges ADR-0005 rule 7, which reserved the patient surface for its own record. It
+amends nothing: ADR-0005 stands in full.

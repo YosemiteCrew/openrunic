@@ -1,0 +1,58 @@
+# Build context filter for the api and web images.
+#
+# The build context is the repository root (both Dockerfiles need the lockfile
+# and every workspace manifest), so this file is what keeps the context from
+# shipping several hundred megabytes of node_modules to the daemon on every
+# build. Anything reproducible from source is excluded and rebuilt inside the
+# image.
+
+# Dependencies and build output: reinstalled and rebuilt in the image.
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+*.tsbuildinfo
+**/*.tsbuildinfo
+.turbo
+**/.turbo
+storybook-static
+**/storybook-static
+
+# The Prisma client is generated inside the image from schema.prisma. A host
+# copy is built for the host's platform and libc, so copying it in would ship a
+# macOS or glibc engine into an Alpine image.
+packages/database/src/generated
+
+# Secrets and local state. .env is the one file that must never enter an image
+# layer: layers are readable by anyone who can pull the image.
+.env
+.env.*
+!.env.example
+.git
+.github
+.husky
+.vscode
+.idea
+
+# Operational data written next to the repository by the backup scripts.
+backups
+.tmp
+
+# Test, docs and tooling output that no runtime stage reads.
+coverage
+**/coverage
+playwright-report
+**/playwright-report
+test-results
+**/test-results
+docs
+*.md
+!apps/*/README.md
+!packages/*/README.md
+
+# OS noise.
+.DS_Store

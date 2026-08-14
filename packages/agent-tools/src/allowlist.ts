@@ -53,10 +53,24 @@ export const TOOL_ALLOWLIST: ToolAllowlist = {
     compliance: ['audit.query'],
   },
   /**
-   * The patient surface is a separate regulatory decision with its own ADR
-   * (ADR-0006, not written), its own flag and its own budget pool. Empty is not
-   * an oversight: it is the decision, and shipping staff and patient behind one
-   * switch would silently adopt ADR-0004's own worst case.
+   * The patient surface, decided separately in
+   * [ADR-0006](../../../docs/adr/0006-patient-agent-surface.md) as ADR-0005
+   * rule 7 required, and still behind its own flag: the API mounts no agent
+   * router without an endpoint, and grants here reach nobody until a deployer
+   * configures one.
+   *
+   * Three read capabilities, and the shortness of the list is the point. Every
+   * one of them returns stored rows from the reader's own chart and nothing
+   * else: no grading, no measured values, no clinician prose, nothing a reader
+   * with no clinician beside them could take for advice. ADR-0006 records what
+   * was left out and why.
+   *
+   * `patient-portal` is the role the API's portal principal actually holds, so
+   * this key is not a new concept invented for the agent. A patient who somehow
+   * carried a staff role would still reach nothing extra, because a tool is
+   * visible only when its own `surfaces` list names the caller's surface.
    */
-  patient: {},
+  patient: {
+    'patient-portal': ['record.list', 'visits.list', 'bills.list'],
+  },
 };

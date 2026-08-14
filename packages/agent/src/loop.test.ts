@@ -510,6 +510,77 @@ describe('a cross-tenant result', () => {
     );
   });
 
+  it('publishes no source ledger for the turn it threw away, but still audits what was read', async () => {
+    const shared = {
+      tier: 'READ',
+      trustClass: 'reader',
+      approval: 'never',
+      requiredScopes: ['patient.read'],
+      surfaces: ['staff'],
+      activityLabel: 'Reading',
+      maxResultRows: 5,
+      compartmentBound: false,
+      input: z.strictObject({}),
+    } as const;
+
+    const readsARow = defineTool({
+      ...shared,
+      id: 'probe.rows',
+      summary: 'Returns a row from the open chart.',
+      output: z.object({
+        rows: z.array(
+          z.object({
+            label: z.string(),
+            source: z.object({ resourceType: z.string(), resourceId: z.string() }),
+          })
+        ),
+      }),
+      execute: () =>
+        Promise.resolve({
+          rows: [{ label: 'A row', source: { resourceType: 'Condition', resourceId: 'row-1' } }],
+        }),
+    });
+
+    const crossTenant = defineTool({
+      ...shared,
+      id: 'probe.read',
+      summary: 'Returns a row.',
+      output: z.object({ tenantId: z.string() }),
+      execute: () => Promise.resolve({ tenantId: OTHER_TENANT_ID }),
+    });
+
+    const { loop, audit } = harness({
+      registry: createToolRegistry([readsARow, crossTenant]),
+      allowlist: { staff: { clinician: ['probe.rows', 'probe.read'] }, patient: {} },
+      script: [
+        {
+          toolCalls: [
+            { toolName: 'probe.rows', input: {} },
+            { toolName: 'probe.read', input: {} },
+          ],
+        },
+        { text: 'this step is never reached' },
+      ],
+    });
+
+    const events = await drain(
+      loop.run({ principal: clinician(), credential, message: 'Read it.', turnIndex: 0 })
+    );
+
+    expect(events.find((event) => event.type === 'failed')).toMatchObject({
+      code: 'AGENT_COMPARTMENT_VIOLATION',
+    });
+    /* The first call succeeded, so there is a ledger to publish and it is not
+       published: a citation list under a discarded answer reads as an answer
+       that was checked. */
+    expect(events.find((event) => event.type === 'sources')).toBeUndefined();
+
+    // What the turn actually read is still in the audit record, because that is
+    // the question an access report has to be able to answer.
+    const turn = audit.events.find((event) => event.action === 'agent.turn');
+    expect(turn?.metadata['retrievalSet']).toEqual(['Condition/row-1']);
+  });
+
   it('reaches the API as the calling human, in the calling human organisation', async () => {
     const seen: { tenantId: string; authorization: string }[] = [];
     const { loop } = harness({

@@ -36,7 +36,11 @@ const turnBodySchema = z.strictObject({
   turnIndex: z.coerce.number().int().min(0).max(1000).default(0),
   /** `read` answers; `propose` may additionally produce a proposal for a person. */
   mode: z.enum(['read', 'propose']).default('read'),
-  /** The chart the caller has open. Narrows what a tool may return; never widens it. */
+  /**
+   * The chart the caller has open. Narrows what a tool may return; never widens
+   * it, and never overrides a chart the token itself names: a patient-scoped
+   * session is bound to its own chart and this field is not consulted there.
+   */
   chartPatientId: z.uuid().optional(),
   /** Whether the surface displayed the standing disclosure. Recorded as evidence. */
   disclosureShown: z.boolean().default(true),

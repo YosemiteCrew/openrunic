@@ -133,15 +133,30 @@ const PLACEHOLDER_SECRET = 'agent-subsystem-disabled-placeholder-secret';
  * resolved by the API's own policy layer, so a capability is invisible unless
  * the caller could have performed it through the ordinary interface.
  *
- * `chartPatientId` is the chart the caller has open, and it can only ever
- * **narrow**: a compartment-bound tool refuses rows outside it, and every read
- * and every commit is authorised again by this API against the caller's own
- * session. Naming a chart the caller cannot reach therefore gains nothing. A
- * signed chart context is the intended hardening, and it would remove the need
- * to reason about that at all.
+ * **The chart comes from the token wherever the token names one.** A
+ * patient-scoped session carries `compartmentPatientId`, which is the only
+ * chart it may ever reach: the request-scoped middleware installs repositories
+ * narrowed to that identifier, so no part of the request can reach another. The
+ * body therefore does not get a say. A portal session is patient-scoped, so on
+ * that surface there is no "change chart" to express, and honouring a body field
+ * would be a second, weaker source for a binding the verified token already
+ * makes - the signed chart context ADR-0006 asks for, which on that surface is
+ * the token itself. A staff launch confined to one chart is bound by its token
+ * in exactly the same way, because the rule is the token's rather than the
+ * surface's.
+ *
+ * `chartPatientId` is therefore read only for a session whose token named no
+ * chart, which is the ordinary staff session: it is the chart the clinician has
+ * open, and it can only ever **narrow**. A compartment-bound tool refuses rows
+ * outside it, and every read and every commit is authorised again by this API
+ * against the caller's own session, so naming a chart the caller cannot reach
+ * gains nothing. A signed chart context for the staff surface is still the
+ * intended hardening, and it would remove the need to reason about that at all.
  */
 export function toAgentPrincipal(principal: Principal, chartPatientId?: string): AgentPrincipal {
   const policy = buildPolicyContext(principal);
+  const boundChart = principal.compartmentPatientId ?? chartPatientId;
+
   return {
     tenantId: principal.tenantId,
     userId: principal.subject,
@@ -149,7 +164,7 @@ export function toAgentPrincipal(principal: Principal, chartPatientId?: string):
     facilityIds: [...principal.facilityIds],
     surface: principal.actorType === 'patient' ? 'patient' : 'staff',
     purposeOfUse: principal.purposeOfUse,
-    compartment: chartPatientId === undefined ? {} : { patientId: chartPatientId },
+    compartment: boundChart === undefined ? {} : { patientId: boundChart },
     scopes: PERMISSIONS.filter((permission: Permission) => policy.can(permission)),
   };
 }

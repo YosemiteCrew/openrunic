@@ -74,7 +74,14 @@ describe('resolving tools for a principal', () => {
     expect(resolveTools(registry, stubPrincipal({ roleIds: ['locum-cover'] }))).toEqual([]);
   });
 
-  it('gives the patient surface nothing at all', () => {
+  /**
+   * The surface is checked as well as the role, and this is what that buys. A
+   * principal on the patient surface holding a full clinician role and every
+   * clinician scope still reaches nothing, because no clinician tool names
+   * `patient` in its own `surfaces` list. `patient-surface.test.ts` covers what
+   * a genuine portal principal does reach.
+   */
+  it('gives a clinician role on the patient surface nothing at all', () => {
     expect(
       resolveTools(
         registry,
@@ -172,7 +179,21 @@ describe('capability caps', () => {
 });
 
 describe('grantedIds', () => {
-  it('is empty for a surface with no grants', () => {
+  it('is empty for a role the surface does not grant', () => {
     expect(grantedIds(TOOL_ALLOWLIST, stubPrincipal({ surface: 'patient' })).size).toBe(0);
+  });
+
+  it('reads the grants of the caller surface, not of the other one', () => {
+    const asPortal = grantedIds(
+      TOOL_ALLOWLIST,
+      stubPrincipal({ surface: 'patient', roleIds: ['patient-portal'] })
+    );
+    expect([...asPortal]).toEqual(['record.list', 'visits.list', 'bills.list']);
+
+    const asStaff = grantedIds(
+      TOOL_ALLOWLIST,
+      stubPrincipal({ surface: 'staff', roleIds: ['patient-portal'] })
+    );
+    expect(asStaff.size).toBe(0);
   });
 });

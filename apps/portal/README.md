@@ -4,8 +4,9 @@ The openrunic patient portal: what a patient sees of their own care. Next.js 16,
 built on `@openrunic/ui`.
 
 Six sections, each a route: home, health record, messages, appointments, forms and bills.
-The same API as the practice EMR sits behind it, read as a **patient** principal rather
-than as staff, so no request the portal can make carries a patient id the client chose.
+A seventh, the assistant, exists only where a practice configured one. The same API as the
+practice EMR sits behind it, read as a **patient** principal rather than as staff, so no
+request the portal can make carries a patient id the client chose.
 
 ```bash
 pnpm --filter portal dev          # http://localhost:3300
@@ -56,6 +57,28 @@ links it.
 Typography degrades to the system stacks until the six OFL font files are dropped into
 `public/fonts/`. Nothing breaks without them; the only loss is the variable optical-size
 axis.
+
+## The assistant
+
+Off unless a deployer configured an inference endpoint, and decided in
+[ADR-0006](../../docs/adr/0006-patient-agent-surface.md). There is no build flag for it: the
+portal asks the API once per app load, and treats every answer other than a clear yes - a
+404, a 401, a 500, a dead socket, a body it cannot read - as no assistant.
+
+- While the probe is in flight, `/assistant` renders **nothing**. No spinner and no
+  skeleton: guessing present would flash a working assistant at a practice that has none,
+  and guessing absent would answer 404 on every first load of a practice that has one.
+- Once the probe settles as absent, `/assistant` is a **404** and the navigation has its
+  usual six entries. There is no disabled tab and no page explaining what is missing.
+- It can reach three read capabilities, all bound to the reader's own chart: their health
+  record, their appointments and their bills. It cannot write anything, cannot interpret a
+  result, and cannot show an answer whose records did not arrive with it.
+- When the honest answer is "ask your care team", it says so and links to the messages
+  screen. A question that asks for a judgement rather than for a record is answered here and
+  never sent anywhere.
+
+In mock mode there is no API to ask, so the answer is no assistant without a request. That
+is why the default demo has six sections.
 
 ## Conventions
 

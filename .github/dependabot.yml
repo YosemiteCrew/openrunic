@@ -114,23 +114,37 @@ updates:
       - dependency-name: 'jsdom'
         update-types: ['version-update:semver-major']
     groups:
-      # ONE pooled pull request for every npm update, majors included.
-      # Deliberate trade-off, recorded so the next person does not "fix" it:
-      # a grouped major is harder to review and harder to revert in isolation
-      # than an individual one. We accept that because a dozen separate bot
-      # pull requests a week is its own failure mode, and because the full gate
-      # (build, lint, type-check, tests with coverage floors, Sonar, SBOM,
-      # grype, licence policy) runs on the pooled branch. If a single dependency
-      # in the pool breaks the gate, add it to `ignore` above with a rationale
-      # and a revisit condition, then let the rest land.
+      # TWO pools, split by blast radius rather than by package.
+      #
+      # It was one pool including majors, and the comment here said that if a
+      # single dependency broke the gate we would ignore it and let the rest
+      # land. That worked, and it cost more than it looked like it would: one
+      # pull request carried thirteen updates and four independent breaks, and
+      # because a failing build skips the test stage the breaks surfaced one CI
+      # cycle at a time rather than together. Meanwhile every routine patch in
+      # the pool waited on the slowest major.
+      #
+      # Minor and patch updates are the ones that are nearly always safe and
+      # nearly always worth taking quickly, including the security fixes that
+      # arrive as patches. They keep the single pooled pull request.
+      #
+      # Majors are the ones that break, and they now arrive in their own pull
+      # request so a broken one blocks nothing but itself. Still grouped rather
+      # than one-per-package: a dozen bot pull requests a week is its own
+      # failure mode, and the point is to separate risk, not to maximise volume.
       all-dependencies:
         applies-to: version-updates
         patterns:
           - '*'
         update-types:
-          - major
           - minor
           - patch
+      all-majors:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
       # Inert while security updates are disabled in settings (see the header).
       # Present so that re-enabling them yields one pull request rather than one
       # per advisory. It would still be aimed at the default branch, which the
@@ -176,9 +190,17 @@ updates:
         patterns:
           - '*'
         update-types:
-          - major
           - minor
           - patch
+      # Split for the same reason as the npm pools above: an action major that
+      # breaks a workflow should not hold back the digest bumps that carry the
+      # security fixes.
+      all-actions-majors:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major
       # Same reasoning as all-security above.
       all-actions-security:
         applies-to: security-updates

@@ -101,6 +101,31 @@ The exception process below is what keeps that cost bounded: a verified false po
 with its reasoning and a revisit condition, and stops blocking. What it does not do is stop being
 read.
 
+## Dependency upgrades
+
+Three rules, each learned from a grouped bump that carried thirteen updates and four independent
+breaks.
+
+**`engines.node` states what CI tests, not what happens to work.** It reads `^22.12`, matching
+`.nvmrc` and the Node the workflows install. It used to read `>=22.12`, which admitted Node 25 and
+26 - versions nothing here has ever run. A contributor on one of those gets a local result that
+disagrees with CI, and the disagreement is invisible: during that bump a failure was diagnosed twice
+as "an artifact of my local Node" and was neither time. Say the supported range and let the install
+refuse rather than let the drift happen quietly.
+
+**Majors arrive in their own pull request.** Minor and patch updates - which are nearly always safe,
+and which carry most security fixes - stay pooled and land quickly. Majors are the ones that break,
+and pooling them meant one broken major held every routine patch behind it, while a failing build
+skipped the test stage so the breaks surfaced one CI cycle at a time. Separated by blast radius, a
+broken major now blocks only itself.
+
+**A held major is re-tested monthly, not just annotated.** Every `ignore` entry in
+`.github/dependabot.yml` carries a reason and a revisit condition. A revisit condition nobody
+evaluates is not a plan - it is how a repository stops upgrading without deciding to.
+`.github/workflows/deferred-deps.yml` installs the newest version of each held package, runs the gate
+that failed, and writes the answer into one tracking issue. It opens no pull request: a green result
+is evidence that an upgrade is worth attempting, not permission to take it unread.
+
 ## Where each gate's exceptions live
 
 A suppression is only defensible if the next reader can find it and see why. Every exception in

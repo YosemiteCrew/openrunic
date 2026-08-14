@@ -80,7 +80,7 @@ jobs:
           # for the script to be trusted with. Both responses are a few KB.
           CLONES_JSON="$(gh api "repos/${REPO}/traffic/clones")" \
           VIEWS_JSON="$(gh api "repos/${REPO}/traffic/views")" \
-            node .github/scripts/fold-traffic.mjs --out traffic-data
+            node .github/scripts/fold-traffic.mjs
 
       - name: Commit only when something changed
         working-directory: traffic-data

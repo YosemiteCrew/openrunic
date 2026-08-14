@@ -34,17 +34,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-function arg(name, fallback = undefined) {
-  const index = process.argv.indexOf(`--${name}`);
-  if (index === -1) {
-    if (fallback === undefined) throw new Error(`missing --${name}`);
-    return fallback;
-  }
-  const value = process.argv[index + 1];
-  if (value === undefined) throw new Error(`--${name} needs a value`);
-  return value;
-}
-
 /** The day part of GitHub's ISO timestamps, which are always midnight UTC. */
 function dayOf(timestamp) {
   return String(timestamp).slice(0, 10);
@@ -119,7 +108,16 @@ function human(value) {
   return `${(value / 1_000_000).toFixed(1)}M`;
 }
 
-const out = arg('out');
+/**
+ * Fixed, not passed in.
+ *
+ * The workflow always clones the data branch to `traffic-data/` beside the
+ * checkout, so taking the location as an argument bought nothing and meant every
+ * read and write in this file resolved a caller-supplied path. Hard-coding it
+ * leaves the script with no path input at all: the snapshots arrive in the
+ * environment and these three constants are the only filesystem it touches.
+ */
+const out = 'traffic-data';
 const historyDir = path.join(out, 'history');
 const badgeDir = path.join(out, 'badges');
 

@@ -23,7 +23,7 @@ export interface PortalChromeProps {
   api?: PortalApi;
 }
 
-export function PortalChrome({ children, api = getPortalApi() }: PortalChromeProps) {
+export function PortalChrome({ children, api = getPortalApi() }: Readonly<PortalChromeProps>) {
   const load = useCallback(() => api.getPatient(), [api]);
   const { state } = useAsync(load);
   const { availability } = useAssistant();

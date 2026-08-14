@@ -68,17 +68,24 @@ describe('ProgressMeter', () => {
   it('exposes the count in words as well as the numbers', () => {
     render(<ProgressMeter done={2} label="2 of 3 answered" total={3} />);
 
+    // value and max rather than aria-valuenow and aria-valuemax: the element is a
+    // native <progress>, so those are the attributes the role reads from.
     const bar = screen.getByRole('progressbar');
-    expect(bar).toHaveAttribute('aria-valuenow', '2');
-    expect(bar).toHaveAttribute('aria-valuemax', '3');
+    expect(bar).toHaveAttribute('value', '2');
+    expect(bar).toHaveAttribute('max', '3');
     expect(bar).toHaveAttribute('aria-valuetext', '2 of 3 answered');
     expect(screen.getByText('2 of 3 answered')).toBeInTheDocument();
   });
 
-  it('does not divide by zero on a form with no questions', () => {
+  it('stays a valid, empty bar on a form with no questions', () => {
     render(<ProgressMeter done={0} label="0 of 0 answered" total={0} />);
 
-    expect(screen.getByRole('progressbar')).toHaveStyle('--portal-progress-fill: 0%');
+    // max is floored at 1: `max={0}` is invalid and would be read as 1 regardless, and
+    // the point of the test is that nothing divides by zero on the way there.
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('value', '0');
+    expect(bar).toHaveAttribute('max', '1');
+    expect(bar).toHaveAttribute('aria-valuetext', '0 of 0 answered');
   });
 });
 

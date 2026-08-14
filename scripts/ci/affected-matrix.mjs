@@ -34,6 +34,7 @@ import { resolveWithin } from './safe-path.mjs';
 const APP_KEYS = new Map([
   ['web', 'web'],
   ['api', 'api'],
+  ['portal', 'portal'],
 ]);
 
 // Workspaces whose jobs need a generated Prisma client before anything compiles.

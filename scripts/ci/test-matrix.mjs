@@ -20,11 +20,12 @@ import path from 'node:path';
 
 // Shard counts are per app, sized to its suite. Anything not listed runs
 // unsharded. Sharding an app whose suite is already short only adds runner
-// startup overhead, so both apps start at 1; raise a count here as its suite
+// startup overhead, so every app starts at 1; raise a count here as its suite
 // grows - the merge stage already handles any number of shards.
 const SHARDS = new Map([
   ['web', 1],
   ['api', 1],
+  ['portal', 1],
 ]);
 
 function fail(message) {

@@ -46,8 +46,8 @@ export function useAsync<T>(load: () => Promise<T>): AsyncResult<T> {
       (data) => {
         if (!cancelled) setState({ status: 'ready', data });
       },
-      (thrown: unknown) => {
-        if (!cancelled) setState({ status: 'error', error: toError(thrown) });
+      (error: unknown) => {
+        if (!cancelled) setState({ status: 'error', error: toError(error) });
       }
     );
 
@@ -96,8 +96,10 @@ export function useAction<Args extends unknown[], Value>(
       setValue(result);
       setStatus('done');
       return true;
-    } catch (thrown: unknown) {
-      setError(toError(thrown));
+    } catch (error_: unknown) {
+      // Trailing underscore because `error` is the state binding three lines up;
+      // shadowing it here would make the setter call below read as a self-assignment.
+      setError(toError(error_));
       setStatus('failed');
       return false;
     }

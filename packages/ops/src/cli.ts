@@ -250,15 +250,42 @@ async function commandVerifyBackup(argv: readonly string[]): Promise<number> {
   return 0;
 }
 
+export interface RestoreArgs {
+  /** The manifest the operator named, or undefined to take the newest backup. */
+  readonly manifestArgument: string | undefined;
+  readonly into: string;
+  readonly confirmed: boolean;
+}
+
+/**
+ * Splits `restore` arguments, keeping a flag's VALUE out of the positionals.
+ *
+ * Extracted and exported for the test, because the bug it fixes was invisible
+ * in review and expensive in the field: the previous filter dropped arguments
+ * beginning with `--` and nothing else, so `--into scratch backup.manifest.json`
+ * left "scratch" as the first positional and the restore went looking for a
+ * manifest by that name. Written the other way round the same command worked,
+ * which is the worst way for this to behave - it reproduces only when somebody
+ * types the flag first, and the person most likely to do that is thinking about
+ * which database they are restoring into, which is to say somebody mid-incident.
+ */
+export function parseRestoreArgs(argv: readonly string[], defaultDatabase: string): RestoreArgs {
+  const intoFlag = argv.indexOf('--into');
+  const valueIndex = intoFlag === -1 ? -1 : intoFlag + 1;
+  const into = intoFlag === -1 ? defaultDatabase : (argv[valueIndex] ?? '');
+  const positional = argv.filter(
+    (argument, index) => !argument.startsWith('--') && index !== valueIndex
+  );
+  return { manifestArgument: positional[0], into, confirmed: argv.includes('--yes') };
+}
+
 async function commandRestore(argv: readonly string[]): Promise<number> {
   const config = await loadConfig();
-  const positional = argv.filter((argument) => !argument.startsWith('--'));
-  const intoFlag = argv.indexOf('--into');
-  const into = intoFlag === -1 ? config.target.database : (argv[intoFlag + 1] ?? '');
+  const { manifestArgument, into, confirmed } = parseRestoreArgs(argv, config.target.database);
 
-  const { archivePath, manifest } = await resolveManifest(positional[0], config.backupDir);
+  const { archivePath, manifest } = await resolveManifest(manifestArgument, config.backupDir);
 
-  if (into === config.target.database && !argv.includes('--yes')) {
+  if (into === config.target.database && !confirmed) {
     out('This will DESTROY the current contents of the live database and replace');
     out(`them with the backup taken at ${manifest.createdAt}.`);
     out();

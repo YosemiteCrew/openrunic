@@ -50,6 +50,17 @@ function dayOf(timestamp) {
   return String(timestamp).slice(0, 10);
 }
 
+/** A snapshot from the environment, or an empty window if it is absent or bad. */
+function parseEnv(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return { days: [] };
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { days: [] };
+  }
+}
+
 function readJson(file, fallback) {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
@@ -115,8 +126,13 @@ const badgeDir = path.join(out, 'badges');
 const clonesHistory = readJson(path.join(historyDir, 'clones.json'), {});
 const viewsHistory = readJson(path.join(historyDir, 'views.json'), {});
 
-const clonesChanged = fold(clonesHistory, readJson(arg('clones'), { days: [] }));
-const viewsChanged = fold(viewsHistory, readJson(arg('views'), { days: [] }));
+// The snapshots come through the environment rather than as file paths.
+// The workflow has already fetched them, so writing them to disk only to read
+// them back would add a step, a temporary file, and a path this script would
+// have to be trusted with. Parsing failures fall back to an empty window, which
+// the fold treats as "nothing to record" rather than as zeroes to write.
+const clonesChanged = fold(clonesHistory, parseEnv('CLONES_JSON'));
+const viewsChanged = fold(viewsHistory, parseEnv('VIEWS_JSON'));
 
 writeJson(path.join(historyDir, 'clones.json'), clonesHistory);
 writeJson(path.join(historyDir, 'views.json'), viewsHistory);

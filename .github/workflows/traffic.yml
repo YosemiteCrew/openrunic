@@ -75,12 +75,12 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh api "repos/${REPO}/traffic/clones" > "$RUNNER_TEMP/clones.json"
-          gh api "repos/${REPO}/traffic/views" > "$RUNNER_TEMP/views.json"
-          node .github/scripts/fold-traffic.mjs \
-            --clones "$RUNNER_TEMP/clones.json" \
-            --views "$RUNNER_TEMP/views.json" \
-            --out traffic-data
+          # Handed to the script in the environment rather than through temporary
+          # files: it already has the payload, and a file would only add a path
+          # for the script to be trusted with. Both responses are a few KB.
+          CLONES_JSON="$(gh api "repos/${REPO}/traffic/clones")" \
+          VIEWS_JSON="$(gh api "repos/${REPO}/traffic/views")" \
+            node .github/scripts/fold-traffic.mjs --out traffic-data
 
       - name: Commit only when something changed
         working-directory: traffic-data

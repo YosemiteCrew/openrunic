@@ -276,12 +276,18 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     ? patientsById.get(confirming.patientId)
     : undefined;
 
+  /* Where the day is happening, as the clause that follows the date. It is
+     empty until the facility comes back, because the first render of this
+     screen has no `state.data` yet and a heading reading "at undefined" is
+     worse than a heading that is briefly only a date. */
+  const atFacility = facility ? ` at ${facility.name}` : '';
+
   return (
     <AppShell
       title="Schedule"
       /* The facility is named here rather than only in the top bar, because it
          is the one a booking made from this screen is written against. */
-      description={`${formatDate(day)}${facility ? ` at ${facility.name}` : ''}. The clinic day, per provider, with status inline.`}
+      description={`${formatDate(day)}${atFacility}. The clinic day, per provider, with status inline.`}
       topBarActions={
         <div className="or-day-pager">
           <IconButton

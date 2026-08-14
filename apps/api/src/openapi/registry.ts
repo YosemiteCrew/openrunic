@@ -46,7 +46,20 @@ export interface RouteContract {
   responses: RouteResponseContract[];
 }
 
-/** Converts `/bff/v0/patients/{id}` to the Hono form `/bff/v0/patients/:id`. */
+/**
+ * Converts `/bff/v0/patients/{id}` to the Hono form `/bff/v0/patients/:id`.
+ *
+ * The name class excludes the opening brace as well as the closing one. With
+ * `[^}]+` a parameter name was allowed to swallow a `{`, so an attempt that
+ * began at one brace and found no `}` ran to the end of the string before
+ * failing, and the global scan restarted that run at every subsequent brace:
+ * quadratic in the number of braces. Excluding `{` stops a failed attempt at
+ * the next brace instead, which is linear.
+ *
+ * Excluding it is also the stricter reading of the OpenAPI path template, where
+ * a parameter name cannot contain a brace, so `{{a}` is a malformed path rather
+ * than a parameter named `{a`.
+ */
 export function toHonoPath(openApiPath: string): string {
-  return openApiPath.replace(/\{(?<name>[^}]+)\}/g, ':$<name>');
+  return openApiPath.replace(/\{(?<name>[^{}]+)\}/g, ':$<name>');
 }

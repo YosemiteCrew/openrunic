@@ -189,6 +189,11 @@ export function patientRowToFhir(row: PatientRow): FhirPatient {
  * that is well-formed but unusable, such as one with no MRN identifier, is a
  * 422 - understood and rejected. Collapsing them would make a client's parser
  * bug and its data-quality bug look identical.
+ *
+ * The assembly is split along the resource's own seams - identifier, name, the
+ * plain elements, the US Core extensions, telecom, address - rather than into
+ * arbitrary halves. A question about this mapper is always a question about one
+ * of those, so the seam that has to be read to answer it is the unit here.
  */
 export function fhirPatientToCreateInput(payload: unknown): PatientCreateInput {
   if (!isPatientResource(payload)) {
@@ -196,50 +201,16 @@ export function fhirPatientToCreateInput(payload: unknown): PatientCreateInput {
   }
 
   const domain = fromFhirPatient(payload);
-  const mrn = domain.mrn ?? readMrnByType(payload);
-  if (mrn === undefined) {
-    throw ApiError.validation('The Patient resource is missing a medical record number.', [
-      { path: 'identifier', message: `an identifier with system ${MRN_SYSTEM} is required` },
-    ]);
-  }
 
-  // `gender` wins over the `birthsex` extension. One column stores both, so a
-  // resource that disagrees with itself has to resolve somewhere, and the
-  // element beats the extension.
-  const sexAtBirth =
-    fromFhirGender(domain.gender) ??
-    (domain.birthSex === undefined ? undefined : FROM_BIRTH_SEX[domain.birthSex]);
-
+  // Assembled in the resource's own order, and `mrn` first because a resource
+  // with no medical record number is rejected before anything else is read.
   const candidate = {
-    mrn,
-    givenName: domain.givenNames[0] ?? '',
-    familyName: domain.familyName,
-    ...(domain.givenNames[1] === undefined ? {} : { middleName: domain.givenNames[1] }),
-    ...(domain.prefix === undefined ? {} : { prefix: domain.prefix }),
-    ...(domain.suffix === undefined ? {} : { suffix: domain.suffix }),
-    ...(domain.preferredName === undefined ? {} : { preferredName: domain.preferredName }),
-    ...(domain.birthDate === undefined ? {} : { birthDate: domain.birthDate }),
-    ...(domain.deceasedAt === undefined ? {} : { deceasedAt: new Date(domain.deceasedAt) }),
-    ...(sexAtBirth === undefined ? {} : { sexAtBirth }),
-    ...(domain.genderIdentityCode === undefined
-      ? {}
-      : { genderIdentityCode: domain.genderIdentityCode }),
-    ...(domain.raceCodes === undefined ? {} : { raceCodes: domain.raceCodes }),
-    ...(domain.ethnicityCodes === undefined ? {} : { ethnicityCodes: domain.ethnicityCodes }),
-    ...(domain.languageCode === undefined ? {} : { languageCode: domain.languageCode }),
-    ...(domain.maritalStatusCode === undefined
-      ? {}
-      : { maritalStatusCode: domain.maritalStatusCode }),
-    ...(domain.email === undefined ? {} : { email: domain.email }),
-    ...(domain.phoneMobile === undefined ? {} : { phoneMobile: domain.phoneMobile }),
-    ...(domain.phoneHome === undefined ? {} : { phoneHome: domain.phoneHome }),
-    ...(domain.addressLine1 === undefined ? {} : { addressLine1: domain.addressLine1 }),
-    ...(domain.addressLine2 === undefined ? {} : { addressLine2: domain.addressLine2 }),
-    ...(domain.city === undefined ? {} : { city: domain.city }),
-    ...(domain.state === undefined ? {} : { state: domain.state }),
-    ...(domain.postalCode === undefined ? {} : { postalCode: domain.postalCode }),
-    ...(domain.country === undefined ? {} : { country: domain.country }),
-    ...(domain.active === undefined ? {} : { active: domain.active }),
+    mrn: readMrn(domain, payload),
+    ...nameFields(domain),
+    ...coreElementFields(domain),
+    ...extensionFields(domain),
+    ...telecomFields(domain),
+    ...addressFields(domain),
   };
 
   // The same schema the internal API validates against. A resource that
@@ -250,12 +221,147 @@ export function fhirPatientToCreateInput(payload: unknown): PatientCreateInput {
     throw ApiError.validation(
       'The Patient resource did not satisfy the patient contract.',
       parsed.error.issues.map((issue) => ({
-        path: issue.path.map((segment) => String(segment)).join('.'),
+        path: issue.path.map(String).join('.'),
         message: issue.message,
       }))
     );
   }
   return parsed.data;
+}
+
+/**
+ * `Patient.identifier` -> `mrn`, the one identifier this contract requires.
+ *
+ * A Patient with no MRN is a 422 rather than a create with a blank column: the
+ * MRN is how the record is found again, and inventing one on the server would
+ * make a duplicate patient the caller's next problem instead of this one.
+ */
+function readMrn(domain: DomainPatient, resource: FhirPatient): string {
+  const mrn = domain.mrn ?? readMrnByType(resource);
+  if (mrn === undefined) {
+    throw ApiError.validation('The Patient resource is missing a medical record number.', [
+      { path: 'identifier', message: `an identifier with system ${MRN_SYSTEM} is required` },
+    ]);
+  }
+  return mrn;
+}
+
+/**
+ * `Patient.name` -> the name columns.
+ *
+ * `givenNames` is a list on the FHIR side and two columns here, so the first
+ * entry is the given name and the second is the middle name; anything beyond
+ * the second has nowhere to go. An absent first entry becomes `''` rather than
+ * an absent key on purpose, so the contract rejects it with a message about
+ * `givenName` instead of about a missing property.
+ */
+function nameFields(domain: DomainPatient): {
+  givenName: string;
+  familyName: string;
+  middleName?: string;
+  prefix?: string;
+  suffix?: string;
+  preferredName?: string;
+} {
+  return {
+    givenName: domain.givenNames[0] ?? '',
+    familyName: domain.familyName,
+    ...(domain.givenNames[1] === undefined ? {} : { middleName: domain.givenNames[1] }),
+    ...(domain.prefix === undefined ? {} : { prefix: domain.prefix }),
+    ...(domain.suffix === undefined ? {} : { suffix: domain.suffix }),
+    ...(domain.preferredName === undefined ? {} : { preferredName: domain.preferredName }),
+  };
+}
+
+/**
+ * The elements that map straight onto a column: `birthDate`,
+ * `deceasedDateTime`, `maritalStatus`, `communication` and `active`.
+ *
+ * Only `deceasedAt` is converted, from the ISO instant the domain shape carries
+ * to the `Date` the contract stores.
+ */
+function coreElementFields(domain: DomainPatient): {
+  birthDate?: string;
+  deceasedAt?: Date;
+  maritalStatusCode?: string;
+  languageCode?: string;
+  active?: boolean;
+} {
+  return {
+    ...(domain.birthDate === undefined ? {} : { birthDate: domain.birthDate }),
+    ...(domain.deceasedAt === undefined ? {} : { deceasedAt: new Date(domain.deceasedAt) }),
+    ...(domain.maritalStatusCode === undefined
+      ? {}
+      : { maritalStatusCode: domain.maritalStatusCode }),
+    ...(domain.languageCode === undefined ? {} : { languageCode: domain.languageCode }),
+    ...(domain.active === undefined ? {} : { active: domain.active }),
+  };
+}
+
+/**
+ * The US Core extensions - race, ethnicity, birth sex, gender identity - and
+ * the one element that competes with one of them.
+ *
+ * `gender` wins over the `birthsex` extension. One column stores both, so a
+ * resource that disagrees with itself has to resolve somewhere, and the element
+ * beats the extension.
+ */
+function extensionFields(domain: DomainPatient): {
+  sexAtBirth?: AdministrativeGender;
+  genderIdentityCode?: string;
+  raceCodes?: string[];
+  ethnicityCodes?: string[];
+} {
+  const sexAtBirth =
+    fromFhirGender(domain.gender) ??
+    (domain.birthSex === undefined ? undefined : FROM_BIRTH_SEX[domain.birthSex]);
+
+  return {
+    ...(sexAtBirth === undefined ? {} : { sexAtBirth }),
+    ...(domain.genderIdentityCode === undefined
+      ? {}
+      : { genderIdentityCode: domain.genderIdentityCode }),
+    ...(domain.raceCodes === undefined ? {} : { raceCodes: domain.raceCodes }),
+    ...(domain.ethnicityCodes === undefined ? {} : { ethnicityCodes: domain.ethnicityCodes }),
+  };
+}
+
+/** `Patient.telecom` -> the contact columns, one per system and use. */
+function telecomFields(domain: DomainPatient): {
+  email?: string;
+  phoneMobile?: string;
+  phoneHome?: string;
+} {
+  return {
+    ...(domain.email === undefined ? {} : { email: domain.email }),
+    ...(domain.phoneMobile === undefined ? {} : { phoneMobile: domain.phoneMobile }),
+    ...(domain.phoneHome === undefined ? {} : { phoneHome: domain.phoneHome }),
+  };
+}
+
+/**
+ * `Patient.address` -> the address columns.
+ *
+ * Every part is optional here, including `country`, which the outbound
+ * projection only emits alongside a real address. A resource that carries no
+ * address therefore sets no address column rather than storing a lone country.
+ */
+function addressFields(domain: DomainPatient): {
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+} {
+  return {
+    ...(domain.addressLine1 === undefined ? {} : { addressLine1: domain.addressLine1 }),
+    ...(domain.addressLine2 === undefined ? {} : { addressLine2: domain.addressLine2 }),
+    ...(domain.city === undefined ? {} : { city: domain.city }),
+    ...(domain.state === undefined ? {} : { state: domain.state }),
+    ...(domain.postalCode === undefined ? {} : { postalCode: domain.postalCode }),
+    ...(domain.country === undefined ? {} : { country: domain.country }),
+  };
 }
 
 /**

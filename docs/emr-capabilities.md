@@ -46,7 +46,7 @@ Three kinds of gap appear below, and they are not the same kind of work:
 | Prior authorisation (278)                                    | **Missing**      | _Buildable_                                                                                                                                           |
 | **Bulk FHIR export (`$export`)**                             | **Done**         | System and Patient-compartment level, `_type`/`_since`, ndjson manifest; `facility.all` plus the caller's own per-type scopes                         |
 | **C-CDA generate and import**                                | **Done (codec)** | `packages/ccda`; nine sections with entries and narrative, round-tripped, DOCTYPE refused on import. The BFF endpoints that call it are the follow-up |
-| HL7 v2 interfaces (ADT, ORU, ORM, VXU)                       | **Missing**      | _Buildable_ - the format is open; each interface is per-partner configuration                                                                         |
+| **HL7 v2 interfaces (ADT, ORU, ORM, VXU)**                   | **Done (codec)** | `packages/hl7v2`; acknowledgements included. Per-partner configuration lives with each interface                                                      |
 | Direct secure messaging                                      | **Missing**      | _Needs certification_ - requires a HISP                                                                                                               |
 | Immunisation registry submission                             | **Missing**      | _Buildable_, but each jurisdiction has its own onboarding                                                                                             |
 

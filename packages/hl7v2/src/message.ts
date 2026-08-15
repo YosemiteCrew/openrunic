@@ -49,7 +49,12 @@ const SEGMENT_SEPARATOR = /\r\n|\r|\n/;
  * and refusing the message would mean losing a result over a byte nobody chose.
  */
 export function parseMessage(raw: string): Hl7Message {
-  const trimmed = raw.replace(/^\s+/, '').replace(/\s+$/, '');
+  // `trim` rather than a pair of anchored `\s+` replacements. The two look
+  // equivalent and are not: an anchored `\s+$` is polynomial in the length of a
+  // trailing whitespace run, and this input arrives off a socket from another
+  // organisation - so a message of nothing but spaces is a way to make the
+  // interface stop answering. `trim` is linear and says the same thing.
+  const trimmed = raw.trim();
   if (trimmed === '') {
     throw new Hl7Error('The message is empty.');
   }

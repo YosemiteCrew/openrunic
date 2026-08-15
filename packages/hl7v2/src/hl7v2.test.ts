@@ -862,3 +862,37 @@ describe('messages recorded with nothing optional filled in', () => {
     expect(error.segmentId).toBeUndefined();
   });
 });
+
+describe('the cost of parsing', () => {
+  /**
+   * The input arrives off a socket from another organisation, so the parser's
+   * worst case is somebody else's choice. This is the regression test for the
+   * shape that used to be quadratic: a long run of whitespace, which an anchored
+   * `\s+$` walks repeatedly and `trim` does not.
+   */
+  it('stays fast on a message that is mostly whitespace', () => {
+    const padded = `${' '.repeat(200_000)}MSH|^~\\&|S|F|R|F|20260814093000||ADT^A01|C1|P|2.5.1${' '.repeat(200_000)}`;
+
+    const started = performance.now();
+    const parsed = parseMessage(padded);
+    const elapsed = performance.now() - started;
+
+    expect(parsed.segments).toHaveLength(1);
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
+  it('stays fast on a message with very many segments', () => {
+    const segments = Array.from(
+      { length: 20_000 },
+      (_, index) => `OBX|${String(index + 1)}|NM|X||1`
+    );
+    const raw = ['MSH|^~\\&|S|F|R|F|20260814093000||ORU^R01|C1|P|2.5.1', ...segments].join('\r');
+
+    const started = performance.now();
+    const parsed = parseMessage(raw);
+    const elapsed = performance.now() - started;
+
+    expect(parsed.segments).toHaveLength(20_001);
+    expect(elapsed).toBeLessThan(2_000);
+  });
+});

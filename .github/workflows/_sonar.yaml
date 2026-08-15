@@ -11,8 +11,9 @@ name: Sonar
 # gate this organisation's plan allows. That gate passes at 80% coverage and 3%
 # duplication on new code and carries no issue condition, so the final step
 # reads the published measures and enforces 95% coverage, zero duplication and
-# zero open issues over the whole branch. See scripts/ci/sonar-thresholds.mjs
-# for why that is a separate step rather than a gate configured on the server.
+# zero open issues. See scripts/ci/sonar-thresholds.mjs for why that is a
+# separate step rather than a gate configured on the server, and for what the
+# bar means on each analysis scope.
 #
 # The cost of scanning without an install is that rules needing type resolution
 # from node_modules see less than they would (projects that set
@@ -146,8 +147,8 @@ jobs:
 
       # The bar, enforced. "Sonar way" passes at 80% coverage and 3% duplication
       # on new code and has no issue condition at all, so the step above proves
-      # much less than it looks like it proves. This one reads the whole-branch
-      # measures the analysis just published and holds the project to the numbers
+      # much less than it looks like it proves. This one reads the measures the
+      # analysis just published and holds the project to the numbers
       # docs/quality-gates.md states. `always()` is deliberately absent: if the
       # scan itself failed there are no measures to read, and the job is already
       # red.
@@ -163,7 +164,17 @@ jobs:
           SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
         run: |
           set -euo pipefail
-          node "$GITHUB_WORKSPACE/scripts/ci/sonar-thresholds.mjs" \
+          # On a pull_request event this workflow file resolves from the merge
+          # ref while the checkout above is the PR head, so a branch cut before
+          # the bar landed runs this step against a tree without the script.
+          # Fail with the actual fix rather than MODULE_NOT_FOUND.
+          SCRIPT="$GITHUB_WORKSPACE/scripts/ci/sonar-thresholds.mjs"
+          if [ ! -f "$SCRIPT" ]; then
+            echo "scripts/ci/sonar-thresholds.mjs is not in this checkout: the branch predates" >&2
+            echo "the Sonar bar. Update the branch from dev and push again." >&2
+            exit 1
+          fi
+          node "$SCRIPT" \
             --coverage 95 \
             --duplication 0 \
             --issues 0

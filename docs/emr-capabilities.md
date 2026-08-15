@@ -18,21 +18,21 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Clinical core
 
-| Capability                                | State              | Note                                                                                                                                                                    |
-| ----------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Patient registration, demographics        | **Done**           | Plus identifiers, related persons, coverage                                                                                                                             |
-| Scheduling, flow board                    | **Done**           | Day view, check-in, rooming, status flow                                                                                                                                |
-| Encounters, clinical notes                | **Done**           | Sign, lock, addenda with author attribution                                                                                                                             |
-| Problem list, allergies, medications      | **Done**           | Coded, with FHIR mappers                                                                                                                                                |
-| Orders, specimens, results                | **Done**           | Order lifecycle, result review and sign                                                                                                                                 |
-| Immunisations                             | **Done**           | Recorded and mapped; registry submission below                                                                                                                          |
-| **Allergy screening at prescribing**      | **Done**           | `packages/clinical-safety`, warns and requires acknowledgement on HIGH criticality                                                                                      |
-| **Duplicate therapy screening**           | **Done**           | Same package, from the practice's own medication list                                                                                                                   |
-| Drug-drug interactions                    | **Seam only**      | _Needs licensed content._ `MedicationSafetyPort` is the interface; `capabilities` tells the UI what was actually checked so an empty result never reads as a clean bill |
-| Dose range, renal and weight dosing       | **Seam only**      | _Needs licensed content_, same port                                                                                                                                     |
-| **Vitals with growth percentiles**        | **Done (library)** | `packages/growth`; CDC LMS data, generated and checked against the CDC's own published percentiles. The chart surface is the follow-up                                  |
-| **Clinical decision support (CDS Hooks)** | **Done**           | `/cds-services`; three services over the existing allergy and duplicate-therapy screening. Every card names what was not checked                                        |
-| Referral management                       | **Missing**        | _Buildable_                                                                                                                                                             |
+| Capability                                | State         | Note                                                                                                                                                                     |
+| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Patient registration, demographics        | **Done**      | Plus identifiers, related persons, coverage                                                                                                                              |
+| Scheduling, flow board                    | **Done**      | Day view, check-in, rooming, status flow                                                                                                                                 |
+| Encounters, clinical notes                | **Done**      | Sign, lock, addenda with author attribution                                                                                                                              |
+| Problem list, allergies, medications      | **Done**      | Coded, with FHIR mappers                                                                                                                                                 |
+| Orders, specimens, results                | **Done**      | Order lifecycle, result review and sign                                                                                                                                  |
+| Immunisations                             | **Done**      | Recorded and mapped; registry submission below                                                                                                                           |
+| **Allergy screening at prescribing**      | **Done**      | `packages/clinical-safety`, warns and requires acknowledgement on HIGH criticality                                                                                       |
+| **Duplicate therapy screening**           | **Done**      | Same package, from the practice's own medication list                                                                                                                    |
+| Drug-drug interactions                    | **Seam only** | _Needs licensed content._ `MedicationSafetyPort` is the interface; `capabilities` tells the UI what was actually checked so an empty result never reads as a clean bill  |
+| Dose range, renal and weight dosing       | **Seam only** | _Needs licensed content_, same port                                                                                                                                      |
+| **Vitals with growth percentiles**        | **Done**      | `packages/growth` plus `GET /bff/v0/patients/{id}/growth`; CDC LMS data generated and checked against the CDC's own published percentiles, points and curves for a chart |
+| **Clinical decision support (CDS Hooks)** | **Done**      | `/cds-services`; three services over the existing allergy and duplicate-therapy screening. Every card names what was not checked                                         |
+| Referral management                       | **Missing**   | _Buildable_                                                                                                                                                              |
 
 ## Interoperability
 

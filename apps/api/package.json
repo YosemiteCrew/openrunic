@@ -21,6 +21,7 @@
     "@openrunic/clinical-safety": "workspace:*",
     "@openrunic/database": "workspace:*",
     "@openrunic/fhir": "workspace:*",
+    "@openrunic/growth": "workspace:*",
     "hono": "^4.13.1",
     "zod": "^4.4.3"
   },

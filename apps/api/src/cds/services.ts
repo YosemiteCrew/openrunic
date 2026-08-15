@@ -184,6 +184,18 @@ export function checkedLine(port: MedicationSafetyPort): string {
 }
 
 /**
+ * One allergy as a line of the card's detail.
+ *
+ * The reaction is what changes what the next prescriber does - "penicillin" and
+ * "penicillin, anaphylaxis 2019" are different pieces of information - so it is
+ * appended when the chart has one and the line simply ends when it does not.
+ */
+function allergyLine(allergy: { substanceDisplay: string; reactionText?: string }): string {
+  const reaction = allergy.reactionText === undefined ? '' : ` - ${allergy.reactionText}`;
+  return `- **${allergy.substanceDisplay}**${reaction}`;
+}
+
+/**
  * Screens every draft order and turns the findings into cards.
  *
  * One card per finding rather than one per order. A prescriber signing three
@@ -262,12 +274,7 @@ export const CDS_SERVICES: readonly CdsServiceDefinition[] = [
       if (severe.length === 0) return [];
 
       const names = severe.map((allergy) => allergy.substanceDisplay).join(', ');
-      const detail = severe
-        .map(
-          (allergy) =>
-            `- **${allergy.substanceDisplay}**${allergy.reactionText === undefined ? '' : ` - ${allergy.reactionText}`}`
-        )
-        .join('\n');
+      const detail = severe.map(allergyLine).join('\n');
 
       return [
         card({

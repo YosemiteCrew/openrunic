@@ -32,6 +32,11 @@ export const DEFAULT_PUBLIC_PATHS: readonly string[] = [
   // is for - so requiring one would make the document unreachable by every
   // client that needs it. It names no patient and reveals no counts.
   '/fhir/.well-known/smart-configuration',
+  // CDS Hooks discovery, for the same reason: a calling EMR reads it before it
+  // has been configured with anything. The document is identical whichever
+  // organisation asks - it names services, hooks and descriptions, and nothing
+  // about this practice. Invocation is NOT public; see cds/index.ts.
+  '/cds-services',
   '/openapi.json',
 ];
 

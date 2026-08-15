@@ -30,9 +30,19 @@
 //     passes it indefinitely as long as each individual change is clean. That is
 //     exactly the drift `docs/quality-gates.md` says a gate is meant to stop.
 //
-// The measures read here are whole-branch figures published by the analysis this
-// job just ran, so they answer the question the bar actually asks: is this
-// project at 95% coverage, zero duplication and zero open issues right now.
+// So this reads the measures the analysis just published and holds them to the
+// bar docs/quality-gates.md states. What those measures mean depends on the
+// analysis scope, verified against live analyses rather than assumed:
+//
+//   - A branch (main) analysis publishes whole-branch figures for all three
+//     metrics: is this project at 95% coverage, zero duplication and zero open
+//     issues right now.
+//   - A pull request analysis publishes whole-project `coverage` and
+//     `duplicated_lines_density` as of the PR head, but its `violations` counts
+//     the issues open on the PR itself. A PR leg therefore enforces "the whole
+//     project meets the coverage and duplication bar, and this change
+//     introduces zero issues"; the push-to-main scan enforces zero open issues
+//     across the whole branch.
 //
 // Dependency-free by design, like the other scripts in this directory: the scan
 // job deliberately does not install the workspace, so this has only Node to
@@ -43,7 +53,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-/** The three measures the bar is written in. Whole-branch, not new code. */
+/** The three measures the bar is written in. */
 export const METRICS = ['coverage', 'duplicated_lines_density', 'violations'];
 
 // A literal, and it stays a literal. Node accepts forward slashes on every
@@ -190,23 +200,43 @@ function authHeaders() {
   return { Authorization: `Basic ${Buffer.from(`${token}:`).toString('base64')}` };
 }
 
-async function getJson(url) {
-  const response = await fetch(url, { headers: authHeaders() });
-  const body = await response.text();
-  let parsed;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    throw new Error(`${url} returned HTTP ${response.status} and no JSON`);
-  }
-  if (!response.ok) {
-    const message = (parsed.errors ?? []).map((error) => error.msg).join('; ');
-    throw new Error(`${url} returned HTTP ${response.status}: ${message || body.slice(0, 200)}`);
-  }
-  return parsed;
-}
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Retried because one transient 5xx, 429 or dropped connection during the
+// compute-engine poll or the measures read would red a leg whose project meets
+// the bar. A 4xx other than 429 is a real answer (bad token, missing project)
+// and is not retried.
+export async function getJson(url, { attempts = 3, retryDelayMs = 5000 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    let response;
+    let body;
+    try {
+      response = await fetch(url, { headers: authHeaders() });
+      body = await response.text();
+    } catch (error) {
+      if (attempt >= attempts)
+        throw new Error(`${url} failed after ${attempts} attempts: ${error.message}`);
+      await sleep(retryDelayMs);
+      continue;
+    }
+    const transient = response.status === 429 || response.status >= 500;
+    if (transient && attempt < attempts) {
+      await sleep(retryDelayMs);
+      continue;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      throw new Error(`${url} returned HTTP ${response.status} and no JSON`);
+    }
+    if (!response.ok) {
+      const message = (parsed.errors ?? []).map((error) => error.msg).join('; ');
+      throw new Error(`${url} returned HTTP ${response.status}: ${message || body.slice(0, 200)}`);
+    }
+    return parsed;
+  }
+}
 
 /**
  * Wait for the compute engine to finish publishing this analysis.

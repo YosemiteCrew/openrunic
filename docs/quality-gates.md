@@ -71,8 +71,7 @@ a cancelled one fails. Do not edit an aggregate to make a branch green.
 
 ## The Sonar bar, and why it is not a quality gate
 
-Every scanned app is held to three numbers, measured over the whole branch rather than over the
-change:
+Every scanned app is held to three numbers:
 
 | Measure                                | Limit  |
 | -------------------------------------- | ------ |
@@ -101,6 +100,17 @@ against new code has by construction:
   sits well below the bar.
 - Sonar way has no issue condition, so a project accumulating smells passes it indefinitely as long
   as each individual change is clean.
+
+What the three measures mean depends on the analysis scope, verified against live analyses rather
+than assumed:
+
+- A push to `main` analyses the main branch, and all three measures are whole-branch figures: the
+  project as a whole must sit at 95% coverage, zero duplication and zero open issues.
+- A pull request analysis publishes whole-project `coverage` and `duplicated_lines_density` as of
+  the PR head, while its `violations` counts the issues open on the pull request itself. A PR leg
+  therefore enforces that the whole project meets the coverage and duplication bar and that the
+  change introduces zero issues; the whole-branch zero-issues condition is carried by the
+  push-to-`main` scan.
 
 A measure the analysis did not publish fails the check rather than passing it. Sonar publishes no
 `coverage` at all when it resolved no coverage report, and reading that absence as either zero or as

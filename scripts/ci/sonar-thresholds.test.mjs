@@ -16,6 +16,7 @@ import { describe, it } from 'node:test';
 import {
   analysisScope,
   checkMeasures,
+  getJson,
   measuresQuery,
   parseReportTask,
 } from './sonar-thresholds.mjs';
@@ -139,6 +140,39 @@ describe('issues', () => {
       LIMITS
     );
     assert.equal(failures.length, 3);
+  });
+});
+
+describe('reading the Sonar API', () => {
+  const jsonResponse = (status, body) => new Response(JSON.stringify(body), { status });
+
+  it('retries a transient failure and returns the eventual answer', async (t) => {
+    const answers = [jsonResponse(429, {}), jsonResponse(502, {}), jsonResponse(200, { ok: true })];
+    t.mock.method(globalThis, 'fetch', async () => answers.shift());
+    assert.deepEqual(await getJson('https://x/api', { retryDelayMs: 0 }), { ok: true });
+    assert.equal(globalThis.fetch.mock.callCount(), 3);
+  });
+
+  it('gives up after the attempt budget rather than retrying forever', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => {
+      throw new Error('socket hang up');
+    });
+    await assert.rejects(
+      getJson('https://x/api', { attempts: 3, retryDelayMs: 0 }),
+      /failed after 3 attempts: socket hang up/
+    );
+    assert.equal(globalThis.fetch.mock.callCount(), 3);
+  });
+
+  it('does not retry a 4xx other than 429, because that answer will not change', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () =>
+      jsonResponse(403, { errors: [{ msg: 'Insufficient privileges' }] })
+    );
+    await assert.rejects(
+      getJson('https://x/api', { retryDelayMs: 0 }),
+      /HTTP 403: Insufficient privileges/
+    );
+    assert.equal(globalThis.fetch.mock.callCount(), 1);
   });
 });
 

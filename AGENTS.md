@@ -24,6 +24,10 @@ packages/ui           The design system: tokens, components, Storybook
 packages/agent        The assistant loop and provider wiring (ADR-0005)
 packages/agent-tools  The tool catalogue, allowlist and compartment rules the loop may reach
 packages/x12          X12 eligibility, claims and remittance codecs
+packages/ccda         C-CDA R2.1 document codec; generate and import, with its own XML reader
+packages/hl7v2        HL7 v2 codec: ADT, ORU, ORM, VXU and acknowledgements
+packages/cds-hooks    CDS Hooks 2.0 protocol: discovery, request validation, cards
+packages/growth       Growth percentiles; CDC LMS reference data, generated and verified
 packages/forms-engine The form definition and rendering engine
 packages/terminology  Bring-your-own terminology; nothing licence-restricted is ever committed
 packages/adapters     Partner seams (eRx, payments, video, clearinghouse), demo implementations
@@ -81,8 +85,10 @@ needs an argument rather than a nudge.
 - **Coverage floors**: `web`, `api` and `portal` at statements 95, functions 95, lines 95, with
   branches at 90 for the two Next.js apps and 95 for `api`. Set in `COVERAGE_FLOORS` in
   `.github/workflows/_test.yaml`. Raise them as suites grow; never lower one to land a change.
-- **Sonar**: 95% coverage, zero duplication and zero open issues, measured over the WHOLE branch
-  rather than over the change. Enforced by `scripts/ci/sonar-thresholds.mjs` in `_sonar.yaml`,
+- **Sonar**: 95% coverage, zero duplication and zero open issues. Whole-branch figures on a push
+  to `main`; on a pull request, coverage and duplication are whole-project figures while
+  `violations` counts the issues open on the PR itself (see `docs/quality-gates.md` for the scope
+  semantics). Enforced by `scripts/ci/sonar-thresholds.mjs` in `_sonar.yaml`,
   because this organisation's SonarCloud plan will not accept a custom quality gate;
   `docs/quality-gates.md` has the detail. A finding that is genuinely wrong gets a narrow exclusion
   in the app's `sonar-project.properties`, with rationale and a revisit condition - never a lower

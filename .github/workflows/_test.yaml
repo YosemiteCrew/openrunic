@@ -33,10 +33,14 @@ env:
   # carry defensive code whose second arm is unreachable through the product -
   # an index fallback behind a bounds check, a component prop default React
   # always supplies - and a branch floor level with the rest would only be
-  # reachable by writing tests that call functions no user path calls. These
-  # floors, not the thresholds in each app's vitest config, are the authority:
-  # the two do not currently agree everywhere, so a green local run is not by
-  # itself evidence that this gate will pass.
+  # reachable by writing tests that call functions no user path calls.
+  #
+  # These floors are the authority. `api` and `portal` mirror them in their own
+  # vitest config so a local run fails where CI would; `web` deliberately does
+  # not, because a threshold in the config is evaluated per shard and would
+  # misfire against a slice of the suite the moment its shard count rises above
+  # one - its config says so at the point where the numbers would otherwise go.
+  # Change a number here and the mirror moves with it.
   #
   # These are per-metric istanbul floors, and they are not the whole coverage
   # story: _sonar.yaml separately holds each app to 95% on Sonar's blended

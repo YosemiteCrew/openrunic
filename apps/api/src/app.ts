@@ -13,6 +13,7 @@ import type { PrincipalResolver } from './auth/principal.js';
 import { DEMO_PRINCIPALS, createStaticPrincipalResolver } from './auth/static-resolver.js';
 import type { AppEnv } from './context.js';
 import { ApiError, isApiError } from './errors.js';
+import { CDS_BASE_PATH, cdsRoutes } from './cds/index.js';
 import { FHIR_BASE_PATH, fhirRoutes, isFhirPath } from './fhir/index.js';
 import { operationOutcomeResponse } from './http/fhir.js';
 import { problemResponse } from './http/problem.js';
@@ -157,6 +158,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
   );
 
   app.route(FHIR_BASE_PATH, fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now }));
+  app.route(CDS_BASE_PATH, cdsRoutes());
   app.route(BFF_BASE_PATH, internalRoutes());
 
   if (agent.status === 'enabled') {

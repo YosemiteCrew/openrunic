@@ -26,6 +26,7 @@ packages/agent-tools  The tool catalogue, allowlist and compartment rules the lo
 packages/x12          X12 eligibility, claims and remittance codecs
 packages/ccda         C-CDA R2.1 document codec; generate and import, with its own XML reader
 packages/hl7v2        HL7 v2 codec: ADT, ORU, ORM, VXU and acknowledgements
+packages/cds-hooks    CDS Hooks 2.0 protocol: discovery, request validation, cards
 packages/forms-engine The form definition and rendering engine
 packages/terminology  Bring-your-own terminology; nothing licence-restricted is ever committed
 packages/adapters     Partner seams (eRx, payments, video, clearinghouse), demo implementations

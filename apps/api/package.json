@@ -17,6 +17,7 @@
     "@hono/node-server": "^2.1.0",
     "@openrunic/agent": "workspace:*",
     "@openrunic/agent-tools": "workspace:*",
+    "@openrunic/cds-hooks": "workspace:*",
     "@openrunic/clinical-safety": "workspace:*",
     "@openrunic/database": "workspace:*",
     "@openrunic/fhir": "workspace:*",

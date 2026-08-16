@@ -342,6 +342,19 @@ function addressOf(patient: {
   return Object.keys(address).length === 0 ? undefined : address;
 }
 
+/**
+ * The chart's criticality to the codec's own words.
+ *
+ * `UNABLE_TO_ASSESS` is the fallback rather than a low reading, because nobody
+ * having established how bad a reaction is does not make it mild - and treating
+ * it as mild is how a prompt stops being read.
+ */
+function criticalityOf(criticality: string): AllergyEntry['criticality'] {
+  if (criticality === 'HIGH') return 'high';
+  if (criticality === 'LOW') return 'low';
+  return 'unable-to-assess';
+}
+
 /** A code with no system is written as text by the codec, never as a fake code. */
 function coded(code: string | null, system: string, display: string): CodedValue {
   return code === null || code === '' ? { display } : { code, codeSystem: system, display };
@@ -359,8 +372,7 @@ function toAllergy(row: ScopedRow<'AllergyIntolerance'>): AllergyEntry {
     // uncoded substance as text rather than as a code in a system it names.
     substance: coded(row.substanceCode, row.substanceCodeSystem ?? RXNORM, row.substanceDisplay),
     ...(row.reactionText === null ? {} : { reaction: row.reactionText }),
-    criticality:
-      row.criticality === 'HIGH' ? 'high' : row.criticality === 'LOW' ? 'low' : 'unable-to-assess',
+    criticality: criticalityOf(row.criticality),
     status: row.clinicalStatus === 'ACTIVE' ? 'active' : 'completed',
     ...(row.onsetDate === null ? {} : { onsetDate: row.onsetDate.toISOString().slice(0, 10) }),
   };

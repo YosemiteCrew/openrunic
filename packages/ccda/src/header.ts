@@ -122,12 +122,18 @@ function genderElement(gender: DocumentPatient['gender']): XmlElement {
   if (gender === 'unknown') {
     return element('administrativeGenderCode', { nullFlavor: 'UNK' });
   }
-  const code = gender === 'male' ? 'M' : gender === 'female' ? 'F' : 'UN';
   return element('administrativeGenderCode', {
-    code,
+    code: genderCode(gender),
     codeSystem: CODE_SYSTEMS.ADMIN_GENDER.oid,
     displayName: gender,
   });
+}
+
+/** `UN` is undifferentiated: a recorded answer that is neither male nor female. */
+function genderCode(gender: DocumentPatient['gender']): string {
+  if (gender === 'male') return 'M';
+  if (gender === 'female') return 'F';
+  return 'UN';
 }
 
 function readGender(node: XmlElement | undefined): DocumentPatient['gender'] {

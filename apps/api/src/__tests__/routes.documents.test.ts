@@ -764,3 +764,37 @@ describe('the header, from what the record holds about the person', () => {
     expect(parsed.custodian.phone).toBeUndefined();
   });
 });
+
+describe('an allergy whose severity nobody assessed', () => {
+  /**
+   * Unassessed is not mild. Nobody having established how bad a reaction is does
+   * not make it low, and a document that said low would understate it to the
+   * next prescriber.
+   */
+  it('carries unable-to-assess rather than reading it down to low', async () => {
+    const created = createTestApp();
+    seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seed(created.dataset, 'AllergyIntolerance', {
+      ...storageColumns(testId(230)),
+      patientId: PATIENT,
+      type: 'ALLERGY',
+      category: 'MEDICATION',
+      criticality: 'UNABLE_TO_ASSESS',
+      clinicalStatus: 'ACTIVE',
+      substanceCode: null,
+      substanceCodeSystem: null,
+      substanceDisplay: 'Sulfa drugs',
+      reactionCodes: [],
+      reactionText: null,
+      severity: null,
+      onsetDate: null,
+      note: null,
+      recordedAt: FIXED_NOW,
+      recordedById: null,
+    } as never);
+
+    const parsed = parseCcd((await ccdFor(created.app)).document);
+
+    expect(parsed.allergies[0]?.criticality).toBe('unable-to-assess');
+  });
+});

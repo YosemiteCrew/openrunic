@@ -456,3 +456,160 @@ describe('validating a scale when it is saved, not when a patient is charged', (
     ).toEqual(['A sliding scale must have at least one band.']);
   });
 });
+
+describe('the specific rate, not whichever was listed first', () => {
+  /**
+   * A schedule holding both `26` and `26,LT` is ordinary. Taking whichever the
+   * scan reached first made the price depend on row order, so the same charge
+   * could be billed two different amounts on two different days with nothing in
+   * the data having changed.
+   */
+  const both: FeeSchedule = {
+    id: 'std',
+    name: 'Standard',
+    effectiveFrom: '2026-01-01',
+    items: [
+      { code: '71046', amountCents: 8_000 },
+      { code: '71046', modifiers: ['26'], amountCents: 3_000 },
+      { code: '71046', modifiers: ['26', 'LT'], amountCents: 3_500 },
+    ],
+  };
+
+  it('takes the entry naming the most modifiers, whatever the order', () => {
+    const line = { code: '71046', modifiers: ['26', 'LT'], units: 1 };
+
+    expect(priceFor(line, both)?.billedCents).toBe(3_500);
+
+    const reversed: FeeSchedule = { ...both, items: [...both.items].reverse() };
+    expect(priceFor(line, reversed)?.billedCents).toBe(3_500);
+  });
+
+  /**
+   * Longest match rather than exact match: a schedule that prices `26` and says
+   * nothing about `26,LT` still means to price a `26,LT` line, and demanding an
+   * exact match would leave it unpriced - worse than pricing it from the closest
+   * thing the practice actually agreed.
+   */
+  it('falls back to a shorter match when there is no exact one', () => {
+    const partial: FeeSchedule = {
+      ...both,
+      items: [
+        { code: '71046', amountCents: 8_000 },
+        { code: '71046', modifiers: ['26'], amountCents: 3_000 },
+      ],
+    };
+
+    expect(
+      priceFor({ code: '71046', modifiers: ['26', 'LT'], units: 1 }, partial)?.billedCents
+    ).toBe(3_000);
+  });
+});
+
+describe('what will actually arrive, against what the contract says', () => {
+  /**
+   * A payer does not pay more than it was billed. Reporting the contracted rate
+   * as the expected payment overstates receivables exactly where the fee
+   * schedule is stale, which is the one place a practice most needs the number
+   * to be right.
+   */
+  it('caps the expected payment at the amount billed', () => {
+    const standard: FeeSchedule = {
+      id: 'std',
+      name: 'Standard',
+      effectiveFrom: '2026-01-01',
+      items: [{ code: '99213', amountCents: 10_000 }],
+    };
+    const generous: FeeSchedule = {
+      id: 'payer',
+      name: 'Payer',
+      payerId: 'EHP',
+      effectiveFrom: '2026-01-01',
+      items: [{ code: '99213', amountCents: 18_000 }],
+    };
+
+    const price = priceFor({ code: '99213', units: 1 }, standard, generous);
+
+    // The contract still says what it says - the negative adjustment is how a
+    // stale fee schedule becomes visible - but nobody should expect 18,000.
+    expect(price?.allowedCents).toBe(18_000);
+    expect(price?.contractualAdjustmentCents).toBe(-8_000);
+    expect(price?.expectedPaymentCents).toBe(10_000);
+  });
+
+  it('expects the contracted amount in the ordinary case', () => {
+    const price = priceFor({ code: '99213', units: 1 }, STANDARD, CONTRACTED);
+
+    expect(price?.expectedPaymentCents).toBe(9_200);
+  });
+
+  it('expects nothing stated where there is no contracted rate', () => {
+    expect(
+      priceFor({ code: '99490', units: 1 }, STANDARD, CONTRACTED)?.expectedPaymentCents
+    ).toBeUndefined();
+  });
+});
+
+describe('two holes the validator used to have', () => {
+  /**
+   * An unbounded band anywhere but the end swallows every band above it, and
+   * the top-band check does not catch it because the last band is unbounded
+   * too. The scale validated clean and applied the wrong discount to everybody
+   * above that point.
+   */
+  it('reports a non-final band with no upper bound', () => {
+    const swallowing: SlidingScale = {
+      id: 's',
+      name: 'Swallowing',
+      effectiveFrom: '2026-01-01',
+      bands: [
+        { fromPercent: 0, toPercent: 100, nominalFeeCents: 2_000, label: 'A' },
+        { fromPercent: 100, discountPercent: 50, label: 'B' },
+        { fromPercent: 200, discountPercent: 0, label: 'C' },
+      ],
+    };
+
+    const problems = validateScale(swallowing).join(' ');
+
+    expect(problems).toContain('no upper bound but is not the last');
+    expect(problems).toContain('"C" and everything above it is unreachable');
+  });
+
+  it('shows what that scale would have done to a household above the gap', () => {
+    const swallowing: SlidingScale = {
+      id: 's',
+      name: 'Swallowing',
+      effectiveFrom: '2026-01-01',
+      bands: [
+        { fromPercent: 0, discountPercent: 90, label: 'A' },
+        { fromPercent: 400, discountPercent: 0, label: 'Full charge' },
+      ],
+    };
+
+    const result = applyScale(10_000, swallowing, {
+      annualIncomeCents: 100_000_00,
+      guidelineAmountCents: 15_060_00,
+    });
+
+    expect(isRefused(result)).toBe(false);
+    if (isRefused(result)) return;
+    // A household on six hundred per cent of the guideline, given the discount
+    // meant for one on nothing. Validation is what stops this reaching a desk.
+    expect(result.determination.bandLabel).toBe('A');
+  });
+
+  /**
+   * A negative nominal fee becomes a negative balance owed: the practice paying
+   * the patient to attend. The validator checked the percentage and not this,
+   * so it passed on save and surfaced at the desk.
+   */
+  it('reports a nominal fee below zero', () => {
+    const negative: SlidingScale = {
+      id: 's',
+      name: 'Negative',
+      effectiveFrom: '2026-01-01',
+      bands: [{ fromPercent: 0, nominalFeeCents: -500, label: 'A' }],
+    };
+
+    expect(validateScale(negative).join(' ')).toContain('nominal fee below zero');
+  });
+});

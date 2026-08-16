@@ -67,11 +67,22 @@ export interface Price {
   /** What goes on the claim. Always the standard rate. */
   readonly billedCents: Cents;
   /**
-   * What the contract says will be paid, when there is a contract that names
-   * this code. Absent means no contracted rate was found - which is not the
-   * same as a contracted rate of zero, and a caller must not treat it as one.
+   * The contracted rate, when there is a contract that names this code. Absent
+   * means no contracted rate was found - which is not the same as a contracted
+   * rate of zero, and a caller must not treat it as one.
+   *
+   * This is what the contract says, not what will arrive. A payer does not pay
+   * more than it was billed, so where the contract allows more than the standard
+   * schedule charges, the two diverge - see `expectedPaymentCents`.
    */
   readonly allowedCents?: Cents;
+  /**
+   * What will actually arrive: the contracted rate, capped at the amount
+   * billed. A receivables estimate built on `allowedCents` alone overstates
+   * itself exactly where the fee schedule is stale, which is the one place a
+   * practice most needs the number to be right.
+   */
+  readonly expectedPaymentCents?: Cents;
   /** `billed - allowed`, when both are known. What the payer will write off. */
   readonly contractualAdjustmentCents?: Cents;
   /** Which schedule supplied each half, so a disputed price can be traced. */
@@ -94,23 +105,28 @@ export function coversDate(schedule: FeeSchedule, isoDate: string): boolean {
 /**
  * The best matching item, or undefined.
  *
- * An entry naming modifiers wins over one that does not, because it is the more
- * specific statement about this exact charge. An entry naming modifiers the
- * charge does not carry does not match at all: `26` is a different service from
- * the global code, not a variant of it.
+ * An entry naming modifiers the charge does not carry does not match at all:
+ * `26` is a different service from the global code, not a variant of it. Among
+ * the entries that do match, the one naming the most modifiers wins.
+ *
+ * "The most" rather than "the first found" is the whole point. A schedule
+ * holding both `26` and `26,LT` is ordinary, and picking whichever `find`
+ * reached first made the price depend on the order rows came back in - so the
+ * same charge could be billed two different amounts on two different days with
+ * nothing in the data having changed.
+ *
+ * Longest-match rather than exact-match, because a schedule that prices `26`
+ * and says nothing about `26,LT` still means to price a `26,LT` line. Demanding
+ * an exact match would leave that line unpriced, which is worse than pricing it
+ * from the closest thing the practice actually agreed.
  */
 export function itemFor(schedule: FeeSchedule, line: ChargeLine): FeeScheduleItem | undefined {
-  const candidates = schedule.items.filter((item) => item.code === line.code);
   const carried = new Set(line.modifiers ?? []);
 
-  const specific = candidates.find(
-    (item) =>
-      (item.modifiers?.length ?? 0) > 0 &&
-      (item.modifiers ?? []).every((modifier) => carried.has(modifier))
-  );
-  if (specific !== undefined) return specific;
-
-  return candidates.find((item) => (item.modifiers?.length ?? 0) === 0);
+  return schedule.items
+    .filter((item) => item.code === line.code)
+    .filter((item) => (item.modifiers ?? []).every((modifier) => carried.has(modifier)))
+    .sort((a, b) => (b.modifiers?.length ?? 0) - (a.modifiers?.length ?? 0))[0];
 }
 
 /**
@@ -141,6 +157,10 @@ export function priceFor(
   return {
     billedCents,
     allowedCents,
+    // A payer does not pay more than it was billed. Where the contract allows
+    // more, the difference is not receivable - it is a fee schedule nobody has
+    // updated, and the negative adjustment below is what makes that visible.
+    expectedPaymentCents: Math.min(allowedCents, billedCents),
     // A contract may allow more than the practice bills - a rate negotiated
     // upward, or a standard schedule nobody has updated. The adjustment is then
     // negative, and reporting it as zero would hide a fee schedule that is out

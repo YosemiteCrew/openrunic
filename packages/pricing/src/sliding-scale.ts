@@ -117,12 +117,14 @@ export function percentOfGuideline(household: HouseholdFinancials): number {
 }
 
 /**
- * The band a household falls in.
+ * The band a household falls in, or undefined when none does.
  *
- * Bands are checked in ascending order and the first match wins, so a set with
- * a gap in it places a household in the next band up rather than in none - the
- * conservative direction, since the alternative is charging full price to
- * somebody the policy meant to discount.
+ * A scale with a gap in it answers undefined for a household that lands in the
+ * gap, and `applyScale` turns that into a named refusal. It fails closed on
+ * purpose: charging full price to somebody the policy meant to discount is the
+ * failure this exists to prevent, and quietly promoting them to the next band up
+ * would be a discount nobody wrote down. `validateScale` is what stops a scale
+ * with a gap ever reaching a patient.
  */
 export function bandFor(scale: SlidingScale, percent: number): SlidingScaleBand | undefined {
   return [...scale.bands]
@@ -222,11 +224,26 @@ export function validateScale(scale: SlidingScale): readonly string[] {
     ) {
       problems.push(`Band "${band.label}" has a discount outside 0-100%.`);
     }
+    // A negative nominal fee becomes a negative balance owed: the practice
+    // paying the patient to attend. The validator checked the percentage and
+    // not this one, so it passed on save and surfaced at the desk.
+    if (band.nominalFeeCents !== undefined && band.nominalFeeCents < 0) {
+      problems.push(`Band "${band.label}" has a nominal fee below zero.`);
+    }
     if (band.toPercent !== undefined && band.toPercent <= band.fromPercent) {
       problems.push(`Band "${band.label}" ends at or before it starts.`);
     }
 
     const next = sorted[index + 1];
+    // An unbounded band anywhere but the end swallows every band above it, and
+    // the top-band check does not catch it because the last band is unbounded
+    // too. The scale then validates clean and applies the wrong discount to
+    // everybody above this point.
+    if (next !== undefined && band.toPercent === undefined) {
+      problems.push(
+        `Band "${band.label}" has no upper bound but is not the last, so "${next.label}" and everything above it is unreachable.`
+      );
+    }
     if (next === undefined || band.toPercent === undefined) continue;
     if (band.toPercent < next.fromPercent) {
       problems.push(`Nothing covers ${String(band.toPercent)}% to ${String(next.fromPercent)}%.`);

@@ -26,12 +26,21 @@ to.
 An absent allowed amount is not zero. A contract that does not name a code has not agreed to pay
 nothing for it.
 
+`allowedCents` is what the contract says; `expectedPaymentCents` is what will arrive, capped at the
+amount billed. They differ exactly where the standard schedule is stale, and a receivables estimate
+built on the first overstates itself in the one place a practice most needs the number to be right.
+
 ## Modifiers are different services
 
 `26` is the professional component - reading a film somebody else's machine produced - and it is
-roughly a third of the global price. An entry naming modifiers wins over one that does not, because
-it is the more specific statement; an entry naming modifiers the charge does not carry does not
-match at all.
+roughly a third of the global price. An entry naming modifiers the charge does not carry does not
+match at all; among those that do, the one naming the most wins.
+
+"The most" rather than "the first found" matters: a schedule holding both `26` and `26,LT` is
+ordinary, and picking whichever the scan reached first made the price depend on row order, so the
+same charge could be billed two different amounts on two different days with nothing in the data
+having changed. It is longest-match rather than exact-match, because a schedule that prices `26` and
+says nothing about `26,LT` still means to price a `26,LT` line.
 
 ## Why the poverty guideline is supplied, not embedded
 

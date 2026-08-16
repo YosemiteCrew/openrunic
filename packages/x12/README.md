@@ -1,7 +1,7 @@
 # `@openrunic/x12`
 
-The claim codec. A pure, IO-free ASC X12 5010 encoder and decoder for the six transactions a
-practice actually exchanges with a payer.
+The claim codec. A pure, IO-free ASC X12 5010 encoder and decoder for the transactions a practice actually exchanges
+with a payer.
 
 | Transaction | Direction | Entry point                     |
 | ----------- | --------- | ------------------------------- |
@@ -11,6 +11,8 @@ practice actually exchanges with a payer.
 | 999         | decode    | `decode999(raw)`                |
 | 270         | encode    | `encode270(request, options)`   |
 | 271         | decode    | `decode271(raw)`                |
+| 278         | encode    | `encode278(request, options)`   |
+| 278         | decode    | `decode278(segments)`           |
 
 It reads and writes strings. It opens no sockets, touches no database and reads no clock, so every
 behaviour in it is reproducible from a golden file. Transport belongs to the clearinghouse adapter;

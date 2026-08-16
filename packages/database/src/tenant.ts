@@ -53,6 +53,7 @@ export const TENANT_SCOPED_MODELS = [
   'AllergyIntolerance',
   'Immunization',
   'Observation',
+  'Referral',
   'ServiceRequest',
   'Specimen',
   'DiagnosticReport',

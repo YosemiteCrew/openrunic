@@ -32,7 +32,7 @@ Three kinds of gap appear below, and they are not the same kind of work:
 | Dose range, renal and weight dosing       | **Seam only** | _Needs licensed content_, same port                                                                                                                                      |
 | **Vitals with growth percentiles**        | **Done**      | `packages/growth` plus `GET /bff/v0/patients/{id}/growth`; CDC LMS data generated and checked against the CDC's own published percentiles, points and curves for a chart |
 | **Clinical decision support (CDS Hooks)** | **Done**      | `/cds-services`; three services over the existing allergy and duplicate-therapy screening. Every card names what was not checked                                         |
-| Referral management                       | **Missing**   | _Buildable_                                                                                                                                                              |
+| **Referral management**                   | **Done**      | `Referral` plus the lifecycle at `/bff/v0/referrals`; four separate timestamps rather than one status, so a referral cannot look closed with nothing having come back    |
 
 ## Interoperability
 

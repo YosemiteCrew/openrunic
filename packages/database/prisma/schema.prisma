@@ -183,6 +183,26 @@ enum AdministrativeGender {
   UNKNOWN
 }
 
+/// Where a referral has got to. The loop is not closed until a report comes back.
+enum ReferralStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  SCHEDULED
+  SEEN
+  COMPLETED
+  CANCELLED
+  ENTERED_IN_ERROR
+}
+
+/// How soon the referral needs to happen. Drives the outstanding-referrals tray.
+enum ReferralPriority {
+  ROUTINE
+  URGENT
+  ASAP
+}
+
 /// FHIR R4 identifier use, a closed value set.
 enum IdentifierUse {
   USUAL
@@ -682,6 +702,7 @@ model Organisation {
   immunizations        Immunization[]
   observations         Observation[]
   serviceRequests      ServiceRequest[]
+  referrals            Referral[]
   specimens            Specimen[]
   diagnosticReports    DiagnosticReport[]
   resultObservations   ResultObservation[]
@@ -774,6 +795,7 @@ model User {
   noteAddenda        NoteAddendum[]
   medicationRequests MedicationRequest[]
   serviceRequests    ServiceRequest[]
+  referralsMade      Referral[]
   assignedTasks      Task[]
   sentMessages       Message[]
   renderedCharges    ChargeItem[]
@@ -938,6 +960,7 @@ model Patient {
   immunizations        Immunization[]
   observations         Observation[]
   serviceRequests      ServiceRequest[]
+  referrals            Referral[]
   specimens            Specimen[]
   diagnosticReports    DiagnosticReport[]
   resultObservations   ResultObservation[]
@@ -1116,6 +1139,9 @@ model Document {
 
   consentGrants ConsentGrant[]
 
+  /// Referrals whose report is this document.
+  referralReports Referral[]
+
   @@index([tenantId, patientId, category])
   @@index([tenantId, status, receivedAt])
   @@index([tenantId, encounterId])
@@ -1228,6 +1254,7 @@ model Encounter {
   immunizations        Immunization[]
   observations         Observation[]
   serviceRequests      ServiceRequest[]
+  referrals            Referral[]
   diagnosticReports    DiagnosticReport[]
   tasks                Task[]
   chargeItems          ChargeItem[]
@@ -2313,4 +2340,77 @@ model AuditEvent {
   @@index([tenantId, breakglass, occurredAt])
   @@index([targetType, targetId])
   @@index([occurredAt])
+}
+
+/// A referral out to another clinician, and the loop it has to close.
+///
+/// The defining failure of referral management is not sending one - it is never
+/// finding out what happened. A patient is referred, and the practice that
+/// referred them has no idea whether they were seen, whether the specialist
+/// declined, or whether a report came back and went unread. That gap is where
+/// diagnoses are lost, and it is the reason this model carries four separate
+/// timestamps rather than one status: sent, scheduled, seen, and report
+/// received. Each is a distinct fact about the world, and collapsing them into
+/// a status would make "we sent it" indistinguishable from "they went".
+///
+/// The receiving side is free text plus an optional NPI rather than a relation.
+/// The practice being referred to is almost never in this practice's own
+/// directory, and requiring it to be would mean either refusing the referral or
+/// inventing a directory entry for a clinic nobody here has a relationship with.
+model Referral {
+  id           String  @id @db.Uuid
+  tenantId     String  @db.Uuid
+  patientId    String  @db.Uuid
+  encounterId  String? @db.Uuid
+  /// The clinician making the referral, who owns the loop until it closes.
+  referredById String  @db.Uuid
+
+  status   ReferralStatus   @default(DRAFT)
+  priority ReferralPriority @default(ROUTINE)
+
+  /// The specialty being referred to, as a code from the tenant's own list.
+  specialtyCode    String
+  specialtyDisplay String
+
+  /// Who it is going to. Free text because the receiving practice is almost
+  /// never in this practice's directory; the NPI is there when it is known.
+  receivingPractice String
+  receivingNpi      String?
+  receivingPhone    String?
+
+  /// ICD-10-CM codes justifying the referral; repeating by definition.
+  reasonCodes String[]
+  reasonText  String?
+  note        String?
+
+  /// Set once the practice has an authorisation, so the tray can show what is
+  /// waiting on one. The 278 exchange that produces it lives elsewhere.
+  authorisationNumber String?
+
+  /// The four facts the loop is made of. Each is separately unknown, and a
+  /// status alone cannot say which of them is missing.
+  sentAt           DateTime?
+  scheduledFor     DateTime?
+  seenAt           DateTime?
+  reportReceivedAt DateTime?
+  /// The report itself, once it arrives and is filed.
+  reportDocumentId String?   @db.Uuid
+
+  /// Why the receiving practice declined, when they did.
+  declinedReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organisation   Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter      Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  referredBy     User         @relation(fields: [referredById], references: [id], onDelete: Restrict)
+  reportDocument Document?    @relation(fields: [reportDocumentId], references: [id], onDelete: SetNull)
+
+  /// The outstanding-referrals tray: what has been sent and not yet closed.
+  @@index([tenantId, status, sentAt])
+  @@index([tenantId, patientId, createdAt])
+  @@index([tenantId, referredById, status])
+  @@index([tenantId, priority, status])
 }

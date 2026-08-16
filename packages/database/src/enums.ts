@@ -117,6 +117,19 @@ export const ALLERGY_CLINICAL_STATUSES = ['ACTIVE', 'INACTIVE', 'RESOLVED'] as c
 export const REACTION_SEVERITIES = ['MILD', 'MODERATE', 'SEVERE'] as const;
 export const IMMUNIZATION_STATUSES = ['COMPLETED', 'NOT_DONE', 'ENTERED_IN_ERROR'] as const;
 
+export const REFERRAL_STATUSES = [
+  'DRAFT',
+  'SENT',
+  'ACCEPTED',
+  'DECLINED',
+  'SCHEDULED',
+  'SEEN',
+  'COMPLETED',
+  'CANCELLED',
+  'ENTERED_IN_ERROR',
+] as const;
+export const REFERRAL_PRIORITIES = ['ROUTINE', 'URGENT', 'ASAP'] as const;
+
 export const OBSERVATION_CATEGORIES = [
   'VITAL_SIGNS',
   'LABORATORY',
@@ -312,6 +325,8 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.AllergyClinicalStatus, typeof ALLERGY_CLINICAL_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.ReactionSeverity, typeof REACTION_SEVERITIES>>,
   AssertOk<AssertMirrors<Prisma.ImmunizationStatus, typeof IMMUNIZATION_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.ReferralStatus, typeof REFERRAL_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.ReferralPriority, typeof REFERRAL_PRIORITIES>>,
   AssertOk<AssertMirrors<Prisma.ObservationCategory, typeof OBSERVATION_CATEGORIES>>,
   AssertOk<AssertMirrors<Prisma.ObservationStatus, typeof OBSERVATION_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.AbnormalFlag, typeof ABNORMAL_FLAGS>>,

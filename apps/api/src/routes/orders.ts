@@ -14,6 +14,8 @@ import { ApiError } from '../errors.js';
 import { parseJsonBody, parseParam, parseQuery, toFieldIssues } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
+
+import { referralRouteContracts, referralRoutes } from './referrals.js';
 import type { Permission } from '../policy/permissions.js';
 import type {
   DocumentStatus,
@@ -895,6 +897,7 @@ export function orderRoutes(): Hono<AppEnv> {
   // literal sub-paths have to resolve alongside the `:id` routes rather than
   // behind them.
   router.route('/', transitionRoutes());
+  referralRoutes(router);
   for (const module of crudModules()) {
     router.route('/', module.routes);
   }
@@ -903,5 +906,9 @@ export function orderRoutes(): Hono<AppEnv> {
 }
 
 export function orderRouteContracts(): RouteContract[] {
-  return [...crudModules().flatMap((module) => [...module.contracts]), ...transitionContracts()];
+  return [
+    ...crudModules().flatMap((module) => [...module.contracts]),
+    ...transitionContracts(),
+    ...referralRouteContracts(),
+  ];
 }

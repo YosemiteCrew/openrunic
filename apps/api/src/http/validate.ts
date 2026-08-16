@@ -54,7 +54,18 @@ export async function parseJsonBody<T>(c: Context<AppEnv>, schema: z.ZodType<T>)
 }
 
 /** Parses a path parameter, e.g. an id that must be a UUID. */
-export function parseParam<T>(value: string, schema: z.ZodType<T>, name: string): T {
+export function parseParam<T>(
+  /**
+   * Accepts `undefined` as well as a string. Hono types `c.req.param('id')` as a
+   * string only where it can see the path literal, which it cannot inside a
+   * helper that takes a plain `Context` - and an absent parameter should reach
+   * the schema and come back as the same 400 as a malformed one, rather than
+   * being ruled out by a type the handler had to assert.
+   */
+  value: string | undefined,
+  schema: z.ZodType<T>,
+  name: string
+): T {
   const result = schema.safeParse(value);
   if (!result.success) {
     throw ApiError.malformed(`The ${name} path parameter is not valid.`, {

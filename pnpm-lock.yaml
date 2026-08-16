@@ -64,6 +64,9 @@ importers:
       '@openrunic/agent-tools':
         specifier: workspace:*
         version: link:../../packages/agent-tools
+      '@openrunic/ccda':
+        specifier: workspace:*
+        version: link:../../packages/ccda
       '@openrunic/cds-hooks':
         specifier: workspace:*
         version: link:../../packages/cds-hooks

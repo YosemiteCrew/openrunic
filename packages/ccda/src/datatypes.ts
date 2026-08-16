@@ -91,12 +91,24 @@ export function effectiveTime(
   end?: string | undefined,
   options: { readonly openEnded?: boolean } = {}
 ): XmlElement | undefined {
-  if (start === undefined || start === '') return undefined;
-  if (end === undefined && options.openEnded !== true) {
+  // Nothing at either end is nothing to say. An `effectiveTime` with two unknown
+  // boundaries asserts that a span exists and that neither end is recorded,
+  // which is a claim; omitting the element makes none.
+  if ((start === undefined || start === '') && (end === undefined || end === '')) return undefined;
+
+  if (start !== undefined && start !== '' && end === undefined && options.openEnded !== true) {
     return element('effectiveTime', { value: writeTime(start) });
   }
+
   return element('effectiveTime', {}, [
-    element('low', { value: writeTime(start) }),
+    // A known end with no known start is ordinary in a real chart - a medication
+    // somebody stopped, first recorded at the moment it was stopped - and it is
+    // exactly the half a receiving prescriber needs. Writing `low nullFlavor` is
+    // how CDA says "it ended then, and when it began was never recorded"; the
+    // alternative of omitting the element loses the stop date altogether.
+    start === undefined || start === ''
+      ? element('low', { nullFlavor: 'UNK' })
+      : element('low', { value: writeTime(start) }),
     end === undefined
       ? element('high', { nullFlavor: 'UNK' })
       : element('high', { value: writeTime(end) }),

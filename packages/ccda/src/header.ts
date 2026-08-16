@@ -90,11 +90,7 @@ function recordTarget(patient: DocumentPatient): XmlElement {
   role.push(
     element('patient', {}, [
       personName(patient.givenName, patient.familyName),
-      element('administrativeGenderCode', {
-        code: genderCode(patient.gender),
-        codeSystem: CODE_SYSTEMS.ADMIN_GENDER.oid,
-        displayName: patient.gender,
-      }),
+      genderElement(patient.gender),
       element('birthTime', { value: writeTime(patient.birthDate) }),
       ...(patient.languageCode === undefined
         ? []
@@ -109,17 +105,37 @@ function recordTarget(patient: DocumentPatient): XmlElement {
   return element('recordTarget', {}, [element('patientRole', {}, role)]);
 }
 
-/** HL7 AdministrativeGender is a one-letter vocabulary, not the FHIR words. */
-function genderCode(gender: DocumentPatient['gender']): string {
-  if (gender === 'male') return 'M';
-  if (gender === 'female') return 'F';
-  return 'UN';
+/**
+ * HL7 AdministrativeGender is a three-value vocabulary - `M`, `F`, `UN` - not the
+ * four FHIR words, and the gap between them is the interesting part.
+ *
+ * `other` and `unknown` are different statements: one is an answer the practice
+ * recorded, the other is the absence of one. Writing both as `UN` loses that,
+ * and it loses it in the direction that matters - a receiving system reads a
+ * recorded answer as a gap in the record and may go asking for it again.
+ *
+ * So `other` takes `UN`, which is what that code means, and `unknown` takes
+ * `nullFlavor="UNK"`, which is how CDA says nothing was recorded. Both are the
+ * specification's own machinery rather than a convention invented here.
+ */
+function genderElement(gender: DocumentPatient['gender']): XmlElement {
+  if (gender === 'unknown') {
+    return element('administrativeGenderCode', { nullFlavor: 'UNK' });
+  }
+  const code = gender === 'male' ? 'M' : gender === 'female' ? 'F' : 'UN';
+  return element('administrativeGenderCode', {
+    code,
+    codeSystem: CODE_SYSTEMS.ADMIN_GENDER.oid,
+    displayName: gender,
+  });
 }
 
-function readGender(code: string | undefined): DocumentPatient['gender'] {
+function readGender(node: XmlElement | undefined): DocumentPatient['gender'] {
+  const code = attr(node, 'code');
   if (code === 'M') return 'male';
   if (code === 'F') return 'female';
-  return 'unknown';
+  // `UN` is a recorded answer; an absent code, whatever its nullFlavor, is not.
+  return code === 'UN' ? 'other' : 'unknown';
 }
 
 function authorElement(author: Author, at: string): XmlElement {
@@ -210,7 +226,7 @@ export function readHeader(root: XmlElement): {
       givenName: textOf(childNamed(name, 'given')),
       familyName: textOf(childNamed(name, 'family')),
       birthDate: (birth ?? '').slice(0, 10),
-      gender: readGender(attr(childNamed(patient, 'administrativeGenderCode'), 'code')),
+      gender: readGender(childNamed(patient, 'administrativeGenderCode')),
       ...(language === undefined ? {} : { languageCode: language }),
       ...(address === undefined ? {} : { address }),
       ...(phone === undefined ? {} : { phone }),

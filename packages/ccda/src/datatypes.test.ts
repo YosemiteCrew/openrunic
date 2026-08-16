@@ -181,3 +181,33 @@ describe('addresses and telecoms', () => {
     expect(readTelecom([element('telecom', { nullFlavor: 'UNK' })], 'tel')).toBeUndefined();
   });
 });
+
+describe('a span with only one end recorded', () => {
+  /**
+   * Ordinary in a real chart: a medication somebody stopped, first recorded at
+   * the moment it was stopped. The stop date is exactly the half a receiving
+   * prescriber needs, and an earlier version of this dropped the whole element
+   * when the start was absent - losing it.
+   */
+  it('writes a known end even when the start was never recorded', () => {
+    const node = effectiveTime(undefined, '2026-02-11');
+
+    expect(attr(childNamed(node, 'low'), 'nullFlavor')).toBe('UNK');
+    expect(attr(childNamed(node, 'high'), 'value')).toBe('20260211');
+  });
+
+  it('writes the same for an open-ended span with no start', () => {
+    const node = effectiveTime('', '2026-02-11', { openEnded: true });
+
+    expect(attr(childNamed(node, 'high'), 'value')).toBe('20260211');
+  });
+
+  /**
+   * Both ends unknown is a claim that a span exists and neither boundary is
+   * recorded. Omitting the element makes no claim, which is what is true.
+   */
+  it('writes nothing when neither end is recorded', () => {
+    expect(effectiveTime(undefined, undefined)).toBeUndefined();
+    expect(effectiveTime('', '', { openEnded: true })).toBeUndefined();
+  });
+});

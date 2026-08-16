@@ -14,6 +14,7 @@ import {
   toPatientListQuery,
 } from '../schemas/patients.js';
 
+import { documentRouteContracts, documentRoutes } from './documents.js';
 import { idParamSchema, repositories, required } from './helpers.js';
 
 /**
@@ -34,6 +35,7 @@ const ERROR_RESPONSES = [
 ] as const;
 
 export const patientRouteContracts: RouteContract[] = [
+  ...documentRouteContracts(),
   {
     method: 'get',
     path: '/bff/v0/patients',
@@ -115,6 +117,7 @@ export const patientRouteContracts: RouteContract[] = [
 
 export function patientRoutes(): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
+  documentRoutes(router);
 
   router.get('/patients', requirePermission('patient.read'), async (c) => {
     const query = toPatientListQuery(parseQuery(c, patientListQuerySchema));

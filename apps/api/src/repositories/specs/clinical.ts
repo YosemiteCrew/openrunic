@@ -4,6 +4,7 @@ import type {
   ConditionInput,
   EncounterCreateInput,
   ImmunizationInput,
+  ReferralInput,
   MedicationRequestInput,
   MedicationStatementInput,
   NoteAddendumInput,
@@ -62,6 +63,8 @@ export type AllergyCriticality = Row<'AllergyIntolerance'>['criticality'];
 export type AllergyClinicalStatus = Row<'AllergyIntolerance'>['clinicalStatus'];
 export type ReactionSeverity = NonNullable<Row<'AllergyIntolerance'>['severity']>;
 export type ImmunizationStatus = Row<'Immunization'>['status'];
+export type ReferralStatus = Row<'Referral'>['status'];
+export type ReferralPriority = Row<'Referral'>['priority'];
 export type ObservationCategory = Row<'Observation'>['category'];
 export type ObservationStatus = Row<'Observation'>['status'];
 
@@ -1100,6 +1103,177 @@ export const observationSpec: CollectionSpec<
   },
 };
 
+/* --------------------------------------------------------------- referrals */
+
+export interface ReferralListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  referredById?: string;
+  status?: ReferralStatus;
+  priority?: ReferralPriority;
+  specialtyCode?: string;
+  /**
+   * The tray filter: referrals that have been sent and have not closed.
+   *
+   * A named flag rather than a status list the caller assembles, because "still
+   * open" is a clinical question with one right answer and every caller
+   * assembling their own list is how two screens come to disagree about how many
+   * referrals are outstanding.
+   */
+  openOnly?: boolean;
+  /** Inclusive lower bound on `createdAt`. */
+  from?: Date;
+  /** Exclusive upper bound on `createdAt`. */
+  to?: Date;
+  sort: 'createdAt' | 'sentAt' | 'priority';
+}
+
+export interface ReferralPatchInput {
+  status?: ReferralStatus;
+  /** Server-stamped when the referral is sent; never accepted from a caller. */
+  sentAt?: Date;
+  priority?: ReferralPriority;
+  receivingPractice?: string;
+  receivingNpi?: string | null;
+  receivingPhone?: string | null;
+  reasonCodes?: string[];
+  reasonText?: string | null;
+  note?: string | null;
+  authorisationNumber?: string | null;
+  scheduledFor?: Date | null;
+  seenAt?: Date | null;
+  reportReceivedAt?: Date | null;
+  reportDocumentId?: string | null;
+  declinedReason?: string | null;
+}
+
+/**
+ * A referral is open once it has been sent and until somebody has both seen the
+ * patient and sent a report back. The two terminal-but-not-closed statuses -
+ * declined and cancelled - are out, because nothing further is owed on them.
+ */
+export const OPEN_REFERRAL_STATUSES: readonly ReferralStatus[] = [
+  'SENT',
+  'ACCEPTED',
+  'SCHEDULED',
+  'SEEN',
+];
+
+/** Ordering for the tray, most urgent first. */
+const PRIORITY_RANK: Readonly<Record<ReferralPriority, number>> = {
+  ASAP: 0,
+  URGENT: 1,
+  ROUTINE: 2,
+};
+
+export const referralSpec: CollectionSpec<
+  'Referral',
+  ReferralInput,
+  ReferralPatchInput,
+  ReferralListQuery
+> = {
+  model: 'Referral',
+  targetType: 'Referral',
+  action: 'referral',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: ReferralInput): Writable<'Referral'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      referredById: input.referredById,
+      // A referral is born a draft even when the caller means to send it
+      // immediately. Sending is a transition with its own timestamp, and one
+      // that starts in SENT would be a referral with no record of when.
+      status: 'DRAFT',
+      priority: input.priority ?? 'ROUTINE',
+      specialtyCode: input.specialtyCode,
+      specialtyDisplay: input.specialtyDisplay,
+      receivingPractice: input.receivingPractice,
+      receivingNpi: input.receivingNpi ?? null,
+      receivingPhone: input.receivingPhone ?? null,
+      reasonCodes: input.reasonCodes ?? [],
+      reasonText: input.reasonText ?? null,
+      note: input.note ?? null,
+      authorisationNumber: input.authorisationNumber ?? null,
+      // Every one of these is a fact about the world that has not happened yet.
+      sentAt: null,
+      scheduledFor: null,
+      seenAt: null,
+      reportReceivedAt: null,
+      reportDocumentId: null,
+      declinedReason: null,
+    };
+  },
+
+  patchData(patch: ReferralPatchInput): Partial<Writable<'Referral'>> {
+    return {
+      ...(patch.status === undefined ? {} : { status: patch.status }),
+      ...(patch.sentAt === undefined ? {} : { sentAt: patch.sentAt }),
+      ...(patch.priority === undefined ? {} : { priority: patch.priority }),
+      ...(patch.receivingPractice === undefined
+        ? {}
+        : { receivingPractice: patch.receivingPractice }),
+      ...(patch.receivingNpi === undefined ? {} : { receivingNpi: patch.receivingNpi }),
+      ...(patch.receivingPhone === undefined ? {} : { receivingPhone: patch.receivingPhone }),
+      ...(patch.reasonCodes === undefined ? {} : { reasonCodes: patch.reasonCodes }),
+      ...(patch.reasonText === undefined ? {} : { reasonText: patch.reasonText }),
+      ...(patch.note === undefined ? {} : { note: patch.note }),
+      ...(patch.authorisationNumber === undefined
+        ? {}
+        : { authorisationNumber: patch.authorisationNumber }),
+      ...(patch.scheduledFor === undefined ? {} : { scheduledFor: patch.scheduledFor }),
+      ...(patch.seenAt === undefined ? {} : { seenAt: patch.seenAt }),
+      ...(patch.reportReceivedAt === undefined ? {} : { reportReceivedAt: patch.reportReceivedAt }),
+      ...(patch.reportDocumentId === undefined ? {} : { reportDocumentId: patch.reportDocumentId }),
+      ...(patch.declinedReason === undefined ? {} : { declinedReason: patch.declinedReason }),
+    };
+  },
+
+  matches(row: ScopedRow<'Referral'>, query: ReferralListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.referredById !== undefined && row.referredById !== query.referredById) return false;
+    if (query.status !== undefined && row.status !== query.status) return false;
+    if (query.priority !== undefined && row.priority !== query.priority) return false;
+    if (query.specialtyCode !== undefined && row.specialtyCode !== query.specialtyCode) {
+      return false;
+    }
+    if (query.openOnly === true && !OPEN_REFERRAL_STATUSES.includes(row.status)) return false;
+    return inWindow(row.createdAt, query.from, query.to);
+  },
+
+  where(query: ReferralListQuery) {
+    const createdAt = windowFilter(query.from, query.to);
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.referredById === undefined ? {} : { referredById: query.referredById }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.priority === undefined ? {} : { priority: query.priority }),
+      ...(query.specialtyCode === undefined ? {} : { specialtyCode: query.specialtyCode }),
+      ...(query.openOnly === true ? { status: { in: [...OPEN_REFERRAL_STATUSES] } } : {}),
+      ...(createdAt === undefined ? {} : { createdAt }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'Referral'>, sort: ReferralListQuery['sort']): number {
+    if (sort === 'priority') return PRIORITY_RANK[row.priority];
+    // An unsent referral sorts as if it were sent at the epoch, which puts the
+    // drafts together at one end rather than scattering them through the tray.
+    if (sort === 'sentAt') return row.sentAt?.getTime() ?? 0;
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: ReferralListQuery) {
+    if (query.sort === 'priority') return [{ priority: query.order }, { id: 'asc' as const }];
+    if (query.sort === 'sentAt') return [{ sentAt: query.order }, { id: 'asc' as const }];
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
@@ -1110,4 +1284,5 @@ export const clinicalSpecs = {
   allergies: allergySpec,
   immunisations: immunisationSpec,
   observations: observationSpec,
+  referrals: referralSpec,
 } as const;

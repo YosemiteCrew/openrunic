@@ -13,6 +13,7 @@ import {
   ENCOUNTER_CLASSES,
   ENCOUNTER_STATUSES,
   IMMUNIZATION_STATUSES,
+  REFERRAL_PRIORITIES,
   MEDICATION_REQUEST_INTENTS,
   MEDICATION_REQUEST_STATUSES,
   MEDICATION_SOURCES,
@@ -204,6 +205,33 @@ export const immunizationInput = z.strictObject({
   refusalReasonCode: code.optional(),
 });
 
+/**
+ * A new referral.
+ *
+ * `status` is deliberately absent: a referral is born a draft and reaches every
+ * other status through a transition that stamps its own timestamp. Letting a
+ * caller create one already SENT would produce a referral nobody can say when
+ * they sent.
+ */
+export const referralInput = z.strictObject({
+  patientId: uuid,
+  encounterId: uuid.optional(),
+  referredById: uuid,
+  priority: z.enum(REFERRAL_PRIORITIES).optional(),
+  specialtyCode: code,
+  specialtyDisplay: display,
+  receivingPractice: z.string().min(1).max(200),
+  receivingNpi: z
+    .string()
+    .regex(/^\d{10}$/, 'An NPI is ten digits.')
+    .optional(),
+  receivingPhone: z.string().min(1).max(32).optional(),
+  reasonCodes: z.array(code).max(12).optional(),
+  reasonText: z.string().min(1).max(2000).optional(),
+  note: z.string().min(1).max(2000).optional(),
+  authorisationNumber: z.string().min(1).max(64).optional(),
+});
+
 export const observationInput = z
   .strictObject({
     patientId: uuid,
@@ -259,4 +287,5 @@ export type AllergyIntoleranceInput = z.infer<typeof allergyIntoleranceInput>;
 export type MedicationStatementInput = z.infer<typeof medicationStatementInput>;
 export type MedicationRequestInput = z.infer<typeof medicationRequestInput>;
 export type ImmunizationInput = z.infer<typeof immunizationInput>;
+export type ReferralInput = z.infer<typeof referralInput>;
 export type ObservationInput = z.infer<typeof observationInput>;

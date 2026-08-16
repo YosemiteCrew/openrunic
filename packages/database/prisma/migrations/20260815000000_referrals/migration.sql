@@ -32,7 +32,7 @@ CREATE TABLE "Referral" (
   "receivingPractice"   TEXT             NOT NULL,
   "receivingNpi"        TEXT,
   "receivingPhone"      TEXT,
-  "reasonCodes"         TEXT[]           NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "reasonCodes"         TEXT[],
   "reasonText"          TEXT,
   "note"                TEXT,
   "authorisationNumber" TEXT,

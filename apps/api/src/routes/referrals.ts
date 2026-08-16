@@ -8,7 +8,6 @@ import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
-import { OPEN_REFERRAL_STATUSES } from '../repositories/specs/clinical.js';
 import type { ReferralStatus } from '../repositories/specs/clinical.js';
 import type { ScopedRow } from '../repositories/types.js';
 import { idParamSchema, repositories, required } from './helpers.js';
@@ -468,6 +467,3 @@ export function referralRouteContracts(): RouteContract[] {
     ),
   ];
 }
-
-/** The statuses the tray counts as still open, for a caller that wants the list. */
-export { OPEN_REFERRAL_STATUSES };

@@ -220,17 +220,14 @@ function curvesFor(
   }[] = [];
 
   for (const measure of new Set(points.map((point) => point.measure))) {
-    const infant = drawsInfantChart(
-      measure as Measure,
-      points.filter((point) => point.measure === measure)
-    );
+    const mine = points.filter((point) => point.measure === measure);
 
-    for (const percentile of CURVE_PERCENTILES) {
-      curves.push({
-        measure,
-        percentile,
-        points: [...curveFor(measure as Measure, sex, percentile, { infant })],
-      });
+    for (const infant of chartsFor(measure as Measure, mine)) {
+      for (const percentile of CURVE_PERCENTILES) {
+        const drawn = curveFor(measure as Measure, sex, percentile, { infant });
+        if (drawn.length === 0) continue;
+        curves.push({ measure, percentile, points: [...drawn] });
+      }
     }
   }
 
@@ -238,23 +235,28 @@ function curvesFor(
 }
 
 /**
- * Which of the two charts a measure's points were scored against.
+ * Which reference charts a measure's points need under them - both, where the
+ * points span the boundary.
  *
- * It has to be the same rule the library used to score them, or a reading is
- * plotted against a curve it was not measured against. Four of the six answer
- * from the measure alone - length and head circumference are only ever on the
- * infant chart, stature and BMI only on the child one - and weight is the one
- * where age decides.
+ * Four of the six answer from the measure alone: length and head circumference
+ * are only ever on the infant chart, stature and BMI only on the child one.
+ * Weight is the one where age decides, and it is the one where a child can have
+ * points on both - a weight at six months and another at five years are on
+ * different references, and there is nothing unusual about a chart holding both.
  *
- * Getting this wrong is not a cosmetic problem. A length recorded at thirty
- * months is charted by the library and, under a rule that keyed on age alone,
- * would have come back with points and no curves at all: a chart with a
- * measurement floating on an empty grid.
+ * Picking one chart for the set leaves the points on the other side floating
+ * with no line under them, whichever way the choice goes: `some` strands the
+ * older points and `every` strands the younger ones. So a set that spans the
+ * boundary gets both, and every point has its own reference to be read against.
  */
-function drawsInfantChart(measure: Measure, points: readonly { ageMonths: number }[]): boolean {
-  if (measure === 'length-for-age' || measure === 'head-circumference-for-age') return true;
-  if (measure === 'stature-for-age' || measure === 'bmi-for-age') return false;
-  return points.some((point) => point.ageMonths < 24);
+function chartsFor(measure: Measure, points: readonly { ageMonths: number }[]): boolean[] {
+  if (measure === 'length-for-age' || measure === 'head-circumference-for-age') return [true];
+  if (measure === 'stature-for-age' || measure === 'bmi-for-age') return [false];
+
+  const charts: boolean[] = [];
+  if (points.some((point) => point.ageMonths < 24)) charts.push(true);
+  if (points.some((point) => point.ageMonths >= 24)) charts.push(false);
+  return charts;
 }
 
 async function readingsFor(

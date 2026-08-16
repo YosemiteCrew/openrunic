@@ -62,14 +62,14 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Revenue cycle
 
-| Capability                                               | State         | Note                                                                          |
-| -------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------- |
-| Charge capture, claims, payments, remittance, statements | **Done**      | Full ledger with claim lines and status history                               |
-| Eligibility checking                                     | **Done**      | Via X12 270/271                                                               |
-| Fee schedules, contract rates                            | **Missing**   | _Buildable_                                                                   |
-| Sliding scale, self-pay discounts                        | **Missing**   | _Buildable_                                                                   |
-| Collections and dunning                                  | **Partial**   | Statements carry dunning cycle; no workflow on top                            |
-| CPT and ICD-10 code sets                                 | **Seam only** | _Needs licensed content_ - `packages/terminology` is bring-your-own by design |
+| Capability                                               | State              | Note                                                                                                                                           |
+| -------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Charge capture, claims, payments, remittance, statements | **Done**           | Full ledger with claim lines and status history                                                                                                |
+| Eligibility checking                                     | **Done**           | Via X12 270/271                                                                                                                                |
+| **Fee schedules, contract rates**                        | **Done (library)** | `packages/pricing`; billed and allowed kept apart, modifier-specific rates, effective dating. Persistence and charge capture are the follow-up |
+| **Sliding scale, self-pay discounts**                    | **Done (library)** | Same package; practice-configured bands against a supplied poverty guideline, nominal fees, and a validator that runs on save                  |
+| Collections and dunning                                  | **Partial**        | Statements carry dunning cycle; no workflow on top                                                                                             |
+| CPT and ICD-10 code sets                                 | **Seam only**      | _Needs licensed content_ - `packages/terminology` is bring-your-own by design                                                                  |
 
 ## Quality and compliance
 

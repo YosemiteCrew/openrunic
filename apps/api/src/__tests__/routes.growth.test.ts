@@ -394,3 +394,66 @@ describe('every charted point has a curve under it', () => {
     expect(body.uncharted[0]?.code).toBe('LOCAL-PULSE');
   });
 });
+
+describe('a child whose weights span the two charts', () => {
+  /**
+   * A weight at six months and another at five years are on different
+   * references, and there is nothing unusual about a chart holding both.
+   * Choosing one chart for the set strands the points on the other side with no
+   * line under them - `some` strands the older ones and `every` strands the
+   * younger ones - so a set that spans the boundary gets both.
+   */
+  it('draws both the infant and the child curves', async () => {
+    const { app, dataset } = harness();
+    seedVital(dataset, { effectiveAt: new Date('2025-02-14T00:00:00.000Z') });
+    seedVital(dataset, {
+      ...storageColumns(testId(620)),
+      valueNumber: 18,
+      effectiveAt: new Date('2029-08-14T00:00:00.000Z'),
+    });
+
+    const body = await growthFor(app);
+    const weight = body.curves.filter((curve) => curve.measure === 'weight-for-age');
+    const starts = new Set(weight.map((curve) => curve.points[0]?.index));
+
+    expect(body.points).toHaveLength(2);
+    // Seven percentile lines on each of the two charts.
+    expect(weight).toHaveLength(14);
+    expect(starts).toEqual(new Set([0, 24]));
+  });
+
+  it('gives every point a curve that actually covers its age', async () => {
+    const { app, dataset } = harness();
+    seedVital(dataset, { effectiveAt: new Date('2025-02-14T00:00:00.000Z') });
+    seedVital(dataset, {
+      ...storageColumns(testId(621)),
+      valueNumber: 18,
+      effectiveAt: new Date('2029-08-14T00:00:00.000Z'),
+    });
+
+    const body = await growthFor(app);
+
+    for (const point of body.points) {
+      const covering = body.curves.filter(
+        (curve) =>
+          curve.measure === point.measure &&
+          curve.points.some((entry) => entry.index <= point.ageMonths) &&
+          curve.points.some((entry) => entry.index >= point.ageMonths)
+      );
+
+      expect(
+        covering.length,
+        `${point.measure} at ${String(point.ageMonths)} months`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('draws one chart only where every point is on the same side', async () => {
+    const { app, dataset } = harness();
+    seedVital(dataset, { effectiveAt: new Date('2025-02-14T00:00:00.000Z') });
+
+    const body = await growthFor(app);
+
+    expect(body.curves.filter((curve) => curve.measure === 'weight-for-age')).toHaveLength(7);
+  });
+});

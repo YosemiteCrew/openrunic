@@ -72,6 +72,7 @@ import {
   type AdministrationResult,
   type CountResult,
   type StockPostingDto,
+  type ReceiptBody,
 } from '../schemas/inventory.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
@@ -132,6 +133,39 @@ type MovementRow = ScopedRow<'StockMovement'>;
 type LotBalance = z.infer<typeof itemStockDtoSchema>['lots'][number];
 
 const NO_ITEM = 'No such stock item.';
+/**
+ * The lot row a receipt line describes, when the carton is one this site has
+ * not seen before.
+ *
+ * Extracted from the receipt handler because its five optional-field spreads
+ * were most of that function's branching, and none of them is a decision the
+ * handler makes - they are the shape of a `StockLot`, which belongs beside the
+ * type rather than inside a loop.
+ *
+ * `receivedOn` falls back to the posting's own date. A delivery is received on
+ * the day it is booked in unless the packing slip says otherwise, and the
+ * column is not nullable because it is FEFO's tie-break and the not-yet-on-the-
+ * shelf gate.
+ */
+function newLotFrom(
+  line: ReceiptBody['lines'][number],
+  id: string,
+  facilityId: string,
+  occurredOn: IsoDate
+): StockLotCreateInput & { id: string } {
+  return {
+    id,
+    itemId: line.itemId,
+    facilityId,
+    lotNumber: line.lotNumber,
+    receivedOn: fromIsoDate(line.receivedOn ?? occurredOn),
+    ...(line.expiresOn === undefined ? {} : { expiresOn: fromIsoDate(line.expiresOn) }),
+    ...(line.beyondUseDays === undefined ? {} : { beyondUseDays: line.beyondUseDays }),
+    ...(line.manufacturer === undefined ? {} : { manufacturer: line.manufacturer }),
+    ...(line.ndcCode === undefined ? {} : { ndcCode: line.ndcCode }),
+  };
+}
+
 const NO_PATIENT = 'No such patient.';
 const NO_ENCOUNTER = 'No such encounter.';
 
@@ -698,17 +732,7 @@ export function inventoryRoutes(): Hono<AppEnv> {
 
       if (lotId === undefined) {
         lotId = uuidv7();
-        newLots.push({
-          id: lotId,
-          itemId: line.itemId,
-          facilityId: body.facilityId,
-          lotNumber: line.lotNumber,
-          receivedOn: fromIsoDate(line.receivedOn ?? body.occurredOn),
-          ...(line.expiresOn === undefined ? {} : { expiresOn: fromIsoDate(line.expiresOn) }),
-          ...(line.beyondUseDays === undefined ? {} : { beyondUseDays: line.beyondUseDays }),
-          ...(line.manufacturer === undefined ? {} : { manufacturer: line.manufacturer }),
-          ...(line.ndcCode === undefined ? {} : { ndcCode: line.ndcCode }),
-        });
+        newLots.push(newLotFrom(line, lotId, body.facilityId, body.occurredOn));
       }
 
       lines.push({

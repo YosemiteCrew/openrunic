@@ -275,6 +275,19 @@ export function allocate(
  * shape stays open and its arithmetic is checked here, at the only door that
  * turns it into ledger rows.
  */
+/**
+ * Equal to within a hair, for two figures that were summed rather than stated.
+ *
+ * Three orders of magnitude below the six-place stock grid: small enough that
+ * nothing a practice could have meant slips through, large enough to absorb the
+ * float noise that adding 0.1 and 0.2 produces.
+ */
+const SUM_TOLERANCE = 1e-9;
+
+function within(left: number, right: number): boolean {
+  return Math.abs(left - right) < SUM_TOLERANCE;
+}
+
 function assertConsistent(allocation: Allocation): void {
   // The three totals bounded before they are compared. Comparing them alone let
   // a negative shortfall satisfy the arithmetic: 100 allocated against 1
@@ -300,17 +313,25 @@ function assertConsistent(allocation: Allocation): void {
     }
   }
 
-  const summed = toStockPrecision(
-    allocation.lines.reduce((total, line) => total + line.quantity, 0)
-  );
-  if (summed !== toStockPrecision(allocation.allocated)) {
+  // Compared with a tolerance far below the grid rather than by rounding both
+  // sides onto it. Rounding discarded exactly what the ledger now keeps: a line
+  // of 0.0000004 rounds to zero and matched an allocation claiming to allocate
+  // nothing, so `movementsFor` emitted a positive outbound row for a zero-unit
+  // allocation - and since `balancesByLot` accumulates raw and rounds once, ten
+  // of those move real stock while every one of them says it moved none.
+  //
+  // The tolerance exists because summing floats is not exact: 0.1 + 0.2 is not
+  // 0.3. It is three orders of magnitude below the six-place grid, so it
+  // absorbs that noise and still refuses anything a person could have meant.
+  const summed = allocation.lines.reduce((total, line) => total + line.quantity, 0);
+  if (!within(summed, allocation.allocated)) {
     throw new RangeError(
       `Allocation lines sum to ${String(summed)} but the allocation says ${String(allocation.allocated)} was allocated.`
     );
   }
 
-  const accounted = toStockPrecision(allocation.allocated + allocation.shortfall);
-  if (accounted !== toStockPrecision(allocation.requested)) {
+  const accounted = allocation.allocated + allocation.shortfall;
+  if (!within(accounted, allocation.requested)) {
     throw new RangeError(
       `Allocation accounts for ${String(accounted)} of a requested ${String(allocation.requested)}.`
     );

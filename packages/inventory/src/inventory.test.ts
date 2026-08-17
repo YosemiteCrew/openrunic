@@ -1674,3 +1674,60 @@ describe('the second review of #96', () => {
     );
   });
 });
+
+describe('the third review of #96', () => {
+  /**
+   * The two fixes in this PR interacting.
+   *
+   * `assertConsistent` rounded both sides onto the grid before comparing, so a
+   * line of 0.0000004 matched an allocation claiming to allocate nothing - and
+   * because `balancesByLot` now accumulates raw and rounds once, ten of those
+   * move real stock while every one of them says it moved none.
+   */
+  it('refuses a sub-grid line against an allocation that claims nothing', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 0.0000004 }],
+      allocated: 0,
+      requested: 0,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/lines sum to 4e-7 but the allocation says 0/u);
+  });
+
+  /**
+   * The tolerance has to absorb float noise, or a real three-lot allocation is
+   * refused. 0.7 + 0.1 + 0.2 is not 1.
+   */
+  it('accepts a real allocation whose lines only sum to its total approximately', () => {
+    expect(0.1 + 0.2, 'the arithmetic the tolerance absorbs').not.toBe(0.3);
+
+    const real = {
+      itemId: 'item-1',
+      lines: [
+        { lotId: 'a', lotNumber: 'A1', quantity: 0.1 },
+        { lotId: 'b', lotNumber: 'B1', quantity: 0.2 },
+      ],
+      allocated: 0.3,
+      requested: 0.3,
+      shortfall: 0,
+    };
+
+    expect(
+      movementsFor(real, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: (_line, index) => `mv-${String(index)}`,
+      })
+    ).toHaveLength(2);
+  });
+});

@@ -977,9 +977,28 @@ export function inventoryRoutes(): Hono<AppEnv> {
     const variances: CountResult['variances'] = [];
     const ledger: MovementRow[] = [];
 
+    const countedLots = new Set<string>();
     for (const [index, line] of body.lines.entries()) {
       const lot = required(await repos.stockLots.findById(line.lotId), NO_LOT);
       if (lot.facilityId !== body.facilityId) throw ApiError.notFound(NO_LOT);
+
+      // Asserted here as well as refused by the schema, because this loop's
+      // correctness depends on it and nothing in the loop says so. Each
+      // iteration reads the lot's ledger before any of this posting's lines are
+      // written, so a lot named twice would have its variance computed against
+      // a baseline that does not include the first line - applying the same
+      // discrepancy twice, to an append-only ledger, against an audit trail
+      // showing two shortfalls that never happened.
+      //
+      // The schema is where a client is told, in a 422 naming the field. This
+      // is where the invariant is stated at the code that relies on it, so a
+      // later relaxation of the schema cannot silently re-open it.
+      if (countedLots.has(line.lotId)) {
+        throw ApiError.malformed('A count may name each lot once.', {
+          issues: [{ path: `lines.${String(index)}.lotId`, message: 'already counted above' }],
+        });
+      }
+      countedLots.add(line.lotId);
 
       const lotLedger = await ledgerOfLot(c, line.lotId, body.facilityId);
       ledger.push(...lotLedger);

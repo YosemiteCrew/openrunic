@@ -115,10 +115,10 @@ export const BULK_EXPORT_OPERATIONS: readonly BulkExportEntry[] = [
  * The resource types FHIR places in the Patient compartment, restricted to the
  * ones this server serves.
  *
- * Taken from the R4 `CompartmentDefinition/patient`, not invented here. The two
- * types this server serves that are NOT in it - Practitioner and Location -
- * describe the practice rather than any patient, which is why the patient-level
- * export must leave them out.
+ * Taken from the R4 `CompartmentDefinition/patient`, not invented here. The
+ * types this server serves that are NOT in it - Practitioner, PractitionerRole
+ * and Location - describe the practice rather than any patient, which is why
+ * the patient-level export must leave them out.
  *
  * `bulk-export.test.ts` asserts that every served module appears in exactly one
  * of this set and {@link NON_COMPARTMENT_TYPES}, so a resource added later
@@ -145,7 +145,11 @@ export const PATIENT_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /** Served types deliberately outside the Patient compartment. */
-export const NON_COMPARTMENT_TYPES: ReadonlySet<string> = new Set(['Practitioner', 'Location']);
+export const NON_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
+  'Practitioner',
+  'PractitionerRole',
+  'Location',
+]);
 
 export interface ExportFile {
   readonly type: string;

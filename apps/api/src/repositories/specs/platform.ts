@@ -638,6 +638,111 @@ export const roleAssignmentSpec: CollectionSpec<
   },
 };
 
+/* --------------------------------------------------- user facility grants */
+
+export interface UserFacilityListQuery extends BaseQuery {
+  userId?: string;
+  facilityId?: string;
+  sort: 'createdAt';
+}
+
+export interface UserFacilityCreateInput {
+  userId: string;
+  facilityId: string;
+  isPrimary?: boolean;
+}
+
+/** Only which site is the primary one is amendable; the rest is grant or revoke. */
+export interface UserFacilityUpdateInput {
+  isPrimary?: boolean;
+}
+
+/**
+ * Where a member of staff actually works.
+ *
+ * Distinct from `RoleAssignment.facilityId`, and the distinction is the reason
+ * this collection exists rather than the two being conflated. A role assignment
+ * narrowed to a facility is an authorisation statement - this permission
+ * applies here and not there. A `UserFacility` row is a directory statement -
+ * this person works here. They coincide often enough to be mistaken for each
+ * other and answer different questions: a nurse may hold one organisation-wide
+ * grant and work at three sites, and asking the grant where she works returns
+ * nothing at all.
+ *
+ * Closed to the patient compartment for the same reason the staff directory is:
+ * which sites a named member of staff works at is not something a portal
+ * session has any business enumerating.
+ */
+export const userFacilitySpec: CollectionSpec<
+  'UserFacility',
+  UserFacilityCreateInput,
+  UserFacilityUpdateInput,
+  UserFacilityListQuery
+> = {
+  model: 'UserFacility',
+  targetType: 'UserFacility',
+  action: 'user.facility',
+  facilityColumn: 'facilityId',
+  compartment: 'closed',
+
+  newRow(input: UserFacilityCreateInput): Writable<'UserFacility'> {
+    return {
+      userId: input.userId,
+      facilityId: input.facilityId,
+      isPrimary: input.isPrimary ?? false,
+    };
+  },
+
+  patchData(patch: UserFacilityUpdateInput): Partial<Writable<'UserFacility'>> {
+    return patch.isPrimary === undefined ? {} : { isPrimary: patch.isPrimary };
+  },
+
+  matches(row: ScopedRow<'UserFacility'>, query: UserFacilityListQuery): boolean {
+    if (query.userId !== undefined && row.userId !== query.userId) return false;
+    return query.facilityId === undefined || row.facilityId === query.facilityId;
+  },
+
+  where(query: UserFacilityListQuery) {
+    return {
+      ...(query.userId === undefined ? {} : { userId: query.userId }),
+      ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'UserFacility'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: UserFacilityListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+
+  writeMetadata(row: ScopedRow<'UserFacility'>): Record<string, unknown> {
+    return { facilityId: row.facilityId, isPrimary: row.isPrimary };
+  },
+
+  /**
+   * The natural key the database already enforces.
+   *
+   * `@@unique([userId, facilityId])` is on the model, so Postgres refuses a
+   * second grant. Without this the in-memory store accepted one, and the two
+   * implementations of the same collection contract disagreed: the suite passed
+   * against memory and the deployed system failed at the database boundary with
+   * a driver error rather than the 409 every other collection returns. Declared
+   * before a write path exists, because the first route to use it would
+   * otherwise inherit the divergence and pass its own tests.
+   */
+  uniqueBy: {
+    where: (input: UserFacilityCreateInput) => ({
+      userId: input.userId,
+      facilityId: input.facilityId,
+    }),
+    matches: (row: ScopedRow<'UserFacility'>, input: UserFacilityCreateInput) =>
+      row.userId === input.userId && row.facilityId === input.facilityId,
+    message: () => 'That member of staff is already attached to that facility.',
+  },
+};
+
 /* -------------------------------------------------------------- facilities */
 
 export interface FacilityListQuery extends BaseQuery {
@@ -888,6 +993,7 @@ export const platformSpecs = {
   users: userSpec,
   roles: roleSpec,
   roleAssignments: roleAssignmentSpec,
+  userFacilities: userFacilitySpec,
   facilities: facilitySpec,
   terminology: terminologyCodeSpec,
 } as const;

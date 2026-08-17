@@ -257,16 +257,23 @@ export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
   }
 
   return [...unique.values()]
+    .filter((lot) => isUsable(lot, asOf))
     .filter((lot) => {
       // Not yet received is not on the shelf. Every function here answers "as
       // of" a date, and without this a lot received in October appeared in a
       // September `fefo` and in September's expiring-soon report - a historical
       // stockroom report listing inventory the practice did not yet have, which
       // reads as a real count and reconciles against nothing.
+      //
+      // After the usability filter, not before it. The first version validated
+      // `receivedOn` first and so threw on a retired lot from years ago with a
+      // corrupt date - one irrelevant historical row taking down `fefo`,
+      // allocation, reordering and every expiry report for the whole item.
+      // Status is decided without reading these dates, so discarding the held
+      // lots first means only the candidates have to be well formed.
       assertIsoDate(lot.receivedOn, `lot ${lot.lotNumber} receivedOn`);
       return lot.receivedOn <= asOf;
     })
-    .filter((lot) => isUsable(lot, asOf))
     .toSorted((a, b) => {
       const aLast = lastUsableDay(a);
       const bLast = lastUsableDay(b);

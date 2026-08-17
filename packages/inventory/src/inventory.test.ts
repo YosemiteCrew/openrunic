@@ -25,6 +25,7 @@ import {
   signedQuantity,
   unusableReason,
   usableBalance,
+  toStockPrecision,
   signedQuantity as signed,
   type Lot,
   type LotStatus,
@@ -1328,5 +1329,53 @@ describe('the fifth review round, each held by a test', () => {
     );
 
     expect(problems).toContain('A correction must name the movement it corrects.');
+  });
+});
+
+describe('the sixth review round, each held by a test', () => {
+  /**
+   * Filter order, which the first version got backwards.
+   *
+   * Validating `receivedOn` before the usability filter meant one retired lot
+   * from years ago with a corrupt date took down `fefo`, allocation, reordering
+   * and every expiry report for the whole item. Status is decided without
+   * reading these dates, so discarding the held lots first means only the
+   * candidates have to be well formed.
+   */
+  it.each(['RETIRED', 'RECALLED', 'QUARANTINED'] as const)(
+    'discards a %s lot with a corrupt date instead of failing on it',
+    (status) => {
+      const corrupt = lot({ id: 'old', status, receivedOn: 'not-a-date' });
+      const good = lot({ id: 'good', receivedOn: '2026-01-01', expiresOn: '2027-01-01' });
+
+      expect(fefo([corrupt, good], TODAY).map((entry) => entry.id)).toEqual(['good']);
+    }
+  );
+
+  it('still refuses a corrupt date on a lot that is otherwise a candidate', () => {
+    const corrupt = lot({ id: 'candidate', receivedOn: 'not-a-date', expiresOn: '2027-01-01' });
+
+    expect(() => fefo([corrupt], TODAY)).toThrow(/must be a YYYY-MM-DD date/u);
+  });
+
+  /**
+   * A finite number that stops being finite when it is scaled.
+   *
+   * `MAX_VALUE` times a million is `Infinity`, so the explicit finite checks
+   * passed and the rounding overflowed behind them. `countVariance` produced a
+   * correction quantity of `Infinity`, and worse, two different overflowing
+   * counts both became `Infinity` and compared equal - reporting no variance
+   * between two numbers that were not the same.
+   */
+  it('refuses a quantity too large to carry at six decimal places', () => {
+    expect(Number.isFinite(Number.MAX_VALUE), 'finite going in').toBe(true);
+    expect(Number.isFinite(Number.MAX_VALUE * 1e6), 'not finite once scaled').toBe(false);
+
+    expect(() => toStockPrecision(Number.MAX_VALUE)).toThrow(/too large to carry/u);
+    expect(() => countVariance(Number.MAX_VALUE, 0)).toThrow(/too large to carry/u);
+  });
+
+  it('carries a quantity a practice could plausibly hold', () => {
+    expect(toStockPrecision(1_000_000.123456)).toBe(1_000_000.123456);
   });
 });

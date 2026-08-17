@@ -264,7 +264,20 @@ export function signedQuantity(movement: StockMovement): number {
 const PLACES = 1e6;
 
 export function toStockPrecision(quantity: number): number {
-  const rounded = Math.round(quantity * PLACES) / PLACES;
+  // The scaling can overflow a value that was finite going in: `MAX_VALUE`
+  // times a million is `Infinity`, so `countVariance(Number.MAX_VALUE, 0)`
+  // produced a correction quantity of `Infinity` that `movementProblems` then
+  // refused - and worse, two different overflowing counts both became
+  // `Infinity` and compared equal, reporting no variance between two numbers
+  // that were not the same. A quantity this large is corrupt or a bad import
+  // rather than stock, so it is refused where it is noticed.
+  const scaled = quantity * PLACES;
+  if (!Number.isFinite(scaled)) {
+    throw new RangeError(
+      `${String(quantity)} is too large to carry as a stock quantity at six decimal places.`
+    );
+  }
+  const rounded = Math.round(scaled) / PLACES;
   // `+ 0` collapses negative zero, which is what rounding a tiny negative
   // residue produces. It compares equal to zero and prints as "-0", so a
   // balance report would show a lot holding minus nothing - the same

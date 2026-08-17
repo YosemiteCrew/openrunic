@@ -66,7 +66,15 @@ export function courseTotal(course: Course): DispensedQuantity {
   // every check downstream and dispenses twenty units against a prescription
   // that says nothing coherent. A sign error is a data-entry mistake and a
   // plausible total is exactly what it must not produce.
-  for (const [name, value] of Object.entries(course)) {
+  //
+  // The three fields named, rather than `Object.entries`. TypeScript is
+  // structural, so a prescription record carrying an `id` alongside these three
+  // is a valid `Course` at the call site - and walking its keys rejected the
+  // `id` for not being a number, refusing a course whose every declared field
+  // was fine. A validator has to check the contract it was given, not whatever
+  // else the object happens to carry.
+  for (const name of ['perDose', 'dosesPerDay', 'days'] as const) {
+    const value = course[name];
     if (!Number.isFinite(value) || value < 0) {
       throw new RangeError(`A course's ${name} must be zero or more, not ${String(value)}.`);
     }

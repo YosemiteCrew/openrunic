@@ -1215,6 +1215,19 @@ describe('the fourth review round, each held by a test', () => {
   });
 
   /**
+   * TypeScript is structural, so a prescription record carrying an `id`
+   * alongside the three course fields is a valid `Course` at the call site.
+   * Walking the object's keys rejected the `id` for not being a number and
+   * refused a course whose every declared field was fine - a validator failing
+   * on data it was never asked about.
+   */
+  it('validates the fields a course declares and ignores what else the object carries', () => {
+    const prescription = { id: 'rx-1', perDose: 1, dosesPerDay: 2, days: 10 };
+
+    expect(courseTotal(prescription)).toBe(20);
+  });
+
+  /**
    * A fridge holding exactly enough, reported as a shortage.
    *
    * The request was normalised and the available total was not, so 0.7 and 0.1

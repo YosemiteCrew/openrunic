@@ -257,6 +257,15 @@ export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
   }
 
   return [...unique.values()]
+    .filter((lot) => {
+      // Not yet received is not on the shelf. Every function here answers "as
+      // of" a date, and without this a lot received in October appeared in a
+      // September `fefo` and in September's expiring-soon report - a historical
+      // stockroom report listing inventory the practice did not yet have, which
+      // reads as a real count and reconciles against nothing.
+      assertIsoDate(lot.receivedOn, `lot ${lot.lotNumber} receivedOn`);
+      return lot.receivedOn <= asOf;
+    })
     .filter((lot) => isUsable(lot, asOf))
     .toSorted((a, b) => {
       const aLast = lastUsableDay(a);
@@ -266,11 +275,7 @@ export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
         if (bLast === undefined) return -1;
         return aLast < bLast ? -1 : 1;
       }
-      if (a.receivedOn !== b.receivedOn) {
-        assertIsoDate(a.receivedOn, `lot ${a.lotNumber} receivedOn`);
-        assertIsoDate(b.receivedOn, `lot ${b.lotNumber} receivedOn`);
-        return a.receivedOn < b.receivedOn ? -1 : 1;
-      }
+      if (a.receivedOn !== b.receivedOn) return a.receivedOn < b.receivedOn ? -1 : 1;
       return a.id < b.id ? -1 : 1;
     });
 }

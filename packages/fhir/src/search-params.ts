@@ -213,12 +213,19 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
         mustSupport: true,
         targets: ['Practitioner'],
       },
-      {
-        name: 'specialty',
-        type: 'token',
-        documentation: 'NUCC provider taxonomy code.',
-        mustSupport: true,
-      },
+      // `specialty` is not here, and US Core marks it must-support.
+      //
+      // The taxonomy code lives on the user rather than on the role grant, so
+      // filtering by it is a join the repository layer cannot express - it has
+      // no set-based read, so "the grants held by every clinician with this
+      // code" cannot be asked as one query. See #88 and #94.
+      //
+      // Declaring it and answering it partially is the failure this whole file
+      // exists to avoid: a client that filters on an ignored parameter receives
+      // the whole practice and believes it received a slice. An absence is
+      // visible in the CapabilityStatement; a filter that half works is not.
+      // The projection still emits the code, so a client can filter what it
+      // receives - it simply cannot ask the server to.
     ],
     includes: ['PractitionerRole:practitioner', 'PractitionerRole:location'],
   },

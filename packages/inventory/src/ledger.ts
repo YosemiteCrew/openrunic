@@ -195,6 +195,13 @@ export function movementProblems(movement: StockMovement): readonly string[] {
   if (movement.correctsMovementId === movement.id) {
     problems.push('A movement cannot correct itself.');
   }
+  // Trimmed and required, like the reason and the actor beside it. A row
+  // carrying `correctsMovementId: '   '` claims to correct something and names
+  // nothing, so the audit link the field exists to make points nowhere - and
+  // the ledger is append-only, so the claim stays.
+  if (movement.correctsMovementId !== undefined && movement.correctsMovementId.trim() === '') {
+    problems.push('A correction must name the movement it corrects.');
+  }
   // Trimmed like the reason, and for the same reason: an audit entry naming
   // "   " as the actor names nobody, with more confidence than a blank field.
   if (movement.actorId.trim() === '') {
@@ -430,10 +437,19 @@ export function countVariance(counted: number, expected: number): CountVariance 
   if (!Number.isFinite(expected)) {
     throw new RangeError(`An expected balance must be a number, not ${String(expected)}.`);
   }
-  if (counted === expected) return undefined;
-  return counted > expected
-    ? { kind: 'COUNT_SURPLUS', quantity: counted - expected, counted, expected }
-    : { kind: 'COUNT_SHORTFALL', quantity: expected - counted, counted, expected };
+  // Both operands onto the ledger's grid before comparing, and the quantity
+  // derived on that grid too. Without it `countVariance(0.1 + 0.2, 0.3)`
+  // reported a surplus of 5.55e-17 - a variance that passes quantity validation
+  // and posts as a permanent correction to an append-only ledger, for a
+  // discrepancy of five hundredths of a femtolitre. Rounding the balances and
+  // not the comparison against them left exactly the artefact the rounding was
+  // introduced to remove.
+  const shelf = toStockPrecision(counted);
+  const book = toStockPrecision(expected);
+  if (shelf === book) return undefined;
+  return shelf > book
+    ? { kind: 'COUNT_SURPLUS', quantity: toStockPrecision(shelf - book), counted, expected }
+    : { kind: 'COUNT_SHORTFALL', quantity: toStockPrecision(book - shelf), counted, expected };
 }
 
 /**

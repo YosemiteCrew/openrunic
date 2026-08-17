@@ -1270,3 +1270,63 @@ describe('the fourth review round, each held by a test', () => {
     expect(movementProblems(movement({ id: 'm', occurredOn: '2026-08-01' }))).toEqual([]);
   });
 });
+
+describe('the fifth review round, each held by a test', () => {
+  /**
+   * Rounding the balances and not the comparison against them left exactly the
+   * artefact the rounding was introduced to remove: a surplus of 5.55e-17,
+   * which passes quantity validation and posts as a permanent correction to an
+   * append-only ledger for a discrepancy of five hundredths of a femtolitre.
+   */
+  it('finds no variance between a fractional count and the sum it came from', () => {
+    expect(0.1 + 0.2, 'the arithmetic this guards against').not.toBe(0.3);
+
+    expect(countVariance(0.1 + 0.2, 0.3)).toBeUndefined();
+    expect(countVariance(0.3, 0.1 + 0.2)).toBeUndefined();
+  });
+
+  it('still reports a variance a practice would care about, on the grid', () => {
+    expect(countVariance(0.1 + 0.2, 0.5)).toEqual({
+      kind: 'COUNT_SHORTFALL',
+      quantity: 0.2,
+      counted: 0.1 + 0.2,
+      expected: 0.5,
+    });
+  });
+
+  /**
+   * Not yet received is not on the shelf.
+   *
+   * Every function here answers "as of" a date, and a lot received in October
+   * appeared in a September `fefo` and in September's expiring-soon report - a
+   * historical stockroom report listing inventory the practice did not have,
+   * which reads as a real count and reconciles against nothing.
+   */
+  it('leaves out a lot that had not arrived by the cutoff', () => {
+    const future = lot({ id: 'future', receivedOn: '2026-10-01', expiresOn: '2027-01-01' });
+    const here = lot({ id: 'here', receivedOn: '2026-01-01', expiresOn: '2027-01-01' });
+
+    expect(fefo([future, here], '2026-09-01').map((entry) => entry.id)).toEqual(['here']);
+    expect(fefo([future, here], '2026-10-01').map((entry) => entry.id)).toEqual(['here', 'future']);
+    expect(expiringWithin([future], '2026-09-01', 365)).toEqual([]);
+  });
+
+  it('includes a lot received exactly on the cutoff', () => {
+    const today = lot({ id: 'today', receivedOn: TODAY, expiresOn: '2027-01-01' });
+
+    expect(fefo([today], TODAY).map((entry) => entry.id)).toEqual(['today']);
+  });
+
+  /**
+   * A row claiming to correct something and naming nothing. The audit link the
+   * field exists to make points nowhere, and the ledger is append-only, so the
+   * claim stays.
+   */
+  it.each(['', '   '])('refuses %j as the movement a correction corrects', (blank) => {
+    const problems = movementProblems(
+      movement({ id: 'm2', correctsMovementId: blank, reason: 'Entered twice' })
+    );
+
+    expect(problems).toContain('A correction must name the movement it corrects.');
+  });
+});

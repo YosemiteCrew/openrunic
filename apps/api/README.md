@@ -50,13 +50,21 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 ### The FHIR boundary
 
 `GET /fhir/metadata` publishes the CapabilityStatement, generated from the mounted resource
-modules. Seventeen resource types are served with `read` and `search-type`; `Patient` also accepts
+modules. Twenty resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
+
+Only `Observation` and `Claim` advertise `status`. The other resources with a status column have a
+domain enum wider than the FHIR value set - the schedule needs a state for "roomed" and R4 has no
+code for it - so advertising `status` there would match one of the states the mapping collapses and
+silently miss the rest. `losslessStatus` in `resources.ts` decides that per resource from the
+mapping itself, which is why the absence is visible here rather than buried in a filter that half
+works.
 
 | Resource              | Search parameters implemented                                         |
 | --------------------- | --------------------------------------------------------------------- |
 | `Patient`             | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
 | `Practitioner`        | `name`                                                                |
+| `PractitionerRole`    | `practitioner`                                                        |
 | `Location`            | `name`                                                                |
 | `Coverage`            | `patient`                                                             |
 | `Appointment`         | `_id`, `patient`, `date`, `practitioner`, `location`                  |
@@ -72,6 +80,8 @@ modules. Seventeen resource types are served with `read` and `search-type`; `Pat
 | `Specimen`            | `patient`, `accession`                                                |
 | `DocumentReference`   | `patient`, `category`, `date`                                         |
 | `Task`                | `patient`                                                             |
+| `Provenance`          | `target`, `recorded`, `agent`                                         |
+| `Claim`               | `patient`, `status`, `created`                                        |
 
 Every resource also accepts `_count` and `_offset`; a parameter that is not listed is refused with
 a `not-supported` OperationOutcome rather than ignored. `fhir.conformance.test.ts` reads the

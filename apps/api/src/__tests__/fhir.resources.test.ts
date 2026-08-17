@@ -36,6 +36,9 @@ const ENCOUNTER = testId(20);
 const CLAIM = testId(940);
 const ORDER = testId(30);
 const REPORT = testId(40);
+const NURSE_ROLE = testId(970);
+const SITE_GRANT = testId(971);
+const ORG_GRANT = testId(972);
 
 function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
@@ -341,6 +344,32 @@ function seedChart(dataset: MemoryDataset): void {
     expiresAt: null,
   });
 
+  seed(dataset, 'Role', {
+    ...storageColumns(NURSE_ROLE),
+    key: 'nurse',
+    name: 'Nurse',
+    description: null,
+    isSystem: true,
+  });
+
+  // Two grants of the same role to the same person, differing only in whether
+  // they name a facility. That is the pair the projection has to tell apart:
+  // one is scoped to a site and one is organisation-wide, and the resource says
+  // so by carrying a `location` or by carrying none.
+  seed(dataset, 'RoleAssignment', {
+    ...storageColumns(SITE_GRANT),
+    userId: PROVIDER,
+    roleId: NURSE_ROLE,
+    facilityId: DEMO_FACILITY_A,
+  });
+
+  seed(dataset, 'RoleAssignment', {
+    ...storageColumns(ORG_GRANT),
+    userId: PROVIDER,
+    roleId: NURSE_ROLE,
+    facilityId: null,
+  });
+
   seed(dataset, 'Task', {
     ...storageColumns(testId(60)),
     type: 'RESULT',
@@ -555,6 +584,76 @@ describe('the projections', () => {
 
     expect(location.name).toBe('Testville Clinic');
     expect(location.address?.city).toBe('Testville');
+  });
+
+  it('binds a role grant to its practitioner, its organisation and its role code', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as {
+      practitioner?: { reference?: string };
+      organization?: { reference?: string };
+      code?: { coding?: { code?: string }[] }[];
+      active?: boolean;
+    };
+
+    expect(role.practitioner?.reference).toBe(`Practitioner/${PROVIDER}`);
+    expect(role.organization?.reference).toBe(`Organization/${DEMO_TENANT_A}`);
+    expect(role.code?.[0]?.coding?.[0]?.code).toBe('nurse');
+    expect(role.active).toBe(true);
+  });
+
+  it('names the facility a site-scoped grant applies at', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { location?: { reference?: string }[] };
+
+    expect(role.location?.map((entry) => entry.reference)).toEqual([`Location/${DEMO_FACILITY_A}`]);
+  });
+
+  /**
+   * The absent-versus-empty property, asserted rather than assumed.
+   *
+   * An organisation-wide grant is not a grant at no location, and the two would
+   * serialise identically if the projection emitted `location: []`. A directory
+   * client reading an empty array concludes the practitioner works nowhere and
+   * routes a referral elsewhere, so the distinction is the whole point of the
+   * resource rather than a formatting preference. `toHaveProperty` rather than a
+   * length check, because `[]` passes every check that asks how many.
+   */
+  it('emits no location at all for an organisation-wide grant', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as Record<string, unknown>;
+
+    expect(role).not.toHaveProperty('location');
+  });
+
+  it('reads a practitioner filter as the reference a directory client sends', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request(`/fhir/PractitionerRole?practitioner=Practitioner/${PROVIDER}`, {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(2);
+  });
+
+  it('refuses a practitioner filter that references the wrong resource type', async () => {
+    const { app } = harness();
+
+    const res = await app.request(`/fhir/PractitionerRole?practitioner=Patient/${PATIENT}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
   });
 
   it('filters a chart search by the patient compartment reference', async () => {

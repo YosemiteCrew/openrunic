@@ -35,6 +35,7 @@ import {
   medicationStatementResource,
   observationResource,
   practitionerResource,
+  practitionerRoleResource,
   provenanceResource,
   serviceRequestResource,
   specimenResource,
@@ -149,6 +150,93 @@ const practitionerModule = defineFhirResource({
     order: 'asc' as const,
   }),
   toResource: practitionerResource,
+});
+
+/**
+ * What one page of role grants needs beyond the grants themselves.
+ *
+ * A grant names a role and a user; the resource needs the role's key and
+ * whether the person is still active. Fetching those per row would be two
+ * queries per grant, which on a page of fifty is a hundred round trips - the
+ * shape the loader exists to avoid.
+ */
+interface RolePageData {
+  roleKeyById: Map<string, string>;
+  userById: Map<string, ScopedRow<'User'>>;
+}
+
+async function prepareRoles(
+  rows: readonly ScopedRow<'RoleAssignment'>[],
+  repositories: Repositories
+): Promise<RolePageData> {
+  const roleKeyById = new Map<string, string>();
+  const userById = new Map<string, ScopedRow<'User'>>();
+  if (rows.length === 0) return { roleKeyById, userById };
+
+  const roleIds = [...new Set(rows.map((row) => row.roleId))];
+  const userIds = [...new Set(rows.map((row) => row.userId))];
+
+  const [roles, users] = await Promise.all([
+    Promise.all(roleIds.map(async (id) => repositories.roles.findById(id))),
+    Promise.all(userIds.map(async (id) => repositories.users.findById(id))),
+  ]);
+
+  for (const role of roles) {
+    if (role !== null) roleKeyById.set(role.id, role.key);
+  }
+  for (const user of users) {
+    if (user !== null) userById.set(user.id, user);
+  }
+
+  return { roleKeyById, userById };
+}
+
+/**
+ * PractitionerRole: who may do what, in which organisation.
+ *
+ * The resource a directory client asks for before it asks anything else, and
+ * the one that makes Practitioner useful - a name with no role answers nothing
+ * a referring practice wants to know.
+ *
+ * ## One resource per grant, not per practitioner
+ *
+ * `RoleAssignment` is unique on `(userId, roleId, facilityId)`, so a nurse who
+ * works at two sites has two rows and therefore two PractitionerRoles. That is
+ * the FHIR shape rather than an artefact of this schema: PractitionerRole is
+ * the join, and a directory that collapsed the two into one resource could not
+ * express that the role was granted at one site and not the other.
+ *
+ * `projections.ts` carries why an organisation-wide grant emits no `location`
+ * rather than an empty one.
+ */
+const practitionerRoleModule = defineFhirResource({
+  type: 'PractitionerRole',
+  interactions: ['read', 'search-type'],
+  params: ['practitioner'],
+  permission: 'user.read',
+  collection: (repositories) => repositories.roleAssignments,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    // Through `referenceId` rather than straight through: a directory client
+    // searches with the reference it was given, `Practitioner/{id}`, and a bare
+    // comparison against `userId` would match nothing and report it as an empty
+    // result rather than as the malformed search it is.
+    ...(query.practitioner === undefined
+      ? {}
+      : { userId: referenceId(query.practitioner, 'Practitioner', 'practitioner') }),
+    sort: 'createdAt' as const,
+    order: 'asc' as const,
+  }),
+  prepare: prepareRoles,
+  toResource: (row: ScopedRow<'RoleAssignment'>, context) => {
+    const user = context.prepared.userById.get(row.userId);
+    const roleKey = context.prepared.roleKeyById.get(row.roleId);
+    return practitionerRoleResource(row, {
+      ...(roleKey === undefined ? {} : { roleKey }),
+      ...(user?.email === undefined || user.email === null ? {} : { email: user.email }),
+      ...(user === undefined ? {} : { active: user.status === 'ACTIVE' }),
+    });
+  },
 });
 
 const locationModule = defineFhirResource({
@@ -584,6 +672,7 @@ const claimModule = defineFhirResource({
 export const SERVED_MODULES: readonly FhirResourceModule[] = [
   patientModule,
   practitionerModule,
+  practitionerRoleModule,
   locationModule,
   coverageModule,
   appointmentModule,

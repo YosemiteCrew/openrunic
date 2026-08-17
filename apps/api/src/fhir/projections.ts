@@ -13,6 +13,7 @@ import {
   toFhirMedicationStatement,
   toFhirObservation,
   toFhirPractitioner,
+  toFhirPractitionerRole,
   toFhirProvenance,
   toFhirServiceRequest,
   toFhirSpecimen,
@@ -31,6 +32,7 @@ import {
   type MedicationStatement,
   type Observation,
   type Practitioner,
+  type PractitionerRole,
   type Provenance,
   type ServiceRequest,
   type Specimen,
@@ -89,6 +91,66 @@ export function practitionerResource(row: ScopedRow<'User'>): Practitioner {
       dea: absent(row.dea),
       email: row.email,
       active: row.status === 'ACTIVE',
+    })
+  );
+}
+
+/**
+ * A grant of a role to a user, as FHIR's PractitionerRole.
+ *
+ * The resource that answers "who may do what, and where" - which a directory
+ * client asks before it asks anything else. It is assembled from three rows
+ * rather than one: the grant itself, the role it names and the user it binds,
+ * because FHIR models as one resource what this schema models as a grant plus
+ * its context.
+ *
+ * The role key travels as the code rather than the role's display name. A
+ * receiving system matches on codes, and a tenant that renamed `provider` to
+ * "Clinician (MD)" would otherwise stop matching without anything having
+ * changed about who the person is.
+ *
+ * ## `location`, and the two things a missing one can mean
+ *
+ * A grant carries `facilityId`, and a nullable one. The two states are not a
+ * value and its absence; they are two different grants:
+ *
+ * - A facility is named. The grant applies at that facility and nowhere else,
+ *   and the resource says so with a `Location` reference.
+ * - No facility. The grant is organisation-wide - it applies wherever the
+ *   organisation operates - which is the opposite of working nowhere.
+ *
+ * The second emits no `location` element rather than an empty array. Both would
+ * serialise to something a directory client can read, but an empty array is a
+ * positive claim that the person practises at no location, and the client would
+ * believe it. Enumerating every facility instead would be a different lie: that
+ * this person was granted the role at each one individually, which is not what
+ * an organisation-wide grant records. An absent element is the only one of the
+ * three that says what is true - this grant is not scoped to a place.
+ */
+export function practitionerRoleResource(
+  row: ScopedRow<'RoleAssignment'>,
+  context: {
+    roleKey?: string;
+    email?: string;
+    active?: boolean;
+  }
+): PractitionerRole {
+  return toFhirPractitionerRole(
+    compactDomain({
+      id: row.id,
+      practitionerId: row.userId,
+      organizationId: row.tenantId,
+      // `compact` in the mapper drops an empty array, so an organisation-wide
+      // grant emits no `location` element at all rather than an empty one. See
+      // the header for why those are different answers.
+      locationIds: row.facilityId === null ? [] : [row.facilityId],
+      // NUCC taxonomy is licensed content this repository does not ship, and a
+      // practice that has the codes supplies them through terminology rather
+      // than through a grant. An empty list says so; an invented one would not.
+      specialtyCodes: [],
+      roleCode: context.roleKey,
+      email: context.email,
+      active: context.active,
     })
   );
 }

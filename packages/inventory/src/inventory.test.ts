@@ -78,12 +78,12 @@ describe('expiry', () => {
   });
 
   it('has no last usable day when nothing expires and nothing was opened', () => {
-    expect(lastUsableDay(lot({ id: 'a' }))).toBeUndefined();
+    expect(lastUsableDay(lot({ id: 'a' }), TODAY)).toBeUndefined();
     expect(isExpired(lot({ id: 'a' }), '2099-01-01')).toBe(false);
   });
 
   it('ignores a beyond-use window on a lot that was never opened', () => {
-    expect(lastUsableDay(lot({ id: 'a', beyondUseDays: 28 }))).toBeUndefined();
+    expect(lastUsableDay(lot({ id: 'a', beyondUseDays: 28 }), TODAY)).toBeUndefined();
   });
 
   /**
@@ -100,7 +100,7 @@ describe('expiry', () => {
       beyondUseDays: 28,
     });
 
-    expect(lastUsableDay(opened)).toBe('2026-08-29');
+    expect(lastUsableDay(opened, TODAY)).toBe('2026-08-29');
     expect(isExpired(opened, '2026-08-30')).toBe(true);
   });
 
@@ -112,7 +112,7 @@ describe('expiry', () => {
       beyondUseDays: 28,
     });
 
-    expect(lastUsableDay(opened)).toBe('2026-08-20');
+    expect(lastUsableDay(opened, TODAY)).toBe('2026-08-20');
   });
 
   /**
@@ -1377,5 +1377,176 @@ describe('the sixth review round, each held by a test', () => {
 
   it('carries a quantity a practice could plausibly hold', () => {
     expect(toStockPrecision(1_000_000.123456)).toBe(1_000_000.123456);
+  });
+});
+
+describe('the review of the merged inventory PRs, each finding held by a test', () => {
+  /**
+   * A deadline derived from something that had not happened yet.
+   *
+   * The beyond-use clock starts when the vial is pierced, so on any date before
+   * that it does not exist. Applying it regardless gave a lot opened on the 10th
+   * an October deadline in a query asked about the 1st, sorting it ahead of a
+   * December expiry in a back-dated FEFO and listing it in that month's
+   * expiring-soon report. The as-of contract this package opens with is exactly
+   * the promise that was broken.
+   */
+  it('ignores a beyond-use window that had not started as of the date asked about', () => {
+    const opened = lot({
+      id: 'a',
+      receivedOn: '2026-08-01',
+      openedOn: '2026-09-10',
+      beyondUseDays: 28,
+    });
+
+    expect(lastUsableDay(opened, '2026-09-01')).toBeUndefined();
+    expect(lastUsableDay(opened, '2026-09-10')).toBe('2026-10-08');
+    expect(expiringWithin([opened], '2026-09-01', 365)).toEqual([]);
+  });
+
+  /**
+   * The public single-lot answer disagreed with the shelf answer, because the
+   * receipt-date check lived only inside `fefo`. A caller asking about one lot
+   * could approve stock the practice did not yet have.
+   */
+  it('reports a not-yet-received lot as unusable, not only as absent from FEFO', () => {
+    const future = lot({ id: 'a', lotNumber: 'F1', receivedOn: '2026-10-01' });
+
+    expect(isUsable(future, '2026-09-01')).toBe(false);
+    expect(unusableReason(future, '2026-09-01')).toBe('Lot F1 was not received until 2026-10-01.');
+    expect(fefo([future], '2026-09-01')).toEqual([]);
+  });
+
+  it('still discards a held lot before reading its dates', () => {
+    const corrupt = lot({ id: 'a', status: 'RETIRED', receivedOn: 'not-a-date' });
+
+    expect(isUsable(corrupt, TODAY)).toBe(false);
+    expect(fefo([corrupt], TODAY)).toEqual([]);
+  });
+
+  /**
+   * A beyond-use window that is not a whole number of days is bad stored data.
+   * A negative one produced a last-usable day before the vial was opened, and
+   * `Date.UTC` silently truncated a fractional one.
+   */
+  it.each([-1, 1.5, Number.NaN])('refuses a beyond-use window of %s days', (days) => {
+    const bad = lot({ id: 'a', openedOn: '2026-08-01', beyondUseDays: days });
+
+    expect(() => lastUsableDay(bad, TODAY)).toThrow(/not a whole number of days/u);
+  });
+
+  /**
+   * Two rows carrying identical fields built by two code paths compared unequal
+   * under `JSON.stringify`, so a duplicate the caller could not deduplicate
+   * threw on a balance read for data that was fine.
+   */
+  it('treats a duplicate as a duplicate whatever order its keys were written in', () => {
+    const first = movement({ id: 'm1', quantity: 10 });
+    const reordered = Object.fromEntries(
+      Object.entries(first).reverse()
+    ) as unknown as StockMovement;
+
+    expect(JSON.stringify(first), 'the comparison this guards against').not.toBe(
+      JSON.stringify(reordered)
+    );
+    expect(lotBalance([first, reordered], 'lot-a', TODAY)).toBe(10);
+  });
+
+  /**
+   * `.trim()` on an absent actor threw a TypeError, turning the validation
+   * failure this function exists to report into an application error - on
+   * precisely the malformed audit input it was written to catch. The other
+   * identifiers were not checked at all.
+   */
+  it.each(['id', 'itemId', 'lotId', 'actorId'] as const)(
+    'reports a missing %s rather than throwing on it',
+    (field) => {
+      const bare = { ...movement({ id: 'm' }) } as Record<string, unknown>;
+      delete bare[field];
+
+      expect(() => movementProblems(bare as unknown as StockMovement)).not.toThrow();
+      expect(movementProblems(bare as unknown as StockMovement).length).toBeGreaterThan(0);
+    }
+  );
+
+  it.each(['id', 'itemId', 'lotId', 'actorId'] as const)('refuses a blank %s', (field) => {
+    const blank = { ...movement({ id: 'm' }), [field]: '   ' } as StockMovement;
+
+    expect(movementProblems(blank).length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Rounding after every addition discarded stock whose individual quantities
+   * sat below the grid, so the per-lot figure and the single-lot figure
+   * disagreed for the same ledger - and allocation read the wrong one.
+   */
+  it('agrees with lotBalance when the quantities are finer than the grid', () => {
+    const dust = Array.from({ length: 10 }, (_, index) =>
+      movement({ id: `m${String(index)}`, quantity: 0.0000004 })
+    );
+
+    expect(lotBalance(dust, 'lot-a', TODAY)).toBe(0.000004);
+    expect(balancesByLot(dust, 'item-1', TODAY).get('lot-a')).toBe(0.000004);
+    expect(itemBalance(dust, 'item-1', TODAY)).toBe(0.000004);
+  });
+
+  /**
+   * `Allocation` is a plain interface, so a caller can build one - and these
+   * tests do. `movementsFor` checked no line against the totals beside it, so a
+   * forged allocation emitted a movement the ledger accepted.
+   */
+  it('refuses an allocation whose lines do not sum to what it claims', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 100 }],
+      allocated: 1,
+      requested: 1,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/lines sum to 100 but the allocation says 1/u);
+  });
+
+  it('refuses an allocation that does not account for what was requested', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 1 }],
+      allocated: 1,
+      requested: 10,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/accounts for 1 of a requested 10/u);
+  });
+
+  /**
+   * Truthiness handed a clinically significant decision to JavaScript: the
+   * string 'false' from an unchecked form is truthy and chose divisible, while
+   * an omitted value chose indivisible - both silently, and both being the
+   * answer nobody gave.
+   */
+  it.each([undefined, 'false', 1, null])('refuses %j as a divisibility answer', (bad) => {
+    const lots = [lot({ id: 'a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const ledger = [movement({ id: 'm1', quantity: 10 })];
+
+    expect(() =>
+      allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(5), TODAY, {
+        divisible: bad as unknown as boolean,
+      })
+    ).toThrow(/must say whether the quantity may be split/u);
   });
 });

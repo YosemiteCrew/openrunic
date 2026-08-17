@@ -202,10 +202,23 @@ export function movementProblems(movement: StockMovement): readonly string[] {
   if (movement.correctsMovementId !== undefined && movement.correctsMovementId.trim() === '') {
     problems.push('A correction must name the movement it corrects.');
   }
-  // Trimmed like the reason, and for the same reason: an audit entry naming
-  // "   " as the actor names nobody, with more confidence than a blank field.
-  if (movement.actorId.trim() === '') {
-    problems.push('A movement must name who posted it.');
+  // Every identifier, coalesced before trimming. `movement.actorId.trim()`
+  // threw a TypeError when the field arrived absent or null from unchecked
+  // JSON, turning the validation failure this function exists to report into an
+  // application error - on precisely the malformed audit input it was written
+  // to catch. The others were not checked at all, so a blank `id`, `itemId` or
+  // `lotId` reached an append-only ledger as an entry nothing can address or
+  // attribute.
+  for (const [field, message] of [
+    ['id', 'A movement must have an id.'],
+    ['itemId', 'A movement must name the item it moved.'],
+    ['lotId', 'A movement must name the lot it came from.'],
+    ['actorId', 'A movement must name who posted it.'],
+  ] as const) {
+    const value: unknown = movement[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      problems.push(message);
+    }
   }
 
   return problems;
@@ -299,11 +312,26 @@ export function toStockPrecision(quantity: number): number {
  * two answers to what one movement was, and picking either would decide a
  * balance by array order.
  */
+/**
+ * A comparison that does not depend on the order the keys were written in.
+ *
+ * `JSON.stringify` does, so two rows carrying identical fields built by two code
+ * paths compared unequal and were rejected as conflicting - a duplicate the
+ * caller could not deduplicate, throwing on a balance read for data that was
+ * fine. What the rule is about is contents.
+ */
+function sameContents(left: object, right: object): boolean {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every(
+    (key) => (left as Record<string, unknown>)[key] === (right as Record<string, unknown>)[key]
+  );
+}
+
 function distinct(movements: readonly StockMovement[]): readonly StockMovement[] {
   const unique = new Map<string, StockMovement>();
   for (const movement of movements) {
     const seen = unique.get(movement.id);
-    if (seen !== undefined && JSON.stringify(seen) !== JSON.stringify(movement)) {
+    if (seen !== undefined && !sameContents(seen, movement)) {
       throw new RangeError(
         `Movement ${movement.id} was supplied twice with different contents, so there is no one answer for its effect on the balance.`
       );
@@ -359,13 +387,21 @@ export function balancesByLot(
   asOf: IsoDate
 ): ReadonlyMap<string, number> {
   assertIsoDate(asOf, 'asOf');
-  const balances = new Map<string, number>();
+  // Accumulated raw and rounded once at the end, which is what `lotBalance`
+  // does. Rounding after every addition discarded real stock whenever the
+  // individual quantities sat below the grid: ten receipts of 0.0000004 came
+  // out at zero here and at 0.000004 there, so the per-lot figure and the
+  // single-lot figure disagreed for the same ledger - and allocation, the
+  // reorder decision and the count all read the one that was wrong.
+  const running = new Map<string, number>();
   for (const movement of distinct(movements)) {
     if (movement.itemId !== itemId || !onOrBefore(movement, asOf)) continue;
-    balances.set(
-      movement.lotId,
-      toStockPrecision((balances.get(movement.lotId) ?? 0) + signedQuantity(movement))
-    );
+    running.set(movement.lotId, (running.get(movement.lotId) ?? 0) + signedQuantity(movement));
+  }
+
+  const balances = new Map<string, number>();
+  for (const [lotId, total] of running) {
+    balances.set(lotId, toStockPrecision(total));
   }
   return balances;
 }

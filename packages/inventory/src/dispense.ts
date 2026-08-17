@@ -204,6 +204,17 @@ export function allocate(
     return { itemId, lines: [], allocated: 0, requested, shortfall: 0 };
   }
 
+  // Compared to `false` rather than tested for truthiness. The option is
+  // documented as having no default because a wrong guess splits a single
+  // injection across two vials, and truthiness handed that decision to
+  // JavaScript: the string `'false'` from an unchecked form is truthy and chose
+  // divisible, while an omitted value chose indivisible - both silently, and
+  // both being the answer nobody gave.
+  if (typeof options.divisible !== 'boolean') {
+    throw new RangeError(
+      `An allocation must say whether the quantity may be split across lots; divisible was ${String(options.divisible)}.`
+    );
+  }
   if (!options.divisible) {
     const whole = candidates.find((entry) => entry.onHand >= requested);
     if (whole === undefined) {
@@ -267,6 +278,47 @@ export function allocate(
  * downstream could detect, because every lot id and quantity in the result is
  * valid and merely debits the wrong ledger.
  */
+/**
+ * Refuses an allocation whose own numbers do not add up.
+ *
+ * `Allocation` is a plain interface, so a caller can build one - and the tests
+ * themselves do. `movementsFor` copied every line and checked none of them
+ * against the totals beside them, so an allocation reporting one unit requested
+ * and allocated while carrying a hundred-unit line emitted a hundred-unit
+ * movement that `movementProblems` accepted and the ledger debited.
+ *
+ * The alternative was to make `Allocation` unforgeable with a brand. That would
+ * be stronger, and it would also stop a caller reconstructing one from a stored
+ * request - which is exactly what a retry after a failed post has to do. So the
+ * shape stays open and its arithmetic is checked here, at the only door that
+ * turns it into ledger rows.
+ */
+function assertConsistent(allocation: Allocation): void {
+  for (const line of allocation.lines) {
+    if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
+      throw new RangeError(
+        `Allocation line for lot ${line.lotNumber} has quantity ${String(line.quantity)}, which is not a positive number.`
+      );
+    }
+  }
+
+  const summed = toStockPrecision(
+    allocation.lines.reduce((total, line) => total + line.quantity, 0)
+  );
+  if (summed !== toStockPrecision(allocation.allocated)) {
+    throw new RangeError(
+      `Allocation lines sum to ${String(summed)} but the allocation says ${String(allocation.allocated)} was allocated.`
+    );
+  }
+
+  const accounted = toStockPrecision(allocation.allocated + allocation.shortfall);
+  if (accounted !== toStockPrecision(allocation.requested)) {
+    throw new RangeError(
+      `Allocation accounts for ${String(accounted)} of a requested ${String(allocation.requested)}.`
+    );
+  }
+}
+
 export function movementsFor(
   allocation: Allocation,
   detail: {
@@ -277,6 +329,7 @@ export function movementsFor(
     readonly idFor: (line: AllocationLine, index: number) => string;
   }
 ): readonly StockMovement[] {
+  assertConsistent(allocation);
   return allocation.lines.map((line, index) => ({
     id: detail.idFor(line, index),
     lotId: line.lotId,

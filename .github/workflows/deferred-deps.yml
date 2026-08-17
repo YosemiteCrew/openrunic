@@ -34,9 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     # Five gate runs, each of which may install a fresh dependency tree.
     timeout-minutes: 45
+    # The top-level `permissions: {}` denies everything; this job re-grants only
+    # the two scopes its steps use, each spelled out so the grant is auditable.
     permissions:
-      contents: read
-      issues: write
+      contents: read # checkout reads the ref; nothing here writes to the repo
+      issues: write # edit, comment on or open the deferred-upgrade tracking issue
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

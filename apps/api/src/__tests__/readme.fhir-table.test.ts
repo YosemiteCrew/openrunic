@@ -61,6 +61,49 @@ describe('the README resource table', () => {
     );
   });
 
+  /**
+   * The prose under the table, held to the table above it.
+   *
+   * The table test above caught nothing when a paragraph below it still called
+   * `Claim` a deliberate absence after `Claim` had been added as served. An
+   * integrator reading the section got two contradictory answers and no test
+   * had an opinion, because the table was right and the sentence was not.
+   *
+   * Two things about how narrow this is, both learned by getting it wrong:
+   *
+   * The unit is the paragraph, not the sentence. The first attempt scoped to a
+   * sentence and passed against the exact prose it was written to catch, since
+   * the original read "Two absences are deliberate." and named `Claim` in the
+   * next sentence. A claim and its subject routinely sit a full stop apart.
+   *
+   * The phrases are the ones that can only mean a resource is not served.
+   * A bare "absence" is not among them: the paragraph above the table uses it
+   * for an absent search parameter while naming `Observation`, which is served,
+   * and a test that failed on correct prose would be deleted rather than fixed.
+   *
+   * It checks one class and does not pretend to verify prose generally. It is
+   * the drift that happens whenever a resource is added, which is the moment
+   * nobody rereads the paragraphs.
+   */
+  it('never describes a served resource as one this server does not serve', () => {
+    const served = new Set<string>(SERVED_MODULES.map((module) => module.type));
+    const absence =
+      /(absences? (are|is) deliberate|is not served|does not serve|deliberately absent)/iu;
+
+    const offenders = readFileSync(README, 'utf8')
+      .split(/\n\s*\n/u)
+      .filter((paragraph) => !paragraph.trimStart().startsWith('|'))
+      .filter((paragraph) => absence.test(paragraph))
+      .flatMap((paragraph) =>
+        [...paragraph.matchAll(/`(?<type>[A-Z][A-Za-z]+)`/gu)]
+          .map((found) => found.groups?.['type'] ?? '')
+          .filter((type) => served.has(type))
+          .map((type) => `${type} is served, but a paragraph calls it absent: ${paragraph.trim()}`)
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
   it('states the number of served resources correctly', () => {
     const words = [
       'Seventeen',

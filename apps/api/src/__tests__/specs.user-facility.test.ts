@@ -178,6 +178,39 @@ describe('the facility-grant collection', () => {
     ).toEqual([{ createdAt: 'desc' }, { id: 'asc' }]);
   });
 
+  /**
+   * The natural key the database already enforces, declared so both
+   * implementations of the collection contract agree.
+   *
+   * `@@unique([userId, facilityId])` is on the model, so Postgres refuses a
+   * second grant. Without a `uniqueBy` the in-memory store accepted one, and
+   * the suite passed against memory while the deployed system failed at the
+   * database boundary with a driver error rather than the 409 every other
+   * collection returns.
+   */
+  it('rejects a second grant of the same user to the same facility', () => {
+    const input = { userId: USER, facilityId: DEMO_FACILITY_A };
+
+    expect(userFacilitySpec.uniqueBy?.where(input)).toEqual({
+      userId: USER,
+      facilityId: DEMO_FACILITY_A,
+    });
+    expect(userFacilitySpec.uniqueBy?.matches(row(), input)).toBe(true);
+    expect(userFacilitySpec.uniqueBy?.message(input)).toContain('already attached');
+  });
+
+  it('allows the same user at a different facility, and a different user at the same one', () => {
+    expect(
+      userFacilitySpec.uniqueBy?.matches(row(), { userId: USER, facilityId: testId(988) })
+    ).toBe(false);
+    expect(
+      userFacilitySpec.uniqueBy?.matches(row(), {
+        userId: testId(989),
+        facilityId: DEMO_FACILITY_A,
+      })
+    ).toBe(false);
+  });
+
   it('is closed to the patient compartment', () => {
     expect(userFacilitySpec.compartment).toBe('closed');
   });

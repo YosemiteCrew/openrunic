@@ -720,6 +720,27 @@ export const userFacilitySpec: CollectionSpec<
   writeMetadata(row: ScopedRow<'UserFacility'>): Record<string, unknown> {
     return { facilityId: row.facilityId, isPrimary: row.isPrimary };
   },
+
+  /**
+   * The natural key the database already enforces.
+   *
+   * `@@unique([userId, facilityId])` is on the model, so Postgres refuses a
+   * second grant. Without this the in-memory store accepted one, and the two
+   * implementations of the same collection contract disagreed: the suite passed
+   * against memory and the deployed system failed at the database boundary with
+   * a driver error rather than the 409 every other collection returns. Declared
+   * before a write path exists, because the first route to use it would
+   * otherwise inherit the divergence and pass its own tests.
+   */
+  uniqueBy: {
+    where: (input: UserFacilityCreateInput) => ({
+      userId: input.userId,
+      facilityId: input.facilityId,
+    }),
+    matches: (row: ScopedRow<'UserFacility'>, input: UserFacilityCreateInput) =>
+      row.userId === input.userId && row.facilityId === input.facilityId,
+    message: () => 'That member of staff is already attached to that facility.',
+  },
 };
 
 /* -------------------------------------------------------------- facilities */

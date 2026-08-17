@@ -25,6 +25,7 @@ import {
   signedQuantity,
   unusableReason,
   usableBalance,
+  toStockPrecision,
   signedQuantity as signed,
   type Lot,
   type LotStatus,
@@ -1268,5 +1269,113 @@ describe('the fourth review round, each held by a test', () => {
 
     expect(problems.some((problem) => /must be a YYYY-MM-DD date/u.test(problem))).toBe(true);
     expect(movementProblems(movement({ id: 'm', occurredOn: '2026-08-01' }))).toEqual([]);
+  });
+});
+
+describe('the fifth review round, each held by a test', () => {
+  /**
+   * Rounding the balances and not the comparison against them left exactly the
+   * artefact the rounding was introduced to remove: a surplus of 5.55e-17,
+   * which passes quantity validation and posts as a permanent correction to an
+   * append-only ledger for a discrepancy of five hundredths of a femtolitre.
+   */
+  it('finds no variance between a fractional count and the sum it came from', () => {
+    expect(0.1 + 0.2, 'the arithmetic this guards against').not.toBe(0.3);
+
+    expect(countVariance(0.1 + 0.2, 0.3)).toBeUndefined();
+    expect(countVariance(0.3, 0.1 + 0.2)).toBeUndefined();
+  });
+
+  it('still reports a variance a practice would care about, on the grid', () => {
+    expect(countVariance(0.1 + 0.2, 0.5)).toEqual({
+      kind: 'COUNT_SHORTFALL',
+      quantity: 0.2,
+      counted: 0.1 + 0.2,
+      expected: 0.5,
+    });
+  });
+
+  /**
+   * Not yet received is not on the shelf.
+   *
+   * Every function here answers "as of" a date, and a lot received in October
+   * appeared in a September `fefo` and in September's expiring-soon report - a
+   * historical stockroom report listing inventory the practice did not have,
+   * which reads as a real count and reconciles against nothing.
+   */
+  it('leaves out a lot that had not arrived by the cutoff', () => {
+    const future = lot({ id: 'future', receivedOn: '2026-10-01', expiresOn: '2027-01-01' });
+    const here = lot({ id: 'here', receivedOn: '2026-01-01', expiresOn: '2027-01-01' });
+
+    expect(fefo([future, here], '2026-09-01').map((entry) => entry.id)).toEqual(['here']);
+    expect(fefo([future, here], '2026-10-01').map((entry) => entry.id)).toEqual(['here', 'future']);
+    expect(expiringWithin([future], '2026-09-01', 365)).toEqual([]);
+  });
+
+  it('includes a lot received exactly on the cutoff', () => {
+    const today = lot({ id: 'today', receivedOn: TODAY, expiresOn: '2027-01-01' });
+
+    expect(fefo([today], TODAY).map((entry) => entry.id)).toEqual(['today']);
+  });
+
+  /**
+   * A row claiming to correct something and naming nothing. The audit link the
+   * field exists to make points nowhere, and the ledger is append-only, so the
+   * claim stays.
+   */
+  it.each(['', '   '])('refuses %j as the movement a correction corrects', (blank) => {
+    const problems = movementProblems(
+      movement({ id: 'm2', correctsMovementId: blank, reason: 'Entered twice' })
+    );
+
+    expect(problems).toContain('A correction must name the movement it corrects.');
+  });
+});
+
+describe('the sixth review round, each held by a test', () => {
+  /**
+   * Filter order, which the first version got backwards.
+   *
+   * Validating `receivedOn` before the usability filter meant one retired lot
+   * from years ago with a corrupt date took down `fefo`, allocation, reordering
+   * and every expiry report for the whole item. Status is decided without
+   * reading these dates, so discarding the held lots first means only the
+   * candidates have to be well formed.
+   */
+  it.each(['RETIRED', 'RECALLED', 'QUARANTINED'] as const)(
+    'discards a %s lot with a corrupt date instead of failing on it',
+    (status) => {
+      const corrupt = lot({ id: 'old', status, receivedOn: 'not-a-date' });
+      const good = lot({ id: 'good', receivedOn: '2026-01-01', expiresOn: '2027-01-01' });
+
+      expect(fefo([corrupt, good], TODAY).map((entry) => entry.id)).toEqual(['good']);
+    }
+  );
+
+  it('still refuses a corrupt date on a lot that is otherwise a candidate', () => {
+    const corrupt = lot({ id: 'candidate', receivedOn: 'not-a-date', expiresOn: '2027-01-01' });
+
+    expect(() => fefo([corrupt], TODAY)).toThrow(/must be a YYYY-MM-DD date/u);
+  });
+
+  /**
+   * A finite number that stops being finite when it is scaled.
+   *
+   * `MAX_VALUE` times a million is `Infinity`, so the explicit finite checks
+   * passed and the rounding overflowed behind them. `countVariance` produced a
+   * correction quantity of `Infinity`, and worse, two different overflowing
+   * counts both became `Infinity` and compared equal - reporting no variance
+   * between two numbers that were not the same.
+   */
+  it('refuses a quantity too large to carry at six decimal places', () => {
+    expect(Number.isFinite(Number.MAX_VALUE), 'finite going in').toBe(true);
+    expect(Number.isFinite(Number.MAX_VALUE * 1e6), 'not finite once scaled').toBe(false);
+
+    expect(() => toStockPrecision(Number.MAX_VALUE)).toThrow(/too large to carry/u);
+    expect(() => countVariance(Number.MAX_VALUE, 0)).toThrow(/too large to carry/u);
+  });
+
+  it('carries a quantity a practice could plausibly hold', () => {
+    expect(toStockPrecision(1_000_000.123456)).toBe(1_000_000.123456);
   });
 });

@@ -48,6 +48,29 @@ export const PERMISSIONS = [
   'facility.write',
   'terminology.read',
   'terminology.write',
+  /** The catalogue, the lots, the postings and the ledger, all read-only. */
+  'inventory.read',
+  /**
+   * The stockroom's ordinary day: booking in a delivery, dispensing against a
+   * prescription, administering a dose, and discarding the remainder of a drawn
+   * vial. Its own aggregate rather than a borrowed `order.write`, because a
+   * role that had to hold `order.write` to put a box on a shelf would also be
+   * able to prescribe.
+   */
+  'inventory.write',
+  /**
+   * The privileged half: reconciling a physical count against the ledger. What
+   * makes a stock ledger defensible is that the person who dispenses is not the
+   * person who reconciles the difference away, so the count is a separate grant
+   * rather than more of `inventory.write`.
+   *
+   * A third permission on one aggregate, which the one-per-direction convention
+   * above does not anticipate - for the same reason `audit.read` is its own
+   * entry. Wasting a drawn dose deliberately stays under `inventory.write`:
+   * it happens several times a day, and putting it here would mean fetching an
+   * administrator on the first shift.
+   */
+  'inventory.adjust',
   /** Reading the audit log is itself privileged, and is itself audited. */
   'audit.read',
   /**
@@ -96,6 +119,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'user.read',
     'facility.read',
     'terminology.read',
+    // A clinician draws stock and records what left the shelf; reconciling a
+    // count against the ledger is somebody else's job by design.
+    'inventory.read',
+    'inventory.write',
   ],
   'front-desk': [
     'patient.read',
@@ -116,6 +143,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'user.read',
     'facility.read',
     'terminology.read',
+    // The front desk answers "have we got any left" and books nothing in.
+    'inventory.read',
   ],
   biller: [
     'patient.read',
@@ -155,6 +184,16 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'form.write',
     'payment.read',
   ],
+  /**
+   * The person who runs the stockroom, and nothing else.
+   *
+   * It exists so that the monthly cycle count is not an administrative act.
+   * Without this role the only bundle holding `inventory.adjust` is `admin`,
+   * which holds everything - so counting the shelf would mean handing the
+   * practice's most privileged token to whoever is standing in front of it, and
+   * "fork a Role" would be the answer to a job every practice has.
+   */
+  'stock-keeper': ['inventory.read', 'inventory.write', 'inventory.adjust', 'facility.read'],
   'read-only': READ_EVERYTHING,
 };
 

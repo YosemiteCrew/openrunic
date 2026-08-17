@@ -95,7 +95,7 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { attributedTo, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * The chart, over HTTP.
@@ -668,28 +668,6 @@ async function movePrescription(
 
   const moved = await prescriptions.update(id, { status: to });
   return required(moved, MISSING_PRESCRIPTION);
-}
-
-/**
- * The principal a signature or an addendum is attributed to.
- *
- * Taken from the verified token and never from the body: these are the values
- * on these aggregates that are claims about a person, and a client that could
- * supply one could attest in someone else's name. For an addendum that is the
- * sharper case, because a correction filed in a colleague's name is worse than
- * an unattributed one: it reads as theirs, on a locked record, forever after. An absent principal
- * means the route was mounted outside the middleware chain, which is a wiring
- * bug rather than a client error, and it surfaces as a 500 rather than as an
- * unattributed signature.
- */
-function attributedTo(c: Context<AppEnv>): string {
-  const principal = c.get('principal');
-  if (principal === undefined) {
-    throw new Error(
-      'a signing route ran without a principal: it is mounted outside the middleware chain'
-    );
-  }
-  return principal.subject;
 }
 
 /* ---------------------------------------------------------- the contracts */

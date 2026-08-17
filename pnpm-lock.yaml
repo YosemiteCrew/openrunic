@@ -85,6 +85,9 @@ importers:
       '@openrunic/hl7v2':
         specifier: workspace:*
         version: link:../../packages/hl7v2
+      '@openrunic/inventory':
+        specifier: workspace:*
+        version: link:../../packages/inventory
       hono:
         specifier: ^4.13.1
         version: 4.13.1

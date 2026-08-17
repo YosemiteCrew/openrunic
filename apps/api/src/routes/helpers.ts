@@ -30,6 +30,30 @@ export function policyOf(c: Context<AppEnv>): PolicyContext | undefined {
   return c.get('policy');
 }
 
+/**
+ * The user id to stamp on something a named person answers for.
+ *
+ * Taken from the verified principal, never from a request body. `AGENTS.md`
+ * records what happened the one time this repository did otherwise: an addendum
+ * route accepted `authorId`, the client obligingly sent the original note's
+ * author, and a correction written by one clinician against another's signed
+ * note was stored permanently under the other clinician's name with nothing
+ * failing.
+ *
+ * The throw is a wiring assertion rather than a path a client can reach:
+ * `requirePermission` has already refused a request with no principal, so an
+ * absent one here means the route is mounted outside the middleware chain.
+ */
+export function attributedTo(c: Context<AppEnv>): string {
+  const principal = c.get('principal');
+  if (principal === undefined) {
+    throw new Error(
+      'a route needing the acting user ran without a principal: it is mounted outside the middleware chain'
+    );
+  }
+  return principal.subject;
+}
+
 /** Turns a repository `null` into the 404 contract. */
 export function required<T>(value: T | null, message: string): T {
   if (value === null) {

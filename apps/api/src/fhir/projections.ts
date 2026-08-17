@@ -153,12 +153,15 @@ export function practitionerRoleResource(
      */
     taxonomyCode?: string;
     /**
-     * When the user row last changed, which is not when the grant did.
+     * The newest timestamp among the rows this resource is built from, other
+     * than the grant itself.
      *
-     * Carried so the resource can declare the later of the two. Deactivating a
-     * practitioner does not touch the grant, so without this the resource keeps
-     * its old stamp and an incremental export silently omits it. See
-     * `stampLastUpdated`.
+     * The user row and the facility grants both feed the resource - the first
+     * decides `active` and `specialty`, the second decides `location` - and
+     * neither is touched when the other changes. Without the newest of them the
+     * resource keeps the assignment's stamp and an incremental export silently
+     * omits a resource that changed. `resources.ts` says what this still cannot
+     * see, which is a deleted facility grant.
      */
     userUpdatedAt?: Date;
     /**

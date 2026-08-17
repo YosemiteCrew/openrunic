@@ -82,6 +82,35 @@ const CHART_SORT = { order: 'desc' } as const;
  */
 const MAX_FACILITY_GRANTS = 200;
 
+/**
+ * The newest of the timestamps a joined resource depends on, if any.
+ *
+ * Every row that contributes to a PractitionerRole has to be able to move its
+ * `meta.lastUpdated`, or an incremental export drops a resource that changed.
+ * Adding a facility grant changes the emitted `location` and touches neither
+ * the user nor the assignment, which is the bug the earlier fix left behind
+ * after it started reading the grants: one dependency was added and the stamp
+ * still tracked the other two.
+ *
+ * ## What this cannot see
+ *
+ * A *removed* facility grant. Deleting the row also changes `location`, and the
+ * deleted row has no timestamp left to read, so the resource keeps the stamp it
+ * had. Nothing derivable from the surviving rows fixes that; it needs the
+ * deletion recorded - a soft delete, or the parent stamped on the way past.
+ * Recorded here rather than passed over, because the failure is silent and the
+ * next reader would otherwise assume this covers every change.
+ */
+function latestOf(candidates: readonly (Date | undefined)[]): { userUpdatedAt?: Date } {
+  const newest = candidates
+    .filter((value): value is Date => value !== undefined)
+    .reduce<Date | undefined>(
+      (latest, value) => (latest === undefined || value > latest ? value : latest),
+      undefined
+    );
+  return newest === undefined ? {} : { userUpdatedAt: newest };
+}
+
 /** Advertises `status` only when the FHIR value set covers every domain state. */
 function losslessStatus<D extends string, F extends string>(mapping: EnumMapping<D, F>): string[] {
   return mapping.lossyValues.length === 0 ? ['status'] : [];
@@ -185,6 +214,8 @@ interface RolePageData {
   userById: Map<string, ScopedRow<'User'>>;
   /** Facilities each user works at, from `UserFacility` - not from the grant. */
   facilityIdsByUser: Map<string, string[]>;
+  /** When each user's facility grants last changed, for the resource stamp. */
+  facilitiesChangedByUser: Map<string, Date>;
 }
 
 async function prepareRoles(
@@ -194,7 +225,10 @@ async function prepareRoles(
   const roleKeyById = new Map<string, string>();
   const userById = new Map<string, ScopedRow<'User'>>();
   const facilityIdsByUser = new Map<string, string[]>();
-  if (rows.length === 0) return { roleKeyById, userById, facilityIdsByUser };
+  const facilitiesChangedByUser = new Map<string, Date>();
+  if (rows.length === 0) {
+    return { roleKeyById, userById, facilityIdsByUser, facilitiesChangedByUser };
+  }
 
   const roleIds = [...new Set(rows.map((row) => row.roleId))];
   const userIds = [...new Set(rows.map((row) => row.userId))];
@@ -228,9 +262,15 @@ async function prepareRoles(
       userId,
       page.rows.map((grant) => grant.facilityId)
     );
+    const latest = page.rows.reduce<Date | undefined>(
+      (newest, grant) =>
+        newest === undefined || grant.updatedAt > newest ? grant.updatedAt : newest,
+      undefined
+    );
+    if (latest !== undefined) facilitiesChangedByUser.set(userId, latest);
   }
 
-  return { roleKeyById, userById, facilityIdsByUser };
+  return { roleKeyById, userById, facilityIdsByUser, facilitiesChangedByUser };
 }
 
 /**
@@ -298,7 +338,7 @@ const practitionerRoleModule = defineFhirResource({
       ...(user?.taxonomyCode === undefined || user.taxonomyCode === null
         ? {}
         : { taxonomyCode: user.taxonomyCode }),
-      ...(user?.updatedAt === undefined ? {} : { userUpdatedAt: user.updatedAt }),
+      ...latestOf([user?.updatedAt, context.prepared.facilitiesChangedByUser.get(row.userId)]),
       worksAt: context.prepared.facilityIdsByUser.get(row.userId) ?? [],
     });
   },

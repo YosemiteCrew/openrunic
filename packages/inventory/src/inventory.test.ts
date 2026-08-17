@@ -1195,3 +1195,65 @@ describe('the third review round, each held by a test', () => {
     );
   });
 });
+
+describe('the fourth review round, each held by a test', () => {
+  /**
+   * Two malformed fields cancelling into a plausible total.
+   *
+   * Validating only the product let `perDose: -1` with `dosesPerDay: -2`
+   * multiply out to a finite positive 20, which passed every check downstream
+   * and dispensed twenty units against a prescription saying nothing coherent.
+   */
+  it('refuses a course whose dimensions cancel into a plausible number', () => {
+    expect(-1 * -2 * 10, 'the arithmetic this guards against').toBe(20);
+    expect(() => courseTotal({ perDose: -1, dosesPerDay: -2, days: 10 })).toThrow(
+      /perDose must be zero or more/u
+    );
+    expect(() => courseTotal({ perDose: 1, dosesPerDay: 2, days: -10 })).toThrow(
+      /days must be zero or more/u
+    );
+  });
+
+  /**
+   * A fridge holding exactly enough, reported as a shortage.
+   *
+   * The request was normalised and the available total was not, so 0.7 and 0.1
+   * summed to 0.7999999999999999 against a request for 0.8 - the comparison
+   * came out false and the caller was told there was no stock, which is the
+   * precise state `blockedByIndivisibility` exists to name.
+   */
+  it('names indivisibility rather than shortage when fractional lots sum to enough', () => {
+    const lots = [
+      lot({ id: 'a', lotNumber: 'A1', expiresOn: '2027-01-01' }),
+      lot({ id: 'b', lotNumber: 'B1', expiresOn: '2027-06-01' }),
+    ];
+    const ledger = [
+      movement({ id: 'm1', lotId: 'a', quantity: 0.7 }),
+      movement({ id: 'm2', lotId: 'b', quantity: 0.1 }),
+    ];
+
+    expect(0.7 + 0.1, 'the arithmetic this guards against').not.toBe(0.8);
+
+    const result = allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(0.8), TODAY, {
+      divisible: false,
+    });
+
+    expect(result.blockedByIndivisibility).toBe(true);
+  });
+
+  /**
+   * The door, which the header claims is where invalid entries are stopped.
+   *
+   * A malformed `occurredOn` produced no problem, entered an append-only
+   * ledger, and then threw on every later balance read for that lot - blocking
+   * allocation and reconciliation until somebody worked out that an immutable
+   * row needed compensating. Failing closed on read is right; failing closed
+   * only on read turns one keystroke into a lot nobody can count.
+   */
+  it('refuses a malformed movement date before it can be posted', () => {
+    const problems = movementProblems(movement({ id: 'm', occurredOn: '2026-8-01' }));
+
+    expect(problems.some((problem) => /must be a YYYY-MM-DD date/u.test(problem))).toBe(true);
+    expect(movementProblems(movement({ id: 'm', occurredOn: '2026-08-01' }))).toEqual([]);
+  });
+});

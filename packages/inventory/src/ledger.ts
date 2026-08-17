@@ -156,6 +156,18 @@ const REASON_REQUIRED: ReadonlySet<MovementKind> = new Set<MovementKind>([
 export function movementProblems(movement: StockMovement): readonly string[] {
   const problems: string[] = [];
 
+  // The date belongs at the door with everything else. Without it a malformed
+  // `occurredOn` passed validation, entered an append-only ledger, and then
+  // threw on every subsequent balance read for that lot - blocking allocation
+  // and reconciliation until somebody worked out that an immutable row had to
+  // be compensated. Failing closed on read is right; failing closed only on
+  // read turns one bad keystroke into a lot nobody can count.
+  try {
+    assertIsoDate(movement.occurredOn, 'occurredOn');
+  } catch (error) {
+    problems.push(error instanceof Error ? error.message : String(error));
+  }
+
   // Checked at runtime as well as in the type, because a kind read from a
   // column is not compile-checked and an unrecognised one subtracts silently.
   if (!isKnownKind(movement.kind)) {

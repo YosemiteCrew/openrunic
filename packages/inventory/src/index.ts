@@ -1,0 +1,46 @@
+export {
+  addDays,
+  expiringWithin,
+  fefo,
+  isExpired,
+  isUsable,
+  lastUsableDay,
+  unusableReason,
+  type IsoDate,
+  type Lot,
+  type LotStatus,
+} from './lots.js';
+
+export {
+  balancesByLot,
+  countVariance,
+  isInbound,
+  isKnownKind,
+  itemBalance,
+  lotBalance,
+  movementProblems,
+  needsReorder,
+  negativeBalances,
+  packsToUnits,
+  signedQuantity,
+  type CountVariance,
+  type InboundKind,
+  type MovementKind,
+  type NegativeBalance,
+  type OutboundKind,
+  type StockItem,
+  type StockMovement,
+  type StockUnit,
+} from './ledger.js';
+
+export {
+  allocate,
+  courseTotal,
+  exactlyThisManyStockUnits,
+  movementsFor,
+  type Allocation,
+  type AllocationLine,
+  type AllocationOptions,
+  type Course,
+  type DispensedQuantity,
+} from './dispense.js';

@@ -26,6 +26,7 @@ packages/agent-tools  The tool catalogue, allowlist and compartment rules the lo
 packages/x12          X12 eligibility, claims, remittance and prior-authorisation codecs
 packages/pricing      Fee schedules and sliding-scale discounts; what is billed, what is allowed
 packages/ccda         C-CDA R2.1 document codec; generate and import, with its own XML reader
+packages/inventory    Stock, lots and dispensing: what is on the shelf, which lot it leaves from
 packages/hl7v2        HL7 v2 codec: ADT, ORU, ORM, VXU and acknowledgements
 packages/cds-hooks    CDS Hooks 2.0 protocol: discovery, request validation, cards
 packages/growth       Growth percentiles; CDC LMS reference data, generated and verified

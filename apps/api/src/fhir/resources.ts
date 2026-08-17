@@ -72,6 +72,16 @@ import { defineFhirResource, type FhirResourceModule } from './resource-module.j
 
 const CHART_SORT = { order: 'desc' } as const;
 
+/**
+ * How many facility grants one practitioner's PractitionerRole will report.
+ *
+ * A bound rather than an unbounded read, because this runs once per distinct
+ * user on a page. Nobody works at two hundred sites; a user who appears to has
+ * bad data, and the resource showing the first two hundred of it is a better
+ * failure than a page that will not load.
+ */
+const MAX_FACILITY_GRANTS = 200;
+
 /** Advertises `status` only when the FHIR value set covers every domain state. */
 function losslessStatus<D extends string, F extends string>(mapping: EnumMapping<D, F>): string[] {
   return mapping.lossyValues.length === 0 ? ['status'] : [];
@@ -173,6 +183,8 @@ const practitionerModule = defineFhirResource({
 interface RolePageData {
   roleKeyById: Map<string, string>;
   userById: Map<string, ScopedRow<'User'>>;
+  /** Facilities each user works at, from `UserFacility` - not from the grant. */
+  facilityIdsByUser: Map<string, string[]>;
 }
 
 async function prepareRoles(
@@ -181,14 +193,26 @@ async function prepareRoles(
 ): Promise<RolePageData> {
   const roleKeyById = new Map<string, string>();
   const userById = new Map<string, ScopedRow<'User'>>();
-  if (rows.length === 0) return { roleKeyById, userById };
+  const facilityIdsByUser = new Map<string, string[]>();
+  if (rows.length === 0) return { roleKeyById, userById, facilityIdsByUser };
 
   const roleIds = [...new Set(rows.map((row) => row.roleId))];
   const userIds = [...new Set(rows.map((row) => row.userId))];
 
-  const [roles, users] = await Promise.all([
+  const [roles, users, grants] = await Promise.all([
     Promise.all(roleIds.map(async (id) => repositories.roles.findById(id))),
     Promise.all(userIds.map(async (id) => repositories.users.findById(id))),
+    Promise.all(
+      userIds.map(async (userId) =>
+        repositories.userFacilities.list({
+          userId,
+          page: 1,
+          pageSize: MAX_FACILITY_GRANTS,
+          sort: 'createdAt',
+          order: 'asc',
+        })
+      )
+    ),
   ]);
 
   for (const role of roles) {
@@ -197,8 +221,16 @@ async function prepareRoles(
   for (const user of users) {
     if (user !== null) userById.set(user.id, user);
   }
+  for (const [index, page] of grants.entries()) {
+    const userId = userIds[index];
+    if (userId === undefined) continue;
+    facilityIdsByUser.set(
+      userId,
+      page.rows.map((grant) => grant.facilityId)
+    );
+  }
 
-  return { roleKeyById, userById };
+  return { roleKeyById, userById, facilityIdsByUser };
 }
 
 /**
@@ -210,14 +242,25 @@ async function prepareRoles(
  *
  * ## One resource per grant, not per practitioner
  *
- * `RoleAssignment` is unique on `(userId, roleId, facilityId)`, so a nurse who
- * works at two sites has two rows and therefore two PractitionerRoles. That is
- * the FHIR shape rather than an artefact of this schema: PractitionerRole is
- * the join, and a directory that collapsed the two into one resource could not
- * express that the role was granted at one site and not the other.
+ * One `RoleAssignment` becomes one PractitionerRole. A nurse granted a role at
+ * two sites has two rows and two resources, which is the FHIR shape rather than
+ * an artefact of this schema: PractitionerRole is the join, and a directory
+ * that collapsed the two could not express that the role was granted at one
+ * site and not the other.
  *
- * `projections.ts` carries why an organisation-wide grant emits no `location`
- * rather than an empty one.
+ * ## The uniqueness this does not rely on
+ *
+ * `RoleAssignment` carries `@@unique([userId, roleId, facilityId])`, and that
+ * constraint does not do what its shape suggests for an organisation-wide
+ * grant: Postgres treats nulls as distinct in a unique index, so two rows with
+ * a null `facilityId` do not collide and the duplicate check lives in the
+ * application layer. The schema says so above the model. This module therefore
+ * describes what a row means rather than asserting there can only be one of it,
+ * and a duplicate organisation-wide grant would surface here as two identical
+ * PractitionerRoles - which is the truthful projection of a duplicate row.
+ *
+ * `projections.ts` carries where `location` comes from, and why it is the
+ * facility grants rather than the role assignment's own facility.
  */
 const practitionerRoleModule = defineFhirResource({
   type: 'PractitionerRole',
@@ -256,6 +299,7 @@ const practitionerRoleModule = defineFhirResource({
         ? {}
         : { taxonomyCode: user.taxonomyCode }),
       ...(user?.updatedAt === undefined ? {} : { userUpdatedAt: user.updatedAt }),
+      worksAt: context.prepared.facilityIdsByUser.get(row.userId) ?? [],
     });
   },
 });

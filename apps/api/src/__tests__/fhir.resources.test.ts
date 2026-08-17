@@ -40,6 +40,7 @@ const REPORT = testId(40);
 const NURSE_ROLE = testId(970);
 const SITE_GRANT = testId(971);
 const ORG_GRANT = testId(972);
+const SECOND_SITE = testId(975);
 
 function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
@@ -345,6 +346,37 @@ function seedChart(dataset: MemoryDataset): void {
     expiresAt: null,
   });
 
+  seed(dataset, 'UserFacility', {
+    ...storageColumns(testId(973)),
+    userId: PROVIDER,
+    facilityId: DEMO_FACILITY_A,
+    isPrimary: true,
+  });
+
+  seed(dataset, 'Facility', {
+    ...storageColumns(SECOND_SITE),
+    name: 'Testville Annexe',
+    code: 'TVA',
+    npi: null,
+    posCode: '11',
+    timezone: 'UTC',
+    addressLine1: '2 Test Street',
+    addressLine2: null,
+    city: 'Testville',
+    state: 'TS',
+    postalCode: '00000',
+    country: 'US',
+    phone: '+15550101',
+    active: true,
+  });
+
+  seed(dataset, 'UserFacility', {
+    ...storageColumns(testId(974)),
+    userId: PROVIDER,
+    facilityId: SECOND_SITE,
+    isPrimary: false,
+  });
+
   seed(dataset, 'Role', {
     ...storageColumns(NURSE_ROLE),
     key: 'nurse',
@@ -605,7 +637,12 @@ describe('the projections', () => {
     expect(role.active).toBe(true);
   });
 
-  it('names the facility a site-scoped grant applies at', async () => {
+  /**
+   * Two tables carry a facility and they answer different questions.
+   * `UserFacility` says where the person works; `RoleAssignment.facilityId`
+   * says where the permission applies. A site-scoped grant is the intersection.
+   */
+  it('narrows a site-scoped grant to the one facility it applies at', async () => {
     const { app } = harness();
 
     const role = (await (
@@ -616,20 +653,46 @@ describe('the projections', () => {
   });
 
   /**
-   * The absent-versus-empty property, asserted rather than assumed.
+   * The case that made reading the assignment wrong rather than imprecise.
    *
-   * An organisation-wide grant is not a grant at no location, and the two would
-   * serialise identically if the projection emitted `location: []`. A directory
-   * client reading an empty array concludes the practitioner works nowhere and
-   * routes a referral elsewhere, so the distinction is the whole point of the
-   * resource rather than a formatting preference. `toHaveProperty` rather than a
-   * length check, because `[]` passes every check that asks how many.
+   * A practitioner with one organisation-wide grant works at both sites, and
+   * the grant names neither. Deriving `location` from the assignment returned
+   * nothing at all for somebody a referring practice can demonstrably reach at
+   * two addresses.
    */
-  it('emits no location at all for an organisation-wide grant', async () => {
+  it('lists every facility a practitioner works at for an organisation-wide grant', async () => {
     const { app } = harness();
 
     const role = (await (
       await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { location?: { reference?: string }[] };
+
+    expect(role.location?.map((entry) => entry.reference)).toEqual([
+      `Location/${DEMO_FACILITY_A}`,
+      `Location/${SECOND_SITE}`,
+    ]);
+  });
+
+  /**
+   * The absent-versus-empty property, asserted rather than assumed.
+   *
+   * A role granted at a site the person is not attached to intersects to
+   * nothing. That must not serialise as `location: []`, because a directory
+   * client reading an empty array concludes the practitioner provides care
+   * nowhere and routes a referral elsewhere - a positive claim, where the truth
+   * is only that two grants disagree and nobody has reconciled them.
+   *
+   * `toHaveProperty` rather than a length check, because `[]` passes every
+   * check that asks how many.
+   */
+  it('emits no location at all when the grants do not intersect', async () => {
+    const { app, dataset } = harness();
+    const grant = dataset.table('RoleAssignment').find((row) => row.id === SITE_GRANT);
+    expect(grant, 'the fixture seeds the site-scoped grant this test moves').toBeDefined();
+    Object.assign(grant!, { facilityId: testId(999) });
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
     ).json()) as Record<string, unknown>;
 
     expect(role).not.toHaveProperty('location');
@@ -739,27 +802,42 @@ describe('the projections', () => {
 });
 
 /**
- * The permission a resource is served under, held to the one the BFF uses for
- * the same rows.
+ * The permission a resource is served under, compared with the one the BFF uses
+ * for the same rows.
  *
  * PractitionerRole projects `RoleAssignment` - the access-control matrix - and
- * `/users/:id/roles` serves those same rows behind `role.read`. Serving them at
- * the FHIR boundary under `user.read` would have meant a clinician or biller
- * holding `user.read` and not `role.read` could enumerate every grant in the
- * organisation through the route that does not check, having been refused by
- * the route that does. A boundary that answers a question another door will not
- * is not a second door; it is the way round.
+ * `/bff/v0/users/{id}/roles` serves those same rows. Serving them at the FHIR
+ * boundary under `user.read` meant a clinician or biller holding `user.read`
+ * and not `role.read` could enumerate every grant in the organisation through
+ * the route that does not check, having been refused by the route that does. A
+ * boundary that answers a question another door will not is not a second door;
+ * it is the way round.
  *
- * Asserted on the module rather than exercised through a principal, because the
- * fixtures have no principal holding one permission and not the other, and
- * inventing one would test the fixture rather than the rule. The pairing is the
- * thing that must not drift.
+ * The first version of this test asserted the FHIR module against the literal
+ * `'role.read'` while claiming to hold a pairing. It would have stayed green if
+ * the BFF route had been tightened to something stricter, which is the drift a
+ * pairing test exists to catch - so it was checking one side and describing
+ * two. The published OpenAPI document carries the BFF permission as
+ * `x-openrunic-permission`, so both sides are readable and both are read.
  */
 describe('the permission each resource is served under', () => {
-  it('gates PractitionerRole on role.read, as the BFF route for the same rows does', () => {
+  interface SpecDocument {
+    paths?: Record<string, Record<string, { 'x-openrunic-permission'?: string }>>;
+  }
+
+  async function bffPermission(app: ReturnType<typeof createTestApp>['app'], path: string) {
+    const spec = (await (await app.request('/openapi.json')).json()) as SpecDocument;
+    return spec.paths?.[path]?.['get']?.['x-openrunic-permission'];
+  }
+
+  it('gates PractitionerRole on the same permission as the BFF route for the same rows', async () => {
+    const { app } = harness();
+
+    const bff = await bffPermission(app, '/bff/v0/users/{id}/roles');
     const module = SERVED_MODULES.find((entry) => entry.type === 'PractitionerRole');
 
-    expect(module?.permission).toBe('role.read');
+    expect(bff, 'the BFF route publishes its permission').toBeDefined();
+    expect(module?.permission).toBe(bff);
   });
 
   it('refuses a principal holding no permissions at all', async () => {

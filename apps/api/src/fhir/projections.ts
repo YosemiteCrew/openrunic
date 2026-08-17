@@ -109,23 +109,33 @@ export function practitionerResource(row: ScopedRow<'User'>): Practitioner {
  * "Clinician (MD)" would otherwise stop matching without anything having
  * changed about who the person is.
  *
- * ## `location`, and the two things a missing one can mean
+ * ## `location` comes from where they work, narrowed by where the grant applies
  *
- * A grant carries `facilityId`, and a nullable one. The two states are not a
- * value and its absence; they are two different grants:
+ * Two tables have a facility on them and they answer different questions.
+ * `UserFacility` is a directory statement: this person works here.
+ * `RoleAssignment.facilityId` is an authorisation statement: this permission
+ * applies here and not there. They coincide often enough to be mistaken for
+ * each other, and reading the wrong one gives the wrong answer in both
+ * directions.
  *
- * - A facility is named. The grant applies at that facility and nowhere else,
- *   and the resource says so with a `Location` reference.
- * - No facility. The grant is organisation-wide - it applies wherever the
- *   organisation operates - which is the opposite of working nowhere.
+ * FHIR's `location` is the directory question - the locations at which this
+ * practitioner provides care - so it is built from the facility grants:
  *
- * The second emits no `location` element rather than an empty array. Both would
- * serialise to something a directory client can read, but an empty array is a
- * positive claim that the person practises at no location, and the client would
- * believe it. Enumerating every facility instead would be a different lie: that
- * this person was granted the role at each one individually, which is not what
- * an organisation-wide grant records. An absent element is the only one of the
- * three that says what is true - this grant is not scoped to a place.
+ * - An organisation-wide assignment: every facility the person works at. The
+ *   grant is not scoped to a place, so nothing narrows the list. Reading the
+ *   assignment instead returned nothing at all for a nurse who works at three
+ *   sites, which is the case that made this wrong rather than merely imprecise.
+ * - A site-scoped assignment: the intersection. The grant applies at one
+ *   facility, so the role is held there and only there, whatever else the
+ *   person's working pattern is.
+ *
+ * The intersection can be empty - a role granted at a site the person is not
+ * attached to. That emits no `location` rather than an empty array, and the
+ * distinction is the same one as everywhere else here: an empty array is a
+ * positive claim that this practitioner provides care nowhere, and a referring
+ * practice would believe it. An absent element says only that this server is
+ * not answering the question, which is what is true of an inconsistent pair of
+ * grants nobody has reconciled.
  */
 export function practitionerRoleResource(
   row: ScopedRow<'RoleAssignment'>,
@@ -151,6 +161,13 @@ export function practitionerRoleResource(
      * `stampLastUpdated`.
      */
     userUpdatedAt?: Date;
+    /**
+     * The facilities this practitioner works at, from `UserFacility`.
+     *
+     * Not from the grant's own `facilityId`, which answers a different
+     * question - see the header.
+     */
+    worksAt: readonly string[];
   }
 ): PractitionerRole {
   const resource = toFhirPractitionerRole(
@@ -158,10 +175,12 @@ export function practitionerRoleResource(
       id: row.id,
       practitionerId: row.userId,
       organizationId: row.tenantId,
-      // `compact` in the mapper drops an empty array, so an organisation-wide
-      // grant emits no `location` element at all rather than an empty one. See
-      // the header for why those are different answers.
-      locationIds: row.facilityId === null ? [] : [row.facilityId],
+      // `compact` in the mapper drops an empty array, so an empty result emits
+      // no `location` element at all rather than an empty one. See the header.
+      locationIds:
+        row.facilityId === null
+          ? [...context.worksAt]
+          : context.worksAt.filter((facilityId) => facilityId === row.facilityId),
       // The code the practice recorded against its own user, not a code this
       // repository supplies. What openrunic does not ship is the NUCC display
       // table, so the coding carries a code and a system and no display text -

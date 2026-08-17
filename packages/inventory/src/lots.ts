@@ -53,7 +53,10 @@ const ISO_DATE = /^(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})$/u;
  * Validated once per lot at the head of the operation rather than inside the
  * comparator, so an n-lot sort costs n checks instead of n log n.
  */
-export function assertIsoDate(date: IsoDate, what: string): void {
+export function assertIsoDate(
+  date: IsoDate,
+  what: string
+): { year: number; month: number; day: number } {
   const parts = ISO_DATE.exec(date);
   if (parts?.groups === undefined) {
     throw new RangeError(`${what} must be a YYYY-MM-DD date, not ${JSON.stringify(date)}.`);
@@ -66,6 +69,12 @@ export function assertIsoDate(date: IsoDate, what: string): void {
   if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== date) {
     throw new RangeError(`${what} is not a date that exists: ${JSON.stringify(date)}.`);
   }
+  // Returned rather than discarded, so a caller does not re-parse what this has
+  // already proved. `addDays` used to split the string again and default each
+  // missing part - `year ?? 0`, `month ?? 1` - which was the original truncated
+  // date bug, and the defaults survived the fix as unreachable code that read
+  // as though a malformed date could still get past this function.
+  return { year, month, day };
 }
 
 /**
@@ -142,9 +151,8 @@ export function addDays(date: IsoDate, days: number): IsoDate {
   // Validated before the offset, because `Date.UTC` rolls over rather than
   // refusing and that rollover is exactly what makes the arithmetic work across
   // a month end. The input has to be proved real while the two are separable.
-  assertIsoDate(date, 'date');
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days))
+  const parts = assertIsoDate(date, 'date');
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days))
     .toISOString()
     .slice(0, 10);
 }

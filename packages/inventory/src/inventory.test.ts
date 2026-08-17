@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addDays,
+  assertIsoDate,
   allocate,
   balancesByLot,
   countVariance,
@@ -1972,5 +1973,61 @@ describe('the sixth review of #96', () => {
 
   it('still carries a quantity larger than any practice holds', () => {
     expect(toStockPrecision(9_000_000_000)).toBe(9_000_000_000);
+  });
+});
+
+describe('branches the coverage report pointed at', () => {
+  /**
+   * Checked rather than covered. An uncovered branch here has twice turned out
+   * to be a live defect rather than a missing test, so each of these was read
+   * before a test was written for it.
+   */
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 0])(
+    'refuses an allocation line of %s before it reaches the grid check',
+    (bad) => {
+      const forged = {
+        itemId: 'item-1',
+        lines: [{ lotId: 'a', lotNumber: 'A1', quantity: bad }],
+        allocated: 0,
+        requested: 0,
+        shortfall: 0,
+      };
+
+      expect(() =>
+        movementsFor(forged, {
+          kind: 'DISPENSE',
+          occurredOn: TODAY,
+          actorId: 'user-1',
+          idFor: () => 'mv-0',
+        })
+      ).toThrow(/is not a positive number/u);
+    }
+  );
+
+  /**
+   * A lot that exists with no movement posted against it - the window between
+   * booking a delivery in and posting its receipt. It contributes nothing
+   * rather than being skipped, which matters because `usableBalance` is what a
+   * reorder decision reads.
+   */
+  it('counts a lot with no movements as nothing, not as absent', () => {
+    const lots = [
+      lot({ id: 'stocked', expiresOn: '2027-01-01' }),
+      lot({ id: 'empty', expiresOn: '2027-06-01' }),
+    ];
+    const ledger = [movement({ id: 'm1', lotId: 'stocked', quantity: 40 })];
+
+    expect(usableBalance(lots, ledger, 'item-1', TODAY)).toBe(40);
+    expect(needsReorder({ ...TABLETS, reorderLevel: 50 }, lots, ledger, TODAY)).toBe(true);
+  });
+
+  /**
+   * `assertIsoDate` returns what it proved, so `addDays` no longer re-splits
+   * the string and defaults the missing parts. Those defaults were the fossil
+   * of the truncated-date bug: unreachable after the fix, and reading as though
+   * a malformed date could still get past the guard.
+   */
+  it('hands the parsed parts back rather than making the caller re-derive them', () => {
+    expect(assertIsoDate('2026-08-17', 'date')).toEqual({ year: 2026, month: 8, day: 17 });
   });
 });

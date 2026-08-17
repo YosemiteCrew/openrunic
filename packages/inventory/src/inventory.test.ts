@@ -10,6 +10,7 @@ import {
   expiringWithin,
   fefo,
   isExpired,
+  isKnownLotStatus,
   isInbound,
   isKnownKind,
   isUsable,
@@ -26,6 +27,7 @@ import {
   usableBalance,
   signedQuantity as signed,
   type Lot,
+  type LotStatus,
   type MovementKind,
   type StockItem,
   type StockMovement,
@@ -998,5 +1000,102 @@ describe('the review findings, each held by a test', () => {
 
     expect(allocation.itemId).toBe('item-1');
     expect(posted.map((entry) => entry.itemId)).toEqual(['item-1']);
+  });
+});
+
+describe('the second review round, each held by a test', () => {
+  /**
+   * The one outcome in this package that reaches a patient.
+   *
+   * An unrecognised status matched none of the clauses, fell through to the
+   * expiry check and came out usable, so a misspelled `RECALLED` from a column
+   * put recalled stock back on the shelf. The type does not help: the string
+   * arrives from a database.
+   */
+  it('refuses a lot whose status it does not recognise rather than assuming it is fine', () => {
+    const corrupt = lot({ id: 'a', lotNumber: 'X1', status: 'RECALED' as LotStatus });
+
+    expect(isKnownLotStatus('RECALED')).toBe(false);
+    expect(isUsable(corrupt, TODAY)).toBe(false);
+    expect(unusableReason(corrupt, TODAY)).toContain('not one this system knows');
+    expect(fefo([corrupt], TODAY)).toEqual([]);
+  });
+
+  /**
+   * The date bug in the other direction: an unpadded month sorts late, so a
+   * receipt dropped out of the balance and allocation reported a shortage that
+   * did not exist.
+   */
+  it('refuses an unpadded movement date rather than dropping it from the balance', () => {
+    const sloppy = [movement({ id: 'm1', quantity: 100, occurredOn: '2026-8-01' })];
+
+    expect('2026-8-01' <= '2026-09-01', 'the comparison this guards against').toBe(false);
+    expect(() => lotBalance(sloppy, 'lot-a', '2026-09-01')).toThrow(/must be a YYYY-MM-DD date/u);
+    expect(() => balancesByLot(sloppy, 'item-1', '2026-09-01')).toThrow(
+      /must be a YYYY-MM-DD date/u
+    );
+  });
+
+  /**
+   * The README claimed `{ kind: 'RECEIPT', quantity: -40 }` was
+   * unrepresentable, and half of that was true. The kind cannot carry a sign;
+   * the quantity could, and an inbound kind with a negative quantity still
+   * subtracted. `movementProblems` caught it and nothing on the balance path
+   * called `movementProblems`.
+   */
+  it.each([-40, 0, Number.NaN])('refuses to balance a movement of quantity %s', (quantity) => {
+    const bad = [movement({ id: 'm1', kind: 'RECEIPT', quantity })];
+
+    expect(() => lotBalance(bad, 'lot-a', TODAY)).toThrow(/not a positive number/u);
+  });
+
+  /**
+   * `usableBalance` exists to predict what allocation would hand out. Summing a
+   * negative lot made it disagree with the only thing it predicts: lots of -10
+   * and 20 reported 10 while `allocate` gives 20.
+   */
+  it('ignores a negative lot rather than offsetting the usable stock beside it', () => {
+    const lots = [
+      lot({ id: 'short', lotNumber: 'S1', expiresOn: '2027-01-01' }),
+      lot({ id: 'long', lotNumber: 'L1', expiresOn: '2027-06-01' }),
+    ];
+    const ledger = [
+      movement({ id: 'm1', lotId: 'short', kind: 'DISPENSE', quantity: 10 }),
+      movement({ id: 'm2', lotId: 'long', kind: 'RECEIPT', quantity: 20 }),
+    ];
+
+    expect(negativeBalances(ledger, 'item-1', TODAY)).toEqual([{ lotId: 'short', balance: -10 }]);
+    expect(usableBalance(lots, ledger, 'item-1', TODAY)).toBe(20);
+    expect(
+      allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(20), TODAY, { divisible: true })
+        .allocated
+    ).toBe(20);
+  });
+
+  /**
+   * A reason of three spaces satisfied an exact-empty check and told an auditor
+   * nothing. The rule is that the movement carries a reason, not that the field
+   * is non-empty.
+   */
+  it.each(['   ', '\t', '\n '])('refuses %j as a reason for a waste movement', (blank) => {
+    expect(movementProblems(movement({ id: 'm', kind: 'WASTE', reason: blank }))).toContain(
+      'A WASTE movement must say why.'
+    );
+  });
+
+  /**
+   * The reorder boundary, documented and implemented the same way.
+   *
+   * It was described as exclusive on `StockItem.reorderLevel` and implemented
+   * as inclusive, leaving a caller to work out which was authoritative from a
+   * test. Inclusive is the convention a reorder point follows.
+   */
+  it('is due for reorder at the level, not one below it', () => {
+    const item: StockItem = { ...TABLETS, reorderLevel: 50 };
+    const lots = [lot({ id: 'lot-a', expiresOn: '2027-01-01' })];
+
+    expect(needsReorder(item, lots, [movement({ id: 'm', quantity: 51 })], TODAY)).toBe(false);
+    expect(needsReorder(item, lots, [movement({ id: 'm', quantity: 50 })], TODAY)).toBe(true);
+    expect(needsReorder(item, lots, [movement({ id: 'm', quantity: 49 })], TODAY)).toBe(true);
   });
 });

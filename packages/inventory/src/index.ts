@@ -4,6 +4,7 @@ export {
   expiringWithin,
   fefo,
   isExpired,
+  isKnownLotStatus,
   isUsable,
   lastUsableDay,
   unusableReason,

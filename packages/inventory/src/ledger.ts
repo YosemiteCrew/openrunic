@@ -66,7 +66,15 @@ export interface StockItem {
    * unit.
    */
   readonly packSize?: number;
-  /** Below this, the item is due to be reordered. */
+  /**
+   * At or below this, the item is due to be reordered.
+   *
+   * Inclusive, which is the convention a reorder point follows: the level is
+   * the quantity at which somebody should already be ordering, not the last one
+   * before it. Said here because the boundary was documented as exclusive and
+   * implemented as inclusive, leaving a caller to work out which was
+   * authoritative from a test.
+   */
   readonly reorderLevel?: number;
   /** True for anything on a controlled-substance schedule. */
   readonly controlled?: boolean;
@@ -162,10 +170,14 @@ export function movementProblems(movement: StockMovement): readonly string[] {
     problems.push('A movement quantity must be greater than zero.');
   }
 
-  if (REASON_REQUIRED.has(movement.kind) && (movement.reason ?? '') === '') {
+  // Trimmed, because a reason of three spaces satisfied an exact-empty check
+  // and told an auditor nothing about why controlled stock moved. The rule is
+  // that the movement carries a reason, not that the field is non-empty.
+  const reason = (movement.reason ?? '').trim();
+  if (REASON_REQUIRED.has(movement.kind) && reason === '') {
     problems.push(`A ${movement.kind} movement must say why.`);
   }
-  if (movement.correctsMovementId !== undefined && (movement.reason ?? '') === '') {
+  if (movement.correctsMovementId !== undefined && reason === '') {
     problems.push('A correction must say why.');
   }
   if (movement.correctsMovementId === movement.id) {
@@ -194,6 +206,17 @@ export function movementProblems(movement: StockMovement): readonly string[] {
  * number nobody can reproduce.
  */
 export function signedQuantity(movement: StockMovement): number {
+  // The quantity as well as the kind, because the README claimed
+  // `{ kind: 'RECEIPT', quantity: -40 }` was unrepresentable and only half of
+  // that was true: the kind cannot carry a sign, and a negative quantity under
+  // an inbound kind still subtracted. `NaN` was worse, poisoning every balance
+  // downstream with no row identifiable as the cause. `movementProblems` caught
+  // both and nothing on this path called it.
+  if (!Number.isFinite(movement.quantity) || movement.quantity <= 0) {
+    throw new RangeError(
+      `Movement ${movement.id} has quantity ${String(movement.quantity)}, which is not a positive number, so its effect on the balance cannot be determined.`
+    );
+  }
   if (!isKnownKind(movement.kind)) {
     throw new RangeError(
       `Movement ${movement.id} has kind ${JSON.stringify(movement.kind)}, which is not one this system knows, so its effect on the balance cannot be determined.`
@@ -229,6 +252,23 @@ export function toStockPrecision(quantity: number): number {
 }
 
 /**
+ * Whether a movement falls on or before the cutoff.
+ *
+ * Validating `occurredOn` first, because the comparison is lexicographic like
+ * every other date comparison here. A receipt dated `'2026-8-01'` sorted after
+ * `'2026-09-01'` and dropped out of the balance, so allocation and
+ * reconciliation reported a shortage that did not exist - the opposite
+ * direction to the expiry bug, and just as quiet.
+ *
+ * Only movements that got past the lot or item filter are checked, so a ledger
+ * carrying other items' rows does not pay for them.
+ */
+function onOrBefore(movement: StockMovement, asOf: IsoDate): boolean {
+  assertIsoDate(movement.occurredOn, `movement ${movement.id} occurredOn`);
+  return movement.occurredOn <= asOf;
+}
+
+/**
  * What is on hand in one lot as of a date.
  *
  * Bounded by date rather than summing everything, because the question a count
@@ -245,7 +285,7 @@ export function lotBalance(
   assertIsoDate(asOf, 'asOf');
   return toStockPrecision(
     movements
-      .filter((movement) => movement.lotId === lotId && movement.occurredOn <= asOf)
+      .filter((movement) => movement.lotId === lotId && onOrBefore(movement, asOf))
       .reduce((total, movement) => total + signedQuantity(movement), 0)
   );
 }
@@ -259,7 +299,7 @@ export function balancesByLot(
   assertIsoDate(asOf, 'asOf');
   const balances = new Map<string, number>();
   for (const movement of movements) {
-    if (movement.itemId !== itemId || movement.occurredOn > asOf) continue;
+    if (movement.itemId !== itemId || !onOrBefore(movement, asOf)) continue;
     balances.set(
       movement.lotId,
       toStockPrecision((balances.get(movement.lotId) ?? 0) + signedQuantity(movement))
@@ -387,6 +427,13 @@ export function needsReorder(
  * the different question of what is physically present, which includes what is
  * expired, recalled or quarantined - a figure a disposal report needs and an
  * ordering decision must not use.
+ *
+ * A lot below zero contributes nothing rather than a negative, because that is
+ * what allocation does: it skips a balance at or below zero and takes from the
+ * others. Summing the negative made lots of -10 and 20 report 10 while
+ * `allocate` would hand out 20, so the figure disagreed with the only thing it
+ * is supposed to predict. A negative lot is a reconciliation finding and
+ * `negativeBalances` is where it is reported; it is not stock owed back.
  */
 export function usableBalance(
   lots: readonly Lot[],
@@ -399,6 +446,6 @@ export function usableBalance(
     fefo(
       lots.filter((lot) => lot.itemId === itemId),
       asOf
-    ).reduce((total, lot) => total + (balances.get(lot.id) ?? 0), 0)
+    ).reduce((total, lot) => total + Math.max(balances.get(lot.id) ?? 0, 0), 0)
   );
 }

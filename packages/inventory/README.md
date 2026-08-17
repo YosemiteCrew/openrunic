@@ -26,6 +26,11 @@ usable in September. `IsoDate` is an alias for `string` and stops nothing arrivi
 column, which is where a non-canonical date comes from, so dates are validated at the point a
 usability or balance decision is made.
 
+`unusableReason` refuses a lot status it does not recognise. An unrecognised status matched none of
+the clauses, fell through to the expiry check, and came out usable - so a misspelled `RECALLED` read
+from a column put recalled stock back on the shelf. It is the one outcome here that reaches a
+patient.
+
 `signedQuantity` throws on a movement kind it does not recognise rather than treating it as
 outbound. A misspelled `RECIEPT` deserialised from a column would otherwise subtract on the way in
 and produce a plausible balance with no error anywhere. A thrown error on a corrupt row is a bad
@@ -55,9 +60,13 @@ tablets and adjusted the count" is not one a practice can defend.
 So the ledger is append-only. A mistake is corrected by a compensating movement carrying
 `correctsMovementId` and a reason; both rows stay. The balance moves, the history does not.
 
-A movement's quantity is always positive and its direction comes from its kind, which makes
-`{ kind: 'RECEIPT', quantity: -40 }` - a removal wearing the word "receipt" - unrepresentable rather
-than merely discouraged. It is also why a count variance is two kinds: stock found and stock missing
+A movement's direction comes from its kind rather than from the sign of its quantity, so a removal
+cannot be written as a receipt with a minus in front of it. The quantity itself is checked wherever
+a balance is computed, not only in `movementProblems` - the first version of this file called
+`{ kind: 'RECEIPT', quantity: -40 }` unrepresentable when only half of it was: the kind could not
+carry a sign and the quantity still could, so an inbound movement subtracted.
+
+Kind carrying the direction is also why a count variance is two kinds: stock found and stock missing
 are not one event with a sign.
 
 ## The dose is not the quantity

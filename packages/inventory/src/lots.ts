@@ -77,6 +77,14 @@ export function assertIsoDate(date: IsoDate, what: string): void {
  * attached. Quarantined stock may well come back. A single flag would tell the
  * stockroom that something is wrong and not what.
  */
+const LOT_STATUSES = ['AVAILABLE', 'QUARANTINED', 'RECALLED', 'RETIRED'] as const;
+
+const KNOWN_STATUSES: ReadonlySet<string> = new Set<string>(LOT_STATUSES);
+
+export function isKnownLotStatus(status: string): status is LotStatus {
+  return KNOWN_STATUSES.has(status);
+}
+
 export type LotStatus =
   /** On the shelf and usable, subject to its dates. */
   | 'AVAILABLE'
@@ -180,6 +188,15 @@ export function isExpired(lot: Lot, asOf: IsoDate): boolean {
  * start keeping a paper book.
  */
 export function unusableReason(lot: Lot, asOf: IsoDate): string | undefined {
+  // Checked first, and failing closed. Without it an unrecognised status - a
+  // misspelled `RECALLED` deserialised from a column - matches none of the
+  // clauses below, falls through to the expiry check, and comes out usable.
+  // Recalled stock reading as available is the one outcome in this file that
+  // reaches a patient, so an unknown status is refused rather than assumed
+  // benign. The type does not help here: the string arrives from a database.
+  if (!isKnownLotStatus(lot.status)) {
+    return `Lot ${lot.lotNumber} has status ${JSON.stringify(lot.status)}, which is not one this system knows, so it cannot be treated as available.`;
+  }
   if (lot.status === 'RECALLED') {
     return `Lot ${lot.lotNumber} was recalled and must not be used.`;
   }

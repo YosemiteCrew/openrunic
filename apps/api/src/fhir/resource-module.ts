@@ -136,13 +136,35 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
  *
  * A row without an `updatedAt` gets no stamp rather than a fabricated one. An
  * invented timestamp is worse than a missing field: a client will believe it.
+ *
+ * ## Why the later of the two, rather than the row's
+ *
+ * Several resources are assembled from more than one row - PractitionerRole
+ * from a grant and the user it names, Claim from a claim and its lines - and
+ * for those the row's own `updatedAt` is not when the resource last changed.
+ * Deactivate a practitioner and the grant row does not move, so a
+ * PractitionerRole whose `active` just flipped keeps its old stamp and an
+ * `$export?_since=` between the two timestamps filters it out. The consumer
+ * never learns the practitioner became inactive, and nothing anywhere reports
+ * an error: the export succeeded and the resource was correctly excluded from
+ * it by a timestamp that was wrong.
+ *
+ * So a projection that knows about a later change may set `meta.lastUpdated`
+ * itself, and this keeps whichever is later rather than overwriting. A
+ * projection that sets nothing behaves exactly as before.
  */
 export function stampLastUpdated(row: unknown, resource: FhirResource): FhirResource {
   const updatedAt = (row as { updatedAt?: unknown }).updatedAt;
   if (!(updatedAt instanceof Date)) return resource;
+
+  const stamped = updatedAt.toISOString();
+  const declared = resource.meta?.lastUpdated;
   return {
     ...resource,
-    meta: { ...resource.meta, lastUpdated: updatedAt.toISOString() },
+    meta: {
+      ...resource.meta,
+      lastUpdated: declared !== undefined && declared > stamped ? declared : stamped,
+    },
   };
 }
 

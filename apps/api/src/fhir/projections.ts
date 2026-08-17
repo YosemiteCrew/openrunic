@@ -133,9 +133,27 @@ export function practitionerRoleResource(
     roleKey?: string;
     email?: string;
     active?: boolean;
+    /**
+     * The user's NUCC taxonomy code, when the practice recorded one.
+     *
+     * From `User.taxonomyCode` rather than hard-coded empty. An empty specialty
+     * list is the same false claim as an empty `location`: a directory client
+     * reading it concludes the practitioner has no recorded specialty, which is
+     * exactly the field a referring practice filters on.
+     */
+    taxonomyCode?: string;
+    /**
+     * When the user row last changed, which is not when the grant did.
+     *
+     * Carried so the resource can declare the later of the two. Deactivating a
+     * practitioner does not touch the grant, so without this the resource keeps
+     * its old stamp and an incremental export silently omits it. See
+     * `stampLastUpdated`.
+     */
+    userUpdatedAt?: Date;
   }
 ): PractitionerRole {
-  return toFhirPractitionerRole(
+  const resource = toFhirPractitionerRole(
     compactDomain({
       id: row.id,
       practitionerId: row.userId,
@@ -144,15 +162,25 @@ export function practitionerRoleResource(
       // grant emits no `location` element at all rather than an empty one. See
       // the header for why those are different answers.
       locationIds: row.facilityId === null ? [] : [row.facilityId],
-      // NUCC taxonomy is licensed content this repository does not ship, and a
-      // practice that has the codes supplies them through terminology rather
-      // than through a grant. An empty list says so; an invented one would not.
-      specialtyCodes: [],
+      // The code the practice recorded against its own user, not a code this
+      // repository supplies. What openrunic does not ship is the NUCC display
+      // table, so the coding carries a code and a system and no display text -
+      // which is why an absent code stays absent rather than being filled from
+      // a lookup that is not here.
+      specialtyCodes: context.taxonomyCode === undefined ? [] : [context.taxonomyCode],
       roleCode: context.roleKey,
       email: context.email,
       active: context.active,
     })
   );
+
+  // The grant row does not move when the user it names is deactivated, so the
+  // resource declares the later of the two and `stampLastUpdated` keeps it.
+  // Without this an `$export?_since=` between the two timestamps drops a
+  // PractitionerRole whose `active` had just flipped, and reports success.
+  return context.userUpdatedAt === undefined
+    ? resource
+    : { ...resource, meta: { ...resource.meta, lastUpdated: context.userUpdatedAt.toISOString() } };
 }
 
 export function locationResource(row: ScopedRow<'Facility'>): Location {

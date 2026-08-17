@@ -17,6 +17,7 @@ import {
   storageColumns,
   testId,
   TOKENS,
+  UNPRIVILEGED_TOKEN,
 } from './support.js';
 
 /**
@@ -52,7 +53,7 @@ function seedChart(dataset: MemoryDataset): void {
     credential: 'MD',
     npi: '1234567893',
     dea: null,
-    taxonomyCode: null,
+    taxonomyCode: '207Q00000X',
     isProvider: true,
     locale: 'en-US',
     status: 'ACTIVE',
@@ -656,6 +657,50 @@ describe('the projections', () => {
     expect(res.status).toBe(400);
   });
 
+  it('carries the specialty the practice recorded against the user', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { specialty?: { coding?: { code?: string; system?: string }[] }[] };
+
+    expect(role.specialty?.[0]?.coding?.[0]?.code).toBe('207Q00000X');
+  });
+
+  /**
+   * The incremental-export hole, asserted rather than assumed.
+   *
+   * Deactivating a practitioner changes `active` on this resource and touches
+   * nothing on the grant row it is stamped from. Without the later of the two
+   * timestamps, an `$export?_since=` between them filters the resource out and
+   * reports success, so the consumer never learns the practitioner went
+   * inactive - a silent staleness with no error anywhere.
+   */
+  it('stamps lastUpdated from the user when the user changed after the grant', async () => {
+    const { app, dataset } = harness();
+    const later = new Date('2026-09-01T00:00:00.000Z');
+    const user = dataset.table('User').find((row) => row.id === PROVIDER);
+    expect(user, 'the fixture seeds the provider this test deactivates').toBeDefined();
+    Object.assign(user!, { status: 'DISABLED', updatedAt: later });
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { active?: boolean; meta?: { lastUpdated?: string } };
+
+    expect(role.active).toBe(false);
+    expect(role.meta?.lastUpdated).toBe(later.toISOString());
+  });
+
+  it('keeps the grant timestamp when the grant is the thing that changed last', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { meta?: { lastUpdated?: string } };
+
+    expect(role.meta?.lastUpdated).toBe(FIXED_NOW.toISOString());
+  });
+
   it('filters a chart search by the patient compartment reference', async () => {
     const { app } = harness();
 
@@ -690,6 +735,41 @@ describe('the projections', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * The permission a resource is served under, held to the one the BFF uses for
+ * the same rows.
+ *
+ * PractitionerRole projects `RoleAssignment` - the access-control matrix - and
+ * `/users/:id/roles` serves those same rows behind `role.read`. Serving them at
+ * the FHIR boundary under `user.read` would have meant a clinician or biller
+ * holding `user.read` and not `role.read` could enumerate every grant in the
+ * organisation through the route that does not check, having been refused by
+ * the route that does. A boundary that answers a question another door will not
+ * is not a second door; it is the way round.
+ *
+ * Asserted on the module rather than exercised through a principal, because the
+ * fixtures have no principal holding one permission and not the other, and
+ * inventing one would test the fixture rather than the rule. The pairing is the
+ * thing that must not drift.
+ */
+describe('the permission each resource is served under', () => {
+  it('gates PractitionerRole on role.read, as the BFF route for the same rows does', () => {
+    const module = SERVED_MODULES.find((entry) => entry.type === 'PractitionerRole');
+
+    expect(module?.permission).toBe('role.read');
+  });
+
+  it('refuses a principal holding no permissions at all', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/PractitionerRole', {
+      headers: { authorization: `Bearer ${UNPRIVILEGED_TOKEN}` },
+    });
+
+    expect(res.status).toBe(403);
   });
 });
 

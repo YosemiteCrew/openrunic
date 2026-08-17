@@ -155,10 +155,20 @@ const practitionerModule = defineFhirResource({
 /**
  * What one page of role grants needs beyond the grants themselves.
  *
- * A grant names a role and a user; the resource needs the role's key and
- * whether the person is still active. Fetching those per row would be two
- * queries per grant, which on a page of fifty is a hundred round trips - the
- * shape the loader exists to avoid.
+ * A grant names a role and a user; the resource needs the role's key, the
+ * user's specialty and status, and when the user row last changed.
+ *
+ * Fetching those per row would be two queries per grant. This dedupes the ids
+ * first, so a page of fifty grants held by five clinicians across two roles
+ * costs seven reads rather than a hundred - which is the win in practice, since
+ * grants cluster hard on both.
+ *
+ * It is worth being exact about what this is not: seven reads, not one. The
+ * repository layer has no set-based read, so these are still individual
+ * `findById` calls, merely deduped and issued concurrently. On a page where
+ * every grant belongs to a different practitioner the dedupe buys nothing and
+ * the count is back to one per row. Issue #88 tracks the set-based read that
+ * would fix that properly, for every module's loader rather than this one.
  */
 interface RolePageData {
   roleKeyById: Map<string, string>;
@@ -213,7 +223,14 @@ const practitionerRoleModule = defineFhirResource({
   type: 'PractitionerRole',
   interactions: ['read', 'search-type'],
   params: ['practitioner'],
-  permission: 'user.read',
+  // `role.read`, not `user.read`. This resource is a list of who holds which
+  // access-control role, and `/users/:id/roles` - the same rows through the BFF
+  // - is behind `role.read` already. Serving them under the weaker permission
+  // would have let a clinician or biller, who holds `user.read` and not
+  // `role.read`, enumerate the whole access-control matrix through the FHIR
+  // route that the BFF route refuses them. A boundary that answers a question
+  // one door will not is not a second door, it is the way round.
+  permission: 'role.read',
   collection: (repositories) => repositories.roleAssignments,
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
@@ -235,6 +252,10 @@ const practitionerRoleModule = defineFhirResource({
       ...(roleKey === undefined ? {} : { roleKey }),
       ...(user?.email === undefined || user.email === null ? {} : { email: user.email }),
       ...(user === undefined ? {} : { active: user.status === 'ACTIVE' }),
+      ...(user?.taxonomyCode === undefined || user.taxonomyCode === null
+        ? {}
+        : { taxonomyCode: user.taxonomyCode }),
+      ...(user?.updatedAt === undefined ? {} : { userUpdatedAt: user.updatedAt }),
     });
   },
 });

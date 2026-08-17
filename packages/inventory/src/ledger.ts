@@ -199,8 +199,16 @@ export function movementProblems(movement: StockMovement): readonly string[] {
   // carrying `correctsMovementId: '   '` claims to correct something and names
   // nothing, so the audit link the field exists to make points nowhere - and
   // the ledger is append-only, so the claim stays.
-  if (movement.correctsMovementId !== undefined && movement.correctsMovementId.trim() === '') {
-    problems.push('A correction must name the movement it corrects.');
+  // Type-checked before trimming, like the four required identifiers above.
+  // The previous version guarded those four and left this one calling `.trim()`
+  // straight on the field, so a `correctsMovementId: null` from unchecked JSON
+  // still threw the TypeError the guard was added to stop - the same defect,
+  // one field over, in the commit that fixed it.
+  if (movement.correctsMovementId !== undefined) {
+    const target: unknown = movement.correctsMovementId;
+    if (typeof target !== 'string' || target.trim() === '') {
+      problems.push('A correction must name the movement it corrects.');
+    }
   }
   // Every identifier, coalesced before trimming. `movement.actorId.trim()`
   // threw a TypeError when the field arrived absent or null from unchecked

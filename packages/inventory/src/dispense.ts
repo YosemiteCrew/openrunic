@@ -294,6 +294,22 @@ export function allocate(
  * turns it into ledger rows.
  */
 function assertConsistent(allocation: Allocation): void {
+  // The three totals bounded before they are compared. Comparing them alone let
+  // a negative shortfall satisfy the arithmetic: 100 allocated against 1
+  // requested balances if the shortfall is -99, and a hundred-unit outbound
+  // movement went out for a one-unit request. An equation that holds is not the
+  // same as numbers that mean anything, and a shortfall below zero is stock
+  // owed back by the patient.
+  for (const [name, value] of [
+    ['requested', allocation.requested],
+    ['allocated', allocation.allocated],
+    ['shortfall', allocation.shortfall],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new RangeError(`An allocation's ${name} must be zero or more, not ${String(value)}.`);
+    }
+  }
+
   for (const line of allocation.lines) {
     if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
       throw new RangeError(

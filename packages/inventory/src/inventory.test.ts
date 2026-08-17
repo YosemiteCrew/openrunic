@@ -1550,3 +1550,76 @@ describe('the review of the merged inventory PRs, each finding held by a test', 
     ).toThrow(/must say whether the quantity may be split/u);
   });
 });
+
+describe('the review of #96, each finding held by a test', () => {
+  /**
+   * The same defect one field over, in the commit that fixed it.
+   *
+   * The four required identifiers were guarded with a typeof check; the
+   * optional correction target was left calling `.trim()` directly, so a null
+   * from unchecked JSON still threw the TypeError the guard was added to stop.
+   */
+  it.each([null, 42, {}])('reports a correction target of %j rather than throwing', (bad) => {
+    const movementWithBadTarget = {
+      ...movement({ id: 'm2', reason: 'Entered twice' }),
+      correctsMovementId: bad,
+    } as unknown as StockMovement;
+
+    expect(() => movementProblems(movementWithBadTarget)).not.toThrow();
+    expect(movementProblems(movementWithBadTarget)).toContain(
+      'A correction must name the movement it corrects.'
+    );
+  });
+
+  /**
+   * An equation that holds is not the same as numbers that mean anything.
+   *
+   * `allocated + shortfall === requested` balances at 100 + (-99) = 1, so a
+   * hundred-unit line satisfied a one-unit request and emitted a hundred-unit
+   * outbound movement. A shortfall below zero is stock owed back by the patient.
+   */
+  it('refuses an allocation whose totals balance only because one is negative', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 100 }],
+      allocated: 100,
+      requested: 1,
+      shortfall: -99,
+    };
+
+    expect(forged.allocated + forged.shortfall, 'the equation this guards against').toBe(
+      forged.requested
+    );
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/shortfall must be zero or more/u);
+  });
+
+  it.each(['requested', 'allocated', 'shortfall'] as const)(
+    'refuses an allocation whose %s is not a number',
+    (field) => {
+      const forged = {
+        itemId: 'item-1',
+        lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 1 }],
+        allocated: 1,
+        requested: 1,
+        shortfall: 0,
+        [field]: Number.NaN,
+      };
+
+      expect(() =>
+        movementsFor(forged, {
+          kind: 'DISPENSE',
+          occurredOn: TODAY,
+          actorId: 'user-1',
+          idFor: () => 'mv-0',
+        })
+      ).toThrow(/must be zero or more/u);
+    }
+  );
+});

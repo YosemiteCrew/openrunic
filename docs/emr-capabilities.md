@@ -84,19 +84,19 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Platform
 
-| Capability                             | State         | Note                                                            |
-| -------------------------------------- | ------------- | --------------------------------------------------------------- |
-| Multi-tenant, multi-facility           | **Done**      | Structural isolation, not filtered isolation                    |
-| Roles and permissions                  | **Done**      | Capability-based, seeded roles                                  |
-| Patient portal                         | **Done**      | Record, visits, bills, messages, forms, assistant               |
-| Forms engine                           | **Done**      | Definitions, submissions, promoted values                       |
-| Self-hosting, backup, restore, upgrade | **Done**      | With a clinical-day drill in CI                                 |
-| Assistant / agentic layer              | **Done**      | Off by default; propose-never-commit; see ADR-0005 and ADR-0006 |
-| Document management and scanning       | **Partial**   | Documents are modelled and stored; no scanning workflow         |
-| DICOM / imaging                        | **Missing**   | _Buildable_, large                                              |
-| Telehealth                             | **Seam only** | `packages/adapters` holds the video seam                        |
-| Internationalisation                   | **Missing**   | _Buildable_ - no message catalogue yet                          |
-| Inventory and dispensing               | **Missing**   | _Buildable_                                                     |
+| Capability                             | State         | Note                                                                                                                           |
+| -------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Multi-tenant, multi-facility           | **Done**      | Structural isolation, not filtered isolation                                                                                   |
+| Roles and permissions                  | **Done**      | Capability-based, seeded roles                                                                                                 |
+| Patient portal                         | **Done**      | Record, visits, bills, messages, forms, assistant                                                                              |
+| Forms engine                           | **Done**      | Definitions, submissions, promoted values                                                                                      |
+| Self-hosting, backup, restore, upgrade | **Done**      | With a clinical-day drill in CI                                                                                                |
+| Assistant / agentic layer              | **Done**      | Off by default; propose-never-commit; see ADR-0005 and ADR-0006                                                                |
+| Document management and scanning       | **Partial**   | Documents are modelled and stored; no scanning workflow                                                                        |
+| DICOM / imaging                        | **Missing**   | _Buildable_, large                                                                                                             |
+| Telehealth                             | **Seam only** | `packages/adapters` holds the video seam                                                                                       |
+| Internationalisation                   | **Missing**   | _Buildable_ - no message catalogue yet                                                                                         |
+| Inventory and dispensing               | **Partial**   | `packages/inventory`: lots, FEFO, an append-only ledger and course-total dispensing. Not yet persisted or exposed over the API |
 
 ## How to read this
 

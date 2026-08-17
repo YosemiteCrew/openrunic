@@ -562,6 +562,34 @@ const facilityAddressFields = {
   country: z.string().length(2).optional(),
 };
 
+/**
+ * An IANA zone name the platform can actually resolve.
+ *
+ * Checked by asking `Intl` rather than by matching a shape, because the value
+ * is only ever used by handing it to `Intl` - a name that looks right and that
+ * this runtime does not know is the same failure as a typo.
+ *
+ * It was a free string, described in a comment as an IANA zone name and checked
+ * as nothing. The inventory reads derive today from it, so `PST` or a
+ * misspelling turned three endpoints into bare 500s for that site, with nothing
+ * in the error pointing at the facility record that caused it.
+ */
+const ianaZone = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(
+    (value) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'must be an IANA time zone name, such as America/New_York' }
+  );
+
 export const facilityCreateSchema = z.strictObject({
   name: z.string().min(1).max(256),
   /** Short code shown in the UI and printed on documents. */
@@ -570,7 +598,7 @@ export const facilityCreateSchema = z.strictObject({
   /** CMS place-of-service code, e.g. "11" for office. Coded, so a string. */
   posCode: z.string().min(1).max(8).optional(),
   /** IANA zone name; the schedule renders every instant through it. */
-  timezone: z.string().min(1).max(64).optional(),
+  timezone: ianaZone.optional(),
   ...facilityAddressFields,
   phone: z.string().min(3).max(32).optional(),
   active: z.boolean().optional(),
@@ -584,7 +612,7 @@ export const facilityPatchSchema = z
     name: z.string().min(1).max(256).optional(),
     npi: z.string().min(1).max(32).optional(),
     posCode: z.string().min(1).max(8).optional(),
-    timezone: z.string().min(1).max(64).optional(),
+    timezone: ianaZone.optional(),
     ...facilityAddressFields,
     phone: z.string().min(3).max(32).optional(),
     active: z.boolean().optional(),

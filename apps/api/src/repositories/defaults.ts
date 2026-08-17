@@ -1,3 +1,4 @@
+import type { StockLotStatus } from './specs/inventory.js';
 import type {
   AdministrativeGender,
   AppointmentCreatedVia,
@@ -38,4 +39,28 @@ export interface AppointmentDefaults {
 export const APPOINTMENT_DEFAULTS: AppointmentDefaults = {
   status: 'BOOKED',
   createdVia: 'STAFF',
+};
+
+export interface StockItemDefaults {
+  controlled: boolean;
+  active: boolean;
+}
+
+export const STOCK_ITEM_DEFAULTS: StockItemDefaults = {
+  controlled: false,
+  active: true,
+};
+
+export interface StockLotDefaults {
+  status: StockLotStatus;
+}
+
+/**
+ * A lot arrives available. Every other status is something a person decided
+ * afterwards - a cold-chain excursion, a recall notice, a disposal - so a
+ * default of anything else would be the system asserting a fact nobody
+ * observed.
+ */
+export const STOCK_LOT_DEFAULTS: StockLotDefaults = {
+  status: 'AVAILABLE',
 };

@@ -46,6 +46,43 @@ describe('the permission catalogue', () => {
   it('rejects a string that is not a permission', () => {
     expect(isPermission('patient.destroy')).toBe(false);
   });
+
+  /**
+   * The stock ledger's separation of duties, as data. A clinician draws stock
+   * and records what left the shelf; reconciling a physical count against the
+   * ledger is somebody else's job, because the control that makes a stock ledger
+   * defensible is that the person who dispenses is not the person who
+   * reconciles the difference away.
+   */
+  it('keeps the cycle count away from the people who dispense', () => {
+    expect(ROLE_PERMISSIONS.clinician).toContain('inventory.write');
+    expect(ROLE_PERMISSIONS.clinician).not.toContain('inventory.adjust');
+    expect(ROLE_PERMISSIONS['stock-keeper']).toContain('inventory.adjust');
+  });
+
+  /**
+   * `stock-keeper` exists so the monthly count is not an administrative act. It
+   * reaches the stockroom and nothing else: without it the only bundle holding
+   * `inventory.adjust` would be `admin`, which holds everything.
+   */
+  it('gives the stock keeper the stockroom and nothing clinical', () => {
+    expect(ROLE_PERMISSIONS['stock-keeper']).not.toContain('patient.read');
+    expect(ROLE_PERMISSIONS['stock-keeper']).not.toContain('encounter.read');
+  });
+
+  it('lets the front desk see the shelf without booking anything in', () => {
+    expect(ROLE_PERMISSIONS['front-desk']).toContain('inventory.read');
+    expect(ROLE_PERMISSIONS['front-desk']).not.toContain('inventory.write');
+  });
+
+  it('leaves billing and the portal out of the stockroom entirely', () => {
+    for (const role of ['biller', 'patient-portal'] as const) {
+      expect(
+        ROLE_PERMISSIONS[role]?.some((p) => p.startsWith('inventory.')),
+        role
+      ).toBe(false);
+    }
+  });
 });
 
 describe('buildPolicyContext', () => {

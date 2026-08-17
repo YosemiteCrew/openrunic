@@ -1700,7 +1700,7 @@ describe('the third review of #96', () => {
         actorId: 'user-1',
         idFor: () => 'mv-0',
       })
-    ).toThrow(/lines sum to 4e-7 but the allocation says 0/u);
+    ).toThrow(/finer than the six decimal places/u);
   });
 
   /**
@@ -1729,5 +1729,106 @@ describe('the third review of #96', () => {
         idFor: (_line, index) => `mv-${String(index)}`,
       })
     ).toHaveLength(2);
+  });
+});
+
+describe('the fourth review of #96', () => {
+  /**
+   * A tolerance is not a fix, it is a smaller hole.
+   *
+   * Rounding both sides onto the grid let a 4e-7 line match an allocation
+   * claiming nothing; comparing within 1e-9 moved the same hole below 1e-9. Any
+   * threshold has a below, and `balancesByLot` accumulates raw, so enough
+   * uniquely-identified rows round into visible stock while every allocation
+   * says it moved none.
+   *
+   * The line has to be on the grid, which has no below.
+   */
+  it.each([5e-10, 4e-7, 0.00000015])('refuses a line of %s, which is finer than the grid', (q) => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: q }],
+      allocated: 0,
+      requested: 0,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/finer than the six decimal places/u);
+  });
+
+  it('accepts a line sitting exactly on the finest step the grid carries', () => {
+    const fine = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 0.000001 }],
+      allocated: 0.000001,
+      requested: 0.000001,
+      shortfall: 0,
+    };
+
+    expect(
+      movementsFor(fine, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toHaveLength(1);
+  });
+
+  /**
+   * Integers, so there is no float noise to tolerate and no tolerance to slip
+   * under. 0.1 + 0.2 is not 0.3, but 100000 + 200000 is 300000.
+   */
+  it('sums a multi-lot allocation exactly, without a tolerance', () => {
+    expect(0.1 + 0.2, 'the arithmetic the grid steps sidestep').not.toBe(0.3);
+
+    const real = {
+      itemId: 'item-1',
+      lines: [
+        { lotId: 'a', lotNumber: 'A1', quantity: 0.1 },
+        { lotId: 'b', lotNumber: 'B1', quantity: 0.2 },
+      ],
+      allocated: 0.3,
+      requested: 0.3,
+      shortfall: 0,
+    };
+
+    expect(
+      movementsFor(real, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: (_line, index) => `mv-${String(index)}`,
+      })
+    ).toHaveLength(2);
+  });
+
+  /**
+   * The object before the property. Guarding `options.divisible` and not
+   * `options` meant an omitted sixth argument - the most natural form of the
+   * omitted answer the check is about - threw a TypeError before the refusal it
+   * exists to produce could be reached.
+   */
+  it.each([undefined, null])('refuses %j in place of the options object', (bad) => {
+    const lots = [lot({ id: 'a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const ledger = [movement({ id: 'm1', quantity: 10 })];
+
+    expect(() =>
+      allocate(
+        lots,
+        ledger,
+        'item-1',
+        exactlyThisManyStockUnits(5),
+        TODAY,
+        bad as unknown as { divisible: boolean }
+      )
+    ).toThrow(/must say whether the quantity may be split/u);
   });
 });

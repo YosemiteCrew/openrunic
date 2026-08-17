@@ -95,7 +95,7 @@ Three kinds of gap appear below, and they are not the same kind of work:
 | Document management and scanning       | **Partial**   | Documents are modelled and stored; no scanning workflow                                                                                                                                  |
 | DICOM / imaging                        | **Missing**   | _Buildable_, large                                                                                                                                                                       |
 | Telehealth                             | **Seam only** | `packages/adapters` holds the video seam                                                                                                                                                 |
-| Internationalisation                   | **Missing**   | _Buildable_ - no message catalogue yet                                                                                                                                                   |
+| Internationalisation                   | **Partial**   | `packages/i18n`: catalogues, locale fallback, measured coverage, CLDR plurals. Not yet wired into the apps, and no catalogue ships but the source one                                    |
 | Inventory and dispensing               | **Done**      | `packages/inventory` behind four tables and the seven daily jobs at `/bff/v0/inventory`. On-hand is summed from an append-only ledger, never stored; UPDATE and DELETE are revoked on it |
 
 ## How to read this

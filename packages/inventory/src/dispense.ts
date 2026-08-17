@@ -261,24 +261,6 @@ export function allocate(
 }
 
 /**
- * Turns an allocation into the movements that record it.
- *
- * Split from `allocate` on purpose. Deciding what to take and writing down that
- * it was taken are different acts, and a system that fused them would post the
- * ledger for a dispense that then failed at the counter - the tablets back on
- * the shelf and the record saying they left. The caller allocates, does the
- * physical thing, and posts.
- *
- * `id` is supplied per line by the caller rather than generated here, because
- * this package has no opinion about identifiers and generating them would make
- * it unable to reproduce a run.
- *
- * The item is not supplied. It comes from the allocation, so a caller cannot
- * allocate one item and post the movements under another - a mismatch nothing
- * downstream could detect, because every lot id and quantity in the result is
- * valid and merely debits the wrong ledger.
- */
-/**
  * Refuses an allocation whose own numbers do not add up.
  *
  * `Allocation` is a plain interface, so a caller can build one - and the tests
@@ -335,6 +317,24 @@ function assertConsistent(allocation: Allocation): void {
   }
 }
 
+/**
+ * Turns an allocation into the movements that record it.
+ *
+ * Split from `allocate` on purpose. Deciding what to take and writing down that
+ * it was taken are different acts, and a system that fused them would post the
+ * ledger for a dispense that then failed at the counter - the tablets back on
+ * the shelf and the record saying they left. The caller allocates, does the
+ * physical thing, and posts.
+ *
+ * `id` is supplied per line by the caller rather than generated here, because
+ * this package has no opinion about identifiers and generating them would make
+ * it unable to reproduce a run.
+ *
+ * The item is not supplied. It comes from the allocation, so a caller cannot
+ * allocate one item and post the movements under another - a mismatch nothing
+ * downstream could detect, because every lot id and quantity in the result is
+ * valid and merely debits the wrong ledger.
+ */
 export function movementsFor(
   allocation: Allocation,
   detail: {

@@ -1623,3 +1623,54 @@ describe('the review of #96, each finding held by a test', () => {
     }
   );
 });
+
+describe('the second review of #96', () => {
+  /**
+   * The as-of fix undone one line below itself.
+   *
+   * The beyond-use window is not in force before the vial is opened, and the
+   * validation added alongside that rule ran regardless - so a back-dated
+   * report failed on a bad value belonging to an event that had not happened on
+   * the date asked about.
+   */
+  it('does not validate a beyond-use window that is not yet in force', () => {
+    const openedLater = lot({
+      id: 'a',
+      receivedOn: '2026-08-01',
+      openedOn: '2026-09-10',
+      beyondUseDays: -1,
+    });
+
+    expect(lastUsableDay(openedLater, '2026-09-01')).toBeUndefined();
+    expect(fefo([openedLater], '2026-09-01').map((entry) => entry.id)).toEqual(['a']);
+    expect(() => lastUsableDay(openedLater, '2026-09-10')).toThrow(/not a whole number of days/u);
+  });
+
+  /**
+   * TypeScript is structural, so a row a join has augmented with a materialised
+   * relation is still a StockMovement. Comparing every key with `===` rejected
+   * two such rows as conflicting because their relation objects were different
+   * instances carrying equal contents.
+   */
+  it('treats two rows as the same ledger line whatever else they carry', () => {
+    const base = movement({ id: 'm1', quantity: 10 });
+    const withRelation = { ...base, lot: { id: 'lot-a' } } as unknown as StockMovement;
+    const withAnother = { ...base, lot: { id: 'lot-a' } } as unknown as StockMovement;
+
+    expect(
+      (withRelation as unknown as { lot: object }).lot ===
+        (withAnother as unknown as { lot: object }).lot,
+      'different instances, equal contents'
+    ).toBe(false);
+    expect(lotBalance([withRelation, withAnother], 'lot-a', TODAY)).toBe(10);
+  });
+
+  it('still refuses two rows that differ on a field the ledger cares about', () => {
+    const one = movement({ id: 'm1', quantity: 10 });
+    const other = movement({ id: 'm1', quantity: 40 });
+
+    expect(() => lotBalance([one, other], 'lot-a', TODAY)).toThrow(
+      /supplied twice with different contents/u
+    );
+  });
+});

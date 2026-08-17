@@ -307,6 +307,37 @@ export function toStockPrecision(quantity: number): number {
 }
 
 /**
+ * A comparison that does not depend on the order the keys were written in.
+ *
+ * `JSON.stringify` does, so two rows carrying identical fields built by two code
+ * paths compared unequal and were rejected as conflicting - a duplicate the
+ * caller could not deduplicate, throwing on a balance read for data that was
+ * fine. What the rule is about is contents.
+ *
+ * The declared fields, not every key. TypeScript is structural, so a row that a
+ * join has augmented with a materialised relation is still a `StockMovement` -
+ * and comparing every key with `===` rejected two such rows as conflicting
+ * because their relation objects were different instances carrying equal
+ * contents. What decides whether two rows are the same ledger line is the
+ * ledger line, so those are the fields compared and the rest is ignored.
+ */
+const MOVEMENT_FIELDS = [
+  'id',
+  'lotId',
+  'itemId',
+  'kind',
+  'quantity',
+  'occurredOn',
+  'actorId',
+  'correctsMovementId',
+  'reason',
+] as const satisfies readonly (keyof StockMovement)[];
+
+function sameContents(left: StockMovement, right: StockMovement): boolean {
+  return MOVEMENT_FIELDS.every((field) => left[field] === right[field]);
+}
+
+/**
  * The movements, with each ledger row counted once.
  *
  * A join that returns a movement twice added its quantity twice, so a single
@@ -320,21 +351,6 @@ export function toStockPrecision(quantity: number): number {
  * two answers to what one movement was, and picking either would decide a
  * balance by array order.
  */
-/**
- * A comparison that does not depend on the order the keys were written in.
- *
- * `JSON.stringify` does, so two rows carrying identical fields built by two code
- * paths compared unequal and were rejected as conflicting - a duplicate the
- * caller could not deduplicate, throwing on a balance read for data that was
- * fine. What the rule is about is contents.
- */
-function sameContents(left: object, right: object): boolean {
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  return [...keys].every(
-    (key) => (left as Record<string, unknown>)[key] === (right as Record<string, unknown>)[key]
-  );
-}
-
 function distinct(movements: readonly StockMovement[]): readonly StockMovement[] {
   const unique = new Map<string, StockMovement>();
   for (const movement of movements) {

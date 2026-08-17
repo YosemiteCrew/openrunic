@@ -186,7 +186,12 @@ export function lastUsableDay(lot: Lot, asOf: IsoDate): IsoDate | undefined {
   // expiring-soon report. The as-of contract this file opens with is exactly
   // the promise that was broken.
   const opened = lot.openedOn !== undefined && lot.openedOn <= asOf;
-  if (lot.beyondUseDays !== undefined && lot.openedOn !== undefined) {
+  // Validated only once the window is in force, which is the same rule as
+  // applying it. Checking it unconditionally meant a back-dated report failed
+  // on a bad value belonging to an event that had not happened on the date
+  // asked about - the as-of fix, undone one line below itself by the guard
+  // added with it.
+  if (opened && lot.beyondUseDays !== undefined) {
     assertWholeDays(lot.beyondUseDays, lot.lotNumber);
   }
   const beyondUse =

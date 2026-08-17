@@ -50,13 +50,29 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 ### The FHIR boundary
 
 `GET /fhir/metadata` publishes the CapabilityStatement, generated from the mounted resource
-modules. Seventeen resource types are served with `read` and `search-type`; `Patient` also accepts
+modules. Twenty resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
+
+Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
+
+`Observation` passes the rule: a coded parameter is advertised only where the domain enum and the
+FHIR value set agree one for one. Where the mapping loses states - the schedule has a code for
+"roomed" and R4 does not - the parameter is left out rather than answered with a filter that
+silently matches one collapsed state and misses the rest. `losslessStatus` in `resources.ts` decides
+that per resource from the mapping itself, which is why those absences are visible here rather than
+buried in a half-working filter.
+
+`Claim` is an exception and not a good one. `CLAIM_STATUS` collapses ten domain states into three
+FHIR codes, so the rule says it should not advertise `status` - but it does, and
+`claimStatusToken` reads the **domain** name rather than the FHIR code. `status=SUBMITTED` works;
+`status=active`, which is what the published CapabilityStatement tells an integrator to send, is
+refused with a 400. Tracked in #91.
 
 | Resource              | Search parameters implemented                                         |
 | --------------------- | --------------------------------------------------------------------- |
 | `Patient`             | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
 | `Practitioner`        | `name`                                                                |
+| `PractitionerRole`    | `practitioner`                                                        |
 | `Location`            | `name`                                                                |
 | `Coverage`            | `patient`                                                             |
 | `Appointment`         | `_id`, `patient`, `date`, `practitioner`, `location`                  |
@@ -72,19 +88,18 @@ modules. Seventeen resource types are served with `read` and `search-type`; `Pat
 | `Specimen`            | `patient`, `accession`                                                |
 | `DocumentReference`   | `patient`, `category`, `date`                                         |
 | `Task`                | `patient`                                                             |
+| `Provenance`          | `target`, `recorded`, `agent`                                         |
+| `Claim`               | `patient`, `status`, `created`                                        |
 
 Every resource also accepts `_count` and `_offset`; a parameter that is not listed is refused with
 a `not-supported` OperationOutcome rather than ignored. `fhir.conformance.test.ts` reads the
 published statement and makes the request each claim implies, so the table above cannot drift from
 the router in either direction.
 
-Two absences are deliberate. A `Claim` without its lines misrepresents what was billed, and
-resolving lines per row across a search is a query shape this boundary does not support yet. An
-`Organization` would have to be either the tenant itself, which a tenant-scoped client cannot
-address, or a payer, whose directory is not built. A coded search parameter is advertised only
-where the domain enum and the FHIR value set agree one for one; where the mapping loses states -
-the schedule has a code for "roomed" and R4 does not - the parameter is left out rather than
-answered with a filter that half works.
+`Organization` is the notable absence, and it is currently a broken promise rather than a clean
+one: `Patient.managingOrganization` and `PractitionerRole.organization` both emit
+`Organization/{tenantId}`, which is a relative reference to a resource this server does not serve,
+so a client that follows it gets a 404. Tracked in #89.
 
 ### The internal surface
 

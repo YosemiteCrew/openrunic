@@ -17,6 +17,7 @@ import {
   storageColumns,
   testId,
   TOKENS,
+  UNPRIVILEGED_TOKEN,
 } from './support.js';
 
 /**
@@ -36,6 +37,10 @@ const ENCOUNTER = testId(20);
 const CLAIM = testId(940);
 const ORDER = testId(30);
 const REPORT = testId(40);
+const NURSE_ROLE = testId(970);
+const SITE_GRANT = testId(971);
+const ORG_GRANT = testId(972);
+const SECOND_SITE = testId(975);
 
 function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
@@ -49,7 +54,7 @@ function seedChart(dataset: MemoryDataset): void {
     credential: 'MD',
     npi: '1234567893',
     dea: null,
-    taxonomyCode: null,
+    taxonomyCode: '207Q00000X',
     isProvider: true,
     locale: 'en-US',
     status: 'ACTIVE',
@@ -341,6 +346,63 @@ function seedChart(dataset: MemoryDataset): void {
     expiresAt: null,
   });
 
+  seed(dataset, 'UserFacility', {
+    ...storageColumns(testId(973)),
+    userId: PROVIDER,
+    facilityId: DEMO_FACILITY_A,
+    isPrimary: true,
+  });
+
+  seed(dataset, 'Facility', {
+    ...storageColumns(SECOND_SITE),
+    name: 'Testville Annexe',
+    code: 'TVA',
+    npi: null,
+    posCode: '11',
+    timezone: 'UTC',
+    addressLine1: '2 Test Street',
+    addressLine2: null,
+    city: 'Testville',
+    state: 'TS',
+    postalCode: '00000',
+    country: 'US',
+    phone: '+15550101',
+    active: true,
+  });
+
+  seed(dataset, 'UserFacility', {
+    ...storageColumns(testId(974)),
+    userId: PROVIDER,
+    facilityId: SECOND_SITE,
+    isPrimary: false,
+  });
+
+  seed(dataset, 'Role', {
+    ...storageColumns(NURSE_ROLE),
+    key: 'nurse',
+    name: 'Nurse',
+    description: null,
+    isSystem: true,
+  });
+
+  // Two grants of the same role to the same person, differing only in whether
+  // they name a facility. That is the pair the projection has to tell apart:
+  // one is scoped to a site and one is organisation-wide, and the resource says
+  // so by carrying a `location` or by carrying none.
+  seed(dataset, 'RoleAssignment', {
+    ...storageColumns(SITE_GRANT),
+    userId: PROVIDER,
+    roleId: NURSE_ROLE,
+    facilityId: DEMO_FACILITY_A,
+  });
+
+  seed(dataset, 'RoleAssignment', {
+    ...storageColumns(ORG_GRANT),
+    userId: PROVIDER,
+    roleId: NURSE_ROLE,
+    facilityId: null,
+  });
+
   seed(dataset, 'Task', {
     ...storageColumns(testId(60)),
     type: 'RESULT',
@@ -557,6 +619,151 @@ describe('the projections', () => {
     expect(location.address?.city).toBe('Testville');
   });
 
+  it('binds a role grant to its practitioner, its organisation and its role code', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as {
+      practitioner?: { reference?: string };
+      organization?: { reference?: string };
+      code?: { coding?: { code?: string }[] }[];
+      active?: boolean;
+    };
+
+    expect(role.practitioner?.reference).toBe(`Practitioner/${PROVIDER}`);
+    expect(role.organization?.reference).toBe(`Organization/${DEMO_TENANT_A}`);
+    expect(role.code?.[0]?.coding?.[0]?.code).toBe('nurse');
+    expect(role.active).toBe(true);
+  });
+
+  /**
+   * Two tables carry a facility and they answer different questions.
+   * `UserFacility` says where the person works; `RoleAssignment.facilityId`
+   * says where the permission applies. A site-scoped grant is the intersection.
+   */
+  it('narrows a site-scoped grant to the one facility it applies at', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { location?: { reference?: string }[] };
+
+    expect(role.location?.map((entry) => entry.reference)).toEqual([`Location/${DEMO_FACILITY_A}`]);
+  });
+
+  /**
+   * The case that made reading the assignment wrong rather than imprecise.
+   *
+   * A practitioner with one organisation-wide grant works at both sites, and
+   * the grant names neither. Deriving `location` from the assignment returned
+   * nothing at all for somebody a referring practice can demonstrably reach at
+   * two addresses.
+   */
+  it('lists every facility a practitioner works at for an organisation-wide grant', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { location?: { reference?: string }[] };
+
+    expect(role.location?.map((entry) => entry.reference)).toEqual([
+      `Location/${DEMO_FACILITY_A}`,
+      `Location/${SECOND_SITE}`,
+    ]);
+  });
+
+  /**
+   * The absent-versus-empty property, asserted rather than assumed.
+   *
+   * A role granted at a site the person is not attached to intersects to
+   * nothing. That must not serialise as `location: []`, because a directory
+   * client reading an empty array concludes the practitioner provides care
+   * nowhere and routes a referral elsewhere - a positive claim, where the truth
+   * is only that two grants disagree and nobody has reconciled them.
+   *
+   * `toHaveProperty` rather than a length check, because `[]` passes every
+   * check that asks how many.
+   */
+  it('emits no location at all when the grants do not intersect', async () => {
+    const { app, dataset } = harness();
+    const grant = dataset.table('RoleAssignment').find((row) => row.id === SITE_GRANT);
+    expect(grant, 'the fixture seeds the site-scoped grant this test moves').toBeDefined();
+    Object.assign(grant!, { facilityId: testId(999) });
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as Record<string, unknown>;
+
+    expect(role).not.toHaveProperty('location');
+  });
+
+  it('reads a practitioner filter as the reference a directory client sends', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request(`/fhir/PractitionerRole?practitioner=Practitioner/${PROVIDER}`, {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(2);
+  });
+
+  it('refuses a practitioner filter that references the wrong resource type', async () => {
+    const { app } = harness();
+
+    const res = await app.request(`/fhir/PractitionerRole?practitioner=Patient/${PATIENT}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('carries the specialty the practice recorded against the user', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { specialty?: { coding?: { code?: string; system?: string }[] }[] };
+
+    expect(role.specialty?.[0]?.coding?.[0]?.code).toBe('207Q00000X');
+  });
+
+  /**
+   * The incremental-export hole, asserted rather than assumed.
+   *
+   * Deactivating a practitioner changes `active` on this resource and touches
+   * nothing on the grant row it is stamped from. Without the later of the two
+   * timestamps, an `$export?_since=` between them filters the resource out and
+   * reports success, so the consumer never learns the practitioner went
+   * inactive - a silent staleness with no error anywhere.
+   */
+  it('stamps lastUpdated from the user when the user changed after the grant', async () => {
+    const { app, dataset } = harness();
+    const later = new Date('2026-09-01T00:00:00.000Z');
+    const user = dataset.table('User').find((row) => row.id === PROVIDER);
+    expect(user, 'the fixture seeds the provider this test deactivates').toBeDefined();
+    Object.assign(user!, { status: 'DISABLED', updatedAt: later });
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { active?: boolean; meta?: { lastUpdated?: string } };
+
+    expect(role.active).toBe(false);
+    expect(role.meta?.lastUpdated).toBe(later.toISOString());
+  });
+
+  it('keeps the grant timestamp when the grant is the thing that changed last', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { meta?: { lastUpdated?: string } };
+
+    expect(role.meta?.lastUpdated).toBe(FIXED_NOW.toISOString());
+  });
+
   it('filters a chart search by the patient compartment reference', async () => {
     const { app } = harness();
 
@@ -591,6 +798,56 @@ describe('the projections', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * The permission a resource is served under, compared with the one the BFF uses
+ * for the same rows.
+ *
+ * PractitionerRole projects `RoleAssignment` - the access-control matrix - and
+ * `/bff/v0/users/{id}/roles` serves those same rows. Serving them at the FHIR
+ * boundary under `user.read` meant a clinician or biller holding `user.read`
+ * and not `role.read` could enumerate every grant in the organisation through
+ * the route that does not check, having been refused by the route that does. A
+ * boundary that answers a question another door will not is not a second door;
+ * it is the way round.
+ *
+ * The first version of this test asserted the FHIR module against the literal
+ * `'role.read'` while claiming to hold a pairing. It would have stayed green if
+ * the BFF route had been tightened to something stricter, which is the drift a
+ * pairing test exists to catch - so it was checking one side and describing
+ * two. The published OpenAPI document carries the BFF permission as
+ * `x-openrunic-permission`, so both sides are readable and both are read.
+ */
+describe('the permission each resource is served under', () => {
+  interface SpecDocument {
+    paths?: Record<string, Record<string, { 'x-openrunic-permission'?: string }>>;
+  }
+
+  async function bffPermission(app: ReturnType<typeof createTestApp>['app'], path: string) {
+    const spec = (await (await app.request('/openapi.json')).json()) as SpecDocument;
+    return spec.paths?.[path]?.['get']?.['x-openrunic-permission'];
+  }
+
+  it('gates PractitionerRole on the same permission as the BFF route for the same rows', async () => {
+    const { app } = harness();
+
+    const bff = await bffPermission(app, '/bff/v0/users/{id}/roles');
+    const module = SERVED_MODULES.find((entry) => entry.type === 'PractitionerRole');
+
+    expect(bff, 'the BFF route publishes its permission').toBeDefined();
+    expect(module?.permission).toBe(bff);
+  });
+
+  it('refuses a principal holding no permissions at all', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/PractitionerRole', {
+      headers: { authorization: `Bearer ${UNPRIVILEGED_TOKEN}` },
+    });
+
+    expect(res.status).toBe(403);
   });
 });
 

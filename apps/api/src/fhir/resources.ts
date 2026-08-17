@@ -35,6 +35,7 @@ import {
   medicationStatementResource,
   observationResource,
   practitionerResource,
+  practitionerRoleResource,
   provenanceResource,
   serviceRequestResource,
   specimenResource,
@@ -70,6 +71,16 @@ import { defineFhirResource, type FhirResourceModule } from './resource-module.j
  */
 
 const CHART_SORT = { order: 'desc' } as const;
+
+/**
+ * How many facility grants one practitioner's PractitionerRole will report.
+ *
+ * A bound rather than an unbounded read, because this runs once per distinct
+ * user on a page. Nobody works at two hundred sites; a user who appears to has
+ * bad data, and the resource showing the first two hundred of it is a better
+ * failure than a page that will not load.
+ */
+const MAX_FACILITY_GRANTS = 200;
 
 /** Advertises `status` only when the FHIR value set covers every domain state. */
 function losslessStatus<D extends string, F extends string>(mapping: EnumMapping<D, F>): string[] {
@@ -149,6 +160,148 @@ const practitionerModule = defineFhirResource({
     order: 'asc' as const,
   }),
   toResource: practitionerResource,
+});
+
+/**
+ * What one page of role grants needs beyond the grants themselves.
+ *
+ * A grant names a role and a user; the resource needs the role's key, the
+ * user's specialty and status, and when the user row last changed.
+ *
+ * Fetching those per row would be two queries per grant. This dedupes the ids
+ * first, so a page of fifty grants held by five clinicians across two roles
+ * costs seven reads rather than a hundred - which is the win in practice, since
+ * grants cluster hard on both.
+ *
+ * It is worth being exact about what this is not: seven reads, not one. The
+ * repository layer has no set-based read, so these are still individual
+ * `findById` calls, merely deduped and issued concurrently. On a page where
+ * every grant belongs to a different practitioner the dedupe buys nothing and
+ * the count is back to one per row. Issue #88 tracks the set-based read that
+ * would fix that properly, for every module's loader rather than this one.
+ */
+interface RolePageData {
+  roleKeyById: Map<string, string>;
+  userById: Map<string, ScopedRow<'User'>>;
+  /** Facilities each user works at, from `UserFacility` - not from the grant. */
+  facilityIdsByUser: Map<string, string[]>;
+}
+
+async function prepareRoles(
+  rows: readonly ScopedRow<'RoleAssignment'>[],
+  repositories: Repositories
+): Promise<RolePageData> {
+  const roleKeyById = new Map<string, string>();
+  const userById = new Map<string, ScopedRow<'User'>>();
+  const facilityIdsByUser = new Map<string, string[]>();
+  if (rows.length === 0) return { roleKeyById, userById, facilityIdsByUser };
+
+  const roleIds = [...new Set(rows.map((row) => row.roleId))];
+  const userIds = [...new Set(rows.map((row) => row.userId))];
+
+  const [roles, users, grants] = await Promise.all([
+    Promise.all(roleIds.map(async (id) => repositories.roles.findById(id))),
+    Promise.all(userIds.map(async (id) => repositories.users.findById(id))),
+    Promise.all(
+      userIds.map(async (userId) =>
+        repositories.userFacilities.list({
+          userId,
+          page: 1,
+          pageSize: MAX_FACILITY_GRANTS,
+          sort: 'createdAt',
+          order: 'asc',
+        })
+      )
+    ),
+  ]);
+
+  for (const role of roles) {
+    if (role !== null) roleKeyById.set(role.id, role.key);
+  }
+  for (const user of users) {
+    if (user !== null) userById.set(user.id, user);
+  }
+  for (const [index, page] of grants.entries()) {
+    const userId = userIds[index];
+    if (userId === undefined) continue;
+    facilityIdsByUser.set(
+      userId,
+      page.rows.map((grant) => grant.facilityId)
+    );
+  }
+
+  return { roleKeyById, userById, facilityIdsByUser };
+}
+
+/**
+ * PractitionerRole: who may do what, in which organisation.
+ *
+ * The resource a directory client asks for before it asks anything else, and
+ * the one that makes Practitioner useful - a name with no role answers nothing
+ * a referring practice wants to know.
+ *
+ * ## One resource per grant, not per practitioner
+ *
+ * One `RoleAssignment` becomes one PractitionerRole. A nurse granted a role at
+ * two sites has two rows and two resources, which is the FHIR shape rather than
+ * an artefact of this schema: PractitionerRole is the join, and a directory
+ * that collapsed the two could not express that the role was granted at one
+ * site and not the other.
+ *
+ * ## The uniqueness this does not rely on
+ *
+ * `RoleAssignment` carries `@@unique([userId, roleId, facilityId])`, and that
+ * constraint does not do what its shape suggests for an organisation-wide
+ * grant: Postgres treats nulls as distinct in a unique index, so two rows with
+ * a null `facilityId` do not collide and the duplicate check lives in the
+ * application layer. The schema says so above the model. This module therefore
+ * describes what a row means rather than asserting there can only be one of it,
+ * and a duplicate organisation-wide grant would surface here as two identical
+ * PractitionerRoles - which is the truthful projection of a duplicate row.
+ *
+ * `projections.ts` carries where `location` comes from, and why it is the
+ * facility grants rather than the role assignment's own facility.
+ */
+const practitionerRoleModule = defineFhirResource({
+  type: 'PractitionerRole',
+  interactions: ['read', 'search-type'],
+  params: ['practitioner'],
+  // `role.read`, not `user.read`. This resource is a list of who holds which
+  // access-control role, and `/users/:id/roles` - the same rows through the BFF
+  // - is behind `role.read` already. Serving them under the weaker permission
+  // would have let a clinician or biller, who holds `user.read` and not
+  // `role.read`, enumerate the whole access-control matrix through the FHIR
+  // route that the BFF route refuses them. A boundary that answers a question
+  // one door will not is not a second door, it is the way round.
+  permission: 'role.read',
+  collection: (repositories) => repositories.roleAssignments,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    // Through `referenceId` rather than straight through: a directory client
+    // searches with the reference it was given, `Practitioner/{id}`, and a bare
+    // comparison against `userId` would match nothing and report it as an empty
+    // result rather than as the malformed search it is.
+    ...(query.practitioner === undefined
+      ? {}
+      : { userId: referenceId(query.practitioner, 'Practitioner', 'practitioner') }),
+    sort: 'createdAt' as const,
+    order: 'asc' as const,
+  }),
+  prepare: prepareRoles,
+  toResource: (row: ScopedRow<'RoleAssignment'>, context) => {
+    const user = context.prepared.userById.get(row.userId);
+    const roleKey = context.prepared.roleKeyById.get(row.roleId);
+    return practitionerRoleResource(row, {
+      ...(roleKey === undefined ? {} : { roleKey }),
+      ...(user?.email === undefined || user.email === null ? {} : { email: user.email }),
+      ...(user === undefined ? {} : { active: user.status === 'ACTIVE' }),
+      ...(user?.taxonomyCode === undefined || user.taxonomyCode === null
+        ? {}
+        : { taxonomyCode: user.taxonomyCode }),
+      ...(user?.updatedAt === undefined ? {} : { userUpdatedAt: user.updatedAt }),
+      worksAt: context.prepared.facilityIdsByUser.get(row.userId) ?? [],
+    });
+  },
 });
 
 const locationModule = defineFhirResource({
@@ -584,6 +737,7 @@ const claimModule = defineFhirResource({
 export const SERVED_MODULES: readonly FhirResourceModule[] = [
   patientModule,
   practitionerModule,
+  practitionerRoleModule,
   locationModule,
   coverageModule,
   appointmentModule,

@@ -754,6 +754,29 @@ describe('the projections', () => {
     expect(role.meta?.lastUpdated).toBe(later.toISOString());
   });
 
+  /**
+   * The dependency the earlier fix added and the stamp did not follow.
+   *
+   * Adding a facility grant changes the emitted `location` and touches neither
+   * the user nor the assignment, so the resource kept its old stamp and an
+   * incremental export dropped a practitioner who had just started at a second
+   * site - the same silent staleness the user-timestamp fix was written for,
+   * reintroduced by the fix that started reading the grants.
+   */
+  it('stamps lastUpdated from a facility grant added after everything else', async () => {
+    const { app, dataset } = harness();
+    const later = new Date('2026-10-01T00:00:00.000Z');
+    const grant = dataset.table('UserFacility').find((row) => row.id === testId(974));
+    expect(grant, 'the fixture seeds the second-site grant this test moves').toBeDefined();
+    Object.assign(grant!, { updatedAt: later });
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { meta?: { lastUpdated?: string } };
+
+    expect(role.meta?.lastUpdated).toBe(later.toISOString());
+  });
+
   it('keeps the grant timestamp when the grant is the thing that changed last', async () => {
     const { app } = harness();
 

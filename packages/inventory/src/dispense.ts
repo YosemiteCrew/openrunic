@@ -60,6 +60,25 @@ export interface Course {
  * it lives at four hundred call sites instead.
  */
 export function courseTotal(course: Course): DispensedQuantity {
+  // Each dimension checked before the multiplication, not after it. Validating
+  // only the product lets two malformed fields cancel: `perDose: -1` with
+  // `dosesPerDay: -2` multiplies out to a finite positive 20, which passes
+  // every check downstream and dispenses twenty units against a prescription
+  // that says nothing coherent. A sign error is a data-entry mistake and a
+  // plausible total is exactly what it must not produce.
+  //
+  // The three fields named, rather than `Object.entries`. TypeScript is
+  // structural, so a prescription record carrying an `id` alongside these three
+  // is a valid `Course` at the call site - and walking its keys rejected the
+  // `id` for not being a number, refusing a course whose every declared field
+  // was fine. A validator has to check the contract it was given, not whatever
+  // else the object happens to carry.
+  for (const name of ['perDose', 'dosesPerDay', 'days'] as const) {
+    const value = course[name];
+    if (!Number.isFinite(value) || value < 0) {
+      throw new RangeError(`A course's ${name} must be zero or more, not ${String(value)}.`);
+    }
+  }
   return exactlyThisManyStockUnits(course.perDose * course.dosesPerDay * course.days);
 }
 
@@ -188,7 +207,14 @@ export function allocate(
   if (!options.divisible) {
     const whole = candidates.find((entry) => entry.onHand >= requested);
     if (whole === undefined) {
-      const available = candidates.reduce((total, entry) => total + entry.onHand, 0);
+      // Normalised before the comparison, because the request already is. A
+      // request for 0.8 against lots of 0.7 and 0.1 summed to
+      // 0.7999999999999999, so the comparison was false and the caller was told
+      // there was a shortage - in front of a fridge holding exactly enough,
+      // which is precisely the state `blockedByIndivisibility` exists to name.
+      const available = toStockPrecision(
+        candidates.reduce((total, entry) => total + entry.onHand, 0)
+      );
       return {
         itemId,
         lines: [],

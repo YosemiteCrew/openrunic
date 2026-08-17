@@ -1,4 +1,4 @@
-import { fefo, type IsoDate, type Lot } from './lots.js';
+import { assertIsoDate, fefo, type IsoDate, type Lot } from './lots.js';
 import { balancesByLot, type StockMovement } from './ledger.js';
 
 /**
@@ -60,7 +60,7 @@ export interface Course {
  * it lives at four hundred call sites instead.
  */
 export function courseTotal(course: Course): DispensedQuantity {
-  return (course.perDose * course.dosesPerDay * course.days) as DispensedQuantity;
+  return exactlyThisManyStockUnits(course.perDose * course.dosesPerDay * course.days);
 }
 
 /**
@@ -71,6 +71,20 @@ export function courseTotal(course: Course): DispensedQuantity {
  * holding a per-dose number, and the name is there to be read at that moment.
  */
 export function exactlyThisManyStockUnits(quantity: number): DispensedQuantity {
+  // Checked, not merely cast. The brand's promise is "this is a total", and a
+  // cast that accepts anything makes that a promise about where the number was
+  // typed rather than about the number. A negative brands as a valid total and
+  // allocates as `requested: -5, allocated: 0, shortfall: 0` - a request that
+  // reports itself completely filled having moved nothing. `NaN` is worse: it
+  // survives `Math.min`, so allocation lines and posted movements carry it, and
+  // every balance downstream becomes `NaN` with no row identifiable as the one
+  // that did it.
+  if (!Number.isFinite(quantity)) {
+    throw new RangeError(`A dispensed quantity must be a number, not ${String(quantity)}.`);
+  }
+  if (quantity < 0) {
+    throw new RangeError(`A dispensed quantity cannot be negative: ${String(quantity)}.`);
+  }
   return quantity as DispensedQuantity;
 }
 
@@ -91,6 +105,17 @@ export interface AllocationLine {
  * than was asked for.
  */
 export interface Allocation {
+  /**
+   * The item this was allocated against.
+   *
+   * Carried so `movementsFor` can take it from here rather than from a second
+   * argument. Without it a caller could allocate item A and post the movements
+   * under item B, and nothing could detect the mismatch: the lot ids and
+   * quantities are all valid, they simply debit the wrong ledger. The rejected
+   * alternative was to keep taking `itemId` and compare - which catches it, and
+   * only for a caller who supplied the right one somewhere.
+   */
+  readonly itemId: string;
   readonly lines: readonly AllocationLine[];
   readonly allocated: number;
   readonly requested: number;
@@ -134,6 +159,7 @@ export function allocate(
   asOf: IsoDate,
   options: AllocationOptions
 ): Allocation {
+  assertIsoDate(asOf, 'asOf');
   const balances = balancesByLot(movements, itemId, asOf);
   // Each candidate carries the balance that qualified it, rather than being
   // looked up again in three places below. Re-reading the map would mean three
@@ -148,7 +174,7 @@ export function allocate(
     .filter((entry) => entry.onHand > 0);
 
   if (requested <= 0) {
-    return { lines: [], allocated: 0, requested, shortfall: 0 };
+    return { itemId, lines: [], allocated: 0, requested, shortfall: 0 };
   }
 
   if (!options.divisible) {
@@ -156,6 +182,7 @@ export function allocate(
     if (whole === undefined) {
       const available = candidates.reduce((total, entry) => total + entry.onHand, 0);
       return {
+        itemId,
         lines: [],
         allocated: 0,
         requested,
@@ -167,6 +194,7 @@ export function allocate(
       };
     }
     return {
+      itemId,
       lines: [{ lotId: whole.lot.id, lotNumber: whole.lot.lotNumber, quantity: requested }],
       allocated: requested,
       requested,
@@ -184,7 +212,7 @@ export function allocate(
   }
 
   const allocated = requested - remaining;
-  return { lines, allocated, requested, shortfall: remaining };
+  return { itemId, lines, allocated, requested, shortfall: remaining };
 }
 
 /**
@@ -199,11 +227,15 @@ export function allocate(
  * `id` is supplied per line by the caller rather than generated here, because
  * this package has no opinion about identifiers and generating them would make
  * it unable to reproduce a run.
+ *
+ * The item is not supplied. It comes from the allocation, so a caller cannot
+ * allocate one item and post the movements under another - a mismatch nothing
+ * downstream could detect, because every lot id and quantity in the result is
+ * valid and merely debits the wrong ledger.
  */
 export function movementsFor(
   allocation: Allocation,
   detail: {
-    readonly itemId: string;
     readonly kind: 'DISPENSE' | 'ADMINISTER' | 'WASTE' | 'TRANSFER_OUT';
     readonly occurredOn: IsoDate;
     readonly actorId: string;
@@ -214,7 +246,7 @@ export function movementsFor(
   return allocation.lines.map((line, index) => ({
     id: detail.idFor(line, index),
     lotId: line.lotId,
-    itemId: detail.itemId,
+    itemId: allocation.itemId,
     kind: detail.kind,
     quantity: line.quantity,
     occurredOn: detail.occurredOn,

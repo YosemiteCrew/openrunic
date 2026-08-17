@@ -1,5 +1,6 @@
 export {
   addDays,
+  assertIsoDate,
   expiringWithin,
   fefo,
   isExpired,
@@ -23,6 +24,8 @@ export {
   negativeBalances,
   packsToUnits,
   signedQuantity,
+  toStockPrecision,
+  usableBalance,
   type CountVariance,
   type InboundKind,
   type MovementKind,

@@ -32,6 +32,42 @@
 /** An ISO date, `YYYY-MM-DD`. Stock dates are days, never instants. */
 export type IsoDate = string;
 
+const ISO_DATE = /^(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})$/u;
+
+/**
+ * Refuses a date this package cannot compare, before anything compares it.
+ *
+ * Every date comparison here is lexicographic, which is correct for
+ * `YYYY-MM-DD` and silently wrong for anything else. An unpadded month is the
+ * dangerous case rather than obvious garbage: `'2026-8-01' < '2026-09-01'` is
+ * false, because `'8'` sorts after `'0'`, so a lot that expired in August reads
+ * as unexpired in September and `fefo` hands it to a patient. Nothing throws,
+ * nothing logs, and the stock is administered.
+ *
+ * The type is an alias for `string`, so it stops nothing arriving from a form
+ * or a column - which is exactly where a non-canonical date comes from. This is
+ * checked at runtime for that reason: a compile-time brand would guarantee the
+ * shape of dates written in this repository and say nothing about the ones that
+ * matter.
+ *
+ * Validated once per lot at the head of the operation rather than inside the
+ * comparator, so an n-lot sort costs n checks instead of n log n.
+ */
+export function assertIsoDate(date: IsoDate, what: string): void {
+  const parts = ISO_DATE.exec(date);
+  if (parts?.groups === undefined) {
+    throw new RangeError(`${what} must be a YYYY-MM-DD date, not ${JSON.stringify(date)}.`);
+  }
+  const year = Number(parts.groups['y']);
+  const month = Number(parts.groups['m']);
+  const day = Number(parts.groups['d']);
+  // Round-trip rather than range checks: `Date.UTC` rolls over rather than
+  // refusing, so the 30th of February would otherwise pass as the 2nd of March.
+  if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== date) {
+    throw new RangeError(`${what} is not a date that exists: ${JSON.stringify(date)}.`);
+  }
+}
+
 /**
  * Why a lot is unavailable, when it is.
  *
@@ -95,30 +131,14 @@ export interface Lot {
  * hours early and retire a lot a day sooner than the carton says.
  */
 export function addDays(date: IsoDate, days: number): IsoDate {
-  // Matched rather than split-and-default. Splitting `'2026'` yields a year and
-  // two undefineds, and defaulting those to January the 1st turns a truncated
-  // date into a plausible one: `addDays('2026', 1)` came back '2026-01-02' and
-  // looked like an answer. A shape this function cannot honestly interpret has
-  // to say so, because every date in this package feeds an expiry decision.
-  const parts = /^(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})$/u.exec(date);
-  if (parts?.groups === undefined) {
-    throw new RangeError(`${date} is not a YYYY-MM-DD date.`);
-  }
-  const year = Number(parts.groups['y']);
-  const month = Number(parts.groups['m']);
-  const day = Number(parts.groups['d']);
-
-  // The input is validated by round-trip rather than by range checks, because
-  // `Date.UTC` rolls over rather than refusing: month 13 becomes next January
-  // and the 30th of February becomes the 2nd of March, silently. That rollover
-  // is exactly what makes the day arithmetic below work across a month end, so
-  // it cannot be switched off - the input has to be proved real before the
-  // offset is applied, while the two are still separable.
-  if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== date) {
-    throw new RangeError(`${date} is not a date that exists.`);
-  }
-
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+  // Validated before the offset, because `Date.UTC` rolls over rather than
+  // refusing and that rollover is exactly what makes the arithmetic work across
+  // a month end. The input has to be proved real while the two are separable.
+  assertIsoDate(date, 'date');
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days))
+    .toISOString()
+    .slice(0, 10);
 }
 
 /**
@@ -129,6 +149,8 @@ export function addDays(date: IsoDate, days: number): IsoDate {
  * opened has no last day, and that is different from having one in the past.
  */
 export function lastUsableDay(lot: Lot): IsoDate | undefined {
+  if (lot.expiresOn !== undefined) assertIsoDate(lot.expiresOn, `lot ${lot.lotNumber} expiresOn`);
+  if (lot.openedOn !== undefined) assertIsoDate(lot.openedOn, `lot ${lot.lotNumber} openedOn`);
   const beyondUse =
     lot.openedOn === undefined || lot.beyondUseDays === undefined
       ? undefined
@@ -144,6 +166,7 @@ export function lastUsableDay(lot: Lot): IsoDate | undefined {
 
 /** True when the lot's last usable day is behind `asOf`. Inclusive; see `Lot`. */
 export function isExpired(lot: Lot, asOf: IsoDate): boolean {
+  assertIsoDate(asOf, 'asOf');
   const last = lastUsableDay(lot);
   return last !== undefined && last < asOf;
 }
@@ -199,7 +222,24 @@ export function isUsable(lot: Lot, asOf: IsoDate): boolean {
  * a second run of the same numbers.
  */
 export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
-  return lots
+  assertIsoDate(asOf, 'asOf');
+  // Deduped by id first. A join that returns a lot twice would otherwise put
+  // two candidates on the shelf holding the same stock, and `allocate` would
+  // hand out its balance once per copy - a lot with ten units satisfying a
+  // request for twenty and going to -10 when the movements are posted, past a
+  // guarantee that allocation never takes more than a lot holds.
+  const unique = new Map<string, Lot>();
+  for (const lot of lots) {
+    const seen = unique.get(lot.id);
+    if (seen !== undefined && JSON.stringify(seen) !== JSON.stringify(lot)) {
+      throw new RangeError(
+        `Lot ${lot.id} was supplied twice with different contents, so there is no one answer for its expiry or status.`
+      );
+    }
+    unique.set(lot.id, lot);
+  }
+
+  return [...unique.values()]
     .filter((lot) => isUsable(lot, asOf))
     .toSorted((a, b) => {
       const aLast = lastUsableDay(a);
@@ -209,7 +249,11 @@ export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
         if (bLast === undefined) return -1;
         return aLast < bLast ? -1 : 1;
       }
-      if (a.receivedOn !== b.receivedOn) return a.receivedOn < b.receivedOn ? -1 : 1;
+      if (a.receivedOn !== b.receivedOn) {
+        assertIsoDate(a.receivedOn, `lot ${a.lotNumber} receivedOn`);
+        assertIsoDate(b.receivedOn, `lot ${b.lotNumber} receivedOn`);
+        return a.receivedOn < b.receivedOn ? -1 : 1;
+      }
       return a.id < b.id ? -1 : 1;
     });
 }

@@ -23,6 +23,8 @@ import {
   packsToUnits,
   signedQuantity,
   unusableReason,
+  usableBalance,
+  signedQuantity as signed,
   type Lot,
   type MovementKind,
   type StockItem,
@@ -121,7 +123,7 @@ describe('expiry', () => {
   it.each(['2026', '2026-08', '17/08/2026', '', 'not-a-date'])(
     'refuses %s rather than guessing what it meant',
     (malformed) => {
-      expect(() => addDays(malformed, 1)).toThrow(/not a YYYY-MM-DD date/u);
+      expect(() => addDays(malformed, 1)).toThrow(/must be a YYYY-MM-DD date/u);
     }
   );
 
@@ -514,12 +516,12 @@ describe('packs and reordering', () => {
     const at = [movement({ id: 'm1', quantity: 50 })];
     const above = [movement({ id: 'm1', quantity: 51 })];
 
-    expect(needsReorder(item, at, TODAY)).toBe(true);
-    expect(needsReorder(item, above, TODAY)).toBe(false);
+    expect(needsReorder(item, [lot({ id: 'lot-a' })], at, TODAY)).toBe(true);
+    expect(needsReorder(item, [lot({ id: 'lot-a' })], above, TODAY)).toBe(false);
   });
 
   it('never flags an item with no reorder level', () => {
-    expect(needsReorder(TABLETS, [], TODAY)).toBe(false);
+    expect(needsReorder(TABLETS, [], [], TODAY)).toBe(false);
   });
 });
 
@@ -666,7 +668,13 @@ describe('allocation', () => {
       divisible: true,
     });
 
-    expect(result).toEqual({ lines: [], allocated: 0, requested: 0, shortfall: 0 });
+    expect(result).toEqual({
+      itemId: 'item-1',
+      lines: [],
+      allocated: 0,
+      requested: 0,
+      shortfall: 0,
+    });
   });
 
   describe('when the quantity cannot be split', () => {
@@ -725,6 +733,7 @@ describe('turning an allocation into movements', () => {
    */
   it('produces one movement per line, and only when the caller asks', () => {
     const allocation = {
+      itemId: 'item-1',
       lines: [
         { lotId: 'short', lotNumber: 'S1', quantity: 20 },
         { lotId: 'long', lotNumber: 'L1', quantity: 10 },
@@ -735,7 +744,6 @@ describe('turning an allocation into movements', () => {
     };
 
     const posted = movementsFor(allocation, {
-      itemId: 'item-1',
       kind: 'DISPENSE',
       occurredOn: TODAY,
       actorId: 'user-1',
@@ -754,13 +762,13 @@ describe('turning an allocation into movements', () => {
   it('carries a reason through to every movement when one is given', () => {
     const posted = movementsFor(
       {
+        itemId: 'item-1',
         lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 2 }],
         allocated: 2,
         requested: 2,
         shortfall: 0,
       },
       {
-        itemId: 'item-1',
         kind: 'WASTE',
         occurredOn: TODAY,
         actorId: 'user-1',
@@ -781,12 +789,13 @@ describe('turning an allocation into movements', () => {
   it('leaves a reason-requiring movement invalid when no reason was given', () => {
     const posted = movementsFor(
       {
+        itemId: 'item-1',
         lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 2 }],
         allocated: 2,
         requested: 2,
         shortfall: 0,
       },
-      { itemId: 'item-1', kind: 'WASTE', occurredOn: TODAY, actorId: 'user-1', idFor: () => 'mv-0' }
+      { kind: 'WASTE', occurredOn: TODAY, actorId: 'user-1', idFor: () => 'mv-0' }
     );
 
     expect(movementProblems(posted[0]!)).toContain('A WASTE movement must say why.');
@@ -817,7 +826,6 @@ describe('a dispense and a count, end to end', () => {
     const ledger = [
       ...received,
       ...movementsFor(allocation, {
-        itemId: 'item-1',
         kind: 'DISPENSE',
         occurredOn: TODAY,
         actorId: 'user-1',
@@ -827,5 +835,168 @@ describe('a dispense and a count, end to end', () => {
 
     expect(itemBalance(ledger, 'item-1', TODAY)).toBe(80);
     expect(countVariance(80, itemBalance(ledger, 'item-1', TODAY))).toBeUndefined();
+  });
+});
+
+describe('the review findings, each held by a test', () => {
+  /**
+   * An unpadded month reads as unexpired.
+   *
+   * Every comparison here is lexicographic, which is right for `YYYY-MM-DD` and
+   * silently wrong otherwise: `'2026-8-01' < '2026-09-01'` is false, because
+   * `'8'` sorts after `'0'`. A lot that expired in August therefore passed as
+   * usable in September, and `fefo` would have handed it to a patient. The type
+   * is an alias for `string`, so it stops nothing arriving from a form or a
+   * column - which is where a non-canonical date comes from.
+   */
+  it('refuses an unpadded expiry rather than reading it as unexpired', () => {
+    const sloppy = lot({ id: 'a', expiresOn: '2026-8-01' });
+
+    expect('2026-8-01' < '2026-09-01', 'the comparison this guards against').toBe(false);
+    expect(() => isExpired(sloppy, '2026-09-01')).toThrow(/must be a YYYY-MM-DD date/u);
+    expect(() => fefo([sloppy], '2026-09-01')).toThrow(/must be a YYYY-MM-DD date/u);
+  });
+
+  it('refuses a malformed comparison date as well as a malformed lot date', () => {
+    expect(() => isExpired(lot({ id: 'a', expiresOn: '2026-09-01' }), '2026-9-1')).toThrow(
+      /must be a YYYY-MM-DD date/u
+    );
+  });
+
+  /**
+   * The check that read as protection and was not.
+   *
+   * `isKnownKind` was called only by `movementProblems`, while `lotBalance` and
+   * `balancesByLot` reach `signedQuantity` directly - so a movement carrying a
+   * misspelled `RECIEPT` produced a quiet, plausible, wrong balance with no
+   * validation error anywhere. Failing closed on a corrupt row is a bad
+   * afternoon; a confidently wrong balance is stock ordered against a number
+   * nobody can reproduce.
+   */
+  it('refuses to compute a balance over a movement whose kind it does not know', () => {
+    const corrupt = [movement({ id: 'm1', kind: 'RECIEPT' as MovementKind, quantity: 40 })];
+
+    expect(() => signed(corrupt[0]!)).toThrow(/not one this system knows/u);
+    expect(() => lotBalance(corrupt, 'lot-a', TODAY)).toThrow(/not one this system knows/u);
+    expect(() => balancesByLot(corrupt, 'item-1', TODAY)).toThrow(/not one this system knows/u);
+  });
+
+  /**
+   * Fractional units and binary floating point.
+   *
+   * Receive 0.3 mL, remove 0.1 and 0.2, and the raw sum is -2.78e-17 rather
+   * than zero. `negativeBalances` reported that as a loss and `countVariance`
+   * turned it into a variance against a shelf that was correct. A stockroom
+   * chasing minus two hundred and seventy-eight quintillionths of a millilitre
+   * is a stockroom that stops believing the reports.
+   */
+  it('lands a fractional lot exactly on zero rather than on floating-point noise', () => {
+    const fractional = [
+      movement({ id: 'm1', kind: 'RECEIPT', quantity: 0.3 }),
+      movement({ id: 'm2', kind: 'DISPENSE', quantity: 0.1 }),
+      movement({ id: 'm3', kind: 'DISPENSE', quantity: 0.2 }),
+    ];
+
+    expect(0.3 - 0.1 - 0.2, 'the arithmetic this guards against').not.toBe(0);
+    expect(lotBalance(fractional, 'lot-a', TODAY)).toBe(0);
+    expect(itemBalance(fractional, 'item-1', TODAY)).toBe(0);
+    expect(negativeBalances(fractional, 'item-1', TODAY)).toEqual([]);
+    expect(countVariance(0, itemBalance(fractional, 'item-1', TODAY))).toBeUndefined();
+  });
+
+  /**
+   * A brand that accepts anything is a promise about where the number was
+   * typed, not about the number.
+   *
+   * A negative allocated as `requested: -5, allocated: 0, shortfall: 0` - a
+   * request reporting itself completely filled having moved nothing. `NaN` was
+   * worse: it survives `Math.min`, so lines and posted movements carried it and
+   * every downstream balance became `NaN` with no row identifiable as the
+   * cause.
+   */
+  it.each([-5, Number.NaN, Number.POSITIVE_INFINITY])('refuses to brand %s as a total', (bad) => {
+    expect(() => exactlyThisManyStockUnits(bad)).toThrow(RangeError);
+  });
+
+  it('refuses a course whose numbers multiply out to nonsense', () => {
+    expect(() => courseTotal({ perDose: 1, dosesPerDay: Number.NaN, days: 10 })).toThrow(
+      RangeError
+    );
+    expect(() => courseTotal({ perDose: -1, dosesPerDay: 2, days: 10 })).toThrow(RangeError);
+  });
+
+  /**
+   * The same lot supplied twice - a join returning duplicate rows.
+   *
+   * Each copy was given the lot's full balance, so ten units passed twice
+   * satisfied a request for twenty with two ten-unit lines, and posting them
+   * drove the lot to -10 straight past the guarantee that allocation never
+   * takes more than a lot holds.
+   */
+  it('gives a duplicated lot its balance once, not once per copy', () => {
+    const single = lot({ id: 'dup', lotNumber: 'D1', expiresOn: '2027-01-01' });
+    const ledger = [movement({ id: 'm1', lotId: 'dup', quantity: 10 })];
+
+    const result = allocate(
+      [single, single],
+      ledger,
+      'item-1',
+      exactlyThisManyStockUnits(20),
+      TODAY,
+      { divisible: true }
+    );
+
+    expect(result.allocated).toBe(10);
+    expect(result.shortfall).toBe(10);
+    expect(result.lines).toEqual([{ lotId: 'dup', lotNumber: 'D1', quantity: 10 }]);
+  });
+
+  it('refuses two different lots sharing an id, having no one answer for either', () => {
+    const one = lot({ id: 'dup', expiresOn: '2027-01-01' });
+    const other = lot({ id: 'dup', expiresOn: '2026-09-01' });
+
+    expect(() => fefo([one, other], TODAY)).toThrow(/supplied twice with different contents/u);
+  });
+
+  /**
+   * Reordering on physical stock suppresses replenishment exactly when the
+   * shelf is empty in every sense that matters.
+   *
+   * A hundred units in an expired lot reads as a hundred on a stock report and
+   * supplies nobody: `allocate` skips the lot and hands out zero.
+   */
+  it('counts only what could be dispensed when deciding to reorder', () => {
+    const item: StockItem = { ...TABLETS, reorderLevel: 50 };
+    const expired = [lot({ id: 'gone', expiresOn: '2026-01-01' })];
+    const ledger = [movement({ id: 'm1', lotId: 'gone', quantity: 100 })];
+
+    expect(itemBalance(ledger, 'item-1', TODAY), 'physically present').toBe(100);
+    expect(usableBalance(expired, ledger, 'item-1', TODAY), 'actually dispensable').toBe(0);
+    expect(needsReorder(item, expired, ledger, TODAY)).toBe(true);
+  });
+
+  /**
+   * Allocating one item and posting the movements under another.
+   *
+   * Undetectable downstream: every lot id and quantity in the result is valid,
+   * and they simply debit the wrong item's ledger. So the item travels with the
+   * allocation rather than being supplied again at posting time.
+   */
+  it('posts movements against the item that was allocated, with no second chance to say', () => {
+    const lots = [lot({ id: 'lot-a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const ledger = [movement({ id: 'm0', quantity: 100 })];
+
+    const allocation = allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(10), TODAY, {
+      divisible: true,
+    });
+    const posted = movementsFor(allocation, {
+      kind: 'DISPENSE',
+      occurredOn: TODAY,
+      actorId: 'user-1',
+      idFor: () => 'mv-0',
+    });
+
+    expect(allocation.itemId).toBe('item-1');
+    expect(posted.map((entry) => entry.itemId)).toEqual(['item-1']);
   });
 });

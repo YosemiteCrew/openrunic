@@ -1,4 +1,4 @@
-import type { IsoDate } from './lots.js';
+import { assertIsoDate, fefo, type IsoDate, type Lot } from './lots.js';
 
 /**
  * THE MOVEMENT LEDGER: HOW MUCH IS THERE, AND HOW IT GOT THAT WAY.
@@ -178,9 +178,54 @@ export function movementProblems(movement: StockMovement): readonly string[] {
   return problems;
 }
 
-/** A movement's effect on the balance: positive in, negative out. */
+/**
+ * A movement's effect on the balance: positive in, negative out.
+ *
+ * Throws on a kind it does not recognise rather than falling through to
+ * outbound. The first version of this checked the kind in `movementProblems`
+ * and nowhere else, which read as protection and was not: `lotBalance` and
+ * `balancesByLot` call this directly, so a movement deserialised with a
+ * misspelled `RECIEPT` produced a quiet, plausible, wrong balance without any
+ * validation error - the exact failure the check was written to prevent, left
+ * open on the only path that matters.
+ *
+ * Failing closed here is the right trade. A thrown error on a corrupt row is a
+ * bad afternoon; a balance that is confidently wrong is stock ordered against a
+ * number nobody can reproduce.
+ */
 export function signedQuantity(movement: StockMovement): number {
+  if (!isKnownKind(movement.kind)) {
+    throw new RangeError(
+      `Movement ${movement.id} has kind ${JSON.stringify(movement.kind)}, which is not one this system knows, so its effect on the balance cannot be determined.`
+    );
+  }
   return isInbound(movement.kind) ? movement.quantity : -movement.quantity;
+}
+
+/**
+ * Stock quantities are carried to six decimal places, and sums are rounded back
+ * to it.
+ *
+ * Because some units are fractional. Receive 0.3 mL and remove 0.1 and 0.2 and
+ * binary floating point leaves -2.78e-17 rather than zero - which
+ * `negativeBalances` reports as a loss, `countVariance` turns into a variance
+ * against a shelf that is correct, and a reorder decision acts on. A stockroom
+ * chasing a discrepancy of minus two hundred and seventy-eight quintillionths
+ * of a millilitre is a stockroom that stops believing the reports.
+ *
+ * Six places is far below any real dispensing precision - the smallest thing
+ * anyone measures here is a hundredth of a millilitre - and far above the noise,
+ * so it removes the artefact without rounding away anything a practice meant.
+ */
+const PLACES = 1e6;
+
+export function toStockPrecision(quantity: number): number {
+  const rounded = Math.round(quantity * PLACES) / PLACES;
+  // `+ 0` collapses negative zero, which is what rounding a tiny negative
+  // residue produces. It compares equal to zero and prints as "-0", so a
+  // balance report would show a lot holding minus nothing - the same
+  // credibility problem as the residue itself, one layer further out.
+  return rounded + 0;
 }
 
 /**
@@ -197,9 +242,12 @@ export function lotBalance(
   lotId: string,
   asOf: IsoDate
 ): number {
-  return movements
-    .filter((movement) => movement.lotId === lotId && movement.occurredOn <= asOf)
-    .reduce((total, movement) => total + signedQuantity(movement), 0);
+  assertIsoDate(asOf, 'asOf');
+  return toStockPrecision(
+    movements
+      .filter((movement) => movement.lotId === lotId && movement.occurredOn <= asOf)
+      .reduce((total, movement) => total + signedQuantity(movement), 0)
+  );
 }
 
 /** On-hand per lot for one item, keyed by lot id. Lots at zero are included. */
@@ -208,10 +256,14 @@ export function balancesByLot(
   itemId: string,
   asOf: IsoDate
 ): ReadonlyMap<string, number> {
+  assertIsoDate(asOf, 'asOf');
   const balances = new Map<string, number>();
   for (const movement of movements) {
     if (movement.itemId !== itemId || movement.occurredOn > asOf) continue;
-    balances.set(movement.lotId, (balances.get(movement.lotId) ?? 0) + signedQuantity(movement));
+    balances.set(
+      movement.lotId,
+      toStockPrecision((balances.get(movement.lotId) ?? 0) + signedQuantity(movement))
+    );
   }
   return balances;
 }
@@ -222,9 +274,11 @@ export function itemBalance(
   itemId: string,
   asOf: IsoDate
 ): number {
-  return [...balancesByLot(movements, itemId, asOf).values()].reduce(
-    (total, quantity) => total + quantity,
-    0
+  return toStockPrecision(
+    [...balancesByLot(movements, itemId, asOf).values()].reduce(
+      (total, quantity) => total + quantity,
+      0
+    )
   );
 }
 
@@ -300,13 +354,51 @@ export function packsToUnits(item: StockItem, packs: number): number {
   return packs * (item.packSize ?? 1);
 }
 
-/** True when the item's on-hand has fallen to or below its reorder level. */
+/**
+ * True when the item's *usable* stock has fallen to or below its reorder level.
+ *
+ * Usable, not physical, and the difference is the whole point. An item with a
+ * reorder level of fifty and a hundred units sitting in an expired lot has a
+ * physical balance of a hundred and can supply nobody: `allocate` skips the lot
+ * and hands out zero. A reorder decision made on the physical figure suppresses
+ * the replenishment precisely when the shelf is empty in every sense that
+ * matters - the failure being invisible on a stock report that says 100.
+ *
+ * So this counts what `fefo` would actually hand out, which is the same
+ * definition allocation uses. Requiring the lots as an argument is deliberate:
+ * an overload that let a caller ask without them would be the physical figure
+ * again, wearing this function's name.
+ */
 export function needsReorder(
   item: StockItem,
+  lots: readonly Lot[],
   movements: readonly StockMovement[],
   asOf: IsoDate
 ): boolean {
-  return (
-    item.reorderLevel !== undefined && itemBalance(movements, item.id, asOf) <= item.reorderLevel
+  if (item.reorderLevel === undefined) return false;
+  return usableBalance(lots, movements, item.id, asOf) <= item.reorderLevel;
+}
+
+/**
+ * What could actually be dispensed today, across the lots that may be drawn
+ * from.
+ *
+ * The number a stockroom means by "how much have we got". `itemBalance` answers
+ * the different question of what is physically present, which includes what is
+ * expired, recalled or quarantined - a figure a disposal report needs and an
+ * ordering decision must not use.
+ */
+export function usableBalance(
+  lots: readonly Lot[],
+  movements: readonly StockMovement[],
+  itemId: string,
+  asOf: IsoDate
+): number {
+  const balances = balancesByLot(movements, itemId, asOf);
+  return toStockPrecision(
+    fefo(
+      lots.filter((lot) => lot.itemId === itemId),
+      asOf
+    ).reduce((total, lot) => total + (balances.get(lot.id) ?? 0), 0)
   );
 }

@@ -10,12 +10,39 @@ What is on the shelf, which lot it comes from, and what leaves it.
 | Which lots do I take this quantity from?               | `allocate(lots, movements, itemId, qty, asOf, opts)` |
 | How many tablets does this prescription actually need? | `courseTotal({ perDose, dosesPerDay, days })`        |
 | The count disagrees with the book - what do I post?    | `countVariance(counted, expected)`                   |
+| How much could I actually dispense right now?          | `usableBalance(lots, movements, itemId, asOf)`       |
 | What runs out in the next month?                       | `expiringWithin(lots, asOf, days)`                   |
 
 Pure and IO-free: no clock, no socket, no database. Every function that cares about time takes the
 date to judge against, so a back-dated correction is judged against the date of the event rather
 than the date somebody got round to entering it, and a test asserts the same thing every day it
 runs.
+
+## Everything fails closed
+
+Date comparisons here are lexicographic, which is correct for `YYYY-MM-DD` and silently wrong for
+anything else - `'2026-8-01' < '2026-09-01'` is false, so a lot that expired in August reads as
+usable in September. `IsoDate` is an alias for `string` and stops nothing arriving from a form or a
+column, which is where a non-canonical date comes from, so dates are validated at the point a
+usability or balance decision is made.
+
+`signedQuantity` throws on a movement kind it does not recognise rather than treating it as
+outbound. A misspelled `RECIEPT` deserialised from a column would otherwise subtract on the way in
+and produce a plausible balance with no error anywhere. A thrown error on a corrupt row is a bad
+afternoon; a confidently wrong balance is stock ordered against a number nobody can reproduce.
+
+`exactlyThisManyStockUnits` checks before it brands. The brand's promise is "this is a total", and a
+cast that accepted anything would make that a promise about where the number was typed. A negative
+allocated as completely filled having moved nothing, and `NaN` survived `Math.min` into the posted
+movements.
+
+Quantities are carried to six decimal places and sums rounded back to it, because some units are
+fractional: receive 0.3 mL, remove 0.1 and 0.2, and raw floating point leaves -2.78e-17, which
+`negativeBalances` reported as a loss and `countVariance` turned into a variance against a shelf
+that was correct.
+
+Lots are deduplicated by id before allocation. A join returning a lot twice gave each copy the
+lot's full balance, so ten units passed twice satisfied a request for twenty.
 
 ## On-hand is derived, never stored
 

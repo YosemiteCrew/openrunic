@@ -1480,14 +1480,29 @@ describe('the review of the merged inventory PRs, each finding held by a test', 
    * sat below the grid, so the per-lot figure and the single-lot figure
    * disagreed for the same ledger - and allocation read the wrong one.
    */
-  it('agrees with lotBalance when the quantities are finer than the grid', () => {
-    const dust = Array.from({ length: 10 }, (_, index) =>
-      movement({ id: `m${String(index)}`, quantity: 0.0000004 })
+  it('agrees with lotBalance on a ledger of many small movements', () => {
+    const many = Array.from({ length: 10 }, (_, index) =>
+      movement({ id: `m${String(index)}`, quantity: 0.000001 })
     );
 
-    expect(lotBalance(dust, 'lot-a', TODAY)).toBe(0.000004);
-    expect(balancesByLot(dust, 'item-1', TODAY).get('lot-a')).toBe(0.000004);
-    expect(itemBalance(dust, 'item-1', TODAY)).toBe(0.000004);
+    expect(lotBalance(many, 'lot-a', TODAY)).toBe(0.00001);
+    expect(balancesByLot(many, 'item-1', TODAY).get('lot-a')).toBe(0.00001);
+    expect(itemBalance(many, 'item-1', TODAY)).toBe(0.00001);
+  });
+
+  /**
+   * The two balance functions disagreed because one preserved sub-grid sums and
+   * the other did not, and there is no right answer for a value the store
+   * cannot hold: `DECIMAL(18,6)` rounds it to something else on the way in, so
+   * the figure that was validated and the figure that was kept differ.
+   *
+   * The answer is that it does not arrive.
+   */
+  it('refuses a movement quantity finer than the grid', () => {
+    expect(movementProblems(movement({ id: 'm', quantity: 0.0000004 }))).toContain(
+      'A movement quantity must be a whole number of six-decimal stock units.'
+    );
+    expect(movementProblems(movement({ id: 'm', quantity: 0.000001 }))).toEqual([]);
   });
 
   /**
@@ -1914,5 +1929,48 @@ describe('the fifth review of #96', () => {
     expect(Number.MAX_VALUE + -Number.MAX_VALUE, 'the cancellation this guards against').toBe(0);
     expect(() => lotBalance(corrupt, 'lot-a', TODAY)).toThrow(/too large to carry/u);
     expect(() => balancesByLot(corrupt, 'item-1', TODAY)).toThrow(/too large to carry/u);
+  });
+});
+
+describe('the sixth review of #96', () => {
+  /**
+   * Adding floats is not associative, so identical ledger contents produced
+   * different on-hand figures depending on the order a query happened to return
+   * the rows in. Every quantity being on the grid did not help: the sums are
+   * what lose precision.
+   */
+  it('reports the same balance whatever order the rows arrive in', () => {
+    const big = movement({ id: 'big', quantity: 1_000_000 });
+    const small = Array.from({ length: 10 }, (_, index) =>
+      movement({ id: `s${String(index)}`, quantity: 0.000001 })
+    );
+
+    const bigFirst = lotBalance([big, ...small], 'lot-a', TODAY);
+    const smallFirst = lotBalance([...small, big], 'lot-a', TODAY);
+
+    expect(bigFirst).toBe(smallFirst);
+    expect(bigFirst).toBe(1_000_000.00001);
+    expect(balancesByLot([big, ...small], 'item-1', TODAY).get('lot-a')).toBe(bigFirst);
+  });
+
+  /**
+   * Above MAX_SAFE_INTEGER two grid-step counts can sum to a third equal to one
+   * of them, so ten billion units plus a millionth is ten billion - and every
+   * exactness this package claims stops being true. The bound is about nine
+   * billion stock units: far above anything a practice holds, far below where
+   * the arithmetic gives up.
+   */
+  it('refuses a quantity whose grid steps would leave safe integer arithmetic', () => {
+    const unsafe = Number.MAX_SAFE_INTEGER / 1e6 + 1;
+
+    expect(unsafe * 1e6 + 1 === unsafe * 1e6, 'the arithmetic this guards against').toBe(true);
+    expect(() => toStockPrecision(unsafe)).toThrow(/too large to carry/u);
+    expect(() => lotBalance([movement({ id: 'm', quantity: unsafe })], 'lot-a', TODAY)).toThrow(
+      /too large to carry/u
+    );
+  });
+
+  it('still carries a quantity larger than any practice holds', () => {
+    expect(toStockPrecision(9_000_000_000)).toBe(9_000_000_000);
   });
 });

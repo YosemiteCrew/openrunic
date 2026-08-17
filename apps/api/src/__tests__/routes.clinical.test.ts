@@ -2081,11 +2081,12 @@ describe('the published contracts', () => {
     );
 
     // Eight aggregates with four operations each, plus the seven transitions
-    // and nested routes that are written by hand, plus the medication screen.
-    expect(documented).toHaveLength(40);
+    // and nested routes that are written by hand, plus the medication screen,
+    // the growth chart and the three registry-submission steps.
+    expect(documented).toHaveLength(44);
     for (const route of documented) {
       expect(registered, route).toContain(route);
     }
-    expect(new Set(clinicalRouteContracts().map((c) => c.operationId)).size).toBe(40);
+    expect(new Set(clinicalRouteContracts().map((c) => c.operationId)).size).toBe(44);
   });
 });

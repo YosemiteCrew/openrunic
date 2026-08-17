@@ -5,6 +5,7 @@
     { "path": "packages/fhir" },
     { "path": "packages/database" },
     { "path": "packages/x12" },
+    { "path": "packages/pricing" },
     { "path": "packages/ccda" },
     { "path": "packages/hl7v2" },
     { "path": "packages/cds-hooks" },

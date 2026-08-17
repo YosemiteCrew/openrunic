@@ -439,3 +439,55 @@ describe('a chart recorded with nothing optional filled in', () => {
     expect(childNamed(document, 'documentationOf')).toBeUndefined();
   });
 });
+
+describe('a recorded sex, and the absence of one', () => {
+  /**
+   * `other` and `unknown` are different statements: one is an answer the
+   * practice recorded, the other is the absence of one. Writing both as `UN`
+   * loses that in the direction that matters - a receiving system reads a
+   * recorded answer as a gap and goes asking for it again.
+   */
+  it('round-trips every value, keeping other apart from unknown', () => {
+    for (const gender of ['male', 'female', 'other', 'unknown'] as const) {
+      const document = { ...sampleDocument(), patient: { ...sampleDocument().patient, gender } };
+
+      expect(parseCcd(generateCcd(document)).patient.gender, gender).toBe(gender);
+    }
+  });
+
+  it('writes an unrecorded sex as a nullFlavor rather than as a code', () => {
+    const document = {
+      ...sampleDocument(),
+      patient: { ...sampleDocument().patient, gender: 'unknown' as const },
+    };
+
+    const node = path(
+      parseXml(generateCcd(document)),
+      'recordTarget',
+      'patientRole',
+      'patient',
+      'administrativeGenderCode'
+    );
+
+    expect(attr(node, 'nullFlavor')).toBe('UNK');
+    expect(attr(node, 'code')).toBeUndefined();
+  });
+
+  it('writes a recorded other as the code that means it', () => {
+    const document = {
+      ...sampleDocument(),
+      patient: { ...sampleDocument().patient, gender: 'other' as const },
+    };
+
+    const node = path(
+      parseXml(generateCcd(document)),
+      'recordTarget',
+      'patientRole',
+      'patient',
+      'administrativeGenderCode'
+    );
+
+    expect(attr(node, 'code')).toBe('UN');
+    expect(attr(node, 'nullFlavor')).toBeUndefined();
+  });
+});

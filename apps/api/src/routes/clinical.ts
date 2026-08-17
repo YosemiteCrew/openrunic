@@ -18,6 +18,9 @@ import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
 import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
+
+import { growthRouteContracts, growthRoutes } from './growth.js';
+import { registryRouteContracts, registryRoutes } from './registry.js';
 import type {
   ClinicalNoteRow,
   EncounterStatus,
@@ -452,6 +455,8 @@ function assertNoteIsEditable(body: NotePatchBody, row: ClinicalNoteRow): void {
 export function clinicalRoutes(): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
   registerMedicationSafety(router);
+  growthRoutes(router);
+  registryRoutes(router);
 
   for (const module of crudModules()) {
     router.route('/', module.routes);
@@ -727,6 +732,8 @@ function transitionContract(operation: {
 export function clinicalRouteContracts(): RouteContract[] {
   return [
     ...crudModules().flatMap((module) => module.contracts),
+    ...growthRouteContracts(),
+    ...registryRouteContracts(),
 
     {
       method: 'post',

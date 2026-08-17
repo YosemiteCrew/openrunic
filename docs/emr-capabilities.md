@@ -18,37 +18,37 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Clinical core
 
-| Capability                                | State              | Note                                                                                                                                                                    |
-| ----------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Patient registration, demographics        | **Done**           | Plus identifiers, related persons, coverage                                                                                                                             |
-| Scheduling, flow board                    | **Done**           | Day view, check-in, rooming, status flow                                                                                                                                |
-| Encounters, clinical notes                | **Done**           | Sign, lock, addenda with author attribution                                                                                                                             |
-| Problem list, allergies, medications      | **Done**           | Coded, with FHIR mappers                                                                                                                                                |
-| Orders, specimens, results                | **Done**           | Order lifecycle, result review and sign                                                                                                                                 |
-| Immunisations                             | **Done**           | Recorded and mapped; registry submission below                                                                                                                          |
-| **Allergy screening at prescribing**      | **Done**           | `packages/clinical-safety`, warns and requires acknowledgement on HIGH criticality                                                                                      |
-| **Duplicate therapy screening**           | **Done**           | Same package, from the practice's own medication list                                                                                                                   |
-| Drug-drug interactions                    | **Seam only**      | _Needs licensed content._ `MedicationSafetyPort` is the interface; `capabilities` tells the UI what was actually checked so an empty result never reads as a clean bill |
-| Dose range, renal and weight dosing       | **Seam only**      | _Needs licensed content_, same port                                                                                                                                     |
-| **Vitals with growth percentiles**        | **Done (library)** | `packages/growth`; CDC LMS data, generated and checked against the CDC's own published percentiles. The chart surface is the follow-up                                  |
-| **Clinical decision support (CDS Hooks)** | **Done**           | `/cds-services`; three services over the existing allergy and duplicate-therapy screening. Every card names what was not checked                                        |
-| Referral management                       | **Missing**        | _Buildable_                                                                                                                                                             |
+| Capability                                | State         | Note                                                                                                                                                                     |
+| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Patient registration, demographics        | **Done**      | Plus identifiers, related persons, coverage                                                                                                                              |
+| Scheduling, flow board                    | **Done**      | Day view, check-in, rooming, status flow                                                                                                                                 |
+| Encounters, clinical notes                | **Done**      | Sign, lock, addenda with author attribution                                                                                                                              |
+| Problem list, allergies, medications      | **Done**      | Coded, with FHIR mappers                                                                                                                                                 |
+| Orders, specimens, results                | **Done**      | Order lifecycle, result review and sign                                                                                                                                  |
+| Immunisations                             | **Done**      | Recorded and mapped; registry submission below                                                                                                                           |
+| **Allergy screening at prescribing**      | **Done**      | `packages/clinical-safety`, warns and requires acknowledgement on HIGH criticality                                                                                       |
+| **Duplicate therapy screening**           | **Done**      | Same package, from the practice's own medication list                                                                                                                    |
+| Drug-drug interactions                    | **Seam only** | _Needs licensed content._ `MedicationSafetyPort` is the interface; `capabilities` tells the UI what was actually checked so an empty result never reads as a clean bill  |
+| Dose range, renal and weight dosing       | **Seam only** | _Needs licensed content_, same port                                                                                                                                      |
+| **Vitals with growth percentiles**        | **Done**      | `packages/growth` plus `GET /bff/v0/patients/{id}/growth`; CDC LMS data generated and checked against the CDC's own published percentiles, points and curves for a chart |
+| **Clinical decision support (CDS Hooks)** | **Done**      | `/cds-services`; three services over the existing allergy and duplicate-therapy screening. Every card names what was not checked                                         |
+| **Referral management**                   | **Done**      | `Referral` plus the lifecycle at `/bff/v0/referrals`; four separate timestamps rather than one status, so a referral cannot look closed with nothing having come back    |
 
 ## Interoperability
 
-| Capability                                                   | State            | Note                                                                                                                                                  |
-| ------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FHIR R4 boundary                                             | **Done**         | 19 resources with US Core profiles, search parameters validated against the CapabilityStatement                                                       |
-| **SMART on FHIR discovery**                                  | **Done**         | `.well-known/smart-configuration`, unauthenticated, claiming only implemented launch modes                                                            |
-| SMART app launch and token exchange                          | **Partial**      | Discovery is served; the authorisation server itself arrives with OIDC                                                                                |
-| X12 eligibility (270/271)                                    | **Done**         | `packages/x12`                                                                                                                                        |
-| X12 claims (837P), remittance (835), status (277), ack (999) | **Done**         | Same package                                                                                                                                          |
-| Prior authorisation (278)                                    | **Missing**      | _Buildable_                                                                                                                                           |
-| **Bulk FHIR export (`$export`)**                             | **Done**         | System and Patient-compartment level, `_type`/`_since`, ndjson manifest; `facility.all` plus the caller's own per-type scopes                         |
-| **C-CDA generate and import**                                | **Done (codec)** | `packages/ccda`; nine sections with entries and narrative, round-tripped, DOCTYPE refused on import. The BFF endpoints that call it are the follow-up |
-| **HL7 v2 interfaces (ADT, ORU, ORM, VXU)**                   | **Done (codec)** | `packages/hl7v2`; acknowledgements included. Per-partner configuration lives with each interface                                                      |
-| Direct secure messaging                                      | **Missing**      | _Needs certification_ - requires a HISP                                                                                                               |
-| Immunisation registry submission                             | **Missing**      | _Buildable_, but each jurisdiction has its own onboarding                                                                                             |
+| Capability                                                   | State            | Note                                                                                                                                                                                |
+| ------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FHIR R4 boundary                                             | **Done**         | 19 resources with US Core profiles, search parameters validated against the CapabilityStatement                                                                                     |
+| **SMART on FHIR discovery**                                  | **Done**         | `.well-known/smart-configuration`, unauthenticated, claiming only implemented launch modes                                                                                          |
+| SMART app launch and token exchange                          | **Partial**      | Discovery is served; the authorisation server itself arrives with OIDC                                                                                                              |
+| X12 eligibility (270/271)                                    | **Done**         | `packages/x12`                                                                                                                                                                      |
+| X12 claims (837P), remittance (835), status (277), ack (999) | **Done**         | Same package                                                                                                                                                                        |
+| **Prior authorisation (278)**                                | **Done**         | `packages/x12`; request and response, with the five decision codes kept apart - pended is neither yes nor no                                                                        |
+| **Bulk FHIR export (`$export`)**                             | **Done**         | System and Patient-compartment level, `_type`/`_since`, ndjson manifest; `facility.all` plus the caller's own per-type scopes                                                       |
+| **C-CDA generate and import**                                | **Done**         | `packages/ccda` plus `GET /bff/v0/patients/{id}/ccd` and `POST /bff/v0/ccd/import`; sections withheld per permission and named, import writes nothing                               |
+| **HL7 v2 interfaces (ADT, ORU, ORM, VXU)**                   | **Done (codec)** | `packages/hl7v2`; acknowledgements included. Per-partner configuration lives with each interface                                                                                    |
+| Direct secure messaging                                      | **Missing**      | _Needs certification_ - requires a HISP                                                                                                                                             |
+| **Immunisation registry submission**                         | **Done**         | `/bff/v0/immunisations/registry/*`; three steps, so nothing is recorded as reported until the registry acknowledges it. Per-jurisdiction onboarding still belongs to each interface |
 
 ## Prescribing
 
@@ -62,14 +62,14 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Revenue cycle
 
-| Capability                                               | State         | Note                                                                          |
-| -------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------- |
-| Charge capture, claims, payments, remittance, statements | **Done**      | Full ledger with claim lines and status history                               |
-| Eligibility checking                                     | **Done**      | Via X12 270/271                                                               |
-| Fee schedules, contract rates                            | **Missing**   | _Buildable_                                                                   |
-| Sliding scale, self-pay discounts                        | **Missing**   | _Buildable_                                                                   |
-| Collections and dunning                                  | **Partial**   | Statements carry dunning cycle; no workflow on top                            |
-| CPT and ICD-10 code sets                                 | **Seam only** | _Needs licensed content_ - `packages/terminology` is bring-your-own by design |
+| Capability                                               | State              | Note                                                                                                                                           |
+| -------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Charge capture, claims, payments, remittance, statements | **Done**           | Full ledger with claim lines and status history                                                                                                |
+| Eligibility checking                                     | **Done**           | Via X12 270/271                                                                                                                                |
+| **Fee schedules, contract rates**                        | **Done (library)** | `packages/pricing`; billed and allowed kept apart, modifier-specific rates, effective dating. Persistence and charge capture are the follow-up |
+| **Sliding scale, self-pay discounts**                    | **Done (library)** | Same package; practice-configured bands against a supplied poverty guideline, nominal fees, and a validator that runs on save                  |
+| Collections and dunning                                  | **Partial**        | Statements carry dunning cycle; no workflow on top                                                                                             |
+| CPT and ICD-10 code sets                                 | **Seam only**      | _Needs licensed content_ - `packages/terminology` is bring-your-own by design                                                                  |
 
 ## Quality and compliance
 

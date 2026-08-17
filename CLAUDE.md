@@ -23,7 +23,8 @@ packages/database     Prisma 7 + Postgres, the relational source of truth, plus 
 packages/ui           The design system: tokens, components, Storybook
 packages/agent        The assistant loop and provider wiring (ADR-0005)
 packages/agent-tools  The tool catalogue, allowlist and compartment rules the loop may reach
-packages/x12          X12 eligibility, claims and remittance codecs
+packages/x12          X12 eligibility, claims, remittance and prior-authorisation codecs
+packages/pricing      Fee schedules and sliding-scale discounts; what is billed, what is allowed
 packages/ccda         C-CDA R2.1 document codec; generate and import, with its own XML reader
 packages/hl7v2        HL7 v2 codec: ADT, ORU, ORM, VXU and acknowledgements
 packages/cds-hooks    CDS Hooks 2.0 protocol: discovery, request validation, cards

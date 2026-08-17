@@ -384,6 +384,56 @@ enum ImmunizationStatus {
   ENTERED_IN_ERROR
 }
 
+/// What a movement did to the shelf. Mirrors `MovementKind` in
+/// `@openrunic/inventory` - all nine values, including the two transfer kinds no
+/// endpoint produces yet - because the mirror is what `EnumParityProof` proves,
+/// and a value present on one side only would make that proof decorative.
+///
+/// Direction is the kind's job and never the sign of the quantity, so a removal
+/// cannot be entered as a receipt with a minus in front of it.
+enum StockMovementKind {
+  RECEIPT
+  RETURN
+  TRANSFER_IN
+  COUNT_SURPLUS
+  DISPENSE
+  ADMINISTER
+  WASTE
+  TRANSFER_OUT
+  COUNT_SHORTFALL
+}
+
+/// Where a lot stands. Mirrors `LotStatus` in `@openrunic/inventory`, which
+/// fails closed on a value it does not recognise rather than falling through to
+/// the expiry check. Recalled stock reading as available is the one failure in
+/// that package that reaches a patient, so the column type is the cheapest
+/// possible second copy of the guard.
+enum StockLotStatus {
+  AVAILABLE
+  QUARANTINED
+  RECALLED
+  RETIRED
+}
+
+/// The business event a set of movements records.
+///
+/// Deliberately not the same set as StockMovementKind, and the difference is why
+/// the posting table exists: one count produces surpluses on some lots and
+/// shortfalls on others, and stock sent back to a supplier leaves as a
+/// TRANSFER_OUT while tablets handed back by a patient arrive as a RETURN. The
+/// movement says which way the stock went; this says what happened.
+enum StockPostingKind {
+  OPENING
+  RECEIPT
+  DISPENSE
+  ADMINISTRATION
+  WASTAGE
+  COUNT
+  CORRECTION
+  SUPPLIER_RETURN
+  PATIENT_RETURN
+}
+
 enum ObservationCategory {
   VITAL_SIGNS
   LABORATORY
@@ -703,6 +753,10 @@ model Organisation {
   observations         Observation[]
   serviceRequests      ServiceRequest[]
   referrals            Referral[]
+  stockItems           StockItem[]
+  stockLots            StockLot[]
+  stockPostings        StockPosting[]
+  stockMovements       StockMovement[]
   specimens            Specimen[]
   diagnosticReports    DiagnosticReport[]
   resultObservations   ResultObservation[]
@@ -758,6 +812,8 @@ model Facility {
   appointments      Appointment[]
   encounters        Encounter[]
   chargeItemsAtSite ChargeItem[]
+  stockLots         StockLot[]
+  stockPostings     StockPosting[]
 
   @@unique([tenantId, code])
   @@index([tenantId, active])
@@ -978,6 +1034,7 @@ model Patient {
   /// Patient search: by MRN (exact), by name, by date of birth. The `active`
   /// prefix keeps the default "search living, non-merged patients" path on one
   /// index.
+  stockPostings StockPosting[]
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
   @@index([tenantId, birthDate])
@@ -1261,6 +1318,7 @@ model Encounter {
   claims               Claim[]
   formSubmissions      FormSubmission[]
 
+  stockPostings StockPosting[]
   @@index([tenantId, patientId, startedAt])
   @@index([tenantId, facilityId, status, startedAt])
   @@index([tenantId, providerId, startedAt])
@@ -2413,4 +2471,283 @@ model Referral {
   @@index([tenantId, patientId, createdAt])
   @@index([tenantId, referredById, status])
   @@index([tenantId, priority, status])
+}
+
+// ---------------------------------------------------------------------------
+// Stock
+// ---------------------------------------------------------------------------
+
+/// A thing the practice keeps on a shelf, as its own catalogue knows it.
+///
+/// There is no quantity column here, and its absence is the whole design. A
+/// stored on-hand figure can be set, and once it can be set it will be, by a
+/// well-meant repair of a number that looked wrong - leaving no trace of what
+/// was wrong or who decided it. For a controlled substance that repair is
+/// precisely what an audit exists to detect. On-hand is summed from
+/// StockMovement every time it is asked for.
+model StockItem {
+  id                 String   @id @db.Uuid
+  tenantId           String   @db.Uuid
+  /// The practice's own catalogue code, and the natural key. Theirs rather than
+  /// a terminology's: two suppliers' packages of the same drug are one line on
+  /// the order sheet and two NDCs.
+  sku                String
+  name               String
+  /// One of the nine values `StockUnit` allows in `@openrunic/inventory`. A
+  /// String rather than an enum because three of them are UCUM codes, and this
+  /// schema never bakes in a terminology. The value set is closed at the write
+  /// door and proved against the package's own type in `apps/api/src/inventory`.
+  unit               String
+  rxnormCode         String?
+  ndcCode            String?
+  /// CDC CVX code, for a vaccine. Coded, so a plain string.
+  cvxCode            String?
+  /// Stock units in one supplier pack. Null means the pack is the unit. The
+  /// conversion happens exactly once, at receipt: `packsToUnits` validates
+  /// nothing, and applying it twice silently squares it.
+  packSize           Decimal? @db.Decimal(18, 6)
+  /// Flag the item when usable stock falls to or below this. Inclusive, matching
+  /// `needsReorder`. Null means never flag, which is a different fact from zero.
+  reorderLevel       Decimal? @db.Decimal(18, 6)
+  /// A controlled substance. Drives one rule today - destroying one is recorded
+  /// with a witness - and is the column a controlled register would be built on.
+  controlled         Boolean  @default(false)
+  /// DEA schedule as a string ("2".."5"); jurisdictional, so coded. Matches
+  /// MedicationRequest.controlledSchedule.
+  controlledSchedule String?
+  /// A discontinued item stays, because its ledger does.
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  lots StockLot[]
+
+  @@unique([tenantId, sku])
+  /// Not a business key - `id` alone is already unique, so this adds no
+  /// collision. It is the target of StockLot's tenant-carrying foreign key:
+  /// referential-integrity checks run as the table owner and are filtered by no
+  /// row-level-security policy, so the shape of the key is the only thing that
+  /// can forbid a lot in one organisation pointing at another's item.
+  @@unique([tenantId, id])
+  /// The catalogue screen, filtered to what is still stocked.
+  @@index([tenantId, active, name])
+  /// Receiving: the clerk scans the carton, and the NDC is what they have.
+  @@index([tenantId, ndcCode])
+}
+
+/// One carton, at one site, with the two clocks that decide when it stops being
+/// usable.
+///
+/// The manufacturer's expiry is printed on the box. The beyond-use window that
+/// starts when a multi-dose vial is first pierced is printed on nothing, usually
+/// runs out first, and is the one a practice forgets - so both are columns, and
+/// the package takes the earlier of the two. An absent `expiresOn` means the
+/// item cannot expire, which is not the same fact as a date far in the future.
+///
+/// `facilityId` is required, and is one of the two scoping dimensions
+/// `@openrunic/inventory` has no field for. Stock at another site is stock you
+/// cannot physically reach, so every balance and every allocation filters on it
+/// exactly as they filter on tenant.
+model StockLot {
+  id            String         @id @db.Uuid
+  tenantId      String         @db.Uuid
+  itemId        String         @db.Uuid
+  facilityId    String         @db.Uuid
+  /// The number printed on the carton, which is what a recall notice names. Not
+  /// unique on its own: suppliers reuse numbers, and the same number at two
+  /// sites is two boxes counted separately.
+  lotNumber     String
+  status        StockLotStatus @default(AVAILABLE)
+  expiresOn     DateTime?      @db.Date
+  /// When the vial was first pierced. Stamped by the server on the open
+  /// transition and refused a second time, because opening twice would restart
+  /// the clock this column exists to run down.
+  openedOn      DateTime?      @db.Date
+  /// Days the contents remain usable after opening. Meaningless without
+  /// `openedOn`, and never validated by the package - a negative value silently
+  /// produces a last-usable day earlier than the day the vial was opened - so
+  /// the write door bounds it.
+  beyondUseDays Int?
+  manufacturer  String?
+  /// The NDC of the package actually received, which can differ from the item's
+  /// default when a generic arrives from a second supplier.
+  ndcCode       String?
+  /// The day it landed. Also FEFO's tie-break and the "not yet on the shelf"
+  /// gate, so it is not nullable.
+  receivedOn    DateTime       @db.Date
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item         StockItem    @relation(fields: [tenantId, itemId], references: [tenantId, id], onDelete: Restrict)
+  facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+
+  movements StockMovement[]
+
+  /// Receiving the same carton number again is a second delivery into the same
+  /// box, never a second box. The receipt path finds-or-creates on this key.
+  @@unique([tenantId, itemId, facilityId, lotNumber])
+  /// The target of StockMovement's foreign key. It constrains nothing on its own
+  /// and exists so Postgres can prove a movement's denormalised itemId and
+  /// facilityId are its own lot's.
+  @@unique([tenantId, id, itemId, facilityId])
+  /// The FEFO candidate fetch: every lot of one item at one site.
+  @@index([tenantId, itemId, facilityId, receivedOn])
+  /// The expiry tray, across a whole site.
+  @@index([tenantId, facilityId, expiresOn])
+  /// Somebody is holding a carton and does not know what it is.
+  @@index([tenantId, lotNumber])
+}
+
+/// One thing that happened in the stockroom, and the ledger lines it produced.
+///
+/// A composite aggregate for the same reason a claim is one: a dispense of
+/// thirty tablets drawn from two lots is two ledger lines and one act, and two
+/// lines written by two requests are a half-recorded dispense nobody can tell
+/// from a whole one. On an append-only table a half-recorded act cannot be
+/// repaired, only apologised for. The lines are written in this row's own
+/// transaction or not at all.
+///
+/// It also owns every fact belonging to the act rather than to the lot - the
+/// patient, the prescription, the site, the supplier's packing slip, who posted
+/// it and who witnessed it - so none of them can disagree between two lines of
+/// one dispense.
+model StockPosting {
+  id             String           @id @db.Uuid
+  tenantId       String           @db.Uuid
+  kind           StockPostingKind
+  facilityId     String           @db.Uuid
+  /// Null on a receipt and on a count. Present on anything that left the shelf
+  /// for somebody.
+  patientId      String?          @db.Uuid
+  encounterId    String?          @db.Uuid
+  /// The prescription this fill was against, when there was one. The clinical
+  /// record stays where it is; this is the stock side of it.
+  prescriptionId String?          @db.Uuid
+  /// The immunisation this dose was drawn for. Optional in both directions on
+  /// purpose: a vaccine can be recorded clinically before the stockroom catches
+  /// up, and refusing the clinical record because the ledger disagreed would be
+  /// the wrong failure in the wrong direction.
+  immunizationId String?          @db.Uuid
+  occurredOn     DateTime         @db.Date
+  postedById     String           @db.Uuid
+  /// The second person on the destruction of a controlled substance. Recorded
+  /// rather than derived, because who watched is a fact about the event.
+  witnessedById  String?          @db.Uuid
+  /// The supplier's packing slip, the count sheet, the invoice. Free text,
+  /// because it is whatever the piece of paper says.
+  reference      String?
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  movements StockMovement[]
+
+  /// The stockroom day book.
+  @@index([tenantId, facilityId, occurredOn])
+  /// What a patient was given, from the stock side.
+  @@index([tenantId, patientId, occurredOn])
+  /// The receipt log, the wastage report, the count history.
+  @@index([tenantId, kind, occurredOn])
+}
+
+/// One append-only ledger line. The only place a stock quantity lives.
+///
+/// A mistake is corrected by a compensating row carrying `correctsMovementId`
+/// and a reason; both rows stay, the balance moves and the history does not.
+/// That is not left as a convention: the migration creating this table revokes
+/// UPDATE and DELETE from the application role, exactly as the row-level
+/// security migration already does for AuditEvent.
+///
+/// Six indexes on a write-heavy table is more than this schema usually carries,
+/// and it is affordable because the table is append-only: index maintenance is
+/// insert-only, with no update churn and no bloat.
+model StockMovement {
+  id                 String            @id @db.Uuid
+  tenantId           String            @db.Uuid
+  /// The business event this line belongs to. Restrict, because a line that
+  /// outlived its posting would be stock nobody can account for.
+  postingId          String            @db.Uuid
+  lotId              String            @db.Uuid
+  /// Denormalised from the lot, and it has to be: `balancesByLot` filters
+  /// movements on `itemId` and this layer does no joins. The composite foreign
+  /// key below keeps the copy true. The package cross-checks nothing here and
+  /// its failure is silent - a movement filed under the wrong item vanishes from
+  /// `balancesByLot`, and `allocate` then reports a shortfall against a full
+  /// shelf.
+  itemId             String            @db.Uuid
+  /// The same argument and the same key: the ledger has to be readable per site
+  /// without a join.
+  facilityId         String            @db.Uuid
+  kind               StockMovementKind
+  /// Always positive; direction is the kind's job. Scale 6 is exactly the grid
+  /// `toStockPrecision` rounds to, so a value the package accepted cannot be
+  /// re-rounded on the way into the column.
+  quantity           Decimal           @db.Decimal(18, 6)
+  /// When it happened, not when it was typed. `createdAt` is when it was typed,
+  /// and the gap between the two is what a back-dated entry is made of - the
+  /// package has no field for it at all.
+  occurredOn         DateTime          @db.Date
+  /// Who did it, from the verified principal and never from a request body. A
+  /// provenance stamp, so no relation.
+  actorId            String            @db.Uuid
+  /// Required by `movementProblems` for WASTE, both count variances, and any
+  /// correction. The package refuses the row and Zod names the field to the
+  /// client, so the same rule is stated to two different audiences.
+  reason             String?
+  /// The line this one reverses. Nullable, so it must never appear in a spec's
+  /// `uniqueBy`: a Prisma probe on an absent value matches every row rather than
+  /// none, and would turn every create into a 409.
+  correctsMovementId String?           @db.Uuid
+  /// This row's position in its lot's ledger, from 1. Two jobs at once: the
+  /// total order of a lot's history, and the concurrency guard. An allocation is
+  /// computed from a snapshot, and the sequence derived from that snapshot is an
+  /// assertion that nothing has touched the lot since it looked.
+  lotSeq             Int
+  createdAt          DateTime          @default(now())
+  /// Carried because every model carries it. It never changes: the application
+  /// role holds no UPDATE privilege on this table.
+  updatedAt          DateTime          @updatedAt
+
+  organisation Organisation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posting      StockPosting   @relation(fields: [postingId], references: [id], onDelete: Restrict)
+  /// Four columns, and every one is load-bearing. `tenantId` because
+  /// referential-integrity checks run as the table owner and no policy filters
+  /// them. `itemId` and `facilityId` because the package cannot check them and
+  /// their disagreement is silent. `onUpdate: NoAction` because a cascading
+  /// update runs with the owner's privileges and would rewrite ledger rows
+  /// straight past the revoked UPDATE.
+  lot          StockLot       @relation(fields: [tenantId, lotId, itemId, facilityId], references: [tenantId, id, itemId, facilityId], onDelete: Restrict, onUpdate: NoAction)
+  corrects     StockMovement? @relation("StockMovementCorrection", fields: [correctsMovementId], references: [id], onDelete: Restrict)
+  /// Declared as a list rather than a one-to-one because Prisma refuses the
+  /// one-to-one form here - it wants a single-column `@unique` on the defining
+  /// side, and the rule is tenant-scoped. The at-most-one guarantee is the
+  /// unique index below, so this array holds zero or one row, always.
+  corrections  StockMovement[] @relation("StockMovementCorrection")
+
+  /// The concurrency guard, and the ledger's order. Also makes the ledger
+  /// provably gapless per lot, so "did we read every movement from inception"
+  /// is answerable as max(lotSeq) == count.
+  @@unique([tenantId, lotId, lotSeq])
+  /// A movement is corrected at most once. Postgres treats NULLs as distinct in
+  /// a unique index, so this needs no partial index and binds only corrections.
+  @@unique([tenantId, correctsMovementId])
+  /// The hot path: every movement for one item at one site from inception, which
+  /// is what `itemBalance`, `balancesByLot` and `allocate` all need.
+  @@index([tenantId, itemId, facilityId, occurredOn])
+  /// One posting's own lines. Prisma does not index foreign keys on Postgres.
+  @@index([tenantId, postingId])
+  /// The wastage report and the receipt log.
+  @@index([tenantId, kind, occurredOn])
+  /// Entered-versus-occurred, for finding back-dated entries.
+  @@index([tenantId, createdAt])
+  /// A diversion investigation starts from a person, not from a lot.
+  @@index([tenantId, actorId, createdAt])
 }

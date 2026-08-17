@@ -117,6 +117,32 @@ export const ALLERGY_CLINICAL_STATUSES = ['ACTIVE', 'INACTIVE', 'RESOLVED'] as c
 export const REACTION_SEVERITIES = ['MILD', 'MODERATE', 'SEVERE'] as const;
 export const IMMUNIZATION_STATUSES = ['COMPLETED', 'NOT_DONE', 'ENTERED_IN_ERROR'] as const;
 
+export const STOCK_MOVEMENT_KINDS = [
+  'RECEIPT',
+  'RETURN',
+  'TRANSFER_IN',
+  'COUNT_SURPLUS',
+  'DISPENSE',
+  'ADMINISTER',
+  'WASTE',
+  'TRANSFER_OUT',
+  'COUNT_SHORTFALL',
+] as const;
+
+export const STOCK_LOT_STATUSES = ['AVAILABLE', 'QUARANTINED', 'RECALLED', 'RETIRED'] as const;
+
+export const STOCK_POSTING_KINDS = [
+  'OPENING',
+  'RECEIPT',
+  'DISPENSE',
+  'ADMINISTRATION',
+  'WASTAGE',
+  'COUNT',
+  'CORRECTION',
+  'SUPPLIER_RETURN',
+  'PATIENT_RETURN',
+] as const;
+
 export const REFERRAL_STATUSES = [
   'DRAFT',
   'SENT',
@@ -297,6 +323,9 @@ type AssertOk<T extends 'ok'> = T;
 
 /** Exported so it is not dead code; referencing it is enough to check it. */
 export type EnumParityProof = [
+  AssertOk<AssertMirrors<Prisma.StockMovementKind, typeof STOCK_MOVEMENT_KINDS>>,
+  AssertOk<AssertMirrors<Prisma.StockLotStatus, typeof STOCK_LOT_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.StockPostingKind, typeof STOCK_POSTING_KINDS>>,
   AssertOk<AssertMirrors<Prisma.OrganisationMode, typeof ORGANISATION_MODES>>,
   AssertOk<AssertMirrors<Prisma.OrganisationStatus, typeof ORGANISATION_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.UserStatus, typeof USER_STATUSES>>,

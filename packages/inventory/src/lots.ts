@@ -53,7 +53,10 @@ const ISO_DATE = /^(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})$/u;
  * Validated once per lot at the head of the operation rather than inside the
  * comparator, so an n-lot sort costs n checks instead of n log n.
  */
-export function assertIsoDate(date: IsoDate, what: string): void {
+export function assertIsoDate(
+  date: IsoDate,
+  what: string
+): { year: number; month: number; day: number } {
   const parts = ISO_DATE.exec(date);
   if (parts?.groups === undefined) {
     throw new RangeError(`${what} must be a YYYY-MM-DD date, not ${JSON.stringify(date)}.`);
@@ -66,6 +69,12 @@ export function assertIsoDate(date: IsoDate, what: string): void {
   if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== date) {
     throw new RangeError(`${what} is not a date that exists: ${JSON.stringify(date)}.`);
   }
+  // Returned rather than discarded, so a caller does not re-parse what this has
+  // already proved. `addDays` used to split the string again and default each
+  // missing part - `year ?? 0`, `month ?? 1` - which was the original truncated
+  // date bug, and the defaults survived the fix as unreachable code that read
+  // as though a malformed date could still get past this function.
+  return { year, month, day };
 }
 
 /**
@@ -142,11 +151,27 @@ export function addDays(date: IsoDate, days: number): IsoDate {
   // Validated before the offset, because `Date.UTC` rolls over rather than
   // refusing and that rollover is exactly what makes the arithmetic work across
   // a month end. The input has to be proved real while the two are separable.
-  assertIsoDate(date, 'date');
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days))
+  const parts = assertIsoDate(date, 'date');
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days))
     .toISOString()
     .slice(0, 10);
+}
+
+/**
+ * Refuses a beyond-use window that is not a whole number of days.
+ *
+ * The package took the value straight into `addDays`, so a negative one
+ * produced a last-usable day before the vial was opened - a lot reported
+ * expired earlier than its recorded shelf life - and `Date.UTC` silently
+ * truncated a fractional one. The field is documented as a count of days, and
+ * a stored value that is not one is bad data to surface rather than round.
+ */
+function assertWholeDays(days: number, lotNumber: string): void {
+  if (!Number.isInteger(days) || days < 0) {
+    throw new RangeError(
+      `Lot ${lotNumber} has a beyond-use window of ${String(days)} days, which is not a whole number of days at or above zero.`
+    );
+  }
 }
 
 /**
@@ -156,11 +181,29 @@ export function addDays(date: IsoDate, days: number): IsoDate {
  * `undefined` when neither applies: a lot with no expiry that has not been
  * opened has no last day, and that is different from having one in the past.
  */
-export function lastUsableDay(lot: Lot): IsoDate | undefined {
+export function lastUsableDay(lot: Lot, asOf: IsoDate): IsoDate | undefined {
   if (lot.expiresOn !== undefined) assertIsoDate(lot.expiresOn, `lot ${lot.lotNumber} expiresOn`);
   if (lot.openedOn !== undefined) assertIsoDate(lot.openedOn, `lot ${lot.lotNumber} openedOn`);
+  assertIsoDate(asOf, 'asOf');
+
+  // The beyond-use clock starts when the vial is pierced, so it does not exist
+  // on any date before that. Applying it regardless made a lot opened on the
+  // 10th carry an October deadline in a query asked about the 1st - a date
+  // derived from something that had not happened, sorting the lot ahead of a
+  // December expiry in a back-dated FEFO and appearing in that month's
+  // expiring-soon report. The as-of contract this file opens with is exactly
+  // the promise that was broken.
+  const opened = lot.openedOn !== undefined && lot.openedOn <= asOf;
+  // Validated only once the window is in force, which is the same rule as
+  // applying it. Checking it unconditionally meant a back-dated report failed
+  // on a bad value belonging to an event that had not happened on the date
+  // asked about - the as-of fix, undone one line below itself by the guard
+  // added with it.
+  if (opened && lot.beyondUseDays !== undefined) {
+    assertWholeDays(lot.beyondUseDays, lot.lotNumber);
+  }
   const beyondUse =
-    lot.openedOn === undefined || lot.beyondUseDays === undefined
+    !opened || lot.openedOn === undefined || lot.beyondUseDays === undefined
       ? undefined
       : addDays(lot.openedOn, lot.beyondUseDays);
 
@@ -175,7 +218,7 @@ export function lastUsableDay(lot: Lot): IsoDate | undefined {
 /** True when the lot's last usable day is behind `asOf`. Inclusive; see `Lot`. */
 export function isExpired(lot: Lot, asOf: IsoDate): boolean {
   assertIsoDate(asOf, 'asOf');
-  const last = lastUsableDay(lot);
+  const last = lastUsableDay(lot, asOf);
   return last !== undefined && last < asOf;
 }
 
@@ -188,6 +231,16 @@ export function isExpired(lot: Lot, asOf: IsoDate): boolean {
  * start keeping a paper book.
  */
 export function unusableReason(lot: Lot, asOf: IsoDate): string | undefined {
+  assertIsoDate(asOf, 'asOf');
+  // Checked here rather than only inside `fefo`, because a caller asking about
+  // one lot got a different answer from a caller asking about the shelf. Not
+  // yet received is not on the shelf, and `isUsable(lot, before-it-arrived)`
+  // answering true let a caller approve stock the practice did not have.
+  //
+  // After the status clauses below would be too late for the opposite reason a
+  // status check has to come first, so the ordering is: status, then receipt,
+  // then the dates. A held lot with a corrupt receipt date is still discarded
+  // by its status without anyone reading the date.
   // Checked first, and failing closed. Without it an unrecognised status - a
   // misspelled `RECALLED` deserialised from a column - matches none of the
   // clauses below, falls through to the expiry check, and comes out usable.
@@ -206,8 +259,12 @@ export function unusableReason(lot: Lot, asOf: IsoDate): string | undefined {
   if (lot.status === 'RETIRED') {
     return `Lot ${lot.lotNumber} has been retired from stock.`;
   }
+  assertIsoDate(lot.receivedOn, `lot ${lot.lotNumber} receivedOn`);
+  if (lot.receivedOn > asOf) {
+    return `Lot ${lot.lotNumber} was not received until ${lot.receivedOn}.`;
+  }
   if (isExpired(lot, asOf)) {
-    const last = lastUsableDay(lot);
+    const last = lastUsableDay(lot, asOf);
     const opened = lot.openedOn !== undefined && last !== lot.expiresOn;
     return opened
       ? `Lot ${lot.lotNumber} passed its beyond-use date on ${String(last)}, ${String(lot.beyondUseDays)} days after it was opened.`
@@ -256,35 +313,24 @@ export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
     unique.set(lot.id, lot);
   }
 
-  return [...unique.values()]
-    .filter((lot) => isUsable(lot, asOf))
-    .filter((lot) => {
-      // Not yet received is not on the shelf. Every function here answers "as
-      // of" a date, and without this a lot received in October appeared in a
-      // September `fefo` and in September's expiring-soon report - a historical
-      // stockroom report listing inventory the practice did not yet have, which
-      // reads as a real count and reconciles against nothing.
-      //
-      // After the usability filter, not before it. The first version validated
-      // `receivedOn` first and so threw on a retired lot from years ago with a
-      // corrupt date - one irrelevant historical row taking down `fefo`,
-      // allocation, reordering and every expiry report for the whole item.
-      // Status is decided without reading these dates, so discarding the held
-      // lots first means only the candidates have to be well formed.
-      assertIsoDate(lot.receivedOn, `lot ${lot.lotNumber} receivedOn`);
-      return lot.receivedOn <= asOf;
-    })
-    .toSorted((a, b) => {
-      const aLast = lastUsableDay(a);
-      const bLast = lastUsableDay(b);
-      if (aLast !== bLast) {
-        if (aLast === undefined) return 1;
-        if (bLast === undefined) return -1;
-        return aLast < bLast ? -1 : 1;
-      }
-      if (a.receivedOn !== b.receivedOn) return a.receivedOn < b.receivedOn ? -1 : 1;
-      return a.id < b.id ? -1 : 1;
-    });
+  return (
+    [...unique.values()]
+      // Not-yet-received is refused by `unusableReason` alongside the statuses and
+      // the dates, so every caller gets the same answer whether it asks about one
+      // lot or about the shelf.
+      .filter((lot) => isUsable(lot, asOf))
+      .toSorted((a, b) => {
+        const aLast = lastUsableDay(a, asOf);
+        const bLast = lastUsableDay(b, asOf);
+        if (aLast !== bLast) {
+          if (aLast === undefined) return 1;
+          if (bLast === undefined) return -1;
+          return aLast < bLast ? -1 : 1;
+        }
+        if (a.receivedOn !== b.receivedOn) return a.receivedOn < b.receivedOn ? -1 : 1;
+        return a.id < b.id ? -1 : 1;
+      })
+  );
 }
 
 /**
@@ -298,7 +344,7 @@ export function fefo(lots: readonly Lot[], asOf: IsoDate): readonly Lot[] {
 export function expiringWithin(lots: readonly Lot[], asOf: IsoDate, days: number): readonly Lot[] {
   const horizon = addDays(asOf, days);
   return fefo(lots, asOf).filter((lot) => {
-    const last = lastUsableDay(lot);
+    const last = lastUsableDay(lot, asOf);
     return last !== undefined && last <= horizon;
   });
 }

@@ -13,9 +13,12 @@ import { SERVED_MODULES } from '../fhir/resources.js';
  * or left for an integrator to discover with a 400.
  *
  * Deleting a requirement from the catalogue to close the gap was the first
- * attempt and it was wrong: it made `mustSupportParams` report a profile
- * requirement that does not exist, which is a worse lie than an admitted gap,
- * because it is invisible.
+ * attempt and it was wrong. It did not stop the server refusing the parameter -
+ * the modules decide that - it made `mustSupportParams` stop reporting a
+ * requirement US Core really does impose. The gap became invisible rather than
+ * closed, and this entry still declares the US Core profile, so the catalogue
+ * would have understated what conformance takes while the profile claim stood.
+ * An admitted gap is better than a quiet one.
  *
  * So the catalogue keeps the requirement, the module keeps the truth, and this
  * pins the difference. A gap that closes fails this test and the entry comes

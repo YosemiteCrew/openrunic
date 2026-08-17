@@ -93,6 +93,7 @@ describe('the OpenAPI document', () => {
       'remittances',
       'statements',
       'forms',
+      'inventory',
       'users',
       'roles',
       'facilities',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addDays,
+  assertIsoDate,
   allocate,
   balancesByLot,
   countVariance,
@@ -78,12 +79,12 @@ describe('expiry', () => {
   });
 
   it('has no last usable day when nothing expires and nothing was opened', () => {
-    expect(lastUsableDay(lot({ id: 'a' }))).toBeUndefined();
+    expect(lastUsableDay(lot({ id: 'a' }), TODAY)).toBeUndefined();
     expect(isExpired(lot({ id: 'a' }), '2099-01-01')).toBe(false);
   });
 
   it('ignores a beyond-use window on a lot that was never opened', () => {
-    expect(lastUsableDay(lot({ id: 'a', beyondUseDays: 28 }))).toBeUndefined();
+    expect(lastUsableDay(lot({ id: 'a', beyondUseDays: 28 }), TODAY)).toBeUndefined();
   });
 
   /**
@@ -100,7 +101,7 @@ describe('expiry', () => {
       beyondUseDays: 28,
     });
 
-    expect(lastUsableDay(opened)).toBe('2026-08-29');
+    expect(lastUsableDay(opened, TODAY)).toBe('2026-08-29');
     expect(isExpired(opened, '2026-08-30')).toBe(true);
   });
 
@@ -112,7 +113,7 @@ describe('expiry', () => {
       beyondUseDays: 28,
     });
 
-    expect(lastUsableDay(opened)).toBe('2026-08-20');
+    expect(lastUsableDay(opened, TODAY)).toBe('2026-08-20');
   });
 
   /**
@@ -1377,5 +1378,656 @@ describe('the sixth review round, each held by a test', () => {
 
   it('carries a quantity a practice could plausibly hold', () => {
     expect(toStockPrecision(1_000_000.123456)).toBe(1_000_000.123456);
+  });
+});
+
+describe('the review of the merged inventory PRs, each finding held by a test', () => {
+  /**
+   * A deadline derived from something that had not happened yet.
+   *
+   * The beyond-use clock starts when the vial is pierced, so on any date before
+   * that it does not exist. Applying it regardless gave a lot opened on the 10th
+   * an October deadline in a query asked about the 1st, sorting it ahead of a
+   * December expiry in a back-dated FEFO and listing it in that month's
+   * expiring-soon report. The as-of contract this package opens with is exactly
+   * the promise that was broken.
+   */
+  it('ignores a beyond-use window that had not started as of the date asked about', () => {
+    const opened = lot({
+      id: 'a',
+      receivedOn: '2026-08-01',
+      openedOn: '2026-09-10',
+      beyondUseDays: 28,
+    });
+
+    expect(lastUsableDay(opened, '2026-09-01')).toBeUndefined();
+    expect(lastUsableDay(opened, '2026-09-10')).toBe('2026-10-08');
+    expect(expiringWithin([opened], '2026-09-01', 365)).toEqual([]);
+  });
+
+  /**
+   * The public single-lot answer disagreed with the shelf answer, because the
+   * receipt-date check lived only inside `fefo`. A caller asking about one lot
+   * could approve stock the practice did not yet have.
+   */
+  it('reports a not-yet-received lot as unusable, not only as absent from FEFO', () => {
+    const future = lot({ id: 'a', lotNumber: 'F1', receivedOn: '2026-10-01' });
+
+    expect(isUsable(future, '2026-09-01')).toBe(false);
+    expect(unusableReason(future, '2026-09-01')).toBe('Lot F1 was not received until 2026-10-01.');
+    expect(fefo([future], '2026-09-01')).toEqual([]);
+  });
+
+  it('still discards a held lot before reading its dates', () => {
+    const corrupt = lot({ id: 'a', status: 'RETIRED', receivedOn: 'not-a-date' });
+
+    expect(isUsable(corrupt, TODAY)).toBe(false);
+    expect(fefo([corrupt], TODAY)).toEqual([]);
+  });
+
+  /**
+   * A beyond-use window that is not a whole number of days is bad stored data.
+   * A negative one produced a last-usable day before the vial was opened, and
+   * `Date.UTC` silently truncated a fractional one.
+   */
+  it.each([-1, 1.5, Number.NaN])('refuses a beyond-use window of %s days', (days) => {
+    const bad = lot({ id: 'a', openedOn: '2026-08-01', beyondUseDays: days });
+
+    expect(() => lastUsableDay(bad, TODAY)).toThrow(/not a whole number of days/u);
+  });
+
+  /**
+   * Two rows carrying identical fields built by two code paths compared unequal
+   * under `JSON.stringify`, so a duplicate the caller could not deduplicate
+   * threw on a balance read for data that was fine.
+   */
+  it('treats a duplicate as a duplicate whatever order its keys were written in', () => {
+    const first = movement({ id: 'm1', quantity: 10 });
+    const reordered = Object.fromEntries(
+      Object.entries(first).reverse()
+    ) as unknown as StockMovement;
+
+    expect(JSON.stringify(first), 'the comparison this guards against').not.toBe(
+      JSON.stringify(reordered)
+    );
+    expect(lotBalance([first, reordered], 'lot-a', TODAY)).toBe(10);
+  });
+
+  /**
+   * `.trim()` on an absent actor threw a TypeError, turning the validation
+   * failure this function exists to report into an application error - on
+   * precisely the malformed audit input it was written to catch. The other
+   * identifiers were not checked at all.
+   */
+  it.each(['id', 'itemId', 'lotId', 'actorId'] as const)(
+    'reports a missing %s rather than throwing on it',
+    (field) => {
+      const bare = { ...movement({ id: 'm' }) } as Record<string, unknown>;
+      delete bare[field];
+
+      expect(() => movementProblems(bare as unknown as StockMovement)).not.toThrow();
+      expect(movementProblems(bare as unknown as StockMovement).length).toBeGreaterThan(0);
+    }
+  );
+
+  it.each(['id', 'itemId', 'lotId', 'actorId'] as const)('refuses a blank %s', (field) => {
+    const blank = { ...movement({ id: 'm' }), [field]: '   ' } as StockMovement;
+
+    expect(movementProblems(blank).length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Rounding after every addition discarded stock whose individual quantities
+   * sat below the grid, so the per-lot figure and the single-lot figure
+   * disagreed for the same ledger - and allocation read the wrong one.
+   */
+  it('agrees with lotBalance on a ledger of many small movements', () => {
+    const many = Array.from({ length: 10 }, (_, index) =>
+      movement({ id: `m${String(index)}`, quantity: 0.000001 })
+    );
+
+    expect(lotBalance(many, 'lot-a', TODAY)).toBe(0.00001);
+    expect(balancesByLot(many, 'item-1', TODAY).get('lot-a')).toBe(0.00001);
+    expect(itemBalance(many, 'item-1', TODAY)).toBe(0.00001);
+  });
+
+  /**
+   * The two balance functions disagreed because one preserved sub-grid sums and
+   * the other did not, and there is no right answer for a value the store
+   * cannot hold: `DECIMAL(18,6)` rounds it to something else on the way in, so
+   * the figure that was validated and the figure that was kept differ.
+   *
+   * The answer is that it does not arrive.
+   */
+  it('refuses a movement quantity finer than the grid', () => {
+    expect(movementProblems(movement({ id: 'm', quantity: 0.0000004 }))).toContain(
+      'A movement quantity must be a whole number of six-decimal stock units.'
+    );
+    expect(movementProblems(movement({ id: 'm', quantity: 0.000001 }))).toEqual([]);
+  });
+
+  /**
+   * `Allocation` is a plain interface, so a caller can build one - and these
+   * tests do. `movementsFor` checked no line against the totals beside it, so a
+   * forged allocation emitted a movement the ledger accepted.
+   */
+  it('refuses an allocation whose lines do not sum to what it claims', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 100 }],
+      allocated: 1,
+      requested: 1,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/lines sum to 100 but the allocation says 1/u);
+  });
+
+  it('refuses an allocation that does not account for what was requested', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 1 }],
+      allocated: 1,
+      requested: 10,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/accounts for 1 of a requested 10/u);
+  });
+
+  /**
+   * Truthiness handed a clinically significant decision to JavaScript: the
+   * string 'false' from an unchecked form is truthy and chose divisible, while
+   * an omitted value chose indivisible - both silently, and both being the
+   * answer nobody gave.
+   */
+  it.each([undefined, 'false', 1, null])('refuses %j as a divisibility answer', (bad) => {
+    const lots = [lot({ id: 'a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const ledger = [movement({ id: 'm1', quantity: 10 })];
+
+    expect(() =>
+      allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(5), TODAY, {
+        divisible: bad as unknown as boolean,
+      })
+    ).toThrow(/must say whether the quantity may be split/u);
+  });
+});
+
+describe('the review of #96, each finding held by a test', () => {
+  /**
+   * The same defect one field over, in the commit that fixed it.
+   *
+   * The four required identifiers were guarded with a typeof check; the
+   * optional correction target was left calling `.trim()` directly, so a null
+   * from unchecked JSON still threw the TypeError the guard was added to stop.
+   */
+  it.each([null, 42, {}])('reports a correction target of %j rather than throwing', (bad) => {
+    const movementWithBadTarget = {
+      ...movement({ id: 'm2', reason: 'Entered twice' }),
+      correctsMovementId: bad,
+    } as unknown as StockMovement;
+
+    expect(() => movementProblems(movementWithBadTarget)).not.toThrow();
+    expect(movementProblems(movementWithBadTarget)).toContain(
+      'A correction must name the movement it corrects.'
+    );
+  });
+
+  /**
+   * An equation that holds is not the same as numbers that mean anything.
+   *
+   * `allocated + shortfall === requested` balances at 100 + (-99) = 1, so a
+   * hundred-unit line satisfied a one-unit request and emitted a hundred-unit
+   * outbound movement. A shortfall below zero is stock owed back by the patient.
+   */
+  it('refuses an allocation whose totals balance only because one is negative', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 100 }],
+      allocated: 100,
+      requested: 1,
+      shortfall: -99,
+    };
+
+    expect(forged.allocated + forged.shortfall, 'the equation this guards against').toBe(
+      forged.requested
+    );
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/shortfall must be zero or more/u);
+  });
+
+  it.each(['requested', 'allocated', 'shortfall'] as const)(
+    'refuses an allocation whose %s is not a number',
+    (field) => {
+      const forged = {
+        itemId: 'item-1',
+        lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 1 }],
+        allocated: 1,
+        requested: 1,
+        shortfall: 0,
+        [field]: Number.NaN,
+      };
+
+      expect(() =>
+        movementsFor(forged, {
+          kind: 'DISPENSE',
+          occurredOn: TODAY,
+          actorId: 'user-1',
+          idFor: () => 'mv-0',
+        })
+      ).toThrow(/must be zero or more/u);
+    }
+  );
+});
+
+describe('the second review of #96', () => {
+  /**
+   * The as-of fix undone one line below itself.
+   *
+   * The beyond-use window is not in force before the vial is opened, and the
+   * validation added alongside that rule ran regardless - so a back-dated
+   * report failed on a bad value belonging to an event that had not happened on
+   * the date asked about.
+   */
+  it('does not validate a beyond-use window that is not yet in force', () => {
+    const openedLater = lot({
+      id: 'a',
+      receivedOn: '2026-08-01',
+      openedOn: '2026-09-10',
+      beyondUseDays: -1,
+    });
+
+    expect(lastUsableDay(openedLater, '2026-09-01')).toBeUndefined();
+    expect(fefo([openedLater], '2026-09-01').map((entry) => entry.id)).toEqual(['a']);
+    expect(() => lastUsableDay(openedLater, '2026-09-10')).toThrow(/not a whole number of days/u);
+  });
+
+  /**
+   * TypeScript is structural, so a row a join has augmented with a materialised
+   * relation is still a StockMovement. Comparing every key with `===` rejected
+   * two such rows as conflicting because their relation objects were different
+   * instances carrying equal contents.
+   */
+  it('treats two rows as the same ledger line whatever else they carry', () => {
+    const base = movement({ id: 'm1', quantity: 10 });
+    const withRelation = { ...base, lot: { id: 'lot-a' } } as unknown as StockMovement;
+    const withAnother = { ...base, lot: { id: 'lot-a' } } as unknown as StockMovement;
+
+    expect(
+      (withRelation as unknown as { lot: object }).lot ===
+        (withAnother as unknown as { lot: object }).lot,
+      'different instances, equal contents'
+    ).toBe(false);
+    expect(lotBalance([withRelation, withAnother], 'lot-a', TODAY)).toBe(10);
+  });
+
+  it('still refuses two rows that differ on a field the ledger cares about', () => {
+    const one = movement({ id: 'm1', quantity: 10 });
+    const other = movement({ id: 'm1', quantity: 40 });
+
+    expect(() => lotBalance([one, other], 'lot-a', TODAY)).toThrow(
+      /supplied twice with different contents/u
+    );
+  });
+});
+
+describe('the third review of #96', () => {
+  /**
+   * The two fixes in this PR interacting.
+   *
+   * `assertConsistent` rounded both sides onto the grid before comparing, so a
+   * line of 0.0000004 matched an allocation claiming to allocate nothing - and
+   * because `balancesByLot` now accumulates raw and rounds once, ten of those
+   * move real stock while every one of them says it moved none.
+   */
+  it('refuses a sub-grid line against an allocation that claims nothing', () => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 0.0000004 }],
+      allocated: 0,
+      requested: 0,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/finer than the six decimal places/u);
+  });
+
+  /**
+   * The tolerance has to absorb float noise, or a real three-lot allocation is
+   * refused. 0.7 + 0.1 + 0.2 is not 1.
+   */
+  it('accepts a real allocation whose lines only sum to its total approximately', () => {
+    expect(0.1 + 0.2, 'the arithmetic the tolerance absorbs').not.toBe(0.3);
+
+    const real = {
+      itemId: 'item-1',
+      lines: [
+        { lotId: 'a', lotNumber: 'A1', quantity: 0.1 },
+        { lotId: 'b', lotNumber: 'B1', quantity: 0.2 },
+      ],
+      allocated: 0.3,
+      requested: 0.3,
+      shortfall: 0,
+    };
+
+    expect(
+      movementsFor(real, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: (_line, index) => `mv-${String(index)}`,
+      })
+    ).toHaveLength(2);
+  });
+});
+
+describe('the fourth review of #96', () => {
+  /**
+   * A tolerance is not a fix, it is a smaller hole.
+   *
+   * Rounding both sides onto the grid let a 4e-7 line match an allocation
+   * claiming nothing; comparing within 1e-9 moved the same hole below 1e-9. Any
+   * threshold has a below, and `balancesByLot` accumulates raw, so enough
+   * uniquely-identified rows round into visible stock while every allocation
+   * says it moved none.
+   *
+   * The line has to be on the grid, which has no below.
+   */
+  it.each([5e-10, 4e-7, 0.00000015])('refuses a line of %s, which is finer than the grid', (q) => {
+    const forged = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: q }],
+      allocated: 0,
+      requested: 0,
+      shortfall: 0,
+    };
+
+    expect(() =>
+      movementsFor(forged, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toThrow(/finer than the six decimal places/u);
+  });
+
+  it('accepts a line sitting exactly on the finest step the grid carries', () => {
+    const fine = {
+      itemId: 'item-1',
+      lines: [{ lotId: 'a', lotNumber: 'A1', quantity: 0.000001 }],
+      allocated: 0.000001,
+      requested: 0.000001,
+      shortfall: 0,
+    };
+
+    expect(
+      movementsFor(fine, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: () => 'mv-0',
+      })
+    ).toHaveLength(1);
+  });
+
+  /**
+   * Integers, so there is no float noise to tolerate and no tolerance to slip
+   * under. 0.1 + 0.2 is not 0.3, but 100000 + 200000 is 300000.
+   */
+  it('sums a multi-lot allocation exactly, without a tolerance', () => {
+    expect(0.1 + 0.2, 'the arithmetic the grid steps sidestep').not.toBe(0.3);
+
+    const real = {
+      itemId: 'item-1',
+      lines: [
+        { lotId: 'a', lotNumber: 'A1', quantity: 0.1 },
+        { lotId: 'b', lotNumber: 'B1', quantity: 0.2 },
+      ],
+      allocated: 0.3,
+      requested: 0.3,
+      shortfall: 0,
+    };
+
+    expect(
+      movementsFor(real, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: (_line, index) => `mv-${String(index)}`,
+      })
+    ).toHaveLength(2);
+  });
+
+  /**
+   * The object before the property. Guarding `options.divisible` and not
+   * `options` meant an omitted sixth argument - the most natural form of the
+   * omitted answer the check is about - threw a TypeError before the refusal it
+   * exists to produce could be reached.
+   */
+  it.each([undefined, null])('refuses %j in place of the options object', (bad) => {
+    const lots = [lot({ id: 'a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const ledger = [movement({ id: 'm1', quantity: 10 })];
+
+    expect(() =>
+      allocate(
+        lots,
+        ledger,
+        'item-1',
+        exactlyThisManyStockUnits(5),
+        TODAY,
+        bad as unknown as { divisible: boolean }
+      )
+    ).toThrow(/must say whether the quantity may be split/u);
+  });
+});
+
+describe('the fifth review of #96', () => {
+  /**
+   * The regression the consistency check introduced.
+   *
+   * Filling one unit from lots of 0.7, 0.1 and 0.2 leaves a residue of about
+   * 2.78e-17, and the next candidate's take rounded to zero. Appending that
+   * line produced an allocation the package's own check then refused, so
+   * `movementsFor(allocate(...))` threw on a request that was completely
+   * filled - the package rejecting its own output.
+   */
+  it('produces an allocation its own consistency check accepts, residue and all', () => {
+    const lots = ['a', 'b', 'c', 'd'].map((id, index) =>
+      lot({ id, lotNumber: id.toUpperCase(), expiresOn: `2027-0${String(index + 1)}-01` })
+    );
+    const ledger = [
+      movement({ id: 'm1', lotId: 'a', quantity: 0.7 }),
+      movement({ id: 'm2', lotId: 'b', quantity: 0.1 }),
+      movement({ id: 'm3', lotId: 'c', quantity: 0.2 }),
+      movement({ id: 'm4', lotId: 'd', quantity: 5 }),
+    ];
+
+    const allocation = allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(1), TODAY, {
+      divisible: true,
+    });
+
+    expect(allocation.shortfall).toBe(0);
+    expect(allocation.lines.map((line) => line.quantity)).toEqual([0.7, 0.1, 0.2]);
+    expect(
+      movementsFor(allocation, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: (_line, index) => `mv-${String(index)}`,
+      })
+    ).toHaveLength(3);
+  });
+
+  /**
+   * `steps` rounds, so an off-grid total was normalised before both
+   * comparisons - an allocation with no lines claiming 0.0000004 allocated
+   * passed and posted nothing, while the comment beside it called the
+   * comparison exact.
+   */
+  it.each(['allocated', 'requested', 'shortfall'] as const)(
+    'refuses an off-grid %s rather than rounding it into agreement',
+    (field) => {
+      const forged = {
+        itemId: 'item-1',
+        lines: [],
+        allocated: 0,
+        requested: 0,
+        shortfall: 0,
+        [field]: 0.0000004,
+      };
+
+      expect(() =>
+        movementsFor(forged, {
+          kind: 'DISPENSE',
+          occurredOn: TODAY,
+          actorId: 'user-1',
+          idFor: () => 'mv-0',
+        })
+      ).toThrow(/finer than the six decimal places/u);
+    }
+  );
+
+  /**
+   * Accumulating raw removed the per-addition rounding that used to reach the
+   * overflow guard on the first row, so two corrupt opposing quantities
+   * cancelled into a plausible zero - each hiding the other, and the balance
+   * reporting a shelf that was fine.
+   */
+  it('refuses two unrepresentable movements rather than letting them cancel', () => {
+    const corrupt = [
+      movement({ id: 'm1', kind: 'RECEIPT', quantity: Number.MAX_VALUE }),
+      movement({ id: 'm2', kind: 'DISPENSE', quantity: Number.MAX_VALUE }),
+    ];
+
+    expect(Number.MAX_VALUE + -Number.MAX_VALUE, 'the cancellation this guards against').toBe(0);
+    expect(() => lotBalance(corrupt, 'lot-a', TODAY)).toThrow(/too large to carry/u);
+    expect(() => balancesByLot(corrupt, 'item-1', TODAY)).toThrow(/too large to carry/u);
+  });
+});
+
+describe('the sixth review of #96', () => {
+  /**
+   * Adding floats is not associative, so identical ledger contents produced
+   * different on-hand figures depending on the order a query happened to return
+   * the rows in. Every quantity being on the grid did not help: the sums are
+   * what lose precision.
+   */
+  it('reports the same balance whatever order the rows arrive in', () => {
+    const big = movement({ id: 'big', quantity: 1_000_000 });
+    const small = Array.from({ length: 10 }, (_, index) =>
+      movement({ id: `s${String(index)}`, quantity: 0.000001 })
+    );
+
+    const bigFirst = lotBalance([big, ...small], 'lot-a', TODAY);
+    const smallFirst = lotBalance([...small, big], 'lot-a', TODAY);
+
+    expect(bigFirst).toBe(smallFirst);
+    expect(bigFirst).toBe(1_000_000.00001);
+    expect(balancesByLot([big, ...small], 'item-1', TODAY).get('lot-a')).toBe(bigFirst);
+  });
+
+  /**
+   * Above MAX_SAFE_INTEGER two grid-step counts can sum to a third equal to one
+   * of them, so ten billion units plus a millionth is ten billion - and every
+   * exactness this package claims stops being true. The bound is about nine
+   * billion stock units: far above anything a practice holds, far below where
+   * the arithmetic gives up.
+   */
+  it('refuses a quantity whose grid steps would leave safe integer arithmetic', () => {
+    const unsafe = Number.MAX_SAFE_INTEGER / 1e6 + 1;
+
+    expect(unsafe * 1e6 + 1 === unsafe * 1e6, 'the arithmetic this guards against').toBe(true);
+    expect(() => toStockPrecision(unsafe)).toThrow(/too large to carry/u);
+    expect(() => lotBalance([movement({ id: 'm', quantity: unsafe })], 'lot-a', TODAY)).toThrow(
+      /too large to carry/u
+    );
+  });
+
+  it('still carries a quantity larger than any practice holds', () => {
+    expect(toStockPrecision(9_000_000_000)).toBe(9_000_000_000);
+  });
+});
+
+describe('branches the coverage report pointed at', () => {
+  /**
+   * Checked rather than covered. An uncovered branch here has twice turned out
+   * to be a live defect rather than a missing test, so each of these was read
+   * before a test was written for it.
+   */
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 0])(
+    'refuses an allocation line of %s before it reaches the grid check',
+    (bad) => {
+      const forged = {
+        itemId: 'item-1',
+        lines: [{ lotId: 'a', lotNumber: 'A1', quantity: bad }],
+        allocated: 0,
+        requested: 0,
+        shortfall: 0,
+      };
+
+      expect(() =>
+        movementsFor(forged, {
+          kind: 'DISPENSE',
+          occurredOn: TODAY,
+          actorId: 'user-1',
+          idFor: () => 'mv-0',
+        })
+      ).toThrow(/is not a positive number/u);
+    }
+  );
+
+  /**
+   * A lot that exists with no movement posted against it - the window between
+   * booking a delivery in and posting its receipt. It contributes nothing
+   * rather than being skipped, which matters because `usableBalance` is what a
+   * reorder decision reads.
+   */
+  it('counts a lot with no movements as nothing, not as absent', () => {
+    const lots = [
+      lot({ id: 'stocked', expiresOn: '2027-01-01' }),
+      lot({ id: 'empty', expiresOn: '2027-06-01' }),
+    ];
+    const ledger = [movement({ id: 'm1', lotId: 'stocked', quantity: 40 })];
+
+    expect(usableBalance(lots, ledger, 'item-1', TODAY)).toBe(40);
+    expect(needsReorder({ ...TABLETS, reorderLevel: 50 }, lots, ledger, TODAY)).toBe(true);
+  });
+
+  /**
+   * `assertIsoDate` returns what it proved, so `addDays` no longer re-splits
+   * the string and defaults the missing parts. Those defaults were the fossil
+   * of the truncated-date bug: unreachable after the fix, and reading as though
+   * a malformed date could still get past the guard.
+   */
+  it('hands the parsed parts back rather than making the caller re-derive them', () => {
+    expect(assertIsoDate('2026-08-17', 'date')).toEqual({ year: 2026, month: 8, day: 17 });
   });
 });

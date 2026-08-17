@@ -204,6 +204,26 @@ export function allocate(
     return { itemId, lines: [], allocated: 0, requested, shortfall: 0 };
   }
 
+  // Compared to `false` rather than tested for truthiness. The option is
+  // documented as having no default because a wrong guess splits a single
+  // injection across two vials, and truthiness handed that decision to
+  // JavaScript: the string `'false'` from an unchecked form is truthy and chose
+  // divisible, while an omitted value chose indivisible - both silently, and
+  // both being the answer nobody gave.
+  // The object before the property. Guarding `options.divisible` and not
+  // `options` meant an omitted sixth argument - which is the most natural form
+  // of the omitted answer this check is about - threw a TypeError before the
+  // refusal it exists to produce could be reached.
+  if (typeof options !== 'object' || options === null) {
+    throw new RangeError(
+      'An allocation must say whether the quantity may be split across lots; no options were given.'
+    );
+  }
+  if (typeof options.divisible !== 'boolean') {
+    throw new RangeError(
+      `An allocation must say whether the quantity may be split across lots; divisible was ${String(options.divisible)}.`
+    );
+  }
   if (!options.divisible) {
     const whole = candidates.find((entry) => entry.onHand >= requested);
     if (whole === undefined) {
@@ -242,11 +262,123 @@ export function allocate(
     if (remaining <= 0) break;
     const take = toStockPrecision(Math.min(remaining, onHand));
     lines.push({ lotId: lot.id, lotNumber: lot.lotNumber, quantity: take });
-    remaining -= take;
+    // Normalised, not just subtracted. Repeated subtraction left a residue -
+    // filling one unit from lots of 0.7, 0.1 and 0.2 leaves about 2.78e-17 -
+    // so `remaining` stayed above zero, the next candidate's take rounded to
+    // nothing, and a zero-quantity line was appended. That produced an
+    // allocation the package's own consistency check then refused, which meant
+    // `movementsFor(allocate(...))` threw on a request that was completely
+    // filled: the package rejecting its own output.
+    //
+    // Keeping `remaining` on the grid closes it at the source. A guard on the
+    // take itself was the alternative and is now unreachable - both figures
+    // being on the grid, their minimum cannot round to zero while `remaining`
+    // is positive - so it is not carried, because an unreachable guard reads as
+    // though the case it names can happen.
+    remaining = toStockPrecision(remaining - take);
   }
 
   const allocated = toStockPrecision(requested - remaining);
   return { itemId, lines, allocated, requested, shortfall: toStockPrecision(remaining) };
+}
+
+/**
+ * Refuses an allocation whose own numbers do not add up.
+ *
+ * `Allocation` is a plain interface, so a caller can build one - and the tests
+ * themselves do. `movementsFor` copied every line and checked none of them
+ * against the totals beside them, so an allocation reporting one unit requested
+ * and allocated while carrying a hundred-unit line emitted a hundred-unit
+ * movement that `movementProblems` accepted and the ledger debited.
+ *
+ * The alternative was to make `Allocation` unforgeable with a brand. That would
+ * be stronger, and it would also stop a caller reconstructing one from a stored
+ * request - which is exactly what a retry after a failed post has to do. So the
+ * shape stays open and its arithmetic is checked here, at the only door that
+ * turns it into ledger rows.
+ */
+/**
+ * The stock grid, as an integer.
+ *
+ * Six decimal places is what the ledger carries and what the column stores, so
+ * a quantity that is not a whole number of these is not a quantity this system
+ * can hold - it rounds to something else on the way into `DECIMAL(18,6)`.
+ */
+const GRID = 1e6;
+
+function onGrid(quantity: number): boolean {
+  return Number.isInteger(Math.round(quantity * GRID)) && toStockPrecision(quantity) === quantity;
+}
+
+/** A figure as a whole number of grid steps, for an exact comparison. */
+function steps(quantity: number): number {
+  return Math.round(quantity * GRID);
+}
+
+function assertConsistent(allocation: Allocation): void {
+  // The three totals bounded before they are compared. Comparing them alone let
+  // a negative shortfall satisfy the arithmetic: 100 allocated against 1
+  // requested balances if the shortfall is -99, and a hundred-unit outbound
+  // movement went out for a one-unit request. An equation that holds is not the
+  // same as numbers that mean anything, and a shortfall below zero is stock
+  // owed back by the patient.
+  for (const [name, value] of [
+    ['requested', allocation.requested],
+    ['allocated', allocation.allocated],
+    ['shortfall', allocation.shortfall],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new RangeError(`An allocation's ${name} must be zero or more, not ${String(value)}.`);
+    }
+    // On the grid, like the lines. `steps` rounds, so an off-grid total was
+    // silently normalised before both comparisons - an allocation with no lines
+    // claiming 0.0000004 allocated passed and posted nothing, while the comment
+    // beside the comparison called it exact and lossless. It is lossless only
+    // for figures already on the grid, so that has to be checked rather than
+    // assumed.
+    if (!onGrid(value)) {
+      throw new RangeError(
+        `An allocation's ${name} is ${String(value)}, which is finer than the six decimal places stock is carried to.`
+      );
+    }
+  }
+
+  for (const line of allocation.lines) {
+    if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
+      throw new RangeError(
+        `Allocation line for lot ${line.lotNumber} has quantity ${String(line.quantity)}, which is not a positive number.`
+      );
+    }
+    // On the grid, not merely positive. A line finer than six decimal places is
+    // not a quantity this system can hold - it becomes something else in the
+    // column - and it was the way through every totals check so far: round both
+    // sides and a sub-grid line matches an allocation claiming nothing; compare
+    // within a tolerance and the hole moves below the tolerance. There is no
+    // threshold that closes it, because any threshold has a below.
+    if (!onGrid(line.quantity)) {
+      throw new RangeError(
+        `Allocation line for lot ${line.lotNumber} has quantity ${String(line.quantity)}, which is finer than the six decimal places stock is carried to.`
+      );
+    }
+  }
+
+  // Summed as whole grid steps and compared exactly. Integers, so there is no
+  // float noise to tolerate - `0.1 + 0.2` is not `0.3` but 100000 + 200000 is
+  // 300000 - and no tolerance, so there is no value small enough to slip under
+  // one. Every line is already known to be on the grid by the loop above, which
+  // is what makes the conversion lossless rather than another rounding.
+  const summed = allocation.lines.reduce((total, line) => total + steps(line.quantity), 0);
+  if (summed !== steps(allocation.allocated)) {
+    throw new RangeError(
+      `Allocation lines sum to ${String(summed / GRID)} but the allocation says ${String(allocation.allocated)} was allocated.`
+    );
+  }
+
+  if (steps(allocation.allocated) + steps(allocation.shortfall) !== steps(allocation.requested)) {
+    throw new RangeError(
+      `Allocation accounts for ${String(allocation.allocated + allocation.shortfall)} of a requested ${String(allocation.requested)}.`
+    );
+  }
 }
 
 /**
@@ -277,6 +409,7 @@ export function movementsFor(
     readonly idFor: (line: AllocationLine, index: number) => string;
   }
 ): readonly StockMovement[] {
+  assertConsistent(allocation);
   return allocation.lines.map((line, index) => ({
     id: detail.idFor(line, index),
     lotId: line.lotId,

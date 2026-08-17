@@ -176,6 +176,17 @@ export function movementProblems(movement: StockMovement): readonly string[] {
 
   if (!Number.isFinite(movement.quantity)) {
     problems.push('A movement quantity must be a number.');
+  } else if (movement.quantity > 0 && toStockPrecision(movement.quantity) !== movement.quantity) {
+    // On the grid, like an allocation line. A quantity finer than six decimal
+    // places is not one this system carries - it becomes something else in the
+    // column it is stored in - so accepting it would mean the figure that was
+    // validated and the figure that was kept are different numbers.
+    //
+    // It also closes the last way two balance functions could disagree.
+    // Accumulating raw preserved sub-grid sums and accumulating in grid steps
+    // does not, and there is no answer to which is right for a value the store
+    // cannot hold. The answer is that it does not arrive.
+    problems.push('A movement quantity must be a whole number of six-decimal stock units.');
   } else if (movement.quantity <= 0) {
     // Zero as well as negative. A zero movement asserts that something happened
     // and changes nothing, which is the shape of a bug rather than an event.
@@ -199,13 +210,34 @@ export function movementProblems(movement: StockMovement): readonly string[] {
   // carrying `correctsMovementId: '   '` claims to correct something and names
   // nothing, so the audit link the field exists to make points nowhere - and
   // the ledger is append-only, so the claim stays.
-  if (movement.correctsMovementId !== undefined && movement.correctsMovementId.trim() === '') {
-    problems.push('A correction must name the movement it corrects.');
+  // Type-checked before trimming, like the four required identifiers above.
+  // The previous version guarded those four and left this one calling `.trim()`
+  // straight on the field, so a `correctsMovementId: null` from unchecked JSON
+  // still threw the TypeError the guard was added to stop - the same defect,
+  // one field over, in the commit that fixed it.
+  if (movement.correctsMovementId !== undefined) {
+    const target: unknown = movement.correctsMovementId;
+    if (typeof target !== 'string' || target.trim() === '') {
+      problems.push('A correction must name the movement it corrects.');
+    }
   }
-  // Trimmed like the reason, and for the same reason: an audit entry naming
-  // "   " as the actor names nobody, with more confidence than a blank field.
-  if (movement.actorId.trim() === '') {
-    problems.push('A movement must name who posted it.');
+  // Every identifier, coalesced before trimming. `movement.actorId.trim()`
+  // threw a TypeError when the field arrived absent or null from unchecked
+  // JSON, turning the validation failure this function exists to report into an
+  // application error - on precisely the malformed audit input it was written
+  // to catch. The others were not checked at all, so a blank `id`, `itemId` or
+  // `lotId` reached an append-only ledger as an entry nothing can address or
+  // attribute.
+  for (const [field, message] of [
+    ['id', 'A movement must have an id.'],
+    ['itemId', 'A movement must name the item it moved.'],
+    ['lotId', 'A movement must name the lot it came from.'],
+    ['actorId', 'A movement must name who posted it.'],
+  ] as const) {
+    const value: unknown = movement[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      problems.push(message);
+    }
   }
 
   return problems;
@@ -264,15 +296,14 @@ export function signedQuantity(movement: StockMovement): number {
 const PLACES = 1e6;
 
 export function toStockPrecision(quantity: number): number {
-  // The scaling can overflow a value that was finite going in: `MAX_VALUE`
-  // times a million is `Infinity`, so `countVariance(Number.MAX_VALUE, 0)`
-  // produced a correction quantity of `Infinity` that `movementProblems` then
-  // refused - and worse, two different overflowing counts both became
-  // `Infinity` and compared equal, reporting no variance between two numbers
-  // that were not the same. A quantity this large is corrupt or a bad import
-  // rather than stock, so it is refused where it is noticed.
   const scaled = quantity * PLACES;
-  if (!Number.isFinite(scaled)) {
+  // Not merely finite: a whole number of grid steps that JavaScript can add
+  // without losing one. Above `MAX_SAFE_INTEGER` two step counts can sum to a
+  // third that equals one of them, so 10 billion units plus a millionth is 10
+  // billion - and every exactness this file claims stops being true. The bound
+  // works out at about nine billion stock units, which is far above anything a
+  // practice holds and far below where the arithmetic gives up.
+  if (!Number.isFinite(scaled) || Math.abs(scaled) > Number.MAX_SAFE_INTEGER) {
     throw new RangeError(
       `${String(quantity)} is too large to carry as a stock quantity at six decimal places.`
     );
@@ -283,6 +314,57 @@ export function toStockPrecision(quantity: number): number {
   // balance report would show a lot holding minus nothing - the same
   // credibility problem as the residue itself, one layer further out.
   return rounded + 0;
+}
+
+/**
+ * A quantity as a whole number of grid steps.
+ *
+ * Balances are accumulated in this space rather than in the quantities
+ * themselves, because adding floats is not associative: a ten-billion receipt
+ * followed by ten millionths rounds differently from the same rows in the other
+ * order, so identical ledger contents produced different on-hand figures
+ * depending on the order a query happened to return them in. Step counts are
+ * integers within the bound above, so their sum is exact and the order cannot
+ * matter.
+ */
+function toSteps(quantity: number): number {
+  return Math.round(toStockPrecision(quantity) * PLACES);
+}
+
+/** The reverse, for reporting a total once it has been summed exactly. */
+function fromSteps(steps: number): number {
+  return steps / PLACES + 0;
+}
+
+/**
+ * A comparison that does not depend on the order the keys were written in.
+ *
+ * `JSON.stringify` does, so two rows carrying identical fields built by two code
+ * paths compared unequal and were rejected as conflicting - a duplicate the
+ * caller could not deduplicate, throwing on a balance read for data that was
+ * fine. What the rule is about is contents.
+ *
+ * The declared fields, not every key. TypeScript is structural, so a row that a
+ * join has augmented with a materialised relation is still a `StockMovement` -
+ * and comparing every key with `===` rejected two such rows as conflicting
+ * because their relation objects were different instances carrying equal
+ * contents. What decides whether two rows are the same ledger line is the
+ * ledger line, so those are the fields compared and the rest is ignored.
+ */
+const MOVEMENT_FIELDS = [
+  'id',
+  'lotId',
+  'itemId',
+  'kind',
+  'quantity',
+  'occurredOn',
+  'actorId',
+  'correctsMovementId',
+  'reason',
+] as const satisfies readonly (keyof StockMovement)[];
+
+function sameContents(left: StockMovement, right: StockMovement): boolean {
+  return MOVEMENT_FIELDS.every((field) => left[field] === right[field]);
 }
 
 /**
@@ -303,7 +385,7 @@ function distinct(movements: readonly StockMovement[]): readonly StockMovement[]
   const unique = new Map<string, StockMovement>();
   for (const movement of movements) {
     const seen = unique.get(movement.id);
-    if (seen !== undefined && JSON.stringify(seen) !== JSON.stringify(movement)) {
+    if (seen !== undefined && !sameContents(seen, movement)) {
       throw new RangeError(
         `Movement ${movement.id} was supplied twice with different contents, so there is no one answer for its effect on the balance.`
       );
@@ -345,10 +427,13 @@ export function lotBalance(
   asOf: IsoDate
 ): number {
   assertIsoDate(asOf, 'asOf');
-  return toStockPrecision(
+  return fromSteps(
     distinct(movements)
       .filter((movement) => movement.lotId === lotId && onOrBefore(movement, asOf))
-      .reduce((total, movement) => total + signedQuantity(movement), 0)
+      // `toSteps` checks representability per row, so two corrupt opposing
+      // quantities cannot cancel into a plausible total, and the sum is over
+      // integers, so it does not depend on the order the rows arrived in.
+      .reduce((total, movement) => total + toSteps(signedQuantity(movement)), 0)
   );
 }
 
@@ -359,13 +444,26 @@ export function balancesByLot(
   asOf: IsoDate
 ): ReadonlyMap<string, number> {
   assertIsoDate(asOf, 'asOf');
-  const balances = new Map<string, number>();
+  // Accumulated raw and rounded once at the end, which is what `lotBalance`
+  // does. Rounding after every addition discarded real stock whenever the
+  // individual quantities sat below the grid: ten receipts of 0.0000004 came
+  // out at zero here and at 0.000004 there, so the per-lot figure and the
+  // single-lot figure disagreed for the same ledger - and allocation, the
+  // reorder decision and the count all read the one that was wrong.
+  // Accumulated as whole grid steps, exactly as `lotBalance` does, so the two
+  // agree and neither depends on the order the rows arrived in.
+  const running = new Map<string, number>();
   for (const movement of distinct(movements)) {
     if (movement.itemId !== itemId || !onOrBefore(movement, asOf)) continue;
-    balances.set(
+    running.set(
       movement.lotId,
-      toStockPrecision((balances.get(movement.lotId) ?? 0) + signedQuantity(movement))
+      (running.get(movement.lotId) ?? 0) + toSteps(signedQuantity(movement))
     );
+  }
+
+  const balances = new Map<string, number>();
+  for (const [lotId, steps] of running) {
+    balances.set(lotId, fromSteps(steps));
   }
   return balances;
 }
@@ -376,9 +474,9 @@ export function itemBalance(
   itemId: string,
   asOf: IsoDate
 ): number {
-  return toStockPrecision(
+  return fromSteps(
     [...balancesByLot(movements, itemId, asOf).values()].reduce(
-      (total, quantity) => total + quantity,
+      (total, quantity) => total + toSteps(quantity),
       0
     )
   );
@@ -525,10 +623,10 @@ export function usableBalance(
   asOf: IsoDate
 ): number {
   const balances = balancesByLot(movements, itemId, asOf);
-  return toStockPrecision(
+  return fromSteps(
     fefo(
       lots.filter((lot) => lot.itemId === itemId),
       asOf
-    ).reduce((total, lot) => total + Math.max(balances.get(lot.id) ?? 0, 0), 0)
+    ).reduce((total, lot) => total + toSteps(Math.max(balances.get(lot.id) ?? 0, 0)), 0)
   );
 }

@@ -262,7 +262,20 @@ export function allocate(
     if (remaining <= 0) break;
     const take = toStockPrecision(Math.min(remaining, onHand));
     lines.push({ lotId: lot.id, lotNumber: lot.lotNumber, quantity: take });
-    remaining -= take;
+    // Normalised, not just subtracted. Repeated subtraction left a residue -
+    // filling one unit from lots of 0.7, 0.1 and 0.2 leaves about 2.78e-17 -
+    // so `remaining` stayed above zero, the next candidate's take rounded to
+    // nothing, and a zero-quantity line was appended. That produced an
+    // allocation the package's own consistency check then refused, which meant
+    // `movementsFor(allocate(...))` threw on a request that was completely
+    // filled: the package rejecting its own output.
+    //
+    // Keeping `remaining` on the grid closes it at the source. A guard on the
+    // take itself was the alternative and is now unreachable - both figures
+    // being on the grid, their minimum cannot round to zero while `remaining`
+    // is positive - so it is not carried, because an unreachable guard reads as
+    // though the case it names can happen.
+    remaining = toStockPrecision(remaining - take);
   }
 
   const allocated = toStockPrecision(requested - remaining);
@@ -316,6 +329,17 @@ function assertConsistent(allocation: Allocation): void {
   ] as const) {
     if (!Number.isFinite(value) || value < 0) {
       throw new RangeError(`An allocation's ${name} must be zero or more, not ${String(value)}.`);
+    }
+    // On the grid, like the lines. `steps` rounds, so an off-grid total was
+    // silently normalised before both comparisons - an allocation with no lines
+    // claiming 0.0000004 allocated passed and posted nothing, while the comment
+    // beside the comparison called it exact and lossless. It is lossless only
+    // for figures already on the grid, so that has to be checked rather than
+    // assumed.
+    if (!onGrid(value)) {
+      throw new RangeError(
+        `An allocation's ${name} is ${String(value)}, which is finer than the six decimal places stock is carried to.`
+      );
     }
   }
 

@@ -1832,3 +1832,87 @@ describe('the fourth review of #96', () => {
     ).toThrow(/must say whether the quantity may be split/u);
   });
 });
+
+describe('the fifth review of #96', () => {
+  /**
+   * The regression the consistency check introduced.
+   *
+   * Filling one unit from lots of 0.7, 0.1 and 0.2 leaves a residue of about
+   * 2.78e-17, and the next candidate's take rounded to zero. Appending that
+   * line produced an allocation the package's own check then refused, so
+   * `movementsFor(allocate(...))` threw on a request that was completely
+   * filled - the package rejecting its own output.
+   */
+  it('produces an allocation its own consistency check accepts, residue and all', () => {
+    const lots = ['a', 'b', 'c', 'd'].map((id, index) =>
+      lot({ id, lotNumber: id.toUpperCase(), expiresOn: `2027-0${String(index + 1)}-01` })
+    );
+    const ledger = [
+      movement({ id: 'm1', lotId: 'a', quantity: 0.7 }),
+      movement({ id: 'm2', lotId: 'b', quantity: 0.1 }),
+      movement({ id: 'm3', lotId: 'c', quantity: 0.2 }),
+      movement({ id: 'm4', lotId: 'd', quantity: 5 }),
+    ];
+
+    const allocation = allocate(lots, ledger, 'item-1', exactlyThisManyStockUnits(1), TODAY, {
+      divisible: true,
+    });
+
+    expect(allocation.shortfall).toBe(0);
+    expect(allocation.lines.map((line) => line.quantity)).toEqual([0.7, 0.1, 0.2]);
+    expect(
+      movementsFor(allocation, {
+        kind: 'DISPENSE',
+        occurredOn: TODAY,
+        actorId: 'user-1',
+        idFor: (_line, index) => `mv-${String(index)}`,
+      })
+    ).toHaveLength(3);
+  });
+
+  /**
+   * `steps` rounds, so an off-grid total was normalised before both
+   * comparisons - an allocation with no lines claiming 0.0000004 allocated
+   * passed and posted nothing, while the comment beside it called the
+   * comparison exact.
+   */
+  it.each(['allocated', 'requested', 'shortfall'] as const)(
+    'refuses an off-grid %s rather than rounding it into agreement',
+    (field) => {
+      const forged = {
+        itemId: 'item-1',
+        lines: [],
+        allocated: 0,
+        requested: 0,
+        shortfall: 0,
+        [field]: 0.0000004,
+      };
+
+      expect(() =>
+        movementsFor(forged, {
+          kind: 'DISPENSE',
+          occurredOn: TODAY,
+          actorId: 'user-1',
+          idFor: () => 'mv-0',
+        })
+      ).toThrow(/finer than the six decimal places/u);
+    }
+  );
+
+  /**
+   * Accumulating raw removed the per-addition rounding that used to reach the
+   * overflow guard on the first row, so two corrupt opposing quantities
+   * cancelled into a plausible zero - each hiding the other, and the balance
+   * reporting a shelf that was fine.
+   */
+  it('refuses two unrepresentable movements rather than letting them cancel', () => {
+    const corrupt = [
+      movement({ id: 'm1', kind: 'RECEIPT', quantity: Number.MAX_VALUE }),
+      movement({ id: 'm2', kind: 'DISPENSE', quantity: Number.MAX_VALUE }),
+    ];
+
+    expect(Number.MAX_VALUE + -Number.MAX_VALUE, 'the cancellation this guards against').toBe(0);
+    expect(() => lotBalance(corrupt, 'lot-a', TODAY)).toThrow(/too large to carry/u);
+    expect(() => balancesByLot(corrupt, 'item-1', TODAY)).toThrow(/too large to carry/u);
+  });
+});

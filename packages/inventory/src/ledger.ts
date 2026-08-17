@@ -400,7 +400,13 @@ export function lotBalance(
   return toStockPrecision(
     distinct(movements)
       .filter((movement) => movement.lotId === lotId && onOrBefore(movement, asOf))
-      .reduce((total, movement) => total + signedQuantity(movement), 0)
+      .reduce((total, movement) => {
+        const signed = signedQuantity(movement);
+        // See `balancesByLot`: representability is checked per row so two
+        // corrupt opposing quantities cannot cancel into a plausible total.
+        toStockPrecision(signed);
+        return total + signed;
+      }, 0)
   );
 }
 
@@ -420,7 +426,14 @@ export function balancesByLot(
   const running = new Map<string, number>();
   for (const movement of distinct(movements)) {
     if (movement.itemId !== itemId || !onOrBefore(movement, asOf)) continue;
-    running.set(movement.lotId, (running.get(movement.lotId) ?? 0) + signedQuantity(movement));
+    // Each quantity checked representable before it joins the running total.
+    // Accumulating raw removed the per-addition rounding that used to reach the
+    // overflow guard on the first row, so a RECEIPT and an outbound movement
+    // both at MAX_VALUE cancelled to a plausible zero - two corrupt rows hiding
+    // each other, and the balance reporting a shelf that was fine.
+    const signed = signedQuantity(movement);
+    toStockPrecision(signed);
+    running.set(movement.lotId, (running.get(movement.lotId) ?? 0) + signed);
   }
 
   const balances = new Map<string, number>();

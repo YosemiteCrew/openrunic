@@ -183,7 +183,9 @@ export function movementProblems(movement: StockMovement): readonly string[] {
   if (movement.correctsMovementId === movement.id) {
     problems.push('A movement cannot correct itself.');
   }
-  if (movement.actorId === '') {
+  // Trimmed like the reason, and for the same reason: an audit entry naming
+  // "   " as the actor names nobody, with more confidence than a blank field.
+  if (movement.actorId.trim() === '') {
     problems.push('A movement must name who posted it.');
   }
 
@@ -252,6 +254,34 @@ export function toStockPrecision(quantity: number): number {
 }
 
 /**
+ * The movements, with each ledger row counted once.
+ *
+ * A join that returns a movement twice added its quantity twice, so a single
+ * ten-unit receipt passed twice gave allocation twenty units to hand out - and
+ * posting that against the real ledger drove the lot to -10, past the
+ * guarantee that allocation never takes more than a lot holds. The same
+ * duplicate-row problem as the lots, one table over, and fixing it there and
+ * not here left the guarantee just as broken.
+ *
+ * Two rows sharing an id with different contents are not a duplicate; they are
+ * two answers to what one movement was, and picking either would decide a
+ * balance by array order.
+ */
+function distinct(movements: readonly StockMovement[]): readonly StockMovement[] {
+  const unique = new Map<string, StockMovement>();
+  for (const movement of movements) {
+    const seen = unique.get(movement.id);
+    if (seen !== undefined && JSON.stringify(seen) !== JSON.stringify(movement)) {
+      throw new RangeError(
+        `Movement ${movement.id} was supplied twice with different contents, so there is no one answer for its effect on the balance.`
+      );
+    }
+    unique.set(movement.id, movement);
+  }
+  return [...unique.values()];
+}
+
+/**
  * Whether a movement falls on or before the cutoff.
  *
  * Validating `occurredOn` first, because the comparison is lexicographic like
@@ -284,7 +314,7 @@ export function lotBalance(
 ): number {
   assertIsoDate(asOf, 'asOf');
   return toStockPrecision(
-    movements
+    distinct(movements)
       .filter((movement) => movement.lotId === lotId && onOrBefore(movement, asOf))
       .reduce((total, movement) => total + signedQuantity(movement), 0)
   );
@@ -298,7 +328,7 @@ export function balancesByLot(
 ): ReadonlyMap<string, number> {
   assertIsoDate(asOf, 'asOf');
   const balances = new Map<string, number>();
-  for (const movement of movements) {
+  for (const movement of distinct(movements)) {
     if (movement.itemId !== itemId || !onOrBefore(movement, asOf)) continue;
     balances.set(
       movement.lotId,
@@ -376,6 +406,18 @@ export interface CountVariance {
  * investigable later.
  */
 export function countVariance(counted: number, expected: number): CountVariance | undefined {
+  // Both operands checked, because a variance is the input to a movement and a
+  // movement that cannot be posted is a variance nobody can close.
+  // `countVariance(-5, 10)` returned a perfectly plausible 15-unit shortfall
+  // that passed quantity validation and would have driven the ledger to -5, and
+  // `NaN` produced a variance carrying `NaN` into whatever was posted from it.
+  // A count of minus five is a typo at the shelf, not a finding.
+  if (!Number.isFinite(counted) || counted < 0) {
+    throw new RangeError(`A physical count must be zero or more, not ${String(counted)}.`);
+  }
+  if (!Number.isFinite(expected)) {
+    throw new RangeError(`An expected balance must be a number, not ${String(expected)}.`);
+  }
   if (counted === expected) return undefined;
   return counted > expected
     ? { kind: 'COUNT_SURPLUS', quantity: counted - expected, counted, expected }

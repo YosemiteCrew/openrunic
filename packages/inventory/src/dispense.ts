@@ -1,5 +1,5 @@
 import { assertIsoDate, fefo, type IsoDate, type Lot } from './lots.js';
-import { balancesByLot, type StockMovement } from './ledger.js';
+import { balancesByLot, toStockPrecision, type StockMovement } from './ledger.js';
 
 /**
  * DISPENSING: TAKING STOCK OFF THE SHELF, AND FROM WHICH LOT.
@@ -85,7 +85,15 @@ export function exactlyThisManyStockUnits(quantity: number): DispensedQuantity {
   if (quantity < 0) {
     throw new RangeError(`A dispensed quantity cannot be negative: ${String(quantity)}.`);
   }
-  return quantity as DispensedQuantity;
+  // Normalised to the same six places the ledger carries, because a course of
+  // 0.1 three times a day multiplies out to 0.30000000000000004. Against a lot
+  // holding exactly 0.3 that allocated the whole 0.3 and reported a shortfall
+  // of 5.55e-17 - a complete fill that reads as partial, so the counter is told
+  // to owe the patient a quantity too small to measure. The ledger rounds its
+  // sums and the quantity going in has to be on the same grid, or the two
+  // disagree at the seventeenth decimal place and the disagreement is what the
+  // caller sees.
+  return toStockPrecision(quantity) as DispensedQuantity;
 }
 
 /** One lot's share of a dispense. */
@@ -206,13 +214,13 @@ export function allocate(
   let remaining: number = requested;
   for (const { lot, onHand } of candidates) {
     if (remaining <= 0) break;
-    const take = Math.min(remaining, onHand);
+    const take = toStockPrecision(Math.min(remaining, onHand));
     lines.push({ lotId: lot.id, lotNumber: lot.lotNumber, quantity: take });
     remaining -= take;
   }
 
-  const allocated = requested - remaining;
-  return { itemId, lines, allocated, requested, shortfall: remaining };
+  const allocated = toStockPrecision(requested - remaining);
+  return { itemId, lines, allocated, requested, shortfall: toStockPrecision(remaining) };
 }
 
 /**

@@ -46,8 +46,18 @@ fractional: receive 0.3 mL, remove 0.1 and 0.2, and raw floating point leaves -2
 `negativeBalances` reported as a loss and `countVariance` turned into a variance against a shelf
 that was correct.
 
-Lots are deduplicated by id before allocation. A join returning a lot twice gave each copy the
-lot's full balance, so ten units passed twice satisfied a request for twenty.
+Lots and movements are both deduplicated by id. A join returning a row twice counted it twice - a
+lot's balance handed out once per copy, or a ten-unit receipt reading as twenty - either of which
+breaks the guarantee that allocation never takes more than a lot holds. Two rows sharing an id with
+different contents are refused rather than resolved by array order.
+
+Branded totals are normalised to the same six places, so a course of 0.1 three times a day is 0.3
+rather than 0.30000000000000004. Against a lot holding exactly 0.3 the unnormalised value allocated
+the whole amount and reported a shortfall of 5.55e-17 - a complete fill reading as partial.
+
+`countVariance` refuses a count that cannot have been counted. A physical count of minus five is a
+typo at the shelf, not a finding, and it returned a plausible fifteen-unit shortfall that passed
+every downstream check.
 
 ## On-hand is derived, never stored
 

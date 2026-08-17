@@ -1099,3 +1099,99 @@ describe('the second review round, each held by a test', () => {
     expect(needsReorder(item, lots, [movement({ id: 'm', quantity: 49 })], TODAY)).toBe(true);
   });
 });
+
+describe('the third review round, each held by a test', () => {
+  /**
+   * The duplicate-row problem one table over.
+   *
+   * I deduplicated lots and not movements, so a join returning a receipt twice
+   * counted its quantity twice: ten units passed twice gave allocation twenty
+   * to hand out, and posting that against the real ledger drove the lot to -10.
+   * Fixing it for lots and not for movements left the guarantee just as broken.
+   */
+  it('counts a duplicated movement once, not once per copy', () => {
+    const receipt = movement({ id: 'm1', quantity: 10 });
+
+    expect(lotBalance([receipt, receipt], 'lot-a', TODAY)).toBe(10);
+    expect(itemBalance([receipt, receipt], 'item-1', TODAY)).toBe(10);
+
+    const lots = [lot({ id: 'lot-a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const result = allocate(
+      lots,
+      [receipt, receipt],
+      'item-1',
+      exactlyThisManyStockUnits(20),
+      TODAY,
+      { divisible: true }
+    );
+
+    expect(result.allocated).toBe(10);
+    expect(result.shortfall).toBe(10);
+  });
+
+  it('refuses two movements sharing an id with different contents', () => {
+    const one = movement({ id: 'm1', quantity: 10 });
+    const other = movement({ id: 'm1', quantity: 40 });
+
+    expect(() => lotBalance([one, other], 'lot-a', TODAY)).toThrow(
+      /supplied twice with different contents/u
+    );
+  });
+
+  /**
+   * A complete fill that reported itself partial.
+   *
+   * 0.1 three times a day multiplies out to 0.30000000000000004, so against a
+   * lot holding exactly 0.3 the allocation supplied the whole 0.3 and reported
+   * a shortfall of 5.55e-17 - the counter told to owe the patient a quantity
+   * too small to measure. The ledger rounds its sums, so the quantity going in
+   * has to be on the same grid.
+   */
+  it('lands a fractional course on the same grid the ledger uses', () => {
+    expect(0.1 * 3, 'the arithmetic this guards against').not.toBe(0.3);
+    expect(courseTotal({ perDose: 0.1, dosesPerDay: 3, days: 1 })).toBe(0.3);
+
+    const lots = [lot({ id: 'lot-a', lotNumber: 'A1', expiresOn: '2027-01-01' })];
+    const ledger = [movement({ id: 'm1', quantity: 0.3 })];
+    const result = allocate(
+      lots,
+      ledger,
+      'item-1',
+      courseTotal({ perDose: 0.1, dosesPerDay: 3, days: 1 }),
+      TODAY,
+      { divisible: true }
+    );
+
+    expect(result.allocated).toBe(0.3);
+    expect(result.shortfall).toBe(0);
+  });
+
+  /**
+   * A variance is the input to a movement, and a movement that cannot be posted
+   * is a variance nobody can close. `countVariance(-5, 10)` returned a
+   * perfectly plausible 15-unit shortfall that passed quantity validation and
+   * would have driven the ledger to -5. A count of minus five is a typo at the
+   * shelf, not a finding.
+   */
+  it('refuses a physical count that cannot have been counted', () => {
+    expect(() => countVariance(-5, 10)).toThrow(/must be zero or more/u);
+    expect(() => countVariance(Number.NaN, 10)).toThrow(/must be zero or more/u);
+    expect(() => countVariance(10, Number.NaN)).toThrow(/must be a number/u);
+    expect(countVariance(0, 10)).toEqual({
+      kind: 'COUNT_SHORTFALL',
+      quantity: 10,
+      counted: 0,
+      expected: 10,
+    });
+  });
+
+  /**
+   * The actor, trimmed like the reason and for the same reason. An audit entry
+   * naming "   " names nobody, with more confidence than a blank field.
+   */
+  it.each(['   ', '\t'])('refuses %j as the actor who posted a movement', (blank) => {
+    expect(movementProblems(movement({ id: 'm', actorId: blank }))).toContain(
+      'A movement must name who posted it.'
+    );
+  });
+});

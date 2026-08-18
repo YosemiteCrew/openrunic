@@ -6,6 +6,13 @@ packages:
 # than 3 days ago, giving the ecosystem time to catch malicious releases.
 minimumReleaseAge: 4320
 
+# Exempt from the age gate: a fresh security patch we are hand-raising to
+# clear an open advisory outranks the cooldown, the same way dependabot.yml
+# exempts security updates. The deepmerge-ts 8.0.x line carries the fix for
+# GHSA-ggr8-5vv4-36mx.
+minimumReleaseAgeExclude:
+  - deepmerge-ts
+
 # Security overrides for transitive pins we cannot update in-range. Exact
 # versions on purpose - range keys silently stop matching when the parent
 # changes its pin. Re-check on every Next.js major (it pins both packages).
@@ -19,6 +26,13 @@ overrides:
   # critical); 0.28.2 embeds go1.26.5. Storybook's esbuild-register pulls the
   # old line in transitively. Re-check when Storybook updates its own pin.
   esbuild: 0.28.2
+  # GHSA-ggr8-5vv4-36mx: deepmerge-ts < 8.0.0 exhausts the stack on a
+  # recursive object graph. Build/dev-time only - @prisma/config reads
+  # prisma.config.ts and would otherwise pull the vulnerable 7.1.5; no
+  # product runtime imports it. 8.0.0 is the first release past the vulnerable
+  # range; 8.0.1 is the current latest of that line. Re-check when Prisma
+  # updates.
+  deepmerge-ts: 8.0.1
 
 # pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
 onlyBuiltDependencies:

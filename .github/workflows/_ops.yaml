@@ -24,6 +24,10 @@ name: Ops
 on:
   workflow_call: {}
 
+concurrency:
+  group: ops-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

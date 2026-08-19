@@ -59,9 +59,13 @@ promotion. Do not disable the check.
 
 ## Versioning and tags
 
-openrunic is pre-release; nothing is tagged yet. When releases begin:
+openrunic's first release is **0.1.0**. It is an early release of software that is not finished:
+read the capability map in [docs/emr-capabilities.md](docs/emr-capabilities.md) before installing
+anything, and the "What this release does not do" section of the release notes before deploying it
+anywhere near patients.
 
-- We follow [Semantic Versioning](https://semver.org/).
+- We follow [Semantic Versioning](https://semver.org/). While the major version is `0`, a minor
+  bump may carry a breaking change.
 - Tags are created on `main` only.
 - Components are tagged independently with component-scoped tags:
 
@@ -70,10 +74,26 @@ openrunic is pre-release; nothing is tagged yet. When releases begin:
   api-vX.Y.Z    # apps/api
   ```
 
-  Packages (`types`, `fhir`, `database`) version with the app releases unless they are published
-  independently later.
+  Packages (`types`, `fhir`, `database` and the rest of `packages/`) version with the app releases
+  unless they are published independently later.
 
 - Every tag points at a commit on `main` that passed the full CI matrix.
+
+### Why `apps/portal` has no component tag
+
+The patient portal ships in the source tree and its `package.json` version moves with the apps at
+every release, but it deliberately has **no `portal-vX.Y.Z` tag**.
+
+A component tag exists to publish and attest one container image. The discovery job in
+`.github/workflows/release-attest.yml` finds images by looking for Dockerfiles, and the tree
+contains exactly two: `apps/api/Dockerfile` and `apps/web/Dockerfile`. The portal has none, so
+there is no image a portal tag could point at.
+
+Worse than nothing, in fact. That job recognises a component-scoped tag by matching `api-v*` or
+`web-v*`; an unrecognised tag is treated as unscoped and publishes **every** image it finds. A
+`portal-v0.1.0` tag would therefore republish the api and web images under a portal version number,
+which is the opposite of what the tag claims. The portal gets a component tag when it gets a
+Dockerfile and the discovery job learns to match it, and not before.
 
 ## Files that must stay identical on dev and main
 
@@ -93,10 +113,52 @@ edit, or otherwise behave badly when the two branches diverge. Keep these identi
 The practical rule: change these files on `dev` like everything else, then promote. Never patch
 them on `main` alone, and if a hotfix touches them, back-merge immediately.
 
-## Release checklist (once releases begin)
+## Release checklist
+
+The order matters. Steps 2 and 3 change files, so they have to land on `dev` and travel through the
+promotion; doing them afterwards means patching `main` directly, which this model does not allow.
 
 1. `dev` is green and contains everything intended for the release.
-2. Promotion PR opened with the correct title format and merged.
-3. Component tags pushed on `main`.
-4. Release notes drafted from the conventional commit history since the last tag.
-5. Announce as appropriate.
+
+2. **Bump the version on `dev`, before the promotion PR is opened.** Nothing in this repository
+   derives a version from a tag: the version a released commit advertises is whatever is written in
+   its `package.json` files. The root package and the three apps currently sit at `0.0.0`, so a tag
+   pushed today would name `0.1.0` while the code inside it still says `0.0.0`, and every SBOM,
+   image label and `--version` output taken from that commit would repeat the wrong number. Set the
+   root `package.json` and every workspace under `apps/` and `packages/` to the release version in
+   one commit on `dev`, and check the result with `git grep -n '"version"' -- '**/package.json'`.
+
+3. **Retire the statements that say openrunic has no releases.** Several files assert it, and each
+   becomes false the moment the release is published. They are not all in this document, so find
+   them rather than trying to remember them:
+
+   ```bash
+   git grep -nEi "nothing (is )?(released|tagged)|no (versioned )?releases (yet|exist)"
+   ```
+
+   At the time of writing that finds `docs/verifying-releases.md`, the marketing site footer in
+   `apps/web`, and the header comment in `.github/workflows/release-attest.yml`. Correct what is
+   now untrue; do not delete the warnings that are still true.
+
+4. Promotion PR opened with the correct title format and merged.
+
+5. Component tags pushed on `main`.
+
+6. Release notes drafted from the conventional commit history since the last tag.
+
+7. **The release notes carry a "What this release does not do" section.** Build it from
+   [docs/emr-capabilities.md](docs/emr-capabilities.md): every row whose state is not **Done** goes
+   in, which means the **Seam only**, **Partial**, **Missing** and **Not startable** rows, each with
+   the reason the map already gives (buildable, needs licensed content, or needs certification).
+   This is the part of the notes that matters most. Someone evaluating an open-source EMR is
+   deciding whether it can run their clinic, and a release note listing only what shipped invites
+   them to assume the rest is there. Say what is absent in the same breath as what is present.
+
+8. **Publish the GitHub Release.** Pushing the tag is not enough on its own: the provenance workflow
+   in `.github/workflows/release-attest.yml` triggers on `release: published` (and on a manual
+   `workflow_dispatch` run from the tag), not on `push: tags`. Until the release is published there
+   are no container images and no signed provenance for an operator to verify with
+   `gh attestation verify`, so the release exists as a tag and nothing else. Publish it against the
+   tag from step 5, with the notes from steps 6 and 7.
+
+9. Announce as appropriate.

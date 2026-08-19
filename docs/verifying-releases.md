@@ -6,9 +6,6 @@ built from the openrunic source, by openrunic's CI, or by somebody who pushed a 
 
 This page is how you answer that.
 
-> **Status:** nothing is released yet. The commands below are the ones that will work from the first
-> release onwards; there is no tag to try them against today.
-
 ## What is published
 
 For every release, CI publishes:
@@ -18,6 +15,21 @@ For every release, CI publishes:
 | Container images             | `ghcr.io/yosemitecrew/openrunic-*`    | `.github/workflows/release-attest.yml` |
 | Build provenance attestation | Alongside each image, in the registry | `.github/workflows/release-attest.yml` |
 | SBOMs (SPDX and CycloneDX)   | Attached to the GitHub release        | `.github/workflows/supply-chain.yml`   |
+
+Two images, one per deployable component: `ghcr.io/yosemitecrew/openrunic-api` and
+`ghcr.io/yosemitecrew/openrunic-web`.
+
+**The image tag is the git tag, verbatim.** Components are released independently under
+component-scoped tags (`api-vX.Y.Z`, `web-vX.Y.Z`, see [RELEASING.md](../RELEASING.md)), and the
+publish job tags the image with whatever the release was tagged, so the first release of the API is
+`ghcr.io/yosemitecrew/openrunic-api:api-v0.1.0` and not `:0.1.0`. The prefix repeating inside the
+tag looks like a mistake and is not one: the tag is the release's own name, which is what makes an
+image traceable back to a release page without a lookup table.
+
+The registry namespace is lowercase (`yosemitecrew`) while the GitHub owner is not
+(`YosemiteCrew`). GHCR resolves the owner case-insensitively, so both reach the same place, but a
+`docker` command will only accept the lowercase spelling. The `--repo` argument of
+`gh attestation verify` is a GitHub repository rather than an image, and keeps its own casing.
 
 The provenance attestation is an in-toto SLSA statement, signed through Sigstore's keyless flow
 (a short-lived certificate issued by Fulcio, recorded in the Rekor transparency log) and bound to
@@ -30,7 +42,7 @@ verification is against public transparency-log data.
 
 ```bash
 gh attestation verify \
-  oci://ghcr.io/yosemitecrew/openrunic-api:1.0.0 \
+  oci://ghcr.io/yosemitecrew/openrunic-api:api-v0.1.0 \
   --repo YosemiteCrew/openrunic
 ```
 
@@ -43,7 +55,7 @@ everywhere:
 
 ```bash
 DIGEST=$(docker buildx imagetools inspect \
-  ghcr.io/yosemitecrew/openrunic-api:1.0.0 --format '{{.Manifest.Digest}}')
+  ghcr.io/yosemitecrew/openrunic-api:api-v0.1.0 --format '{{.Manifest.Digest}}')
 
 gh attestation verify \
   "oci://ghcr.io/yosemitecrew/openrunic-api@${DIGEST}" \
@@ -83,12 +95,21 @@ Each release also carries an SPDX and a CycloneDX SBOM of the source tree, attac
 assets. To see what is in a release before installing it:
 
 ```bash
-gh release download 1.0.0 --repo YosemiteCrew/openrunic --pattern 'openrunic.spdx.json'
+gh release download api-v0.1.0 --repo YosemiteCrew/openrunic --pattern 'openrunic.spdx.json'
 grype sbom:openrunic.spdx.json
 ```
 
-That is the same scan CI runs, against the same file, so you can reproduce the gate rather than
-trust it.
+That is the same tool CI runs, against the same file, so you can look for yourself rather than
+trust a green check. It is not quite the same gate: CI adds `--fail-on critical` and picks up the
+accepted findings in `.grype.yaml`, which is auto-discovered from the working directory. To
+reproduce the gate rather than the raw scan, run it from a clone checked out at the release tag:
+
+```bash
+grype sbom:openrunic.spdx.json --fail-on critical
+```
+
+Without `.grype.yaml` in the working directory the scan reports everything, including the findings
+this project has examined and accepted with a reason and a re-review date.
 
 ## What this does not do
 

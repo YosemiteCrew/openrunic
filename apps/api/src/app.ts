@@ -4,6 +4,9 @@ import { secureHeaders } from 'hono/secure-headers';
 
 import type { AgentRuntime } from '@openrunic/agent';
 
+// Imported for its version and nothing else. See SOFTWARE_VERSION below.
+import pkg from '../package.json' with { type: 'json' };
+
 import { agentRouteContracts, agentRoutes } from './agent/routes.js';
 import { createAuditBridge, loadAgentRuntime, type AuditBridge } from './agent/runtime.js';
 import { createAuditChainStore } from './audit/chain-store.js';
@@ -23,8 +26,25 @@ import { createMemoryRepositoryRegistry } from './repositories/memory.js';
 import type { RepositoryRegistry } from './repositories/types.js';
 import { BFF_BASE_PATH, internalRouteContracts, internalRoutes } from './routes/index.js';
 
-/** Reported in the CapabilityStatement and the OpenAPI document. */
-export const SOFTWARE_VERSION = '0.0.0';
+/**
+ * The version this server reports to FHIR clients, as `software.version` in the
+ * CapabilityStatement at /fhir/metadata.
+ *
+ * Read from this package's manifest rather than written out here, because a
+ * release is a tag named after the version in package.json, and a second copy
+ * of that number is a copy that can disagree with it. A client reading a
+ * CapabilityStatement has no way to tell that the version it was handed is not
+ * the version that shipped, so the only safe number is the one nobody has to
+ * remember to update twice.
+ *
+ * The import resolves from the build output as well as from source. tsc leaves
+ * the specifier alone, and `dist/app.js` sits exactly one directory below the
+ * manifest just as `src/app.ts` does, so the same relative path lands on the
+ * same file. In the container image that file is at /app/package.json beside
+ * /app/dist, and it has to be: Node reads `"type": "module"` from it, so
+ * `node dist/index.js` would not start at all without it.
+ */
+export const SOFTWARE_VERSION = pkg.version;
 
 export interface CreateAppOptions {
   /**

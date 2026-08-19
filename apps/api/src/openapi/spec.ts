@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// Imported for its version and nothing else. See DEFAULT_INFO below.
+import pkg from '../../package.json' with { type: 'json' };
+
 import type { RouteContract } from './registry.js';
 
 /**
@@ -18,7 +21,12 @@ import type { RouteContract } from './registry.js';
  * shape a client has to produce.
  */
 
-/** The document version, bumped by hand when the contract changes. */
+/**
+ * Which revision of the OpenAPI specification this document is written to, not
+ * the version of the API it describes. That number is `info.version` below.
+ * Bumped by hand, and only when the document is actually rewritten to a newer
+ * revision of the specification.
+ */
 export const OPENAPI_VERSION = '3.1.0';
 
 export interface OpenApiInfo {
@@ -29,7 +37,14 @@ export interface OpenApiInfo {
 
 export const DEFAULT_INFO: OpenApiInfo = {
   title: 'openrunic internal API',
-  version: '0.0.0',
+  // The same manifest version the CapabilityStatement reports, for the same
+  // reason: the two documents describe one running server, so a reader who
+  // compares them should never find two different numbers. See SOFTWARE_VERSION
+  // in app.ts, which explains why the manifest is the one source. It is read
+  // here directly rather than imported from app.ts, because app.ts imports this
+  // module and the cycle would leave this constant reading an uninitialised
+  // binding.
+  version: pkg.version,
   description:
     'The internal REST surface behind openrunic web and portal. Unstable and first-party only: it changes with the screens it serves. The stable public contract is FHIR R4, described by the CapabilityStatement at /fhir/metadata.',
 };

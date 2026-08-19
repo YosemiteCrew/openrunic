@@ -1,6 +1,6 @@
 {
   "name": "portal",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "openrunic patient portal \u2014 what a patient sees of their own care",
   "license": "AGPL-3.0-only",

@@ -30,8 +30,13 @@ organised by what you see on screen, not by what is wrong underneath.
 | Disk             | 20 GB free                                                            | 50 GB free, plus somewhere else for backups |
 | Software         | Docker Engine 24 or newer, with the Compose plugin                    | same                                        |
 
-You do **not** need to install Node.js, a database, or a web server. All three
-run inside containers that openrunic builds for you.
+You do **not** need to install a database or a web server. Both run inside
+containers that openrunic builds for you.
+
+Node.js and pnpm are a separate question. The setup, backup and upgrade tooling
+runs from this repository rather than from inside a container, so a machine that
+will be looked after wants them. Step 3 below is the path for one that has
+neither.
 
 Check what you have:
 
@@ -51,19 +56,55 @@ instructions for your distribution are the ones to follow; the packages named
 ### 1. Get the code
 
 ```bash
-git clone https://github.com/openrunic/openrunic.git
+git clone https://github.com/YosemiteCrew/openrunic.git
 cd openrunic
 ```
 
-### 2. Start it
+### 2. Install it
 
 ```bash
+pnpm install
+pnpm setup:selfhost
+```
+
+That is the whole install, and it is one command because each step of it can
+fail in a way worth naming. It checks your prerequisites and reports all of them
+together, rather than letting you find the fourth problem one five-minute build
+after fixing the third. It writes a `.env` from `.env.example` with a generated
+database password and a generated session key, readable only by you. It builds
+the images, starts the stack, waits for every container to report healthy, and
+then reads the demo practice back out of Postgres, because "the containers
+started" and "the practice can book somebody in" are not the same claim. At the
+end it prints where to reach the application.
+
+It never prints a secret, and it never replaces a value already in `.env`, so it
+is safe to run again after an upgrade adds a new key.
+
+The first run takes a while, because it compiles the application from source,
+and it prints a lot on the way.
+
+### 3. Or drive Docker Compose yourself
+
+The stack underneath is plain Docker Compose, so a machine with no Node.js on it
+can run openrunic without the installer. One value has no default and compose
+refuses to start without it: `SESSION_COOKIE_SECRET`, the key the web
+application seals its session cookie with. That refusal is deliberate. A default
+would mean a deployment that builds, starts, reports itself healthy, and then
+answers 503 to every sign-in, which is a far longer afternoon than a stack that
+will not come up and names the variable it wants.
+
+```bash
+cp .env.example .env
+chmod 600 .env
+openssl rand -hex 32    # once per `generate-me` in the file
 docker compose up --build
 ```
 
-That is the whole install. It will take a while the first time - it is
-compiling the application from source - and it will print a lot. You are waiting
-for these lines:
+Two keys carry that `generate-me` sentinel: `POSTGRES_PASSWORD` and
+`SESSION_COOKIE_SECRET`. Replace both before starting. Every other value in the
+file already has a working default, and each one says what it is for.
+
+You are waiting for these lines:
 
 ```
 migrate  | migrations applied
@@ -83,20 +124,6 @@ Timings measured on a 4-core, 8 GB machine:
 
 Almost all of the first run is compilation. Later starts reuse the built images.
 
-### 3. Or use the guided installer
-
-If Node.js and pnpm are available on the machine, this does the same thing and
-also generates real passwords instead of the published defaults, checks your
-prerequisites first, and times itself:
-
-```bash
-pnpm install
-pnpm setup:selfhost
-```
-
-It writes a `.env` file with a generated database password. It never prints the
-password, and the file is created readable only by you.
-
 ### What you get
 
 A demo practice, so the software has something in it on the first day:
@@ -114,7 +141,29 @@ effect - the demo data is only ever written into an empty database.
 
 ### Signing in
 
-There is no sign-in screen yet. The API accepts three demo tokens:
+**http://localhost:3000** is the public front page and loads without a session.
+Ask for anything clinical, the schedule or a chart or the billing screens, and
+you are redirected to a sign-in screen instead, carrying where you were headed
+so that is where you land afterwards.
+
+That screen asks for an access token rather than a username and a password,
+because a token is what a credential is in this system today: the API resolves a
+bearer token to a user, and nothing anywhere checks a password. A development
+build also lists the demo identities on it as buttons, so signing in as one is a
+click rather than something to type.
+
+**A production build offers none of them, and `docker compose` builds for
+production.** `apps/web/src/lib/auth/directory.ts` returns an empty list of
+credentials under `NODE_ENV=production`, and the sign-in endpoint refuses every
+token for the same reason: a token the API has already decided to reject should
+not be able to mint a session here. The consequence is worth stating plainly
+rather than leaving you to find it. **The staff screens of a compose stack
+cannot be signed into yet.** That is the state of the project, not a fault in
+your install, and it is the same gap the [Security](#security) section is about.
+
+What the demo practice is reachable through in the meantime is the API, which
+accepts three demo tokens directly. Put one of these in an
+`Authorization: Bearer` header on a request to port 4000:
 
 | Token             | Who they are                   |
 | ----------------- | ------------------------------ |
@@ -315,9 +364,11 @@ rooms.
 from the other containers. Backups work through the container, so there is no
 reason to open it, and you should not.
 
-**Change the default password.** If you started with `docker compose up` and no
-`.env`, the database is using a password that is printed in this repository.
-`pnpm setup:selfhost` replaces it with a generated one.
+**Change the seeded password.** The stack refuses to start with no `.env` at
+all, but it starts quite happily with `POSTGRES_PASSWORD` still set to the
+`generate-me` sentinel that ships in `.env.example`, which is a string published
+in this repository. `pnpm setup:selfhost` replaces it with a generated one, and
+`openssl rand -hex 32` does the same by hand.
 
 **Keep the containers non-root.** They already are - everything runs as an
 unprivileged user with id 10001. If you bind-mount a directory into a container,

@@ -16,7 +16,7 @@ describe('isUuid', () => {
   it.each([
     '',
     'not-a-uuid',
-    '00000000-0000-0000-0000-000000000000', // nil UUID — never a real record id
+    '00000000-0000-0000-0000-000000000000', // nil UUID, never a real record id
     '9b2f6a2e-2f9d-9c1a-9f7a-1d2e3f4a5b6c', // version nibble 9 does not exist
     '9b2f6a2e-2f9d-4c1a-0f7a-1d2e3f4a5b6c', // invalid variant nibble
     '9b2f6a2e2f9d4c1a9f7a1d2e3f4a5b6c', // missing dashes

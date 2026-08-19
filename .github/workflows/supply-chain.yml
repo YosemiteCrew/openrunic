@@ -6,11 +6,11 @@ name: Supply Chain
 # script, so the workflow is the single place the tool versions live; run the
 # same commands locally with the versions documented on each install step.
 #
-# The tag/release triggers are kept even though nothing publishes releases yet:
-# releases published by workflows using GITHUB_TOKEN do NOT emit a release
-# event this workflow can see, so the user's tag push is the trigger that
-# covers those paths - it produces the SBOM artifacts and runs the gates for
-# the released ref.
+# Both the tag trigger and the release trigger are kept, because neither covers
+# the other: a release published by a workflow using GITHUB_TOKEN emits no
+# release event this workflow can see, so the tag push is the trigger that
+# covers that path - it produces the SBOM artifacts and runs the gates for the
+# released ref.
 
 on:
   pull_request:
@@ -39,8 +39,19 @@ on:
         default: ''
 
 concurrency:
-  group: supply-chain-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # The event is part of the group because it has to be: pushing tag `v0.1.0`
+  # and publishing the release made from it both report `github.ref` as
+  # `refs/tags/v0.1.0`, so the two runs shared a group and, with cancellation
+  # on, whichever started second killed the first. The casualty could be the
+  # release run, which is the only one that attaches the SBOMs to the release
+  # assets - a release published with no SBOM, from a workflow that reported
+  # nothing wrong.
+  group: supply-chain-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Cancel for pull requests only. There a new push makes the in-flight run's
+  # verdict obsolete, so cancelling it is the point. Everywhere else - a branch
+  # push, a tag push, a release, a merge group - the run's output is wanted, and
+  # a cancelled run produces no SBOM and no gate result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

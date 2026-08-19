@@ -18,7 +18,7 @@ coverage/
 # scripts/ci/sonar-thresholds.mjs), and a local scan leaves one behind too.
 .scannerwork/
 
-# Environment — never commit secrets
+# Environment - never commit secrets
 .env
 .env.*
 !.env.example

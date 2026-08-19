@@ -6,15 +6,23 @@ grateful to researchers who report responsibly.
 
 ## Supported versions
 
-openrunic is pre-release. There are no versioned releases yet; only the current state of the
-`dev` and `main` branches is supported. Once releases begin, this table will list supported
-release lines.
+openrunic follows [Semantic Versioning](https://semver.org/). The first release is **0.1.0**.
 
-| Branch / version | Supported |
-| ---------------- | --------- |
-| `main`           | Yes       |
-| `dev`            | Yes       |
-| Anything else    | No        |
+Security fixes are made on the **most recent release line only**. There is no long-term-support
+line and nothing is backported to an older minor. With a `0.x` major and a small maintainer group,
+a support promise we cannot keep would be worse than an honest one, so the remedy for an older
+install is always to upgrade.
+
+| Release line              | Supported                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| 0.1.x                     | Yes. This is the current line                                                 |
+| Earlier lines             | None exist yet. When 0.2.0 ships, 0.1.x stops receiving fixes on the same day |
+| `dev` and `main` branches | Yes. Fixes land here first and reach installations in the next release        |
+
+Two consequences worth stating plainly. Because the major version is `0`, upgrading to collect a
+security fix can mean absorbing a breaking change; that is a real cost, and you should not first
+meet it during an incident. And an unreleased fix already sitting on `dev` or `main` is visible in
+public git history before any release carries it, so track releases rather than waiting to be told.
 
 ## Reporting a vulnerability
 

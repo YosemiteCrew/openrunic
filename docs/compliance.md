@@ -53,10 +53,17 @@ Findings that shape the FHIR boundary (researched August 2026):
   vendored into this repository. Terminology support will be a pluggable service interface
   (for example Snowstorm Lite, HAPI terminology, or tx.fhir.org). LOINC, ICD-10-CM, and RxNorm
   have friendlier licensing but still ship as deployment-time content, not repo content.
-- **Auth: OIDC first, SMART on FHIR later.** First-party apps use plain OIDC with role-based
-  access. SMART App Launch (v2 granular scopes) and SMART Backend Services come when third-party
-  apps and bulk export arrive; the data-access layer is designed to enforce scope-to-filter rules
-  from the start so that layering is additive.
+- **Auth: OIDC first, SMART on FHIR later.** Bulk export has since arrived: `$export` is served at
+  system and Patient-compartment level, and it filters on the caller's own scopes rather than
+  handing out everything. OIDC is written and not in use. `apps/api/src/auth/oidc-resolver.ts`
+  verifies a bearer token against an issuer's published keys, and `apps/api/src/index.ts` installs
+  it in place of the demo-token table when `OIDC_ISSUER`, `OIDC_AUDIENCE` and `OIDC_JWKS_URI` are
+  all set; no shipped deployment sets them, nothing here issues such a token, and the staff sign-in
+  screen has no provider redirect, so every install today authenticates nobody and says so on every
+  boot. SMART App Launch (v2 granular scopes) and SMART Backend Services are the outstanding piece:
+  `.well-known/smart-configuration` is served and claims only the launch modes that exist, but
+  there is no authorisation server behind it. The data-access layer already enforces scope-to-filter
+  rules, which is what keeps that layering additive.
 
 ## Future considerations, not current claims
 

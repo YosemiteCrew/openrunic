@@ -1,6 +1,6 @@
 # Traffic history
 
-How the clone and view counts in the README are collected, and what they do and do not mean.
+How openrunic's clone and view counts are collected, and what they do and do not mean.
 
 ## Why this exists
 
@@ -10,7 +10,10 @@ many times has this been cloned since we opened it", and neither can the API: by
 question is asked, the answer has been deleted.
 
 `.github/workflows/traffic.yml` runs daily, takes a snapshot of the window, and folds it into a
-permanent history. The badges in the README read from that history rather than from GitHub.
+permanent history on an orphaned data branch. The README carried badges reading from that history
+until the 0.1.0 release; they were removed because the job had never once succeeded, so the only
+thing they ever published was four zeros. The history itself is still worth keeping, because it is
+the only record that survives the rolling window.
 
 ## Why the totals are not simply added up
 
@@ -28,7 +31,7 @@ lives.
 ## What the numbers mean
 
 **Total** is the sum of the per-day counts, and it is honest as far back as `First recorded` on the
-generated summary — which is the day the job first ran, not the day of the first commit. Everything
+generated summary, which is the day the job first ran, not the day of the first commit. Everything
 before that is gone. The summary prints the start date rather than implying otherwise, because a
 figure that overstates its own coverage is worse than one that admits where it begins.
 
@@ -63,3 +66,12 @@ project. It is also outside both rulesets, which is the point: the job never pus
   replacing real numbers with zeroes.
 - **The counts include automation.** CI checkouts, mirrors and scrapers all clone. These are traffic
   figures, not an audience estimate, and they should not be read as one.
+- **Without the `TRAFFIC_READ_TOKEN` secret, nothing is recorded at all.** The traffic endpoints
+  need `Administration: read`, and `GITHUB_TOKEN` cannot be granted it, so the job stops before
+  fetching and writes the reason to its run summary. It exits green on purpose: a red run every
+  morning for a secret nobody has created yet is how a repository learns to ignore a red run. Once
+  the secret exists, any failure after that point is real and does go red.
+- **This job lied for its entire life before 0.1.0.** The two window fetches were shell assignments
+  prefixed to the `node` command, so `set -e` tested node's status and not `gh`'s. Every 403
+  produced an empty window, a fold that wrote nothing, and a green tick. If you are reading this
+  history, it starts from the day the secret was first set, not from the day the repository opened.

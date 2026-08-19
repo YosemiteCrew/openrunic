@@ -18,6 +18,21 @@ name: Traffic
 # one: the script comes from the code branch, the history from the data branch,
 # because a single checkout of `traffic-data` would not contain the script that
 # maintains it.
+#
+# THE READ NEEDS A CREDENTIAL THIS WORKFLOW CANNOT GRANT ITSELF.
+# `GET /repos/{owner}/{repo}/traffic/{clones,views}` requires Administration:
+# read, and `administration` is not one of the scopes a workflow `permissions:`
+# block accepts, so no combination of `contents:`, `metadata:` or anything else
+# gets GITHUB_TOKEN past it. The read therefore uses the `TRAFFIC_READ_TOKEN`
+# secret - a fine-grained token with Administration: read on this repository -
+# while the data branch is still written with the built-in token.
+#
+# Until that secret exists this job records nothing and says so on the run
+# summary, rather than either failing every morning or pretending it worked.
+# Before this, the 403 was swallowed and the run reported success while
+# recording nothing, which is why the README's traffic figures were zeros for
+# as long as they were published: a scheduled job that claims to have worked is
+# harder to notice than one that does not.
 
 on:
   schedule:
@@ -41,9 +56,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      # The traffic API requires push-level access to the repository it reads,
-      # and the data branch is written with the same token.
-      contents: write
+      # This is here for the data branch push and nothing else. It buys no
+      # access to the traffic API, which needs Administration: read - a scope a
+      # workflow `permissions:` block cannot express at all. See the header for
+      # the credential that read actually uses.
+      contents: write # push the snapshot to the `traffic-data` branch
     steps:
       - name: Checkout the code branch for the script
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,16 +88,83 @@ jobs:
 
       - name: Fetch the window and fold it into the history
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Falls back to the built-in token so that a genuine misconfiguration
+          # is a real 403 from a real request, naming the endpoint that refused,
+          # rather than an empty `gh` invocation before any request is made.
+          GH_TOKEN: ${{ secrets.TRAFFIC_READ_TOKEN || github.token }}
+          # Whether the secret exists at all, which is a different question from
+          # whether the request worked. See the guard immediately below.
+          HAS_TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_READ_TOKEN != '' && 'yes' || 'no' }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # NOT CONFIGURED and BROKEN must not look the same, and neither may
+          # look like SUCCESS.
+          #
+          # These endpoints need Administration: read, which GITHUB_TOKEN cannot
+          # be granted, so without the secret this job can never work. Failing
+          # red every morning for a setting nobody has made yet teaches everyone
+          # to ignore a red traffic run, and the day it breaks for a real reason
+          # nobody looks. So an absent secret stops here, green, and says so
+          # loudly in the run summary.
+          #
+          # That is not the bug this job used to have. The old failure recorded
+          # nothing while reporting success and explaining nothing; this records
+          # nothing, reports success, and puts the reason and the fix on the
+          # summary page. Once the secret exists, any failure past this point is
+          # a real one and goes red.
+          if [ "$HAS_TRAFFIC_TOKEN" != 'yes' ]; then
+            {
+              echo '### Traffic history not recorded'
+              echo
+              echo 'The TRAFFIC_READ_TOKEN secret is not set, so no snapshot was taken.'
+              echo
+              echo 'GitHub traffic endpoints require the Administration: read permission,'
+              echo 'which the built-in GITHUB_TOKEN cannot hold. Create a fine-grained'
+              echo 'personal access token with that permission on this repository and save'
+              echo 'it as the TRAFFIC_READ_TOKEN repository secret. Until then the 14-day'
+              echo 'window keeps rolling, and each day older than fourteen is gone for good.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo '::notice::TRAFFIC_READ_TOKEN is not set, so no traffic snapshot was taken. See the run summary.'
+            exit 0
+          fi
+          # Each window is fetched into a plain assignment on its own line, and
+          # exported afterwards, because the two things that made this job lie
+          # both live in how the payloads reached the script.
+          #
+          # It used to assign both as a PREFIX on the `node` command. An
+          # assignment prefixed to a command is evaluated only for its value:
+          # a failing substitution leaves the variable empty, and the status
+          # `set -e` goes on to test is node's, not gh's. So a 403 produced an
+          # empty window, a fold that wrote nothing, "Nothing new to record",
+          # and a green tick. A plain assignment does abort under `set -e`.
+          #
+          # The second leak is on the other side: fold-traffic.mjs turns an
+          # unparseable payload into an empty window on purpose, so that a bad
+          # response cannot overwrite real figures with zeroes. That is right for
+          # the script and wrong as the last word, because an empty window and a
+          # quiet day look identical downstream. So the shape is checked here,
+          # where there is still something to report.
+          fetch_window() {
+            local endpoint="$1" payload
+            if ! payload="$(gh api "repos/${REPO}/traffic/${endpoint}")"; then
+              echo "::error::GET repos/${REPO}/traffic/${endpoint} failed. These endpoints need Administration: read, which GITHUB_TOKEN cannot be granted - set the TRAFFIC_READ_TOKEN secret to a fine-grained token that holds it." >&2
+              return 1
+            fi
+            if ! printf '%s' "$payload" | jq -e 'has("days") and (.days | type == "array")' >/dev/null; then
+              echo "::error::repos/${REPO}/traffic/${endpoint} answered without a day-by-day window. Refusing to fold a response this job cannot read, which would silently record nothing." >&2
+              return 1
+            fi
+            printf '%s' "$payload"
+          }
+
           # Handed to the script in the environment rather than through temporary
           # files: it already has the payload, and a file would only add a path
           # for the script to be trusted with. Both responses are a few KB.
-          CLONES_JSON="$(gh api "repos/${REPO}/traffic/clones")" \
-          VIEWS_JSON="$(gh api "repos/${REPO}/traffic/views")" \
-            node .github/scripts/fold-traffic.mjs
+          CLONES_JSON="$(fetch_window clones)"
+          VIEWS_JSON="$(fetch_window views)"
+          export CLONES_JSON VIEWS_JSON
+          node .github/scripts/fold-traffic.mjs
 
       - name: Commit only when something changed
         working-directory: traffic-data

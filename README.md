@@ -30,7 +30,7 @@
 [![FHIR R4](https://img.shields.io/badge/FHIR-R4-C4552D)](https://hl7.org/fhir/R4/)
 [![Contribute](https://img.shields.io/badge/Contribute-FF9800)](CONTRIBUTING.md)
 [![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-2E211A)](CODE_OF_CONDUCT.md)
-[![Storybook](https://img.shields.io/badge/Storybook-9-FF4785?logo=storybook&logoColor=white)](https://yosemitecrew.github.io/openrunic/)
+[![Storybook](https://img.shields.io/badge/Storybook-10-FF4785?logo=storybook&logoColor=white)](https://yosemitecrew.github.io/openrunic/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/YosemiteCrew/openrunic)
 
 </div>
@@ -59,7 +59,6 @@
 [![Forks](https://img.shields.io/github/forks/YosemiteCrew/openrunic?style=flat&color=8C5E3C&logo=github)](https://github.com/YosemiteCrew/openrunic/network/members)
 [![Contributors](https://img.shields.io/github/contributors/YosemiteCrew/openrunic?color=6B7A4F)](https://github.com/YosemiteCrew/openrunic/graphs/contributors)
 [![Open issues](https://img.shields.io/github/issues/YosemiteCrew/openrunic?color=A9714B)](https://github.com/YosemiteCrew/openrunic/issues)
-[![Good first issues](https://img.shields.io/github/issues/YosemiteCrew/openrunic/good%20first%20issue?color=6B7A4F&label=good%20first%20issues)](https://github.com/YosemiteCrew/openrunic/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-C4552D)](CONTRIBUTING.md)
 [![Discussions](https://img.shields.io/github/discussions/YosemiteCrew/openrunic?color=2E211A&logo=github)](https://github.com/YosemiteCrew/openrunic/discussions)
 [![Last commit](https://img.shields.io/github/last-commit/YosemiteCrew/openrunic/dev?color=8C5E3C)](https://github.com/YosemiteCrew/openrunic/commits/dev)
@@ -68,20 +67,13 @@
 
 </div>
 
-<div align="center">
-
-[![Clones (all time)](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FYosemiteCrew%2Fopenrunic%2Ftraffic-data%2Fbadges%2Fclones.json)](https://github.com/YosemiteCrew/openrunic/graphs/traffic)
-[![Unique cloners (all time)](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FYosemiteCrew%2Fopenrunic%2Ftraffic-data%2Fbadges%2Fcloners.json)](https://github.com/YosemiteCrew/openrunic/graphs/traffic)
-[![Views (all time)](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FYosemiteCrew%2Fopenrunic%2Ftraffic-data%2Fbadges%2Fviews.json)](https://github.com/YosemiteCrew/openrunic/graphs/traffic)
-[![Unique visitors (all time)](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FYosemiteCrew%2Fopenrunic%2Ftraffic-data%2Fbadges%2Fvisitors.json)](https://github.com/YosemiteCrew/openrunic/graphs/traffic)
-
-</div>
-
 GitHub keeps only the last 14 days of traffic and discards the rest, so its own graphs cannot answer
-"how many clones since launch". The four badges above are cumulative: a scheduled job snapshots the
-14-day window daily and folds it into a running total, keeping one record per date so an overlapping
-window cannot double-count. The history lives on the `traffic-data` branch, and
-[`docs/traffic.md`](docs/traffic.md) explains how it is collected and how to read it.
+"how many clones since launch". A scheduled job snapshots that window daily and folds it into a
+running total on the `traffic-data` branch, keeping one record per date so an overlapping window
+cannot double-count. Those totals are deliberately not badged here: the history begins at the first
+snapshot the job managed to record rather than at the first commit, and a badge on this page would
+be read as a count since launch. [`docs/traffic.md`](docs/traffic.md) explains how the history is
+collected and how to read it.
 
 <br>
 
@@ -140,8 +132,25 @@ A modern, fast, lightweight EMR:
 
 ## Project status
 
-> **Pre-alpha.** This repository is an early scaffold. APIs, schemas, and package boundaries will
-> change without notice. Do not run this in production, and do not put real patient data into it.
+**0.1.0.** Substantial EMR functionality has shipped and has tests behind it.
+[`docs/emr-capabilities.md`](docs/emr-capabilities.md) is the capability map: it records more than
+thirty capabilities as Done, and seventeen more as Partial, a seam only, Missing, or not startable at
+all without an external certifying body. Read it before assuming this project is either further
+along or further behind than it is.
+
+Two things follow from a version that still starts with a zero, and they matter more than the
+feature list:
+
+> **There is no authentication.** `OPENRUNIC_AUTH_MODE` accepts exactly one value, `demo-tokens`,
+> which maps a short list of tokens onto demo users. Those tokens are published in this
+> repository's source, so anyone who can reach a running instance can read everything in it, and
+> the API prints that warning on every boot. There is no identity provider yet.
+>
+> **APIs, schemas, and package boundaries will change without notice. Do not run this in
+> production, and do not put real patient data into it.**
+
+[`docs/self-hosting.md`](docs/self-hosting.md) covers what openrunic is ready for today: an
+evaluation on a machine you control, on a network nobody else is on.
 
 ## Tech stack
 
@@ -149,12 +158,12 @@ A modern, fast, lightweight EMR:
 | --------------- | ---------------------------------------------------- |
 | Monorepo        | pnpm 10 workspaces + Turborepo                       |
 | Runtime         | Node.js 22                                           |
-| Web app         | Next.js 16 (React 19)                                |
+| Web apps        | Next.js 16 (React 19): staff EMR and patient portal  |
 | API             | Hono, serving FHIR R4 at the API boundary            |
 | Database        | PostgreSQL via Prisma 7 (relational source of truth) |
 | Interop         | FHIR R4 types and domain-to-FHIR mappers             |
 | Components      | @openrunic/ui design-system library + Storybook      |
-| Tests           | Vitest                                               |
+| Tests           | Vitest, plus Playwright for the clinical drill       |
 | Lint and format | ESLint 9 (flat config) + Prettier                    |
 
 ## Repository layout
@@ -162,15 +171,30 @@ A modern, fast, lightweight EMR:
 ```text
 openrunic/
 ├── apps/
-│   ├── web/          # Next.js 16 app: practice-facing EMR
-│   └── api/          # Hono service: FHIR R4 API boundary
-├── packages/
-│   ├── types/        # Shared TypeScript types
-│   ├── fhir/         # FHIR R4 types + domain<->FHIR mappers (round-trip tested)
-│   ├── ui/           # React component library implementing the design system
-│   └── database/     # Prisma 7 schema, migrations, and client (Postgres)
-└── docs/             # ADRs and project documentation
+│   ├── web/       # Next.js 16: the staff EMR, and the public marketing pages
+│   ├── portal/    # Next.js 16: the patient portal
+│   ├── api/       # Hono: the FHIR R4 API boundary, and the BFF both apps call
+│   └── e2e/       # The full-day clinical drill: the acceptance test for the whole product
+├── packages/      # The shared libraries, grouped below
+└── docs/          # ADRs, the capability map, self-hosting, and the gate documentation
 ```
+
+**Foundations** - `types` (branded identifiers and `Result`), `database` (Prisma 7, Postgres,
+row-level security), `ui` (design-system tokens, components, Storybook), `i18n` (message catalogues
+and locale fallback), `ops` (install, backup, restore, upgrade).
+
+**Interoperability** - `fhir` (R4 types and domain-to-FHIR mappers, round-trip tested), `ccda`
+(C-CDA R2.1 generate and import), `hl7v2` (ADT, ORU, ORM, VXU and acknowledgements), `x12`
+(270/271, 837P, 835, 277, 999, 278), `cds-hooks` (CDS Hooks 2.0 discovery, validation and cards),
+`terminology` (bring your own; nothing licence-restricted is committed).
+
+**Clinical and revenue** - `clinical-safety` (allergy and duplicate-therapy screening at
+prescribing), `growth` (CDC LMS percentiles), `forms-engine` (form definitions, validation,
+rendering), `inventory` (stock, lots and dispensing), `pricing` (fee schedules and sliding-scale
+discounts), `adapters` (partner seams for eRx, payments, video and clearinghouses).
+
+**Assistant** - `agent` (the loop, approval gating, tenant scoping and budget caps; ADR-0005),
+`agent-tools` (the tool catalogue and the compartment rules the loop may reach).
 
 ## Getting started
 
@@ -187,10 +211,16 @@ cp packages/database/.env.example packages/database/.env
 # Run everything in dev mode
 pnpm dev
 
-# Or run a single workspace
-pnpm --filter web dev
-pnpm --filter api dev
+# Or one app at a time
+pnpm turbo run dev --filter=web
+pnpm turbo run dev --filter=portal
+pnpm turbo run dev --filter=api
 ```
+
+Both forms go through turbo, which builds the workspace packages an app imports before starting it.
+That is why there is no separate build step here, and why the scoped runs are written as
+`pnpm turbo run dev --filter=<app>`: `pnpm --filter <app> dev` skips turbo, so on a fresh clone it
+starts the app against packages that have not been built yet.
 
 Useful repo-wide commands:
 
@@ -199,8 +229,32 @@ pnpm lint          # ESLint across all workspaces
 pnpm type-check    # TypeScript across all workspaces
 pnpm test          # Vitest across all workspaces
 pnpm build         # Build all workspaces
-pnpm verify        # lint + type-check + test + build
+pnpm verify        # every gate that runs from this repo's own dependencies, in one shot
 ```
+
+### Or run the whole thing in Docker
+
+To see openrunic running rather than to work on it, Docker is the shorter path: it needs no Node.js
+and no PostgreSQL on the host.
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# Replace every `generate-me` in .env with a fresh value:
+openssl rand -hex 32
+docker compose up --build
+```
+
+That brings up Postgres, the API and the web app, applies every migration, and seeds a demo
+practice. Two keys in `.env.example` carry a `generate-me` sentinel, `POSTGRES_PASSWORD` and
+`SESSION_COOKIE_SECRET`, and the compose stack starts happily with the sentinel still in place. It
+is a published string, so a stack left that way has a database password and a session-signing key
+that anyone reading this repository already knows. Replace both. On a machine that has Node.js,
+`pnpm setup:selfhost` does the same job and generates them for you.
+
+[`docs/self-hosting.md`](docs/self-hosting.md) is the full guide, written for whoever looks after
+the computers at a clinic rather than for a developer: what to run, how to back it up and restore
+it, how to upgrade, and what has to be true before it can hold a real record.
 
 ## Contributing
 

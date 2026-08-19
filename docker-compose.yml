@@ -1,14 +1,17 @@
 # openrunic, self-hosted.
 #
+#   pnpm setup:selfhost
 #   docker compose up --build
 #
-# That is the whole install. It builds three images, starts Postgres, applies
-# every migration, seeds a demo practice, and serves the application. No file
-# needs editing first: every value below has a working default.
+# That is the whole install. The first command writes a .env with generated
+# secrets, and it is not optional: SESSION_COOKIE_SECRET is the one value below
+# with no default, because a web container started without it serves a sign-in
+# page that answers 503. The second builds three images, starts Postgres,
+# applies every migration, seeds a demo practice, and serves the application.
 #
-# Those defaults are for an evaluation on a machine you control. Before this is
-# reachable from any network, run `pnpm setup:selfhost`, which writes a .env
-# with generated secrets, and read docs/self-hosting.md.
+# Nothing else needs editing first. Those defaults are for an evaluation on a
+# machine you control. Before this is reachable from any network, replace them
+# and read docs/self-hosting.md.
 #
 # Nothing here publishes the database port. Postgres is reachable only from the
 # other containers on this network, and the backup and restore tooling works
@@ -175,6 +178,14 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      # The key this deployment seals its session cookie with. `:?` and not
+      # `:-`, because there is no safe default: NODE_ENV is production here, and
+      # in production the code will not fall back to the development key that is
+      # printed in its own source, so a stack brought up without this value
+      # builds, starts, reports healthy, and answers 503 to every sign-in. A
+      # deployment that refuses to start is a five-minute problem; one that
+      # starts and rejects everybody is an afternoon of reading logs.
+      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:?required, and has no default. Run `pnpm setup:selfhost` to write a .env with a generated one.}
       # Server-side only, and deliberately not the browser's address: the
       # health route runs inside the network and reaches the API by service
       # name, which is what keeps the probe free of CORS.

@@ -27,10 +27,27 @@ cp packages/database/.env.example packages/database/.env
 # The api reads PORT/NODE_ENV from the shell environment (PORT defaults to 4000).
 ```
 
+To run the assembled product instead of a development tree, Docker needs neither Node.js nor
+PostgreSQL on the host:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# Replace every `generate-me` in .env with a fresh value:
+openssl rand -hex 32
+docker compose up --build
+```
+
+That brings up Postgres, the API and the web app, applies every migration and seeds a demo
+practice. `POSTGRES_PASSWORD` and `SESSION_COOKIE_SECRET` arrive as the `generate-me` sentinel and
+the stack starts without replacing them, so replace both or you are running on a password published
+in this repository. `pnpm setup:selfhost` generates them for you. [`docs/self-hosting.md`](docs/self-hosting.md) is the operator's guide to that
+stack: backups, restores, upgrades, and what has to be true before it can hold a real record.
+
 Common commands:
 
 ```bash
-pnpm dev               # run all apps in dev mode (turbo)
+pnpm dev               # run all apps in dev mode; turbo builds the packages they import first
 pnpm lint              # ESLint across the repo
 pnpm type-check        # TypeScript across the repo
 pnpm test              # Vitest across the repo
@@ -48,21 +65,47 @@ brew install actionlint shellcheck hadolint   # or your distribution's equivalen
 Prefer scoped commands while iterating; they are much faster:
 
 ```bash
-pnpm --filter web dev              # one workspace's dev server
+pnpm turbo run dev --filter=web    # one app's dev server, with the packages it imports built first
 pnpm --filter api test             # one workspace's tests
 pnpm turbo run lint --filter=@openrunic/fhir  # one workspace via turbo (full package name)
 ```
 
+Run a dev server through turbo rather than as `pnpm --filter web dev`. Every package resolves to
+its `dist/`, and only turbo knows to build those first; the bare filter form starts the app against
+packages a fresh clone has never built.
+
 ## Repository structure
 
 ```text
-apps/web            Next.js 16 app (hospital and patient web)
-apps/api            Hono service (FHIR R4 API boundary)
-packages/types      Shared TypeScript types
-packages/fhir       FHIR R4 types + domain<->FHIR mappers with round-trip tests
-packages/database   Prisma 7 schema, migrations, and client (Postgres)
-packages/ui         React component library (design system implementation) + Storybook
-docs/               ADRs and project documentation
+apps/web                  Next.js 16, the staff EMR, plus the public marketing pages
+apps/portal               Next.js 16, the patient portal
+apps/api                  Hono, the FHIR R4 API boundary and the BFF both apps call
+apps/e2e                  The full-day clinical drill: the acceptance test for the whole product
+
+packages/types            Shared primitive types: environments, branded identifiers, Result
+packages/database         Prisma 7 schema, migrations, client, and row-level security (Postgres)
+packages/ui               React component library (design system implementation) + Storybook
+packages/i18n             Message catalogues and locale fallback
+packages/ops              Self-host operations: install, backup, restore, upgrade
+
+packages/fhir             FHIR R4 types + domain<->FHIR mappers with round-trip tests
+packages/ccda             C-CDA R2.1 document codec: generate and import
+packages/hl7v2            HL7 v2 codec: ADT, ORU, ORM, VXU and acknowledgements
+packages/x12              X12 5010: 270/271, 837P, 835, 277, 999, 278
+packages/cds-hooks        CDS Hooks 2.0: discovery, request validation, cards
+packages/terminology      Bring-your-own terminology; nothing licence-restricted is committed
+
+packages/clinical-safety  Allergy and duplicate-therapy screening at prescribing
+packages/growth           Growth percentiles from CDC LMS reference data
+packages/forms-engine     Form definitions, validation, rendering, promotion
+packages/inventory        Stock, lots and dispensing from an append-only ledger
+packages/pricing          Fee schedules and sliding-scale discounts
+packages/adapters         Partner seams (eRx, payments, video, clearinghouse) with demo mocks
+
+packages/agent            The assistant loop, approval gating and budget caps (ADR-0005)
+packages/agent-tools      The tool catalogue and compartment rules the loop may reach
+
+docs/                     ADRs, the capability map, self-hosting, and the gate documentation
 ```
 
 Architectural decisions are recorded as ADRs in [docs/adr/](docs/adr/). If your change reverses or
@@ -143,7 +186,7 @@ Allowed **types**:
 
 Allowed **scopes**:
 
-`web`, `api`, `database`, `fhir`, `types`, `ui`, `lib`, `repo`, `ci`, `docs`
+`web`, `portal`, `api`, `database`, `fhir`, `types`, `ui`, `lib`, `repo`, `ci`, `docs`
 
 Examples:
 

@@ -5,8 +5,29 @@ implementations of it, and a verifying loader for the code-system files a deploy
 
 ## This project never vendors terminology
 
-**No terminology content ships in this repository. None. Not a sample, not a subset, not a
-development fixture drawn from a real publisher.**
+**No code system release ships in this repository. None. Not a sample, not a subset, not a
+development fixture drawn from a real publisher. Nothing a deployment runs bills, prices or
+displays a code from a vocabulary that would need a licence.**
+
+Two things are worth saying precisely, because the sentence above used to be written as an absolute
+and an absolute was not true of the repository as a whole.
+
+First, this package vendors nothing at all: every code in it is invented and every system URI is
+under `example.invalid`. Second, the repository around it does ship a small number of individual
+codes in demonstration data, and every one of them comes from a vocabulary that is free to
+redistribute: LOINC, which permits redistribution provided its copyright notice travels with it,
+plus ICD-10-CM, CVX, RxNorm and the CDC growth tables, which are United States federal government
+work published without a redistribution restriction. `THIRD-PARTY-NOTICES.md` at the repository
+root names every one of them, names the file that carries it, and carries the notices those
+licences require. A few bare SNOMED CT identifiers appear as cross-references with no description
+or hierarchy attached. No procedure or service code set sold under licence is redistributed: the
+demo seed bills invented codes under a system URI on `example.invalid` for exactly this reason.
+
+The one thing this section will not do is round down. Individual billing code numbers are used as
+test data across the X12, pricing, C-CDA and FHIR suites and in the web mock fixtures, sometimes
+beside a short phrase describing the visit. Isolated identifiers exercising a codec are a different
+thing from a redistributed code set, and `THIRD-PARTY-NOTICES.md` names where they are rather than
+claiming they are absent.
 
 The code systems a clinic actually needs are licensed content. Diagnosis, procedure, laboratory,
 medication and clinical-finding vocabularies variously require a paid licence, a national affiliate
@@ -315,7 +336,12 @@ line, and fifty examples is enough to diagnose it.
 
 ## Bundled reference content
 
-**None. Deliberately, and this is the correct outcome rather than an omission.**
+**None in this package. Deliberately, and this is the correct outcome rather than an omission.**
+
+The freely redistributable codes that appear in the repository's demonstration data are listed in
+`THIRD-PARTY-NOTICES.md`. They are demonstration data, not reference content: nothing loads them,
+nothing validates against them, and they are not a release. This section is about the code-system
+files this package would load, and there are none of those.
 
 The bar for including anything would be a licence that unambiguously permits redistribution, in
 every jurisdiction Openrunic is deployed in, without an agreement between the publisher and the

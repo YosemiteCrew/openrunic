@@ -15,7 +15,7 @@ export interface CreatePrismaClientOptions {
  * Deliberately a lazy factory: nothing is read from the environment and no
  * client is constructed at import time, so importing this package never
  * requires a configured database. Call it once per process and share the
- * instance — each client owns a connection pool.
+ * instance. Each client owns a connection pool.
  */
 export function createPrismaClient(options: CreatePrismaClientOptions = {}): PrismaClient {
   const connectionString = options.datasourceUrl ?? process.env.DATABASE_URL;

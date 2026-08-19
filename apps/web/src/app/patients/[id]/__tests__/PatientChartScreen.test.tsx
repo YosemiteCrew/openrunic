@@ -99,8 +99,12 @@ describe('PatientChartScreen', () => {
   it('counts what is on each tab so nothing has to be opened to be seen', async () => {
     render(<PatientChartScreen patientId={testina.id} />);
 
+    // The tab renders as soon as the strip mounts, but its count is derived from
+    // the chart summary, which loads asynchronously. findByRole resolves on the
+    // bare "Results" label, so wait for the count to populate before asserting it
+    // rather than reading it on the render before the data arrives.
     const results = await screen.findByRole('tab', { name: /Results/ });
-    expect(results).toHaveTextContent('6');
+    await waitFor(() => expect(results).toHaveTextContent('6'));
   });
 
   it('states every result with a unit and a worded range state', async () => {

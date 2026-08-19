@@ -7,11 +7,19 @@ import { createUuidv7 } from '../uuid.js';
 /**
  * A synthetic demo practice, built as plain rows with no database involved.
  *
- * Everything in here is invented. The names are deliberately, obviously fake
- * ("Testina Patientsson", "Placeholder Mutual Health"), the identifiers are in
- * reserved or non-routable ranges, and no value is derived from a real person,
- * a real payer or a real clinic. That is a hard rule for this repository, not a
- * convention: see CLAUDE.md.
+ * Every identity in here is invented. The names are deliberately, obviously
+ * fake ("Testina Patientsson", "Placeholder Mutual Health"), the identifiers
+ * are in reserved or non-routable ranges, and no value is derived from a real
+ * person, a real payer or a real clinic. That is a hard rule for this
+ * repository, not a convention: see CLAUDE.md.
+ *
+ * The clinical codes are the one thing that is not invented, and only where
+ * the vocabulary is free to redistribute: the LOINC, ICD-10-CM, CVX and RxNorm
+ * codes below are real, so the demo shows a clinician something they recognise,
+ * and `THIRD-PARTY-NOTICES.md` at the repository root carries the attribution
+ * each of them requires. The procedure codes are invented, because that
+ * vocabulary is not free to redistribute; the comment on `PROCEDURE_SYSTEM`
+ * says why at length.
  *
  * The build is fully deterministic. There is no `Math.random`, no `Date.now`
  * and no faker: ids come from a UUIDv7 generator wired to a fixed clock and a
@@ -165,7 +173,15 @@ const VACCINES: readonly (readonly [string, string])[] = [
   ['213', 'SARS-COV-2 vaccine, unspecified'],
 ];
 
-/** LOINC code, display, UCUM unit, base value, per-patient step. */
+/**
+ * LOINC code, display, UCUM unit, base value, per-patient step.
+ *
+ * These, and the panels below, are real LOINC codes with their published names.
+ * That is deliberate and it is allowed: LOINC may be redistributed provided the
+ * copyright notice travels with it, which is why `THIRD-PARTY-NOTICES.md` at
+ * the repository root carries the Regenstrief notice and names this file. If
+ * you add a LOINC code here, check that notice still describes what ships.
+ */
 const VITALS: readonly (readonly [string, string, string, number, number])[] = [
   ['8867-4', 'Heart rate', '/min', 68, 1],
   ['8480-6', 'Systolic blood pressure', 'mm[Hg]', 112, 2],
@@ -196,7 +212,40 @@ const LAB_PANELS: readonly {
   },
 ];
 
-const CPT_SYSTEM = 'http://www.ama-assn.org/go/cpt';
+/**
+ * The demo's procedure vocabulary, invented from end to end.
+ *
+ * These codes are not a real procedure code set and must never be replaced by
+ * one. The published procedure code sets a clinic bills against are licensed
+ * content: the publisher charges for the descriptors and controls who may
+ * redistribute them. This seed ships in every self-hosted deployment of an
+ * AGPL project, so committing real descriptors here would redistribute
+ * somebody else's licensed vocabulary to everybody who clones the repository,
+ * and would contradict what `packages/terminology/README.md` promises about
+ * this repository. An earlier revision of this file did exactly that; it was
+ * removed on purpose, so please do not helpfully put it back.
+ *
+ * The URI is under `example.invalid`, a domain the IETF reserved so that it can
+ * never resolve, which is the same convention
+ * `packages/terminology/src/test-support/fixture.ts` uses for the same reason.
+ * A deployment that holds a licence for a real procedure set loads its own
+ * release through `@openrunic/terminology`; that is what the package is for.
+ *
+ * Only the values are invented. The shape is untouched and is the part the
+ * demo and the tests read: one coded procedure on the charge, the same code on
+ * the claim line, and the same code again on the remittance line, so a
+ * reconciliation still matches the way it would in a real practice.
+ */
+const PROCEDURE_SYSTEM = 'http://example.invalid/fs/demo-procedures';
+
+/** The visit every demo encounter is billed as. */
+const OFFICE_VISIT_CODE = 'DEMO-VISIT-3';
+const OFFICE_VISIT_DISPLAY = 'Demo established-patient office visit';
+
+/** The draw that pays for the demo lab panels. */
+const BLOOD_DRAW_CODE = 'DEMO-DRAW-1';
+const BLOOD_DRAW_DISPLAY = 'Demo blood draw';
+
 const LOINC_SYSTEM = 'http://loinc.org';
 const ICD10_SYSTEM = 'http://hl7.org/fhir/sid/icd-10-cm';
 const RXNORM_SYSTEM = 'http://www.nlm.nih.gov/research/umls/rxnorm';
@@ -510,17 +559,17 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
     {
       id: nextId(),
       tenantId,
-      system: CPT_SYSTEM,
-      code: '99213',
-      display: 'Office or other outpatient visit, established patient, low complexity',
+      system: PROCEDURE_SYSTEM,
+      code: OFFICE_VISIT_CODE,
+      display: OFFICE_VISIT_DISPLAY,
       createdAt,
     },
     {
       id: nextId(),
       tenantId,
-      system: CPT_SYSTEM,
-      code: '36415',
-      display: 'Collection of venous blood by venipuncture',
+      system: PROCEDURE_SYSTEM,
+      code: BLOOD_DRAW_CODE,
+      display: BLOOD_DRAW_DISPLAY,
       createdAt,
     },
   ];
@@ -1179,9 +1228,9 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
       facilityId,
       encounterId,
       patientId,
-      code: '99213',
-      codeSystem: CPT_SYSTEM,
-      display: 'Office visit, established patient, low complexity',
+      code: OFFICE_VISIT_CODE,
+      codeSystem: PROCEDURE_SYSTEM,
+      display: OFFICE_VISIT_DISPLAY,
       modifiers: [],
       units: 1,
       unitPriceCents: chargeCents,
@@ -1249,8 +1298,8 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
       claimId,
       chargeItemId: chargeId,
       sequence: 1,
-      code: '99213',
-      codeSystem: CPT_SYSTEM,
+      code: OFFICE_VISIT_CODE,
+      codeSystem: PROCEDURE_SYSTEM,
       modifiers: [],
       units: 1,
       chargedCents: chargeCents,
@@ -1327,7 +1376,7 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
         claimLineId,
         sequence: 1,
         payerControlNumber: `PMH-${index + 1}`,
-        code: '99213',
+        code: OFFICE_VISIT_CODE,
         chargedCents: chargeCents,
         allowedCents,
         paidCents: allowedCents,

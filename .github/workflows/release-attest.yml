@@ -18,10 +18,18 @@ name: Release Provenance
 #
 #  * This runs ON RELEASE ONLY. Nothing here touches a pull request, and there
 #    is nothing to attest until an image exists.
-#  * Nothing is released or tagged yet and the Dockerfiles arrive with the
-#    self-hosting work, so the discovery job exits 0 with an explanatory message
-#    when there is nothing to build. The workflow cannot fail a release that has
-#    no images.
+#  * apps/api/Dockerfile and apps/web/Dockerfile exist, so a release DOES build
+#    and push images, and this workflow CAN fail a release: a build error, a
+#    rejected push, or a digest it cannot read fails the job. That is
+#    deliberate: a release whose images never built should not look successful.
+#    The failure shows in the Actions tab and in the usual notifications rather
+#    than on the release page itself, which reports nothing about workflow runs.
+#  * The empty-match branch is a fallback, not the expected case. A tag that
+#    matches no Dockerfile leaves the discovery job green with an explanatory
+#    line in the step summary, so a docs-only or tooling tag can be released
+#    without a red workflow. If an `api-` or `web-` tag ever takes that branch
+#    it means the image is missing rather than that none was expected, and the
+#    step summary is the only place that says so.
 #  * Provenance is not the same as signing the image itself. The provenance
 #    statement is signed; a detached signature over the image is a separate
 #    thing, and adding one is deferred deliberately - see the "What this does
@@ -94,6 +102,13 @@ jobs:
           # RELEASING.md tags components independently ("api-v1.2.3"). A
           # component-scoped tag publishes only that component; anything else
           # publishes every image found.
+          #
+          # Only a component that HAS a Dockerfile belongs in this case
+          # statement. A scoped tag with no case here leaves COMPONENT empty,
+          # which skips the filter below and republishes every image under that
+          # tag - so adding a `portal-v*` case while apps/portal has no
+          # Dockerfile would be worse than leaving it out, and leaving it out is
+          # only safe for as long as nobody pushes a `portal-v*` tag.
           COMPONENT=""
           case "$TAG" in
             api-v*) COMPONENT="api" ;;
@@ -168,11 +183,22 @@ jobs:
         id: build
         env:
           DOCKERFILE: ${{ matrix.dockerfile }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          OWNER: ${{ github.repository_owner }}
+          IMAGE_NAME: ${{ matrix.image }}
           TAG: ${{ needs.discover.outputs.tag }}
           DOCKER_BUILDKIT: '1'
         run: |
           set -euo pipefail
+          # `github.repository_owner` carries the owner's REGISTERED casing, and
+          # a Docker repository name must be lowercase. Interpolated straight
+          # into the tag, `docker build --tag
+          # ghcr.io/YosemiteCrew/openrunic-api:api-v0.1.0 .` dies on "invalid
+          # reference format: repository name must be lowercase" before it ever
+          # reads the Dockerfile - so every release built zero images and went
+          # red on its own release page. Do not delete this as noise: GHCR
+          # resolves the owner case-insensitively, so the lowercased name is the
+          # same namespace, but `docker build` does not.
+          IMAGE="ghcr.io/$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')/${IMAGE_NAME}"
           # Repository root as the build context: these are pnpm workspace
           # images and need the lockfile and the sibling packages.
           docker build --file "$DOCKERFILE" --tag "${IMAGE}:${TAG}" .

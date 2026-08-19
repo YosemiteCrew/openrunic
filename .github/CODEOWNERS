@@ -1,11 +1,11 @@
 # Default owners for everything in the repo. Code owners must be users with
 # write access or org teams; the bare org account is not resolvable, and the
 # org has no teams yet - revisit when a maintainers team exists.
-* @ankit-yc @harshvardhan-yc
+* @ankit-yc @aupyay
 
 # Governance-sensitive paths (explicit, so ownership survives future
 # narrowing of the default rule).
-/.github/ @ankit-yc @harshvardhan-yc
-/SECURITY.md @ankit-yc @harshvardhan-yc
-/CONTRIBUTING.md @ankit-yc @harshvardhan-yc
-/docs/adr/ @ankit-yc @harshvardhan-yc
+/.github/ @ankit-yc @aupyay
+/SECURITY.md @ankit-yc @aupyay
+/CONTRIBUTING.md @ankit-yc @aupyay
+/docs/adr/ @ankit-yc @aupyay

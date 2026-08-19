@@ -3,7 +3,7 @@ declare const brand: unique symbol;
 /**
  * Nominal typing helper. `Brand<string, 'UUID'>` is assignable to `string`,
  * but a plain `string` is not assignable to it without passing a guard.
- * The brand exists only at the type level — there is no runtime cost.
+ * The brand exists only at the type level, so there is no runtime cost.
  */
 export type Brand<T, TBrand extends string> = T & { readonly [brand]: TBrand };
 
@@ -17,7 +17,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 /**
  * Guard for {@link UUID}. Accepts RFC 4122 UUIDs of versions 1–8 in any case.
- * The all-zero nil UUID is deliberately rejected — it is never a real record id.
+ * The all-zero nil UUID is deliberately rejected, because it is never a real
+ * record id.
  */
 export function isUuid(value: string): value is UUID {
   return UUID_PATTERN.test(value);
@@ -49,7 +50,7 @@ function isValidCalendarDate(year: number, month: number, day: number): boolean 
  * Guard for {@link ISODateTime}. Requires date, time, and an explicit offset
  * (`Z` or `±HH:MM`), and rejects strings that match the shape but are not real
  * instants (e.g. month 13 or February 30th). Note: `Date.parse` is deliberately
- * not used — V8 silently rolls invalid days over into the next month.
+ * not used, because V8 silently rolls invalid days over into the next month.
  */
 export function isIsoDateTime(value: string): value is ISODateTime {
   const match = ISO_DATE_TIME_PATTERN.exec(value);

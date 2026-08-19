@@ -84,19 +84,33 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Platform
 
-| Capability                             | State         | Note                                                                                                                                                                                     |
-| -------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Multi-tenant, multi-facility           | **Done**      | Structural isolation, not filtered isolation                                                                                                                                             |
-| Roles and permissions                  | **Done**      | Capability-based, seeded roles                                                                                                                                                           |
-| Patient portal                         | **Done**      | Record, visits, bills, messages, forms, assistant                                                                                                                                        |
-| Forms engine                           | **Done**      | Definitions, submissions, promoted values                                                                                                                                                |
-| Self-hosting, backup, restore, upgrade | **Done**      | With a clinical-day drill in CI                                                                                                                                                          |
-| Assistant / agentic layer              | **Done**      | Off by default; propose-never-commit; see ADR-0005 and ADR-0006                                                                                                                          |
-| Document management and scanning       | **Partial**   | Documents are modelled and stored; no scanning workflow                                                                                                                                  |
-| DICOM / imaging                        | **Missing**   | _Buildable_, large                                                                                                                                                                       |
-| Telehealth                             | **Seam only** | `packages/adapters` holds the video seam                                                                                                                                                 |
-| Internationalisation                   | **Partial**   | `packages/i18n`: catalogues, locale fallback, measured coverage, CLDR plurals. Not yet wired into the apps, and no catalogue ships but the source one                                    |
-| Inventory and dispensing               | **Done**      | `packages/inventory` behind four tables and the seven daily jobs at `/bff/v0/inventory`. On-hand is summed from an append-only ledger, never stored; UPDATE and DELETE are revoked on it |
+| Capability                             | State         | Note                                                                                                                                                                                                                                        |
+| -------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Authentication and identity**        | **Missing**   | _Buildable._ There is none. `OPENRUNIC_AUTH_MODE` accepts one value, `demo-tokens`, and the API says so in a banner on every boot. The note under this table is exact about what exists and what does not                                   |
+| Multi-tenant, multi-facility           | **Done**      | Structural isolation, not filtered isolation                                                                                                                                                                                                |
+| Roles and permissions                  | **Done**      | Capability-based, seeded roles, enforced per route by `requirePermission` and audited on denial. Authorisation and not authentication: it attaches to whoever the bearer token named, and the first row of this table is what that is worth |
+| Patient portal                         | **Done**      | Record, visits, bills, messages, forms, assistant                                                                                                                                                                                           |
+| Forms engine                           | **Done**      | Definitions, submissions, promoted values                                                                                                                                                                                                   |
+| Self-hosting, backup, restore, upgrade | **Done**      | With a clinical-day drill in CI                                                                                                                                                                                                             |
+| Assistant / agentic layer              | **Done**      | Off by default; propose-never-commit; see ADR-0005 and ADR-0006                                                                                                                                                                             |
+| Document management and scanning       | **Partial**   | Documents are modelled and stored; no scanning workflow                                                                                                                                                                                     |
+| DICOM / imaging                        | **Missing**   | _Buildable_, large                                                                                                                                                                                                                          |
+| Telehealth                             | **Seam only** | `packages/adapters` holds the video seam                                                                                                                                                                                                    |
+| Internationalisation                   | **Partial**   | `packages/i18n`: catalogues, locale fallback, measured coverage, CLDR plurals. Not yet wired into the apps, and no catalogue ships but the source one                                                                                       |
+| Inventory and dispensing               | **Done**      | `packages/inventory` behind four tables and the seven daily jobs at `/bff/v0/inventory`. On-hand is summed from an append-only ledger, never stored; UPDATE and DELETE are revoked on it                                                    |
+
+**On that first row.** Authentication is the one gap that qualifies every other row in this
+document, so it is worth being exact. `OPENRUNIC_AUTH_MODE` in `apps/api/src/server/wiring.ts` has
+one accepted value and no default: `demo-tokens`, which maps the three tokens printed in
+`apps/api/src/server/demo-principals.ts` onto the seeded demo users, and which prints a banner on
+every boot saying the deployment has no authentication. A real verifier is already written -
+`apps/api/src/auth/oidc-resolver.ts` checks a bearer token against an issuer's published keys, and
+`apps/api/src/index.ts` installs it in place of the demo table when `OIDC_ISSUER`, `OIDC_AUDIENCE`
+and `OIDC_JWKS_URI` are all set - but nothing in this project issues such a token, no shipped
+deployment sets those variables, and the staff sign-in screen has no provider redirect to send
+anybody to. Every install runs the demo table. What the other rows say about roles,
+scopes, break-glass and the audit log is true of a request once it carries an identity; none of it
+establishes that the identity is whose it claims to be.
 
 ## How to read this
 

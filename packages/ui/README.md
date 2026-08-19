@@ -8,13 +8,40 @@ drift from the brand by hard-coding a colour, a radius, or a duration.
 
 ## Install
 
-```bash
-pnpm add @openrunic/ui react react-dom
+**This package is not published to npm.** There is no `@openrunic/ui` on the registry and nothing
+in this repository publishes one, so `npm install @openrunic/ui` fetches somebody else's package or
+nothing at all. It is a workspace package inside the openrunic monorepo, and that is the only way
+to consume it today.
+
+Inside the monorepo, depend on it the way `apps/web` and `apps/portal` already do:
+
+```jsonc
+// apps/<your-app>/package.json
+{
+  "dependencies": {
+    "@openrunic/ui": "workspace:*",
+  },
+}
 ```
 
-`react` and `react-dom` (both `^19`) are peer dependencies. `lucide-react` is a real dependency:
-icons are npm modules, never fetched from a CDN, so a page rendering OpenRunic UI makes no network
-request for chrome.
+Then install and build it, because the exports point at `dist/` and pnpm links the package
+directory rather than a compiled copy:
+
+```bash
+pnpm install
+pnpm --filter @openrunic/ui build
+```
+
+Turborepo builds it for you as a dependency of an app build; the explicit command is for the case
+where you are working on the library itself, and `pnpm --filter @openrunic/ui dev` rebuilds it on
+change.
+
+`react` and `react-dom` (both `^19`) are peer dependencies, supplied by the consuming app.
+`lucide-react` is a real dependency: icons are npm modules, never fetched from a CDN, so a page
+rendering OpenRunic UI makes no network request for chrome.
+
+Publishing to npm is a decision that has not been made rather than a step that has been forgotten.
+Nothing here is API-stable yet, and a published package is a promise about names.
 
 ## Use
 
@@ -230,19 +257,22 @@ Nothing is disabled globally.
 There is deliberately **no** screenshot diffing in this package yet. The library would fail such a
 gate for reasons that have nothing to do with a regression:
 
-- The three OFL families are referenced but not bundled (see [Fonts](#fonts)), so text renders in
-  whatever fallback the host has. macOS falls back to `-apple-system` and Georgia; a Linux CI
-  runner falls back to something else entirely, and every baseline would be a font diff.
+- The rendering stack under the story tests is not pinned. The three OFL families _are_ bundled
+  (see [Fonts](#fonts)), so the glyphs are the same everywhere, but `.github/workflows/storybook.yml`
+  runs on `ubuntu-latest` and installs Chromium with `playwright install --with-deps`. The image,
+  and with it fontconfig, FreeType and HarfBuzz, moves underneath us; a rasteriser or hinting change
+  shifts antialiasing across every baseline at once, and a baseline that a runner-image update can
+  invalidate is not evidence of anything.
 - Every component is pre-alpha and changing weekly. A gate that gets re-baselined on most pull
   requests stops being a gate and becomes a rubber stamp with binaries attached to it.
 - The axe and interaction suite above already runs in a real browser, so structural and contrast
   regressions - the ones that actually hurt - are caught without pixel comparison.
 
-What would have to be true before adding it: the font binaries vendored into the package (or a
-pinned font set installed into the CI image), a pinned browser via the Playwright container image
-rather than the runner's own, animations and transitions disabled in the preview, a fixed viewport
-and device scale factor, and a component API stable enough that a diff means a mistake rather than
-progress. When those hold, the natural home is a third job in `.github/workflows/storybook.yml`
+What would have to be true before adding it: a pinned browser and rendering stack via the Playwright
+container image rather than the runner's own, animations and transitions disabled in the preview, a
+fixed viewport and device scale factor, and a component API stable enough that a diff means a
+mistake rather than progress. The font half of that list is already done, which is the one
+precondition this package has met. When those hold, the natural home is a third job in `.github/workflows/storybook.yml`
 alongside the two that exist.
 
 ## Licence

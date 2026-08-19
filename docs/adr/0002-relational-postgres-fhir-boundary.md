@@ -66,7 +66,7 @@ truth**, and perform **FHIR R4 serialization at the API boundary** in `apps/api`
 
 ## Alternatives considered
 
-- **FHIR-native JSONB storage (Medplum-style)**: store FHIR resources as JSONB in Postgres and
+- **FHIR-native JSONB storage**: store FHIR resources as JSONB in Postgres and
   index for FHIR search. Rejected: we would be rebuilding FHIR search machinery (search parameter
   indexing, token/reference/date semantics) that mature servers took years to harden; verbose
   resources tax every screen with parsing and projection work; and typed access degrades to

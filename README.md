@@ -10,7 +10,7 @@
 <h1 align="center">Open-Source Operating System for Human Health</h1>
 
 <p align="center">
-  <b>A free, self-hostable electronic medical record</b><br />
+  <b>A free, self-hostable agent first electronic medical record</b><br />
   and the open platform that grows around it.
 </p>
 

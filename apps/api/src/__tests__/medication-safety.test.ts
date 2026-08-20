@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { SmartLaunchSettings } from '../env.js';
+
 import {
   bearer,
   createTestApp,
@@ -183,20 +185,66 @@ describe('SMART discovery', () => {
     expect(res.status).toBe(200);
   });
 
-  it('claims only launch modes this server implements', async () => {
-    const { app } = harness();
+  async function discovery(smartLaunch?: SmartLaunchSettings): Promise<Record<string, unknown>> {
+    const app = createTestApp({ smartLaunch }).app;
+    const res = await app.request('/fhir/.well-known/smart-configuration');
+    expect(res.status).toBe(200);
+    return (await res.json()) as Record<string, unknown>;
+  }
 
-    const document = (await (
-      await app.request('/fhir/.well-known/smart-configuration')
-    ).json()) as { capabilities: string[]; issuer: string; scopes_supported: string[] };
+  const LAUNCH: SmartLaunchSettings = {
+    authorizationEndpoint: 'https://idp.example.invalid/authorize',
+    tokenEndpoint: 'https://idp.example.invalid/oauth/token',
+  };
 
-    expect(document.capabilities).toContain('launch-standalone');
-    // Not claimed: this server has no EHR launch context to hand an app, and
-    // advertising one would send a client down a flow that fails after the user
-    // has already been redirected.
-    expect(document.capabilities).not.toContain('launch-ehr');
+  it('describes how it reads a scope whether or not a launch is published', async () => {
+    const document = await discovery();
+
+    // These two say how this server interprets a scope it is handed, which is
+    // true of any token it accepts, whoever issued it.
+    expect(document.capabilities).toContain('permission-patient');
+    expect(document.capabilities).toContain('permission-user');
     expect(document.issuer).toContain('/fhir');
     expect(document.scopes_supported).toContain('patient/*.read');
+  });
+
+  it('publishes no launch, and no endpoints, when no authorisation server is configured', async () => {
+    const document = await discovery();
+
+    // The document used to name `/authorize` and `/token` on this API's own
+    // origin. Neither has ever been served, so an app that believed the
+    // document was redirected to a 404 with the user already sitting in front
+    // of it. Silence here is what tells a client to stop before that happens.
+    expect(document.authorization_endpoint).toBeUndefined();
+    expect(document.token_endpoint).toBeUndefined();
+    expect(document.capabilities).not.toContain('launch-standalone');
+    expect(document.capabilities).not.toContain('client-public');
+  });
+
+  it('publishes the configured authorisation server, and only then claims a launch', async () => {
+    const document = await discovery(LAUNCH);
+
+    expect(document.authorization_endpoint).toBe(LAUNCH.authorizationEndpoint);
+    expect(document.token_endpoint).toBe(LAUNCH.tokenEndpoint);
+    expect(document.capabilities).toContain('launch-standalone');
+    expect(document.capabilities).toContain('client-public');
+    expect(document.capabilities).toContain('context-standalone-patient');
+  });
+
+  it('never claims an EHR launch, configured or not', async () => {
+    // This server has no EHR launch context to hand an app. Configuring an
+    // authorisation server does not create one, so the answer is the same in
+    // both directions.
+    for (const document of [await discovery(), await discovery(LAUNCH)]) {
+      expect(document.capabilities).not.toContain('launch-ehr');
+      expect(document.capabilities).not.toContain('context-ehr-patient');
+    }
+  });
+
+  it('offers only S256, so a downgrade to plain is not on the table', async () => {
+    const document = await discovery(LAUNCH);
+
+    expect(document.code_challenge_methods_supported).toStrictEqual(['S256']);
   });
 
   it('names no patient, because discovery is public', async () => {

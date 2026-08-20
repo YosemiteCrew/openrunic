@@ -15,6 +15,7 @@ import type { AuditSink } from './audit/types.js';
 import type { PrincipalResolver } from './auth/principal.js';
 import { DEMO_PRINCIPALS, createStaticPrincipalResolver } from './auth/static-resolver.js';
 import type { AppEnv } from './context.js';
+import type { SmartLaunchSettings } from './env.js';
 import { ApiError, isApiError } from './errors.js';
 import { CDS_BASE_PATH, cdsRoutes } from './cds/index.js';
 import { FHIR_BASE_PATH, fhirRoutes, isFhirPath } from './fhir/index.js';
@@ -84,6 +85,14 @@ export interface CreateAppOptions {
    * Absent in development, where there is no database to be ready for.
    */
   readiness?: () => Promise<boolean>;
+  /**
+   * Where a SMART app authorises, when the deployment publishes a launch.
+   *
+   * Absent by default, and absent is a real answer rather than a gap: the
+   * discovery document omits the endpoints instead of naming ones this API does
+   * not serve.
+   */
+  smartLaunch?: SmartLaunchSettings;
 }
 
 /**
@@ -182,7 +191,10 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     )
   );
 
-  app.route(FHIR_BASE_PATH, fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now }));
+  app.route(
+    FHIR_BASE_PATH,
+    fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now, smartLaunch: options.smartLaunch })
+  );
   app.route(CDS_BASE_PATH, cdsRoutes());
   app.route(BFF_BASE_PATH, internalRoutes());
 

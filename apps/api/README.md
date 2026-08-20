@@ -243,6 +243,11 @@ Environment variables are validated at startup (`src/env.ts`):
   all; a partial configuration is refused, because falling back to the development principal table
   because one variable was missing is exactly the accident this validation exists to prevent.
 - `OIDC_CLOCK_SKEW_SECONDS` - tolerance on `exp`, `nbf` and `iat`, default `60`
+- `OIDC_AUTHORIZATION_ENDPOINT`, `OIDC_TOKEN_ENDPOINT` - the authorisation server third-party
+  SMART apps are sent to. Set together, and only alongside the three above, since a launch whose
+  tokens this API cannot verify hands an app a redirect that ends in a 401. Leave both unset and
+  `/fhir/.well-known/smart-configuration` omits the endpoints and claims no launch, which is how
+  a client learns to stop before redirecting anyone.
 
 With those set, the entry point installs the real bearer-token verifier: JWKS fetched and cached,
 key rotation handled by a rate-limited refetch on an unknown `kid`, `alg` checked against an

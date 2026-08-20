@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { oidcSettings, parseEnv, type Env } from '../env.js';
+import { oidcSettings, parseEnv, smartLaunchSettings, type Env } from '../env.js';
 
 describe('parseEnv', () => {
   it('applies defaults when variables are absent', () => {
@@ -111,5 +111,66 @@ describe('a half-configured provider is refused at parse time', () => {
 
   it('accepts none of them, which is the demo-token path', () => {
     expect(oidcSettings(parseEnv({ DATABASE_URL: COMPLETE.DATABASE_URL }))).toBeUndefined();
+  });
+});
+
+describe('the SMART launch settings', () => {
+  const verification = {
+    OIDC_ISSUER: 'https://idp.example.invalid',
+    OIDC_AUDIENCE: 'openrunic-api',
+    OIDC_JWKS_URI: 'https://idp.example.invalid/jwks',
+  };
+  const endpoints = {
+    OIDC_AUTHORIZATION_ENDPOINT: 'https://idp.example.invalid/authorize',
+    OIDC_TOKEN_ENDPOINT: 'https://idp.example.invalid/oauth/token',
+  };
+
+  it('are absent when the deployment publishes no launch', () => {
+    // Verifying tokens and publishing a launch are separate decisions. A
+    // deployment whose apps are configured by hand wants the first and not the
+    // second, and it says so by leaving these unset.
+    expect(smartLaunchSettings(parseEnv(verification))).toBeUndefined();
+  });
+
+  it('read both endpoints when the deployment set them', () => {
+    expect(smartLaunchSettings(parseEnv({ ...verification, ...endpoints }))).toEqual({
+      authorizationEndpoint: 'https://idp.example.invalid/authorize',
+      tokenEndpoint: 'https://idp.example.invalid/oauth/token',
+    });
+  });
+
+  it.each(['OIDC_AUTHORIZATION_ENDPOINT', 'OIDC_TOKEN_ENDPOINT'])(
+    'refuses %s on its own',
+    (missing) => {
+      const partial: Record<string, string> = { ...verification, ...endpoints };
+      delete partial[missing];
+
+      // Half a pair would publish a document naming one endpoint and not the
+      // other, which no client can complete a flow against.
+      expect(() => parseEnv(partial)).toThrow(/Invalid environment configuration/);
+    }
+  );
+
+  it('refuses a launch the deployment could not verify the result of', () => {
+    // Authorising against a provider whose tokens this API cannot check would
+    // give an app a working redirect and a 401 at the end of it.
+    expect(() => parseEnv(endpoints)).toThrow(/Invalid environment configuration/);
+  });
+
+  it.each([
+    ['OIDC_AUTHORIZATION_ENDPOINT', 'OIDC_TOKEN_ENDPOINT'],
+    ['OIDC_TOKEN_ENDPOINT', 'OIDC_AUTHORIZATION_ENDPOINT'],
+  ])('names what is missing when only %s is set, not what was set', (present, absent) => {
+    let message = '';
+    try {
+      parseEnv({ ...verification, [present]: 'https://a.invalid/somewhere' });
+    } catch (error) {
+      message = error instanceof Error ? error.message : '';
+    }
+
+    // The variable the operator has to add, not the one they just typed.
+    expect(message).toContain(absent);
+    // And never the value: this file's errors are read out of boot logs.
+    expect(message).not.toContain('a.invalid');
   });
 });

@@ -22,6 +22,23 @@ const envSchema = z
     OIDC_JWKS_URI: z.url().optional(),
     /** Tolerance on `exp`, `nbf` and `iat`, in seconds. */
     OIDC_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(600).default(60),
+    /**
+     * Where the provider authorises, and where it redeems a code.
+     *
+     * Named explicitly rather than discovered from the issuer, for the same
+     * reason `OIDC_JWKS_URI` is. The one document that needs them,
+     * `.well-known/smart-configuration`, is served unauthenticated, and an
+     * unauthenticated endpoint that makes an outbound request on demand lets
+     * anybody drive traffic out of this API at a URL this API chose. Two lines
+     * of configuration are cheaper than owning that.
+     *
+     * Optional even when the rest of OIDC is set: a deployment can verify
+     * tokens perfectly well without publishing a SMART launch, and it says so
+     * by leaving these unset rather than by naming an endpoint that is not
+     * there.
+     */
+    OIDC_AUTHORIZATION_ENDPOINT: z.url().optional(),
+    OIDC_TOKEN_ENDPOINT: z.url().optional(),
   })
   .refine(
     (value) =>
@@ -34,6 +51,37 @@ const envSchema = z
     {
       message: 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be set together or not at all',
       path: ['OIDC_ISSUER'],
+    }
+  )
+  // Two refinements rather than one comparing the pair, so the path names the
+  // variable that is MISSING. `parseEnv` reports paths, not messages, and an
+  // error naming the variable the operator just set tells them nothing they did
+  // not already know.
+  .refine(
+    (value) =>
+      value.OIDC_TOKEN_ENDPOINT === undefined || value.OIDC_AUTHORIZATION_ENDPOINT !== undefined,
+    {
+      message: 'OIDC_AUTHORIZATION_ENDPOINT and OIDC_TOKEN_ENDPOINT must be set together',
+      path: ['OIDC_AUTHORIZATION_ENDPOINT'],
+    }
+  )
+  .refine(
+    (value) =>
+      value.OIDC_AUTHORIZATION_ENDPOINT === undefined || value.OIDC_TOKEN_ENDPOINT !== undefined,
+    {
+      message: 'OIDC_AUTHORIZATION_ENDPOINT and OIDC_TOKEN_ENDPOINT must be set together',
+      path: ['OIDC_TOKEN_ENDPOINT'],
+    }
+  )
+  .refine(
+    (value) => value.OIDC_AUTHORIZATION_ENDPOINT === undefined || value.OIDC_ISSUER !== undefined,
+    {
+      // A launch cannot be advertised by a deployment that cannot verify what
+      // comes back from it. Allowing this pair alone would publish a working
+      // authorisation flow whose tokens this API then rejects, and the app
+      // developer would debug it at the far end of a redirect.
+      message: 'OIDC_AUTHORIZATION_ENDPOINT requires the OIDC verification settings to be set too',
+      path: ['OIDC_AUTHORIZATION_ENDPOINT'],
     }
   );
 
@@ -79,5 +127,30 @@ export function oidcSettings(env: Env): OidcSettings | undefined {
       .filter((entry) => entry.length > 0),
     jwksUri: env.OIDC_JWKS_URI,
     clockSkewSeconds: env.OIDC_CLOCK_SKEW_SECONDS,
+  };
+}
+
+/**
+ * The authorisation server a SMART app should be sent to, when this deployment
+ * has one.
+ *
+ * Separate from {@link OidcSettings} because the two answer different questions.
+ * `OidcSettings` is what this API needs to VERIFY a token that has arrived.
+ * This is what a third-party app needs to OBTAIN one, and a deployment can
+ * reasonably have the first without publishing the second.
+ */
+export interface SmartLaunchSettings {
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+}
+
+export function smartLaunchSettings(env: Env): SmartLaunchSettings | undefined {
+  // The schema already refuses one without the other, and refuses either
+  // without the verification settings, so a single check is the whole test.
+  if (env.OIDC_AUTHORIZATION_ENDPOINT === undefined) return undefined;
+  if (env.OIDC_TOKEN_ENDPOINT === undefined) return undefined;
+  return {
+    authorizationEndpoint: env.OIDC_AUTHORIZATION_ENDPOINT,
+    tokenEndpoint: env.OIDC_TOKEN_ENDPOINT,
   };
 }

@@ -2,11 +2,19 @@ import { serve } from '@hono/node-server';
 
 import { createApp, type CreateAppOptions } from './app.js';
 import { createOidcPrincipalResolver } from './auth/oidc-resolver.js';
-import { oidcSettings, parseEnv } from './env.js';
+import { oidcSettings, parseEnv, smartLaunchSettings } from './env.js';
 import { buildServerWiring, parseWiringEnv, type ServerWiring } from './server/wiring.js';
 
 const env = parseEnv();
 const oidc = oidcSettings(env);
+
+/**
+ * Read outside the wiring branch below because it is not a production concern.
+ * A developer pointing a SMART app at a local API needs the launch published
+ * just as much as a real install does, and the document is the only place an
+ * app can learn where to go.
+ */
+const smartLaunch = smartLaunchSettings(env);
 
 /**
  * Development keeps `createApp`'s defaults - an in-memory store and the demo
@@ -33,8 +41,9 @@ const wiring: ServerWiring | null =
  */
 const options: CreateAppOptions =
   wiring === null
-    ? {}
+    ? { smartLaunch }
     : {
+        smartLaunch,
         repositories: wiring.repositories,
         auditSink: wiring.auditSink,
         readiness: wiring.readiness,

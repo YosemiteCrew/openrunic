@@ -1,3 +1,4 @@
+import { AdapterRegistry } from '@openrunic/adapters';
 import { FHIR_VERSION, type CapabilityStatement, type OperationOutcome } from '@openrunic/fhir';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -125,12 +126,16 @@ describe('createApp', () => {
   it('refuses the development defaults under NODE_ENV=production', () => {
     vi.stubEnv('NODE_ENV', 'production');
     try {
-      expect(() => createApp()).toThrow(/repositories, principalResolver, auditSink/);
+      expect(() => createApp()).toThrow(/repositories, principalResolver, auditSink, adapters/);
       expect(() =>
         createApp({
           repositories: createMemoryRepositoryRegistry(),
           auditSink: createMemoryAuditSink(),
           principalResolver: createStaticPrincipalResolver(new Map()),
+          // A mock telehealth vendor issues join links at an address that can
+          // never resolve. Nothing about that fails at boot; it fails with a
+          // patient already waiting, so production has to name a real one.
+          adapters: new AdapterRegistry(),
         })
       ).not.toThrow();
     } finally {

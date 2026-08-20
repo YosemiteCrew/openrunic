@@ -9,7 +9,9 @@ import {
   equalsIfSet,
   jsonColumn,
   matchesIfSet,
+  inWindow,
   startsWithFold,
+  statusMetadata,
   windowFilter,
   type BaseQuery,
   type CollectionSpec,
@@ -18,7 +20,7 @@ import {
 } from '../collection.js';
 import { APPOINTMENT_DEFAULTS, PATIENT_DEFAULTS } from '../defaults.js';
 import type { ScopedRow } from '../rows.js';
-import type { AdministrativeGender, AppointmentStatus } from '../types.js';
+import type { AdministrativeGender, AppointmentStatus, TelehealthVisitStatus } from '../types.js';
 
 /**
  * Registration and scheduling: the two aggregates every other one refers to.
@@ -303,7 +305,117 @@ export const appointmentSpec: CollectionSpec<
   },
 };
 
+/* --------------------------------------------------------------- telehealth */
+
+export interface TelehealthVisitListQuery extends BaseQuery {
+  appointmentId?: string;
+  status?: TelehealthVisitStatus;
+  /** Inclusive lower bound on `scheduledStart`. */
+  from?: Date;
+  /** Exclusive upper bound on `scheduledStart`. */
+  to?: Date;
+  sort: 'scheduledStart' | 'createdAt';
+}
+
+/**
+ * What the routes may write after a room exists.
+ *
+ * No `roomRef`, no `joinUrl` and no `vendorId`. Those describe a room a vendor
+ * made; rewriting them here would point this record at a different room while
+ * the visit it belongs to carries on, and nobody would be able to tell which
+ * room the participants were actually in.
+ */
+export interface TelehealthVisitPatchInput {
+  status?: TelehealthVisitStatus;
+  endedAt?: Date;
+  endedReason?: string;
+  durationSeconds?: number;
+}
+
+export interface TelehealthVisitCreateInput {
+  appointmentId: string;
+  vendorId: string;
+  roomRef: string;
+  joinUrl: string;
+  scheduledStart: Date;
+  expiresAt: Date;
+}
+
+export const telehealthVisitSpec: CollectionSpec<
+  'TelehealthVisit',
+  TelehealthVisitCreateInput,
+  TelehealthVisitPatchInput,
+  TelehealthVisitListQuery
+> = {
+  model: 'TelehealthVisit',
+  targetType: 'TelehealthVisit',
+  action: 'appointment',
+  // No patient column and no compartment. A visit points at an appointment,
+  // which is where the chart is; duplicating the patient here would give one
+  // visit two answers to whose it is, and the two would drift the first time an
+  // appointment was moved to a different chart.
+  compartment: 'open',
+
+  newRow(input: TelehealthVisitCreateInput): Writable<'TelehealthVisit'> {
+    return {
+      appointmentId: input.appointmentId,
+      vendorId: input.vendorId,
+      roomRef: input.roomRef,
+      joinUrl: input.joinUrl,
+      status: 'OPEN',
+      scheduledStart: input.scheduledStart,
+      expiresAt: input.expiresAt,
+      endedAt: null,
+      endedReason: null,
+      durationSeconds: null,
+    };
+  },
+
+  patchData(patch: TelehealthVisitPatchInput): Partial<Writable<'TelehealthVisit'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'TelehealthVisit'>, query: TelehealthVisitListQuery): boolean {
+    if (query.appointmentId !== undefined && row.appointmentId !== query.appointmentId) {
+      return false;
+    }
+    if (query.status !== undefined && row.status !== query.status) return false;
+    return inWindow(row.scheduledStart, query.from, query.to);
+  },
+
+  where(query: TelehealthVisitListQuery) {
+    const scheduledStart = windowFilter(query.from, query.to);
+    return {
+      ...(query.appointmentId === undefined ? {} : { appointmentId: query.appointmentId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(scheduledStart === undefined ? {} : { scheduledStart }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'TelehealthVisit'>, sort: TelehealthVisitListQuery['sort']): number {
+    if (sort === 'createdAt') return row.createdAt.getTime();
+    return row.scheduledStart.getTime();
+  },
+
+  orderBy(query: TelehealthVisitListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ scheduledStart: order }, { id: 'asc' as const }];
+  },
+
+  writeMetadata(
+    row: ScopedRow<'TelehealthVisit'>,
+    before: ScopedRow<'TelehealthVisit'> | null
+  ): Record<string, unknown> {
+    // The room reference, not the join url and never a token. A support engineer
+    // tracing a failed visit needs to name the room to the vendor; nothing in an
+    // audit record needs to be able to enter it.
+    return statusMetadata(row.status, before, { roomRef: row.roomRef });
+  },
+};
+
 export const coreSpecs = {
   patients: patientSpec,
   appointments: appointmentSpec,
+  telehealthVisits: telehealthVisitSpec,
 } as const;

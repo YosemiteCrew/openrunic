@@ -783,6 +783,7 @@ model Organisation {
   terminologyCodes     TerminologyCode[]
   consentGrants        ConsentGrant[]
   auditEvents          AuditEvent[]
+  telehealthVisits     TelehealthVisit[]
 
   @@index([status])
 }
@@ -1040,6 +1041,7 @@ model Patient {
   /// prefix keeps the default "search living, non-merged patients" path on one
   /// index.
   stockPostings StockPosting[]
+
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
   @@index([tenantId, birthDate])
@@ -1258,8 +1260,9 @@ model Appointment {
   patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: Restrict)
   provider     User         @relation(fields: [providerId], references: [id], onDelete: Restrict)
 
-  statusHistory AppointmentStatusHistory[]
-  encounter     Encounter?
+  statusHistory   AppointmentStatusHistory[]
+  encounter       Encounter?
+  telehealthVisit TelehealthVisit?
 
   /// The schedule day view: one facility, one date range.
   @@index([tenantId, facilityId, start])
@@ -1337,6 +1340,7 @@ model Encounter {
   formSubmissions      FormSubmission[]
 
   stockPostings StockPosting[]
+
   @@index([tenantId, patientId, startedAt])
   @@index([tenantId, facilityId, status, startedAt])
   @@index([tenantId, providerId, startedAt])
@@ -2777,4 +2781,52 @@ model StockMovement {
   @@index([tenantId, createdAt])
   /// A diversion investigation starts from a person, not from a lot.
   @@index([tenantId, actorId, createdAt])
+}
+
+/// A telehealth visit: one video room, for one appointment.
+///
+/// Deliberately a table of its own rather than columns on Appointment. Most
+/// appointments are in person and would carry six null columns forever, and the
+/// vendor's identifiers are not part of the scheduling aggregate: an appointment
+/// is a commitment between people, and a room is a thing a vendor made.
+///
+/// NO JOIN TOKEN IS STORED HERE, and there is no column for one. A token admits
+/// the bearer to a consultation. Persisting one turns every future read of this
+/// table, every backup and every support export into a way into a patient's
+/// appointment. Tokens are issued on demand, handed to the caller once, and
+/// never written down.
+model TelehealthVisit {
+  id              String                @id @db.Uuid
+  tenantId        String                @db.Uuid
+  /// One room per appointment. A second room for the same visit is two waiting
+  /// rooms, and half the participants end up in the wrong one.
+  appointmentId   String                @unique @db.Uuid
+  /// The vendor whose adapter made this room. Recorded because a room outlives a
+  /// configuration change, and afterwards nobody can tell which vendor to ask.
+  vendorId        String
+  /// The vendor's own room identifier. Opaque to this system by design.
+  roomRef         String
+  joinUrl         String
+  status          TelehealthVisitStatus @default(OPEN)
+  scheduledStart  DateTime
+  /// After this instant the vendor refuses every token, including issued ones.
+  expiresAt       DateTime
+  endedAt         DateTime?
+  endedReason     String?
+  /// Wall-clock length the vendor reported, which billing uses as one input to
+  /// visit duration. Null until the visit ends.
+  durationSeconds Int?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment  Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status, scheduledStart])
+}
+
+enum TelehealthVisitStatus {
+  OPEN
+  ENDED
+  EXPIRED
 }

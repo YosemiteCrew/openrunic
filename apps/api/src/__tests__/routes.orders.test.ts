@@ -213,6 +213,8 @@ function makeDocumentRow(overrides: Partial<DocumentRow> = {}): DocumentRow {
     filedAt: null,
     filedById: null,
     expiresAt: null,
+    supersededById: null,
+    errorReason: null,
     ...overrides,
   };
 }
@@ -1268,6 +1270,145 @@ describe('documents', () => {
     const again = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/file`, { body: {} });
     expect(again.status).toBe(409);
     expect((await problem(again)).type).toBe('https://openrunic.org/problems/invalid-transition');
+  });
+
+  it('refuses to file a document that belongs to no chart', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Document', makeDocumentRow({ patientId: null }));
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/file`, { body: {} });
+
+    // The failure this guard exists for: filing used to take an empty body and
+    // change only the status, so an unclaimed document left the triage queue
+    // and arrived nowhere. It looked like success.
+    expect(res.status).toBe(409);
+    expect((await problem(res)).detail).toContain('needs a chart');
+  });
+
+  it('files an unclaimed document into the chart the filer names', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Document', makeDocumentRow({ patientId: null }));
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/file`, {
+      body: { patientId: PATIENT, title: 'Cardiology consult', category: '11488-4' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await body<DocumentDto>(res)).toMatchObject({
+      status: 'FILED',
+      patientId: PATIENT,
+      // Corrected in the same request. A fax arrives titled by the sending
+      // machine, and a filer who has to patch first and file second is a filer
+      // who sometimes forgets the second.
+      title: 'Cardiology consult',
+    });
+  });
+
+  it('records which document replaced a superseded one', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Document',
+      makeDocumentRow(),
+      makeDocumentRow({ id: DOCUMENT_B, sha256: 'b'.repeat(64) })
+    );
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: DOCUMENT_B },
+    });
+
+    expect(res.status).toBe(200);
+    // SUPERSEDED was in the transition graph from the start with no route to
+    // reach it and nothing to say what had done the superseding.
+    expect(await body<DocumentDto>(res)).toMatchObject({
+      status: 'SUPERSEDED',
+      supersededById: DOCUMENT_B,
+    });
+  });
+
+  it('refuses to point a superseded document at nothing', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Document', makeDocumentRow());
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: testId(9_999) },
+    });
+
+    // Read back before the write, so a pointer into nothing is never stored.
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses to let a document supersede itself', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Document', makeDocumentRow());
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: DOCUMENT_A },
+    });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('keeps the reason a document was rejected', async () => {
+    const { app } = seededApp();
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/reject`, {
+      body: { reason: 'Wrong patient: this is another practice\u2019s fax' },
+    });
+
+    expect(res.status).toBe(200);
+    const rejected = await body<DocumentDto>(res);
+    expect(rejected.status).toBe('ENTERED_IN_ERROR');
+    // The audit trail records who and when. What it cannot record is what they
+    // saw, and that is the part somebody asks about when a page is missing.
+    expect(rejected.errorReason).toContain('Wrong patient');
+  });
+
+  it('refuses a rejection with no reason', async () => {
+    const { app } = seededApp();
+
+    const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/reject`, { body: {} });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('refuses bytes this organisation already holds, naming what it holds', async () => {
+    const { app } = seededApp();
+
+    const res = await call(app, 'post', '/bff/v0/documents', {
+      body: { ...VALID_DOCUMENT, sha256: 'a'.repeat(64) },
+    });
+
+    // A fax that arrives twice is one document. The second copy looks exactly
+    // like new work, and whoever triages it files a duplicate into a chart,
+    // where it reads as a second result rather than the same one seen twice.
+    expect(res.status).toBe(409);
+    expect((await problem(res)).detail).toContain(DOCUMENT_A);
+  });
+
+  it.each(['SUPERSEDED', 'ENTERED_IN_ERROR'] as const)(
+    'allows the same bytes again once the earlier copy is %s',
+    async (status) => {
+      const { app, dataset } = createTestApp();
+      seed(dataset, 'Document', makeDocumentRow({ status }));
+
+      const res = await call(app, 'post', '/bff/v0/documents', {
+        body: { ...VALID_DOCUMENT, sha256: 'a'.repeat(64) },
+      });
+
+      // Re-uploading is how somebody fixes a mistake. Refusing it would leave
+      // them with a chart they cannot correct.
+      expect(res.status).toBe(201);
+    }
+  );
+
+  it('finds an existing document by its digest', async () => {
+    const { app } = seededApp();
+
+    const res = await call(app, 'get', `/bff/v0/documents?sha256=${'a'.repeat(64)}`);
+
+    expect(res.status).toBe(200);
+    expect((await body<{ data: DocumentDto[] }>(res)).data).toHaveLength(1);
   });
 });
 

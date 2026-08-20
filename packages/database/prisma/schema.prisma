@@ -1186,6 +1186,13 @@ model Document {
   receivedAt       DateTime         @default(now())
   filedAt          DateTime?
   filedById        String?          @db.Uuid
+  /// The document that replaced this one. Set when status becomes SUPERSEDED,
+  /// because a status saying something replaced this is not much use without
+  /// saying what.
+  supersededById   String?          @db.Uuid
+  /// Why this was marked ENTERED_IN_ERROR. Somebody will ask, and the audit
+  /// trail records who and when but not what they saw.
+  errorReason      String?
   expiresAt        DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -1199,9 +1206,15 @@ model Document {
   /// Referrals whose report is this document.
   referralReports Referral[]
 
+  supersededBy Document?  @relation("DocumentSupersedes", fields: [supersededById], references: [id], onDelete: Restrict)
+  supersedes   Document[] @relation("DocumentSupersedes")
+
   @@index([tenantId, patientId, category])
   @@index([tenantId, status, receivedAt])
   @@index([tenantId, encounterId])
+  /// Answers "have these exact bytes arrived before", which is what stops a fax
+  /// received twice becoming two documents in one chart.
+  @@index([tenantId, sha256])
 }
 
 // ---------------------------------------------------------------------------

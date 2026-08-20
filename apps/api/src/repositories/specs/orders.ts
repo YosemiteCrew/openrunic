@@ -662,6 +662,8 @@ export interface DocumentListQuery extends BaseQuery {
   status?: DocumentStatus;
   category?: string;
   source?: DocumentSource;
+  /** Exact digest of the stored bytes. Answers "has this arrived before". */
+  sha256?: string;
   /** Inclusive lower bound on `receivedAt`. */
   from?: Date;
   /** Exclusive upper bound on `receivedAt`. */
@@ -680,6 +682,8 @@ export interface DocumentPatchInput {
   expiresAt?: Date;
   filedAt?: Date;
   filedById?: string;
+  supersededById?: string;
+  errorReason?: string;
 }
 
 export const documentSpec: CollectionSpec<
@@ -709,8 +713,13 @@ export const documentSpec: CollectionSpec<
       status: input.status ?? ORDER_DEFAULTS.document.status,
       sensitivityClass: input.sensitivityClass ?? ORDER_DEFAULTS.document.sensitivityClass,
       receivedAt: input.receivedAt ?? context.now,
+      // Filing, supersession and rejection are all decisions somebody makes
+      // after the bytes arrive. A document that has just landed carries none of
+      // them, whatever the caller supplied.
       filedAt: null,
       filedById: null,
+      supersededById: null,
+      errorReason: null,
       expiresAt: input.expiresAt ?? null,
     };
   },
@@ -725,6 +734,7 @@ export const documentSpec: CollectionSpec<
     if (query.status !== undefined && row.status !== query.status) return false;
     if (query.category !== undefined && row.category !== query.category) return false;
     if (query.source !== undefined && row.source !== query.source) return false;
+    if (query.sha256 !== undefined && row.sha256 !== query.sha256) return false;
     return inWindow(row.receivedAt, query.from, query.to);
   },
 
@@ -736,6 +746,7 @@ export const documentSpec: CollectionSpec<
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.category === undefined ? {} : { category: query.category }),
       ...(query.source === undefined ? {} : { source: query.source }),
+      ...(query.sha256 === undefined ? {} : { sha256: query.sha256 }),
       ...(receivedAt === undefined ? {} : { receivedAt }),
     };
   },

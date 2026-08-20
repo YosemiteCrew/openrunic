@@ -576,6 +576,11 @@ export const documentListQuerySchema = z.strictObject({
   status: z.enum(DOCUMENT_STATUSES).optional(),
   category: z.string().min(1).max(64).optional(),
   source: z.enum(DOCUMENT_SOURCES).optional(),
+  /** Exact digest of the stored bytes. Answers "has this arrived before". */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
   sort: z.enum(['receivedAt', 'title', 'createdAt']).default('receivedAt'),
   order: sortOrderField,
 });
@@ -589,6 +594,7 @@ export function toDocumentListQuery(input: DocumentListQueryInput): DocumentList
     ...windowOf(input),
     ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
     ...(input.encounterId === undefined ? {} : { encounterId: input.encounterId }),
+    ...(input.sha256 === undefined ? {} : { sha256: input.sha256 }),
     ...(input.status === undefined ? {} : { status: input.status }),
     ...(input.category === undefined ? {} : { category: input.category }),
     ...(input.source === undefined ? {} : { source: input.source }),
@@ -620,6 +626,51 @@ export const documentPatchSchema = z
 
 export type DocumentPatchBody = z.infer<typeof documentPatchSchema>;
 
+/**
+ * Filing a document from the inbox into a chart.
+ *
+ * A chart is the whole point. A document in the inbox is bytes nobody has
+ * claimed; filing is the act of saying whose chart they belong in, and filing
+ * with no patient moves it out of the triage queue without putting it anywhere
+ * a clinician will find it. That is the failure this workflow exists to
+ * prevent, and it used to be what an empty body did.
+ *
+ * `patientId` is optional here rather than required because a document
+ * delivered by an interface usually already carries one, and making the filer
+ * restate it is how a typo puts a page in the wrong chart. The route refuses
+ * when neither the body nor the document names a patient; what it will not do
+ * is accept the absence of both.
+ *
+ * The other fields are here because triage is usually where they are corrected:
+ * a fax arrives titled by the sending machine and categorised by whatever the
+ * interface guessed, and making the filer patch first and file second is how a
+ * document ends up filed with the wrong title.
+ */
+export const documentFileSchema = z.strictObject({
+  patientId: z.uuid().optional(),
+  encounterId: z.uuid().optional(),
+  category: z.string().min(1).max(64).optional(),
+  title: z.string().min(1).max(256).optional(),
+  sensitivityClass: z.enum(SENSITIVITY_CLASSES).optional(),
+});
+
+export type DocumentFileBody = z.infer<typeof documentFileSchema>;
+
+/** Recording that a newer document replaces this one. */
+export const documentSupersedeSchema = z.strictObject({
+  /** The document that replaces this one. Must already exist in this tenant. */
+  supersededById: z.uuid(),
+});
+
+export type DocumentSupersedeBody = z.infer<typeof documentSupersedeSchema>;
+
+/** Marking a document as something that should not be in the record. */
+export const documentRejectSchema = z.strictObject({
+  reason: z.string().min(1).max(500),
+});
+
+export type DocumentRejectBody = z.infer<typeof documentRejectSchema>;
+
 export function toDocumentPatchInput(body: DocumentPatchBody): DocumentPatchInput {
   return {
     ...(body.patientId === undefined ? {} : { patientId: body.patientId }),
@@ -648,6 +699,9 @@ export const documentDtoSchema = z.strictObject({
   receivedAt: z.string(),
   filedAt: z.string().nullable(),
   filedById: z.uuid().nullable(),
+  /** The document that replaced this one, when this one was superseded. */
+  supersededById: z.uuid().nullable(),
+  errorReason: z.string().nullable(),
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -671,6 +725,8 @@ export function toDocumentDto(row: DocumentRow): DocumentDto {
     sensitivityClass: row.sensitivityClass,
     receivedAt: row.receivedAt.toISOString(),
     filedAt: isoOrNull(row.filedAt),
+    supersededById: row.supersededById,
+    errorReason: row.errorReason,
     filedById: row.filedById,
     expiresAt: isoOrNull(row.expiresAt),
     createdAt: row.createdAt.toISOString(),

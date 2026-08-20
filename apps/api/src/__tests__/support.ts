@@ -55,14 +55,19 @@ export const TOKENS = {
   /** Holds a patient scope with no launch context to honour it. */
   danglingPatientScopeA: 'test-dangling-patient-scope-a',
   /**
-   * Every permission except `facility.all`, granted facility A only.
+   * A `read-only` principal granted facility A alone.
    *
-   * The admin tokens above hold `facility.all`, so none of them can show
-   * whether the facility narrowing works: they skip it by design. This one
-   * exists so a test can prove a principal sees its own site and not the
-   * other one.
+   * The admin tokens above hold `facility.all` and skip the facility narrowing
+   * by design, so none of them can show whether it works. `read-only` is a role
+   * this product actually ships: it holds every `.read` permission, and
+   * `facility.all` is not one of them.
+   *
+   * Deliberately an existing role rather than one invented for the suite. A
+   * role added to `ROLE_PERMISSIONS` is assignable in a real deployment, and
+   * one named for a confinement the BFF does not yet enforce would promise
+   * something this code cannot keep.
    */
-  siteAdminA: 'test-site-admin-a',
+  siteReaderA: 'test-site-reader-a',
 } as const;
 
 /** A valid, stable UUIDv7-shaped id. */
@@ -254,10 +259,10 @@ export const SECOND_ADMIN_PRINCIPAL: Principal = {
  * `ADMIN_PRINCIPAL` in exactly one thing: it cannot see every site. That makes
  * it the only principal here that exercises the facility narrowing at all.
  */
-export const SITE_ADMIN_PRINCIPAL: Principal = {
+export const SITE_READER_PRINCIPAL: Principal = {
   ...ADMIN_PRINCIPAL,
   subject: testId(77),
-  roles: ['site-admin'],
+  roles: ['read-only'],
   facilityIds: [DEMO_FACILITY_A],
 };
 
@@ -306,7 +311,7 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.patientScopeAdminA, PATIENT_SCOPE_ADMIN_PRINCIPAL],
       [TOKENS.noScopeA, NO_SCOPE_PRINCIPAL],
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
-      [TOKENS.siteAdminA, SITE_ADMIN_PRINCIPAL],
+      [TOKENS.siteReaderA, SITE_READER_PRINCIPAL],
     ])
   );
 }

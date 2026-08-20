@@ -94,15 +94,6 @@ const READ_EVERYTHING: readonly Permission[] = PERMISSIONS.filter(
  */
 export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> = {
   admin: PERMISSIONS,
-  /**
-   * Everything an administrator can do, at one site.
-   *
-   * Exists because `admin` holds `facility.all` and therefore never exercises
-   * the facility narrowing on reads. A deployment that wants a site manager
-   * rather than an organisation administrator wants this role, and the test
-   * suite needs it to prove the narrowing works at all.
-   */
-  'site-admin': PERMISSIONS.filter((permission) => permission !== 'facility.all'),
   clinician: [
     'patient.read',
     'patient.write',

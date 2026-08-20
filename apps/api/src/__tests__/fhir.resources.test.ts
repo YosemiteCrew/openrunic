@@ -1054,8 +1054,9 @@ describe('Claim', () => {
  * a row there being out of reach.
  *
  * The admin tokens used everywhere else in this file hold `facility.all` and
- * skip the narrowing by design, so these tests use `siteAdminA`, which holds
- * every other permission and is granted facility A alone.
+ * skip the narrowing by design, so these tests use `siteReaderA`: the shipping
+ * `read-only` role, which holds every `.read` permission and not that one,
+ * granted facility A alone.
  */
 const ANNEXE_PATIENT = testId(990);
 const ANNEXE_APPOINTMENT = testId(991);
@@ -1152,7 +1153,7 @@ describe('the facility scope the caller arrived with', () => {
       const { app } = scopedHarness();
 
       const res = await app.request(`/fhir/${type}/${id}`, {
-        headers: bearer(TOKENS.siteAdminA),
+        headers: bearer(TOKENS.siteReaderA),
       });
 
       // 404 rather than 403 on purpose. A 403 confirms the row exists, which
@@ -1165,7 +1166,7 @@ describe('the facility scope the caller arrived with', () => {
   it.each(ANNEXE_ROWS)("$type: a search omits the other site's row", async ({ type, id }) => {
     const { app } = scopedHarness();
 
-    expect(await bundleIds(app, type, TOKENS.siteAdminA)).not.toContain(id);
+    expect(await bundleIds(app, type, TOKENS.siteReaderA)).not.toContain(id);
   });
 
   it.each(ANNEXE_ROWS)(
@@ -1187,11 +1188,11 @@ describe('the facility scope the caller arrived with', () => {
     const { app } = scopedHarness();
 
     const res = await app.request(`/fhir/Patient/${UNSITED_PATIENT}`, {
-      headers: bearer(TOKENS.siteAdminA),
+      headers: bearer(TOKENS.siteReaderA),
     });
 
     expect(res.status).toBe(200);
-    expect(await bundleIds(app, 'Patient', TOKENS.siteAdminA)).toContain(UNSITED_PATIENT);
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(UNSITED_PATIENT);
   });
 
   it('keeps an organisation-wide role grant visible to a site-scoped caller', async () => {
@@ -1201,11 +1202,11 @@ describe('the facility scope the caller arrived with', () => {
     // in the organisation". Narrowing that dropped null rows would quietly
     // revoke every organisation-wide grant for anyone not holding facility.all.
     const res = await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, {
-      headers: bearer(TOKENS.siteAdminA),
+      headers: bearer(TOKENS.siteReaderA),
     });
 
     expect(res.status).toBe(200);
-    expect(await bundleIds(app, 'PractitionerRole', TOKENS.siteAdminA)).toContain(ORG_GRANT);
+    expect(await bundleIds(app, 'PractitionerRole', TOKENS.siteReaderA)).toContain(ORG_GRANT);
   });
 
   it("still serves the caller's own site", async () => {
@@ -1214,10 +1215,10 @@ describe('the facility scope the caller arrived with', () => {
     // The narrowing has to remove the annexe and nothing else. A clause that
     // matched no rows at all would satisfy every assertion above.
     const res = await app.request(`/fhir/Patient/${PATIENT}`, {
-      headers: bearer(TOKENS.siteAdminA),
+      headers: bearer(TOKENS.siteReaderA),
     });
 
     expect(res.status).toBe(200);
-    expect(await bundleIds(app, 'Patient', TOKENS.siteAdminA)).toContain(PATIENT);
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(PATIENT);
   });
 });

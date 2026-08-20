@@ -65,6 +65,11 @@ export interface OidcSettings {
 }
 
 export function oidcSettings(env: Env): OidcSettings | undefined {
+  // No guard for a half-set configuration here on purpose: `envSchema` already
+  // refuses one, with the message "must be set together or not at all", so the
+  // process never reaches this function holding two of the three. A second
+  // check here would be unreachable, and unreachable code that looks like a
+  // safety net is worse than none.
   if (env.OIDC_ISSUER === undefined || env.OIDC_AUDIENCE === undefined) return undefined;
   if (env.OIDC_JWKS_URI === undefined) return undefined;
   return {

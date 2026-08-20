@@ -147,15 +147,65 @@ function fromBase64Url(value: string): Uint8Array<ArrayBuffer> | null {
  * produced a value escaped twice on the way out and once on the way back, so
  * every session ended at the first reload.
  */
-export async function sealSessionCookie(record: SessionRecord, key: string): Promise<string> {
-  const payload = JSON.stringify(record);
+/**
+ * Signs an arbitrary JSON payload the same way the session cookie is signed.
+ *
+ * Exported because the OIDC sign-in flow has to park a code verifier, a state
+ * and a nonce in the browser between the redirect out to the provider and the
+ * redirect back. Those are exactly as forgeable as a session cookie and want
+ * exactly the same protection, and the one thing worse than a second cookie is
+ * a second, slightly different way of signing one.
+ */
+export async function sealPayload(payload: unknown, key: string): Promise<string> {
+  const body = JSON.stringify(payload);
   const signature = await globalThis.crypto.subtle.sign(
     ALGORITHM.name,
     await signingKey(key),
-    bytes(payload)
+    bytes(body)
   );
 
-  return `${toBase64Url(signature)}.${payload}`;
+  return `${toBase64Url(signature)}.${body}`;
+}
+
+/**
+ * Verifies a payload sealed by {@link sealPayload} and hands the parsed value to
+ * `reader`, which decides whether the shape is one this caller accepts.
+ *
+ * Returns null on a bad signature, a truncated value, unparseable JSON, or a
+ * shape the reader refuses. All four mean the same thing to a caller: this is
+ * not something we wrote, so do not act on it.
+ */
+export async function unsealPayload<T>(
+  value: string | undefined,
+  key: string,
+  reader: (parsed: unknown) => T | null
+): Promise<T | null> {
+  if (value === undefined || value === '') return null;
+
+  const separator = value.indexOf('.');
+  if (separator <= 0) return null;
+
+  const signature = fromBase64Url(value.slice(0, separator));
+  if (signature?.length !== SIGNATURE_BYTES) return null;
+
+  const body = value.slice(separator + 1);
+  const valid = await globalThis.crypto.subtle.verify(
+    ALGORITHM.name,
+    await signingKey(key),
+    signature,
+    bytes(body)
+  );
+  if (!valid) return null;
+
+  try {
+    return reader(JSON.parse(body));
+  } catch {
+    return null;
+  }
+}
+
+export async function sealSessionCookie(record: SessionRecord, key: string): Promise<string> {
+  return sealPayload(record, key);
 }
 
 /**

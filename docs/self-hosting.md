@@ -351,10 +351,13 @@ afterwards. Anything already on screen stays readable.
 
 Read this section before openrunic sees a real patient.
 
-**There is no authentication.** The tokens above are published in the source.
-Anyone who can reach port 3000 or port 4000 can read and change everything.
-Until a login system ships, openrunic must only run on a machine that only
-you can reach.
+**Configure an identity provider before this holds a real record.** Until you
+do, the tokens above are published in the source, and anyone who can reach port
+3000 or port 4000 can read and change everything. Setting `OIDC_ISSUER`,
+`OIDC_AUDIENCE` and `OIDC_JWKS_URI` makes the API verify real tokens, and
+`OIDC_CLIENT_ID` with `OIDC_REDIRECT_URI` gives staff a sign-in that redirects
+to your provider. See `.env.example` for the full list. Without them, openrunic
+must only run on a machine that only you can reach.
 
 **Do not put it on the internet.** Not behind a password-protected reverse
 proxy either. The gap is not the front door; there is no lock on any of the

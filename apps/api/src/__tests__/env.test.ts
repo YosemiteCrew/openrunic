@@ -81,3 +81,35 @@ describe('the identity-provider settings', () => {
     expect(() => parseEnv({ ...configured, OIDC_ISSUER: 'not-a-url' })).toThrow(/OIDC_ISSUER/);
   });
 });
+
+describe('a half-configured provider is refused at parse time', () => {
+  const COMPLETE = {
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/openrunic',
+    OIDC_ISSUER: 'https://id.example.invalid',
+    OIDC_AUDIENCE: 'openrunic-api',
+    OIDC_JWKS_URI: 'https://id.example.invalid/jwks.json',
+  };
+
+  it.each([['OIDC_ISSUER'], ['OIDC_AUDIENCE'], ['OIDC_JWKS_URI']])(
+    'refuses the environment when %s is the one that is missing',
+    (missing) => {
+      const partial: Record<string, string> = { ...COMPLETE };
+      delete partial[missing];
+
+      // This is the case that matters most in this file. An operator who
+      // intended authentication and misspelled one variable must not get a
+      // deployment that quietly accepts the demo tokens instead.
+      expect(() => parseEnv(partial)).toThrow(/Invalid environment configuration/);
+    }
+  );
+
+  it('accepts all three together', () => {
+    expect(oidcSettings(parseEnv(COMPLETE as NodeJS.ProcessEnv))?.issuer).toBe(
+      'https://id.example.invalid'
+    );
+  });
+
+  it('accepts none of them, which is the demo-token path', () => {
+    expect(oidcSettings(parseEnv({ DATABASE_URL: COMPLETE.DATABASE_URL }))).toBeUndefined();
+  });
+});

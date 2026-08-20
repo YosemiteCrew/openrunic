@@ -437,11 +437,19 @@ be redone rather than the finding re-ignored.
 
 Written down because a gap nobody has named is a gap nobody will close.
 
-**There is no authentication.** `OPENRUNIC_AUTH_MODE=demo-tokens` is the only
-implemented mode and it maps published tokens to seeded users. The variable has
-no default, so a deployment cannot arrive there by accident, and the API prints
-a banner naming the deployment as unauthenticated on every boot. This is the
-single thing blocking openrunic from holding a real record.
+**Authentication has to be configured, and it is silent about being absent in
+exactly one direction.** With the OIDC variables set, the API verifies every
+bearer token against the provider's published key set and the web app redirects
+staff there to sign in. Without them, `OPENRUNIC_AUTH_MODE=demo-tokens` maps
+published tokens onto seeded users. That variable has no default, so a
+deployment cannot arrive there by accident, and the API prints a banner naming
+itself unauthenticated on every boot.
+
+A half-set OIDC configuration does not fall back: `envSchema` refuses to start
+with two of the three variables present, saying they must be set together or
+not at all. So the failure mode to watch for is not a typo in a value, which
+fails at the first token, but a deployment that never set them and nobody
+noticed. The boot banner is what says so.
 
 **The demo tenant id was not the seeded tenant id.** `DEMO_PRINCIPALS` in
 `apps/api/src/auth/static-resolver.ts` hardcodes a tenant id; the seed mints its

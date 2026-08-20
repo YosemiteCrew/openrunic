@@ -252,3 +252,29 @@ describe('the route', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
   });
 });
+
+describe('the organisation sign-in link', () => {
+  it('is absent when the deployment has no identity provider', () => {
+    render(<SignInScreen reason={null} next={null} credentials={[]} />);
+
+    expect(screen.queryByRole('link', { name: /organisation/i })).not.toBeInTheDocument();
+  });
+
+  it('starts the redirect flow when one is configured', () => {
+    render(<SignInScreen reason={null} next={null} credentials={[]} oidcEnabled />);
+
+    expect(screen.getByRole('link', { name: /organisation/i })).toHaveAttribute(
+      'href',
+      '/auth/start'
+    );
+  });
+
+  it('carries the return path through the provider and back', () => {
+    render(<SignInScreen reason={null} next="/billing" credentials={[]} oidcEnabled />);
+
+    expect(screen.getByRole('link', { name: /organisation/i })).toHaveAttribute(
+      'href',
+      '/auth/start?next=%2Fbilling'
+    );
+  });
+});

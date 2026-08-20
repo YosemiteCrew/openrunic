@@ -109,7 +109,12 @@ export async function discoverEndpoints(
   issuer: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<OidcEndpoints | null> {
-  const base = issuer.replace(/\/+$/, '');
+  // Trimmed with a loop rather than /\/+$/, which backtracks super-linearly on a
+  // long run of trailing slashes. The issuer is deployment configuration and not
+  // attacker input, so this is a cheap fix to a theoretical problem rather than
+  // a live one, but a linear trim costs nothing and the regex bought nothing.
+  let base = issuer;
+  while (base.endsWith('/')) base = base.slice(0, -1);
   let document: unknown;
   try {
     const response = await fetchImpl(`${base}/.well-known/openid-configuration`, {

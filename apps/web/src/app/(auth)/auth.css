@@ -92,3 +92,32 @@
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
+
+/* The organisation sign-in sits above the token form on purpose. Where an
+   identity provider is configured it is the way in for everybody except the
+   person debugging the deployment, and burying it under a field most staff
+   should never touch gets that backwards. */
+.or-auth__sso {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: var(--hairline) solid var(--border-hairline);
+}
+
+.or-auth__sso-link {
+  display: block;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-heading);
+  font-family: var(--font-text);
+  font-weight: var(--wght-semibold);
+  text-align: center;
+  text-decoration: none;
+}
+
+.or-auth__sso-link:hover,
+.or-auth__sso-link:focus-visible {
+  border-color: var(--text-heading);
+}

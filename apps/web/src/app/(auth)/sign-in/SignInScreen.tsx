@@ -83,6 +83,13 @@ export interface SignInScreenProps {
   navigate?: (url: string) => void;
   /** Injectable for tests. Empty in a production build, which offers no door. */
   credentials?: readonly StaffCredential[];
+  /**
+   * Whether this deployment has an identity provider configured. Decided on the
+   * server, because the client bundle has no business holding issuer settings
+   * and `process.env` here would be inlined at build time rather than read at
+   * run time, which is how one image cannot serve two deployments.
+   */
+  oidcEnabled?: boolean;
 }
 
 function documentNavigate(url: string): void {
@@ -94,6 +101,7 @@ export function SignInScreen({
   next,
   navigate = documentNavigate,
   credentials = developmentCredentials(process.env.NODE_ENV),
+  oidcEnabled = false,
 }: Readonly<SignInScreenProps>): ReactElement {
   const [token, setToken] = useState('');
   const [attempt, setAttempt] = useState<Attempt>('ready');
@@ -157,6 +165,21 @@ export function SignInScreen({
             {busy ? 'Signing in' : 'Sign in'}
           </Button>
         </form>
+
+        {oidcEnabled ? (
+          <div className="or-auth__sso">
+            <a
+              className="or-auth__sso-link"
+              href={next ? `/auth/start?next=${encodeURIComponent(next)}` : '/auth/start'}
+            >
+              Sign in with your organisation
+            </a>
+            <p className="or-auth__lede">
+              You will be sent to your identity provider and returned here once it has confirmed who
+              you are.
+            </p>
+          </div>
+        ) : null}
 
         {credentials.length > 0 ? (
           <fieldset className="or-auth__demo">

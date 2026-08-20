@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import type { ReactElement } from 'react';
 
+import { oidcWebConfig } from '@/lib/auth/oidc';
+
 import { SignInScreen } from './SignInScreen';
 
 export const metadata: Metadata = {
@@ -33,5 +35,11 @@ export default async function SignInPage({
   searchParams,
 }: Readonly<SignInPageProps>): Promise<ReactElement> {
   const params = await searchParams;
-  return <SignInScreen reason={firstValue(params.reason)} next={firstValue(params.next)} />;
+  return (
+    <SignInScreen
+      reason={firstValue(params.reason)}
+      next={firstValue(params.next)}
+      oidcEnabled={oidcWebConfig() !== null}
+    />
+  );
 }

@@ -20,6 +20,7 @@
     "@openrunic/ccda": "workspace:*",
     "@openrunic/cds-hooks": "workspace:*",
     "@openrunic/clinical-safety": "workspace:*",
+    "@openrunic/collections": "workspace:*",
     "@openrunic/database": "workspace:*",
     "@openrunic/fhir": "workspace:*",
     "@openrunic/growth": "workspace:*",

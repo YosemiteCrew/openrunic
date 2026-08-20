@@ -654,6 +654,11 @@ enum StatementStatus {
   SENT
   PAID
   VOID
+  /// The debt was real and the practice stopped pursuing it. Distinct from VOID,
+  /// which means the statement should never have been sent. Collapsing the two
+  /// would make bad debt indistinguishable from billing errors, and those are
+  /// the two numbers a practice most needs to tell apart.
+  WRITTEN_OFF
 }
 
 enum StatementDelivery {
@@ -2133,7 +2138,15 @@ model Statement {
   patientId        String             @db.Uuid
   status           StatementStatus    @default(DRAFT)
   balanceCents     Int
-  dunningCycle     Int                @default(1)
+  /// How many notices have gone out. Zero until the first one does.
+  dunningCycle     Int                @default(0)
+  /// When the last notice went out, which is what the interval is measured from.
+  lastNoticeAt     DateTime?
+  /// Set while the practice has agreed not to chase: a dispute, or hardship.
+  holdUntil        DateTime?
+  holdReason       String?
+  /// Why pursuit stopped, recorded when the statement is written off.
+  closedReason     String?
   periodStart      DateTime?          @db.Date
   periodEnd        DateTime?          @db.Date
   generatedAt      DateTime           @default(now())
@@ -2152,6 +2165,7 @@ model Statement {
 
   @@index([tenantId, patientId, generatedAt])
   @@index([tenantId, status, generatedAt])
+  @@index([tenantId, status, lastNoticeAt])
 }
 
 // ---------------------------------------------------------------------------

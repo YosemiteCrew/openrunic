@@ -8,12 +8,20 @@ import {
   type ClaimStatusChangeInput,
   type PaymentAllocationInput,
 } from '@openrunic/database';
+import {
+  ageBalance,
+  DEFAULT_DUNNING_POLICY,
+  nextAction,
+  type BalanceState,
+  type CollectionsAction,
+  type DunningPolicy,
+} from '@openrunic/collections';
 import { Hono, type Context } from 'hono';
 import type { z } from 'zod';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
-import { parseJsonBody, parseParam, toFieldIssues } from '../http/validate.js';
+import { parseJsonBody, parseParam, parseQuery, toFieldIssues } from '../http/validate.js';
 import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type {
@@ -92,6 +100,13 @@ import {
   type RemittanceParseResult,
   type RemittancePostResult,
   type StatementDto,
+  collectionsWorklistEntrySchema,
+  collectionsWorklistQuerySchema,
+  statementHoldSchema,
+  statementNoticeSchema,
+  statementWriteOffSchema,
+  type CollectionsWorklistEntry,
+  type StatementRow,
 } from '../schemas/financial.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
@@ -187,9 +202,17 @@ const REMITTANCE_TRANSITIONS: Readonly<Record<RemittanceStatus, readonly Remitta
 const STATEMENT_TRANSITIONS: Readonly<Record<StatementStatus, readonly StatementStatus[]>> = {
   DRAFT: ['GENERATED'],
   GENERATED: ['SENT'],
-  SENT: ['PAID', 'VOID'],
+  // A sent statement can be paid, withdrawn as a mistake, or given up on. Only
+  // the last of those is a collections outcome, and it is a separate state from
+  // VOID because a practice that cannot tell abandoned debt from a billing
+  // error cannot report either one.
+  SENT: ['PAID', 'VOID', 'WRITTEN_OFF'],
   PAID: [],
   VOID: [],
+  // Terminal. A written-off balance that is later paid is a payment against the
+  // ledger, not a resurrection of the notice it ended: reopening it here would
+  // put the statement back on a dunning schedule it had already left.
+  WRITTEN_OFF: [],
 };
 
 /** The states that mean a payer has decided, as opposed to merely received. */
@@ -213,6 +236,16 @@ const CLAIM_LINE_LIMIT = 50;
 const CLAIM_HISTORY_LIMIT = 200;
 const PAYMENT_ALLOCATION_LIMIT = 500;
 const REMITTANCE_LINE_LIMIT = 5000;
+
+/**
+ * How many outstanding statements the worklist will consider, per status.
+ *
+ * A ceiling rather than a page: a practice with more balances than this in one
+ * state has a problem no list can present, and silently returning the first
+ * screenful of it would read as "this is all of it". Kept in step with
+ * `REMITTANCE_LINE_LIMIT`, which bounds the other unpaged read in this file.
+ */
+const WORKLIST_LIMIT = 5000;
 
 type ClaimStatusSource = ClaimStatusChangeInput['source'];
 
@@ -858,7 +891,212 @@ function transitionRoutes(): Hono<AppEnv> {
     return c.json<StatementDto>(toStatementDto(row));
   });
 
+  /**
+   * WHAT NEEDS CHASING TODAY.
+   *
+   * Mounted under `/collections` rather than `/statements` because
+   * `/statements/worklist` would be caught by `/statements/:id` and answer a
+   * validation error about a malformed uuid, which is a confusing way to learn
+   * that a route exists.
+   *
+   * Only SENT and GENERATED statements are considered: those are the ones on a
+   * schedule. Paid, voided and written-off balances are outcomes, and a
+   * worklist that listed them would grow forever and be abandoned within a
+   * month.
+   *
+   * The action is computed here rather than stored. A stored decision goes
+   * stale the moment a payment lands, and a worklist telling a biller to chase
+   * somebody who paid yesterday is worse than no worklist at all.
+   */
+  router.get('/collections/worklist', requirePermission('payment.read'), async (c) => {
+    const query = parseQuery(c, collectionsWorklistQuerySchema);
+    const now = new Date();
+    const policy = dunningPolicy();
+    const statements = repositories(c).statements;
+
+    const pages = await Promise.all(
+      (['GENERATED', 'SENT'] as const).map((status) =>
+        statements.list({
+          page: 1,
+          pageSize: WORKLIST_LIMIT,
+          sort: 'generatedAt',
+          order: 'asc',
+          status,
+        })
+      )
+    );
+
+    const entries = pages
+      .flatMap((page) => page.rows)
+      .map((row) => {
+        const aged = ageBalance(balanceStateOf(row), policy, now);
+        return {
+          statementId: row.id,
+          patientId: row.patientId,
+          balanceCents: row.balanceCents,
+          daysOverdue: aged.daysOverdue,
+          bucket: aged.bucket,
+          noticesSent: row.dunningCycle,
+          lastNoticeAt: row.lastNoticeAt?.toISOString() ?? null,
+          action: aged.action.kind,
+          actionableAt: actionableAt(aged.action),
+        } satisfies CollectionsWorklistEntry;
+      })
+      .filter((entry) => query.action === undefined || entry.action === query.action)
+      // Oldest debt first. A biller working down a list gets to the balances
+      // closest to being uncollectable before the ones that just came due.
+      .sort((left, right) => right.daysOverdue - left.daysOverdue);
+
+    return c.json({ items: entries, total: entries.length });
+  });
+
+  /**
+   * ADVANCING THE DUNNING CYCLE.
+   *
+   * The caller says a notice went out and by which channel. It does not say
+   * which notice: that comes from the row and the practice's policy, because a
+   * caller who can name the cycle can place a patient anywhere on the schedule,
+   * and a retried job would do exactly that by accident.
+   *
+   * The policy is consulted rather than trusted to the caller for the same
+   * reason. If it says to wait, this refuses, and the refusal is the feature:
+   * it is what stops a patient being chased twice in a week by a job that ran
+   * twice.
+   */
+  router.post('/statements/:id/notice', requirePermission('payment.write'), async (c) => {
+    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+    const body = await parseTransitionBody(c, statementNoticeSchema);
+    const statements = repositories(c).statements;
+    const before = required(await statements.findById(id), MISSING_STATEMENT);
+
+    // GENERATED is where the first notice comes from, and SENT is where every
+    // later one does. Anything else has left the schedule.
+    if (before.status !== 'GENERATED' && before.status !== 'SENT') {
+      throw ApiError.conflict(`A statement in ${before.status} is not on a dunning schedule.`);
+    }
+
+    const now = new Date();
+    const balanceCents = body.balanceCents ?? before.balanceCents;
+    const action = nextAction(balanceStateOf({ ...before, balanceCents }), dunningPolicy(), now);
+    if (action.kind !== 'notice') {
+      throw ApiError.conflict(noticeRefusal(action));
+    }
+
+    const row = required(
+      await statements.update(id, {
+        status: 'SENT',
+        dunningCycle: action.notice,
+        lastNoticeAt: now,
+        deliveredVia: body.deliveredVia,
+        deliveredAt: now,
+        ...(body.balanceCents === undefined ? {} : { balanceCents: body.balanceCents }),
+      }),
+      MISSING_STATEMENT
+    );
+    return c.json<StatementDto>(toStatementDto(row));
+  });
+
+  /**
+   * Agreeing not to chase.
+   *
+   * Does not change the status. A held statement is still owed and still SENT;
+   * what a hold suspends is the schedule, and moving it to a state of its own
+   * would take it out of the ageing report it most needs to stay in.
+   */
+  router.post('/statements/:id/hold', requirePermission('payment.write'), async (c) => {
+    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+    const body = await parseTransitionBody(c, statementHoldSchema);
+    const statements = repositories(c).statements;
+    const before = required(await statements.findById(id), MISSING_STATEMENT);
+
+    if (before.status === 'PAID' || before.status === 'VOID' || before.status === 'WRITTEN_OFF') {
+      throw ApiError.conflict(`A statement in ${before.status} is not being chased.`);
+    }
+
+    const row = required(
+      await statements.update(id, {
+        holdUntil: new Date(body.until),
+        holdReason: body.reason,
+      }),
+      MISSING_STATEMENT
+    );
+    return c.json<StatementDto>(toStatementDto(row));
+  });
+
+  /**
+   * Giving up on a real debt.
+   *
+   * Separate from voiding, which says the statement should never have been
+   * sent. The reason is required and kept, because this is one of the two
+   * decisions a practice has to be able to justify afterwards.
+   */
+  router.post('/statements/:id/write-off', requirePermission('payment.write'), async (c) => {
+    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+    const body = await parseTransitionBody(c, statementWriteOffSchema);
+    const statements = repositories(c).statements;
+    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'WRITTEN_OFF');
+
+    const row = required(
+      await statements.update(id, { status: 'WRITTEN_OFF', closedReason: body.reason }),
+      MISSING_STATEMENT
+    );
+    return c.json<StatementDto>(toStatementDto(row));
+  });
+
   return router;
+}
+
+/* --------------------------------------------------------------- collections */
+
+/**
+ * The practice's dunning policy.
+ *
+ * The default for now, and deliberately behind a function rather than read
+ * inline, so the one place this becomes practice-configured is the one place
+ * that has to change. Every caller already asks a question rather than reading
+ * a constant.
+ */
+function dunningPolicy(): DunningPolicy {
+  return DEFAULT_DUNNING_POLICY;
+}
+
+/**
+ * The handful of facts the policy needs, taken off a statement row.
+ *
+ * `dueSince` is the delivery date, falling back to when the statement was
+ * generated. Ageing measures how long the patient has had the bill, and a
+ * statement sitting in a queue was never theirs to pay.
+ */
+function balanceStateOf(row: StatementRow): BalanceState {
+  return {
+    balanceCents: row.balanceCents,
+    noticesSent: row.dunningCycle,
+    lastNoticeAt: row.lastNoticeAt,
+    dueSince: row.deliveredAt ?? row.generatedAt,
+    heldUntil: row.holdUntil,
+  };
+}
+
+/** Why a notice was refused, in the caller's terms rather than the policy's. */
+function noticeRefusal(action: CollectionsAction): string {
+  if (action.kind === 'wait') {
+    return `The next notice is not due until ${action.nextNoticeDueAt.toISOString()}.`;
+  }
+  if (action.kind === 'held') {
+    return `This balance is on hold until ${action.until.toISOString()}.`;
+  }
+  if (action.kind === 'settled') return 'There is no balance owed.';
+  // Both remaining cases mean the schedule is finished: every notice the policy
+  // defines has gone out, and what happens next is a decision rather than
+  // another letter.
+  return 'Every notice in the policy has been sent. Write it off or escalate it.';
+}
+
+function actionableAt(action: CollectionsAction): string | null {
+  if (action.kind === 'wait') return action.nextNoticeDueAt.toISOString();
+  if (action.kind === 'held') return action.until.toISOString();
+  return null;
 }
 
 /* ----------------------------------------------------------------- contracts */
@@ -1163,6 +1401,86 @@ const TRANSITION_CONTRACTS: RouteContract[] = [
       NOT_FOUND_RESPONSE,
       CONFLICT_RESPONSE,
       UNPROCESSABLE_RESPONSE,
+    ],
+  },
+  {
+    method: 'post',
+    path: '/bff/v0/statements/{id}/notice',
+    operationId: 'sendStatementNotice',
+    summary: 'Send the next dunning notice.',
+    description:
+      'Advances the dunning cycle by one and stamps the notice date. Which notice this is comes from the practice policy and the statement, not from the caller. Answers 409 when the policy says to wait, when the balance is on hold, when nothing is owed, or when every notice has already been sent.',
+    tags: ['statements'],
+    permission: 'payment.write',
+    pathParams: [idParam('Statement')],
+    body: statementNoticeSchema,
+    responses: [
+      {
+        status: 200,
+        description: 'The statement, with the cycle advanced.',
+        schema: statementDtoSchema,
+      },
+      ...CRUD_ERRORS,
+      NOT_FOUND_RESPONSE,
+      CONFLICT_RESPONSE,
+      UNPROCESSABLE_RESPONSE,
+    ],
+  },
+  {
+    method: 'post',
+    path: '/bff/v0/statements/{id}/hold',
+    operationId: 'holdStatement',
+    summary: 'Suspend dunning on a balance.',
+    description:
+      'Records that the practice agreed not to chase this balance until the given date, and why. The status does not change: the balance is still owed and stays in the ageing report. Answers 409 for a statement that is already paid, void or written off.',
+    tags: ['statements'],
+    permission: 'payment.write',
+    pathParams: [idParam('Statement')],
+    body: statementHoldSchema,
+    responses: [
+      { status: 200, description: 'The statement, now on hold.', schema: statementDtoSchema },
+      ...CRUD_ERRORS,
+      NOT_FOUND_RESPONSE,
+      CONFLICT_RESPONSE,
+      UNPROCESSABLE_RESPONSE,
+    ],
+  },
+  {
+    method: 'post',
+    path: '/bff/v0/statements/{id}/write-off',
+    operationId: 'writeOffStatement',
+    summary: 'Stop pursuing a real debt.',
+    description:
+      'SENT becomes WRITTEN_OFF, with the reason recorded. Distinct from voiding, which says the statement should never have been sent; a practice needs to tell abandoned debt from a billing error.',
+    tags: ['statements'],
+    permission: 'payment.write',
+    pathParams: [idParam('Statement')],
+    body: statementWriteOffSchema,
+    responses: [
+      { status: 200, description: 'The written-off statement.', schema: statementDtoSchema },
+      ...CRUD_ERRORS,
+      NOT_FOUND_RESPONSE,
+      CONFLICT_RESPONSE,
+      UNPROCESSABLE_RESPONSE,
+    ],
+  },
+  {
+    method: 'get',
+    path: '/bff/v0/collections/worklist',
+    operationId: 'listCollectionsWorklist',
+    summary: 'What needs chasing today.',
+    description:
+      'Outstanding balances with their ageing bucket and what the practice policy says to do with each, oldest debt first. The action is computed on read, so it is never stale against a payment that has landed.',
+    tags: ['statements'],
+    permission: 'payment.read',
+    query: collectionsWorklistQuerySchema,
+    responses: [
+      {
+        status: 200,
+        description: 'The worklist.',
+        schema: listResponseSchema(collectionsWorklistEntrySchema),
+      },
+      ...CRUD_ERRORS,
     ],
   },
 ];

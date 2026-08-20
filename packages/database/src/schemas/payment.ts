@@ -131,7 +131,14 @@ export const statementInput = z
     patientId: uuid,
     status: z.enum(STATEMENT_STATUSES).optional(),
     balanceCents: cents,
-    dunningCycle: z.int().min(1).max(12).optional(),
+    // Zero is the starting state and has to be expressible: a statement that
+    // has never been sent has had no notice, and a minimum of one made that
+    // unsayable while the column defaulted to it.
+    dunningCycle: z.int().min(0).max(12).optional(),
+    lastNoticeAt: timestamp.optional(),
+    holdUntil: timestamp.optional(),
+    holdReason: z.string().min(1).max(500).optional(),
+    closedReason: z.string().min(1).max(500).optional(),
     periodStart: localDate.optional(),
     periodEnd: localDate.optional(),
     generatedAt: timestamp.optional(),
@@ -151,6 +158,13 @@ export const statementInput = z
   .refine((value) => value.payLinkToken === undefined || value.payLinkExpiresAt !== undefined, {
     message: 'a pay link must expire',
     path: ['payLinkExpiresAt'],
+  })
+  .refine((value) => value.holdUntil === undefined || value.holdReason !== undefined, {
+    // A hold with no reason is indistinguishable from a mistake a month later,
+    // and the person who has to justify why a patient was not billed is not the
+    // person who set it.
+    message: 'a hold must say why',
+    path: ['holdReason'],
   });
 
 export type PaymentAllocationInput = z.infer<typeof paymentAllocationInput>;

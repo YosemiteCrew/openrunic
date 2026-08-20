@@ -99,6 +99,7 @@ packages/clinical-safety  Allergy and duplicate-therapy screening at prescribing
 packages/growth           Growth percentiles from CDC LMS reference data
 packages/forms-engine     Form definitions, validation, rendering, promotion
 packages/inventory        Stock, lots and dispensing from an append-only ledger
+packages/collections      Patient-balance collections: dunning schedule, ageing, write-off
 packages/pricing          Fee schedules and sliding-scale discounts
 packages/adapters         Partner seams (eRx, payments, video, clearinghouse) with demo mocks
 

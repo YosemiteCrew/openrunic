@@ -1057,6 +1057,72 @@ export const statementSendSchema = z
 export type StatementSendBody = z.infer<typeof statementSendSchema>;
 
 /**
+ * Advancing the dunning cycle.
+ *
+ * The body carries no cycle number. Which notice this is comes from the row and
+ * the practice's policy, and letting a caller name it would let a retrying job
+ * or a double click place a patient anywhere on the schedule.
+ */
+export const statementNoticeSchema = z.strictObject({
+  deliveredVia: z.enum(STATEMENT_DELIVERIES),
+  balanceCents: z.int().optional(),
+});
+
+export type StatementNoticeBody = z.infer<typeof statementNoticeSchema>;
+
+/** Agreeing not to chase, for a stated reason, until a stated date. */
+export const statementHoldSchema = z.strictObject({
+  // Required, and the reason is in `payment.ts`: a hold with no reason is
+  // indistinguishable from a mistake a month later, and the person who has to
+  // justify it is not the person who set it.
+  reason: z.string().min(1).max(500),
+  until: instantField,
+});
+
+export type StatementHoldBody = z.infer<typeof statementHoldSchema>;
+
+/** Giving up on a real debt. */
+export const statementWriteOffSchema = z.strictObject({
+  reason: z.string().min(1).max(500),
+});
+
+export type StatementWriteOffBody = z.infer<typeof statementWriteOffSchema>;
+
+/**
+ * One line of the collections worklist.
+ *
+ * `action` is what the practice's policy says to do, not what the row says
+ * happened. It is computed on read rather than stored, because a stored
+ * decision goes stale the moment a payment lands and a worklist that tells a
+ * biller to chase somebody who paid yesterday is worse than no worklist.
+ */
+export const collectionsWorklistEntrySchema = z.strictObject({
+  statementId: z.uuid(),
+  patientId: z.uuid(),
+  balanceCents: z.int(),
+  daysOverdue: z.int(),
+  bucket: z.enum(['current', '1-30', '31-60', '61-90', '90+']),
+  noticesSent: z.int(),
+  lastNoticeAt: z.string().nullable(),
+  action: z.enum(['wait', 'notice', 'write-off', 'escalate', 'held', 'settled']),
+  /** When `action` is `wait` or `held`, the date it is waiting for. */
+  actionableAt: z.string().nullable(),
+});
+
+export type CollectionsWorklistEntry = z.infer<typeof collectionsWorklistEntrySchema>;
+
+/**
+ * Narrowing the worklist to one kind of work.
+ *
+ * No paging. The list is bounded by how many statements a practice has out at
+ * once, and a biller working a queue wants the whole queue: a page-two link on
+ * a list that reorders itself as payments land is a way to skip rows.
+ */
+export const collectionsWorklistQuerySchema = z.strictObject({
+  action: z.enum(['wait', 'notice', 'write-off', 'escalate', 'held', 'settled']).optional(),
+});
+
+/**
  * The statement, minus its pay-link token.
  *
  * The token is a single-use bearer credential for a payment page, so emitting
@@ -1070,6 +1136,10 @@ export const statementDtoSchema = z.strictObject({
   status: z.enum(STATEMENT_STATUSES),
   balanceCents: z.int(),
   dunningCycle: z.int(),
+  lastNoticeAt: z.string().nullable(),
+  holdUntil: z.string().nullable(),
+  holdReason: z.string().nullable(),
+  closedReason: z.string().nullable(),
   periodStart: z.string().nullable(),
   periodEnd: z.string().nullable(),
   generatedAt: z.string(),
@@ -1092,6 +1162,10 @@ export function toStatementDto(row: StatementRow): StatementDto {
     status: row.status,
     balanceCents: row.balanceCents,
     dunningCycle: row.dunningCycle,
+    lastNoticeAt: isoOrNull(row.lastNoticeAt),
+    holdUntil: isoOrNull(row.holdUntil),
+    holdReason: row.holdReason,
+    closedReason: row.closedReason,
     periodStart: dateOnlyOrNull(row.periodStart),
     periodEnd: dateOnlyOrNull(row.periodEnd),
     generatedAt: row.generatedAt.toISOString(),

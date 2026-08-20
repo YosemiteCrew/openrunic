@@ -277,7 +277,14 @@ export const PAYMENT_SOURCES = ['PATIENT', 'PAYER_ERA', 'ADAPTER', 'ADJUSTMENT']
 export const PAYMENT_METHODS = ['CASH', 'CHECK', 'CARD', 'ACH', 'EFT', 'OTHER'] as const;
 export const PAYMENT_STATUSES = ['PENDING', 'POSTED', 'FAILED', 'REFUNDED', 'VOIDED'] as const;
 export const REMITTANCE_STATUSES = ['RECEIVED', 'PARSED', 'POSTED', 'EXCEPTIONS'] as const;
-export const STATEMENT_STATUSES = ['DRAFT', 'GENERATED', 'SENT', 'PAID', 'VOID'] as const;
+export const STATEMENT_STATUSES = [
+  'DRAFT',
+  'GENERATED',
+  'SENT',
+  'PAID',
+  'VOID',
+  'WRITTEN_OFF',
+] as const;
 export const STATEMENT_DELIVERIES = ['PRINT', 'EMAIL', 'SMS', 'PORTAL'] as const;
 
 export const FORM_STATUSES = ['DRAFT', 'PUBLISHED', 'RETIRED'] as const;

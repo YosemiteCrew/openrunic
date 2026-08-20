@@ -343,6 +343,8 @@ function seedChart(dataset: MemoryDataset): void {
     receivedAt: FIXED_NOW,
     filedAt: FIXED_NOW,
     filedById: PROVIDER,
+    supersededById: null,
+    errorReason: null,
     expiresAt: null,
   });
 

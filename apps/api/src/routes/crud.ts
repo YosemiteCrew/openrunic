@@ -98,6 +98,15 @@ export interface CrudResource<
   facilityOfRow?(row: TRow): string | null;
   /** The facility a create names, checked before anything is written. */
   facilityOfInput?(input: TCreate): string | null;
+  /**
+   * A last check before a create is written, for rules the schema cannot state.
+   *
+   * Throws to refuse. Runs after the facility check and before anything reaches
+   * the database, so a refused create leaves nothing behind. Exists because
+   * some rules need to read what is already stored, and a Zod schema cannot:
+   * whether these exact bytes have arrived before is the case that drove it.
+   */
+  beforeCreate?(c: Context<AppEnv>, input: TCreate): Promise<void>;
   /** Extra statuses this aggregate's writes can produce, for the spec. */
   readonly writeResponses?: readonly { status: number; description: string }[];
 }
@@ -276,6 +285,7 @@ function crudRoutes<
     // Asked before the write rather than after, so a refused create never
     // reaches the database.
     if (facilityId !== null) assertFacilityAccess(policyOf(c), facilityId);
+    await resource.beforeCreate?.(c, input);
     const row = await resource.collection(repositories(c)).create(input);
     return c.json(resource.toDto(row), 201, {
       Location: `/bff/v0/${resource.segment}/${rowId(row)}`,

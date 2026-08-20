@@ -125,6 +125,11 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     repositories,
     auditSink,
     responseFormatFor: (path) => (isFhirPath(path) ? 'fhir' : 'problem'),
+    // The FHIR boundary answers 404 for a resource at a site the caller has no
+    // grant for, so a search cannot be used to enumerate the rest of the
+    // tenant. The BFF keeps its 403, which is the more useful answer for a
+    // staff application whose user is already inside the organisation.
+    facilityScopedFor: (path) => isFhirPath(path),
     ...(options.generateRequestId === undefined
       ? {}
       : { generateRequestId: options.generateRequestId }),

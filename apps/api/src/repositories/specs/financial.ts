@@ -298,6 +298,7 @@ export const chargeItemSpec: CollectionSpec<
   action: 'charge',
   patientColumn: 'patientId',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   encounterColumn: 'encounterId',
   compartment: { column: 'patientId' },
 

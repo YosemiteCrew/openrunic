@@ -595,6 +595,7 @@ export const roleAssignmentSpec: CollectionSpec<
   targetType: 'RoleAssignment',
   action: 'role.assignment',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   // Who holds which capability, and where, is the other half of the staff
   // directory and is closed for the same reason.
   compartment: 'closed',

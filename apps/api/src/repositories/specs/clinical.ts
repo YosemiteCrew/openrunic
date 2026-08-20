@@ -198,6 +198,7 @@ export const encounterSpec: CollectionSpec<
   action: 'encounter',
   patientColumn: 'patientId',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   compartment: { column: 'patientId' },
 
   // `Encounter.appointmentId` is unique in the schema and is deliberately not

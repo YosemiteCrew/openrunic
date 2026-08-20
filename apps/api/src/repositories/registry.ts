@@ -26,6 +26,21 @@ export interface RequestScope {
    * performs.
    */
   compartmentPatientId?: string;
+  /**
+   * The facilities this principal may see, or undefined for a principal holding
+   * `facility.all`.
+   *
+   * Undefined is unrestricted and an empty array is nothing, which is the
+   * opposite of the usual convention and is deliberate: `Principal.facilityIds`
+   * already documents that an empty grant list is not a wildcard, and a scope
+   * that treated `[]` as "everything" would hand the whole tenant to a principal
+   * who was granted no site at all.
+   *
+   * Applied by the repository rather than by handlers, for the same reason the
+   * patient compartment is: a principal reaches one site because the objects it
+   * was given cannot reach another, not because every route remembered to ask.
+   */
+  facilityIds?: readonly string[];
   audit: AuditCollector;
 }
 

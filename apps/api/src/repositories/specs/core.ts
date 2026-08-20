@@ -67,6 +67,7 @@ export const patientSpec: CollectionSpec<
   targetType: 'Patient',
   action: 'patient',
   facilityColumn: 'primaryFacilityId',
+  facilityScoped: true,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.
   compartment: { column: 'id' },
@@ -221,6 +222,7 @@ export const appointmentSpec: CollectionSpec<
   action: 'appointment',
   patientColumn: 'patientId',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   compartment: { column: 'patientId' },
 
   newRow(input: AppointmentCreateInput): Writable<'Appointment'> {

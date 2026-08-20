@@ -10,7 +10,7 @@ import {
   oidcWebConfig,
   randomToken,
 } from '@/lib/auth/oidc';
-import { safeReturnPath, signInUrl } from '@/lib/auth/routes';
+import { SIGN_IN_PATH, safeReturnPath } from '@/lib/auth/routes';
 import { sealPayload, sessionSealKey } from '@/lib/auth/seal';
 import type { FlowState } from '@/lib/auth/oidc';
 
@@ -29,8 +29,13 @@ import type { FlowState } from '@/lib/auth/oidc';
  */
 const SEE_OTHER = 303;
 
+/** See the note on `sameOrigin` in the callback route: origin from the request
+ *  object, path from a constant, never a string that arrived from outside. */
 function backToSignIn(request: NextRequest): NextResponse {
-  return NextResponse.redirect(new URL(signInUrl(), request.url), SEE_OTHER);
+  const url = request.nextUrl.clone();
+  url.pathname = SIGN_IN_PATH;
+  url.search = '';
+  return NextResponse.redirect(url, SEE_OTHER);
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {

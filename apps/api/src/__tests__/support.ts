@@ -54,6 +54,15 @@ export const TOKENS = {
   noScopeA: 'test-no-scope-a',
   /** Holds a patient scope with no launch context to honour it. */
   danglingPatientScopeA: 'test-dangling-patient-scope-a',
+  /**
+   * Every permission except `facility.all`, granted facility A only.
+   *
+   * The admin tokens above hold `facility.all`, so none of them can show
+   * whether the facility narrowing works: they skip it by design. This one
+   * exists so a test can prove a principal sees its own site and not the
+   * other one.
+   */
+  siteAdminA: 'test-site-admin-a',
 } as const;
 
 /** A valid, stable UUIDv7-shaped id. */
@@ -237,6 +246,21 @@ export const SECOND_ADMIN_PRINCIPAL: Principal = {
 };
 
 /** An administrator in the other organisation, for cross-tenant refusals. */
+/**
+ * Every permission except `facility.all`, and a grant for facility A only.
+ *
+ * Built by subtraction from the admin permission set rather than by listing a
+ * role, so it keeps every capability the FHIR routes ask for and differs from
+ * `ADMIN_PRINCIPAL` in exactly one thing: it cannot see every site. That makes
+ * it the only principal here that exercises the facility narrowing at all.
+ */
+export const SITE_ADMIN_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(77),
+  roles: ['site-admin'],
+  facilityIds: [DEMO_FACILITY_A],
+};
+
 export const ADMIN_B_PRINCIPAL: Principal = {
   ...ADMIN_PRINCIPAL,
   subject: testId(955),
@@ -282,6 +306,7 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.patientScopeAdminA, PATIENT_SCOPE_ADMIN_PRINCIPAL],
       [TOKENS.noScopeA, NO_SCOPE_PRINCIPAL],
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
+      [TOKENS.siteAdminA, SITE_ADMIN_PRINCIPAL],
     ])
   );
 }

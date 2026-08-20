@@ -100,14 +100,45 @@ export function createPrismaCollection<
    */
   const closed = compartment !== undefined && spec.compartment === 'closed';
 
+  /**
+   * The caller's facility narrowing, or null when there is none to apply.
+   *
+   * Null covers three cases that all mean "do not filter": the spec did not opt
+   * in, the principal holds `facility.all` so `scope.facilityIds` is undefined,
+   * or the spec has no column to filter on.
+   */
+  const facilityClause = (): Record<string, unknown> | null => {
+    if (spec.facilityScoped !== true) return null;
+    if (scope.facilityIds === undefined) return null;
+    const column = spec.facilityColumn;
+    if (column === undefined) return null;
+    // Null stays visible: on several tables it means the row is not sited at
+    // all, and hiding those from everyone fails in the direction that looks
+    // like an empty result rather than like a refusal.
+    return { OR: [{ [column]: { in: [...scope.facilityIds] } }, { [column]: null }] };
+  };
+
   const scoped = (where: Record<string, unknown> | undefined): Record<string, unknown> => {
-    if (compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed') {
-      return where ?? {};
-    }
-    const column = spec.model === 'Patient' ? 'id' : spec.compartment.column;
-    // ANDed rather than merged, so a filter the caller supplied on the same
-    // column cannot widen the compartment: the outer AND still has to hold.
-    return { AND: [where ?? {}, { [column]: { equals: compartment } }] };
+    const facility = facilityClause();
+    const compartmented =
+      compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed'
+        ? (where ?? {})
+        : {
+            // ANDed rather than merged, so a filter the caller supplied on the
+            // same column cannot widen the compartment: the outer AND still has
+            // to hold.
+            AND: [
+              where ?? {},
+              {
+                [spec.model === 'Patient' ? 'id' : spec.compartment.column]: {
+                  equals: compartment,
+                },
+              },
+            ],
+          };
+    // Same reasoning again one level out: the facility narrowing is ANDed on
+    // top, so nothing a caller sends can widen it either.
+    return facility === null ? compartmented : { AND: [compartmented, facility] };
   };
 
   const delegate = port.model(spec.model);

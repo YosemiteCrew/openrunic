@@ -3,6 +3,7 @@ import { createMiddleware } from 'hono/factory';
 import { AuditCollector } from '../audit/collector.js';
 import type { AuditSink } from '../audit/types.js';
 import type { AppEnv } from '../context.js';
+import { buildPolicyContext } from '../policy/policy.js';
 import type { RepositoryRegistry } from '../repositories/types.js';
 
 export interface AuditCollectorOptions {
@@ -10,6 +11,22 @@ export interface AuditCollectorOptions {
   repositories: RepositoryRegistry;
   /** Called when the post-response flush fails. Defaults to a console warning. */
   onFlushError?: (error: unknown) => void;
+  /**
+   * Whether this path's repositories should hide rows outside the caller's
+   * facilities, rather than letting the route refuse them.
+   *
+   * The two boundaries answer differently on purpose. The FHIR boundary hides:
+   * a resource at a site the caller has no grant for is a 404, the same answer
+   * as one that does not exist, so search cannot be used to enumerate what
+   * exists elsewhere in the tenant. The BFF refuses: those routes serve a staff
+   * application whose user is already inside the organisation, and telling them
+   * "you have no grant for that site" is more useful than pretending the
+   * appointment is not there.
+   *
+   * Defaults to hiding nothing, so a caller that does not pass this keeps the
+   * behaviour it had.
+   */
+  facilityScopedFor?: (path: string) => boolean;
 }
 
 /**
@@ -29,6 +46,7 @@ export interface AuditCollectorOptions {
  * the audit record.
  */
 export function auditCollector(options: AuditCollectorOptions) {
+  const scopeFacilities = options.facilityScopedFor ?? ((): boolean => false);
   const onFlushError =
     options.onFlushError ??
     ((error: unknown): void => {
@@ -67,6 +85,20 @@ export function auditCollector(options: AuditCollectorOptions) {
         ...(principal.compartmentPatientId === undefined
           ? {}
           : { compartmentPatientId: principal.compartmentPatientId }),
+        // Omitted entirely for a principal holding `facility.all`, because the
+        // scope reads undefined as unrestricted and an empty array as nothing.
+        // Passing `principal.facilityIds` unconditionally would give an
+        // organisation-wide role the empty grant list it happens to carry, and
+        // it would see no sited rows at all.
+        // Undefined for a principal holding `facility.all`, and for any path
+        // that did not ask to be scoped. The scope reads undefined as
+        // unrestricted and an empty array as nothing, so passing
+        // `principal.facilityIds` unconditionally would give an
+        // organisation-wide role its empty grant list and show it no sited rows
+        // at all.
+        ...(scopeFacilities(c.req.path) && !buildPolicyContext(principal).can('facility.all')
+          ? { facilityIds: principal.facilityIds }
+          : {}),
         audit: collector,
       })
     );

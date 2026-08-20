@@ -122,8 +122,30 @@ export function createMemoryCollection<
   const compartment = scope.compartmentPatientId;
   const table = (): ScopedRow<M>[] => dataset.table(spec.model);
 
+  /**
+   * The facility narrowing, mirroring the Prisma port's `facilityClause`.
+   *
+   * The two have to agree. This one backs the tests and the in-browser mock, so
+   * a difference between them would be a rule the suite proves and production
+   * does not have, which is worse than having no rule in either.
+   */
+  const inFacility = (row: ScopedRow<M>): boolean => {
+    if (spec.facilityScoped !== true) return true;
+    if (scope.facilityIds === undefined) return true;
+    const column = spec.facilityColumn;
+    if (column === undefined) return true;
+    const value = readColumn(row, column);
+    // Null stays visible to the whole tenant, as in the Prisma port.
+    if (value === null || value === undefined) return true;
+    // Anything that is not a facility id fails closed. A column typed wider than
+    // this rule expects means the spec and the schema have drifted, and guessing
+    // that an unreadable value is in scope is the wrong way to be wrong.
+    return typeof value === 'string' && scope.facilityIds.includes(value);
+  };
+
   const inScope = (row: ScopedRow<M>): boolean => {
     if (row.tenantId !== tenantId) return false;
+    if (!inFacility(row)) return false;
     if (compartment === undefined || spec.compartment === 'open') return true;
     if (spec.compartment === 'closed') return false;
     return readColumn(row, spec.compartment.column) === compartment;

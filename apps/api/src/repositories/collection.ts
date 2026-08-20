@@ -129,6 +129,32 @@ export interface CollectionSpec<
   readonly patientColumn?: keyof Row<NoInfer<M>> & string;
   /** The column naming the place of service, when the row is facility-scoped. */
   readonly facilityColumn?: keyof Row<NoInfer<M>> & string;
+  /**
+   * Narrow reads to the caller's facilities, using {@link facilityColumn}.
+   *
+   * Opt-in rather than implied by `facilityColumn`, which several specs declare
+   * only so the audit trail can name the site a row belonged to. Turning it on
+   * for all of them would change what existing routes return, and a collection
+   * that should be scoped and is not needs to be visible in review rather than
+   * inferred from an unrelated field.
+   *
+   * Rows whose facility column is null stay visible to the whole tenant. On some
+   * tables null means the row is not sited at all, and filtering those out fails
+   * in the harder direction to notice: an empty page reads as "nothing here"
+   * rather than as a permissions problem.
+   *
+   * This flag says the collection CAN be narrowed, not that every route does it.
+   * The caller's facilities only reach a repository when the middleware puts
+   * them on the request scope, and `createApp` does that for FHIR paths alone
+   * (`facilityScopedFor`). The BFF routes decide cross-facility access
+   * themselves and answer 403 where the FHIR boundary answers 404, so switching
+   * them to this mechanism would change what they return and is a separate
+   * change. `ChargeItem` is the one collection currently opted in that no FHIR
+   * route serves: the declaration is true of its rows and costs nothing, and it
+   * is what stops the narrowing being forgotten if the collection is ever
+   * published.
+   */
+  readonly facilityScoped?: true;
   /** The column naming the visit, when the row hangs off one. */
   readonly encounterColumn?: keyof Row<NoInfer<M>> & string;
   /** What a patient-scoped token may see of this aggregate. */

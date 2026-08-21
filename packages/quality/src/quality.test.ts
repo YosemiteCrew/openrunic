@@ -333,6 +333,36 @@ describe('CMS122, diabetes with poor HbA1c control', () => {
     expect(report.numerator).toBe(1);
   });
 
+  it('also reports that patient as untested, not only as poor control', () => {
+    // Both, and both matter. Review caught an earlier version where the
+    // numerator returned `met` directly: the patient landed in the numerator
+    // and never in `numeratorUnknown`, so a practice could not tell the part of
+    // its number that was measured and was bad from the part that was never
+    // measured. One of those means change a treatment; the other means order a
+    // test.
+    const report = run(cms122, [diabetic([])]);
+
+    expect(report.numeratorUnknown).toBe(1);
+  });
+
+  it('separates an untested patient from one whose result was bad', () => {
+    const report = run(cms122, [
+      diabetic([numeric('A1C', 11)]),
+      subject({ patientId: 'p2', conditions: [coded('DM')], observations: [] }),
+    ]);
+
+    expect(report).toMatchObject({ numerator: 2, numeratorUnknown: 1 });
+  });
+
+  it('does not count an untested patient in a measure where absence is not the failure', () => {
+    // The default, and the reason this package exists. CMS165 must not count a
+    // patient with no reading; CMS122 must. The difference is declared on the
+    // measure rather than buried in a return value.
+    const report = run(cms165, [subject({ conditions: [coded('HTN')], observations: [] })]);
+
+    expect(report).toMatchObject({ numerator: 0, numeratorUnknown: 1 });
+  });
+
   it('takes the most recent test', () => {
     const report = run(cms122, [
       diabetic([

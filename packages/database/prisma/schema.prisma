@@ -784,6 +784,8 @@ model Organisation {
   consentGrants        ConsentGrant[]
   auditEvents          AuditEvent[]
 
+  valueSets            ValueSet[]
+
   @@index([status])
 }
 
@@ -2777,4 +2779,36 @@ model StockMovement {
   @@index([tenantId, createdAt])
   /// A diversion investigation starts from a person, not from a lot.
   @@index([tenantId, actorId, createdAt])
+}
+
+/// A named set of codes, as the deployment defined it.
+///
+/// Quality measures name the value sets they read by canonical URL and this is
+/// where a deployment says what is in one. The rows are definitions, not
+/// expansions: the codes themselves live in "TerminologyCode", and storing a
+/// resolved list here would go stale the moment a code system release was
+/// loaded and would give one value set two answers.
+///
+/// NOTHING SHIPS IN THIS TABLE. The measure specifications are public; the code
+/// lists behind them are licensed content this project does not redistribute.
+/// A deployment obtains them under whatever licence applies to it and loads them
+/// here, exactly as it does code systems - see packages/terminology.
+model ValueSet {
+  id          String   @id @db.Uuid
+  tenantId    String   @db.Uuid
+  /// Canonical identifier. What a measure names, and what a caller passes.
+  url         String
+  name        String?
+  description String?
+  /// Include and exclude rules, in the shape `packages/terminology` parses.
+  /// Json because the shape is the terminology package's to define, and a
+  /// column per rule field would have to migrate every time it gained one.
+  definition  Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, url])
+  @@index([tenantId, url])
 }

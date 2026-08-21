@@ -10,6 +10,7 @@ import { inventoryRouteContracts, inventoryRoutes } from './inventory.js';
 import { orderRouteContracts, orderRoutes } from './orders.js';
 import { patientRouteContracts, patientRoutes } from './patients.js';
 import { platformRouteContracts, platformRoutes } from './platform.js';
+import { qualityRouteContracts, qualityRoutes } from './quality.js';
 
 /**
  * The internal API, one router per workstream mounted from one line each.
@@ -36,6 +37,7 @@ export function internalRoutes(): Hono<AppEnv> {
   router.route('/', financialRoutes());
   router.route('/', inventoryRoutes());
   router.route('/', platformRoutes());
+  router.route('/', qualityRoutes());
 
   return router;
 }
@@ -50,5 +52,6 @@ export function internalRouteContracts(): RouteContract[] {
     ...financialRouteContracts(),
     ...inventoryRouteContracts(),
     ...platformRouteContracts(),
+    ...qualityRouteContracts(),
   ];
 }

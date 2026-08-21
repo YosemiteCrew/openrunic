@@ -6,7 +6,9 @@ import { CommandPalette } from '@/components/command/CommandPalette';
 import { CommandProvider, useRegisterCommands } from '@/components/command/CommandProvider';
 import { filterCommands, flattenSections, scoreCommand } from '@/components/command/filter';
 import type { Command } from '@/components/command/types';
-import { NAVIGATE_COMMANDS } from '@/components/shell/navigation';
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
+
+import { navigateCommands } from '@/components/shell/navigation';
 
 const push = vi.fn();
 
@@ -35,6 +37,11 @@ function ScreenWithCommands() {
   );
   return <p>screen body</p>;
 }
+
+// The real catalogue in the source language, so the palette carries the labels
+// and the search words a reader actually sees rather than a second set invented
+// here that could drift from them.
+const NAVIGATE_COMMANDS = navigateCommands(createTranslator(appCatalogue, 'en'));
 
 function Harness({ withScreen = true }: { withScreen?: boolean }) {
   return (

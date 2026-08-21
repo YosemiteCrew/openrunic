@@ -2,6 +2,8 @@
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
+import { useTranslator } from '@/lib/i18n/messages';
+
 import styles from './downtime.module.css';
 
 /**
@@ -19,9 +21,27 @@ import styles from './downtime.module.css';
 
 export interface DowntimeBoundaryProps {
   readonly children: ReactNode;
-  /** Named in the message so staff can tell support which screen it was. */
-  readonly area?: string;
+  /**
+   * Catalogue key for the screen's own name, so staff can tell support which
+   * screen it was. Defaults to "this screen".
+   *
+   * A key rather than the words, because the sentence it lands in is
+   * translated, and a Spanish sentence with an English screen name in the
+   * middle of it is the half-translated result the catalogue design exists to
+   * avoid.
+   */
+  readonly areaKey?: string;
   readonly onError?: (error: Error, info: ErrorInfo) => void;
+}
+
+/**
+ * The boundary itself has to be a class: `getDerivedStateFromError` and
+ * `componentDidCatch` have no hook equivalents. So the translator arrives as a
+ * prop, put there by the wrapper below, rather than being read from a hook this
+ * component cannot call.
+ */
+interface DowntimeBoundaryViewProps extends DowntimeBoundaryProps {
+  readonly translate: (key: string, values?: Record<string, string | number>) => string;
 }
 
 interface DowntimeBoundaryState {
@@ -53,7 +73,7 @@ function reference(): string {
     .toUpperCase();
 }
 
-export class DowntimeBoundary extends Component<DowntimeBoundaryProps, DowntimeBoundaryState> {
+class DowntimeBoundaryView extends Component<DowntimeBoundaryViewProps, DowntimeBoundaryState> {
   public override state: DowntimeBoundaryState = { failed: false, reference: null };
 
   public static getDerivedStateFromError(): DowntimeBoundaryState {
@@ -70,21 +90,30 @@ export class DowntimeBoundary extends Component<DowntimeBoundaryProps, DowntimeB
   public override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
 
-    const area = this.props.area ?? 'this screen';
+    const t = this.props.translate;
+    const area = t(this.props.areaKey ?? 'downtime.failed.thisScreen');
 
     return (
       <section role="alert" data-testid="downtime-fallback" className={styles.fallback}>
-        <h1 className={styles.fallback__title}>{area} could not be displayed</h1>
-        <p className={styles.fallback__body}>
-          Something went wrong while loading this page. No patient information has been changed or
-          lost by this - anything you saved before now is safe.
+        <h1 className={styles.fallback__title}>{t('downtime.failed.title', { area })}</h1>
+        <p className={styles.fallback__body}>{t('downtime.failed.reassurance')}</p>
+        <p className={styles.fallback__body}>{t('downtime.failed.next')}</p>
+        <p className={styles.reference}>
+          {t('downtime.failed.reference', { reference: this.state.reference ?? '' })}
         </p>
-        <p className={styles.fallback__body}>
-          Try reloading the page. If it happens again, use a different screen for now and tell
-          whoever looks after your server, quoting the reference below.
-        </p>
-        <p className={styles.reference}>Reference {this.state.reference}</p>
       </section>
     );
   }
+}
+
+/**
+ * The boundary as everything else uses it.
+ *
+ * A function component so it can read the translator from context, wrapping the
+ * class that does the actual catching. Splitting them is what lets an error
+ * boundary render translated text at all.
+ */
+export function DowntimeBoundary(props: Readonly<DowntimeBoundaryProps>) {
+  const translate = useTranslator();
+  return <DowntimeBoundaryView {...props} translate={translate} />;
 }

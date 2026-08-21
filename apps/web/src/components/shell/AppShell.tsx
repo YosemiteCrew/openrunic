@@ -11,7 +11,9 @@ import { CommandPalette, CommandProvider } from '@/components/command';
 
 import { Breadcrumb } from './Breadcrumb';
 import type { BreadcrumbItem } from './Breadcrumb';
-import { NAVIGATE_COMMANDS, NAV_AREAS, activeAreaLabel } from './navigation';
+import { useTranslator } from '@/lib/i18n/messages';
+
+import { NAV_AREAS, activeArea, navigateCommands } from './navigation';
 import { TopBar } from './TopBar';
 
 /**
@@ -63,20 +65,32 @@ export function AppShell({
 }: Readonly<AppShellProps>): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
-  const active = activeAreaLabel(pathname ?? '');
+  const t = useTranslator();
+  const area = activeArea(pathname ?? '');
+  const active = area === undefined ? undefined : t(area.labelKey);
 
-  const items = useMemo<SideNavItem[]>(
-    () => NAV_AREAS.map((area) => ({ label: area.label, icon: area.icon })),
-    []
+  // The rail's API is label-based, so the mapping back from a label to a route
+  // is built here from the same translator in the same render. Building it in
+  // one place is what stops a translated rail navigating to the wrong screen.
+  const routes = useMemo(
+    () => new Map(NAV_AREAS.map((entry) => [t(entry.labelKey), entry.href])),
+    [t]
   );
 
+  const items = useMemo<SideNavItem[]>(
+    () => NAV_AREAS.map((entry) => ({ label: t(entry.labelKey), icon: entry.icon })),
+    [t]
+  );
+
+  const commands = useMemo(() => navigateCommands(t), [t]);
+
   const navigate = (label: string) => {
-    const area = NAV_AREAS.find((candidate) => candidate.label === label);
-    if (area) router.push(area.href);
+    const href = routes.get(label);
+    if (href !== undefined) router.push(href);
   };
 
   return (
-    <CommandProvider baseCommands={NAVIGATE_COMMANDS}>
+    <CommandProvider baseCommands={commands}>
       {/* Inside the command registry so the assistant can register its own
           palette entry, and around the shell so the panel keeps one
           conversation while a clinician walks from chart to chart. It asks the
@@ -116,7 +130,7 @@ export function AppShell({
               </div>
 
               {rightRail ? (
-                <aside className="or-app__rail" aria-label="Page context">
+                <aside className="or-app__rail" aria-label={t('shell.pageContext')}>
                   {rightRail}
                 </aside>
               ) : null}

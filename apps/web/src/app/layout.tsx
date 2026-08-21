@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
+
 import { SessionGate } from '@/lib/auth/SessionGate';
+import { resolveLocale } from '@/lib/i18n/locale';
+import { MessagesProvider } from '@/lib/i18n/messages';
 
 // Order matters: the design system first, then the app's own layer, so the
 // shell can win ties against the library's element selectors.
@@ -44,14 +48,23 @@ export const viewport: Viewport = {
  * them is a white page or a stack trace in front of a patient. Putting them
  * here means no future screen has to remember.
  */
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  // Resolved here, before the first byte. A page that renders in English and
+  // swaps to Spanish once JavaScript arrives has shown the wrong language to
+  // the person least able to read it, and moved the layout under their cursor
+  // while doing it.
+  const locale = await resolveLocale();
+  // This layout is a server component, so it renders its own strings directly
+  // rather than through the hook the client components use.
+  const t = createTranslator(appCatalogue, locale);
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body>
         {/* First stop in the tab order on every page. It is visually hidden
             until focused, then it lands on the shell's <main>. */}
         <a className="or-skip-link" href="#main-content">
-          Skip to content
+          {t('shell.skipToContent')}
         </a>
         {/* The order here is the design, not an accident.
 
@@ -66,13 +79,19 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
 
             SessionGate is innermost: it holds a clinical screen back until the
             token from the session cookie is in memory, and takes both away when
-            the workstation goes quiet. Public routes pass straight through. */}
-        <ConnectivityProvider>
-          <DowntimeBanner />
-          <DowntimeBoundary>
-            <SessionGate>{children}</SessionGate>
-          </DowntimeBoundary>
-        </ConnectivityProvider>
+            the workstation goes quiet. Public routes pass straight through.
+
+            MessagesProvider is outside all of them, because the downtime notices
+            and the sign-in screen both need a language and both render before
+            there is a session to read one from. */}
+        <MessagesProvider locale={locale}>
+          <ConnectivityProvider>
+            <DowntimeBanner />
+            <DowntimeBoundary>
+              <SessionGate>{children}</SessionGate>
+            </DowntimeBoundary>
+          </ConnectivityProvider>
+        </MessagesProvider>
       </body>
     </html>
   );

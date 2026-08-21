@@ -28,44 +28,46 @@ export type ConnectivityStatus = 'online' | 'degraded' | 'offline';
 export type ProbeResult = 'ok' | 'degraded' | 'down' | null;
 
 export interface StatusCopy {
-  /** Short label, for the banner. */
-  readonly title: string;
-  /** What has happened, in one sentence, with no jargon. */
-  readonly detail: string;
-  /** What the person reading this should do next. */
-  readonly action: string;
+  /** Catalogue key for the short banner label. */
+  readonly titleKey: string;
+  /** Catalogue key for what has happened, in one sentence, with no jargon. */
+  readonly detailKey: string;
+  /** Catalogue key for what the person reading this should do next. */
+  readonly actionKey: string | null;
   /** Banners for a working system are polite; a broken one interrupts. */
   readonly tone: 'info' | 'warning' | 'critical';
 }
 
 /**
- * The words staff actually see.
+ * What staff actually see, as keys.
  *
- * Kept as data rather than inline JSX so the wording is reviewable in one
- * place, and testable. Every string is written for a front-desk user in the
- * middle of a clinic day: no "5xx", no "upstream", no "connection pool".
+ * Kept as data rather than inline JSX so the wording is reviewable in one place
+ * and testable, and as keys rather than sentences so a clinic that does not
+ * work in English is told its notes are not being saved in a language it reads.
+ * That is the single most important sentence this application ever shows, and
+ * it is the one a reader is least able to puzzle out from context.
+ *
+ * `actionKey` is null where there is nothing to do, rather than an empty
+ * string: an empty message would render as a blank paragraph, and the banner
+ * would carry an empty line where an instruction usually is.
  */
 export const STATUS_COPY: Readonly<Record<ConnectivityStatus, StatusCopy>> = {
   online: {
-    title: 'Connected',
-    detail: 'openrunic is working normally.',
-    action: '',
+    titleKey: 'downtime.online.title',
+    detailKey: 'downtime.online.detail',
+    actionKey: null,
     tone: 'info',
   },
   degraded: {
-    title: 'Read-only: records cannot be saved',
-    detail:
-      'The application is running but cannot reach the patient records database. Anything already on screen is still readable. New notes, orders and changes will not be saved.',
-    action:
-      'Keep working on paper for now and enter it once this message clears. Tell whoever looks after your server that the database is unreachable. This page checks again every few seconds on its own.',
+    titleKey: 'downtime.degraded.title',
+    detailKey: 'downtime.degraded.detail',
+    actionKey: 'downtime.degraded.action',
     tone: 'critical',
   },
   offline: {
-    title: 'Cannot reach openrunic',
-    detail:
-      'This computer cannot reach the openrunic server. That usually means the server is restarting, or this machine has lost its network connection.',
-    action:
-      'Check that this computer is on the practice network. If other computers have the same message, the server itself is down - tell whoever looks after it. This page keeps trying on its own; do not close it.',
+    titleKey: 'downtime.offline.title',
+    detailKey: 'downtime.offline.detail',
+    actionKey: 'downtime.offline.action',
     tone: 'critical',
   },
 };

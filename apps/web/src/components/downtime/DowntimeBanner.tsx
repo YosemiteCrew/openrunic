@@ -1,6 +1,7 @@
 'use client';
 
 import { STATUS_COPY } from '@/lib/downtime/status';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { useConnectivity } from './ConnectivityProvider';
 import styles from './downtime.module.css';
@@ -17,6 +18,7 @@ import styles from './downtime.module.css';
  */
 export function DowntimeBanner() {
   const { status, recheck } = useConnectivity();
+  const t = useTranslator();
 
   if (status === 'online') return null;
 
@@ -34,12 +36,12 @@ export function DowntimeBanner() {
       className={styles.banner}
     >
       <div className={styles.body}>
-        <p className={styles.title}>{copy.title}</p>
-        <p className={styles.detail}>{copy.detail}</p>
-        <p className={styles.action}>{copy.action}</p>
+        <p className={styles.title}>{t(copy.titleKey)}</p>
+        <p className={styles.detail}>{t(copy.detailKey)}</p>
+        {copy.actionKey === null ? null : <p className={styles.action}>{t(copy.actionKey)}</p>}
       </div>
       <button type="button" onClick={recheck} className={styles.retry}>
-        Check again now
+        {t('downtime.checkAgain')}
       </button>
     </div>
   );

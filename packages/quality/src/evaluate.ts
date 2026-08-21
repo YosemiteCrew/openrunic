@@ -42,6 +42,12 @@ export interface MeasureReport {
    * care that was not written down, and a practice works on those two problems
    * in completely different ways. They are counted against the practice in the
    * rate below, which is correct: an unrecorded result is not a result.
+   *
+   * Always counted, whichever way the measure treats them. On an inverse
+   * measure like CMS122 these patients are also IN the numerator, because the
+   * specification says an absent result is the failure; this field is how a
+   * practice tells that part of the number from the part that was measured and
+   * was bad.
    */
   readonly numeratorUnknown: number;
   /**
@@ -130,9 +136,15 @@ export function evaluateMeasure(
 
     const met = measure.numerator(context);
     if (met === 'met') numerator += 1;
-    // `unknown` is counted and NOT added to the numerator. A patient whose
-    // record does not say cannot be assumed to have passed.
-    if (met === 'unknown') numeratorUnknown += 1;
+    if (met === 'unknown') {
+      // Always counted, whatever the measure does with it, so a practice can
+      // always see how much of its number is unmeasured rather than unachieved.
+      numeratorUnknown += 1;
+      // And added to the numerator only where the specification says an absent
+      // result IS the failure being counted. Everywhere else a patient whose
+      // record does not say cannot be assumed to have passed.
+      if (measure.unknownCountsAsMet === true) numerator += 1;
+    }
   }
 
   const eligible = denominator - denominatorExclusion - denominatorException;

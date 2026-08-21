@@ -165,15 +165,22 @@ export const cms165: MeasureDefinition = {
  * that is, as poor control. That is the opposite of the usual rule in this
  * package and it is deliberate in the specification: a year with no test is a
  * year of unmonitored diabetes, and the measure refuses to let an absent result
- * look like a good one. It is still reported as `unknown` here so the practice
- * can see how much of its number is untested rather than uncontrolled, and the
- * numerator counts it.
+ * look like a good one.
+ *
+ * The numerator therefore answers `unknown` and the measure sets
+ * `unknownCountsAsMet`, rather than the numerator answering `met` directly.
+ * Both put the patient in the numerator; only this way also reports them in
+ * `numeratorUnknown`, which is what lets a practice tell the part of its number
+ * that was measured and was bad from the part that was never measured. Review
+ * caught the earlier version, where the comment promised that reporting and the
+ * control flow could not produce it.
  */
 export const cms122: MeasureDefinition = {
   id: 'CMS122',
   title: 'Diabetes: Haemoglobin A1c Poor Control (>9%)',
   version: '2026',
   higherIsBetter: false,
+  unknownCountsAsMet: true,
   valueSets: [
     VS.diabetes,
     VS.hba1cLaboratoryTest,
@@ -203,11 +210,11 @@ export const cms122: MeasureDefinition = {
       context.inValueSet(VS.hba1cLaboratoryTest, observation)
     );
 
-    // No result in the period is poor control, per the specification. A year
-    // with no test is a year of unmonitored diabetes, and this is the one place
-    // in this package where an absent value counts against the practice rather
-    // than being set aside.
-    if (result === undefined) return 'met';
+    // No result in the period is poor control, per the specification, and
+    // `unknownCountsAsMet` above is what puts it in the numerator. Answering
+    // `unknown` rather than `met` is what also gets it reported: a practice
+    // needs to tell an untested patient from a tested one whose number was bad.
+    if (result === undefined) return 'unknown';
     return asResult(result.value > 9);
   },
 };

@@ -127,4 +127,23 @@ export interface MeasureDefinition {
   readonly denominatorException?: (context: CriterionContext) => CriterionResult;
   /** Who met the quality criterion. */
   readonly numerator: (context: CriterionContext) => CriterionResult;
+  /**
+   * Whether a numerator that could not be evaluated counts as met.
+   *
+   * False almost everywhere, and that default is the point of this package: a
+   * patient with no blood pressure recorded is not a patient whose blood
+   * pressure was controlled.
+   *
+   * True for an inverse measure that counts failures, where the specification
+   * says an absent result IS the failure. CMS122 is the case: a year with no
+   * HbA1c is a year of unmonitored diabetes, and the measure refuses to let
+   * that look like a good result.
+   *
+   * Declared here rather than hidden inside a numerator returning `met` for a
+   * missing value, because a numerator that did that would never report the
+   * patient in `numeratorUnknown`, and the practice could not tell how much of
+   * its number is untested rather than uncontrolled. Those call for completely
+   * different work: one is ordering a test, the other is changing a treatment.
+   */
+  readonly unknownCountsAsMet?: true;
 }

@@ -7,6 +7,7 @@
     { "path": "packages/x12" },
     { "path": "packages/collections" },
     { "path": "packages/pricing" },
+    { "path": "packages/quality" },
     { "path": "packages/ccda" },
     { "path": "packages/hl7v2" },
     { "path": "packages/cds-hooks" },

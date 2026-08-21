@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { AdapterRegistry } from '@openrunic/adapters';
 
 import { createApp, type CreateAppOptions } from './app.js';
 import { createOidcPrincipalResolver } from './auth/oidc-resolver.js';
@@ -44,6 +45,14 @@ const options: CreateAppOptions =
     ? { smartLaunch }
     : {
         smartLaunch,
+        // Empty, and that is a real answer rather than a gap: this deployment
+        // does not do video, so every telehealth route says 501 rather than
+        // opening a room at an address that can never resolve. `createApp`
+        // refuses to fall back to its development registry under
+        // NODE_ENV=production, which is why this is passed explicitly. A
+        // deployment with a vendor registers it here and awaits its `init`
+        // before `serve` is called.
+        adapters: new AdapterRegistry(),
         repositories: wiring.repositories,
         auditSink: wiring.auditSink,
         readiness: wiring.readiness,

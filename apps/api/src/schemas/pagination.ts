@@ -59,3 +59,17 @@ export function toListResponse<TRow, TDto>(
     },
   };
 }
+
+/** The window every dated list accepts: `from` inclusive, `to` exclusive. */
+export const windowQueryFields = {
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
+};
+
+/** Turns that window into the repository's shape. Absent stays absent. */
+export function windowOf(input: { from?: string; to?: string }): { from?: Date; to?: Date } {
+  return {
+    ...(input.from === undefined ? {} : { from: new Date(input.from) }),
+    ...(input.to === undefined ? {} : { to: new Date(input.to) }),
+  };
+}

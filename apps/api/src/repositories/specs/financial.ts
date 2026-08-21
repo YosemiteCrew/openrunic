@@ -16,6 +16,7 @@ import {
   comparable,
   inWindow,
   jsonColumn,
+  statusMetadata,
   windowFilter,
   type BaseQuery,
   type ChildBatch,
@@ -143,16 +144,6 @@ function mentionedColumns<M extends PrismaModelName>(
     if (value !== undefined) data[column] = value;
   }
   return data as Partial<Writable<M>>;
-}
-
-/** Facts worth carrying on a write event: the state, and how it moved. */
-function statusMetadata(
-  status: string,
-  before: { status: string } | null,
-  created: Record<string, unknown>
-): Record<string, unknown> {
-  if (before === null) return { status, ...created };
-  return before.status === status ? {} : { statusFrom: before.status, statusTo: status };
 }
 
 /* ------------------------------------------------------------------ coverage */

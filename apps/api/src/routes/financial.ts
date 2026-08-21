@@ -119,7 +119,7 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * The revenue cycle, from eligibility to a paid statement.
@@ -293,10 +293,6 @@ const ADJUSTMENT_GROUPS = ['CO', 'CR', 'OA', 'PI', 'PR'] as const;
 
 function toAdjustmentGroup(value: string | null): (typeof ADJUSTMENT_GROUPS)[number] | undefined {
   return ADJUSTMENT_GROUPS.find((group) => group === value);
-}
-
-function idParam(subject: string): { name: string; description: string; schema: z.ZodType } {
-  return { name: 'id', description: `${subject} id (UUIDv7).`, schema: idParamSchema };
 }
 
 /* ------------------------------------------------------------ crud resources */

@@ -42,6 +42,16 @@ export const PROBLEM_KINDS = [
   'invalid-transition',
   'validation-failed',
   'not-implemented',
+  /**
+   * A partner this deployment depends on did not answer, or refused.
+   *
+   * Separate from `internal-error` because it says something different and
+   * because the caller can act on it: nothing is wrong with this API or with the
+   * request, and whether retrying helps depends on which partner failed. The
+   * partner's own message is never carried through - it is written for whoever
+   * is holding the request, and here that is a patient.
+   */
+  'upstream-failed',
   'internal-error',
 ] as const;
 
@@ -57,6 +67,7 @@ const STATUS_BY_KIND: Record<ProblemKind, ContentfulStatusCode> = {
   'invalid-transition': 409,
   'validation-failed': 422,
   'not-implemented': 501,
+  'upstream-failed': 502,
   'internal-error': 500,
 };
 
@@ -70,6 +81,7 @@ const TITLE_BY_KIND: Record<ProblemKind, string> = {
   'invalid-transition': 'Invalid state transition',
   'validation-failed': 'Validation failed',
   'not-implemented': 'Not implemented',
+  'upstream-failed': 'A partner service failed',
   'internal-error': 'Internal error',
 };
 
@@ -145,6 +157,11 @@ export class ApiError extends Error {
     return new ApiError('not-implemented', { ...options, detail });
   }
 
+  /** A partner service did not answer, or refused. Never carries its message. */
+  static badGateway(detail: string, options: ApiErrorOptions = {}): ApiError {
+    return new ApiError('upstream-failed', { ...options, detail });
+  }
+
   /**
    * A refused state transition, reported with the states involved.
    *
@@ -186,6 +203,7 @@ const DEFAULT_FHIR_ISSUE_CODE: Record<ProblemKind, FhirIssueCode> = {
   'invalid-transition': 'business-rule',
   'validation-failed': 'invariant',
   'not-implemented': 'not-supported',
+  'upstream-failed': 'transient',
   'internal-error': 'exception',
 };
 

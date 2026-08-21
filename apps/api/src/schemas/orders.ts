@@ -51,7 +51,12 @@ import type {
   TaskRow,
 } from '../repositories/specs/orders.js';
 
-import { paginationQueryFields, sortOrderField } from './pagination.js';
+import {
+  paginationQueryFields,
+  sortOrderField,
+  windowOf,
+  windowQueryFields,
+} from './pagination.js';
 
 /**
  * The wire contracts for orders, results and the worklists.
@@ -84,19 +89,6 @@ function flag(value: 'true' | 'false' | undefined): boolean | undefined {
 /** An instant column on the wire. Absent stays absent, never becomes the epoch. */
 function isoOrNull(value: Date | null): string | null {
   return value?.toISOString() ?? null;
-}
-
-/** The window every dated list accepts: `from` inclusive, `to` exclusive. */
-const windowQueryFields = {
-  from: z.iso.datetime({ offset: true }).optional(),
-  to: z.iso.datetime({ offset: true }).optional(),
-};
-
-function windowOf(input: { from?: string; to?: string }): { from?: Date; to?: Date } {
-  return {
-    ...(input.from === undefined ? {} : { from: new Date(input.from) }),
-    ...(input.to === undefined ? {} : { to: new Date(input.to) }),
-  };
 }
 
 /**

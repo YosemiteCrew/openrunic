@@ -1,5 +1,5 @@
 import type { AdapterError, AdapterRegistry } from '@openrunic/adapters';
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -337,5 +337,3 @@ export function telehealthRouteContracts(): RouteContract[] {
     },
   ];
 }
-
-export type { Context };

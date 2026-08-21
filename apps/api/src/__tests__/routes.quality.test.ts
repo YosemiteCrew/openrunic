@@ -1,3 +1,4 @@
+import { openrunicCodeSystem } from '@openrunic/fhir';
 import { MEASURE_VALUE_SETS } from '@openrunic/quality';
 import { describe, expect, it } from 'vitest';
 
@@ -48,7 +49,7 @@ async function loadValueSets(
   }
 }
 
-const APPOINTMENT_SYSTEM = 'http://openrunic.org/fhir/CodeSystem/appointment-type';
+const APPOINTMENT_SYSTEM = openrunicCodeSystem('appointment-type');
 
 /** The value sets CMS165 reads, with invented codes standing in for each. */
 const CMS165_SETS = [
@@ -302,6 +303,74 @@ describe('computing a measure', () => {
     expect(await res.text()).toContain(MEASURE_VALUE_SETS.hypertension);
   });
 
+  it('projects immunisations, which a measure may read even when these two do not', async () => {
+    const { app, dataset } = createTestApp();
+    seedCodes(dataset);
+    seedChart(dataset, { systolic: 128, diastolic: 78 });
+    seed(dataset, 'Immunization', {
+      ...storageColumns(testId(500)),
+      patientId: PATIENT,
+      encounterId: null,
+      status: 'COMPLETED',
+      cvxCode: '208',
+      mvxCode: null,
+      ndcCode: null,
+      display: 'COVID-19 vaccine',
+      lotNumber: null,
+      expirationDate: null,
+      siteCode: null,
+      routeCode: null,
+      doseQuantity: null,
+      doseUnit: null,
+      administeredAt: new Date('2026-05-01T00:00:00.000Z'),
+      administeredById: null,
+      visDate: null,
+      refusalReasonCode: null,
+      reportedToRegistryAt: null,
+    });
+    await loadValueSets(app, CMS165_SETS);
+
+    // Neither shipped measure reads immunisations, and the projection has to
+    // work anyway: a measure that did would otherwise see an empty list and
+    // report a practice as having vaccinated nobody.
+    const res = await report(app);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('dates a condition with no known onset from when it was recorded', async () => {
+    const { app, dataset } = createTestApp();
+    seedCodes(dataset);
+    seedChart(dataset, { systolic: 128, diastolic: 78, hypertensive: false });
+    seed(dataset, 'Condition', {
+      ...storageColumns(testId(301)),
+      patientId: PATIENT,
+      encounterId: null,
+      category: 'PROBLEM_LIST_ITEM',
+      code: 'HTN',
+      codeSystem: SYSTEM,
+      display: 'Hypertension',
+      snomedCode: null,
+      clinicalStatus: 'ACTIVE',
+      verificationStatus: 'CONFIRMED',
+      // No onset date. Common on a real problem list: the diagnosis is known
+      // and when it began is not, and a condition with no date at all would
+      // drop out of a denominator it belongs in.
+      onsetDate: null,
+      abatementDate: null,
+      severityCode: null,
+      bodySiteCode: null,
+      note: null,
+      recordedAt: new Date('2024-01-01T00:00:00.000Z'),
+      recordedById: null,
+    });
+    await loadValueSets(app, CMS165_SETS);
+
+    const body = (await (await report(app)).json()) as MeasureReportDto;
+
+    expect(body.denominator).toBe(1);
+  });
+
   it('answers 404 for a measure this build does not carry', async () => {
     const { app } = createTestApp();
 
@@ -336,6 +405,25 @@ describe('computing a measure', () => {
   });
 });
 
+describe('a population larger than the endpoint reports over', () => {
+  it('refuses rather than reporting a rate over an unstated subset', async () => {
+    // The ceiling is injectable so this can be proved without seeding twenty
+    // thousand charts. What is under test is the refusal, not the number: a
+    // plausible rate over a silently truncated population is the one thing a
+    // quality number must never be.
+    const { app, dataset } = createTestApp({ quality: { patientCeiling: 1 } });
+    seedCodes(dataset);
+    seedChart(dataset, { systolic: 128, diastolic: 78 });
+    seed(dataset, 'Patient', makePatientRow({ id: testId(2), mrn: 'OR-100002' }));
+    await loadValueSets(app, CMS165_SETS);
+
+    const res = await report(app);
+
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('at most 1');
+  });
+});
+
 describe('value sets a deployment supplies', () => {
   it('refuses a definition that is not well formed', async () => {
     const { app } = createTestApp();
@@ -367,6 +455,39 @@ describe('value sets a deployment supplies', () => {
       }),
     });
 
+    expect(res.status).toBe(422);
+  });
+
+  it('lists what the deployment has loaded, narrowed by canonical URL', async () => {
+    const { app } = createTestApp();
+    await loadValueSets(app, CMS165_SETS.slice(0, 2));
+
+    const all = await app.request('/bff/v0/value-sets', { headers: bearer(TOKENS.adminA) });
+    const one = await app.request(
+      `/bff/v0/value-sets?url=${encodeURIComponent(MEASURE_VALUE_SETS.hypertension)}`,
+      { headers: bearer(TOKENS.adminA) }
+    );
+
+    expect(((await all.json()) as { data: unknown[] }).data).toHaveLength(2);
+    expect(((await one.json()) as { data: unknown[] }).data).toHaveLength(1);
+  });
+
+  it('refuses a patch that changes nothing', async () => {
+    const { app } = createTestApp();
+    await loadValueSets(app, CMS165_SETS.slice(0, 1));
+    const listed = (await (
+      await app.request('/bff/v0/value-sets', { headers: bearer(TOKENS.adminA) })
+    ).json()) as { data: { id: string }[] };
+    const id = listed.data[0]?.id ?? '';
+
+    const res = await app.request(`/bff/v0/value-sets/${id}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.adminA),
+      body: JSON.stringify({}),
+    });
+
+    // An empty patch is a request that means nothing, and answering 200 to one
+    // tells a caller their change was applied.
     expect(res.status).toBe(422);
   });
 

@@ -16,7 +16,7 @@ import { paginationQueryFields, sortOrderField } from './pagination.js';
  * it finds out which.
  */
 export const measureListSchema = z.strictObject({
-  id: z.string().regex(/^CMS[0-9]{2,4}$/u),
+  id: z.string().regex(/^CMS\d{2,4}$/u),
   title: z.string(),
   version: z.string(),
   /** False when a lower rate is the better practice. See CMS122. */

@@ -1,5 +1,6 @@
 import { conceptInValueSet, parseValueSetDefinition } from '@openrunic/terminology';
 import type { ValueSetDefinition } from '@openrunic/terminology';
+import { openrunicCodeSystem, SYSTEMS } from '@openrunic/fhir';
 import {
   evaluateMeasure,
   isComputable,
@@ -66,8 +67,20 @@ import { repositories } from './helpers.js';
  * exceeding it refuses rather than truncating.
  */
 
+/**
+ * How many patients a report will consider.
+ *
+ * High, because a practice's whole panel is the population. Overridable so a
+ * test can prove the refusal below without seeding twenty thousand charts:
+ * the same reason `now` and `modules` are overridable elsewhere in this app,
+ * and the behaviour under test is the refusal rather than the number.
+ */
 const PATIENT_CEILING = 20_000;
 const EVENTS_PER_PATIENT = 500;
+
+export interface QualityRouteOptions {
+  readonly patientCeiling?: number;
+}
 
 /** `system|code`, the key an expanded value set is looked up by. */
 function conceptKey(system: string, code: string): string {
@@ -149,21 +162,22 @@ async function concepts(
 /** Turns the stored chart into the small shape a measure reads. */
 async function subjectsFor(
   c: Context<AppEnv>,
-  period: MeasurementPeriod
+  period: MeasurementPeriod,
+  ceiling: number
 ): Promise<MeasureSubject[]> {
   const repos = repositories(c);
   const patients = await repos.patients.list({
     page: 1,
-    pageSize: PATIENT_CEILING,
+    pageSize: ceiling,
     sort: 'familyName',
     order: 'asc',
   });
 
-  if (patients.total > PATIENT_CEILING) {
+  if (patients.total > ceiling) {
     // Refused rather than truncated. A plausible rate over an unstated subset
     // is the one thing a quality number must never be.
     throw ApiError.conflict(
-      `This organisation has ${String(patients.total)} patients and this endpoint reports over at most ${String(PATIENT_CEILING)}.`
+      `This organisation has ${String(patients.total)} patients and this endpoint reports over at most ${String(ceiling)}.`
     );
   }
 
@@ -238,12 +252,18 @@ async function subjectsFor(
  * deployment maps its own codes into a value set under this system. That is a
  * real limitation and it is why the encounter criteria are the first thing to
  * check when a denominator looks empty.
+ *
+ * Built rather than written out, so this project's code-system URIs are defined
+ * in exactly one place. They are canonical identifiers and not endpoints:
+ * nothing dereferences them, and rewriting one to https would make it a
+ * different identifier that no longer matches the data it describes.
  */
-const APPOINTMENT_SYSTEM = 'http://openrunic.org/fhir/CodeSystem/appointment-type';
-const IMMUNISATION_SYSTEM = 'http://hl7.org/fhir/sid/cvx';
+const APPOINTMENT_SYSTEM = openrunicCodeSystem('appointment-type');
+const IMMUNISATION_SYSTEM = SYSTEMS.cvx;
 
-export function qualityRoutes(): Hono<AppEnv> {
+export function qualityRoutes(options: QualityRouteOptions = {}): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
+  const patientCeiling = options.patientCeiling ?? PATIENT_CEILING;
 
   /**
    * What this build can measure, and whether this deployment can compute it.
@@ -284,7 +304,7 @@ export function qualityRoutes(): Hono<AppEnv> {
     }
 
     const expanded = await expandValueSets(c, measure.valueSets);
-    const subjects = await subjectsFor(c, period);
+    const subjects = await subjectsFor(c, period, patientCeiling);
 
     const outcome = evaluateMeasure(measure, subjects, period, {
       loadedValueSets: new Set(expanded.keys()),

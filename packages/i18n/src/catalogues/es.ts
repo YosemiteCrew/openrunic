@@ -73,13 +73,23 @@ export const es: Messages = {
   'downtime.failed.thisScreen': 'esta pantalla',
 
   'auth.signIn.title': 'Iniciar sesión',
-  'auth.signIn.submit': 'Continuar',
-  'auth.signIn.provider': 'Inicie sesión con la cuenta de su organización',
-  'auth.signIn.failed': 'No se completó el inicio de sesión. Inténtelo de nuevo.',
-  'auth.holding': 'Comprobando su sesión',
-  'auth.signedOut.title': 'Se ha cerrado su sesión',
-  'auth.signedOut.body':
-    'Esta estación de trabajo estuvo inactiva. Inicie sesión de nuevo para continuar.',
+  'auth.signIn.lede':
+    'Acceso para personal de openrunic. La sesión se cierra tras {minutes} minutos sin actividad, de modo que una estación de trabajo desatendida no queda abierta en un historial.',
+  'auth.signIn.tokenLabel': 'Token de acceso',
+  'auth.signIn.tokenHint': 'El token que le facilitó su instalación.',
+  'auth.signIn.tokenRejected': 'No se reconoció ese token de acceso.',
+  'auth.signIn.submit': 'Iniciar sesión',
+  'auth.signIn.submitting': 'Iniciando sesión',
+  'auth.signIn.provider': 'Inicie sesión con su organización',
+  'auth.signIn.developmentHeading': 'Inicio de sesión de desarrollo',
+  'auth.signIn.unavailable.title': 'No se pudo contactar con el servicio de inicio de sesión.',
+  'auth.signIn.unavailable.body':
+    'Compruebe que la aplicación sigue funcionando e inténtelo de nuevo.',
+  'auth.signedOut.idle.title': 'Se cerró su sesión tras {minutes} minutos sin actividad.',
+  'auth.signedOut.idle.body': 'Inicie sesión de nuevo para continuar donde lo dejó.',
+  'auth.signedOut.expired.title': 'Su sesión ha terminado.',
+  'auth.signedOut.expired.body': 'Inicie sesión de nuevo para continuar.',
+  'auth.holding': 'Restaurando su sesión',
 
   'marketing.tagline': 'Sistema operativo de código abierto para la salud humana',
   'marketing.readTheCode': 'Lea el código',

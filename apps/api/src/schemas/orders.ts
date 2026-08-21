@@ -1,4 +1,5 @@
 import {
+  IMAGING_STUDY_STATUSES,
   ABNORMAL_FLAGS,
   DIAGNOSTIC_REPORT_STATUSES,
   DOCUMENT_SOURCES,
@@ -21,7 +22,10 @@ import {
 import { z } from 'zod';
 
 import { readJsonObject } from '../repositories/collection.js';
+import type { ScopedRow } from '../repositories/rows.js';
 import type {
+  ImagingStudyCreateInput,
+  ImagingStudyListQuery,
   DiagnosticReportListQuery,
   DiagnosticReportPatchInput,
   DiagnosticReportRow,
@@ -1043,5 +1047,159 @@ export function toMessageDto(row: MessageRow): MessageDto {
     readAt: isoOrNull(row.readAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/* ------------------------------------------------------------------ imaging */
+
+/**
+ * An imaging study on the wire.
+ *
+ * There is no field for image data and there should never be one. openrunic is
+ * not a PACS: this record says a study exists, ties it to the order and the
+ * chart, and carries where a viewer retrieves it. The images live in the system
+ * built for gigabytes of them.
+ */
+export const imagingStudyDtoSchema = z.strictObject({
+  id: z.uuid(),
+  patientId: z.uuid(),
+  encounterId: z.uuid().nullable(),
+  serviceRequestId: z.uuid().nullable(),
+  diagnosticReportId: z.uuid().nullable(),
+  /** DICOM Study Instance UID (0020,000D). */
+  studyInstanceUid: z.string(),
+  /** Shared by the order, the modality worklist and the PACS. */
+  accessionNumber: z.string().nullable(),
+  modalities: z.array(z.string()),
+  description: z.string().nullable(),
+  status: z.enum(IMAGING_STUDY_STATUSES),
+  startedAt: z.string(),
+  numberOfSeries: z.int(),
+  numberOfInstances: z.int(),
+  /** Normally a DICOMweb WADO-RS study URL. Null when the viewer resolves by UID. */
+  retrieveUrl: z.url().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ImagingStudyDto = z.infer<typeof imagingStudyDtoSchema>;
+
+export function toImagingStudyDto(row: ScopedRow<'ImagingStudy'>): ImagingStudyDto {
+  return {
+    id: row.id,
+    patientId: row.patientId,
+    encounterId: row.encounterId,
+    serviceRequestId: row.serviceRequestId,
+    diagnosticReportId: row.diagnosticReportId,
+    studyInstanceUid: row.studyInstanceUid,
+    accessionNumber: row.accessionNumber,
+    modalities: row.modalities,
+    description: row.description,
+    status: row.status,
+    startedAt: row.startedAt.toISOString(),
+    numberOfSeries: row.numberOfSeries,
+    numberOfInstances: row.numberOfInstances,
+    retrieveUrl: row.retrieveUrl,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * A DICOM UID: dotted decimal, 64 characters at most.
+ *
+ * Checked rather than taken as any string, because this value is the study's
+ * identity and is unique per organisation. A malformed one creates a row that
+ * nothing arriving from a PACS will ever match, and the study looks recorded.
+ */
+const dicomUid = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^\d+(\.\d+)*$/u, 'must be a dotted-decimal DICOM UID');
+
+export const imagingStudyCreateSchema = z.strictObject({
+  patientId: z.uuid(),
+  encounterId: z.uuid().optional(),
+  serviceRequestId: z.uuid().optional(),
+  studyInstanceUid: dicomUid,
+  accessionNumber: z.string().min(1).max(64).optional(),
+  /** At least one: a study with no modality cannot be routed to a reading list. */
+  modalities: z.array(z.string().min(1).max(16)).min(1).max(20),
+  description: z.string().min(1).max(256).optional(),
+  status: z.enum(IMAGING_STUDY_STATUSES).optional(),
+  startedAt: z.iso.datetime({ offset: true }),
+  numberOfSeries: z.int().nonnegative().max(10_000).optional(),
+  numberOfInstances: z.int().nonnegative().max(1_000_000).optional(),
+  retrieveUrl: z.url().max(2048).optional(),
+});
+
+export type ImagingStudyCreateBody = z.infer<typeof imagingStudyCreateSchema>;
+
+export function toImagingStudyCreate(body: ImagingStudyCreateBody): ImagingStudyCreateInput {
+  return {
+    patientId: body.patientId,
+    ...(body.encounterId === undefined ? {} : { encounterId: body.encounterId }),
+    ...(body.serviceRequestId === undefined ? {} : { serviceRequestId: body.serviceRequestId }),
+    studyInstanceUid: body.studyInstanceUid,
+    ...(body.accessionNumber === undefined ? {} : { accessionNumber: body.accessionNumber }),
+    modalities: body.modalities,
+    ...(body.description === undefined ? {} : { description: body.description }),
+    ...(body.status === undefined ? {} : { status: body.status }),
+    startedAt: new Date(body.startedAt),
+    ...(body.numberOfSeries === undefined ? {} : { numberOfSeries: body.numberOfSeries }),
+    ...(body.numberOfInstances === undefined ? {} : { numberOfInstances: body.numberOfInstances }),
+    ...(body.retrieveUrl === undefined ? {} : { retrieveUrl: body.retrieveUrl }),
+  };
+}
+
+/** `studyInstanceUid` and `patientId` are absent on purpose; see the patch type. */
+export const imagingStudyPatchSchema = z
+  .strictObject({
+    encounterId: z.uuid().optional(),
+    serviceRequestId: z.uuid().optional(),
+    diagnosticReportId: z.uuid().optional(),
+    accessionNumber: z.string().min(1).max(64).optional(),
+    modalities: z.array(z.string().min(1).max(16)).min(1).max(20).optional(),
+    description: z.string().min(1).max(256).optional(),
+    status: z.enum(IMAGING_STUDY_STATUSES).optional(),
+    numberOfSeries: z.int().nonnegative().max(10_000).optional(),
+    numberOfInstances: z.int().nonnegative().max(1_000_000).optional(),
+    retrieveUrl: z.url().max(2048).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'the patch must change at least one field',
+  });
+
+export type ImagingStudyPatchBody = z.infer<typeof imagingStudyPatchSchema>;
+
+export const imagingStudyListQuerySchema = z.strictObject({
+  ...paginationQueryFields,
+  ...windowQueryFields,
+  patientId: z.uuid().optional(),
+  encounterId: z.uuid().optional(),
+  serviceRequestId: z.uuid().optional(),
+  accessionNumber: z.string().min(1).max(64).optional(),
+  studyInstanceUid: dicomUid.optional(),
+  status: z.enum(IMAGING_STUDY_STATUSES).optional(),
+  sort: z.enum(['startedAt', 'createdAt']).default('startedAt'),
+  order: sortOrderField,
+});
+
+export type ImagingStudyListQueryInput = z.infer<typeof imagingStudyListQuerySchema>;
+
+export function toImagingStudyListQuery(input: ImagingStudyListQueryInput): ImagingStudyListQuery {
+  return {
+    page: input.page,
+    pageSize: input.pageSize,
+    ...windowOf(input),
+    ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
+    ...(input.encounterId === undefined ? {} : { encounterId: input.encounterId }),
+    ...(input.serviceRequestId === undefined ? {} : { serviceRequestId: input.serviceRequestId }),
+    ...(input.accessionNumber === undefined ? {} : { accessionNumber: input.accessionNumber }),
+    ...(input.studyInstanceUid === undefined ? {} : { studyInstanceUid: input.studyInstanceUid }),
+    ...(input.status === undefined ? {} : { status: input.status }),
+    sort: input.sort,
+    order: input.order,
   };
 }

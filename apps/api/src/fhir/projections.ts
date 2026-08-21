@@ -1,4 +1,5 @@
 import {
+  toFhirImagingStudy,
   toFhirAllergyIntolerance,
   toFhirAppointment,
   toFhirClaim,
@@ -628,6 +629,34 @@ export function claimResource(
           ? {}
           : { serviceDateTo: line.serviceDateTo.toISOString().slice(0, 10) }),
       })),
+    })
+  );
+}
+
+/**
+ * An imaging study, as FHIR sees it.
+ *
+ * `diagnosticReportId` is deliberately not projected. The link travels the
+ * other way, from the report to the study, and carrying it in both directions
+ * would give one association two records that can disagree about which report
+ * read which study.
+ */
+export function imagingStudyResource(row: ScopedRow<'ImagingStudy'>): fhir4.ImagingStudy {
+  return toFhirImagingStudy(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      encounterId: absent(row.encounterId),
+      serviceRequestId: absent(row.serviceRequestId),
+      studyInstanceUid: row.studyInstanceUid,
+      accessionNumber: absent(row.accessionNumber),
+      modalities: row.modalities,
+      description: absent(row.description),
+      status: row.status,
+      startedAt: row.startedAt.toISOString(),
+      numberOfSeries: row.numberOfSeries,
+      numberOfInstances: row.numberOfInstances,
+      retrieveUrl: absent(row.retrieveUrl),
     })
   );
 }

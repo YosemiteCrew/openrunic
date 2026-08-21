@@ -405,6 +405,23 @@ function seedChart(dataset: MemoryDataset): void {
     facilityId: null,
   });
 
+  seed(dataset, 'ImagingStudy', {
+    ...storageColumns(testId(80)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    serviceRequestId: ORDER,
+    diagnosticReportId: null,
+    studyInstanceUid: '1.2.840.113619.2.55.3.604688119.868.1234567890.1',
+    accessionNumber: 'ACC-100482',
+    modalities: ['CT'],
+    description: 'CT chest with contrast',
+    status: 'AVAILABLE',
+    startedAt: FIXED_NOW,
+    numberOfSeries: 4,
+    numberOfInstances: 512,
+    retrieveUrl: 'https://pacs.example.invalid/dicomweb/studies/1.2.840',
+  });
+
   seed(dataset, 'Task', {
     ...storageColumns(testId(60)),
     type: 'RESULT',

@@ -11,6 +11,7 @@ import { inventoryRouteContracts, inventoryRoutes } from './inventory.js';
 import { orderRouteContracts, orderRoutes } from './orders.js';
 import { patientRouteContracts, patientRoutes } from './patients.js';
 import { platformRouteContracts, platformRoutes } from './platform.js';
+import { qualityRouteContracts, qualityRoutes, type QualityRouteOptions } from './quality.js';
 import { telehealthRouteContracts, telehealthRoutes } from './telehealth.js';
 
 /**
@@ -29,6 +30,8 @@ import { telehealthRouteContracts, telehealthRoutes } from './telehealth.js';
 export const BFF_BASE_PATH = '/bff/v0';
 
 export interface InternalRouteOptions {
+  /** Quality reporting limits; see `routes/quality.ts`. */
+  quality?: QualityRouteOptions;
   /**
    * Partner seams. Passed in rather than resolved here because the routes that
    * use one are the only routes that should know a registry exists.
@@ -46,6 +49,7 @@ export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
   router.route('/', financialRoutes());
   router.route('/', inventoryRoutes());
   router.route('/', platformRoutes());
+  router.route('/', qualityRoutes(options.quality));
   router.route('/', telehealthRoutes(options.adapters));
 
   return router;
@@ -61,6 +65,7 @@ export function internalRouteContracts(): RouteContract[] {
     ...financialRouteContracts(),
     ...inventoryRouteContracts(),
     ...platformRouteContracts(),
+    ...qualityRouteContracts(),
     ...telehealthRouteContracts(),
   ];
 }

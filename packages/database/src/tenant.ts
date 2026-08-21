@@ -81,6 +81,7 @@ export const TENANT_SCOPED_MODELS = [
   'ConsentGrant',
   'AuditEvent',
   'ImagingStudy',
+  'ValueSet',
   'TelehealthVisit',
 ] as const;
 

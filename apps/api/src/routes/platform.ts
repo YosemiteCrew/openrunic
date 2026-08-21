@@ -4,6 +4,7 @@ import {
   formSubmissionInput,
   terminologyCodeInput,
 } from '@openrunic/database';
+import { parseValueSetDefinition } from '@openrunic/terminology';
 import { Hono, type Context, type Next } from 'hono';
 import type { z } from 'zod';
 
@@ -78,6 +79,14 @@ import {
   type FormDefinitionPatchBody,
   type FormSubmissionPatchBody,
 } from '../schemas/platform.js';
+import {
+  toValueSetDto,
+  toValueSetListQuery,
+  valueSetCreateSchema,
+  valueSetDtoSchema,
+  valueSetListQuerySchema,
+  valueSetPatchSchema,
+} from '../schemas/quality.js';
 
 import {
   assertTransition,
@@ -327,6 +336,40 @@ function platformCrudModules(): CrudModule[] {
       dtoSchema: facilityDtoSchema,
       toDto: toFacilityDto,
       writeResponses: [{ status: 409, description: 'That facility code is taken.' }],
+    }),
+    defineCrud({
+      segment: 'value-sets',
+      singular: 'value set',
+      plural: 'value sets',
+      tag: 'terminology',
+      operation: 'ValueSet',
+      readPermission: 'terminology.read',
+      writePermission: 'terminology.write',
+      collection: (repos) => repos.valueSets,
+      listQuerySchema: valueSetListQuerySchema,
+      toQuery: toValueSetListQuery,
+      listDescription:
+        'What a quality measure means by a code list. Nothing ships here: measure specifications are public, the value sets behind them are licensed, and a deployment loads the ones it holds a licence for. A measure whose value sets are absent reports that it cannot be computed rather than a rate from a partial list.',
+      createSchema: valueSetCreateSchema,
+      toCreate: (body) => ({
+        url: body.url,
+        ...(body.name === undefined ? {} : { name: body.name }),
+        ...(body.description === undefined ? {} : { description: body.description }),
+        definition: assertValueSetDefinition(body.definition),
+      }),
+      patchSchema: valueSetPatchSchema,
+      toPatch: (body) => ({
+        ...(body.name === undefined ? {} : { name: body.name }),
+        ...(body.description === undefined ? {} : { description: body.description }),
+        ...(body.definition === undefined
+          ? {}
+          : { definition: assertValueSetDefinition(body.definition) }),
+      }),
+      dtoSchema: valueSetDtoSchema,
+      toDto: toValueSetDto,
+      writeResponses: [
+        { status: 409, description: 'A value set with that canonical URL already exists.' },
+      ],
     }),
     defineCrud({
       segment: 'terminology',
@@ -799,4 +842,32 @@ export function platformRoutes(): Hono<AppEnv> {
   });
 
   return router;
+}
+
+/**
+ * Checks a value set definition against the terminology package's own schema.
+ *
+ * Validated here rather than restated in a Zod schema beside the DTO, because
+ * the shape belongs to `packages/terminology` and two schemas for one shape is
+ * two places to change when a rule field is added. One of them is always the
+ * one nobody remembers.
+ *
+ * Unknown keys are refused rather than ignored, which is the terminology
+ * package's decision and the right one: a misspelled `parentcode` that silently
+ * widened a value set to a whole code system would be discovered by a clinician
+ * reading a quality report, not by an operator.
+ */
+function assertValueSetDefinition(definition: Record<string, unknown>): Record<string, unknown> {
+  const parsed = parseValueSetDefinition(definition);
+  if (!parsed.ok) {
+    // The package reports one string per problem rather than a path and a
+    // message, so they land at the root. That is honest: a rule index is not a
+    // field a caller can point at in a form, and inventing a path would send
+    // somebody to the wrong input.
+    throw ApiError.validation(
+      parsed.error.message,
+      parsed.error.issues.map((issue) => ({ path: 'definition', message: issue }))
+    );
+  }
+  return definition;
 }

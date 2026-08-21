@@ -17,6 +17,7 @@ import { DEMO_PRINCIPALS, createStaticPrincipalResolver } from './auth/static-re
 import type { AdapterRegistry } from '@openrunic/adapters';
 
 import { createDevelopmentAdapters } from './adapters/development.js';
+import type { QualityRouteOptions } from './routes/quality.js';
 import type { AppEnv } from './context.js';
 import type { SmartLaunchSettings } from './env.js';
 import { ApiError, isApiError } from './errors.js';
@@ -99,6 +100,13 @@ export interface CreateAppOptions {
    * already waiting.
    */
   adapters?: AdapterRegistry;
+  /**
+   * Quality reporting limits.
+   *
+   * Present so a test can prove the population ceiling's refusal without
+   * seeding twenty thousand charts. The default is the real one.
+   */
+  quality?: QualityRouteOptions;
   /**
    * Where a SMART app authorises, when the deployment publishes a launch.
    *
@@ -211,7 +219,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now, smartLaunch: options.smartLaunch })
   );
   app.route(CDS_BASE_PATH, cdsRoutes());
-  app.route(BFF_BASE_PATH, internalRoutes({ adapters }));
+  app.route(BFF_BASE_PATH, internalRoutes({ adapters, quality: options.quality }));
 
   if (agent.status === 'enabled') {
     app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));

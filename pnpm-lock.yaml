@@ -59,6 +59,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.1)
+      '@openrunic/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@openrunic/agent':
         specifier: workspace:*
         version: link:../../packages/agent

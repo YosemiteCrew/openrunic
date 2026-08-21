@@ -25,6 +25,7 @@ packages/agent        The assistant loop and provider wiring (ADR-0005)
 packages/agent-tools  The tool catalogue, allowlist and compartment rules the loop may reach
 packages/x12          X12 eligibility, claims, remittance and prior-authorisation codecs
 packages/collections  Chasing an unpaid patient balance: when the next notice is due, when to stop
+packages/mips         MIPS scoring: the categories an EMR can compute, and the one it cannot
 packages/pricing      Fee schedules and sliding-scale discounts; what is billed, what is allowed
 packages/quality      Electronic clinical quality measures; what a practice did, and what this will not claim
 packages/ccda         C-CDA R2.1 document codec; generate and import, with its own XML reader

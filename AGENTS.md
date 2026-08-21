@@ -28,7 +28,7 @@ packages/collections  Chasing an unpaid patient balance: when the next notice is
 packages/pricing      Fee schedules and sliding-scale discounts; what is billed, what is allowed
 packages/ccda         C-CDA R2.1 document codec; generate and import, with its own XML reader
 packages/inventory    Stock, lots and dispensing: what is on the shelf, which lot it leaves from
-packages/i18n         Message catalogues: what a screen says, in the reader's language
+packages/i18n         Message catalogues, locale negotiation and the translator the apps render through
 packages/hl7v2        HL7 v2 codec: ADT, ORU, ORM, VXU and acknowledgements
 packages/cds-hooks    CDS Hooks 2.0 protocol: discovery, request validation, cards
 packages/growth       Growth percentiles; CDC LMS reference data, generated and verified

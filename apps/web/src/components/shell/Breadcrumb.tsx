@@ -1,5 +1,9 @@
+'use client';
+
 import Link from 'next/link';
 import type { ReactElement } from 'react';
+
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * Breadcrumbs exist ONLY outside the chart: Admin and Reports, where a screen
@@ -19,10 +23,11 @@ export interface BreadcrumbProps {
 }
 
 export function Breadcrumb({ items }: Readonly<BreadcrumbProps>): ReactElement | null {
+  const t = useTranslator();
   if (items.length === 0) return null;
 
   return (
-    <nav aria-label="Breadcrumb" className="or-breadcrumb">
+    <nav aria-label={t('shell.breadcrumb')} className="or-breadcrumb">
       <ol className="or-breadcrumb__list">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;

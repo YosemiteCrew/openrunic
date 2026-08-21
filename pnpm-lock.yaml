@@ -95,6 +95,12 @@ importers:
       '@openrunic/inventory':
         specifier: workspace:*
         version: link:../../packages/inventory
+      '@openrunic/quality':
+        specifier: workspace:*
+        version: link:../../packages/quality
+      '@openrunic/terminology':
+        specifier: workspace:*
+        version: link:../../packages/terminology
       hono:
         specifier: ^4.13.1
         version: 4.13.1

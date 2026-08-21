@@ -38,6 +38,7 @@ import {
   type Writable,
 } from '../collection.js';
 import type { ScopedRow } from '../rows.js';
+import type { ImagingStudyStatus } from '../types.js';
 
 /**
  * Orders, results and the worklists they feed.
@@ -1084,7 +1085,139 @@ export const messageSpec: CollectionSpec<
   },
 };
 
+/* ----------------------------------------------------------------- imaging */
+
+export interface ImagingStudyListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  serviceRequestId?: string;
+  accessionNumber?: string;
+  studyInstanceUid?: string;
+  status?: ImagingStudyStatus;
+  /** Inclusive lower bound on `startedAt`. */
+  from?: Date;
+  /** Exclusive upper bound on `startedAt`. */
+  to?: Date;
+  sort: 'startedAt' | 'createdAt';
+}
+
+export interface ImagingStudyCreateInput {
+  patientId: string;
+  encounterId?: string;
+  serviceRequestId?: string;
+  studyInstanceUid: string;
+  accessionNumber?: string;
+  modalities: string[];
+  description?: string;
+  status?: ImagingStudyStatus;
+  startedAt: Date;
+  numberOfSeries?: number;
+  numberOfInstances?: number;
+  retrieveUrl?: string;
+}
+
+/**
+ * What may be corrected after a study is recorded.
+ *
+ * Not `studyInstanceUid`: it identifies the study, and rewriting it points this
+ * record at a different one while the report that cited it carries on citing
+ * this row. Not `patientId` either, for the same reason a document is refiled
+ * rather than repointed - moving a study between charts is an act somebody
+ * should have to do deliberately, and it is not this.
+ */
+export interface ImagingStudyPatchInput {
+  encounterId?: string;
+  serviceRequestId?: string;
+  diagnosticReportId?: string;
+  accessionNumber?: string;
+  modalities?: string[];
+  description?: string;
+  status?: ImagingStudyStatus;
+  numberOfSeries?: number;
+  numberOfInstances?: number;
+  retrieveUrl?: string;
+}
+
+export const imagingStudySpec: CollectionSpec<
+  'ImagingStudy',
+  ImagingStudyCreateInput,
+  ImagingStudyPatchInput,
+  ImagingStudyListQuery
+> = {
+  model: 'ImagingStudy',
+  targetType: 'ImagingStudy',
+  action: 'result',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: ImagingStudyCreateInput): Writable<'ImagingStudy'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      serviceRequestId: input.serviceRequestId ?? null,
+      // Set when the radiologist's report exists, never at creation: a study
+      // arriving from a modality has not been read yet.
+      diagnosticReportId: null,
+      studyInstanceUid: input.studyInstanceUid,
+      accessionNumber: input.accessionNumber ?? null,
+      modalities: input.modalities,
+      description: input.description ?? null,
+      status: input.status ?? 'AVAILABLE',
+      startedAt: input.startedAt,
+      numberOfSeries: input.numberOfSeries ?? 0,
+      numberOfInstances: input.numberOfInstances ?? 0,
+      retrieveUrl: input.retrieveUrl ?? null,
+    };
+  },
+
+  patchData(patch: ImagingStudyPatchInput): Partial<Writable<'ImagingStudy'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'ImagingStudy'>, query: ImagingStudyListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.serviceRequestId !== undefined && row.serviceRequestId !== query.serviceRequestId) {
+      return false;
+    }
+    if (query.accessionNumber !== undefined && row.accessionNumber !== query.accessionNumber) {
+      return false;
+    }
+    if (query.studyInstanceUid !== undefined && row.studyInstanceUid !== query.studyInstanceUid) {
+      return false;
+    }
+    if (query.status !== undefined && row.status !== query.status) return false;
+    return inWindow(row.startedAt, query.from, query.to);
+  },
+
+  where(query: ImagingStudyListQuery) {
+    const startedAt = windowFilter(query.from, query.to);
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.serviceRequestId === undefined ? {} : { serviceRequestId: query.serviceRequestId }),
+      ...(query.accessionNumber === undefined ? {} : { accessionNumber: query.accessionNumber }),
+      ...(query.studyInstanceUid === undefined ? {} : { studyInstanceUid: query.studyInstanceUid }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(startedAt === undefined ? {} : { startedAt }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'ImagingStudy'>, sort: ImagingStudyListQuery['sort']): number {
+    if (sort === 'createdAt') return row.createdAt.getTime();
+    return row.startedAt.getTime();
+  },
+
+  orderBy(query: ImagingStudyListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ startedAt: order }, { id: 'asc' as const }];
+  },
+};
+
 export const orderSpecs = {
+  imagingStudies: imagingStudySpec,
   orders: serviceRequestSpec,
   specimens: specimenSpec,
   reports: diagnosticReportSpec,

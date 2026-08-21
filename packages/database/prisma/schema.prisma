@@ -785,6 +785,7 @@ model Organisation {
   auditEvents          AuditEvent[]
 
   @@index([status])
+  imagingStudies       ImagingStudy[]
 }
 
 /// A place of service. Unlimited per organisation; scheduling, encounters and
@@ -1045,6 +1046,7 @@ model Patient {
   @@index([tenantId, birthDate])
   @@index([tenantId, active, familyName, givenName])
   @@index([tenantId, primaryFacilityId, active])
+  imagingStudies    ImagingStudy[]
 }
 
 /// Every identifier that is not the MRN: SSN, driving licence, payer member id,
@@ -1340,6 +1342,7 @@ model Encounter {
   @@index([tenantId, patientId, startedAt])
   @@index([tenantId, facilityId, status, startedAt])
   @@index([tenantId, providerId, startedAt])
+  imagingStudies ImagingStudy[]
 }
 
 /// A block-structured clinical document. `blocks` is a JSONB block list, not
@@ -1654,6 +1657,7 @@ model ServiceRequest {
   @@index([tenantId, patientId, requestedAt])
   @@index([tenantId, orderedById, status])
   @@index([tenantId, category, status, priority])
+  imagingStudies ImagingStudy[]
 }
 
 model Specimen {
@@ -1730,6 +1734,7 @@ model DiagnosticReport {
   @@index([tenantId, status, issuedAt])
   @@index([tenantId, reviewedAt, abnormalFlag])
   @@index([tenantId, serviceRequestId])
+  imagingStudies ImagingStudy[]
 }
 
 /// One discrete analyte within a DiagnosticReport.
@@ -2777,4 +2782,67 @@ model StockMovement {
   @@index([tenantId, createdAt])
   /// A diversion investigation starts from a person, not from a lot.
   @@index([tenantId, actorId, createdAt])
+}
+
+/// An imaging study: the record that pictures exist, and where to find them.
+///
+/// openrunic is not a PACS and this table is the boundary that says so. IT
+/// HOLDS NO PIXEL DATA and has no column that could. A DICOM study is gigabytes
+/// of images with their own storage, their own retention rules and their own
+/// viewer; an EMR's job is to know a study happened, tie it to the order that
+/// asked for it and the chart it belongs to, and be able to point a viewer at
+/// it. Storing the images here would duplicate a system that already exists and
+/// do it worse.
+///
+/// "accessionNumber" is the identifier that makes this work at all. It is what
+/// the order, the modality worklist and the PACS all carry, so it is how a
+/// study coming back from a scanner is reconciled with the order that asked for
+/// it. A study that arrives without one cannot be attached to anything and has
+/// to be matched by a human.
+model ImagingStudy {
+  id                 String              @id @db.Uuid
+  tenantId           String              @db.Uuid
+  patientId          String              @db.Uuid
+  encounterId        String?             @db.Uuid
+  /// The order that asked for it, when there was one. Null for an outside study.
+  serviceRequestId   String?             @db.Uuid
+  /// The radiologist's report, once it exists.
+  diagnosticReportId String?             @db.Uuid
+  /// DICOM Study Instance UID (0020,000D). Globally unique by the standard.
+  studyInstanceUid   String
+  /// Shared by the order, the worklist and the PACS. How a study is reconciled.
+  accessionNumber    String?
+  /// DICOM modality codes present in the study: CT, MR, US, CR, DX, and so on.
+  modalities         String[]
+  description        String?
+  status             ImagingStudyStatus  @default(AVAILABLE)
+  startedAt          DateTime
+  numberOfSeries     Int                 @default(0)
+  numberOfInstances  Int                 @default(0)
+  /// Where a viewer retrieves the study, normally a DICOMweb WADO-RS study URL.
+  /// Null when the deployment's viewer resolves studies by UID on its own.
+  retrieveUrl        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  organisation  Organisation      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient       Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter     Encounter?        @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  order         ServiceRequest?   @relation(fields: [serviceRequestId], references: [id], onDelete: Restrict)
+  report        DiagnosticReport? @relation(fields: [diagnosticReportId], references: [id], onDelete: Restrict)
+
+  /// A study instance UID identifies one study. Two rows claiming the same one
+  /// is a study with two records that can disagree about which order it answers.
+  @@unique([tenantId, studyInstanceUid])
+  @@index([tenantId, patientId, startedAt])
+  @@index([tenantId, accessionNumber])
+}
+
+enum ImagingStudyStatus {
+  /// Ordered and expected, but nothing has arrived from the modality yet.
+  REGISTERED
+  AVAILABLE
+  /// Withdrawn: the study should not be in this chart. Kept, not deleted, so
+  /// the report that cited it does not point at nothing.
+  ENTERED_IN_ERROR
 }

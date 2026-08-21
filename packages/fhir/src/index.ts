@@ -391,3 +391,11 @@ export {
   toFhirProvenance,
 } from './provenance.js';
 export type { DomainProvenance } from './provenance.js';
+
+export {
+  fromFhirImagingStudy,
+  IMAGING_STUDY_DROPPED_FIELDS,
+  toFhirImagingStudy,
+  type DomainImagingStudy,
+  type DomainImagingStudyStatus,
+} from './imaging-study.js';

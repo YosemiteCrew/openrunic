@@ -38,6 +38,7 @@ import {
   practitionerRoleResource,
   provenanceResource,
   serviceRequestResource,
+  imagingStudyResource,
   specimenResource,
   taskResource,
 } from './projections.js';
@@ -583,6 +584,30 @@ const specimenModule = defineFhirResource({
   toResource: specimenResource,
 });
 
+/**
+ * ImagingStudy: the record that pictures exist, and where a viewer gets them.
+ *
+ * `accession` is a search parameter because it is the identifier the order, the
+ * modality worklist and the PACS all carry, so it is how anything outside this
+ * system finds the study it means.
+ */
+const imagingStudyModule = defineFhirResource({
+  type: 'ImagingStudy',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'accession', 'date'],
+  permission: 'result.read',
+  collection: (repositories) => repositories.imagingStudies,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.accession === undefined ? {} : { accessionNumber: tokenValue(query.accession) }),
+    ...window(query.date, 'date'),
+    sort: 'startedAt' as const,
+    ...CHART_SORT,
+  }),
+  toResource: imagingStudyResource,
+});
+
 const documentReferenceModule = defineFhirResource({
   type: 'DocumentReference',
   interactions: ['read', 'search-type'],
@@ -790,6 +815,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   observationModule,
   diagnosticReportModule,
   serviceRequestModule,
+  imagingStudyModule,
   specimenModule,
   documentReferenceModule,
   taskModule,

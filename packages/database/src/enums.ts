@@ -286,6 +286,7 @@ export const STATEMENT_STATUSES = [
   'WRITTEN_OFF',
 ] as const;
 export const STATEMENT_DELIVERIES = ['PRINT', 'EMAIL', 'SMS', 'PORTAL'] as const;
+export const IMAGING_STUDY_STATUSES = ['REGISTERED', 'AVAILABLE', 'ENTERED_IN_ERROR'] as const;
 
 export const FORM_STATUSES = ['DRAFT', 'PUBLISHED', 'RETIRED'] as const;
 export const FORM_BINDINGS = ['PATIENT', 'ENCOUNTER', 'PORTAL', 'REFERRAL'] as const;
@@ -390,6 +391,7 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.RemittanceStatus, typeof REMITTANCE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.StatementStatus, typeof STATEMENT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.StatementDelivery, typeof STATEMENT_DELIVERIES>>,
+  AssertOk<AssertMirrors<Prisma.ImagingStudyStatus, typeof IMAGING_STUDY_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormStatus, typeof FORM_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormBinding, typeof FORM_BINDINGS>>,
   AssertOk<AssertMirrors<Prisma.FormSubmissionStatus, typeof FORM_SUBMISSION_STATUSES>>,

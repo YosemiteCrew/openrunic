@@ -152,6 +152,44 @@ describe('reading a resource from elsewhere', () => {
   });
 });
 
+describe('the edges of the mapper', () => {
+  it('omits the study identifier when there is no UID to carry', () => {
+    const resource = toFhirImagingStudy(study({ studyInstanceUid: '' }));
+
+    expect(resource.identifier).toBeUndefined();
+  });
+
+  it('omits an empty accession number rather than carrying a blank identifier', () => {
+    // A blank identifier is worse than an absent one: it looks like an
+    // accession number that happens to be empty.
+    const resource = toFhirImagingStudy(study({ accessionNumber: '' }));
+
+    expect(resource.identifier).toHaveLength(1);
+  });
+
+  it('omits the endpoint when there is nowhere to send a viewer', () => {
+    expect(toFhirImagingStudy(study({ retrieveUrl: '' })).endpoint).toBeUndefined();
+  });
+
+  it('omits the start when it is not known', () => {
+    expect(toFhirImagingStudy(study({ startedAt: '' })).started).toBeUndefined();
+  });
+});
+
+describe('a resource that names no patient', () => {
+  it('reads an empty subject rather than throwing', () => {
+    // A study with no subject should not exist and this is what happens when
+    // one arrives. An empty patient id is obviously wrong to whatever reads it
+    // next, where a throw would take down the import of a whole batch.
+    const domain = fromFhirImagingStudy({
+      resourceType: 'ImagingStudy',
+      status: 'available',
+    } as fhir4.ImagingStudy);
+
+    expect(domain.patientId).toBe('');
+  });
+});
+
 describe('the dropped fields', () => {
   it('names why the report link does not travel', () => {
     // The link travels the other way: the report carries `imagingStudy`.

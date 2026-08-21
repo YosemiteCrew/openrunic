@@ -191,6 +191,104 @@ describe('finding a study again', () => {
   });
 });
 
+describe('every filter the list advertises', () => {
+  it('narrows by encounter, by order and by a date window', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seed(
+      dataset,
+      'ImagingStudy',
+      studyRow({ encounterId: testId(20), serviceRequestId: testId(30) }),
+      studyRow({
+        ...storageColumns(testId(82)),
+        studyInstanceUid: `${UID}.3`,
+        accessionNumber: 'ACC-OTHER',
+        startedAt: new Date('2025-01-01T00:00:00.000Z'),
+      })
+    );
+
+    const byEncounter = await app.request(`/bff/v0/imaging/studies?encounterId=${testId(20)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    const byOrder = await app.request(`/bff/v0/imaging/studies?serviceRequestId=${testId(30)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    const byWindow = await app.request(
+      '/bff/v0/imaging/studies?from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z',
+      { headers: bearer(TOKENS.adminA) }
+    );
+
+    for (const res of [byEncounter, byOrder, byWindow]) {
+      expect(((await res.json()) as { data: ImagingStudyDto[] }).data).toHaveLength(1);
+    }
+  });
+
+  it('sorts by when the row was created as well as when the study started', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seed(dataset, 'ImagingStudy', studyRow());
+
+    const res = await app.request('/bff/v0/imaging/studies?sort=createdAt&order=desc', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { data: ImagingStudyDto[] }).data).toHaveLength(1);
+  });
+
+  it('attaches the report once the study has been read', async () => {
+    const { app } = harness();
+
+    const res = await app.request(`/bff/v0/imaging/studies/${STUDY}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.adminA),
+      body: JSON.stringify({
+        diagnosticReportId: testId(40),
+        status: 'AVAILABLE',
+        numberOfSeries: 5,
+        numberOfInstances: 600,
+        description: 'CT chest, revised',
+        modalities: ['CT', 'SR'],
+        accessionNumber: 'ACC-REVISED',
+        retrieveUrl: 'https://pacs.example.invalid/dicomweb/studies/1.2.840.rev',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      diagnosticReportId: testId(40),
+      numberOfSeries: 5,
+      modalities: ['CT', 'SR'],
+    });
+  });
+
+  it('refuses a patch that changes nothing', async () => {
+    const { app } = harness();
+
+    const res = await app.request(`/bff/v0/imaging/studies/${STUDY}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.adminA),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('will not let a patch repoint the study at a different one', async () => {
+    const { app } = harness();
+
+    // The UID identifies the study. Rewriting it points this record at a
+    // different one while the report that cited it carries on citing this row.
+    const res = await app.request(`/bff/v0/imaging/studies/${STUDY}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.adminA),
+      body: JSON.stringify({ studyInstanceUid: '1.2.3' }),
+    });
+
+    expect(res.status).toBe(422);
+  });
+});
+
 describe('the FHIR resource', () => {
   it('serves the study, with the UID as an identifier', async () => {
     const { app } = harness();

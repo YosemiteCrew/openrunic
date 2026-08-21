@@ -1116,7 +1116,7 @@ const dicomUid = z
   .string()
   .min(1)
   .max(64)
-  .regex(/^[0-9]+(\.[0-9]+)*$/u, 'must be a dotted-decimal DICOM UID');
+  .regex(/^\d+(\.\d+)*$/u, 'must be a dotted-decimal DICOM UID');
 
 export const imagingStudyCreateSchema = z.strictObject({
   patientId: z.uuid(),

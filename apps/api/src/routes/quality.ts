@@ -1,5 +1,6 @@
 import { conceptInValueSet, parseValueSetDefinition } from '@openrunic/terminology';
 import type { ValueSetDefinition } from '@openrunic/terminology';
+import { openrunicCodeSystem, SYSTEMS } from '@openrunic/fhir';
 import {
   evaluateMeasure,
   isComputable,
@@ -238,9 +239,14 @@ async function subjectsFor(
  * deployment maps its own codes into a value set under this system. That is a
  * real limitation and it is why the encounter criteria are the first thing to
  * check when a denominator looks empty.
+ *
+ * Built rather than written out, so this project's code-system URIs are defined
+ * in exactly one place. They are canonical identifiers and not endpoints:
+ * nothing dereferences them, and rewriting one to https would make it a
+ * different identifier that no longer matches the data it describes.
  */
-const APPOINTMENT_SYSTEM = 'http://openrunic.org/fhir/CodeSystem/appointment-type';
-const IMMUNISATION_SYSTEM = 'http://hl7.org/fhir/sid/cvx';
+const APPOINTMENT_SYSTEM = openrunicCodeSystem('appointment-type');
+const IMMUNISATION_SYSTEM = SYSTEMS.cvx;
 
 export function qualityRoutes(): Hono<AppEnv> {
   const router = new Hono<AppEnv>();

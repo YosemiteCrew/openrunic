@@ -1,3 +1,4 @@
+import { openrunicCodeSystem } from '@openrunic/fhir';
 import { MEASURE_VALUE_SETS } from '@openrunic/quality';
 import { describe, expect, it } from 'vitest';
 
@@ -48,7 +49,7 @@ async function loadValueSets(
   }
 }
 
-const APPOINTMENT_SYSTEM = 'http://openrunic.org/fhir/CodeSystem/appointment-type';
+const APPOINTMENT_SYSTEM = openrunicCodeSystem('appointment-type');
 
 /** The value sets CMS165 reads, with invented codes standing in for each. */
 const CMS165_SETS = [

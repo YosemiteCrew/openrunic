@@ -14,6 +14,9 @@ import { createMemoryAuditSink } from './audit/memory-sink.js';
 import type { AuditSink } from './audit/types.js';
 import type { PrincipalResolver } from './auth/principal.js';
 import { DEMO_PRINCIPALS, createStaticPrincipalResolver } from './auth/static-resolver.js';
+import type { AdapterRegistry } from '@openrunic/adapters';
+
+import { createDevelopmentAdapters } from './adapters/development.js';
 import type { AppEnv } from './context.js';
 import type { SmartLaunchSettings } from './env.js';
 import { ApiError, isApiError } from './errors.js';
@@ -86,6 +89,17 @@ export interface CreateAppOptions {
    */
   readiness?: () => Promise<boolean>;
   /**
+   * Partner seams, for the capabilities this API actually calls.
+   *
+   * Defaults to a registry holding the in-process telehealth mock, which is what
+   * makes a database-less development run able to open a video visit that goes
+   * nowhere real. `assertProductionWiring` refuses that default under
+   * NODE_ENV=production: a mock video vendor issues join links at an address
+   * that can never resolve, and a clinic would discover it with a patient
+   * already waiting.
+   */
+  adapters?: AdapterRegistry;
+  /**
    * Where a SMART app authorises, when the deployment publishes a launch.
    *
    * Absent by default, and absent is a real answer rather than a gap: the
@@ -121,6 +135,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     options.principalResolver ?? createStaticPrincipalResolver(DEMO_PRINCIPALS);
   const auditSink = options.auditSink ?? createMemoryAuditSink({ store: auditStore });
   const now = options.now ?? ((): Date => new Date());
+  const adapters = options.adapters ?? createDevelopmentAdapters();
 
   const app = new Hono<AppEnv>();
 
@@ -196,7 +211,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now, smartLaunch: options.smartLaunch })
   );
   app.route(CDS_BASE_PATH, cdsRoutes());
-  app.route(BFF_BASE_PATH, internalRoutes());
+  app.route(BFF_BASE_PATH, internalRoutes({ adapters }));
 
   if (agent.status === 'enabled') {
     app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));
@@ -251,6 +266,9 @@ function assertProductionWiring(options: CreateAppOptions, isProduction: boolean
     options.repositories === undefined ? 'repositories' : undefined,
     options.principalResolver === undefined ? 'principalResolver' : undefined,
     options.auditSink === undefined ? 'auditSink' : undefined,
+    // A mock video vendor issues join links at an address that can never
+    // resolve. Nothing fails at boot; it fails with a patient waiting.
+    options.adapters === undefined ? 'adapters' : undefined,
   ].filter((name): name is string => name !== undefined);
 
   if (missing.length > 0) {

@@ -81,6 +81,7 @@ export const TENANT_SCOPED_MODELS = [
   'ConsentGrant',
   'AuditEvent',
   'ValueSet',
+  'TelehealthVisit',
 ] as const;
 
 export type TenantScopedModel = (typeof TENANT_SCOPED_MODELS)[number];

@@ -290,3 +290,19 @@ export function comparable(value: unknown): number | string {
   if (typeof value === 'string') return value;
   return Number.POSITIVE_INFINITY;
 }
+
+/**
+ * Facts worth carrying on a write event: the state, and how it moved.
+ *
+ * A create records what it was created as, along with whatever else the spec
+ * thinks names the row. A patch that did not move the status records nothing,
+ * because "still OPEN" on every save is how an audit log becomes unreadable.
+ */
+export function statusMetadata(
+  status: string,
+  before: { status: string } | null,
+  created: Record<string, unknown>
+): Record<string, unknown> {
+  if (before === null) return { status, ...created };
+  return before.status === status ? {} : { statusFrom: before.status, statusTo: status };
+}

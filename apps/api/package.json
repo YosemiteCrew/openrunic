@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
+    "@openrunic/adapters": "workspace:*",
     "@openrunic/agent": "workspace:*",
     "@openrunic/agent-tools": "workspace:*",
     "@openrunic/ccda": "workspace:*",

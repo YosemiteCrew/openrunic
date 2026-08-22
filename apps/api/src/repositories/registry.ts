@@ -1,5 +1,6 @@
 import type { AuditCollector } from '../audit/collector.js';
 
+import type { OrganisationQueryRepository } from './organisation-query.js';
 import type { AuditQueryRepository } from './audit-query.js';
 import type { BaseQuery, Collection, CollectionSpec } from './collection.js';
 import type { PrismaModelName, ScopedRow } from './rows.js';
@@ -88,12 +89,13 @@ export type CollectionFactory = <
 export function buildRepositories(
   scope: RequestScope,
   make: CollectionFactory,
-  audit: AuditQueryRepository
+  audit: AuditQueryRepository,
+  organisations: OrganisationQueryRepository
 ): Repositories {
   const build = make as unknown as (spec: unknown) => unknown;
   const collections: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(COLLECTION_SPECS)) {
     collections[key] = build(spec);
   }
-  return { tenantId: scope.tenantId, audit, ...collections } as Repositories;
+  return { tenantId: scope.tenantId, audit, organisations, ...collections } as Repositories;
 }

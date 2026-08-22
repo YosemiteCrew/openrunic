@@ -50,7 +50,7 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 ### The FHIR boundary
 
 `GET /fhir/metadata` publishes the CapabilityStatement, generated from the mounted resource
-modules. Twenty-one resource types are served with `read` and `search-type`; `Patient` also accepts
+modules. Twenty-two resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
 
 Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
@@ -80,6 +80,7 @@ truthful-looking "no claims". The domain names are no longer accepted through th
 | `Patient`             | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
 | `Practitioner`        | `name`                                                                |
 | `PractitionerRole`    | `practitioner`, `specialty`                                           |
+| `Organization`        | `name`                                                                |
 | `Location`            | `name`                                                                |
 | `Coverage`            | `patient`                                                             |
 | `Appointment`         | `_id`, `patient`, `date`, `practitioner`, `location`                  |
@@ -104,10 +105,18 @@ a `not-supported` OperationOutcome rather than ignored. `fhir.conformance.test.t
 published statement and makes the request each claim implies, so the table above cannot drift from
 the router in either direction.
 
-`Organization` is the notable absence, and it is currently a broken promise rather than a clean
-one: `Patient.managingOrganization` and `PractitionerRole.organization` both emit
-`Organization/{tenantId}`, which is a relative reference to a resource this server does not serve,
-so a client that follows it gets a 404. Tracked in #89.
+`Organization` is served, and returns exactly one row: the caller's own practice. `Organisation` is
+the only model in the schema with no `tenantId` column, because it is the tenant - its id is what
+every other row's `tenantId` points at - so the narrowing is on the primary key and a read of any
+other id is a 404 rather than a 403. `address` and `identifier` are must-support and unimplemented:
+the columns do not exist, because the practice's postal address and NPI live on `Facility`, which is
+what `Location` serves.
+
+That makes the references pointing at the tenant resolve - `PractitionerRole.organization` and
+`Location.managingOrganization`. Two others still do not, and for a different reason:
+`Coverage.payor` and `Claim.insurer` point at `Payer` rows, which are a separate table this server
+does not project as `Organization`. And `Claim.provider` emits `Practitioner/{id}` even when the id
+it carries is the organisation's, which is a bug in the projection rather than a missing resource.
 
 ### The internal surface
 

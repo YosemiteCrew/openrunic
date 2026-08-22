@@ -10,16 +10,16 @@ search-parameter registry, a Bundle builder and an OperationOutcome helper.
 
 ## Resources mapped
 
-| Group        | Resources                                                                           |
-| ------------ | ----------------------------------------------------------------------------------- |
-| Registration | Patient, Coverage, Consent, DocumentReference                                       |
-| Directory    | Practitioner, PractitionerRole, Organization, Location                              |
-| Scheduling   | Appointment, Encounter                                                              |
-| Clinical     | Condition, AllergyIntolerance, MedicationRequest, MedicationStatement, Immunization |
-| Results      | Observation (vitals and result lines), DiagnosticReport, ServiceRequest, Specimen   |
-| Workflow     | Task                                                                                |
-| Financial    | Claim                                                                               |
-| Audit        | Provenance                                                                          |
+| Group        | Resources                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| Registration | Patient, Coverage, Consent, DocumentReference                                                   |
+| Directory    | Practitioner, PractitionerRole, Organization, Location                                          |
+| Scheduling   | Appointment, Encounter                                                                          |
+| Clinical     | Condition, AllergyIntolerance, MedicationRequest, MedicationStatement, Immunization             |
+| Results      | Observation (vitals and result lines), DiagnosticReport, ServiceRequest, Specimen, ImagingStudy |
+| Workflow     | Task                                                                                            |
+| Financial    | Claim                                                                                           |
+| Audit        | Provenance                                                                                      |
 
 Every resource has a `toFhirX` / `fromFhirX` pair, a `DomainX` boundary type and an
 `X_DROPPED_FIELDS` manifest.

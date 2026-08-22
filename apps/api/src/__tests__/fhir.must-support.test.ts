@@ -66,6 +66,11 @@ const KNOWN_GAPS: Readonly<Record<string, readonly string[]>> = {
   Appointment: ['status'],
   MedicationStatement: ['status'],
   Immunization: ['status'],
+  // No columns exist. The practice's postal address and NPI live on `Facility`,
+  // which is what `Location` serves; `Organisation` holds the name and the
+  // deployment state. Inventing an address from the first facility would state
+  // a fact the record never did, and a practice may have several sites.
+  Organization: ['address', 'identifier'],
 };
 
 describe('the must-support parameters this server does not implement', () => {

@@ -5,6 +5,7 @@ import { AuditCollector } from '../audit/collector.js';
 import { createMemoryAuditSink, type MemoryAuditSink } from '../audit/memory-sink.js';
 import type { AuditUnitOfWork } from '../audit/types.js';
 import { createPrismaAuditQuery } from '../repositories/audit-query.js';
+import { createPrismaOrganisationQuery } from '../repositories/organisation-query.js';
 import { childBatch, type CollectionSpec, type Writable } from '../repositories/collection.js';
 import {
   createDbPort,
@@ -23,6 +24,7 @@ import {
   DEMO_FACILITY_A,
   DEMO_FACILITY_B,
   DEMO_TENANT_A,
+  DEMO_TENANT_B,
   FIXED_NOW,
   makeAppointmentRow,
   makePatientRow,
@@ -633,6 +635,86 @@ describe('the Prisma audit query', () => {
       valid: false,
       brokenAtSeq: 2n,
       reason: 'hash-mismatch',
+    });
+  });
+});
+
+/**
+ * The organisation read, through the Prisma port.
+ *
+ * The memory port is what every HTTP test exercises, so without this the
+ * production path for the one collection whose narrowing is hand-written would
+ * have no test at all. The fake ANDs `tenantId` only for the models
+ * `createTenantClient` actually scopes, and `Organisation` is not one of them,
+ * so the narrowing under test here is the repository's own `id === tenantId`
+ * and nothing else.
+ */
+describe('the Prisma organisation query', () => {
+  const organisationRow = (id: string, name: string): ScopedRow<'Organisation'> =>
+    ({
+      id,
+      slug: name.toLowerCase().replaceAll(' ', '-'),
+      name,
+      mode: 'SELF_HOST',
+      status: 'ACTIVE',
+      timezone: 'UTC',
+      flags: {},
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    }) as unknown as ScopedRow<'Organisation'>;
+
+  function seedBoth(h: Harness): void {
+    h.dataset.table('Organisation').push(organisationRow(DEMO_TENANT_A, 'Practice A'));
+    h.dataset.table('Organisation').push(organisationRow(DEMO_TENANT_B, 'Practice B'));
+  }
+
+  const query = { page: 1, pageSize: 25, sort: 'name', order: 'asc' } as const;
+
+  it('reads the caller own organisation and no other', async () => {
+    const h = harness();
+    seedBoth(h);
+
+    const page = await createPrismaOrganisationQuery(h.port, h.scope).list(query);
+
+    expect(page.total).toBe(1);
+    expect(page.rows[0]?.id).toBe(DEMO_TENANT_A);
+  });
+
+  it('asks the database for the id rather than filtering afterwards', async () => {
+    const h = harness();
+    seedBoth(h);
+
+    await createPrismaOrganisationQuery(h.port, h.scope).list(query);
+
+    // The narrowing has to be in the query the database sees. A repository that
+    // read every row and picked one would pass the test above and leak under
+    // any port that does not happen to be a fake in the same process.
+    const call = h.port.calls.find((entry) => entry.model === 'Organisation');
+    expect(call?.args).toMatchObject({ where: { id: DEMO_TENANT_A } });
+  });
+
+  it('reports another organisation as absent by id', async () => {
+    const h = harness();
+    seedBoth(h);
+    const repository = createPrismaOrganisationQuery(h.port, h.scope);
+
+    await expect(repository.findById(DEMO_TENANT_B)).resolves.toBeNull();
+    await expect(repository.findById(DEMO_TENANT_A)).resolves.toMatchObject({
+      name: 'Practice A',
+    });
+  });
+
+  it('applies the name filter, and an empty result is a page of none', async () => {
+    const h = harness();
+    seedBoth(h);
+    const repository = createPrismaOrganisationQuery(h.port, h.scope);
+
+    await expect(repository.list({ ...query, name: 'practice a' })).resolves.toMatchObject({
+      total: 1,
+    });
+    // Practice B's name, which this caller must not match on.
+    await expect(repository.list({ ...query, name: 'Practice B' })).resolves.toMatchObject({
+      total: 0,
     });
   });
 });

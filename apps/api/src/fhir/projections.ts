@@ -10,6 +10,7 @@ import {
   toFhirEncounter,
   toFhirImmunization,
   toFhirLocation,
+  toFhirOrganization,
   toFhirMedicationRequest,
   toFhirMedicationStatement,
   toFhirObservation,
@@ -29,6 +30,7 @@ import {
   type Encounter,
   type Immunization,
   type Location,
+  type Organization,
   type MedicationRequest,
   type MedicationStatement,
   type Observation,
@@ -40,7 +42,7 @@ import {
   type Task,
 } from '@openrunic/fhir';
 
-import type { ScopedRow } from '../repositories/rows.js';
+import type { Row, ScopedRow } from '../repositories/rows.js';
 
 /**
  * Stored rows, projected onto the domain shapes `packages/fhir` maps from.
@@ -204,6 +206,30 @@ export function practitionerRoleResource(
   return context.userUpdatedAt === undefined
     ? resource
     : { ...resource, meta: { ...resource.meta, lastUpdated: context.userUpdatedAt.toISOString() } };
+}
+
+/**
+ * The tenant's own organisation.
+ *
+ * Thin on purpose. `Organisation` holds the practice's name and its deployment
+ * state, and nothing else a directory client would want: no NPI, no address, no
+ * telephone. Those live on `Facility`, which is what `Location` serves. So this
+ * emits the identity and the `prov` type and stops, rather than inventing a
+ * postal address out of the first facility - a client cannot tell an invented
+ * address from a recorded one, and the practice may have several sites.
+ *
+ * `status` is deployment state rather than a clinical fact, so only `ACTIVE`
+ * maps to `active: true`; a suspended tenant is not an active organisation.
+ */
+export function organizationResource(row: Row<'Organisation'>): Organization {
+  return toFhirOrganization(
+    compactDomain({
+      id: row.id,
+      name: row.name,
+      typeCode: 'prov',
+      active: row.status === 'ACTIVE',
+    })
+  );
 }
 
 export function locationResource(row: ScopedRow<'Facility'>): Location {

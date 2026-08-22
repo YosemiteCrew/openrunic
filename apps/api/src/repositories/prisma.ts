@@ -3,6 +3,7 @@ import { uuidv7 } from '@openrunic/database';
 import { ApiError } from '../errors.js';
 
 import { createPrismaAuditQuery } from './audit-query.js';
+import { createPrismaOrganisationQuery } from './organisation-query.js';
 import {
   type BaseQuery,
   type ChildBatch,
@@ -50,7 +51,8 @@ export function createPrismaRepositoryRegistry(connect: DbPortFactory): Reposito
       return buildRepositories(
         scope,
         (spec) => createPrismaCollection(spec, port, scope),
-        createPrismaAuditQuery(port, scope)
+        createPrismaAuditQuery(port, scope),
+        createPrismaOrganisationQuery(port, scope)
       );
     },
   };

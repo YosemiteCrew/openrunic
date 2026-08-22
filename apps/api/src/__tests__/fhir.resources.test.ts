@@ -9,6 +9,7 @@ import type { ClaimStatus } from '../repositories/specs/financial.js';
 
 import {
   DEMO_TENANT_A,
+  DEMO_TENANT_B,
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
@@ -48,6 +49,21 @@ const SECOND_GRANT = testId(976);
 const SECOND_SITE = testId(975);
 
 function seedChart(dataset: MemoryDataset): void {
+  // The tenant's own row. Its id IS the tenant id, which is the whole reason
+  // `Organisation` carries no `tenantId` column and cannot be a spec: it is the
+  // thing every other row's `tenantId` points at.
+  seed(dataset, 'Organisation', {
+    id: DEMO_TENANT_A,
+    slug: 'demo-practice',
+    name: 'Demo Family Practice',
+    mode: 'SELF_HOST',
+    status: 'ACTIVE',
+    timezone: 'UTC',
+    flags: {},
+    createdAt: FIXED_NOW,
+    updatedAt: FIXED_NOW,
+  } as unknown as Parameters<typeof seed>[2]);
+
   seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
   seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
@@ -1520,5 +1536,128 @@ describe('the facility scope the caller arrived with', () => {
 
     expect(res.status).toBe(200);
     expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(PATIENT);
+  });
+});
+
+/**
+ * The practice itself, and the one narrowing that holds it.
+ *
+ * `Organisation` is the only model in the schema with no `tenantId` column,
+ * because it *is* the tenant. Every other collection is confined by a tenant
+ * filter it inherits from a spec; this one is confined by `id === tenantId` in
+ * a hand-written repository. So the tests that matter are the ones that would
+ * still pass if that narrowing were deleted, and these are written to fail.
+ */
+describe('the practice organisation', () => {
+  const organisationRow = (id: string, name: string): Parameters<typeof seed>[2] =>
+    ({
+      id,
+      slug: name.toLowerCase().replaceAll(' ', '-'),
+      name,
+      mode: 'SELF_HOST',
+      status: 'ACTIVE',
+      timezone: 'UTC',
+      flags: {},
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    }) as unknown as Parameters<typeof seed>[2];
+
+  it('serves the caller their own practice, as a page of one', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Organization', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(1);
+    expect((bundle.entry?.[0]?.resource as FhirResource).id).toBe(DEMO_TENANT_A);
+  });
+
+  it('leaves another practice out of the search entirely', async () => {
+    const created = harness();
+    seed(created.dataset, 'Organisation', organisationRow(DEMO_TENANT_B, 'Other Practice'));
+
+    const bundle = (await (
+      await created.app.request('/fhir/Organization', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    // Two rows in the table, one in the bundle. Nothing about the other
+    // practice reaches this caller, not even its existence.
+    expect(created.dataset.table('Organisation')).toHaveLength(2);
+    expect(bundle.total).toBe(1);
+    expect((bundle.entry?.[0]?.resource as FhirResource).id).toBe(DEMO_TENANT_A);
+  });
+
+  it('reports another practice as absent rather than forbidden', async () => {
+    const created = harness();
+    seed(created.dataset, 'Organisation', organisationRow(DEMO_TENANT_B, 'Other Practice'));
+
+    const res = await created.app.request(`/fhir/Organization/${DEMO_TENANT_B}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    // 404 and not 403: a 403 would confirm the id names something real, which
+    // is a fact about another practice this caller has no business learning.
+    expect(res.status).toBe(404);
+  });
+
+  it('gives each practice its own row, not the first one seeded', async () => {
+    const created = harness();
+    seed(created.dataset, 'Organisation', organisationRow(DEMO_TENANT_B, 'Other Practice'));
+
+    const bundle = (await (
+      await created.app.request('/fhir/Organization', { headers: bearer(TOKENS.adminB) })
+    ).json()) as Bundle;
+
+    expect((bundle.entry?.[0]?.resource as FhirResource).id).toBe(DEMO_TENANT_B);
+  });
+
+  it('filters by name, and matching nothing is an empty bundle', async () => {
+    const { app } = harness();
+
+    const hit = (await (
+      await app.request('/fhir/Organization?name=family', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const miss = (await (
+      await app.request('/fhir/Organization?name=nowhere', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    // Case-insensitive substring, as the FHIR string parameter means it.
+    expect(hit.total).toBe(1);
+    expect(miss.total).toBe(0);
+  });
+
+  it('carries the practice name and the provider type', async () => {
+    const { app } = harness();
+
+    const organization = (await (
+      await app.request(`/fhir/Organization/${DEMO_TENANT_A}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as fhir4.Organization;
+
+    expect(organization.name).toBe('Demo Family Practice');
+    expect(organization.active).toBe(true);
+    expect(organization.type?.[0]?.coding?.[0]?.code).toBe('prov');
+  });
+
+  it('refuses a caller without the permission Location needs', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Organization', { headers: bearer(UNPRIVILEGED_TOKEN) });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('resolves the references other resources emit at it', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { organization?: { reference?: string } };
+    const reference = role.organization?.reference ?? '';
+
+    expect(reference).toBe(`Organization/${DEMO_TENANT_A}`);
+    // The point of serving it: following the pointer now finds something.
+    const followed = await app.request(`/fhir/${reference}`, { headers: bearer(TOKENS.adminA) });
+    expect(followed.status).toBe(200);
   });
 });

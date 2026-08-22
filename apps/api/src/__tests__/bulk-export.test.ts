@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Principal } from '../auth/principal.js';
 import type { PolicyContext } from '../policy/policy.js';
 import {
   BULK_EXPORT_OPERATIONS,
@@ -16,6 +17,7 @@ import {
   runExport,
   truncationOutcomes,
   type ExportJob,
+  type ExportStore,
 } from '../fhir/bulk-export.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
 import type { ScopedRow } from '../repositories/types.js';
@@ -563,6 +565,7 @@ describe('the bounds, which are reported rather than silent', () => {
       id,
       tenantId: 't',
       subject: 's',
+      entry: SYSTEM_ENTRY,
       requestUrl: 'http://localhost/fhir/$export',
       transactionTime: '2026-08-14T00:00:00.000Z',
       files: [],
@@ -620,27 +623,77 @@ describe('the bounds, which are reported rather than silent', () => {
   });
 });
 
+/** The system-level entry, read off the list the router mounts rather than retyped. */
+const SYSTEM_ENTRY = BULK_EXPORT_OPERATIONS.find((operation) => operation.scope === 'system')!;
+
 describe('jobFor, at its edges', () => {
-  const store = createExportStore();
-  const job: ExportJob = {
-    id: 'job-1',
-    tenantId: ADMIN_PRINCIPAL.tenantId,
-    subject: ADMIN_PRINCIPAL.subject,
-    requestUrl: 'http://localhost/fhir/$export',
-    transactionTime: '2026-08-14T00:00:00.000Z',
-    files: [],
-    errors: [],
+  /** A policy context that permits everything, so scopes are the only variable. */
+  const allowAll: PolicyContext = {
+    roles: ['admin'],
+    permissions: new Set(),
+    facilityIds: [],
+    can: () => true,
+    canAccessFacility: () => true,
   };
-  store.create(job);
+
+  const storeWith = (files: ExportJob['files']): { store: ExportStore; job: ExportJob } => {
+    const store = createExportStore();
+    const job: ExportJob = {
+      id: 'job-1',
+      tenantId: ADMIN_PRINCIPAL.tenantId,
+      subject: ADMIN_PRINCIPAL.subject,
+      entry: SYSTEM_ENTRY,
+      requestUrl: 'http://localhost/fhir/$export',
+      transactionTime: '2026-08-14T00:00:00.000Z',
+      files,
+      errors: [],
+    };
+    store.create(job);
+    return { store, job };
+  };
+
+  const fetchWith = (store: ExportStore, principal: Principal): ExportJob =>
+    jobFor(store, 'job-1', principal, allowAll, SERVED_MODULES);
 
   it('returns the job to the principal that ran it', () => {
-    expect(jobFor(store, 'job-1', ADMIN_PRINCIPAL)).toBe(job);
+    const { store, job } = storeWith([]);
+    expect(fetchWith(store, ADMIN_PRINCIPAL)).toBe(job);
   });
 
   it('refuses another tenant, another subject and an unknown id alike', () => {
-    expect(() => jobFor(store, 'job-1', { ...ADMIN_PRINCIPAL, tenantId: 'other' })).toThrow();
-    expect(() => jobFor(store, 'job-1', { ...ADMIN_PRINCIPAL, subject: 'other' })).toThrow();
-    expect(() => jobFor(store, 'nope', ADMIN_PRINCIPAL)).toThrow();
+    const { store } = storeWith([]);
+    expect(() => fetchWith(store, { ...ADMIN_PRINCIPAL, tenantId: 'other' })).toThrow();
+    expect(() => fetchWith(store, { ...ADMIN_PRINCIPAL, subject: 'other' })).toThrow();
+    expect(() => jobFor(store, 'nope', ADMIN_PRINCIPAL, allowAll, SERVED_MODULES)).toThrow();
+  });
+
+  /**
+   * The case the subject check alone cannot see.
+   *
+   * One person holds more than one token: a SMART app authorised for
+   * `user/Patient.read` and a back-office session authorised for everything are
+   * the same subject in the same tenant. A job created under the broad
+   * authorisation and fetched under the narrow one used to hand the narrow
+   * application every Claim and Provenance in the practice, because a bulk job
+   * id is an identifier and was being spent as a credential.
+   */
+  it('refuses a token of the same user that could not have created the export', () => {
+    const { store } = storeWith([
+      { type: 'Patient', ndjson: '', count: 0 },
+      { type: 'Claim', ndjson: '', count: 0 },
+    ]);
+    const narrow: Principal = { ...ADMIN_PRINCIPAL, scopes: ['user/Patient.read'] };
+
+    expect(() => fetchWith(store, narrow)).toThrow(/Claim/);
+    // The same job, under the authorisation that made it, still comes back.
+    expect(() => fetchWith(store, ADMIN_PRINCIPAL)).not.toThrow();
+  });
+
+  it('serves an export whose every type the narrower token still covers', () => {
+    const { store, job } = storeWith([{ type: 'Patient', ndjson: '', count: 0 }]);
+    const narrow: Principal = { ...ADMIN_PRINCIPAL, scopes: ['user/Patient.read'] };
+
+    expect(fetchWith(store, narrow)).toBe(job);
   });
 });
 

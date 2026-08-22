@@ -170,6 +170,19 @@ export interface ExportJob {
    */
   readonly tenantId: string;
   readonly subject: string;
+  /**
+   * The entry point it was run from, kept so a retrieval can ask the same
+   * question the kick-off asked: may THIS token read these types?
+   *
+   * The subject alone is not that question. One person's tokens are not
+   * interchangeable - a SMART app authorised for `user/Patient.read` and a
+   * back-office token authorised for everything can both belong to the same
+   * user - so a job created under the broad one and fetched under the narrow one
+   * would hand the narrow application every Claim, Observation and Provenance in
+   * the practice. Bulk job ids are identifiers rather than credentials, and this
+   * is what stops one being spent as if it were a credential.
+   */
+  readonly entry: BulkExportEntry;
   readonly requestUrl: string;
   readonly transactionTime: string;
   readonly files: readonly ExportFile[];
@@ -232,7 +245,13 @@ export function createExportStore(capacity: number = MAX_RETAINED_JOBS): ExportS
  * resource answers 404: a distinguishable "exists but is not yours" would let a
  * caller confirm that a given id is a live export somewhere else in the estate.
  */
-export function jobFor(store: ExportStore, id: string, principal: Principal): ExportJob {
+export function jobFor(
+  store: ExportStore,
+  id: string,
+  principal: Principal,
+  policy: PolicyContext | undefined,
+  modules: readonly FhirResourceModule[]
+): ExportJob {
   const job = store.get(id);
   // An absent job compares unequal here, which is the answer it should get: a
   // job that is not this principal's and a job that does not exist are the same
@@ -242,6 +261,26 @@ export function jobFor(store: ExportStore, id: string, principal: Principal): Ex
       'No export by that id. A restarted server, and one that has run several exports since, both forget finished ones.'
     );
   }
+
+  // Then the scopes, again, against the files that actually exist. Asked here
+  // rather than in each of the three routes because a check every caller has to
+  // remember is one a fourth route will not, and all three already come through
+  // this function.
+  //
+  // 403 and not 404: the job is demonstrably this principal's, so there is no
+  // existence to conceal, and "your token may not read Claim" is something the
+  // client can act on where an empty 404 would send it round the loop again.
+  const permitted: ReadonlySet<string> = new Set<string>(
+    permittedModules(modules, principal, policy, job.entry).map((module) => module.type)
+  );
+  const refused = job.files.map((file) => file.type).filter((type) => !permitted.has(type));
+  if (refused.length > 0) {
+    throw ApiError.forbidden(
+      `This export contains ${refused.join(', ')}, which this token may not read. An export is retrievable only by an authorisation that could have created it.`,
+      { fhirIssueCode: 'forbidden' }
+    );
+  }
+
   return job;
 }
 

@@ -1,11 +1,11 @@
-import { createPrismaClient, createTenantClient, type PrismaClient } from '@openrunic/database';
+import { createPrismaClient, type PrismaClient } from '@openrunic/database';
 import { z } from 'zod';
 
 import { createPrismaAuditSink, type AuditWriteScope } from '../audit/prisma-sink.js';
 import type { AuditSink } from '../audit/types.js';
 import type { PrincipalResolver } from '../auth/principal.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
-import { createDbPort } from '../repositories/db-port.js';
+import { createRlsDbPortFactory } from '../repositories/rls-port.js';
 import type { RepositoryRegistry } from '../repositories/types.js';
 
 import { createDemoPrincipalResolver } from './demo-principals.js';
@@ -111,7 +111,9 @@ function buildPrincipalResolver(
  *
  * The unscoped client on purpose - every audit event carries its own tenantId
  * into the row, and a denial has to be recorded even when no tenant transaction
- * was ever opened.
+ * was ever opened. The chain's tail lookup names its tenant explicitly rather
+ * than relying on this scope to narrow it, which is what makes that safe; see
+ * the `where` in `prisma-sink.ts`.
  *
  * Written as an explicit adapter rather than a cast. `PrismaClient.auditEvent`
  * is not assignable to `AuditEventDelegate`: Prisma's generated methods are
@@ -148,13 +150,21 @@ function standaloneAuditScope(prisma: PrismaClient): AuditWriteScope {
 export function buildServerWiring(env: WiringEnv, client?: PrismaClient): ServerWiring {
   const prisma = client ?? createPrismaClient({ datasourceUrl: env.DATABASE_URL });
 
-  // `createDbPort` is not optional plumbing: the registry wants the port's
-  // generic `model(name)` accessor, and a tenant-scoped client is still keyed by
-  // model name. Handing the raw client over compiles only because both are
-  // structurally close, and fails at the first delegate lookup.
-  const repositories = createPrismaRepositoryRegistry((tenantId) =>
-    createDbPort(createTenantClient(prisma, { tenantId }))
-  );
+  // THE RLS PORT, not a bare tenant-scoped client.
+  //
+  // `createTenantClient` is a Prisma extension: it narrows the queries this
+  // process issues. Row-level security is the backstop underneath it, and it
+  // only engages inside a transaction that has declared `openrunic.tenant_id` -
+  // which is exactly what `createRlsDbPortFactory` does and what a plain client
+  // never does. Wiring the plain one meant the design's second line of defence
+  // was absent in the only deployment that has a real database, and absent
+  // silently: every query worked, because the extension was doing the narrowing
+  // on its own.
+  //
+  // It also fails in the honest direction now. Against a correctly configured
+  // non-superuser role, a query that somehow escaped the session returns
+  // nothing rather than everything, because the policies deny by default.
+  const repositories = createPrismaRepositoryRegistry(createRlsDbPortFactory(prisma));
 
   const auditSink = createPrismaAuditSink({ standalone: standaloneAuditScope(prisma) });
 

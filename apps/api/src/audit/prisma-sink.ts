@@ -43,6 +43,18 @@ export function createPrismaAuditSink(options: PrismaAuditSinkOptions): AuditSin
     scope: AuditWriteScope
   ): Promise<void> => {
     const tail = await scope.auditEvent.findFirst({
+      // The tenant, stated. It used to be left to whatever narrowing the scope
+      // happened to carry - RLS inside a tenant session, the tenant extension
+      // inside a mutation's transaction - and a chain is not a thing to hold
+      // together by inference. A deployment whose database role bypasses RLS,
+      // which is what the official Postgres image's POSTGRES_USER is, would
+      // otherwise link one tenant's event to another tenant's tail, and every
+      // per-tenant verification downstream then fails on rows nobody touched.
+      //
+      // Belt to the braces rather than a replacement for them: the session and
+      // the extension both still apply where they apply. This is the half that
+      // is true regardless of who the connection is.
+      where: { tenantId },
       orderBy: { seq: 'desc' },
       select: { seq: true, hash: true },
     });

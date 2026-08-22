@@ -40,9 +40,15 @@ function fakeClient(
     create?: (args: unknown) => Promise<{ id: string }>;
     findFirst?: (args: unknown) => Promise<{ seq: bigint; hash: string } | null>;
   } = {}
-): { client: PrismaClient; disconnected: () => number; extendedWith: () => unknown[] } {
+): {
+  client: PrismaClient;
+  disconnected: () => number;
+  extendedWith: () => unknown[];
+  sessionSettings: () => unknown[][];
+} {
   let disconnects = 0;
   const extensions: unknown[] = [];
+  const sessionSettings: unknown[][] = [];
 
   const client = {
     $queryRaw: overrides.queryRaw ?? ((): Promise<unknown> => Promise.resolve([{ '?column?': 1 }])),
@@ -54,10 +60,24 @@ function fakeClient(
       extensions.push(extension);
       return client;
     },
+    // What `withTenantSession` needs, and the reason it is here: the RLS port
+    // reaches Postgres only through a transaction whose first statement declares
+    // the organisation, so a fake that cannot record that cannot tell whether
+    // the wiring uses the port at all.
+    $transaction: <R>(run: (tx: unknown) => Promise<R>): Promise<R> => run(client),
+    $executeRaw: (...args: unknown[]): Promise<number> => {
+      sessionSettings.push(args);
+      return Promise.resolve(1);
+    },
     auditEvent: {
       create:
         overrides.create ?? ((): Promise<{ id: string }> => Promise.resolve({ id: 'audit-1' })),
       findFirst: overrides.findFirst ?? ((): Promise<null> => Promise.resolve(null)),
+    },
+    patient: {
+      findFirst: (): Promise<null> => Promise.resolve(null),
+      findMany: (): Promise<unknown[]> => Promise.resolve([]),
+      count: (): Promise<number> => Promise.resolve(0),
     },
   };
 
@@ -65,6 +85,8 @@ function fakeClient(
     client: client as unknown as PrismaClient,
     disconnected: () => disconnects,
     extendedWith: () => extensions,
+    /** Every `set_config` the port issued, as its template arguments. */
+    sessionSettings: () => sessionSettings,
   };
 }
 
@@ -198,16 +220,49 @@ describe('buildServerWiring', () => {
     expect(fake.disconnected()).toBe(1);
   });
 
-  it('scopes repositories per request rather than per process', () => {
+  /**
+   * THE BACKSTOP, WIRED.
+   *
+   * The Prisma extension narrows what this process asks for; row-level security
+   * is the line underneath it, and it only engages inside a transaction that has
+   * declared `openrunic.tenant_id`. This module used to hand the repositories a
+   * plain tenant-scoped client, which never declares one - so the design's
+   * second line of defence was absent in the only deployment that has a real
+   * database, and absent silently, because every query still worked.
+   *
+   * Asserted on the statement rather than on the shape: what matters is that
+   * reaching Postgres opens a session naming this request's organisation.
+   */
+  it('reaches the database only through a session that declares the tenant', async () => {
     const fake = fakeClient();
     const wiring = buildServerWiring(env, fake.client);
 
-    wiring.repositories.forRequest({ tenantId: 'tenant-a' } as never);
-    wiring.repositories.forRequest({ tenantId: 'tenant-b' } as never);
+    const repositories = wiring.repositories.forRequest({
+      tenantId: 'tenant-a',
+      audit: { read: () => undefined, write: () => Promise.resolve() },
+    } as never);
+    await repositories.patients.findById('01890000-0000-7000-8000-000000000001');
+
+    const settings = fake.sessionSettings();
+    expect(settings).toHaveLength(1);
+    expect(JSON.stringify(settings[0])).toContain('openrunic.tenant_id');
+    expect(JSON.stringify(settings[0])).toContain('tenant-a');
+  });
+
+  it('opens a session per request rather than one for the process', async () => {
+    const fake = fakeClient();
+    const wiring = buildServerWiring(env, fake.client);
+    const audit = { read: () => undefined, write: () => Promise.resolve() };
+
+    for (const tenantId of ['tenant-a', 'tenant-b']) {
+      const repositories = wiring.repositories.forRequest({ tenantId, audit } as never);
+      await repositories.patients.findById('01890000-0000-7000-8000-000000000001');
+    }
 
     // One client owns one pool; tenant isolation is a property of the wiring,
-    // not of every handler, so each request gets its own scoped view.
-    expect(fake.extendedWith()).toHaveLength(2);
+    // not of every handler, so each request declares its own organisation.
+    expect(JSON.stringify(fake.sessionSettings())).toContain('tenant-a');
+    expect(JSON.stringify(fake.sessionSettings())).toContain('tenant-b');
   });
 
   it('hands the audit sink exactly the two fields the port declares', async () => {

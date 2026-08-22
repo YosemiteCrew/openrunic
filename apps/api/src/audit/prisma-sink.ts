@@ -28,9 +28,31 @@ export function isAuditWriteScope(value: AuditUnitOfWork | undefined): value is 
   );
 }
 
+/**
+ * Opens a unit of work for an event that has none of its own, bound to one
+ * tenant.
+ *
+ * A function rather than a scope, and both halves of that matter.
+ *
+ * It takes the TENANT because `AuditEvent` carries a row-level security policy
+ * like every other table, so a write issued outside a declared session is
+ * refused - and a refused audit write is the quietest possible failure, since
+ * the collector logs a flush error and the response has already gone out.
+ *
+ * It RUNS the work rather than handing back a delegate because the chain rule
+ * needs both halves in one transaction: read the tail, write the row linked to
+ * it, with nothing slipping between. The old shape was a bare client, so those
+ * two statements were two autocommits, and the `@@unique([tenantId, seq])`
+ * backstop was doing more work than it should have had to.
+ */
+export type StandaloneAuditWork = <R>(
+  tenantId: string,
+  run: (scope: AuditWriteScope) => Promise<R>
+) => Promise<R>;
+
 export interface PrismaAuditSinkOptions {
   /** Used when no unit of work is supplied, e.g. for a denial or a read batch. */
-  standalone: AuditWriteScope;
+  standalone: StandaloneAuditWork;
   now?: () => Date;
 }
 
@@ -80,7 +102,7 @@ export function createPrismaAuditSink(options: PrismaAuditSinkOptions): AuditSin
     recordReadBatch(tenantId: string, event: AuditEvent): Promise<void> {
       // Reads are flushed after the response, so there is no caller transaction
       // to join; this is the one path that legitimately stands alone.
-      return append(tenantId, event, options.standalone);
+      return options.standalone(tenantId, (scope) => append(tenantId, event, scope));
     },
 
     // `async` rather than promise-returning so the refusal below arrives as a
@@ -92,8 +114,10 @@ export function createPrismaAuditSink(options: PrismaAuditSinkOptions): AuditSin
       unitOfWork?: AuditUnitOfWork
     ): Promise<void> {
       if (unitOfWork === undefined) {
-        // A denial: nothing was mutated, so nothing needs to be atomic with it.
-        await append(tenantId, event, options.standalone);
+        // A denial: nothing was mutated, so there is no caller transaction to
+        // join - but the chain still needs one of its own, and the row still
+        // needs a declared tenant to satisfy the policy.
+        await options.standalone(tenantId, (scope) => append(tenantId, event, scope));
         return;
       }
       if (!isAuditWriteScope(unitOfWork)) {

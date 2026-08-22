@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@openrunic/database';
 import { describe, expect, it } from 'vitest';
 
+import { demoOrganisationId } from '@openrunic/database/seed';
+
 import {
   createDemoPrincipalResolver,
   DEMO_ORGANISATION_SLUG,
@@ -54,16 +56,32 @@ const USERS: SeededUser[] = [
   },
 ];
 
-/** A client whose organisation lookup returns whatever the test scripts. */
+/**
+ * A client whose organisation lookup returns whatever the test scripts.
+ *
+ * It has to answer `$extends`, `$transaction` and `$executeRaw` as well as the
+ * lookup, because the resolver no longer reads on a bare client: `Organisation`
+ * is policied like every other table, so the read happens inside a session that
+ * declares the tenant first. `sessions()` is what those `set_config` calls were
+ * given, which is the property worth asserting - a resolver that opened no
+ * session would read nothing in a real database and answer 401 for every token.
+ */
 function clientReturning(
   results: ({ id: string; facilities: { id: string }[]; users: SeededUser[] } | null)[]
-): { client: PrismaClient; calls: () => unknown[] } {
+): { client: PrismaClient; calls: () => unknown[]; sessions: () => unknown[][] } {
   const calls: unknown[] = [];
+  const sessions: unknown[][] = [];
   let index = 0;
 
   const client = {
+    $extends: (): unknown => client,
+    $transaction: <R>(run: (tx: unknown) => Promise<R>): Promise<R> => run(client),
+    $executeRaw: (...args: unknown[]): Promise<number> => {
+      sessions.push(args);
+      return Promise.resolve(1);
+    },
     organisation: {
-      findUnique: (args: unknown): Promise<unknown> => {
+      findFirst: (args: unknown): Promise<unknown> => {
         calls.push(args);
         const result = results[Math.min(index, results.length - 1)] ?? null;
         index += 1;
@@ -72,7 +90,11 @@ function clientReturning(
     },
   };
 
-  return { client: client as unknown as PrismaClient, calls: () => calls };
+  return {
+    client: client as unknown as PrismaClient,
+    calls: () => calls,
+    sessions: () => sessions,
+  };
 }
 
 const seeded = {
@@ -95,6 +117,36 @@ describe('createDemoPrincipalResolver', () => {
         actorType: 'user',
       });
     }
+  });
+
+  /**
+   * THE BOOTSTRAP THIS SYSTEM CANNOT DO BY QUERYING.
+   *
+   * `Organisation`'s policy keys on `id`, so a connection that has not declared
+   * a tenant sees no organisations at all - not even to find one by slug. The
+   * resolver used to do exactly that, which worked only because the API
+   * connected as the superuser initdb creates. The id now arrives from
+   * `demoOrganisationId()`, derived from the same pure builder the seed writes
+   * from, and the read happens inside a session opened with it.
+   */
+  it('opens a session under the id the seed writes, before reading anything', async () => {
+    const { client, sessions } = clientReturning([seeded]);
+    await createDemoPrincipalResolver(client).resolve('dev-clinician-a');
+
+    expect(sessions()).toHaveLength(1);
+    const statement = JSON.stringify(sessions()[0]);
+    expect(statement).toContain('openrunic.tenant_id');
+    expect(statement).toContain(demoOrganisationId());
+  });
+
+  it('reads the organisation inside that session, never on a bare client', async () => {
+    const { client, calls, sessions } = clientReturning([seeded]);
+    await createDemoPrincipalResolver(client).resolve('dev-clinician-a');
+
+    // One read, and a session was opened before it. A bare read would return
+    // nothing in a real database and answer 401 for every token.
+    expect(calls()).toHaveLength(1);
+    expect(sessions()).toHaveLength(1);
   });
 
   it('looks the organisation up by the slug the seed writes', async () => {

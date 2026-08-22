@@ -40,6 +40,18 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-openrunic}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openrunic-evaluation-only}
       POSTGRES_DB: ${POSTGRES_DB:-openrunic}
+      # The role the API connects as, created by the init script mounted below.
+      # It is NOT this container's POSTGRES_USER, and that is the whole point:
+      # the official image's POSTGRES_USER is a superuser, and a superuser
+      # bypasses every row-level security policy silently. An API pointed at it
+      # works perfectly and proves nothing.
+      #
+      # Required, with no default, unlike POSTGRES_PASSWORD above. This role is
+      # the one that touches patient rows, so a published default would be a
+      # credential this repository ships; `pnpm setup:selfhost` writes a
+      # generated one into .env on a first run.
+      OPENRUNIC_DB_APP_USER: ${OPENRUNIC_DB_APP_USER:?required, and has no default. Run `pnpm setup:selfhost` to write a .env.}
+      OPENRUNIC_DB_APP_PASSWORD: ${OPENRUNIC_DB_APP_PASSWORD:?required, and has no default. Run `pnpm setup:selfhost` to write a .env with a generated one.}
       # Data checksums cost a few percent of throughput and are the difference
       # between silent bit rot and an error naming the corrupt page. They can
       # only be chosen at initdb time, which means now or never.
@@ -49,6 +61,10 @@ services:
       # Postgres insists on are the single most common reason a bind-mounted
       # data directory refuses to start.
       - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty data directory, before anything else connects.
+      # Read-only: it is this repository's file and the database has no business
+      # writing to it.
+      - ./ops/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # `pg_isready` alone answers true while the server is still in its initdb
       # bootstrap and about to restart, so the check names the real database and
@@ -130,7 +146,16 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-openrunic}:${POSTGRES_PASSWORD:-openrunic-evaluation-only}@postgres:5432/${POSTGRES_DB:-openrunic}?schema=public
+      # The APPLICATION role, not the owner. Row-level security is the last line
+      # of tenant isolation here and a superuser bypasses every policy: pointed
+      # at POSTGRES_USER this process works exactly as well and the backstop
+      # underneath is never asked. As this role, a query that reaches Postgres
+      # without declaring openrunic.tenant_id returns nothing rather than
+      # everything.
+      #
+      # `migrate` above keeps the owner, because it creates tables and grants
+      # this role its privileges, and this role deliberately cannot do either.
+      DATABASE_URL: postgresql://${OPENRUNIC_DB_APP_USER:?required, and has no default. Run `pnpm setup:selfhost` to write a .env.}:${OPENRUNIC_DB_APP_PASSWORD:?required, and has no default. Run `pnpm setup:selfhost` to write a .env with a generated one.}@postgres:5432/${POSTGRES_DB:-openrunic}?schema=public
       # There is no identity provider yet. This mode maps a handful of public
       # demo tokens to demo users and prints a warning saying so on every boot.
       # See docs/self-hosting.md before pointing anything real at this.

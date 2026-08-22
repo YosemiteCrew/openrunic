@@ -284,6 +284,30 @@ function isoDate(value: Date): Date {
  * that touches a database, which keeps this function testable and keeps the
  * fixtures usable by consumers that just want realistic objects.
  */
+/**
+ * The organisation id the demo practice is always seeded under.
+ *
+ * Derived from the builder rather than written out, because a second copy of
+ * this value is a copy that can disagree with the one the seed actually writes.
+ * {@link buildDemoPractice} is pure and its clock and byte source are fixed, so
+ * this is a constant in everything but spelling - `data.test.ts` already asserts
+ * two builds are identical.
+ *
+ * It exists because a database with row-level security on has no way to find
+ * this practice by any other means. `Organisation`'s policy keys on `id`, so a
+ * connection that has not declared a tenant sees no organisations at all - not
+ * even to look one up by slug. The API's demo-token resolver needs the id
+ * BEFORE it can open a session, which is the one bootstrap this design cannot
+ * do by querying. Memoised because the builder walks the whole practice and the
+ * resolver only wants its first id.
+ */
+let demoOrganisation: string | undefined;
+
+export function demoOrganisationId(): string {
+  demoOrganisation ??= buildDemoPractice().organisation.id;
+  return demoOrganisation;
+}
+
 export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPractice {
   const today = options.today ?? DEFAULT_TODAY;
   const patientCount = Math.min(options.patientCount ?? 20, PATIENT_NAMES.length);

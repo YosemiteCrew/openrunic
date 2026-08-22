@@ -16,6 +16,15 @@
 # so the check never reports, and a required check that never reports leaves the
 # pull request unmergeable. That is the correct outcome for exactly the branch
 # shape this exists to refuse.
+#
+# The head REPOSITORY is checked as well as the head branch, and that is not
+# belt-and-braces. A pull request's head ref is a branch name, and a branch name
+# is unique within one repository rather than across GitHub: anyone may fork this
+# repository, push a branch they have also called `dev`, and open a pull request
+# from it. Reading the name alone, that request is indistinguishable from a
+# promotion, so the guard would pass and the one route into `main` would have a
+# second entrance - one whose contents never went through the integration gate at
+# all. The name says which branch; only the repository says whose.
 name: Promotion guard
 
 on:
@@ -31,16 +40,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Refuse any source branch other than dev
+      - name: Refuse any source branch other than this repository's dev
         env:
-          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
           ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
 
-          if [ "$HEAD_REF" = "dev" ]; then
-            echo "Source branch is dev. This is a promotion."
+          if [ "$HEAD_REPO" = "$BASE_REPO" ] && [ "$HEAD_REF" = "dev" ]; then
+            echo "Source is $BASE_REPO:dev. This is a promotion."
             exit 0
+          fi
+
+          # Named separately because this one looks like a promotion and is not.
+          # A fork's branch may carry any name its owner likes, `dev` included,
+          # and a check that read the name alone would call this a promotion.
+          if [ "$HEAD_REF" = "dev" ] && [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::This pull request merges '$HEAD_REPO:dev' into main, not '$BASE_REPO:dev'."
+            echo "::error::A branch name is unique within a repository, not across GitHub, so a fork"
+            echo "::error::branch called dev is not this repository's integration branch and has not"
+            echo "::error::been through the gate against the integrated tree."
+            echo "::error::Open this against dev instead; it reaches main with the next promotion."
+            exit 1
           fi
 
           # Named separately because the remedy differs. A bot pull request on
@@ -55,7 +78,7 @@ jobs:
             exit 1
           fi
 
-          echo "::error::This pull request merges '$HEAD_REF' into main. Only dev may do that."
+          echo "::error::This pull request merges '$HEAD_REPO:$HEAD_REF' into main. Only dev may do that."
           echo "::error::main is what a clinic installs, and dev is where the gate runs against"
           echo "::error::the integrated tree. Retarget this pull request at dev; it reaches main"
           echo "::error::with the next promotion (see RELEASING.md)."

@@ -63,19 +63,27 @@ allow:
   # Verified 2026-08-22 by reading the LICENSE file, not the package.json field.
   - (AFL-2.1 OR BSD-3-Clause)
 
-# Every package with no machine-readable license in its package.json now has to
-# be a deliberate exception below, rather than passing silently.
+# Left false, and NOT because the tail is untriaged. It was triaged on
+# 2026-08-22: all 850 packages in the installed tree were walked and exactly one
+# (`seq-queue`) has no `license` field, verified MIT by reading its LICENSE file
+# and excepted below.
 #
-# This was `false` with a note calling the flip "the documented follow-up
-# hardening once that tail is triaged". The tail was triaged on 2026-08-22: all
-# 850 installed packages were walked, and exactly ONE has no license field
-# (`seq-queue`, excepted below with its LICENSE file read). Four more carry a
-# non-SPDX string; all four are excepted below.
+# It is false because the SBOM this gate reads does not carry licences at all.
+# Flipping it to true on the PR that triaged the tail produced:
 #
-# What the flip buys is the next one. A dependency added tomorrow with no
-# license metadata now fails this gate instead of being waved through by a
-# blanket setting, which is the difference between a policy and a preference.
-require-license: true
+#   by compliance: 1190 denied, 12 allowed, 6 ignored, 1190 unlicensed
+#
+# That is 1190 of 1202 packages reported as "no licenses found" by syft, against
+# 850 that plainly declare one on disk. So the allow list above is currently
+# adjudicating twelve packages, and `require-license: true` would deny the tree.
+#
+# The note that used to sit here called the flip "the documented follow-up
+# hardening once that tail is triaged". That was the wrong follow-up: the tail
+# was never the obstacle. The real one is that syft is cataloguing this pnpm
+# tree without licence metadata, and until that is fixed this flag cannot be
+# turned on and the allow list is doing far less than it appears to. Tracked
+# separately.
+require-license: false
 
 # Package-level exceptions. Every entry MUST carry: the verified reason, an
 # owner, and a re-review date. Verified means the LICENSE file in the

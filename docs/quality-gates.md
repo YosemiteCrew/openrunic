@@ -55,8 +55,13 @@ Each carries an owner and a re-review date.
 
 `.grant.yaml` is deny-by-default: a dependency licence is either on an allow list of SPDX
 identifiers verified as AGPL-compatible, or it is a named package exception with the reason written
-down. As of 2026-08-22 it also sets `require-license: true`, so a dependency arriving with no
-licence metadata fails rather than passing quietly.
+down.
+
+**It currently adjudicates far fewer packages than it appears to.** The SBOM the gate reads reports
+1190 of 1202 packages as having no licence, against 850 that declare one on disk, so the allow list
+is deciding twelve of them. That is a defect in how the SBOM is catalogued rather than in this
+policy, it is why `require-license` cannot be turned on, and it is tracked separately. Read the gate
+as a floor on the packages it can see, not as coverage of the tree.
 
 Two things an exception in that file is **not**.
 

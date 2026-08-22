@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 
 import { applySessionCookie, clearSessionCookie } from '@/lib/auth/cookie';
 import { identityForAccessToken } from '@/lib/auth/credentials';
+import { SESSION_FETCH_HEADER } from '@/lib/auth/routes';
 import { sealSessionCookie, sessionSealKey, unsealSessionCookie } from '@/lib/auth/seal';
 import {
   SESSION_COOKIE,
@@ -22,6 +23,12 @@ import {
  * because a check on the server is a rule and a timer in a tab is advice.
  * DELETE is signing out.
  *
+ * GET and POST additionally require the header `lib/auth/routes.ts` names,
+ * which is how the route knows a request came from this application's own code
+ * rather than from a page a clinician was sent to. GET is the one that needs
+ * it: it re-stamps the idle clock, and the cookie is `SameSite=Lax`, so a
+ * cross-site top-level navigation carries it.
+ *
  * When OIDC lands, POST becomes a redirect to the provider plus a callback that
  * exchanges an authorization code, and GET becomes a refresh-token exchange
  * against the provider's token endpoint. Both of those need a client secret,
@@ -40,6 +47,41 @@ import {
  */
 
 const UNAUTHENTICATED = 401;
+
+const FORBIDDEN = 403;
+
+/** A request that did not come from this application's own code. */
+const NOT_OUR_REQUEST = {
+  error: 'This endpoint is called by the application, not navigated to.',
+} as const;
+
+/**
+ * Whether this request was made by script on this origin.
+ *
+ * `GET /session` re-stamps the idle clock, which is a state change behind a safe
+ * method, and the session cookie is `SameSite=Lax` - which browsers send on a
+ * cross-site top-level NAVIGATION. A page a signed-in clinician visits could
+ * therefore open a window, point it here every few minutes, and hold the session
+ * open to its twelve-hour ceiling, defeating the fifteen-minute
+ * unattended-workstation control entirely. Same-origin policy stops the attacker
+ * READING the token out of that window; it never stopped the server acting on
+ * the cookie.
+ *
+ * The check is the presence of a header, because a navigation cannot set one and
+ * a cross-origin `fetch` that tries is stopped by a preflight this route does not
+ * answer. `Origin` would not do: browsers omit it on a same-origin GET, so there
+ * would be nothing to compare against.
+ */
+function fromApplication(request: NextRequest): boolean {
+  return request.headers.get(SESSION_FETCH_HEADER) !== null;
+}
+
+function notOurRequest(): NextResponse {
+  // Deliberately not `clearSessionCookie`: this request proves nothing about the
+  // session, and clearing on it would let any page a clinician visits sign them
+  // out - trading one cross-site effect for another.
+  return NextResponse.json(NOT_OUR_REQUEST, { status: FORBIDDEN });
+}
 
 const MISCONFIGURED = 503;
 
@@ -72,6 +114,11 @@ function readSubmittedToken(body: unknown): string | null {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // POST is not reachable by navigation, but it mints the cookie, so the same
+  // proof is asked of it: a marker that some calls carry and others do not is
+  // one somebody eventually drops from the call that needed it.
+  if (!fromApplication(request)) return notOurRequest();
+
   const key = sessionSealKey();
   if (key === null) return unsealable();
 
@@ -106,6 +153,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
  * window or the shift has already ended.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  // Before the cookie is read at all, because the cookie is the thing a
+  // cross-site navigation brings with it.
+  if (!fromApplication(request)) return notOurRequest();
+
   const key = sessionSealKey();
   if (key === null) return unsealable();
 
@@ -122,6 +173,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   );
 }
 
+/**
+ * Signing out. Deliberately still answered for a request with no marker.
+ *
+ * The failure mode here is the opposite of GET's: a sign-out that is refused
+ * leaves somebody signed in, and a cross-site request that signs a clinician out
+ * is a nuisance rather than a breach. A browser cannot navigate with DELETE
+ * anyway, and a cross-origin `fetch` that tries is stopped by a preflight this
+ * route does not answer.
+ */
 export function DELETE(): NextResponse {
   return clearSessionCookie(new NextResponse(null, { status: 204 }));
 }

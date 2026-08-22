@@ -8,6 +8,7 @@ import { ACTIVITY_REFRESH_MS } from '@/lib/auth/idle';
 import { ABSOLUTE_LIFETIME_MS, IDLE_TIMEOUT_MS } from '@/lib/auth/session';
 import type { Session } from '@/lib/auth/session';
 import { heldSession, holdSession } from '@/lib/auth/store';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 
 /**
  * What a clinician sees between asking for a screen and getting one.
@@ -229,7 +230,14 @@ describe('a workstation left unattended', () => {
       window.dispatchEvent(new Event('pointerdown'));
     });
 
-    expect(fetchImpl).toHaveBeenCalledWith('/session', { method: 'GET' });
+    // The marker is what makes this a keep-alive the route will honour: it
+    // re-stamps the idle clock, and without it the route refuses, because a
+    // cross-site navigation carries the SameSite=Lax cookie and cannot carry
+    // this.
+    expect(fetchImpl).toHaveBeenCalledWith('/session', {
+      method: 'GET',
+      headers: { [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER },
+    });
   });
 
   it('ends the session on a public page without throwing the reader off it', async () => {

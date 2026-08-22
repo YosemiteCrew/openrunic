@@ -1,4 +1,4 @@
-import { SESSION_PATH } from './routes';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER, SESSION_PATH } from './routes';
 import { readSessionPayload } from './session';
 import type { Session } from './session';
 import { heldSession, holdSession } from './store';
@@ -43,6 +43,18 @@ const UNAUTHENTICATED = 401;
  */
 let revoking: Promise<unknown> = Promise.resolve();
 
+/**
+ * The header that marks a request as this application's own.
+ *
+ * Set on all three verbs even though only GET requires it, because the reason
+ * it works is that a navigation cannot produce one - and a header that some
+ * calls carry and others do not is one somebody eventually drops from the call
+ * that needed it.
+ */
+function sameOriginHeader(): Record<string, string> {
+  return { [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER };
+}
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -67,7 +79,7 @@ export async function signIn(accessToken: string): Promise<SignInOutcome> {
   try {
     response = await globalThis.fetch(SESSION_PATH, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...sameOriginHeader() },
       body: JSON.stringify({ token: accessToken }),
     });
   } catch {
@@ -103,7 +115,10 @@ export async function restoreSession(): Promise<Session | null> {
 
   let response: Response;
   try {
-    response = await globalThis.fetch(SESSION_PATH, { method: 'GET' });
+    response = await globalThis.fetch(SESSION_PATH, {
+      method: 'GET',
+      headers: sameOriginHeader(),
+    });
   } catch {
     holdSession(null);
     return null;
@@ -127,10 +142,12 @@ export async function restoreSession(): Promise<Session | null> {
  * woken by the drop is already ordered behind it. See `revoking` above.
  */
 export async function endSession(): Promise<void> {
-  revoking = globalThis.fetch(SESSION_PATH, { method: 'DELETE' }).catch(() => {
-    // Nothing to report and nothing to retry: the credential is already gone
-    // from this tab, and the cookie carries its own deadlines.
-  });
+  revoking = globalThis
+    .fetch(SESSION_PATH, { method: 'DELETE', headers: sameOriginHeader() })
+    .catch(() => {
+      // Nothing to report and nothing to retry: the credential is already gone
+      // from this tab, and the cookie carries its own deadlines.
+    });
   holdSession(null);
   await revoking;
 }

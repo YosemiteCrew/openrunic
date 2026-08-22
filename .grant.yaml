@@ -52,13 +52,30 @@ allow:
   # packages; every branch is independently on this list.
   - (MIT OR Apache-2.0)
   - (MIT OR CC0-1.0)
+  # (AFL-2.1 OR BSD-3-Clause): NOT every branch is on this list, so this entry
+  # is an election rather than a pass-through. AFL-2.1 is FSF-listed as
+  # GPL-incompatible; BSD-3-Clause is on the list above. Under an OR the
+  # recipient chooses, and json-schema's own LICENSE file says so in as many
+  # words: "As a recipient of Dojo, you may choose which license to receive this
+  # code under". openrunic receives it under BSD-3-Clause. Recorded here rather
+  # than as a package exception because the election is a property of the
+  # licence expression and holds for anything offering the same choice.
+  # Verified 2026-08-22 by reading the LICENSE file, not the package.json field.
+  - (AFL-2.1 OR BSD-3-Clause)
 
-# Packages with no machine-readable license in their package.json (mostly
-# store-internal artifacts and packages with nonstandard license fields) would
-# otherwise fail the gate on missing metadata rather than on an actual license
-# conflict. Flipping this to true is the documented follow-up hardening once
-# that tail is triaged.
-require-license: false
+# Every package with no machine-readable license in its package.json now has to
+# be a deliberate exception below, rather than passing silently.
+#
+# This was `false` with a note calling the flip "the documented follow-up
+# hardening once that tail is triaged". The tail was triaged on 2026-08-22: all
+# 850 installed packages were walked, and exactly ONE has no license field
+# (`seq-queue`, excepted below with its LICENSE file read). Four more carry a
+# non-SPDX string; all four are excepted below.
+#
+# What the flip buys is the next one. A dependency added tomorrow with no
+# license metadata now fails this gate instead of being waved through by a
+# blanket setting, which is the difference between a policy and a preference.
+require-license: true
 
 # Package-level exceptions. Every entry MUST carry: the verified reason, an
 # owner, and a re-review date. Verified means the LICENSE file in the
@@ -124,3 +141,67 @@ ignore-packages:
   # code analysis is a substantial part of the value.
   - react-doctor
   - oxlint-plugin-react-doctor
+  #
+  # `deslop-js` is react-doctor's own dependency, from the same publisher
+  # (Million Software, Inc.), carrying the identical Modified MIT License text.
+  # VERIFIED 2026-08-22 by reading node_modules/.pnpm/deslop-js@0.9.11/.../LICENSE.
+  # It reaches the tree only through react-doctor, so it is in scope of exactly
+  # the argument above and falls out the moment that dependency does.
+  # Owner: ankit-yc. Re-review by: 2027-02-13, with react-doctor.
+  - deslop-js
+
+  # ---------------------------------------------------------------------------
+  # The rest of this list is a different kind of entry from the block above.
+  # Those are a non-free licence knowingly accepted. These are packages whose
+  # licence IS acceptable and whose METADATA is not machine-readable, which the
+  # gate cannot tell apart. Each was verified by reading the installed LICENSE
+  # file, per the rule at the top of this section.
+  # ---------------------------------------------------------------------------
+
+  # elkjs: Eclipse Public License 2.0, and this one is a real incompatibility
+  # rather than a spelling problem. EPL-2.0 is not on the FSF GPL-compatible
+  # list, so elkjs code linked into this AGPL work would be a licence conflict
+  # that no policy file can settle.
+  #
+  # It is excepted because no such combination exists. It arrives as a
+  # transitive dependency of @prisma/studio-core, the dev-time database GUI.
+  # Nothing under apps/ or packages/ imports it, and apps/api/Dockerfile deletes
+  # `elkjs@*` by name in the prune stage, so it is not in the published image
+  # and is not distributed with the product. That deletion is not an assertion
+  # either: the compose smoke drill boots the pruned image against a real
+  # Postgres and reads seeded rows through the Prisma client, so a future Prisma
+  # release that starts needing elkjs at runtime fails the drill.
+  #
+  # The condition that invalidates this: elkjs appearing in the runtime image,
+  # or any source file importing it. Either turns this from a dev-tool footnote
+  # into a licensing decision that has to be made properly.
+  # Owner: ankit-yc. Re-review by: 2027-02-22.
+  - elkjs
+
+  # @visx/vendor: package.json says "MIT and ISC", which is not valid SPDX (that
+  # would be "MIT AND ISC"), so grant cannot classify it. Both halves are
+  # independently on the allow list above. VERIFIED 2026-08-22 by reading the
+  # installed LICENSE file, which carries the MIT grant.
+  #
+  # A package exception rather than allow-listing the literal string, because
+  # the string is not an SPDX expression and the allow list's stated basis is
+  # SPDX identifiers. Admitting the raw text would admit anything that happens
+  # to spell a combination the same wrong way.
+  #
+  # Also dev-time only: it reaches the tree through @prisma/studio-core, which
+  # the Dockerfile prune removes.
+  # Owner: ankit-yc. Re-review by: 2027-02-22.
+  - '@visx/vendor'
+
+  # seq-queue: no `license` field in package.json at all, which is the single
+  # package that kept `require-license` off. VERIFIED 2026-08-22 by reading the
+  # installed LICENSE file: "(The MIT License)", Copyright (c) 2012 Netease,
+  # Inc. and other pomelo contributors. MIT is on the allow list; only the
+  # metadata is missing.
+  #
+  # It arrives via mysql2 under the `prisma` CLI, which is a devDependency and
+  # is deleted from the published image by the same prune stage.
+  # Owner: ankit-yc. Re-review by: 2027-02-22, or sooner if the package
+  # publishes a release that declares its licence, at which point this entry
+  # should simply be deleted.
+  - seq-queue

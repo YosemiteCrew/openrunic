@@ -118,8 +118,20 @@ export function createPrismaCollection<
     return { OR: [{ [column]: { in: [...scope.facilityIds] } }, { [column]: null }] };
   };
 
-  const scoped = (where: Record<string, unknown> | undefined): Record<string, unknown> => {
-    const facility = facilityClause();
+  /**
+   * A list is always narrowed; a row addressed by id only when the scope says to
+   * hide it. See `RequestScope.hideFacilityRows` for why the two differ - the
+   * short version is that a list names no facility, so there is nothing for a
+   * route to refuse and nothing but the narrowing standing between a
+   * facility-limited caller and the rest of the tenant.
+   */
+  const hideAddressed = scope.hideFacilityRows === true;
+
+  const scoped = (
+    where: Record<string, unknown> | undefined,
+    narrowFacility: boolean
+  ): Record<string, unknown> => {
+    const facility = narrowFacility ? facilityClause() : null;
     const compartmented =
       compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed'
         ? (where ?? {})
@@ -165,7 +177,7 @@ export function createPrismaCollection<
     async list(query: TQuery): Promise<Page<ScopedRow<M>>> {
       if (closed) return { rows: [], total: 0, page: query.page, pageSize: query.pageSize };
 
-      const where = scoped(spec.where(query));
+      const where = scoped(spec.where(query), true);
       const [records, total] = await Promise.all([
         delegate.findMany({
           where,
@@ -182,7 +194,7 @@ export function createPrismaCollection<
 
     async findById(id: string): Promise<ScopedRow<M> | null> {
       if (closed) return null;
-      const record = await delegate.findFirst({ where: scoped(byId(id)) });
+      const record = await delegate.findFirst({ where: scoped(byId(id), hideAddressed) });
       if (record === null) return null;
       const row = toPlainRow<M>(record) as ScopedRow<M>;
       recordRead(row);
@@ -227,7 +239,9 @@ export function createPrismaCollection<
       return port.$transaction(async (tx) => {
         if (closed) return null;
         const scopedDelegate = tx.model(spec.model);
-        const existing = await scopedDelegate.findFirst({ where: scoped(byId(id)) });
+        const existing = await scopedDelegate.findFirst({
+          where: scoped(byId(id), hideAddressed),
+        });
         if (existing === null) return null;
 
         const before = toPlainRow<M>(existing) as ScopedRow<M>;
@@ -236,12 +250,17 @@ export function createPrismaCollection<
           now: new Date(),
           nextId: uuidv7,
         });
-        const result = await scopedDelegate.updateMany({ where: scoped(byId(id)), data });
+        const result = await scopedDelegate.updateMany({
+          where: scoped(byId(id), hideAddressed),
+          data,
+        });
         if (result.count === 0) return null;
 
         // Re-read rather than trust the patch: defaults, triggers and the
         // `updatedAt` column are the database's to decide.
-        const record = await scopedDelegate.findFirst({ where: scoped(byId(id)) });
+        const record = await scopedDelegate.findFirst({
+          where: scoped(byId(id), hideAddressed),
+        });
         if (record === null) return null;
         const row = toPlainRow<M>(record) as ScopedRow<M>;
 

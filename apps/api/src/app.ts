@@ -157,11 +157,14 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     repositories,
     auditSink,
     responseFormatFor: (path) => (isFhirPath(path) ? 'fhir' : 'problem'),
-    // The FHIR boundary answers 404 for a resource at a site the caller has no
-    // grant for, so a search cannot be used to enumerate the rest of the
-    // tenant. The BFF keeps its 403, which is the more useful answer for a
-    // staff application whose user is already inside the organisation.
-    facilityScopedFor: (path) => isFhirPath(path),
+    // Which boundary hides an ungranted facility's row and which refuses it.
+    // The FHIR boundary answers 404, so a read cannot be used to enumerate the
+    // rest of the tenant. The BFF keeps its 403, which is the more useful answer
+    // for a staff application whose user is already inside the organisation.
+    //
+    // Neither choice affects LISTS: the caller's grants narrow those on every
+    // path, because a list names no facility and there is nothing to refuse.
+    hideFacilityRowsFor: (path) => isFhirPath(path),
     ...(options.generateRequestId === undefined
       ? {}
       : { generateRequestId: options.generateRequestId }),

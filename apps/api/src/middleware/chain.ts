@@ -40,11 +40,12 @@ export interface ChainDependencies {
   /** Chooses problem+json or OperationOutcome, per path. */
   responseFormatFor?: (path: string) => 'problem' | 'fhir';
   /**
-   * Whether a path's repositories hide rows outside the caller's facilities.
-   * See the note on `AuditCollectorOptions.facilityScopedFor`: the FHIR
-   * boundary hides, the BFF refuses.
+   * Whether a path's repositories hide a row addressed by id when it sits in an
+   * ungranted facility. See the note on
+   * `AuditCollectorOptions.hideFacilityRowsFor`: the FHIR boundary hides, the
+   * BFF loads the row and refuses. Lists are narrowed on every path either way.
    */
-  facilityScopedFor?: (path: string) => boolean;
+  hideFacilityRowsFor?: (path: string) => boolean;
   onAuditFlushError?: (error: unknown) => void;
 }
 
@@ -83,9 +84,9 @@ export function buildMiddlewareChain(deps: ChainDependencies): ChainLink[] {
         sink: deps.auditSink,
         repositories: deps.repositories,
         ...(deps.onAuditFlushError === undefined ? {} : { onFlushError: deps.onAuditFlushError }),
-        ...(deps.facilityScopedFor === undefined
+        ...(deps.hideFacilityRowsFor === undefined
           ? {}
-          : { facilityScopedFor: deps.facilityScopedFor }),
+          : { hideFacilityRowsFor: deps.hideFacilityRowsFor }),
       }),
     },
   ];

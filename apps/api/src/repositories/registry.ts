@@ -41,6 +41,28 @@ export interface RequestScope {
    * was given cannot reach another, not because every route remembered to ask.
    */
   facilityIds?: readonly string[];
+  /**
+   * Whether an ungranted facility's row reads as ABSENT when it is addressed by
+   * id, rather than merely being kept out of lists.
+   *
+   * The narrowing above always applies to a list, because a list names no
+   * facility and there is nothing for a route to refuse: handing back rows from
+   * a site the caller was never granted is the bug, not the answer to it.
+   *
+   * Addressing one row by its id is a different question, and the two boundaries
+   * answer it differently on purpose. The FHIR boundary hides, so a 404 covers
+   * both "no such resource" and "not yours" and a search cannot be used to
+   * enumerate the rest of the tenant. The BFF refuses, because its user is a
+   * member of staff already inside the organisation and "you have no grant for
+   * that site" is more useful to them than a resource that appears not to exist -
+   * so its routes load the row and answer 403 themselves.
+   *
+   * Absent means refuse, which is the safe default for a new caller: a route
+   * that forgot to check gets a row it can see rather than one it silently
+   * cannot, and a missing check is visible in review rather than as an empty
+   * page.
+   */
+  hideFacilityRows?: boolean;
   audit: AuditCollector;
 }
 

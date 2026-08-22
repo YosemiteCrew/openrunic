@@ -143,16 +143,16 @@ export interface CollectionSpec<
    * in the harder direction to notice: an empty page reads as "nothing here"
    * rather than as a permissions problem.
    *
-   * This flag says the collection CAN be narrowed, not that every route does it.
-   * The caller's facilities only reach a repository when the middleware puts
-   * them on the request scope, and `createApp` does that for FHIR paths alone
-   * (`facilityScopedFor`). The BFF routes decide cross-facility access
-   * themselves and answer 403 where the FHIR boundary answers 404, so switching
-   * them to this mechanism would change what they return and is a separate
-   * change. `ChargeItem` is the one collection currently opted in that no FHIR
-   * route serves: the declaration is true of its rows and costs nothing, and it
-   * is what stops the narrowing being forgotten if the collection is ever
-   * published.
+   * Opting in narrows every LIST of this collection, on every path, to the
+   * caller's grants. It used to narrow only the FHIR paths, because the BFF
+   * routes were said to decide cross-facility access for themselves - and they
+   * did, for a row addressed by its id, and not at all for a list. A list names
+   * no facility, so there was nothing for those routes to check and nothing
+   * between a caller granted one site and every sited row in the tenant.
+   *
+   * What still differs by boundary is one row addressed by its id: the FHIR
+   * paths hide it (404), the BFF paths load it and answer 403. That is
+   * `RequestScope.hideFacilityRows`, not this flag.
    */
   readonly facilityScoped?: true;
   /** The column naming the visit, when the row hangs off one. */

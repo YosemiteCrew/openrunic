@@ -269,6 +269,7 @@ function crudModules(): CrudModule[] {
       toDto: toEncounterDto,
       facilityOfRow: (row) => row.facilityId,
       facilityOfInput: (input) => input.facilityId,
+      facilityOfQuery: (query) => query.facilityId ?? null,
       writeResponses: [
         { status: 409, description: 'The visit cannot move to that status from this one.' },
       ],

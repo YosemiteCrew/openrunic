@@ -143,15 +143,20 @@ export function createMemoryCollection<
     return typeof value === 'string' && scope.facilityIds.includes(value);
   };
 
-  const inScope = (row: ScopedRow<M>): boolean => {
+  /** Mirrors the Prisma port: a list is always narrowed, a row by id only when
+   * the scope says to hide it rather than let the route refuse it. */
+  const hideAddressed = scope.hideFacilityRows === true;
+
+  const inScope = (row: ScopedRow<M>, narrowFacility: boolean): boolean => {
     if (row.tenantId !== tenantId) return false;
-    if (!inFacility(row)) return false;
+    if (narrowFacility && !inFacility(row)) return false;
     if (compartment === undefined || spec.compartment === 'open') return true;
     if (spec.compartment === 'closed') return false;
     return readColumn(row, spec.compartment.column) === compartment;
   };
 
-  const mine = (): ScopedRow<M>[] => table().filter(inScope);
+  const mine = (narrowFacility: boolean): ScopedRow<M>[] =>
+    table().filter((row) => inScope(row, narrowFacility));
 
   const recordRead = (row: ScopedRow<M>): void => {
     audit.read({ targetType: spec.targetType, targetId: row.id, ...patientOf(spec, row) });
@@ -178,7 +183,7 @@ export function createMemoryCollection<
 
   return {
     list(query: TQuery): Promise<Page<ScopedRow<M>>> {
-      const matched = mine().filter((row) => spec.matches(row, query));
+      const matched = mine(true).filter((row) => spec.matches(row, query));
       sortRows(matched, spec, query);
       const page = paginate(matched, query.page, query.pageSize);
       page.rows.forEach(recordRead);
@@ -186,14 +191,14 @@ export function createMemoryCollection<
     },
 
     findById(id: string): Promise<ScopedRow<M> | null> {
-      const row = mine().find((candidate) => candidate.id === id) ?? null;
+      const row = mine(hideAddressed).find((candidate) => candidate.id === id) ?? null;
       if (row !== null) recordRead(row);
       return Promise.resolve(row);
     },
 
     async create(input: TCreate): Promise<ScopedRow<M>> {
       const unique = spec.uniqueBy;
-      if (unique !== undefined && mine().some((row) => unique.matches(row, input))) {
+      if (unique !== undefined && mine(false).some((row) => unique.matches(row, input))) {
         // Mirrors the table's unique constraint. Raised here rather than left
         // to the handler so both implementations fail the same way.
         throw ApiError.conflict(unique.message(input));
@@ -223,7 +228,7 @@ export function createMemoryCollection<
     },
 
     async update(id: string, patch: TPatch): Promise<ScopedRow<M> | null> {
-      const row = mine().find((candidate) => candidate.id === id);
+      const row = mine(hideAddressed).find((candidate) => candidate.id === id);
       if (row === undefined) return null;
 
       const now = clock.now();

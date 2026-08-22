@@ -1,5 +1,5 @@
 import type { Delimiters } from './delimiters.js';
-import type { X12Location } from './errors.js';
+import type { X12Error, X12Location } from './errors.js';
 
 /**
  * The low-level document model: a segment is a tag plus positional elements,
@@ -68,12 +68,80 @@ export function locate(
 }
 
 /**
+ * The delimiter characters an element may not contain, and why there is no
+ * escaping alternative.
+ *
+ * X12 has no escape mechanism. A separator inside an element IS a separator, so
+ * a member id of `A*B` does not produce an element containing an asterisk - it
+ * produces two elements, and every element after it shifts left. On an 837P that
+ * moves NM109 into NM108's position and the claim is submitted for whatever
+ * identifier lands there; a `~` does the same one level up and invents a
+ * segment. The values reaching the mappers are demographics, member ids, claim
+ * references and service codes, all of which a low-privileged user can influence.
+ *
+ * So the only two honest answers are refuse or mangle, and this refuses. A claim
+ * that cannot be encoded is a work item; a claim encoded for somebody else's
+ * member id is a payment.
+ */
+export function delimiterFault(
+  source: Segment,
+  delimiters: Delimiters,
+  segmentIndex: number
+): X12Error | undefined {
+  // The repetition separator is deliberately absent. This codec never splits on
+  // it: a repeating element arrives as one string and is re-emitted as one
+  // string, so the character shifts nothing here. Real payer documents use it -
+  // EB03 on a 271 carries repeated service type codes that way - and refusing it
+  // would reject legal traffic while protecting nothing.
+  const separators = [
+    ['element', delimiters.element],
+    ['component', delimiters.component],
+    ['segment', delimiters.segment],
+  ] as const;
+
+  const offending = (value: string): string | undefined =>
+    separators.find(([, character]) => value.includes(character))?.[0];
+
+  if (offending(source.tag) !== undefined) {
+    return {
+      kind: 'invalid_element',
+      message: `the segment tag "${source.tag}" contains an X12 delimiter`,
+      at: { segmentIndex, segmentTag: source.tag },
+      value: source.tag,
+      expected: 'a tag free of the active delimiters',
+    };
+  }
+
+  for (const [index, value] of source.elements.entries()) {
+    const components = typeof value === 'string' ? [value] : value;
+    for (const component of components) {
+      const name = offending(component);
+      if (name === undefined) continue;
+      return {
+        kind: 'invalid_element',
+        message: `element ${String(index + 1)} of ${source.tag} contains the ${name} delimiter, which would split it into fields this document does not mean`,
+        at: { segmentIndex, segmentTag: source.tag, elementPosition: index + 1 },
+        value: component,
+        expected: 'a value free of the active delimiters',
+      };
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Serializes one segment.
  *
  * Trailing empty elements are dropped, which is not cosmetic: X12 treats a
  * trailing separator run as noise, several payers' parsers reject it, and
  * keeping it would make byte-exact golden files depend on how many optional
  * fields a mapper happened to enumerate.
+ *
+ * It does NOT check its input, and cannot usefully: it returns a string, and the
+ * refusal has to reach a caller as a `Result`. {@link delimiterFault} is that
+ * check, and `writeInterchange` applies it to every segment before any of them
+ * is serialized.
  */
 export function writeSegment(source: Segment, delimiters: Delimiters): string {
   const rendered = source.elements.map((value) =>

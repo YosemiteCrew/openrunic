@@ -7,7 +7,7 @@ import { DEFAULT_DELIMITERS, validateDelimiters } from './delimiters.js';
 import type { Delimiters } from './delimiters.js';
 import type { X12Error } from './errors.js';
 import { formatDate6, formatDate8, formatTime4, padRight } from './format.js';
-import { segment, writeSegment } from './segments.js';
+import { delimiterFault, segment, writeSegment } from './segments.js';
 import type { Segment } from './segments.js';
 
 /**
@@ -106,31 +106,28 @@ export function writeInterchange(draft: InterchangeDraft): Result<string, X12Err
     }
   }
 
-  const lines: string[] = [];
+  const written: Segment[] = [];
   const interchangeControl = formatInterchangeControlNumber(draft.controlNumbers.interchange);
 
-  lines.push(
-    writeSegment(
-      segment(
-        'ISA',
-        '00',
-        padRight('', 10),
-        '00',
-        padRight('', 10),
-        draft.sender.qualifier,
-        padRight(draft.sender.id, ISA_ID_WIDTH),
-        draft.receiver.qualifier,
-        padRight(draft.receiver.id, ISA_ID_WIDTH),
-        formatDate6(draft.created),
-        formatTime4(draft.created),
-        delimiters.value.repetition,
-        '00501',
-        interchangeControl,
-        '0',
-        draft.usageIndicator,
-        delimiters.value.component
-      ),
-      delimiters.value
+  written.push(
+    segment(
+      'ISA',
+      '00',
+      padRight('', 10),
+      '00',
+      padRight('', 10),
+      draft.sender.qualifier,
+      padRight(draft.sender.id, ISA_ID_WIDTH),
+      draft.receiver.qualifier,
+      padRight(draft.receiver.id, ISA_ID_WIDTH),
+      formatDate6(draft.created),
+      formatTime4(draft.created),
+      delimiters.value.repetition,
+      '00501',
+      interchangeControl,
+      '0',
+      draft.usageIndicator,
+      delimiters.value.component
     )
   );
 
@@ -145,58 +142,48 @@ export function writeInterchange(draft: InterchangeDraft): Result<string, X12Err
     }
 
     const groupControlText = String(groupControl);
-    lines.push(
-      writeSegment(
-        segment(
-          'GS',
-          group.functionalIdentifier,
-          draft.sender.applicationId,
-          draft.receiver.applicationId,
-          formatDate8(draft.created),
-          formatTime4(draft.created),
-          groupControlText,
-          'X',
-          group.version
-        ),
-        delimiters.value
+    written.push(
+      segment(
+        'GS',
+        group.functionalIdentifier,
+        draft.sender.applicationId,
+        draft.receiver.applicationId,
+        formatDate8(draft.created),
+        formatTime4(draft.created),
+        groupControlText,
+        'X',
+        group.version
       )
     );
 
     let transactionControl = draft.controlNumbers.transactionStart;
     for (const transaction of group.transactions) {
       const controlText = formatTransactionControlNumber(transactionControl);
-      lines.push(
-        writeSegment(
-          segment(
-            'ST',
-            transaction.setIdentifier,
-            controlText,
-            transaction.implementationConvention
-          ),
-          delimiters.value
-        )
+      written.push(
+        segment('ST', transaction.setIdentifier, controlText, transaction.implementationConvention)
       );
-      for (const bodySegment of transaction.segments) {
-        lines.push(writeSegment(bodySegment, delimiters.value));
-      }
+      written.push(...transaction.segments);
       // SE01 counts ST and SE themselves, hence the two.
       const segmentCount = transaction.segments.length + 2;
-      lines.push(writeSegment(segment('SE', String(segmentCount), controlText), delimiters.value));
+      written.push(segment('SE', String(segmentCount), controlText));
       transactionControl += 1;
     }
 
-    lines.push(
-      writeSegment(
-        segment('GE', String(group.transactions.length), groupControlText),
-        delimiters.value
-      )
-    );
+    written.push(segment('GE', String(group.transactions.length), groupControlText));
     groupControl += 1;
   }
 
-  lines.push(
-    writeSegment(segment('IEA', String(draft.groups.length), interchangeControl), delimiters.value)
-  );
+  written.push(segment('IEA', String(draft.groups.length), interchangeControl));
 
-  return ok(lines.join(''));
+  // Every segment is checked before any is serialized, so a document that would
+  // have carried an injected delimiter is refused whole rather than emitted as
+  // far as the offending element. ISA is exempt because ISA11 and ISA16 ARE
+  // delimiter characters by definition - it is the segment that declares them.
+  for (const [index, source] of written.entries()) {
+    if (index === 0) continue;
+    const fault = delimiterFault(source, delimiters.value, index);
+    if (fault !== undefined) return err(fault);
+  }
+
+  return ok(written.map((source) => writeSegment(source, delimiters.value)).join(''));
 }

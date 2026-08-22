@@ -35,6 +35,7 @@ import {
   seed,
   storageColumns,
   DEMO_FACILITY_A,
+  DEMO_FACILITY_B,
   DEMO_TENANT_A,
   FIXED_NOW,
   TOKENS,
@@ -1830,6 +1831,92 @@ async function auditedApp(): Promise<TestApp> {
   await get(harness.app, '/bff/v0/facilities', UNPRIVILEGED_TOKEN);
   return harness;
 }
+
+describe('the audit log and the caller\u2019s facilities', () => {
+  /**
+   * An auditor confined to one site should read that site's log, and not the
+   * organisation's. The events themselves carry `facilityId` - where the act
+   * happened - so this is a containment boundary rather than an attribution,
+   * and narrowing on it is the same rule every row repository already applies.
+   */
+  function seedSitedEvents(store: AuditChainStore): void {
+    const base = {
+      actorType: 'user' as const,
+      actorId: testId(900),
+      actorDisplay: 'Adaeze Okafor',
+      action: 'PATIENT_READ',
+      targetType: 'Patient',
+      purposeOfUse: 'TREAT',
+      outcome: 'success' as const,
+      metadata: {},
+    };
+    store.append(
+      DEMO_TENANT_A,
+      { ...base, targetId: testId(1), facilityId: DEMO_FACILITY_A },
+      FIXED_NOW
+    );
+    store.append(
+      DEMO_TENANT_A,
+      { ...base, targetId: testId(2), facilityId: DEMO_FACILITY_B },
+      FIXED_NOW
+    );
+    // No facility at all: an act that was not sited. It has to stay visible,
+    // for the same reason a null facility stays visible on every other table -
+    // hiding it would empty the page of exactly the organisation-wide events an
+    // auditor most needs to see.
+    store.append(DEMO_TENANT_A, { ...base, targetId: testId(3) }, FIXED_NOW);
+  }
+
+  it('shows a site-confined auditor their own site and the unsited events', async () => {
+    const { app, auditStore } = createTestApp();
+    seedSitedEvents(auditStore);
+
+    const page = await body<ListResponse<AuditEventDto>>(
+      await get(app, '/bff/v0/audit?pageSize=50', TOKENS.siteReaderA)
+    );
+
+    const targets = page.data.map((event) => event.targetId);
+    expect(targets).toContain(testId(1));
+    expect(targets).toContain(testId(3));
+    // The other site's event is the one that must not be there. `read-only`
+    // holds audit.read and not facility.all, so before this narrowing a site
+    // auditor read the whole organisation's log.
+    expect(targets).not.toContain(testId(2));
+  });
+
+  it('shows an organisation-wide auditor everything', async () => {
+    const { app, auditStore } = createTestApp();
+    seedSitedEvents(auditStore);
+
+    const page = await body<ListResponse<AuditEventDto>>(
+      await get(app, '/bff/v0/audit?pageSize=50')
+    );
+
+    // The narrowing is a floor for callers who lack facility.all, not a new
+    // restriction on the ones who hold it. Without this, a clause that matched
+    // nothing would satisfy the assertion above.
+    const targets = page.data.map((event) => event.targetId);
+    expect(targets).toContain(testId(1));
+    expect(targets).toContain(testId(2));
+  });
+
+  it('hides another site\u2019s event from a by-id read as well as from the list', async () => {
+    const { app, auditStore } = createTestApp();
+    seedSitedEvents(auditStore);
+    const all = await body<ListResponse<AuditEventDto>>(
+      await get(app, '/bff/v0/audit?pageSize=50')
+    );
+    const other = all.data.find((event) => event.targetId === testId(2));
+    expect(other, 'the facility-B event should exist for an admin').toBeDefined();
+
+    const res = await get(app, `/bff/v0/audit/${other?.id ?? ''}`, TOKENS.siteReaderA);
+
+    // 404 rather than 403: a distinguishable refusal would confirm the event
+    // exists, which on an audit log tells the caller an act happened at a site
+    // they cannot see.
+    expect(res.status).toBe(404);
+  });
+});
 
 describe('GET /bff/v0/audit', () => {
   it('returns the events this process wrote, newest first', async () => {

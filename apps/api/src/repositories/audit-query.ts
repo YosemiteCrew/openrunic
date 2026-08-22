@@ -121,6 +121,36 @@ function sortRows(rows: AuditEventRow[], query: AuditQuery): void {
   });
 }
 
+/**
+ * Whether an audit event is inside the caller's facility grants.
+ *
+ * Mirrors the clause the row repositories apply, deliberately and in both
+ * directions: an event with no facility stays visible to the whole tenant,
+ * because null on this column means the act was not sited rather than that it
+ * was sited somewhere secret, and hiding those would empty an auditor's page of
+ * exactly the organisation-wide events they most need to see.
+ *
+ * A caller holding `facility.all` arrives with `facilityIds` undefined and is
+ * not narrowed at all, which is the same shape the middleware already uses.
+ */
+function inFacility(facilityId: string | null, scope: RequestScope): boolean {
+  if (scope.facilityIds === undefined) return true;
+  if (facilityId === null) return true;
+  return scope.facilityIds.includes(facilityId);
+}
+
+/**
+ * The same rule as a Prisma `where` fragment.
+ *
+ * Undefined when the caller is unrestricted, so the clause is absent from the
+ * query rather than present and vacuously true - a filter that matches
+ * everything reads, in a slow query log, exactly like one that was forgotten.
+ */
+function facilityWhere(scope: RequestScope): Record<string, unknown> | undefined {
+  if (scope.facilityIds === undefined) return undefined;
+  return { OR: [{ facilityId: { in: [...scope.facilityIds] } }, { facilityId: null }] };
+}
+
 export function createMemoryAuditQuery(
   store: AuditChainStore,
   scope: RequestScope
@@ -129,7 +159,8 @@ export function createMemoryAuditQuery(
     store
       .chain(scope.tenantId)
       .map(normalise)
-      .filter((row) => inCompartment(row, scope.compartmentPatientId));
+      .filter((row) => inCompartment(row, scope.compartmentPatientId))
+      .filter((row) => inFacility(row.facilityId, scope));
 
   return {
     list(query: AuditQuery): Promise<Page<AuditEventRow>> {
@@ -172,6 +203,7 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
           },
         }),
     ...(scope.compartmentPatientId === undefined ? {} : { patientId: scope.compartmentPatientId }),
+    ...(facilityWhere(scope) ?? {}),
   });
 
   return {
@@ -195,6 +227,7 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
       const record = await delegate.findFirst({
         where: {
           id,
+          ...(facilityWhere(scope) ?? {}),
           ...(scope.compartmentPatientId === undefined
             ? {}
             : { patientId: scope.compartmentPatientId }),

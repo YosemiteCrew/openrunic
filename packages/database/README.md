@@ -121,6 +121,15 @@ SELECT has_table_privilege('openrunic_app', '"Patient"', 'SELECT') AS can_read;
 replay section 4 of `packages/database/prisma/migrations/20260813120000_row_level_security/migration.sql`
 by hand as the owner; it is idempotent.
 
+**The demo auth mode needs the id, not a lookup.** `OPENRUNIC_AUTH_MODE=demo-tokens` has no token to
+read an organisation out of, and it cannot find one by querying: `Organisation`'s policy keys on
+`id`, so a connection that has not declared a tenant sees no organisations at all, not even to look
+one up by slug. Section 3 leaves no unpoliced table to bootstrap from, by design. So the id arrives
+instead: `demoOrganisationId()` in `@openrunic/database/seed` derives it from the same pure builder
+the seed writes from, `seedDemoPractice` refuses to write a practice under any other, and the
+resolver opens a session with it before reading anything. A deployment verifying a real token takes
+its organisation from the token and never makes that read at all.
+
 Order of operations for an existing deployment: create the role, apply the migration, verify with
 the queries above, then switch the application's `DATABASE_URL` over. Applying the migration while
 the application is still connected as the owner is safe - the owner is subject to the policies and

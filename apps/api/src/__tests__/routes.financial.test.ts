@@ -34,6 +34,7 @@ import type {
   RemittancePostResult,
   RemittanceRow,
   StatementDto,
+  CollectionsWorklistEntry,
   StatementRow,
 } from '../schemas/financial.js';
 import type { ListResponse } from '../schemas/pagination.js';
@@ -269,7 +270,11 @@ function makeStatementRow(overrides: Partial<StatementRow> = {}): StatementRow {
     patientId: PATIENT_ID,
     status: 'DRAFT',
     balanceCents: 2_500,
-    dunningCycle: 1,
+    dunningCycle: 0,
+    lastNoticeAt: null,
+    holdUntil: null,
+    holdReason: null,
+    closedReason: null,
     periodStart: new Date('2026-07-01T00:00:00.000Z'),
     periodEnd: new Date('2026-07-31T00:00:00.000Z'),
     generatedAt: new Date('2026-08-01T09:00:00.000Z'),
@@ -652,8 +657,12 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 /* ------------------------------------------------------------------ charges */
 
 describe('charges', () => {
-  it('filters by patient, encounter, facility, status and a service-date window', async () => {
+  it('filters by patient, encounter, status and a service-date window', async () => {
     const { app, dataset } = createTestApp();
+    // Both at facility A, which is the only site this principal is granted. A
+    // row at another site is not a filtering question at all - it is invisible,
+    // which the test below is about - and seeding one here would have made
+    // every assertion in this test depend on which of the two rules refused it.
     seed(
       dataset,
       'ChargeItem',
@@ -662,7 +671,6 @@ describe('charges', () => {
         id: testId(21),
         patientId: OTHER_PATIENT_ID,
         encounterId: OTHER_ENCOUNTER_ID,
-        facilityId: DEMO_FACILITY_B,
         status: 'BILLED',
         serviceDate: new Date('2026-09-01T00:00:00.000Z'),
       })
@@ -676,12 +684,45 @@ describe('charges', () => {
 
     expect(await search(`patientId=${PATIENT_ID}`)).toEqual([testId(20)]);
     expect(await search(`encounterId=${OTHER_ENCOUNTER_ID}`)).toEqual([testId(21)]);
-    expect(await search(`facilityId=${DEMO_FACILITY_A}`)).toEqual([testId(20)]);
     expect(await search('status=BILLED')).toEqual([testId(21)]);
     expect(await search('from=2026-08-01&to=2026-08-31')).toEqual([testId(20)]);
     expect(await search('order=asc')).toEqual([testId(20), testId(21)]);
     expect(await search('sort=totalPriceCents&order=desc')).toEqual([testId(20), testId(21)]);
     expect(await search('sort=createdAt')).toEqual([testId(20), testId(21)]);
+  });
+
+  it('keeps an ungranted facility out of the list, and refuses a filter naming one', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'ChargeItem',
+      makeChargeRow({ id: testId(20) }),
+      makeChargeRow({ id: testId(22), facilityId: DEMO_FACILITY_B })
+    );
+    const search = async (query: string): Promise<Response> =>
+      app.request(`/bff/v0/charges?${query}`, { headers: bearer(TOKENS.billerA) });
+    const ids = async (query: string): Promise<string[]> =>
+      (await json<ListResponse<ChargeDto>>(await search(query))).data.map((row) => row.id);
+
+    // The case this exists for: no facilityId in the query at all. There is
+    // nothing for the route to refuse, so the repository narrows instead, and
+    // the charge at the other site is simply not in the page. Before the
+    // narrowing this returned both, which handed a biller granted one site
+    // every billing row in the organisation.
+    expect(await ids('')).toEqual([testId(20)]);
+    expect(await ids('status=OPEN')).toEqual([testId(20)]);
+    expect(await ids(`facilityId=${DEMO_FACILITY_A}`)).toEqual([testId(20)]);
+
+    // Naming the ungranted site is a different answer on this boundary: 403,
+    // not an empty page that reads as "no charges there".
+    expect((await search(`facilityId=${DEMO_FACILITY_B}`)).status).toBe(403);
+
+    // And the single read still refuses rather than hides, which is the BFF
+    // contract the FHIR boundary deliberately does not share.
+    expect(
+      (await app.request(`/bff/v0/charges/${testId(22)}`, { headers: bearer(TOKENS.billerA) }))
+        .status
+    ).toBe(403);
   });
 
   it('reads one charge, records one, and amends one', async () => {
@@ -1792,7 +1833,10 @@ describe('statements', () => {
     expect(created.headers.get('location')).toBe(`/bff/v0/statements/${createdBody.id}`);
     expect(createdBody).toMatchObject({
       status: 'DRAFT',
-      dunningCycle: 1,
+      // Zero notices, because none has been sent. This asserted 1 while the
+      // column defaulted to 1, which claimed a notice for a statement that had
+      // never left the building.
+      dunningCycle: 0,
       deliveredVia: null,
       deliveredAt: null,
       payLinkSet: false,
@@ -2772,6 +2816,342 @@ describe('allocations and remittance lines', () => {
   });
 });
 
+describe('collections and dunning', () => {
+  /**
+   * The default policy is three notices, thirty days apart, with a seven-day
+   * floor and a five-dollar write-off threshold. Every date below is expressed
+   * relative to the clock the app runs on, so a test says "thirty-one days ago"
+   * rather than naming a date that means nothing on its own.
+   */
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  function daysAgo(days: number): Date {
+    return new Date(Date.now() - days * DAY_MS);
+  }
+
+  function sentStatement(overrides: Partial<StatementRow> = {}): Partial<StatementRow> {
+    return {
+      status: 'SENT',
+      dunningCycle: 1,
+      lastNoticeAt: daysAgo(31),
+      deliveredVia: 'EMAIL',
+      deliveredAt: daysAgo(31),
+      ...overrides,
+    };
+  }
+
+  const NOTICE = { deliveredVia: 'EMAIL' as const };
+
+  it('sends the first notice, advancing the cycle and stamping the date', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow({ status: 'GENERATED' }));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+
+    expect(res.status).toBe(200);
+    const body = await json<StatementDto>(res);
+    expect(body.status).toBe('SENT');
+    expect(body.dunningCycle).toBe(1);
+    expect(body.lastNoticeAt).not.toBeNull();
+  });
+
+  it('refuses a second notice before the interval has passed', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement({ lastNoticeAt: daysAgo(3) })));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+
+    // The refusal is the feature. A job that runs twice, or an operator who
+    // clicks twice, must not chase the same patient twice in a week.
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('not due until');
+  });
+
+  it('sends the next notice once the interval has passed', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement()));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+
+    expect(res.status).toBe(200);
+    expect((await json<StatementDto>(res)).dunningCycle).toBe(2);
+  });
+
+  it('will not let the caller choose which notice this is', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement()));
+
+    // A caller who can name the cycle can put a patient anywhere on the
+    // schedule, including at the final notice on the first letter.
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, {
+        ...NOTICE,
+        dunningCycle: 3,
+      })
+    );
+
+    expect(res.status).toBe(422);
+  });
+
+  it('refuses a notice on a balance the practice agreed not to chase', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Statement',
+      makeStatementRow(sentStatement({ holdUntil: new Date(Date.now() + 30 * DAY_MS) }))
+    );
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('on hold');
+  });
+
+  it('refuses a notice once every notice in the policy has been sent', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement({ dunningCycle: 3 })));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('Write it off or escalate');
+  });
+
+  it('refuses a notice on a balance that is no longer owed', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement({ balanceCents: 0 })));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('no balance owed');
+  });
+
+  it.each(['DRAFT', 'PAID', 'VOID'] as const)(
+    'refuses a notice on a statement in %s, which is not on a schedule',
+    async (status) => {
+      const { app, dataset } = createTestApp();
+      seed(dataset, 'Statement', makeStatementRow({ status }));
+
+      const res = await app.request(
+        ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+      );
+
+      expect(res.status).toBe(409);
+    }
+  );
+
+  it('holds a balance without taking it out of the ageing report', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement()));
+    const until = new Date(Date.now() + 60 * DAY_MS).toISOString();
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/hold`, TOKENS.billerA, {
+        reason: 'Patient disputes the balance',
+        until,
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const body = await json<StatementDto>(res);
+    expect(body.holdReason).toBe('Patient disputes the balance');
+    // Still SENT, still owed. A hold suspends the schedule, and moving it to a
+    // state of its own would take it out of the report it most needs to be in.
+    expect(body.status).toBe('SENT');
+  });
+
+  it('refuses a hold with no reason', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement()));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/hold`, TOKENS.billerA, {
+        until: new Date(Date.now() + DAY_MS).toISOString(),
+      })
+    );
+
+    // The person who has to justify why a patient was not billed is not the
+    // person who set the hold.
+    expect(res.status).toBe(422);
+  });
+
+  it.each(['PAID', 'VOID'] as const)('refuses a hold on a statement in %s', async (status) => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow({ status }));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/hold`, TOKENS.billerA, {
+        reason: 'Hardship',
+        until: new Date(Date.now() + DAY_MS).toISOString(),
+      })
+    );
+
+    expect(res.status).toBe(409);
+  });
+
+  it('writes off a real debt, keeping it apart from a voided one', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement()));
+
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/write-off`, TOKENS.billerA, {
+        reason: 'Uncollectable after three notices',
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const body = await json<StatementDto>(res);
+    expect(body.status).toBe('WRITTEN_OFF');
+    expect(body.closedReason).toBe('Uncollectable after three notices');
+  });
+
+  it('refuses to write off a statement nobody has sent', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow({ status: 'DRAFT' }));
+
+    // Nothing has been asked for yet, so there is no debt to abandon. A draft
+    // that should not exist is deleted or voided, not written off.
+    const res = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/write-off`, TOKENS.billerA, { reason: 'Nope' })
+    );
+
+    expect(res.status).toBe(409);
+  });
+
+  it('leaves a written-off statement terminal', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Statement', makeStatementRow(sentStatement()));
+    await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/write-off`, TOKENS.billerA, { reason: 'Bad debt' })
+    );
+
+    // A later payment is a payment against the ledger, not a reason to put the
+    // statement back on a dunning schedule it had already left.
+    const notice = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/notice`, TOKENS.billerA, NOTICE)
+    );
+    const hold = await app.request(
+      ...post(`/bff/v0/statements/${testId(70)}/hold`, TOKENS.billerA, {
+        reason: 'Too late',
+        until: new Date(Date.now() + DAY_MS).toISOString(),
+      })
+    );
+
+    expect(notice.status).toBe(409);
+    expect(hold.status).toBe(409);
+  });
+
+  it('lists what needs chasing, oldest debt first, with the ageing bucket', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Statement',
+      makeStatementRow({ id: testId(70), ...sentStatement({ deliveredAt: daysAgo(100) }) }),
+      makeStatementRow({ id: testId(71), ...sentStatement({ deliveredAt: daysAgo(40) }) })
+    );
+
+    const res = await app.request('/bff/v0/collections/worklist', {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await json<{ items: CollectionsWorklistEntry[]; total: number }>(res);
+    expect(body.items.map((entry) => entry.statementId)).toStrictEqual([testId(70), testId(71)]);
+    expect(body.items[0]?.bucket).toBe('90+');
+    expect(body.items[1]?.bucket).toBe('31-60');
+    expect(body.items[0]?.action).toBe('notice');
+  });
+
+  it.each(['PAID', 'VOID', 'WRITTEN_OFF'] as const)(
+    'leaves a statement in %s off the worklist',
+    async (status) => {
+      const { app, dataset } = createTestApp();
+      seed(dataset, 'Statement', makeStatementRow({ status }));
+
+      const body = await json<{ items: CollectionsWorklistEntry[] }>(
+        await app.request('/bff/v0/collections/worklist', { headers: bearer(TOKENS.billerA) })
+      );
+
+      // Outcomes, not work. A worklist that listed them would grow forever.
+      expect(body.items).toHaveLength(0);
+    }
+  );
+
+  it('narrows to one kind of work', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Statement',
+      makeStatementRow({ id: testId(70), ...sentStatement() }),
+      makeStatementRow({ id: testId(71), ...sentStatement({ lastNoticeAt: daysAgo(2) }) })
+    );
+
+    const body = await json<{ items: CollectionsWorklistEntry[] }>(
+      await app.request('/bff/v0/collections/worklist?action=wait', {
+        headers: bearer(TOKENS.billerA),
+      })
+    );
+
+    expect(body.items.map((entry) => entry.statementId)).toStrictEqual([testId(71)]);
+    expect(body.items[0]?.actionableAt).not.toBeNull();
+  });
+
+  it('recomputes the action, so a paid balance never reads as work', async () => {
+    const { app, dataset } = createTestApp();
+    // The row still says SENT and still carries three notices. What changed is
+    // the money, and a stored decision would not have noticed.
+    seed(
+      dataset,
+      'Statement',
+      makeStatementRow(sentStatement({ balanceCents: 0, dunningCycle: 3 }))
+    );
+
+    const body = await json<{ items: CollectionsWorklistEntry[] }>(
+      await app.request('/bff/v0/collections/worklist', { headers: bearer(TOKENS.billerA) })
+    );
+
+    expect(body.items[0]?.action).toBe('settled');
+  });
+
+  it('marks a small exhausted balance for write-off rather than another letter', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Statement',
+      makeStatementRow(sentStatement({ balanceCents: 300, dunningCycle: 3 }))
+    );
+
+    const body = await json<{ items: CollectionsWorklistEntry[] }>(
+      await app.request('/bff/v0/collections/worklist', { headers: bearer(TOKENS.billerA) })
+    );
+
+    expect(body.items[0]?.action).toBe('write-off');
+  });
+
+  it('refuses the worklist to a principal without the payment permission', async () => {
+    const { app } = createTestApp();
+
+    const res = await app.request('/bff/v0/collections/worklist', {
+      headers: bearer(UNPRIVILEGED_TOKEN),
+    });
+
+    expect(res.status).toBe(403);
+  });
+});
+
 /* ----------------------------------------------------------------- contracts */
 
 describe('financialRouteContracts', () => {
@@ -2822,6 +3202,10 @@ describe('financialRouteContracts', () => {
         'PATCH /bff/v0/statements/{id}',
         'POST /bff/v0/statements/{id}/generate',
         'POST /bff/v0/statements/{id}/send',
+        'POST /bff/v0/statements/{id}/notice',
+        'POST /bff/v0/statements/{id}/hold',
+        'POST /bff/v0/statements/{id}/write-off',
+        'GET /bff/v0/collections/worklist',
       ].sort()
     );
   });

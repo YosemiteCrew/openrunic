@@ -71,11 +71,45 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # THE TRUSTED HALF OF THE CHECKOUT, AND WHY IT IS SEPARATE.
+      #
+      # The checkout above is the pull request's HEAD, because scanning is the
+      # whole point and you cannot scan code you did not fetch. But this job also
+      # holds SONAR_TOKEN, and several later steps run repository code: a local
+      # composite action, and two node scripts. On a pull_request event the
+      # workflow FILE resolves from the merge ref, so an edit to this file in a
+      # branch does not take effect - but `uses: ./...` and `node scripts/...`
+      # resolve from the workspace, which is the head. Anyone able to push a
+      # branch to this repository could therefore rewrite either one and read the
+      # token out of the environment it is handed. The fork guard on this job
+      # stops an outside contributor; it does nothing about a same-repository
+      # branch, which is the case this exists for.
+      #
+      # So everything this job EXECUTES comes from the base commit - already
+      # reviewed and already merged - and only the code it MEASURES comes from the
+      # head. `base.sha` on a pull request, `github.sha` on a push to main, which
+      # is trusted by definition.
+      - name: Check out the code this job runs, from the base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: .ci-trusted
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            scripts/ci
+          sparse-checkout-cone-mode: false
+
       # Node only, no install: the two scripts this job runs are dependency-free
       # by design, and pinning the major means they behave here exactly as they
       # do everywhere else rather than on whatever the runner image ships.
+      #
+      # From the trusted checkout, not the workspace. A composite action runs
+      # before the token-bearing steps and can write GITHUB_ENV and GITHUB_PATH,
+      # so a head-controlled one does not need to be handed the token to reach it
+      # - it only needs to decide which `node` the step after it resolves.
       - name: Setup
-        uses: ./.github/actions/setup
+        uses: ./.ci-trusted/.github/actions/setup
         with:
           install: 'false'
 
@@ -97,7 +131,7 @@ jobs:
           fi
           # Sonar treats unresolvable coverage paths as 0% and passes its gate
           # without complaint. Catch that here, before the scan.
-          node scripts/ci/lcov-check.mjs --resolve "$APP_DIR" "$LCOV"
+          node "$GITHUB_WORKSPACE/.ci-trusted/scripts/ci/lcov-check.mjs" --resolve "$APP_DIR" "$LCOV"
 
       - name: Cache Sonar scanner
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -141,7 +175,16 @@ jobs:
           # The gate waited on is the built-in "Sonar way", because this
           # organisation's plan will not attach a custom one - see the step
           # below, which is where this repository's actual numbers are enforced.
-          args: -Dsonar.qualitygate.wait=true
+          #
+          # The host is pinned on the command line, where it outranks the
+          # properties file. `sonar.host.url` is an ordinary analysis property, so
+          # a sonar-project.properties in the pull request head could otherwise
+          # name any server it liked and the scanner would obligingly authenticate
+          # to it - which is the same token exfiltration the trusted checkout above
+          # closes, arriving through configuration instead of through code.
+          args: >-
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.host.url=https://sonarcloud.io
         env:
           SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
 
@@ -164,14 +207,18 @@ jobs:
           SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
         run: |
           set -euo pipefail
-          # On a pull_request event this workflow file resolves from the merge
-          # ref while the checkout above is the PR head, so a branch cut before
-          # the bar landed runs this step against a tree without the script.
-          # Fail with the actual fix rather than MODULE_NOT_FOUND.
-          SCRIPT="$GITHUB_WORKSPACE/scripts/ci/sonar-thresholds.mjs"
+          # From .ci-trusted, never from the workspace: this step is handed
+          # SONAR_TOKEN, and the workspace is the pull request head. See the
+          # trusted checkout above.
+          #
+          # The base commit always carries the script once this change is on it,
+          # so the missing-file case below is now only reachable while promoting
+          # a `main` that predates it. Kept, because the failure it replaces is
+          # MODULE_NOT_FOUND and the fix is not obvious from that.
+          SCRIPT="$GITHUB_WORKSPACE/.ci-trusted/scripts/ci/sonar-thresholds.mjs"
           if [ ! -f "$SCRIPT" ]; then
-            echo "scripts/ci/sonar-thresholds.mjs is not in this checkout: the branch predates" >&2
-            echo "the Sonar bar. Update the branch from dev and push again." >&2
+            echo "scripts/ci/sonar-thresholds.mjs is not in the base checkout: the base branch" >&2
+            echo "predates the Sonar bar. Promote dev to main first, or rebase this branch." >&2
             exit 1
           fi
           node "$SCRIPT" \

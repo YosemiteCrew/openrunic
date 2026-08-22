@@ -595,6 +595,7 @@ export const roleAssignmentSpec: CollectionSpec<
   targetType: 'RoleAssignment',
   action: 'role.assignment',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   // Who holds which capability, and where, is the other half of the staff
   // directory and is closed for the same reason.
   compartment: 'closed',
@@ -683,6 +684,7 @@ export const userFacilitySpec: CollectionSpec<
   targetType: 'UserFacility',
   action: 'user.facility',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   compartment: 'closed',
 
   newRow(input: UserFacilityCreateInput): Writable<'UserFacility'> {
@@ -987,7 +989,91 @@ export const terminologyCodeSpec: CollectionSpec<
   },
 };
 
+/* ---------------------------------------------------------------- value sets */
+
+export interface ValueSetListQuery extends BaseQuery {
+  url?: string;
+  sort: 'url' | 'createdAt';
+}
+
+export interface ValueSetCreateInput {
+  url: string;
+  name?: string;
+  description?: string;
+  /**
+   * Include and exclude rules, already validated by the route against the
+   * schema `packages/terminology` exports. Typed as a record rather than
+   * `unknown` because that is what the column holds and what `jsonColumn`
+   * accepts; the shape itself belongs to the terminology package.
+   */
+  definition: Record<string, unknown>;
+}
+
+export interface ValueSetPatchInput {
+  name?: string;
+  description?: string;
+  definition?: Record<string, unknown>;
+}
+
+/**
+ * Value set definitions a deployment supplied.
+ *
+ * `action: 'terminology'` because that is what this is: the codes a value set
+ * selects are terminology, and whoever may load a code system is whoever may
+ * say which codes belong to a set. A separate permission would let somebody
+ * change what a quality measure counts without being allowed to change the
+ * codes it counts them from.
+ */
+export const valueSetSpec: CollectionSpec<
+  'ValueSet',
+  ValueSetCreateInput,
+  ValueSetPatchInput,
+  ValueSetListQuery
+> = {
+  model: 'ValueSet',
+  targetType: 'ValueSet',
+  action: 'terminology',
+  compartment: 'open',
+
+  newRow(input: ValueSetCreateInput): Writable<'ValueSet'> {
+    return {
+      url: input.url,
+      name: input.name ?? null,
+      description: input.description ?? null,
+      definition: jsonColumn(input.definition),
+    };
+  },
+
+  patchData(patch: ValueSetPatchInput): Partial<Writable<'ValueSet'>> {
+    return {
+      ...(patch.name === undefined ? {} : { name: patch.name }),
+      ...(patch.description === undefined ? {} : { description: patch.description }),
+      ...(patch.definition === undefined ? {} : { definition: jsonColumn(patch.definition) }),
+    };
+  },
+
+  matches(row: ScopedRow<'ValueSet'>, query: ValueSetListQuery): boolean {
+    return query.url === undefined || row.url === query.url;
+  },
+
+  where(query: ValueSetListQuery) {
+    return { ...(query.url === undefined ? {} : { url: query.url }) };
+  },
+
+  sortValue(row: ScopedRow<'ValueSet'>, sort: ValueSetListQuery['sort']): number | string {
+    if (sort === 'createdAt') return row.createdAt.getTime();
+    return row.url;
+  },
+
+  orderBy(query: ValueSetListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ url: order }, { id: 'asc' as const }];
+  },
+};
+
 export const platformSpecs = {
+  valueSets: valueSetSpec,
   formDefinitions: formDefinitionSpec,
   formSubmissions: formSubmissionSpec,
   users: userSpec,

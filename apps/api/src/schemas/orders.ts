@@ -1,4 +1,5 @@
 import {
+  IMAGING_STUDY_STATUSES,
   ABNORMAL_FLAGS,
   DIAGNOSTIC_REPORT_STATUSES,
   DOCUMENT_SOURCES,
@@ -21,7 +22,10 @@ import {
 import { z } from 'zod';
 
 import { readJsonObject } from '../repositories/collection.js';
+import type { ScopedRow } from '../repositories/rows.js';
 import type {
+  ImagingStudyCreateInput,
+  ImagingStudyListQuery,
   DiagnosticReportListQuery,
   DiagnosticReportPatchInput,
   DiagnosticReportRow,
@@ -47,7 +51,12 @@ import type {
   TaskRow,
 } from '../repositories/specs/orders.js';
 
-import { paginationQueryFields, sortOrderField } from './pagination.js';
+import {
+  paginationQueryFields,
+  sortOrderField,
+  windowOf,
+  windowQueryFields,
+} from './pagination.js';
 
 /**
  * The wire contracts for orders, results and the worklists.
@@ -80,19 +89,6 @@ function flag(value: 'true' | 'false' | undefined): boolean | undefined {
 /** An instant column on the wire. Absent stays absent, never becomes the epoch. */
 function isoOrNull(value: Date | null): string | null {
   return value?.toISOString() ?? null;
-}
-
-/** The window every dated list accepts: `from` inclusive, `to` exclusive. */
-const windowQueryFields = {
-  from: z.iso.datetime({ offset: true }).optional(),
-  to: z.iso.datetime({ offset: true }).optional(),
-};
-
-function windowOf(input: { from?: string; to?: string }): { from?: Date; to?: Date } {
-  return {
-    ...(input.from === undefined ? {} : { from: new Date(input.from) }),
-    ...(input.to === undefined ? {} : { to: new Date(input.to) }),
-  };
 }
 
 /**
@@ -576,6 +572,11 @@ export const documentListQuerySchema = z.strictObject({
   status: z.enum(DOCUMENT_STATUSES).optional(),
   category: z.string().min(1).max(64).optional(),
   source: z.enum(DOCUMENT_SOURCES).optional(),
+  /** Exact digest of the stored bytes. Answers "has this arrived before". */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
   sort: z.enum(['receivedAt', 'title', 'createdAt']).default('receivedAt'),
   order: sortOrderField,
 });
@@ -589,6 +590,7 @@ export function toDocumentListQuery(input: DocumentListQueryInput): DocumentList
     ...windowOf(input),
     ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
     ...(input.encounterId === undefined ? {} : { encounterId: input.encounterId }),
+    ...(input.sha256 === undefined ? {} : { sha256: input.sha256 }),
     ...(input.status === undefined ? {} : { status: input.status }),
     ...(input.category === undefined ? {} : { category: input.category }),
     ...(input.source === undefined ? {} : { source: input.source }),
@@ -620,6 +622,51 @@ export const documentPatchSchema = z
 
 export type DocumentPatchBody = z.infer<typeof documentPatchSchema>;
 
+/**
+ * Filing a document from the inbox into a chart.
+ *
+ * A chart is the whole point. A document in the inbox is bytes nobody has
+ * claimed; filing is the act of saying whose chart they belong in, and filing
+ * with no patient moves it out of the triage queue without putting it anywhere
+ * a clinician will find it. That is the failure this workflow exists to
+ * prevent, and it used to be what an empty body did.
+ *
+ * `patientId` is optional here rather than required because a document
+ * delivered by an interface usually already carries one, and making the filer
+ * restate it is how a typo puts a page in the wrong chart. The route refuses
+ * when neither the body nor the document names a patient; what it will not do
+ * is accept the absence of both.
+ *
+ * The other fields are here because triage is usually where they are corrected:
+ * a fax arrives titled by the sending machine and categorised by whatever the
+ * interface guessed, and making the filer patch first and file second is how a
+ * document ends up filed with the wrong title.
+ */
+export const documentFileSchema = z.strictObject({
+  patientId: z.uuid().optional(),
+  encounterId: z.uuid().optional(),
+  category: z.string().min(1).max(64).optional(),
+  title: z.string().min(1).max(256).optional(),
+  sensitivityClass: z.enum(SENSITIVITY_CLASSES).optional(),
+});
+
+export type DocumentFileBody = z.infer<typeof documentFileSchema>;
+
+/** Recording that a newer document replaces this one. */
+export const documentSupersedeSchema = z.strictObject({
+  /** The document that replaces this one. Must already exist in this tenant. */
+  supersededById: z.uuid(),
+});
+
+export type DocumentSupersedeBody = z.infer<typeof documentSupersedeSchema>;
+
+/** Marking a document as something that should not be in the record. */
+export const documentRejectSchema = z.strictObject({
+  reason: z.string().min(1).max(500),
+});
+
+export type DocumentRejectBody = z.infer<typeof documentRejectSchema>;
+
 export function toDocumentPatchInput(body: DocumentPatchBody): DocumentPatchInput {
   return {
     ...(body.patientId === undefined ? {} : { patientId: body.patientId }),
@@ -648,6 +695,9 @@ export const documentDtoSchema = z.strictObject({
   receivedAt: z.string(),
   filedAt: z.string().nullable(),
   filedById: z.uuid().nullable(),
+  /** The document that replaced this one, when this one was superseded. */
+  supersededById: z.uuid().nullable(),
+  errorReason: z.string().nullable(),
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -671,6 +721,8 @@ export function toDocumentDto(row: DocumentRow): DocumentDto {
     sensitivityClass: row.sensitivityClass,
     receivedAt: row.receivedAt.toISOString(),
     filedAt: isoOrNull(row.filedAt),
+    supersededById: row.supersededById,
+    errorReason: row.errorReason,
     filedById: row.filedById,
     expiresAt: isoOrNull(row.expiresAt),
     createdAt: row.createdAt.toISOString(),
@@ -995,5 +1047,159 @@ export function toMessageDto(row: MessageRow): MessageDto {
     readAt: isoOrNull(row.readAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/* ------------------------------------------------------------------ imaging */
+
+/**
+ * An imaging study on the wire.
+ *
+ * There is no field for image data and there should never be one. openrunic is
+ * not a PACS: this record says a study exists, ties it to the order and the
+ * chart, and carries where a viewer retrieves it. The images live in the system
+ * built for gigabytes of them.
+ */
+export const imagingStudyDtoSchema = z.strictObject({
+  id: z.uuid(),
+  patientId: z.uuid(),
+  encounterId: z.uuid().nullable(),
+  serviceRequestId: z.uuid().nullable(),
+  diagnosticReportId: z.uuid().nullable(),
+  /** DICOM Study Instance UID (0020,000D). */
+  studyInstanceUid: z.string(),
+  /** Shared by the order, the modality worklist and the PACS. */
+  accessionNumber: z.string().nullable(),
+  modalities: z.array(z.string()),
+  description: z.string().nullable(),
+  status: z.enum(IMAGING_STUDY_STATUSES),
+  startedAt: z.string(),
+  numberOfSeries: z.int(),
+  numberOfInstances: z.int(),
+  /** Normally a DICOMweb WADO-RS study URL. Null when the viewer resolves by UID. */
+  retrieveUrl: z.url().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ImagingStudyDto = z.infer<typeof imagingStudyDtoSchema>;
+
+export function toImagingStudyDto(row: ScopedRow<'ImagingStudy'>): ImagingStudyDto {
+  return {
+    id: row.id,
+    patientId: row.patientId,
+    encounterId: row.encounterId,
+    serviceRequestId: row.serviceRequestId,
+    diagnosticReportId: row.diagnosticReportId,
+    studyInstanceUid: row.studyInstanceUid,
+    accessionNumber: row.accessionNumber,
+    modalities: row.modalities,
+    description: row.description,
+    status: row.status,
+    startedAt: row.startedAt.toISOString(),
+    numberOfSeries: row.numberOfSeries,
+    numberOfInstances: row.numberOfInstances,
+    retrieveUrl: row.retrieveUrl,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * A DICOM UID: dotted decimal, 64 characters at most.
+ *
+ * Checked rather than taken as any string, because this value is the study's
+ * identity and is unique per organisation. A malformed one creates a row that
+ * nothing arriving from a PACS will ever match, and the study looks recorded.
+ */
+const dicomUid = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^\d+(\.\d+)*$/u, 'must be a dotted-decimal DICOM UID');
+
+export const imagingStudyCreateSchema = z.strictObject({
+  patientId: z.uuid(),
+  encounterId: z.uuid().optional(),
+  serviceRequestId: z.uuid().optional(),
+  studyInstanceUid: dicomUid,
+  accessionNumber: z.string().min(1).max(64).optional(),
+  /** At least one: a study with no modality cannot be routed to a reading list. */
+  modalities: z.array(z.string().min(1).max(16)).min(1).max(20),
+  description: z.string().min(1).max(256).optional(),
+  status: z.enum(IMAGING_STUDY_STATUSES).optional(),
+  startedAt: z.iso.datetime({ offset: true }),
+  numberOfSeries: z.int().nonnegative().max(10_000).optional(),
+  numberOfInstances: z.int().nonnegative().max(1_000_000).optional(),
+  retrieveUrl: z.url().max(2048).optional(),
+});
+
+export type ImagingStudyCreateBody = z.infer<typeof imagingStudyCreateSchema>;
+
+export function toImagingStudyCreate(body: ImagingStudyCreateBody): ImagingStudyCreateInput {
+  return {
+    patientId: body.patientId,
+    ...(body.encounterId === undefined ? {} : { encounterId: body.encounterId }),
+    ...(body.serviceRequestId === undefined ? {} : { serviceRequestId: body.serviceRequestId }),
+    studyInstanceUid: body.studyInstanceUid,
+    ...(body.accessionNumber === undefined ? {} : { accessionNumber: body.accessionNumber }),
+    modalities: body.modalities,
+    ...(body.description === undefined ? {} : { description: body.description }),
+    ...(body.status === undefined ? {} : { status: body.status }),
+    startedAt: new Date(body.startedAt),
+    ...(body.numberOfSeries === undefined ? {} : { numberOfSeries: body.numberOfSeries }),
+    ...(body.numberOfInstances === undefined ? {} : { numberOfInstances: body.numberOfInstances }),
+    ...(body.retrieveUrl === undefined ? {} : { retrieveUrl: body.retrieveUrl }),
+  };
+}
+
+/** `studyInstanceUid` and `patientId` are absent on purpose; see the patch type. */
+export const imagingStudyPatchSchema = z
+  .strictObject({
+    encounterId: z.uuid().optional(),
+    serviceRequestId: z.uuid().optional(),
+    diagnosticReportId: z.uuid().optional(),
+    accessionNumber: z.string().min(1).max(64).optional(),
+    modalities: z.array(z.string().min(1).max(16)).min(1).max(20).optional(),
+    description: z.string().min(1).max(256).optional(),
+    status: z.enum(IMAGING_STUDY_STATUSES).optional(),
+    numberOfSeries: z.int().nonnegative().max(10_000).optional(),
+    numberOfInstances: z.int().nonnegative().max(1_000_000).optional(),
+    retrieveUrl: z.url().max(2048).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'the patch must change at least one field',
+  });
+
+export type ImagingStudyPatchBody = z.infer<typeof imagingStudyPatchSchema>;
+
+export const imagingStudyListQuerySchema = z.strictObject({
+  ...paginationQueryFields,
+  ...windowQueryFields,
+  patientId: z.uuid().optional(),
+  encounterId: z.uuid().optional(),
+  serviceRequestId: z.uuid().optional(),
+  accessionNumber: z.string().min(1).max(64).optional(),
+  studyInstanceUid: dicomUid.optional(),
+  status: z.enum(IMAGING_STUDY_STATUSES).optional(),
+  sort: z.enum(['startedAt', 'createdAt']).default('startedAt'),
+  order: sortOrderField,
+});
+
+export type ImagingStudyListQueryInput = z.infer<typeof imagingStudyListQuerySchema>;
+
+export function toImagingStudyListQuery(input: ImagingStudyListQueryInput): ImagingStudyListQuery {
+  return {
+    page: input.page,
+    pageSize: input.pageSize,
+    ...windowOf(input),
+    ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
+    ...(input.encounterId === undefined ? {} : { encounterId: input.encounterId }),
+    ...(input.serviceRequestId === undefined ? {} : { serviceRequestId: input.serviceRequestId }),
+    ...(input.accessionNumber === undefined ? {} : { accessionNumber: input.accessionNumber }),
+    ...(input.studyInstanceUid === undefined ? {} : { studyInstanceUid: input.studyInstanceUid }),
+    ...(input.status === undefined ? {} : { status: input.status }),
+    sort: input.sort,
+    order: input.order,
   };
 }

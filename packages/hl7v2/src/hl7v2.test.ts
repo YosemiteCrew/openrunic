@@ -896,3 +896,157 @@ describe('the cost of parsing', () => {
     expect(elapsed).toBeLessThan(2_000);
   });
 });
+
+/**
+ * SEGMENT INJECTION.
+ *
+ * A field carrying a raw carriage return is a field that ends its segment and
+ * starts another, so a value with `\rOBX|...` in it does not corrupt one message
+ * - it adds a result to it, and the receiving system files that result under the
+ * patient and order the real segments named. The values that reach these
+ * builders are names, lot numbers, control ids and free text, all of which
+ * arrive from a chart, a request body or another organisation's message.
+ *
+ * Two properties are asserted for every one of them: the message still has
+ * exactly the segments the builder wrote, and the value comes back out of the
+ * parser unchanged. The second is what stops the fix being "strip the
+ * character", which would silently rewrite clinical text.
+ */
+describe('a value that tries to end its own segment', () => {
+  const CARRIAGE = '\r';
+  const injected = (payload: string): string => `Legitimate${CARRIAGE}${payload}`;
+
+  it('escapes a carriage return rather than emitting it', () => {
+    const escaped = escapeValue('before\rafter', DEFAULT_DELIMITERS);
+
+    expect(escaped).toBe('before\\X0D\\after');
+    expect(unescapeValue(escaped, DEFAULT_DELIMITERS)).toBe('before\rafter');
+  });
+
+  it('escapes a line feed too, because the parser accepts one as a separator', () => {
+    const escaped = escapeValue('before\nafter', DEFAULT_DELIMITERS);
+
+    expect(escaped).toBe('before\\X0A\\after');
+    expect(unescapeValue(escaped, DEFAULT_DELIMITERS)).toBe('before\nafter');
+  });
+
+  it('keeps a control id from appending segments to a VXU', () => {
+    const vxu: VxuMessage = {
+      header: { ...HEADER, controlId: injected('PID|1||FORGED^^^^MR|') },
+      patient: PATIENT,
+      immunisations: [
+        {
+          sequence: 1,
+          administeredAt: '2026-08-14T09:00:00.000Z',
+          vaccine: { code: '08', display: 'Hep B' },
+          completionStatus: 'CP',
+        },
+      ],
+    };
+
+    const raw = buildVxu(vxu);
+    const parsed = parseMessage(raw);
+
+    expect(parsed.segments.map((segment) => segment.id)).toEqual(['MSH', 'PID', 'ORC', 'RXA']);
+    expect(parseVxu(raw).header.controlId).toBe(vxu.header.controlId);
+  });
+
+  it('keeps a lot number from appending an RXA to a VXU', () => {
+    const vxu: VxuMessage = {
+      header: HEADER,
+      patient: PATIENT,
+      immunisations: [
+        {
+          sequence: 1,
+          administeredAt: '2026-08-14T09:00:00.000Z',
+          vaccine: { code: '08', display: 'Hep B' },
+          lotNumber: injected('RXA|0|2|20260814090000||99^Forged||||||||||||||CP'),
+          completionStatus: 'CP',
+        },
+      ],
+    };
+
+    const raw = buildVxu(vxu);
+
+    expect(segmentsNamed(parseMessage(raw), 'RXA')).toHaveLength(1);
+    expect(parseVxu(raw).immunisations[0]?.lotNumber).toBe(vxu.immunisations[0]?.lotNumber);
+  });
+
+  it('keeps a patient name from appending a PID to any message', () => {
+    const adt: AdtMessage = {
+      header: HEADER,
+      event: 'A01',
+      occurredAt: '2026-08-14T09:00:00.000Z',
+      patient: { ...PATIENT, familyName: injected('PID|1||FORGED^^^^MR|') },
+    };
+
+    const raw = buildAdt(adt);
+
+    expect(segmentsNamed(parseMessage(raw), 'PID')).toHaveLength(1);
+    expect(parseAdt(raw).patient.familyName).toBe(adt.patient.familyName);
+  });
+
+  /**
+   * The forwarding case, which is the one that needs no attacker inside the
+   * practice at all. HL7 lets a sender write a carriage return as `\X0D\`, the
+   * parser decodes it to the real character as it must, and a naive re-emit then
+   * turns that decoded value back into syntax. Parse, then build, then parse.
+   */
+  it('survives a hostile value that arrived escaped in an inbound message', () => {
+    const hostile = 'MSH|^~\\&|LAB|EXT|OPENRUNIC|PRACTICE|20260814093000||ORU^R01|C1|P|2.5.1\r';
+    const pid = 'PID|1||OR-1^^^^MR|| Patientsson^Testina\r';
+    const obr = 'OBR|1|PLACER1||1234-5^Glucose\r';
+    // `\X0D\` is a carriage return the standard allows a sender to write.
+    const obx = 'OBX|1|NM|1234-5^Glucose||5.4\\X0D\\OBX|2|NM|9999-9^Forged||99|||A||F\r';
+
+    const inbound = parseOru(hostile + pid + obr + obx);
+    expect(inbound.orders[0]?.results[0]?.value).toContain('\r');
+
+    const forwarded = parseMessage(buildOru(inbound));
+
+    expect(segmentsNamed(forwarded, 'OBX')).toHaveLength(1);
+    expect(parseOru(buildOru(inbound)).orders[0]?.results[0]?.value).toBe(
+      inbound.orders[0]?.results[0]?.value
+    );
+  });
+
+  it('keeps an acknowledged control id from appending an MSA', () => {
+    const raw = buildAck({
+      header: HEADER,
+      code: 'AA',
+      acknowledgedControlId: injected('MSA|AE|OTHER|Rejected'),
+    });
+
+    expect(segmentsNamed(parseMessage(raw), 'MSA')).toHaveLength(1);
+    expect(parseAck(raw).acknowledgedControlId).toContain('\r');
+  });
+
+  /**
+   * The backstop, for a segment this package did not build. `buildSegment`
+   * escapes, so nothing inside the codec can reach this - but a caller holding
+   * the exported `Segment` type can write `fields` directly, and a future
+   * builder could too. It refuses rather than escaping, because a raw separator
+   * here means the caller and the renderer disagree about whether the field
+   * holds data or syntax.
+   */
+  it('refuses to render a segment somebody assembled without escaping', () => {
+    const message = parseMessage('MSH|^~\\&|S|F|R|F|20260814093000||ADT^A01|C1|P|2.5.1');
+    const forged = { id: 'PID', fields: ['', '1', '', 'OR-1\rOBX|1|NM|X||9'] };
+
+    expect(() => renderMessage({ ...message, segments: [...message.segments, forged] })).toThrow(
+      Hl7Error
+    );
+  });
+
+  it('still writes MSH-2 as the delimiters it declares, not as escaped text', () => {
+    const raw = buildAdt({
+      header: HEADER,
+      event: 'A01',
+      occurredAt: '2026-08-14T09:00:00.000Z',
+      patient: PATIENT,
+    });
+
+    expect(raw.startsWith('MSH|^~\\&|')).toBe(true);
+    expect(readDelimiters(raw.split('\r')[0] ?? '')).toEqual(DEFAULT_DELIMITERS);
+  });
+});

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createSessionAwareFetch, endSession, restoreSession, signIn } from '@/lib/auth/client';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 import { ABSOLUTE_LIFETIME_MS } from '@/lib/auth/session';
 import type { Session } from '@/lib/auth/session';
 import { heldSession, holdSession } from '@/lib/auth/store';
@@ -56,7 +57,7 @@ describe('signing in', () => {
 
     expect(fetchImpl).toHaveBeenCalledWith('/session', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER },
       body: JSON.stringify({ token: 'dev-clinician-a' }),
     });
   });
@@ -117,6 +118,33 @@ describe('restoring a session after a page load', () => {
   });
 });
 
+/**
+ * The marker every call carries, and why it is on all three verbs.
+ *
+ * `GET /session` re-stamps the idle clock, and the cookie is `SameSite=Lax`, so
+ * a cross-site top-level navigation carries it - a page a clinician visits could
+ * otherwise hold the session open past the unattended-workstation window. A
+ * navigation cannot set a header, which is what makes this the check. It goes on
+ * POST and DELETE too because a marker that some calls carry and others do not
+ * is one somebody eventually drops from the call that needed it.
+ */
+describe('the same-origin marker', () => {
+  it('is on every call to the session endpoint', async () => {
+    fetchImpl.mockResolvedValue(jsonResponse(SESSION));
+    await signIn('dev-clinician-a');
+    await restoreSession();
+    fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
+    await endSession();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    for (const [, init] of fetchImpl.mock.calls) {
+      expect((init as RequestInit | undefined)?.headers).toMatchObject({
+        [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER,
+      });
+    }
+  });
+});
+
 describe('signing out', () => {
   it('clears the token from this tab and revokes the cookie', async () => {
     holdSession(SESSION);
@@ -125,7 +153,10 @@ describe('signing out', () => {
     await endSession();
 
     expect(heldSession()).toBeNull();
-    expect(fetchImpl).toHaveBeenCalledWith('/session', { method: 'DELETE' });
+    expect(fetchImpl).toHaveBeenCalledWith('/session', {
+      method: 'DELETE',
+      headers: { [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER },
+    });
   });
 
   it('cannot be undone by a restore that started at the same moment', async () => {

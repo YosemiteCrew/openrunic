@@ -285,7 +285,12 @@ function serviceSegments(request: AuthorisationRequest): readonly Segment[] {
     // `ABK` is the principal diagnosis and `ABF` each one after it. Sending
     // every code as principal is a common defect and produces a request the
     // payer reads as several unrelated conditions.
-    out.push(segment('HI', `${index === 0 ? 'ABK' : 'ABF'}:${code}`));
+    // Components, not a joined string with a hardcoded colon. The colon is only
+    // the DEFAULT component separator - a partner may declare another, and this
+    // was emitting a literal one regardless - and passing the parts lets the
+    // writer check the diagnosis code itself for a delimiter rather than seeing
+    // an element that already contains one.
+    out.push(segment('HI', [index === 0 ? 'ABK' : 'ABF', code]));
   }
 
   if (service.serviceDate !== undefined) {
@@ -303,7 +308,7 @@ function serviceSegments(request: AuthorisationRequest): readonly Segment[] {
 
   if (service.procedureCode !== undefined) {
     out.push(
-      segment('SV1', `HC:${service.procedureCode}`, '', 'UN', String(service.quantity ?? 1))
+      segment('SV1', ['HC', service.procedureCode], '', 'UN', String(service.quantity ?? 1))
     );
   }
 
@@ -402,7 +407,12 @@ export function decode278(segments: readonly Segment[]): Result<AuthorisationRes
     const decision = pending.decision;
     if (decision !== undefined) {
       responses.push({
-        traceNumber: pending.traceNumber ?? trace,
+        // Never a fallback to the running trace. An HCR is refused outright
+        // without one, so a decision that reaches here always carries the trace
+        // that was on its own level; a `?? trace` here would be the same
+        // inheritance the HCR branch exists to refuse, reintroduced one function
+        // away.
+        traceNumber: pending.traceNumber ?? '',
         decision,
         reasonCodes: pending.reasonCodes,
         ...(pending.authorisationNumber === undefined
@@ -434,6 +444,25 @@ export function decode278(segments: readonly Segment[]): Result<AuthorisationRes
       // than as one with the last payer's fields on it.
       flush();
       open = true;
+      // The trace is CONSUMED here, not merely read. It rides on the 2000E
+      // level the decision answers about, one per decision, so a second HCR
+      // arriving without its own TRN has nothing to be matched by - and the
+      // accumulator used to hand it the previous decision's. That is the
+      // dangerous shape: the caller matches prior-authorisation results by this
+      // field, so an inherited one posts a denial, an approval or an
+      // authorisation number against a different request and therefore a
+      // different patient. A wrong answer, where a refusal is only a missing
+      // one.
+      if (trace === '') {
+        return err({
+          kind: 'missing_segment',
+          message:
+            'an HCR decision arrived with no TRN of its own, so there is nothing to match this response to the request that produced it',
+          tag: 'TRN',
+        });
+      }
+      const decisionTrace = trace;
+      trace = '';
       const code = simpleAt(current, 1);
       const decision = DECISIONS[code];
       if (decision === undefined) {
@@ -446,7 +475,7 @@ export function decode278(segments: readonly Segment[]): Result<AuthorisationRes
         });
       }
       pending.decision = decision;
-      pending.traceNumber = trace;
+      pending.traceNumber = decisionTrace;
       const reason = simpleAt(current, 3);
       if (reason !== '') pending.reasonCodes.push(reason);
       continue;

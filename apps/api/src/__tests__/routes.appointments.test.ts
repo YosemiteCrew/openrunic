@@ -92,6 +92,30 @@ describe('GET /bff/v0/appointments', () => {
     expect(((await res.json()) as ProblemDocument).detail).toContain('facility');
   });
 
+  it('omits an ungranted facility from a list that names no facility', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(100) }),
+      makeAppointmentRow({ id: testId(101), facilityId: DEMO_FACILITY_B })
+    );
+
+    // The check above only fires when the caller names a facility, so before the
+    // repository narrowed lists this query - or any of the other filters - was
+    // a way to read the schedule of every site in the organisation. There is
+    // nothing for the route to refuse here: the caller asked no wrong question,
+    // so the answer is the rows they may see rather than a 403.
+    const res = await app.request('/bff/v0/appointments', {
+      headers: bearer(TOKENS.frontDeskA),
+    });
+
+    expect(res.status).toBe(200);
+    const page = (await res.json()) as { data: { id: string }[]; page: { total: number } };
+    expect(page.data.map((row) => row.id)).toEqual([testId(100)]);
+    expect(page.page.total).toBe(1);
+  });
+
   it('denies a principal whose roles grant no permissions', async () => {
     const { app } = createTestApp();
     const res = await app.request('/bff/v0/appointments', { headers: bearer(UNPRIVILEGED_TOKEN) });

@@ -255,6 +255,7 @@ export const stockLotSpec: CollectionSpec<
   targetType: 'StockLot',
   action: 'stock.lot',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   compartment: 'closed',
 
   newRow(input: StockLotCreateInput): Writable<'StockLot'> {
@@ -382,6 +383,7 @@ export const stockPostingSpec: CollectionSpec<
   // Declared for the audit stamp, not for narrowing. See the header.
   patientColumn: 'patientId',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   encounterColumn: 'encounterId',
   compartment: 'closed',
 
@@ -505,6 +507,7 @@ export const stockMovementSpec: CollectionSpec<
   targetType: 'StockMovement',
   action: 'stock.movement',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   compartment: 'closed',
 
   newRow(input: StockMovementCreateInput): Writable<'StockMovement'> {

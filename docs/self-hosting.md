@@ -351,10 +351,13 @@ afterwards. Anything already on screen stays readable.
 
 Read this section before openrunic sees a real patient.
 
-**There is no authentication.** The tokens above are published in the source.
-Anyone who can reach port 3000 or port 4000 can read and change everything.
-Until a login system ships, openrunic must only run on a machine that only
-you can reach.
+**Configure an identity provider before this holds a real record.** Until you
+do, the tokens above are published in the source, and anyone who can reach port
+3000 or port 4000 can read and change everything. Setting `OIDC_ISSUER`,
+`OIDC_AUDIENCE` and `OIDC_JWKS_URI` makes the API verify real tokens, and
+`OIDC_CLIENT_ID` with `OIDC_REDIRECT_URI` gives staff a sign-in that redirects
+to your provider. See `.env.example` for the full list. Without them, openrunic
+must only run on a machine that only you can reach.
 
 **Do not put it on the internet.** Not behind a password-protected reverse
 proxy either. The gap is not the front door; there is no lock on any of the
@@ -373,6 +376,41 @@ in this repository. `pnpm setup:selfhost` replaces it with a generated one, and
 **Keep the containers non-root.** They already are - everything runs as an
 unprivileged user with id 10001. If you bind-mount a directory into a container,
 it has to be readable by that id.
+
+**The API connects as its own database role, and it matters that it is not the
+owner.** Every table carries a row-level security policy that filters on the
+organisation the connection declared, and those policies are the last line of
+tenant isolation: the one that still holds when something above it goes wrong. A
+Postgres SUPERUSER bypasses them entirely, silently and completely, and
+`POSTGRES_USER` is a superuser because that is what the official image's initdb
+creates. So the API uses `OPENRUNIC_DB_APP_USER`, created on a first run by
+`ops/postgres/initdb/10-app-role.sh` and granted what it needs by the migration
+that creates the policies. The `migrate` container keeps the owner, because it
+creates tables and the API must not be able to.
+
+That script runs once, on an empty data directory. **A stack upgrading a volume
+that already exists has to create the role by hand**, because initdb will not
+run again. Open a psql session on the running database:
+
+```bash
+docker compose exec -it postgres psql -U openrunic -d openrunic
+```
+
+Create the role without a password, then set one with psql's own `\password`.
+That is not fussiness: `\password` prompts, hashes the value in the client, and
+sends only the hash, so the plaintext reaches neither your shell history, nor the
+server log, nor this page.
+
+```sql
+CREATE ROLE openrunic_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE INHERIT;
+GRANT CONNECT ON DATABASE openrunic TO openrunic_app;
+\password openrunic_app
+```
+
+Then put the same value in `OPENRUNIC_DB_APP_PASSWORD`, re-run `migrate` so the
+grants in the row-level security migration are applied to the new role, and
+restart the API. `packages/database/README.md` has the query that verifies it
+worked.
 
 ---
 

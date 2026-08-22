@@ -61,3 +61,12 @@ export function required<T>(value: T | null, message: string): T {
   }
   return value;
 }
+
+/** The `{id}` path parameter, described the same way on every route that has one. */
+export function idParam(subject: string): {
+  name: string;
+  description: string;
+  schema: z.ZodType;
+} {
+  return { name: 'id', description: `${subject} id (UUIDv7).`, schema: idParamSchema };
+}

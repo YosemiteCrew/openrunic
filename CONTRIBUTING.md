@@ -99,7 +99,10 @@ packages/clinical-safety  Allergy and duplicate-therapy screening at prescribing
 packages/growth           Growth percentiles from CDC LMS reference data
 packages/forms-engine     Form definitions, validation, rendering, promotion
 packages/inventory        Stock, lots and dispensing from an append-only ledger
+packages/collections      Patient-balance collections: dunning schedule, ageing, write-off
+packages/mips             MIPS scoring on top of the quality measures
 packages/pricing          Fee schedules and sliding-scale discounts
+packages/quality          Electronic clinical quality measures (eCQM)
 packages/adapters         Partner seams (eRx, payments, video, clearinghouse) with demo mocks
 
 packages/agent            The assistant loop, approval gating and budget caps (ADR-0005)

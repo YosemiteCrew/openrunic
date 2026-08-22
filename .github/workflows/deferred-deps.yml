@@ -28,17 +28,38 @@ concurrency:
 
 permissions: {}
 
+# WHY THIS IS TWO JOBS.
+#
+# The first one installs `@latest` of packages this repository has deliberately
+# not adopted and then runs lint, tests and type-check over them. Every one of
+# those is arbitrary code from a package chosen for being NEW: install scripts,
+# plugin entry points, transitive dependencies nobody has reviewed. Testing an
+# unadopted major is exactly the act of running code you do not trust, and that
+# is fine - it is what the job is for.
+#
+# What must not also be true is that the same job holds a credential. It used to:
+# the reporting step ran in the same job with `issues: write` and `GH_TOKEN`, one
+# step after the untrusted install. A step does not need to be handed a secret to
+# reach one that arrives later in its job - appending to `GITHUB_ENV` or
+# `GITHUB_PATH` is enough to have a subsequent shell step source an attacker's
+# script or resolve a planted `gh`. And the retry script deliberately swallows
+# failures so the report always gets written, so a package that broke on purpose
+# would not even stop the credentialed step from running.
+#
+# So the untrusted half runs with `permissions: {}` and no token and hands its
+# result over as an artifact, and the half that writes to the tracking issue
+# checks out nothing, installs nothing and runs only `gh`. Neither job can be
+# both.
 jobs:
   retry:
     name: Retry deferred majors
     runs-on: ubuntu-latest
     # Five gate runs, each of which may install a fresh dependency tree.
     timeout-minutes: 45
-    # The top-level `permissions: {}` denies everything; this job re-grants only
-    # the two scopes its steps use, each spelled out so the grant is auditable.
+    # Read only, and no `GH_TOKEN` anywhere in this job. Everything after the
+    # install step is untrusted code by construction.
     permissions:
       contents: read # checkout reads the ref; nothing here writes to the repo
-      issues: write # edit, comment on or open the deferred-upgrade tracking issue
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,6 +72,31 @@ jobs:
 
       - name: Try each held upgrade
         run: node .github/scripts/retry-deferred.mjs
+
+      - name: Hand the report to the reporting job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deferred-report
+          path: deferred-report.md
+          if-no-files-found: error
+          retention-days: 7
+
+  report:
+    name: Record the findings
+    needs: retry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only job with a credential, and the only one that runs no repository
+    # or dependency code: no checkout, no install, no node. Its whole input is a
+    # markdown file produced by the job above, and markdown in an issue body is
+    # data rather than something this job executes.
+    permissions:
+      issues: write # edit, comment on or open the deferred-upgrade tracking issue
+    steps:
+      - name: Download the report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deferred-report
 
       - name: Record the findings in the tracking issue
         env:

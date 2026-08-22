@@ -32,10 +32,24 @@ import {
  * here opens that screen, so the information is one tap away by a path that
  * does not run through a model.
  *
- * **No free text from the chart.** Clinician notes on a row are not projected.
- * A patient may read them in the portal; routing them through a model turns
+ * **No free text from the chart.** Clinician notes on a row are not projected -
+ * not the dose line on a medicine, not the recorded reaction on an allergy. A
+ * patient may read both in the portal; routing them through a model turns
  * clinician-authored prose into model-authored prose the first time it is
  * paraphrased, and the reader cannot tell which one they got.
+ *
+ * The rule was written here first and then broken by the implementation, which
+ * projected both. Two things made that worse than an ordinary miss. The agent
+ * loop appends this tool's complete output to the model conversation, so on a
+ * remote endpoint the prose left the deployment as well as the practice. And
+ * both fields are free text somebody else composed - a member of staff, or a
+ * document imported from another organisation - so a hostile sentence in an
+ * allergy reaction or a dose line arrived in the model's context as instructions
+ * it had no way to tell from the surrounding retrieval.
+ *
+ * The fields are absent from the row schemas rather than merely absent from the
+ * projection, so the free text is dropped at the parse and cannot be reinstated
+ * by an edit to the mapping alone.
  *
  * **No results.** Explaining what a measured value means is interpretation
  * rather than retrieval, and ADR-0005 records patient-facing result
@@ -84,11 +98,18 @@ const conditionRowSchema = z.object({
   recordedAt: z.string(),
 });
 
+/**
+ * `sigText` and `reactionText` are deliberately absent from these two schemas.
+ *
+ * Zod strips what it is not told about, so the chart's free text is dropped at
+ * the parse rather than merely left out of the projection below - which means it
+ * cannot be reinstated by a later edit to the mapping without somebody first
+ * putting the field back here, next to this note.
+ */
 const medicineRowSchema = z.object({
   id: z.string(),
   patientId: z.string(),
   display: z.string(),
-  sigText: z.string().nullable(),
   status: z.string(),
   effectiveStart: z.string().nullable(),
 });
@@ -97,7 +118,6 @@ const allergyRowSchema = z.object({
   id: z.string(),
   patientId: z.string(),
   substanceDisplay: z.string(),
-  reactionText: z.string().nullable(),
   clinicalStatus: z.string(),
   recordedAt: z.string(),
 });
@@ -163,10 +183,13 @@ export const recordList = defineTool({
           id: row.id,
           label: row.display,
           fields: [
-            /* The dose line is the practice's own words, copied across
-                 unchanged. It is the one field here a reader acts on, so it is
-                 never reworded. */
-            ...(row.sigText === null ? [] : [{ name: 'How to take it', value: row.sigText }]),
+            /* The dose line is NOT here. It is the practice's own words and the
+                 one field a reader acts on, which is exactly why it must not
+                 pass through a model: the loop appends this tool's whole output
+                 to the conversation, so "copied across unchanged" describes the
+                 projection and not what happens afterwards. The citation opens
+                 the portal screen that shows it, one tap away by a path with no
+                 model in it. */
             { name: 'Status', value: plainStatus(row.status) },
             ...(row.effectiveStart === null
               ? []
@@ -190,9 +213,11 @@ export const recordList = defineTool({
           id: row.id,
           label: row.substanceDisplay,
           fields: [
-            ...(row.reactionText === null
-              ? []
-              : [{ name: 'What happened', value: row.reactionText }]),
+            /* The recorded reaction is not projected either, and for a second
+                 reason on top of the first: it is free text a member of staff or
+                 an inbound document import wrote, so forwarding it verbatim into
+                 the conversation is a prompt-injection path into a
+                 patient-facing answer. */
             { name: 'Status', value: plainStatus(row.clinicalStatus) },
             { name: 'Written down on', value: dayOf(row.recordedAt) },
           ],

@@ -10,7 +10,7 @@
 <h1 align="center">Open-Source Operating System for Human Health</h1>
 
 <p align="center">
-  <b>A free, self-hostable electronic medical record</b><br />
+  <b>A free, self-hostable agent first electronic medical record</b><br />
   and the open platform that grows around it.
 </p>
 
@@ -141,10 +141,15 @@ along or further behind than it is.
 Two things follow from a version that still starts with a zero, and they matter more than the
 feature list:
 
-> **There is no authentication.** `OPENRUNIC_AUTH_MODE` accepts exactly one value, `demo-tokens`,
-> which maps a short list of tokens onto demo users. Those tokens are published in this
-> repository's source, so anyone who can reach a running instance can read everything in it, and
-> the API prints that warning on every boot. There is no identity provider yet.
+> **Authentication is OIDC, and it is off until you configure it.** Point `OIDC_ISSUER`,
+> `OIDC_AUDIENCE` and `OIDC_JWKS_URI` at your provider and the API verifies every bearer token
+> against its published keys; add `OIDC_CLIENT_ID` and `OIDC_REDIRECT_URI` and the staff
+> application signs people in with the authorization code flow and PKCE. openrunic issues no
+> credentials of its own and stores no passwords.
+>
+> A deployment that configures none of that falls back to `OPENRUNIC_AUTH_MODE=demo-tokens`, which
+> maps a short list of tokens published in this repository onto demo users. The API prints a banner
+> saying so on every boot. That path is for a laptop, not for a network anyone else can reach.
 >
 > **APIs, schemas, and package boundaries will change without notice. Do not run this in
 > production, and do not put real patient data into it.**

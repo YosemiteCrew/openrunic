@@ -22,6 +22,10 @@ export const SYSTEMS = {
   nucc: 'http://nucc.org/provider-taxonomy',
   ncpdp: 'http://terminology.hl7.org/NamingSystem/NCPDPProviderIdentificationNumber',
   identifierType: 'http://terminology.hl7.org/CodeSystem/v2-0203',
+  /** DICOM unique identifiers, carried as `urn:oid:` values. */
+  dicomUid: 'urn:dicom:uid',
+  /** DICOM modality codes: CT, MR, US, CR, DX. Published by DICOM, not licensed. */
+  dicomModality: 'http://dicom.nema.org/resources/ontology/DCM',
   actCode: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
   actReason: 'http://terminology.hl7.org/CodeSystem/v3-ActReason',
   actSite: 'http://terminology.hl7.org/CodeSystem/v3-ActSite',

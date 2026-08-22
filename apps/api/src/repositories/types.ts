@@ -1,6 +1,8 @@
 import type {
   ADMINISTRATIVE_GENDERS,
   APPOINTMENT_CREATED_VIA,
+  IMAGING_STUDY_STATUSES,
+  TELEHEALTH_VISIT_STATUSES,
   APPOINTMENT_STATUSES,
   SENSITIVITY_CLASSES,
 } from '@openrunic/database';
@@ -36,6 +38,8 @@ export type AdministrativeGender = (typeof ADMINISTRATIVE_GENDERS)[number];
 export type SensitivityClass = (typeof SENSITIVITY_CLASSES)[number];
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 export type AppointmentCreatedVia = (typeof APPOINTMENT_CREATED_VIA)[number];
+export type ImagingStudyStatus = (typeof IMAGING_STUDY_STATUSES)[number];
+export type TelehealthVisitStatus = (typeof TELEHEALTH_VISIT_STATUSES)[number];
 
 export type { Page, SortOrder, BaseQuery } from './collection.js';
 export type { RequestScope } from './registry.js';

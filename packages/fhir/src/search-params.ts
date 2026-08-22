@@ -36,6 +36,7 @@ export type SupportedResourceType =
   | 'DiagnosticReport'
   | 'ServiceRequest'
   | 'Specimen'
+  | 'ImagingStudy'
   | 'DocumentReference'
   | 'Task'
   | 'Claim'
@@ -415,6 +416,30 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
       codeParam('Orderable code from the compendium.'),
       dateParam('authored', 'When the order was placed.'),
       statusParam('Order status.'),
+    ],
+  },
+  ImagingStudy: {
+    resourceType: 'ImagingStudy',
+    // No US Core profile: openrunic records that a study exists and where a
+    // viewer retrieves it, and does not describe its series or instances,
+    // which the profile expects. Claiming conformance to a profile this does
+    // not meet would send an app looking for elements that are not here.
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      {
+        name: 'accession',
+        type: 'token',
+        documentation:
+          'The accession number the order, the modality worklist and the PACS all carry.',
+        mustSupport: false,
+      },
+      {
+        name: 'date',
+        type: 'date',
+        documentation: 'When the study was started.',
+        mustSupport: false,
+      },
     ],
   },
   Specimen: {

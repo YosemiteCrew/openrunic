@@ -1,12 +1,21 @@
 import { serve } from '@hono/node-server';
+import { AdapterRegistry } from '@openrunic/adapters';
 
 import { createApp, type CreateAppOptions } from './app.js';
 import { createOidcPrincipalResolver } from './auth/oidc-resolver.js';
-import { oidcSettings, parseEnv } from './env.js';
+import { oidcSettings, parseEnv, smartLaunchSettings } from './env.js';
 import { buildServerWiring, parseWiringEnv, type ServerWiring } from './server/wiring.js';
 
 const env = parseEnv();
 const oidc = oidcSettings(env);
+
+/**
+ * Read outside the wiring branch below because it is not a production concern.
+ * A developer pointing a SMART app at a local API needs the launch published
+ * just as much as a real install does, and the document is the only place an
+ * app can learn where to go.
+ */
+const smartLaunch = smartLaunchSettings(env);
 
 /**
  * Development keeps `createApp`'s defaults - an in-memory store and the demo
@@ -33,8 +42,17 @@ const wiring: ServerWiring | null =
  */
 const options: CreateAppOptions =
   wiring === null
-    ? {}
+    ? { smartLaunch }
     : {
+        smartLaunch,
+        // Empty, and that is a real answer rather than a gap: this deployment
+        // does not do video, so every telehealth route says 501 rather than
+        // opening a room at an address that can never resolve. `createApp`
+        // refuses to fall back to its development registry under
+        // NODE_ENV=production, which is why this is passed explicitly. A
+        // deployment with a vendor registers it here and awaits its `init`
+        // before `serve` is called.
+        adapters: new AdapterRegistry(),
         repositories: wiring.repositories,
         auditSink: wiring.auditSink,
         readiness: wiring.readiness,

@@ -343,6 +343,8 @@ function seedChart(dataset: MemoryDataset): void {
     receivedAt: FIXED_NOW,
     filedAt: FIXED_NOW,
     filedById: PROVIDER,
+    supersededById: null,
+    errorReason: null,
     expiresAt: null,
   });
 
@@ -401,6 +403,23 @@ function seedChart(dataset: MemoryDataset): void {
     userId: PROVIDER,
     roleId: NURSE_ROLE,
     facilityId: null,
+  });
+
+  seed(dataset, 'ImagingStudy', {
+    ...storageColumns(testId(80)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    serviceRequestId: ORDER,
+    diagnosticReportId: null,
+    studyInstanceUid: '1.2.840.113619.2.55.3.604688119.868.1234567890.1',
+    accessionNumber: 'ACC-100482',
+    modalities: ['CT'],
+    description: 'CT chest with contrast',
+    status: 'AVAILABLE',
+    startedAt: FIXED_NOW,
+    numberOfSeries: 4,
+    numberOfInstances: 512,
+    retrieveUrl: 'https://pacs.example.invalid/dicomweb/studies/1.2.840',
   });
 
   seed(dataset, 'Task', {
@@ -671,6 +690,33 @@ describe('the projections', () => {
       `Location/${DEMO_FACILITY_A}`,
       `Location/${SECOND_SITE}`,
     ]);
+  });
+
+  /**
+   * The same organisation-wide grant, read by somebody granted one site.
+   *
+   * `location` is derived from `UserFacility`, which is a different table from
+   * the one the resource is built on, and it used to be read by user id alone.
+   * So a principal confined to facility A could ask this boundary where a
+   * colleague works and be told about facility B - the caller's own confinement
+   * narrowed the assignments it could list and then said nothing at all about
+   * the sites those assignments were enriched with.
+   *
+   * `read-only` is the role that makes this reachable in a real deployment: it
+   * holds every `.read` permission, `role.read` included, and does not hold
+   * `facility.all`. The admin tokens the tests above use hold `facility.all`
+   * and would pass this whether or not the narrowing existed.
+   */
+  it('shows a site-confined reader only the facilities they were granted', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, {
+        headers: bearer(TOKENS.siteReaderA),
+      })
+    ).json()) as { location?: { reference?: string }[] };
+
+    expect(role.location?.map((entry) => entry.reference)).toEqual([`Location/${DEMO_FACILITY_A}`]);
   });
 
   /**
@@ -1040,5 +1086,185 @@ describe('Claim', () => {
       ).json()) as Bundle;
       expect(bundle.total, `status=${value}`).toBe(1);
     }
+  });
+});
+
+/**
+ * The caller's facility scope, applied at the FHIR boundary.
+ *
+ * Every resource below is seeded into the SAME tenant as the caller and differs
+ * only in which site it belongs to. That is deliberate: tenant isolation would
+ * hide a row in the other organisation all on its own, so a fixture placed
+ * there would pass whether or not facility narrowing existed. The annexe is
+ * tenant A's own second site, and nothing except the facility scope can explain
+ * a row there being out of reach.
+ *
+ * The admin tokens used everywhere else in this file hold `facility.all` and
+ * skip the narrowing by design, so these tests use `siteReaderA`: the shipping
+ * `read-only` role, which holds every `.read` permission and not that one,
+ * granted facility A alone.
+ */
+const ANNEXE_PATIENT = testId(990);
+const ANNEXE_APPOINTMENT = testId(991);
+const ANNEXE_ENCOUNTER = testId(992);
+const ANNEXE_GRANT = testId(993);
+const UNSITED_PATIENT = testId(994);
+
+/** Rows at the annexe, one per resource type that carries a facility. */
+const ANNEXE_ROWS = [
+  { type: 'Patient', id: ANNEXE_PATIENT },
+  { type: 'Appointment', id: ANNEXE_APPOINTMENT },
+  { type: 'Encounter', id: ANNEXE_ENCOUNTER },
+  { type: 'PractitionerRole', id: ANNEXE_GRANT },
+] as const;
+
+function seedSecondSite(dataset: MemoryDataset): void {
+  seed(
+    dataset,
+    'Patient',
+    makePatientRow({
+      id: ANNEXE_PATIENT,
+      mrn: 'OR-100990',
+      familyName: 'Annexeson',
+      primaryFacilityId: SECOND_SITE,
+    })
+  );
+
+  // A patient with no home site at all. Facility narrowing has to let this one
+  // through: a chart is registered before anyone decides which site it belongs
+  // to, and a scope that dropped every unsited row would hide new patients from
+  // the staff registering them.
+  seed(
+    dataset,
+    'Patient',
+    makePatientRow({
+      id: UNSITED_PATIENT,
+      mrn: 'OR-100994',
+      familyName: 'Unsitedsson',
+      primaryFacilityId: null,
+    })
+  );
+
+  seed(
+    dataset,
+    'Appointment',
+    makeAppointmentRow({ id: ANNEXE_APPOINTMENT, facilityId: SECOND_SITE })
+  );
+
+  seed(dataset, 'Encounter', {
+    ...storageColumns(ANNEXE_ENCOUNTER),
+    facilityId: SECOND_SITE,
+    patientId: ANNEXE_PATIENT,
+    providerId: PROVIDER,
+    appointmentId: null,
+    class: 'AMBULATORY',
+    status: 'COMPLETED',
+    reasonCode: 'R51',
+    reasonText: 'Headache',
+    startedAt: FIXED_NOW,
+    endedAt: null,
+    signedAt: null,
+    signedById: null,
+  });
+
+  seed(dataset, 'RoleAssignment', {
+    ...storageColumns(ANNEXE_GRANT),
+    userId: PROVIDER,
+    roleId: NURSE_ROLE,
+    facilityId: SECOND_SITE,
+  });
+}
+
+function scopedHarness(): ReturnType<typeof createTestApp> {
+  const created = harness();
+  seedSecondSite(created.dataset);
+  return created;
+}
+
+async function bundleIds(
+  app: ReturnType<typeof createTestApp>['app'],
+  type: string,
+  token: string
+): Promise<string[]> {
+  const res = await app.request(`/fhir/${type}?_count=50`, { headers: bearer(token) });
+  expect(res.status, `${type} search`).toBe(200);
+  const bundle = (await res.json()) as Bundle;
+  return (bundle.entry ?? []).map((entry) => (entry.resource as FhirResource).id ?? '');
+}
+
+describe('the facility scope the caller arrived with', () => {
+  it.each(ANNEXE_ROWS)(
+    '$type: a row at another site reads as absent, not as forbidden',
+    async ({ type, id }) => {
+      const { app } = scopedHarness();
+
+      const res = await app.request(`/fhir/${type}/${id}`, {
+        headers: bearer(TOKENS.siteReaderA),
+      });
+
+      // 404 rather than 403 on purpose. A 403 confirms the row exists, which
+      // turns an id guess into a way to learn that a person was seen at a site
+      // the caller cannot reach. Out of scope reads as never there.
+      expect(res.status).toBe(404);
+    }
+  );
+
+  it.each(ANNEXE_ROWS)("$type: a search omits the other site's row", async ({ type, id }) => {
+    const { app } = scopedHarness();
+
+    expect(await bundleIds(app, type, TOKENS.siteReaderA)).not.toContain(id);
+  });
+
+  it.each(ANNEXE_ROWS)(
+    '$type: a principal holding facility.all still sees the other site',
+    async ({ type, id }) => {
+      const { app } = scopedHarness();
+
+      // The narrowing is a floor for principals who lack `facility.all`, not a
+      // new restriction on the ones who hold it. Without this, a scope bug that
+      // hid the annexe from everybody would look like a pass above.
+      const res = await app.request(`/fhir/${type}/${id}`, { headers: bearer(TOKENS.adminA) });
+
+      expect(res.status).toBe(200);
+      expect(await bundleIds(app, type, TOKENS.adminA)).toContain(id);
+    }
+  );
+
+  it('keeps a patient with no home site visible to a site-scoped caller', async () => {
+    const { app } = scopedHarness();
+
+    const res = await app.request(`/fhir/Patient/${UNSITED_PATIENT}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(UNSITED_PATIENT);
+  });
+
+  it('keeps an organisation-wide role grant visible to a site-scoped caller', async () => {
+    const { app } = scopedHarness();
+
+    // `ORG_GRANT` carries no facility, which is how this schema says "everywhere
+    // in the organisation". Narrowing that dropped null rows would quietly
+    // revoke every organisation-wide grant for anyone not holding facility.all.
+    const res = await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await bundleIds(app, 'PractitionerRole', TOKENS.siteReaderA)).toContain(ORG_GRANT);
+  });
+
+  it("still serves the caller's own site", async () => {
+    const { app } = scopedHarness();
+
+    // The narrowing has to remove the annexe and nothing else. A clause that
+    // matched no rows at all would satisfy every assertion above.
+    const res = await app.request(`/fhir/Patient/${PATIENT}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(PATIENT);
   });
 });

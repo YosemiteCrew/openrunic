@@ -447,3 +447,50 @@ describe('who may touch one', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /bff/v0/referrals, and what a malformed query gets', () => {
+  const badQueries = [
+    ['patientId=not-a-uuid', 'patientId'],
+    ['encounterId=12', 'encounterId'],
+    ['status=nonsense', 'status'],
+    ['priority=WHENEVER', 'priority'],
+    ['page=0', 'page'],
+    ['pageSize=9000', 'pageSize'],
+  ] as const;
+
+  /**
+   * 400, not 500. This route parsed its query with `schema.parse`, which throws
+   * a ZodError rather than an ApiError, so the boundary treated a caller's typo
+   * as an unexpected internal fault: it logged it and answered 500. Every other
+   * list route on this surface answers 400 for the same input.
+   *
+   * `status` and `priority` are in this table because they used to be
+   * `z.string()` cast to an enum at the call site - so a value no column can
+   * hold passed validation and produced its 500 one layer further down, in the
+   * repository.
+   */
+  it.each(badQueries)('400s %s rather than raising a server error', async (query, field) => {
+    const { app } = harness();
+
+    const res = await app.request(`/bff/v0/referrals?${query}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status, query).toBe(400);
+    const body = (await res.json()) as { errors?: { path?: string }[] };
+    expect(
+      body.errors?.some((issue) => issue.path === field),
+      query
+    ).toBe(true);
+  });
+
+  it('still serves the filters it does accept', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/bff/v0/referrals?status=DRAFT&priority=ROUTINE', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+});

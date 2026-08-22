@@ -8,6 +8,7 @@ import type { PatientDto } from '../schemas/patients.js';
 import type { ListResponse } from '../schemas/pagination.js';
 
 import {
+  DEMO_FACILITY_B,
   DEMO_TENANT_A,
   DEMO_TENANT_B,
   bearer,
@@ -45,17 +46,27 @@ import {
 
 function twoTenantApp(): ReturnType<typeof createTestApp> {
   const harness = createTestApp();
+  // Each tenant's rows are sited at that tenant's facility. The row builders
+  // default to facility A, and leaving tenant B's rows on it made them
+  // invisible to tenant B's own principal once list reads started honouring
+  // facility grants - which would have quietly turned every assertion about
+  // what tenant B can see into an assertion about an empty list.
   seed(
     harness.dataset,
     'Patient',
     makePatientRow({ id: testId(1), tenantId: DEMO_TENANT_A, mrn: 'OR-100482' }),
-    makePatientRow({ id: testId(2), tenantId: DEMO_TENANT_B, mrn: 'OR-200001' })
+    makePatientRow({
+      id: testId(2),
+      tenantId: DEMO_TENANT_B,
+      mrn: 'OR-200001',
+      primaryFacilityId: DEMO_FACILITY_B,
+    })
   );
   seed(
     harness.dataset,
     'Appointment',
     makeAppointmentRow({ id: testId(101), tenantId: DEMO_TENANT_A }),
-    makeAppointmentRow({ id: testId(102), tenantId: DEMO_TENANT_B })
+    makeAppointmentRow({ id: testId(102), tenantId: DEMO_TENANT_B, facilityId: DEMO_FACILITY_B })
   );
   return harness;
 }

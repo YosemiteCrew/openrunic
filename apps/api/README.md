@@ -50,7 +50,7 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 ### The FHIR boundary
 
 `GET /fhir/metadata` publishes the CapabilityStatement, generated from the mounted resource
-modules. Twenty resource types are served with `read` and `search-type`; `Patient` also accepts
+modules. Twenty-one resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
 
 Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
@@ -85,6 +85,7 @@ refused with a 400. Tracked in #91.
 | `Observation`         | `patient`, `code`, `date`, `status`                                   |
 | `DiagnosticReport`    | `patient`, `date`                                                     |
 | `ServiceRequest`      | `patient`, `authored`                                                 |
+| `ImagingStudy`        | `patient`, `accession`, `date`                                        |
 | `Specimen`            | `patient`, `accession`                                                |
 | `DocumentReference`   | `patient`, `category`, `date`                                         |
 | `Task`                | `patient`                                                             |
@@ -243,6 +244,11 @@ Environment variables are validated at startup (`src/env.ts`):
   all; a partial configuration is refused, because falling back to the development principal table
   because one variable was missing is exactly the accident this validation exists to prevent.
 - `OIDC_CLOCK_SKEW_SECONDS` - tolerance on `exp`, `nbf` and `iat`, default `60`
+- `OIDC_AUTHORIZATION_ENDPOINT`, `OIDC_TOKEN_ENDPOINT` - the authorisation server third-party
+  SMART apps are sent to. Set together, and only alongside the three above, since a launch whose
+  tokens this API cannot verify hands an app a redirect that ends in a 401. Leave both unset and
+  `/fhir/.well-known/smart-configuration` omits the endpoints and claims no launch, which is how
+  a client learns to stop before redirecting anyone.
 
 With those set, the entry point installs the real bearer-token verifier: JWKS fetched and cached,
 key rotation handled by a rate-limited refetch on an unknown `kid`, `alg` checked against an

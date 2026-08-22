@@ -9,6 +9,8 @@ import { watchForIdleness } from './idle';
 import { isPublicPath, signInUrl } from './routes';
 import { useSession } from './useSession';
 
+import { useTranslator } from '@/lib/i18n/messages';
+
 /**
  * Stands between a clinical route and its screen until there is a session
  * behind it, and takes the session away again when the workstation goes quiet.
@@ -72,6 +74,7 @@ export function SessionGate({
   children,
   navigate = documentNavigate,
 }: Readonly<SessionGateProps>): ReactElement {
+  const t = useTranslator();
   const pathname = usePathname();
   const session = useSession();
   const [restoreFailed, setRestoreFailed] = useState(false);
@@ -137,7 +140,7 @@ export function SessionGate({
           element the platform already defines as a live result, so assistive
           technology announces the wait without the role being asserted by
           hand. */}
-      <output className="or-auth__status">Restoring your session</output>
+      <output className="or-auth__status">{t('auth.holding')}</output>
     </div>
   );
 }

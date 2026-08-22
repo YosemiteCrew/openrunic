@@ -166,3 +166,115 @@ describe('refusing to write a document a partner would reject', () => {
     ).toMatchObject({ path: ['sender', 'qualifier'] });
   });
 });
+
+/**
+ * DELIMITER INJECTION.
+ *
+ * X12 has no escape mechanism, so a separator inside an element IS a separator.
+ * A member id of `A*B` does not produce an element containing an asterisk - it
+ * produces two, and every element after it shifts left. On an 837P that moves
+ * NM109 into NM108's position and the claim goes out for whatever identifier
+ * lands there; a `~` invents a whole segment. The values reaching the mappers
+ * are demographics, member ids, claim references and service codes, all of which
+ * a low-privileged user can influence.
+ *
+ * The only two honest answers are refuse or mangle. A claim that cannot be
+ * encoded is a work item; a claim encoded for somebody else's member id is a
+ * payment.
+ */
+describe('an element carrying a delimiter', () => {
+  const withBody = (body: readonly Segment[]): InterchangeDraft =>
+    draft({
+      groups: [
+        {
+          functionalIdentifier: 'HC',
+          version: '005010X222A1',
+          transactions: [
+            { setIdentifier: '837', implementationConvention: '005010X222A1', segments: body },
+          ],
+        },
+      ],
+    });
+
+  it('refuses an element separator, which would shift every element after it', () => {
+    const error = expectErr(writeInterchange(withBody([segment('NM1', 'IL', '1', 'MEMBER*ID')])));
+
+    expect(error.kind).toBe('invalid_element');
+    expect(error.message).toContain('element delimiter');
+  });
+
+  it('refuses a segment terminator, which would invent a segment', () => {
+    const error = expectErr(writeInterchange(withBody([segment('NM1', 'IL', '1', 'SMITH~REF')])));
+
+    expect(error.kind).toBe('invalid_element');
+    expect(error.message).toContain('segment delimiter');
+  });
+
+  it('refuses a component separator inside a simple element', () => {
+    const error = expectErr(writeInterchange(withBody([segment('REF', 'BB', 'AUTH:FORGED')])));
+
+    expect(error.kind).toBe('invalid_element');
+    expect(error.message).toContain('component delimiter');
+  });
+
+  it('checks inside a composite as well as beside it', () => {
+    const error = expectErr(
+      writeInterchange(withBody([segment('HI', ['ABK', 'K92.2~SE*99*0001'])]))
+    );
+
+    expect(error.kind).toBe('invalid_element');
+    expect(error.kind === 'invalid_element' ? error.at.elementPosition : undefined).toBe(1);
+  });
+
+  it('refuses a tag that is not a tag', () => {
+    const error = expectErr(writeInterchange(withBody([segment('RE*F', 'ZZ', '1')])));
+
+    expect(error.kind).toBe('invalid_element');
+    expect(error.message).toContain('segment tag');
+  });
+
+  it('names the location, so the refusal is a work item rather than a mystery', () => {
+    const error = expectErr(
+      writeInterchange(
+        withBody([segment('REF', 'ZZ', 'fine'), segment('NM1', 'IL', '1', 'MEMBER*ID')])
+      )
+    );
+
+    // Narrowed rather than optional-chained: the union has variants with no
+    // location at all, and `?.` would let this pass against one of them.
+    expect(error.kind).toBe('invalid_element');
+    const at = error.kind === 'invalid_element' ? error.at : undefined;
+    expect(at?.segmentTag).toBe('NM1');
+    // NM103: the tag is not an element, so the third value after it is 3.
+    expect(at?.elementPosition).toBe(3);
+  });
+
+  /**
+   * The repetition separator is deliberately allowed. This codec never splits on
+   * it - a repeating element arrives as one string and is re-emitted as one - so
+   * it shifts nothing here, and real payer documents use it: EB03 on a 271
+   * carries repeated service type codes exactly that way. Refusing it would
+   * reject legal traffic while protecting nothing.
+   */
+  it('allows the repetition separator, which this codec never splits on', () => {
+    const written = expectOk(writeInterchange(withBody([segment('EB', '1', '', 'AL^30^35')])));
+
+    expect(written).toContain('EB*1**AL^30^35~');
+  });
+
+  /**
+   * ISA is the segment that DECLARES the delimiters: ISA11 is the repetition
+   * separator and ISA16 the component separator, both carried as literal data.
+   * Checking it would refuse every interchange this package writes.
+   */
+  it('still writes an ISA whose own elements are delimiters', () => {
+    const written = expectOk(writeInterchange(withBody([segment('REF', 'ZZ', '1')])));
+
+    expect(written.startsWith('ISA*00*')).toBe(true);
+    expect(written).toContain('*:~');
+  });
+
+  it('refuses nothing when the document is clean', () => {
+    expect(expectOk(writeInterchange(withBody(body(3))))).toContain('REF*ZZ*1~');
+  });
+});

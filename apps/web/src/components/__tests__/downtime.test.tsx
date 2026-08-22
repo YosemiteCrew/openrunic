@@ -7,7 +7,7 @@ import {
   DowntimeBoundary,
   useConnectivity,
 } from '@/components/downtime';
-import { resolveStatus, STATUS_COPY } from '@/lib/downtime/status';
+import { resolveStatus } from '@/lib/downtime/status';
 
 /**
  * Downtime mode, tested against the three failures it exists for: the database
@@ -121,7 +121,7 @@ describe('DowntimeBanner', () => {
 
     expect(banner).toHaveAttribute('data-status', 'offline');
     expect(banner).toHaveAttribute('role', 'alert');
-    expect(banner).toHaveTextContent(STATUS_COPY.offline.title);
+    expect(banner).toHaveTextContent('Cannot reach openrunic');
     expect(banner).toHaveTextContent('Check that this computer is on the practice network');
   });
 
@@ -226,13 +226,13 @@ describe('DowntimeBoundary', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     render(
-      <DowntimeBoundary area="The schedule">
+      <DowntimeBoundary areaKey="nav.schedule">
         <Exploding />
       </DowntimeBoundary>
     );
 
     const fallback = screen.getByTestId('downtime-fallback');
-    expect(fallback).toHaveTextContent('The schedule could not be displayed');
+    expect(fallback).toHaveTextContent('Schedule could not be displayed');
     expect(fallback).toHaveTextContent('No patient information has been changed or lost');
   });
 

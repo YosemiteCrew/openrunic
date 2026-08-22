@@ -129,6 +129,32 @@ export interface CollectionSpec<
   readonly patientColumn?: keyof Row<NoInfer<M>> & string;
   /** The column naming the place of service, when the row is facility-scoped. */
   readonly facilityColumn?: keyof Row<NoInfer<M>> & string;
+  /**
+   * Narrow reads to the caller's facilities, using {@link facilityColumn}.
+   *
+   * Opt-in rather than implied by `facilityColumn`, which several specs declare
+   * only so the audit trail can name the site a row belonged to. Turning it on
+   * for all of them would change what existing routes return, and a collection
+   * that should be scoped and is not needs to be visible in review rather than
+   * inferred from an unrelated field.
+   *
+   * Rows whose facility column is null stay visible to the whole tenant. On some
+   * tables null means the row is not sited at all, and filtering those out fails
+   * in the harder direction to notice: an empty page reads as "nothing here"
+   * rather than as a permissions problem.
+   *
+   * Opting in narrows every LIST of this collection, on every path, to the
+   * caller's grants. It used to narrow only the FHIR paths, because the BFF
+   * routes were said to decide cross-facility access for themselves - and they
+   * did, for a row addressed by its id, and not at all for a list. A list names
+   * no facility, so there was nothing for those routes to check and nothing
+   * between a caller granted one site and every sited row in the tenant.
+   *
+   * What still differs by boundary is one row addressed by its id: the FHIR
+   * paths hide it (404), the BFF paths load it and answer 403. That is
+   * `RequestScope.hideFacilityRows`, not this flag.
+   */
+  readonly facilityScoped?: true;
   /** The column naming the visit, when the row hangs off one. */
   readonly encounterColumn?: keyof Row<NoInfer<M>> & string;
   /** What a patient-scoped token may see of this aggregate. */
@@ -263,4 +289,20 @@ export function comparable(value: unknown): number | string {
   if (typeof value === 'number') return value;
   if (typeof value === 'string') return value;
   return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Facts worth carrying on a write event: the state, and how it moved.
+ *
+ * A create records what it was created as, along with whatever else the spec
+ * thinks names the row. A patch that did not move the status records nothing,
+ * because "still OPEN" on every save is how an audit log becomes unreadable.
+ */
+export function statusMetadata(
+  status: string,
+  before: { status: string } | null,
+  created: Record<string, unknown>
+): Record<string, unknown> {
+  if (before === null) return { status, ...created };
+  return before.status === status ? {} : { statusFrom: before.status, statusTo: status };
 }

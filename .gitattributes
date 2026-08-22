@@ -1,8 +1,14 @@
 * text=auto eol=lf
 
-# Lockfiles are machine-written: no diffs in review, and excluded from the
-# repository language statistics so they do not drown out the source.
-pnpm-lock.yaml -diff linguist-generated=true
+# The lockfile is machine-written and is excluded from the repository language
+# statistics so it does not drown out the source. It is deliberately NOT marked
+# `-diff`: a lockfile pins exact versions, integrity hashes, transitive
+# resolutions and any non-registry tarball URL, so its diff is the one place a
+# swapped dependency or a redirected download is visible. Suppressing it makes
+# review quieter and supply-chain tampering harder to see, which is the wrong
+# trade for software a clinic installs. `linguist-generated` already collapses
+# it by default on GitHub while leaving the diff there to expand.
+pnpm-lock.yaml linguist-generated=true
 
 # Generated Prisma client output, when it is present in a working tree.
 packages/database/src/generated/** linguist-generated=true

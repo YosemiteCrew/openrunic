@@ -1,9 +1,9 @@
 import type { PrismaClient } from '../generated/prisma/client.js';
 import { TENANT_SETTING } from '../rls.js';
-import { buildDemoPractice } from './data.js';
+import { buildDemoPractice, demoOrganisationId } from './data.js';
 import type { DemoPractice, DemoPracticeOptions } from './data.js';
 
-export { buildDemoPractice } from './data.js';
+export { buildDemoPractice, demoOrganisationId } from './data.js';
 export type { DemoPractice, DemoPracticeOptions } from './data.js';
 
 /** Row counts written, keyed by table, for the CLI to print and tests to assert. */
@@ -33,6 +33,18 @@ export async function seedDemoPractice(
 ): Promise<SeedSummary> {
   const practice = buildDemoPractice(options);
   const summary: SeedSummary = {};
+
+  // The id the API's demo-token resolver will open its session with. Asserted
+  // here rather than trusted, because that resolver cannot query for it: under
+  // row-level security an undeclared connection sees no organisations at all,
+  // so a mismatch would surface as every token answering 401 with nothing in
+  // any log to say why. Only reachable by seeding with a custom `today`, which
+  // nothing in this repository does.
+  if (practice.organisation.id !== demoOrganisationId()) {
+    throw new Error(
+      `seedDemoPractice: this practice would be written under ${practice.organisation.id}, but demoOrganisationId() answers ${demoOrganisationId()}. The API's demo-token resolver opens its session with the latter and would find nothing.`
+    );
+  }
 
   await client.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config(${TENANT_SETTING}, ${practice.organisation.id}, true)`;

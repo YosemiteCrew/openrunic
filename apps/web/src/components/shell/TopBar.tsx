@@ -9,6 +9,7 @@ import { IS_MOCK_MODE, MOCK_FACILITY } from '@/lib/api';
 import { endSession } from '@/lib/auth/client';
 import { signInUrl } from '@/lib/auth/routes';
 import { useSession } from '@/lib/auth/useSession';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The product's top bar: where you are, what you are looking at it as, who you
@@ -54,6 +55,7 @@ export function TopBar({
   navigate = documentNavigate,
   children,
 }: Readonly<TopBarProps>): ReactElement {
+  const t = useTranslator();
   const { open } = useCommandPalette();
   const session = useSession();
 
@@ -88,7 +90,7 @@ export function TopBar({
             assistant, which by default it does not. */}
         <AssistantLauncher />
         <button type="button" className="or-topbar__command" onClick={open}>
-          <span className="or-topbar__command-label">Search or run a command</span>
+          <span className="or-topbar__command-label">{t('shell.commandPalette')}</span>
           <kbd className="or-topbar__kbd" aria-hidden="true">
             Cmd K
           </kbd>

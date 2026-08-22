@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { sealSessionCookie, sessionSealKey, unsealSessionCookie } from '@/lib/auth/seal';
+import {
+  sealPayload,
+  sealSessionCookie,
+  sessionSealKey,
+  unsealPayload,
+  unsealSessionCookie,
+} from '@/lib/auth/seal';
 import { startSessionRecord } from '@/lib/auth/session';
 import type { Identity, SessionRecord } from '@/lib/auth/session';
 
@@ -194,5 +200,55 @@ describe('where the key comes from', () => {
     vi.stubEnv('NODE_ENV', 'production');
 
     expect(sessionSealKey()).toBe('the-configured-one');
+  });
+});
+
+describe('sealPayload and unsealPayload', () => {
+  const KEY = 'a-key';
+  const reader = (parsed: unknown): { a: number } | null =>
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    typeof (parsed as { a?: unknown }).a === 'number'
+      ? { a: (parsed as { a: number }).a }
+      : null;
+
+  it('round-trips a payload the reader accepts', async () => {
+    const sealed = await sealPayload({ a: 1 }, KEY);
+    await expect(unsealPayload(sealed, KEY, reader)).resolves.toEqual({ a: 1 });
+  });
+
+  it('refuses a payload signed with a different key', async () => {
+    const sealed = await sealPayload({ a: 1 }, 'another-key');
+    await expect(unsealPayload(sealed, KEY, reader)).resolves.toBeNull();
+  });
+
+  it('refuses a payload edited after signing', async () => {
+    const sealed = await sealPayload({ a: 1 }, KEY);
+    const tampered = `${sealed.slice(0, sealed.indexOf('.') + 1)}{"a":2}`;
+    await expect(unsealPayload(tampered, KEY, reader)).resolves.toBeNull();
+  });
+
+  it('refuses a shape the reader does not accept, even when the signature is sound', async () => {
+    const sealed = await sealPayload({ a: 'not a number' }, KEY);
+    await expect(unsealPayload(sealed, KEY, reader)).resolves.toBeNull();
+  });
+
+  it.each([
+    ['nothing at all', undefined],
+    ['an empty string', ''],
+    ['no separator', 'abcdef'],
+    ['a leading separator', '.{"a":1}'],
+    ['a signature that is not base64url', '!!!.{"a":1}'],
+    ['a signature of the wrong length', `${'A'.repeat(8)}.{"a":1}`],
+  ])('refuses %s', async (_label, value) => {
+    await expect(unsealPayload(value, KEY, reader)).resolves.toBeNull();
+  });
+
+  it('refuses a signed payload that is not JSON', async () => {
+    // Signed correctly, so it reaches the JSON parse, which is the branch under
+    // test rather than the signature check above it.
+    const sealed = await sealPayload('not json', KEY);
+    const broken = `${sealed.slice(0, sealed.indexOf('.') + 1)}not json`;
+    await expect(unsealPayload(broken, KEY, reader)).resolves.toBeNull();
   });
 });

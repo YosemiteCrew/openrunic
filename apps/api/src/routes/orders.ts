@@ -1,6 +1,7 @@
 import {
   diagnosticReportInput,
   documentInput,
+  type DocumentInput,
   serviceRequestInput,
   specimenInput,
   taskInput,
@@ -30,7 +31,17 @@ import {
   diagnosticReportPatchSchema,
   documentDtoSchema,
   documentListQuerySchema,
+  imagingStudyCreateSchema,
+  imagingStudyDtoSchema,
+  imagingStudyListQuerySchema,
+  imagingStudyPatchSchema,
+  toImagingStudyCreate,
+  toImagingStudyDto,
+  toImagingStudyListQuery,
+  documentFileSchema,
   documentPatchSchema,
+  documentRejectSchema,
+  documentSupersedeSchema,
   emptyBodySchema,
   messageDtoSchema,
   messageListQuerySchema,
@@ -335,6 +346,29 @@ function crudModules(): CrudModule[] {
       toDto: toDiagnosticReportDto,
     }),
     defineCrud({
+      segment: 'imaging/studies',
+      singular: 'imaging study',
+      plural: 'imaging studies',
+      tag: 'imaging',
+      operation: 'ImagingStudy',
+      readPermission: 'result.read',
+      writePermission: 'result.write',
+      collection: (repos) => repos.imagingStudies,
+      listQuerySchema: imagingStudyListQuerySchema,
+      toQuery: toImagingStudyListQuery,
+      listDescription:
+        'The unread list is `status=AVAILABLE` with no `diagnosticReportId`. openrunic is not a PACS: a study here records that pictures exist and where a viewer retrieves them, and holds no image data. `accessionNumber` is what reconciles a study arriving from a modality with the order that asked for it.',
+      createSchema: imagingStudyCreateSchema,
+      toCreate: toImagingStudyCreate,
+      patchSchema: imagingStudyPatchSchema,
+      toPatch: (body) => body,
+      dtoSchema: imagingStudyDtoSchema,
+      toDto: toImagingStudyDto,
+      writeResponses: [
+        { status: 409, description: 'That study instance UID is already recorded.' },
+      ],
+    }),
+    defineCrud({
       segment: 'documents',
       singular: 'document',
       plural: 'documents',
@@ -349,6 +383,7 @@ function crudModules(): CrudModule[] {
         'The triage inbox is `status=INBOX`, usually narrowed to `source=FAX`. The bytes live in object storage; this aggregate carries the key and the digest.',
       createSchema: documentInput,
       toCreate: (body) => body,
+      beforeCreate: refuseDuplicateDocument,
       patchSchema: documentPatchSchema,
       toPatch: toDocumentPatchInput,
       dtoSchema: documentDtoSchema,
@@ -492,15 +527,110 @@ function transitionRoutes(): Hono<AppEnv> {
 
   /* documents */
 
+  /**
+   * FILING A DOCUMENT INTO A CHART.
+   *
+   * This used to take an empty body and change only the status, which meant a
+   * document with no patient could be filed. It left the triage queue and
+   * arrived nowhere: not in a chart, and no longer in the list of things
+   * waiting to be put in one. That is the exact failure a triage queue exists
+   * to prevent, and it looked like success.
+   *
+   * A chart is therefore required. The body may name one, or the document may
+   * already carry one from the interface that delivered it; what is refused is
+   * filing with neither.
+   *
+   * Title, category and sensitivity are accepted here because triage is where
+   * they are usually corrected. A fax arrives titled by the sending machine and
+   * categorised by whatever the interface guessed, and making the filer patch
+   * first and file second is how a document ends up filed with the wrong title
+   * because the second request was forgotten.
+   */
   router.post('/documents/:id/file', requirePermission('document.write'), async (c) => {
     const id = pathId(c.req.param('id'));
-    await parseTransitionBody(c, emptyBodySchema);
+    const body = await parseTransitionBody(c, documentFileSchema);
     const filedById = actingUserId(c);
     const documents = repositories(c).documents;
     const before = required(await documents.findById(id), NO_DOCUMENT);
     assertTransition(DOCUMENT_TRANSITIONS, 'document', before.status, 'FILED');
+
+    const patientId = body.patientId ?? before.patientId;
+    if (patientId === null) {
+      throw ApiError.conflict(
+        'Filing needs a chart: name a patient, or the document must already carry one.'
+      );
+    }
+
     const row = required(
-      await documents.update(id, { status: 'FILED', filedAt: new Date(), filedById }),
+      await documents.update(id, {
+        status: 'FILED',
+        filedAt: new Date(),
+        filedById,
+        patientId,
+        ...(body.encounterId === undefined ? {} : { encounterId: body.encounterId }),
+        ...(body.category === undefined ? {} : { category: body.category }),
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.sensitivityClass === undefined ? {} : { sensitivityClass: body.sensitivityClass }),
+      }),
+      NO_DOCUMENT
+    );
+    return c.json(toDocumentDto(row));
+  });
+
+  /**
+   * Recording that a newer document replaces this one.
+   *
+   * `DocumentStatus` has carried SUPERSEDED from the start and nothing ever set
+   * it, so the state was declared and unreachable. Worse, nothing anywhere said
+   * what had done the superseding: a clinician looking at a replaced result
+   * could see that a newer one existed and not which one it was, which is less
+   * use than not being told.
+   *
+   * The replacement is read back before anything is written, so a pointer into
+   * nothing cannot be stored, and a document cannot supersede itself.
+   */
+  router.post('/documents/:id/supersede', requirePermission('document.write'), async (c) => {
+    const id = pathId(c.req.param('id'));
+    const body = await parseTransitionBody(c, documentSupersedeSchema);
+    const documents = repositories(c).documents;
+    const before = required(await documents.findById(id), NO_DOCUMENT);
+    assertTransition(DOCUMENT_TRANSITIONS, 'document', before.status, 'SUPERSEDED');
+
+    if (body.supersededById === id) {
+      throw ApiError.validation('A document cannot supersede itself.', [
+        { path: 'supersededById', message: 'must name a different document' },
+      ]);
+    }
+    // Read through the same scoped collection as everything else, so a document
+    // in another organisation is absent rather than forbidden.
+    required(await documents.findById(body.supersededById), NO_DOCUMENT);
+
+    const row = required(
+      await documents.update(id, {
+        status: 'SUPERSEDED',
+        supersededById: body.supersededById,
+      }),
+      NO_DOCUMENT
+    );
+    return c.json(toDocumentDto(row));
+  });
+
+  /**
+   * Marking a document as something that does not belong in the record.
+   *
+   * The reason is required and stored. The audit trail already records who did
+   * this and when; what it cannot record is what they saw, and that is the part
+   * somebody asks about when a page is missing from a chart.
+   */
+  router.post('/documents/:id/reject', requirePermission('document.write'), async (c) => {
+    const id = pathId(c.req.param('id'));
+    const body = await parseTransitionBody(c, documentRejectSchema);
+    const documents = repositories(c).documents;
+    const before = required(await documents.findById(id), NO_DOCUMENT);
+    assertTransition(DOCUMENT_TRANSITIONS, 'document', before.status, 'ENTERED_IN_ERROR');
+
+    const row = required(
+      await documents.update(id, { status: 'ENTERED_IN_ERROR', errorReason: body.reason }),
       NO_DOCUMENT
     );
     return c.json(toDocumentDto(row));
@@ -787,12 +917,39 @@ function transitionContracts(): RouteContract[] {
       segment: 'documents',
       action: 'file',
       operationId: 'fileDocument',
-      summary: 'File an inbox document.',
-      description: 'An inbox document becomes filed, stamping `filedAt` and `filedById`.',
+      summary: 'File an inbox document into a chart.',
+      description:
+        'An inbox document becomes filed, stamping `filedAt` and `filedById`. A chart is required: name a `patientId`, or the document must already carry one, otherwise the filing is refused. Title, category, encounter and sensitivity may be corrected in the same request, because triage is where they are usually wrong.',
       tag: 'documents',
       permission: 'document.write',
       subject: 'document',
-      body: emptyBodySchema,
+      body: documentFileSchema,
+      response: documentDtoSchema,
+    }),
+    transitionContract({
+      segment: 'documents',
+      action: 'supersede',
+      operationId: 'supersedeDocument',
+      summary: 'Record that a newer document replaces this one.',
+      description:
+        'The document becomes superseded and points at its replacement, which must already exist and must not be the document itself.',
+      tag: 'documents',
+      permission: 'document.write',
+      subject: 'document',
+      body: documentSupersedeSchema,
+      response: documentDtoSchema,
+    }),
+    transitionContract({
+      segment: 'documents',
+      action: 'reject',
+      operationId: 'rejectDocument',
+      summary: 'Mark a document as not belonging in the record.',
+      description:
+        'The document becomes entered-in-error with the reason recorded. The audit trail carries who and when; the reason is what it cannot carry.',
+      tag: 'documents',
+      permission: 'document.write',
+      subject: 'document',
+      body: documentRejectSchema,
       response: documentDtoSchema,
     }),
     transitionContract({
@@ -912,3 +1069,46 @@ export function orderRouteContracts(): RouteContract[] {
     ...referralRouteContracts(),
   ];
 }
+
+/**
+ * Refuses a document whose bytes are already in this organisation.
+ *
+ * A fax that arrives twice is one document. Without this the second copy lands
+ * in the inbox looking exactly like new work, and whoever triages it files a
+ * duplicate into a chart, where it reads as a second result rather than the
+ * same one seen twice. On a lab report that is the difference between one
+ * abnormal value and two.
+ *
+ * Only live documents block. A copy already superseded or marked entered in
+ * error does not, which is deliberate: re-uploading is how somebody fixes a
+ * mistake, and refusing it would leave them with a chart they cannot correct.
+ *
+ * The refusal names the existing document, because "you already have this" is
+ * only actionable if the caller can go and look at it.
+ */
+async function refuseDuplicateDocument(c: Context<AppEnv>, input: DocumentInput): Promise<void> {
+  const existing = await repositories(c).documents.list({
+    page: 1,
+    pageSize: DUPLICATE_PROBE_LIMIT,
+    sort: 'receivedAt',
+    order: 'desc',
+    sha256: input.sha256,
+  });
+
+  const live = existing.rows.find((row) => row.status === 'INBOX' || row.status === 'FILED');
+  if (live === undefined) return;
+
+  throw ApiError.conflict(
+    `These bytes are already stored as document ${live.id}, in ${live.status}.`
+  );
+}
+
+/**
+ * How many same-digest rows to read before deciding.
+ *
+ * More than one because a digest may legitimately repeat across superseded and
+ * rejected copies, and the question is whether a LIVE one exists. Small because
+ * a tenant holding more than a handful of copies of identical bytes has a
+ * problem this check is not going to solve.
+ */
+const DUPLICATE_PROBE_LIMIT = 20;

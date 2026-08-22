@@ -1,11 +1,12 @@
-import { createPrismaClient, createTenantClient, type PrismaClient } from '@openrunic/database';
+import { createPrismaClient, withTenantSession, type PrismaClient } from '@openrunic/database';
 import { z } from 'zod';
 
-import { createPrismaAuditSink, type AuditWriteScope } from '../audit/prisma-sink.js';
+import { createPrismaAuditSink, type StandaloneAuditWork } from '../audit/prisma-sink.js';
+import type { AuditEventDelegate } from '../repositories/db-port.js';
 import type { AuditSink } from '../audit/types.js';
 import type { PrincipalResolver } from '../auth/principal.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
-import { createDbPort } from '../repositories/db-port.js';
+import { createRlsDbPortFactory } from '../repositories/rls-port.js';
 import type { RepositoryRegistry } from '../repositories/types.js';
 
 import { createDemoPrincipalResolver } from './demo-principals.js';
@@ -109,9 +110,12 @@ function buildPrincipalResolver(
  * The audit sink's fallback write path, for events with no transaction of their
  * own: an authorisation denial, or a batch of reads.
  *
- * The unscoped client on purpose - every audit event carries its own tenantId
- * into the row, and a denial has to be recorded even when no tenant transaction
- * was ever opened.
+ * It opens a tenant session, because `AuditEvent` is policied like every other
+ * table and a write outside a declared session is refused - and a refused audit
+ * write is the quietest failure in this system, since the collector logs the
+ * flush error after the response has already gone. One transaction also gives
+ * the hash chain what it has always needed: the tail read and the linked write
+ * with nothing between them.
  *
  * Written as an explicit adapter rather than a cast. `PrismaClient.auditEvent`
  * is not assignable to `AuditEventDelegate`: Prisma's generated methods are
@@ -120,22 +124,33 @@ function buildPrincipalResolver(
  * promise honest - the sink is handed exactly the two fields it declares it
  * needs, and nothing about the caller's shape is asserted.
  */
-function standaloneAuditScope(prisma: PrismaClient): AuditWriteScope {
-  return {
-    auditEvent: {
-      create: async (args) => {
-        const created = await prisma.auditEvent.create({ ...args, select: { id: true } });
-        return { id: created.id };
-      },
-      findFirst: async (args) => {
-        const row = await prisma.auditEvent.findFirst({
-          ...args,
-          select: { seq: true, hash: true },
-        });
-        return row === null ? null : { seq: row.seq, hash: row.hash };
-      },
-    },
-  };
+function standaloneAuditWork(prisma: PrismaClient): StandaloneAuditWork {
+  return (tenantId, run) =>
+    withTenantSession(prisma, { tenantId }, (tx) => {
+      // Narrowed to the port's type BEFORE anything is called on it. Spreading
+      // the sink's own `args` into the transaction client's generic delegate
+      // makes TypeScript compare two deeply instantiated argument types and give
+      // up ("excessive stack depth"); through `AuditEventDelegate` it is one
+      // concrete signature. `tenantTransactionSatisfiesPort` in `db-port.ts`
+      // proves the assignment is sound.
+      const delegate: AuditEventDelegate = tx.auditEvent;
+
+      return run({
+        auditEvent: {
+          create: async (args) => {
+            const created = await delegate.create({ ...args, select: { id: true } });
+            return { id: created.id };
+          },
+          findFirst: async (args) => {
+            const row = await delegate.findFirst({
+              ...args,
+              select: { seq: true, hash: true },
+            });
+            return row === null ? null : { seq: row.seq, hash: row.hash };
+          },
+        },
+      });
+    });
 }
 
 /**
@@ -148,15 +163,23 @@ function standaloneAuditScope(prisma: PrismaClient): AuditWriteScope {
 export function buildServerWiring(env: WiringEnv, client?: PrismaClient): ServerWiring {
   const prisma = client ?? createPrismaClient({ datasourceUrl: env.DATABASE_URL });
 
-  // `createDbPort` is not optional plumbing: the registry wants the port's
-  // generic `model(name)` accessor, and a tenant-scoped client is still keyed by
-  // model name. Handing the raw client over compiles only because both are
-  // structurally close, and fails at the first delegate lookup.
-  const repositories = createPrismaRepositoryRegistry((tenantId) =>
-    createDbPort(createTenantClient(prisma, { tenantId }))
-  );
+  // THE RLS PORT, not a bare tenant-scoped client.
+  //
+  // `createTenantClient` is a Prisma extension: it narrows the queries this
+  // process issues. Row-level security is the backstop underneath it, and it
+  // only engages inside a transaction that has declared `openrunic.tenant_id` -
+  // which is exactly what `createRlsDbPortFactory` does and what a plain client
+  // never does. Wiring the plain one meant the design's second line of defence
+  // was absent in the only deployment that has a real database, and absent
+  // silently: every query worked, because the extension was doing the narrowing
+  // on its own.
+  //
+  // It also fails in the honest direction now. Against a correctly configured
+  // non-superuser role, a query that somehow escaped the session returns
+  // nothing rather than everything, because the policies deny by default.
+  const repositories = createPrismaRepositoryRegistry(createRlsDbPortFactory(prisma));
 
-  const auditSink = createPrismaAuditSink({ standalone: standaloneAuditScope(prisma) });
+  const auditSink = createPrismaAuditSink({ standalone: standaloneAuditWork(prisma) });
 
   return {
     repositories,

@@ -80,6 +80,9 @@ export const TENANT_SCOPED_MODELS = [
   'TerminologyCode',
   'ConsentGrant',
   'AuditEvent',
+  'ImagingStudy',
+  'ValueSet',
+  'TelehealthVisit',
 ] as const;
 
 export type TenantScopedModel = (typeof TENANT_SCOPED_MODELS)[number];

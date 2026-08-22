@@ -10,7 +10,7 @@ describe('ApiError', () => {
   it('maps every kind to exactly one status', () => {
     const statuses = PROBLEM_KINDS.map((kind) => new ApiError(kind).status);
 
-    expect(statuses).toEqual([400, 401, 403, 404, 409, 409, 422, 501, 500]);
+    expect(statuses).toEqual([400, 401, 403, 404, 409, 409, 422, 501, 502, 500]);
   });
 
   it('maps every kind to a FHIR issue code', () => {
@@ -23,6 +23,7 @@ describe('ApiError', () => {
       'business-rule',
       'invariant',
       'not-supported',
+      'transient',
       'exception',
     ]);
   });

@@ -14,7 +14,12 @@ import { createMemoryAuditSink } from './audit/memory-sink.js';
 import type { AuditSink } from './audit/types.js';
 import type { PrincipalResolver } from './auth/principal.js';
 import { DEMO_PRINCIPALS, createStaticPrincipalResolver } from './auth/static-resolver.js';
+import type { AdapterRegistry } from '@openrunic/adapters';
+
+import { createDevelopmentAdapters } from './adapters/development.js';
+import type { QualityRouteOptions } from './routes/quality.js';
 import type { AppEnv } from './context.js';
+import type { SmartLaunchSettings } from './env.js';
 import { ApiError, isApiError } from './errors.js';
 import { CDS_BASE_PATH, cdsRoutes } from './cds/index.js';
 import { FHIR_BASE_PATH, fhirRoutes, isFhirPath } from './fhir/index.js';
@@ -84,6 +89,32 @@ export interface CreateAppOptions {
    * Absent in development, where there is no database to be ready for.
    */
   readiness?: () => Promise<boolean>;
+  /**
+   * Partner seams, for the capabilities this API actually calls.
+   *
+   * Defaults to a registry holding the in-process telehealth mock, which is what
+   * makes a database-less development run able to open a video visit that goes
+   * nowhere real. `assertProductionWiring` refuses that default under
+   * NODE_ENV=production: a mock video vendor issues join links at an address
+   * that can never resolve, and a clinic would discover it with a patient
+   * already waiting.
+   */
+  adapters?: AdapterRegistry;
+  /**
+   * Quality reporting limits.
+   *
+   * Present so a test can prove the population ceiling's refusal without
+   * seeding twenty thousand charts. The default is the real one.
+   */
+  quality?: QualityRouteOptions;
+  /**
+   * Where a SMART app authorises, when the deployment publishes a launch.
+   *
+   * Absent by default, and absent is a real answer rather than a gap: the
+   * discovery document omits the endpoints instead of naming ones this API does
+   * not serve.
+   */
+  smartLaunch?: SmartLaunchSettings;
 }
 
 /**
@@ -112,6 +143,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     options.principalResolver ?? createStaticPrincipalResolver(DEMO_PRINCIPALS);
   const auditSink = options.auditSink ?? createMemoryAuditSink({ store: auditStore });
   const now = options.now ?? ((): Date => new Date());
+  const adapters = options.adapters ?? createDevelopmentAdapters();
 
   const app = new Hono<AppEnv>();
 
@@ -125,6 +157,14 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     repositories,
     auditSink,
     responseFormatFor: (path) => (isFhirPath(path) ? 'fhir' : 'problem'),
+    // Which boundary hides an ungranted facility's row and which refuses it.
+    // The FHIR boundary answers 404, so a read cannot be used to enumerate the
+    // rest of the tenant. The BFF keeps its 403, which is the more useful answer
+    // for a staff application whose user is already inside the organisation.
+    //
+    // Neither choice affects LISTS: the caller's grants narrow those on every
+    // path, because a list names no facility and there is nothing to refuse.
+    hideFacilityRowsFor: (path) => isFhirPath(path),
     ...(options.generateRequestId === undefined
       ? {}
       : { generateRequestId: options.generateRequestId }),
@@ -177,9 +217,12 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     )
   );
 
-  app.route(FHIR_BASE_PATH, fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now }));
+  app.route(
+    FHIR_BASE_PATH,
+    fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now, smartLaunch: options.smartLaunch })
+  );
   app.route(CDS_BASE_PATH, cdsRoutes());
-  app.route(BFF_BASE_PATH, internalRoutes());
+  app.route(BFF_BASE_PATH, internalRoutes({ adapters, quality: options.quality }));
 
   if (agent.status === 'enabled') {
     app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));
@@ -234,6 +277,9 @@ function assertProductionWiring(options: CreateAppOptions, isProduction: boolean
     options.repositories === undefined ? 'repositories' : undefined,
     options.principalResolver === undefined ? 'principalResolver' : undefined,
     options.auditSink === undefined ? 'auditSink' : undefined,
+    // A mock video vendor issues join links at an address that can never
+    // resolve. Nothing fails at boot; it fails with a patient waiting.
+    options.adapters === undefined ? 'adapters' : undefined,
   ].filter((name): name is string => name !== undefined);
 
   if (missing.length > 0) {

@@ -3,6 +3,7 @@ import { Hono, type Context } from 'hono';
 
 import type { Principal } from '../auth/principal.js';
 import type { AppEnv } from '../context.js';
+import type { SmartLaunchSettings } from '../env.js';
 import { ApiError } from '../errors.js';
 import { fhirResponse } from '../http/fhir.js';
 import { parseParam } from '../http/validate.js';
@@ -66,6 +67,14 @@ export interface FhirRouterOptions {
   now?: () => Date;
   /** Overridable so a test can mount a narrower server than the real one. */
   modules?: readonly FhirResourceModule[];
+  /**
+   * The authorisation server SMART apps are sent to, when one is configured.
+   *
+   * Undefined means this deployment publishes no launch, and the discovery
+   * document says so by omitting the endpoints rather than by naming a plausible
+   * one. See the route for why that distinction is the whole point.
+   */
+  smartLaunch?: SmartLaunchSettings;
 }
 
 /** What the registry needs to validate a search, derived from the mounted modules. */
@@ -168,6 +177,9 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
         id,
         tenantId: principal.tenantId,
         subject: principal.subject,
+        // Kept so a retrieval can re-ask the scope question against the same
+        // entry point, rather than trusting the subject alone.
+        entry,
         requestUrl: c.req.url,
         transactionTime,
         files,
@@ -211,7 +223,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
    * "gone" from "still working" would wait forever.
    */
   router.get('/$export-status/:id', ...bulkGuards, (c) => {
-    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const job = jobFor(exports, c.req.param('id'), principalOf(c), c.get('policy'), modules);
     return c.json(manifestFor(job, new URL(c.req.url).origin));
   });
 
@@ -221,7 +233,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
    * array pretending.
    */
   router.get('/$export-file/:id/:type', ...bulkGuards, async (c) => {
-    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const job = jobFor(exports, c.req.param('id'), principalOf(c), c.get('policy'), modules);
     const type = c.req.param('type');
     const file = [...job.files, ...job.errors].find((candidate) => candidate.type === type);
     if (file === undefined) {
@@ -245,7 +257,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
   router.delete('/$export-status/:id', ...bulkGuards, (c) => {
     // Resolved through the same binding as a read: a caller may not delete a job
     // it could not have polled.
-    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const job = jobFor(exports, c.req.param('id'), principalOf(c), c.get('policy'), modules);
     exports.delete(job.id);
     return c.body(null, 202);
   });
@@ -274,25 +286,42 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
   router.get('/.well-known/smart-configuration', (c) => {
     const base = new URL(c.req.url);
     const issuer = `${base.origin}${FHIR_BASE_PATH}`;
+    const launch = options.smartLaunch;
+
+    // Capabilities that only mean anything once an app can actually reach an
+    // authorisation server. Advertising these without one is what this route
+    // used to do, and it sent every app to two endpoints this API has never
+    // served: the failure landed after the user had already been redirected,
+    // which is the worst place to discover a server cannot do what it claimed.
+    const launchCapabilities = ['launch-standalone', 'client-public', 'context-standalone-patient'];
+
     return c.json(
       {
         issuer,
-        // The token endpoint is the API's own session route: this deployment
-        // authenticates through it and has no separate authorisation server
-        // yet. When OIDC lands (see lib/auth in the web app) these two move to
-        // the provider and this document is where an app finds out.
-        authorization_endpoint: `${base.origin}/authorize`,
-        token_endpoint: `${base.origin}/token`,
+        ...(launch === undefined
+          ? {}
+          : {
+              authorization_endpoint: launch.authorizationEndpoint,
+              token_endpoint: launch.tokenEndpoint,
+            }),
+        // `permission-patient` and `permission-user` describe how this server
+        // reads a scope it is handed, which is true whoever issued the token, so
+        // they stay whether or not a launch is published.
         capabilities: [
-          'launch-standalone',
-          'client-public',
-          'context-standalone-patient',
+          ...(launch === undefined ? [] : launchCapabilities),
           'permission-patient',
           'permission-user',
         ],
         code_challenge_methods_supported: ['S256'],
         grant_types_supported: ['authorization_code'],
-        scopes_supported: ['openid', 'fhirUser', 'launch/patient', 'patient/*.read', 'user/*.read'],
+        scopes_supported: [
+          'openid',
+          'fhirUser',
+          'launch/patient',
+          'patient/*.read',
+          'user/*.read',
+          'user/*.write',
+        ],
         response_types_supported: ['code'],
       },
       200,

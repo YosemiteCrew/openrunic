@@ -10,6 +10,7 @@ import type { StaffCredential } from '@/lib/auth/directory';
 import { landingPath } from '@/lib/auth/routes';
 import type { SignInReason } from '@/lib/auth/routes';
 import { IDLE_TIMEOUT_MS } from '@/lib/auth/session';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The one screen that exists before the application does.
@@ -44,8 +45,17 @@ type Attempt = 'ready' | 'signing-in' | 'rejected' | 'unavailable';
 
 interface ReasonNotice {
   readonly tone: 'caution' | 'info';
-  readonly title: string;
-  readonly body: string;
+  readonly titleKey: string;
+  readonly bodyKey: string;
+  /**
+   * Values the title needs, and only the ones it needs.
+   *
+   * The formatter refuses a value a message does not use, which is right: an
+   * extra one almost always means the caller believes the message says
+   * something it does not. So the idle notice carries the minute count and the
+   * expired notice carries nothing.
+   */
+  readonly titleValues?: Readonly<Record<string, string | number>>;
 }
 
 /**
@@ -56,13 +66,14 @@ interface ReasonNotice {
 const REASON_NOTICE: Record<SignInReason, ReasonNotice> = {
   idle: {
     tone: 'caution',
-    title: `You were signed out after ${IDLE_MINUTES} minutes without activity.`,
-    body: 'Sign in again to pick up where you left off.',
+    titleKey: 'auth.signedOut.idle.title',
+    bodyKey: 'auth.signedOut.idle.body',
+    titleValues: { minutes: IDLE_MINUTES },
   },
   expired: {
     tone: 'info',
-    title: 'Your session has ended.',
-    body: 'Sign in again to continue.',
+    titleKey: 'auth.signedOut.expired.title',
+    bodyKey: 'auth.signedOut.expired.body',
   },
 };
 
@@ -83,6 +94,13 @@ export interface SignInScreenProps {
   navigate?: (url: string) => void;
   /** Injectable for tests. Empty in a production build, which offers no door. */
   credentials?: readonly StaffCredential[];
+  /**
+   * Whether this deployment has an identity provider configured. Decided on the
+   * server, because the client bundle has no business holding issuer settings
+   * and `process.env` here would be inlined at build time rather than read at
+   * run time, which is how one image cannot serve two deployments.
+   */
+  oidcEnabled?: boolean;
 }
 
 function documentNavigate(url: string): void {
@@ -94,7 +112,9 @@ export function SignInScreen({
   next,
   navigate = documentNavigate,
   credentials = developmentCredentials(process.env.NODE_ENV),
+  oidcEnabled = false,
 }: Readonly<SignInScreenProps>): ReactElement {
+  const t = useTranslator();
   const [token, setToken] = useState('');
   const [attempt, setAttempt] = useState<Attempt>('ready');
 
@@ -120,47 +140,63 @@ export function SignInScreen({
     <div className="or-auth">
       <div className="or-auth__panel">
         <div className="or-auth__intro">
-          <h1 className="or-auth__title">Sign in</h1>
-          <p className="or-auth__lede">
-            openrunic staff access. A session ends after {IDLE_MINUTES} minutes without activity, so
-            a workstation left unattended does not stay open on a chart.
-          </p>
+          <h1 className="or-auth__title">{t('auth.signIn.title')}</h1>
+          <p className="or-auth__lede">{t('auth.signIn.lede', { minutes: IDLE_MINUTES })}</p>
         </div>
 
         {notice === null ? null : (
-          <Alert tone={notice.tone} title={notice.title} message={notice.body} />
+          <Alert
+            tone={notice.tone}
+            title={t(notice.titleKey, notice.titleValues)}
+            message={t(notice.bodyKey)}
+          />
         )}
 
         {attempt === 'unavailable' ? (
           <Alert
             tone="danger"
-            title="The sign-in service could not be reached."
-            message="Check that the application is still running, then try again."
+            title={t('auth.signIn.unavailable.title')}
+            message={t('auth.signIn.unavailable.body')}
           />
         ) : null}
 
         <form className="or-auth__form" onSubmit={onSubmit} noValidate>
           <Input
             id="sign-in-token"
-            label="Access token"
+            label={t('auth.signIn.tokenLabel')}
             type="password"
             autoComplete="off"
             value={token}
-            hint="The bearer token your deployment issued you."
-            error={attempt === 'rejected' ? 'That access token was not recognised.' : undefined}
+            hint={t('auth.signIn.tokenHint')}
+            error={attempt === 'rejected' ? t('auth.signIn.tokenRejected') : undefined}
             onChange={(event) => {
               setToken(event.target.value);
               setAttempt('ready');
             }}
           />
           <Button type="submit" variant="primary" fullWidth disabled={busy || token === ''}>
-            {busy ? 'Signing in' : 'Sign in'}
+            {busy ? t('auth.signIn.submitting') : t('auth.signIn.submit')}
           </Button>
         </form>
 
+        {oidcEnabled ? (
+          <div className="or-auth__sso">
+            <a
+              className="or-auth__sso-link"
+              href={next ? `/auth/start?next=${encodeURIComponent(next)}` : '/auth/start'}
+            >
+              {t('auth.signIn.provider')}
+            </a>
+            <p className="or-auth__lede">
+              You will be sent to your identity provider and returned here once it has confirmed who
+              you are.
+            </p>
+          </div>
+        ) : null}
+
         {credentials.length > 0 ? (
           <fieldset className="or-auth__demo">
-            <legend className="or-auth__demo-legend">Development sign-in</legend>
+            <legend className="or-auth__demo-legend">{t('auth.signIn.developmentHeading')}</legend>
             <p className="or-auth__lede">
               These are the API&apos;s public development principals. They exist in this build only,
               and the API refuses to accept any of them in production.

@@ -57,7 +57,20 @@ const ALLERGY_LIMIT = 200;
 
 export interface CdsServiceDefinition {
   readonly definition: ServiceDefinition;
-  /** What a caller must hold to invoke it. A hook is a read of the chart. */
+  /**
+   * What a caller must hold to invoke it, enforced per service by the route.
+   *
+   * It must be the permission that protects the data the service READS, not the
+   * one that protects the context it is handed. These services read allergies
+   * and medication statements, and those live behind `encounter.read` at every
+   * other door - the BFF collections, and the screening endpoint. Guarding the
+   * hook with `patient.read` instead would have let a role allowed demographics
+   * and not the chart read the chart, one card at a time.
+   *
+   * Declared per service rather than fixed for the surface because the next one
+   * added will read something else, and a mount that ignored the declaration is
+   * how the surface acquires a service whose gate is somebody else's.
+   */
   readonly permission: Permission;
   evaluate(c: Context<AppEnv>, request: CdsRequest): Promise<readonly Card[]>;
 }
@@ -261,9 +274,9 @@ export const CDS_SERVICES: readonly CdsServiceDefinition[] = [
       description:
         'Shows the allergies a clinician should know about before doing anything else on this chart. Silent when there are none.',
       prefetch: ORDER_PREFETCH,
-      usageRequirements: 'Requires the patient.read permission on the calling token.',
+      usageRequirements: 'Requires the encounter.read permission on the calling token.',
     },
-    permission: 'patient.read',
+    permission: 'encounter.read',
     evaluate: async (c, request) => {
       const allergies = await activeMedicationAllergies(c, patientIdOf(request));
       const severe = allergies.filter((allergy) => allergy.criticality === 'HIGH');
@@ -295,7 +308,7 @@ export const CDS_SERVICES: readonly CdsServiceDefinition[] = [
         'Screens a medication being chosen against the recorded allergies and the current medication list, while an alternative is still cheap to pick.',
       prefetch: ORDER_PREFETCH,
     },
-    permission: 'patient.read',
+    permission: 'encounter.read',
     evaluate: screenDrafts,
   },
   {
@@ -307,7 +320,7 @@ export const CDS_SERVICES: readonly CdsServiceDefinition[] = [
         'The last screening before an order is committed: recorded allergies and duplicate therapy across every draft in the signing bundle.',
       prefetch: ORDER_PREFETCH,
     },
-    permission: 'patient.read',
+    permission: 'encounter.read',
     evaluate: screenDrafts,
   },
 ];

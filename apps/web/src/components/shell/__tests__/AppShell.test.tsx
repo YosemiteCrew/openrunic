@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from '@/components/shell/AppShell';
-import { activeAreaLabel, NAVIGATE_COMMANDS, NAV_AREAS } from '@/components/shell/navigation';
+import { activeArea, navigateCommands, NAV_AREAS } from '@/components/shell/navigation';
 
 const push = vi.fn();
 let pathname = '/schedule';
@@ -17,30 +17,45 @@ beforeEach(() => {
   pathname = '/schedule';
 });
 
-describe('activeAreaLabel', () => {
+describe('activeArea', () => {
   it('lights the rail row that owns the route', () => {
-    expect(activeAreaLabel('/schedule')).toBe('Schedule');
-    expect(activeAreaLabel('/patients')).toBe('Patients');
+    expect(activeArea('/schedule')?.labelKey).toBe('nav.schedule');
+    expect(activeArea('/patients')?.labelKey).toBe('nav.patients');
   });
 
   it('keeps a chart route under Patients', () => {
-    expect(activeAreaLabel('/patients/0192f1a0-0000-7000-8000-00000000p001')).toBe('Patients');
+    expect(activeArea('/patients/0192f1a0-0000-7000-8000-00000000p001')?.labelKey).toBe(
+      'nav.patients'
+    );
   });
 
   it('lights nothing for a route outside the rail', () => {
-    expect(activeAreaLabel('/')).toBeUndefined();
+    expect(activeArea('/')).toBeUndefined();
   });
 });
 
-describe('NAVIGATE_COMMANDS', () => {
+describe('navigateCommands', () => {
+  const commands = navigateCommands((key) => key);
+
   it('makes every rail area reachable from the palette', () => {
     for (const area of NAV_AREAS) {
-      expect(NAVIGATE_COMMANDS.some((command) => command.href === area.href)).toBe(true);
+      expect(commands.some((command) => command.href === area.href)).toBe(true);
     }
   });
 
   it('also reaches the routes that have no rail row', () => {
-    expect(NAVIGATE_COMMANDS.some((command) => command.href === '/results')).toBe(true);
+    expect(commands.some((command) => command.href === '/results')).toBe(true);
+  });
+
+  it('gives a command an id that does not change with the language', () => {
+    // The id used to be the lowercased label, so every command silently got a
+    // new one the moment the reader switched language.
+    const spanish = navigateCommands((key) => (key === 'nav.patients' ? 'Pacientes' : key));
+    const english = navigateCommands((key) => (key === 'nav.patients' ? 'Patients' : key));
+
+    expect(spanish.map((command) => command.id)).toStrictEqual(
+      english.map((command) => command.id)
+    );
   });
 });
 

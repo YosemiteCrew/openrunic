@@ -81,15 +81,54 @@ function escapeMap(delimiters: Delimiters): ReadonlyMap<string, string> {
   ]);
 }
 
-/** Escapes a value so it can carry the delimiters as data. */
+/**
+ * Escapes a value so it can carry the delimiters, and the SEGMENT SEPARATOR, as
+ * data.
+ *
+ * The delimiters are the obvious half and were never the dangerous one. A field
+ * carrying a raw carriage return is a field that ends the segment and starts
+ * another, so a patient name, a lot number or a message control id containing
+ * one turns into extra PID, RXA or OBX segments in the message this codec
+ * emits - segments the sender never wrote and the receiver cannot tell from the
+ * ones it did. A registry files the invented dose; a lab system files the
+ * invented result. The delimiter set alone does not touch that character, so
+ * escaping only the delimiters left the whole of it open.
+ *
+ * `\X0D\` and `\X0A\` are the standard's own answer: hexadecimal character
+ * escapes, which `unescapeValue` decodes back to the exact bytes, so a value
+ * that legitimately contains a line break still survives a round trip.
+ */
 export function escapeValue(value: string, delimiters: Delimiters): string {
   const map = escapeMap(delimiters);
   let out = '';
   for (const character of value) {
     const code = map.get(character);
-    out += code === undefined ? character : `${delimiters.escape}${code}${delimiters.escape}`;
+    if (code !== undefined) {
+      out += `${delimiters.escape}${code}${delimiters.escape}`;
+      continue;
+    }
+    const control = SEGMENT_CONTROL.get(character);
+    out += control === undefined ? character : `${delimiters.escape}${control}${delimiters.escape}`;
   }
   return out;
+}
+
+/**
+ * The characters that end a segment, and the hex escapes that carry them.
+ *
+ * `\r` is the separator the standard names; `\n` is the one half the world's
+ * senders actually use, and `parseMessage` accepts both - so a codec that
+ * escaped only the first would be secure against the specification and not
+ * against its own parser.
+ */
+const SEGMENT_CONTROL: ReadonlyMap<string, string> = new Map([
+  ['\r', 'X0D'],
+  ['\n', 'X0A'],
+]);
+
+/** True when a value carries a character that would end the segment holding it. */
+export function endsSegment(value: string): boolean {
+  return value.includes('\r') || value.includes('\n');
 }
 
 /**

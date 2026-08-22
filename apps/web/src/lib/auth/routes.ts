@@ -19,6 +19,33 @@ export const SIGN_IN_PATH = '/sign-in';
 export const SESSION_PATH = '/session';
 
 /**
+ * The header that says a request to {@link SESSION_PATH} came from this
+ * application's own code.
+ *
+ * `GET /session` does two things: it hands a tab its token back, and it
+ * re-stamps the idle clock. The second is a state change behind a safe method,
+ * and the session cookie is `SameSite=Lax`, which browsers send on a cross-site
+ * top-level NAVIGATION. So a page a signed-in clinician visits could open a
+ * window, point it here every few minutes, and hold the session open to its
+ * twelve-hour ceiling - defeating the fifteen-minute unattended-workstation
+ * control. Same-origin policy stops the attacker READING the token out of that
+ * window; it does not stop the server acting on the cookie.
+ *
+ * A custom header is the check, rather than `Origin` or `Sec-Fetch-Site`.
+ * `Origin` is not sent on a same-origin GET, so there would be nothing to
+ * compare; `Sec-Fetch-Site` is sent by every browser that matters and by
+ * definition not by the ones that do not, so relying on it alone fails open
+ * exactly where it fails. A header a request can only carry if script on this
+ * origin set it needs no such reasoning: a navigation cannot set one, and a
+ * cross-origin `fetch` that tries is stopped by the preflight this route does
+ * not answer.
+ */
+export const SESSION_FETCH_HEADER = 'x-openrunic-session';
+
+/** What that header carries. The value is a marker; only its presence matters. */
+export const SESSION_FETCH_MARKER = 'same-origin';
+
+/**
  * Where signing in lands when nothing else is asked for.
  *
  * The rail is ordered by workflow rather than alphabetically, and Schedule is

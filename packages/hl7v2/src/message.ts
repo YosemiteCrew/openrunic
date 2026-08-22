@@ -1,4 +1,10 @@
-import { DEFAULT_DELIMITERS, escapeValue, readDelimiters, unescapeValue } from './encoding.js';
+import {
+  DEFAULT_DELIMITERS,
+  endsSegment,
+  escapeValue,
+  readDelimiters,
+  unescapeValue,
+} from './encoding.js';
 import type { Delimiters } from './encoding.js';
 import { Hl7Error } from './errors.js';
 
@@ -177,6 +183,7 @@ export function renderMessage(message: Hl7Message): string {
 }
 
 function renderSegment(segment: Segment, delimiters: Delimiters): string {
+  assertEncoded(segment, delimiters);
   if (segment.id === 'MSH') {
     // The separator is field 1 and is written by being there; the encoding
     // characters are field 2 and are written as a value. Writing field 1 as a
@@ -191,15 +198,82 @@ function renderSegment(segment: Segment, delimiters: Delimiters): string {
   return `${segment.id}${delimiters.field}${fields.slice(0, end).join(delimiters.field)}`;
 }
 
-/** Builds a segment from HL7-numbered fields, so `set(3, 'X')` is field 3. */
-export function buildSegment(id: string, values: Readonly<Record<number, string>>): Segment {
+/**
+ * What a builder may put in a field.
+ *
+ * A plain string is DATA, and is escaped. An array is a composite, one entry per
+ * component, each escaped. Neither can produce syntax, which is the point: the
+ * builders assemble fields out of names, identifiers, lot numbers and free text
+ * that arrived from somewhere else, and the previous signature - a record of
+ * already-encoded strings - made "escape it" a thing each of the fifty-odd
+ * fields had to remember separately. Most did not.
+ */
+export type FieldValue = string | readonly string[] | Verbatim;
+
+/** Text that is HL7 syntax rather than data. See {@link verbatim}. */
+interface Verbatim {
+  readonly verbatim: string;
+}
+
+/**
+ * Marks a value as syntax the codec is writing on purpose.
+ *
+ * Two fields in the whole package: `MSH-1`, which IS the field separator, and
+ * `MSH-2`, which is the other four delimiters. Escaping those would emit a
+ * header that describes delimiters no message uses. Everything else is data.
+ * The wrapper exists so those two are visible and greppable rather than being
+ * an unstated exception in the middle of a loop.
+ */
+export function verbatim(value: string): FieldValue {
+  return { verbatim: value };
+}
+
+/** Builds a segment from HL7-numbered fields, so `3: 'X'` is field 3. */
+export function buildSegment(
+  id: string,
+  values: Readonly<Record<number, FieldValue>>,
+  delimiters: Delimiters
+): Segment {
   const numbers = Object.keys(values).map(Number);
   const highest = numbers.length === 0 ? 0 : Math.max(...numbers);
   const fields: string[] = Array.from({ length: highest + 1 }, () => '');
   for (const [number, value] of Object.entries(values)) {
-    fields[Number(number)] = value;
+    fields[Number(number)] = encodeField(value, delimiters);
   }
   return { id, fields };
+}
+
+function encodeField(value: FieldValue, delimiters: Delimiters): string {
+  if (typeof value === 'string') return escapeValue(value, delimiters);
+  if (Array.isArray(value)) return joinComponents(value, delimiters);
+  return (value as Verbatim).verbatim;
+}
+
+/**
+ * The last check before bytes leave: no field may carry structure.
+ *
+ * `buildSegment` escapes everything it is handed, so nothing built through this
+ * package can fail here. What can is a `Segment` assembled some other way, or
+ * one round-tripped out of `parseMessage` and edited, or a future builder that
+ * writes `fields` directly. Those are the paths by which a name or a lot number
+ * carrying a carriage return becomes an extra segment in the outbound message,
+ * and the receiving system files a result nobody ordered.
+ *
+ * It throws rather than escaping, because a raw separator here means the caller
+ * and this file disagree about whether `fields` holds data or syntax, and
+ * silently picking one answer would make the disagreement permanent.
+ */
+function assertEncoded(segment: Segment, delimiters: Delimiters): void {
+  for (const [index, value] of segment.fields.entries()) {
+    // MSH-1 is the field separator itself and is never rendered as a value; the
+    // loop skips it rather than the check making an exception for a delimiter.
+    if (segment.id === 'MSH' && index <= 1) continue;
+    if (endsSegment(value) || value.includes(delimiters.field)) {
+      throw new Hl7Error(
+        `${segment.id}-${String(index)} carries a field separator or a line break, which would end the segment and start another. Field values must be escaped before they are rendered.`
+      );
+    }
+  }
 }
 
 /** A message built from segments, with the delimiters this codec writes. */

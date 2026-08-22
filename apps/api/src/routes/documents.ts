@@ -2,6 +2,7 @@ import {
   generateCcd,
   parseCcd,
   CcdaError,
+  DEFAULT_XML_LIMITS,
   type AllergyEntry,
   type CcdDocument,
   type CodedValue,
@@ -62,7 +63,19 @@ const importBodySchema = z.object({
    * route is JSON and the client is our own. A partner posting XML directly
    * belongs on a separate ingress with its own authentication.
    */
-  document: z.string().min(1, 'The document is empty.'),
+  document: z
+    .string()
+    .min(1, 'The document is empty.')
+    // Refused before a character is scanned. The parser carries its own ceiling
+    // - it is the property of parsing a document somebody else composed, not of
+    // this one route - but a body limit is cheaper still, and it answers 422
+    // naming the field rather than 400 naming the codec. `document.write` is a
+    // front-desk permission in the shipped role map, so the caller who can post
+    // here is an ordinary member of staff.
+    .max(
+      DEFAULT_XML_LIMITS.maxLength,
+      `A C-CDA larger than ${String(DEFAULT_XML_LIMITS.maxLength)} characters is a transport or export defect rather than a chart.`
+    ),
 });
 
 const codedValueSchema = z.object({

@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import { AuditCollector } from '../audit/collector.js';
 import { createMemoryAuditSink } from '../audit/memory-sink.js';
-import { createPrismaAuditSink, isAuditWriteScope } from '../audit/prisma-sink.js';
+import {
+  createPrismaAuditSink,
+  isAuditWriteScope,
+  type StandaloneAuditWork,
+} from '../audit/prisma-sink.js';
 import type { AuditEvent, AuditRequestContext } from '../audit/types.js';
 
-import { DEMO_TENANT_A, FIXED_NOW, testId } from './support.js';
+import { DEMO_TENANT_A, DEMO_TENANT_B, FIXED_NOW, testId } from './support.js';
 
 const CONTEXT: AuditRequestContext = {
   tenantId: DEMO_TENANT_A,
@@ -193,11 +197,19 @@ interface StoredAuditRow {
   [key: string]: unknown;
 }
 
-/** A fake `auditEvent` delegate that keeps the chain the real column would. */
+/**
+ * A fake standalone unit of work that keeps the chain the real column would,
+ * and records the tenant each one was opened under.
+ *
+ * A runner rather than a bare scope, mirroring the real one: `AuditEvent` is
+ * policied like every other table, so a standalone write has to open a session
+ * declaring its tenant or Postgres refuses it - and a refused audit write is the
+ * quietest failure in this system.
+ */
 function fakeAuditScope() {
   const rows: StoredAuditRow[] = [];
-  return {
-    rows,
+  const tenants: string[] = [];
+  const scope = {
     auditEvent: {
       create(args: { data: unknown }): Promise<{ id: string }> {
         const data = args.data as StoredAuditRow;
@@ -210,6 +222,16 @@ function fakeAuditScope() {
       },
     },
   };
+
+  const standalone: StandaloneAuditWork = async (tenantId, run) => {
+    tenants.push(tenantId);
+    return run(scope);
+  };
+
+  // `scope` is exposed as well as `standalone`, because a caller's transaction
+  // arrives at the sink as a bare scope: it is already inside the mutation's
+  // own unit of work and must not open a second one.
+  return { rows, tenants, standalone, scope };
 }
 
 const EVENT: AuditEvent = {
@@ -223,26 +245,44 @@ const EVENT: AuditEvent = {
 };
 
 describe('createPrismaAuditSink', () => {
+  /**
+   * The session, asserted. `AuditEvent` is policied like every other table, so a
+   * standalone write outside a declared session is refused by Postgres - and
+   * that refusal is the quietest failure in this system, because the collector
+   * logs a flush error after the response has already gone out. The sink used to
+   * be handed a bare client, which worked only while the API connected as a
+   * superuser.
+   */
+  it('opens the standalone work under the tenant the event names', async () => {
+    const fake = fakeAuditScope();
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
+
+    await sink.recordWrite(DEMO_TENANT_A, EVENT);
+    await sink.recordReadBatch(DEMO_TENANT_B, { ...EVENT, action: 'patient.read' });
+
+    expect(fake.tenants).toEqual([DEMO_TENANT_A, DEMO_TENANT_B]);
+  });
+
   it('links each event onto the tenant chain', async () => {
-    const standalone = fakeAuditScope();
-    const sink = createPrismaAuditSink({ standalone, now: () => FIXED_NOW });
+    const fake = fakeAuditScope();
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
 
     await sink.recordWrite(DEMO_TENANT_A, EVENT);
     await sink.recordWrite(DEMO_TENANT_A, { ...EVENT, action: 'patient.updated' });
 
-    expect(standalone.rows.map((row) => row.seq)).toEqual([1n, 2n]);
-    expect(standalone.rows[0]?.prevHash).toBe(AUDIT_GENESIS_HASH);
-    expect(standalone.rows[1]?.prevHash).toBe(standalone.rows[0]?.hash);
+    expect(fake.rows.map((row) => row.seq)).toEqual([1n, 2n]);
+    expect(fake.rows[0]?.prevHash).toBe(AUDIT_GENESIS_HASH);
+    expect(fake.rows[1]?.prevHash).toBe(fake.rows[0]?.hash);
   });
 
   it('produces a chain the database package can verify', async () => {
-    const standalone = fakeAuditScope();
-    const sink = createPrismaAuditSink({ standalone, now: () => FIXED_NOW });
+    const fake = fakeAuditScope();
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
     await sink.recordWrite(DEMO_TENANT_A, EVENT);
     await sink.recordReadBatch(DEMO_TENANT_A, { ...EVENT, action: 'phi.read' });
 
     const verification = verifyAuditChain(
-      standalone.rows.map((row) => ({
+      fake.rows.map((row) => ({
         tenantId: DEMO_TENANT_A,
         seq: row.seq,
         occurredAt: FIXED_NOW,
@@ -262,18 +302,21 @@ describe('createPrismaAuditSink', () => {
   });
 
   it('writes a mutation event through the caller transaction, not the root client', async () => {
-    const standalone = fakeAuditScope();
+    const fake = fakeAuditScope();
     const transaction = fakeAuditScope();
-    const sink = createPrismaAuditSink({ standalone, now: () => FIXED_NOW });
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
 
-    await sink.recordWrite(DEMO_TENANT_A, EVENT, transaction);
+    await sink.recordWrite(DEMO_TENANT_A, EVENT, transaction.scope);
 
     expect(transaction.rows).toHaveLength(1);
-    expect(standalone.rows).toHaveLength(0);
+    expect(fake.rows).toHaveLength(0);
   });
 
   it('refuses a unit of work it does not recognise rather than writing outside it', async () => {
-    const sink = createPrismaAuditSink({ standalone: fakeAuditScope(), now: () => FIXED_NOW });
+    const sink = createPrismaAuditSink({
+      standalone: fakeAuditScope().standalone,
+      now: () => FIXED_NOW,
+    });
 
     await expect(sink.recordWrite(DEMO_TENANT_A, EVENT, { notATransaction: true })).rejects.toThrow(
       /unrecognised unit of work/
@@ -291,23 +334,23 @@ describe('createPrismaAuditSink', () => {
   });
 
   it('defaults its clock to the wall clock', async () => {
-    const standalone = fakeAuditScope();
+    const fake = fakeAuditScope();
     const before = Date.now();
-    await createPrismaAuditSink({ standalone }).recordWrite(DEMO_TENANT_A, EVENT);
+    await createPrismaAuditSink({ standalone: fake.standalone }).recordWrite(DEMO_TENANT_A, EVENT);
 
-    const occurredAt = standalone.rows[0]?.occurredAt;
+    const occurredAt = fake.rows[0]?.occurredAt;
     expect(occurredAt).toBeInstanceOf(Date);
     expect((occurredAt as Date).getTime()).toBeGreaterThanOrEqual(before);
   });
 
   it('hashes what the database package would hash', async () => {
-    const standalone = fakeAuditScope();
-    await createPrismaAuditSink({ standalone, now: () => FIXED_NOW }).recordWrite(
+    const fake = fakeAuditScope();
+    await createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW }).recordWrite(
       DEMO_TENANT_A,
       EVENT
     );
 
-    expect(standalone.rows[0]?.hash).toBe(
+    expect(fake.rows[0]?.hash).toBe(
       computeAuditHash(AUDIT_GENESIS_HASH, {
         ...EVENT,
         tenantId: DEMO_TENANT_A,

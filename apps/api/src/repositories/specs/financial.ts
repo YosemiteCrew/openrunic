@@ -16,6 +16,7 @@ import {
   comparable,
   inWindow,
   jsonColumn,
+  statusMetadata,
   windowFilter,
   type BaseQuery,
   type ChildBatch,
@@ -115,7 +116,9 @@ const REMITTANCE_LINE_DEFAULTS = {
 
 const STATEMENT_DEFAULTS = {
   status: 'DRAFT',
-  dunningCycle: 1,
+  // Zero notices, because none has been sent. This used to be 1, which claimed
+  // a notice for every statement ever created, including ones still in draft.
+  dunningCycle: 0,
 } satisfies Partial<Writable<'Statement'>>;
 
 /**
@@ -141,16 +144,6 @@ function mentionedColumns<M extends PrismaModelName>(
     if (value !== undefined) data[column] = value;
   }
   return data as Partial<Writable<M>>;
-}
-
-/** Facts worth carrying on a write event: the state, and how it moved. */
-function statusMetadata(
-  status: string,
-  before: { status: string } | null,
-  created: Record<string, unknown>
-): Record<string, unknown> {
-  if (before === null) return { status, ...created };
-  return before.status === status ? {} : { statusFrom: before.status, statusTo: status };
 }
 
 /* ------------------------------------------------------------------ coverage */
@@ -298,6 +291,7 @@ export const chargeItemSpec: CollectionSpec<
   action: 'charge',
   patientColumn: 'patientId',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   encounterColumn: 'encounterId',
   compartment: { column: 'patientId' },
 
@@ -1206,6 +1200,10 @@ export type StatementPatchInput = {
   payLinkToken?: string;
   payLinkExpiresAt?: Date;
   paidAt?: Date;
+  lastNoticeAt?: Date;
+  holdUntil?: Date;
+  holdReason?: string;
+  closedReason?: string;
 };
 
 export const statementSpec: CollectionSpec<
@@ -1237,6 +1235,12 @@ export const statementSpec: CollectionSpec<
       payLinkToken: input.payLinkToken ?? null,
       payLinkExpiresAt: input.payLinkExpiresAt ?? null,
       paidAt: null,
+      // Set by the notice route, not at creation, for the same reason as
+      // `deliveredAt`: a statement nobody has chased has no notice date.
+      lastNoticeAt: input.lastNoticeAt ?? null,
+      holdUntil: input.holdUntil ?? null,
+      holdReason: input.holdReason ?? null,
+      closedReason: input.closedReason ?? null,
     };
   },
 
@@ -1281,6 +1285,11 @@ export const statementSpec: CollectionSpec<
     return statusMetadata(row.status, before, {
       balanceCents: row.balanceCents,
       dunningCycle: row.dunningCycle,
+      // On the audit trail because a hold and a write-off are the two decisions
+      // a practice has to be able to justify afterwards, and both are answers to
+      // "why was this patient not billed".
+      ...(row.holdUntil === null ? {} : { holdUntil: row.holdUntil.toISOString() }),
+      ...(row.closedReason === null ? {} : { closedReason: row.closedReason }),
     });
   },
 };

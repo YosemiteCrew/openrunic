@@ -12,179 +12,220 @@ import type { Command, NavigateCommand } from '@/components/command';
  */
 
 export interface NavArea {
-  /** Rail label and the palette's "Go to" entry. Sentence case. */
-  label: string;
+  /**
+   * Stable identity for this area, independent of what it is called.
+   *
+   * The palette's command id is built from this rather than from the label,
+   * which used to be lowercased into the id directly. That was fine while there
+   * was one language: it means a command's id changes when the reader's
+   * language does, and anything keyed on it - a recently-used list, a shortcut,
+   * a test - silently stops matching.
+   */
+  id: string;
+  /** Catalogue key for the rail label and the palette's "Go to" entry. */
+  labelKey: string;
   href: string;
   /** Lucide slug. */
   icon: string;
-  /** What a tired person might type instead of the label. */
-  keywords: string[];
+  /**
+   * Catalogue key for the search words a tired person types instead of the
+   * label, comma separated.
+   *
+   * Per-language and not transliterations: somebody searching in Spanish does
+   * not type "flow", so the Spanish catalogue carries the words they do type.
+   */
+  keywordsKey: string;
 }
 
 export const NAV_AREAS: readonly NavArea[] = [
   {
-    label: 'Schedule',
+    id: 'schedule',
+    labelKey: 'nav.schedule',
     href: '/schedule',
     icon: 'calendar-days',
-    keywords: ['calendar', 'day view', 'appointments', 'book', 'front desk'],
+    keywordsKey: 'nav.schedule.keywords',
   },
   {
     // Kept verbatim from legacy systems: migrants know this board by this name.
-    label: 'Flow Board',
+    id: 'flow-board',
+    labelKey: 'nav.flowBoard',
     href: '/schedule/flow-board',
     icon: 'columns-3',
-    keywords: ['flow', 'board', 'waiting', 'rooms', 'check in', 'arrived', 'wait time'],
+    keywordsKey: 'nav.flowBoard.keywords',
   },
   {
-    label: 'Patients',
+    id: 'patients',
+    labelKey: 'nav.patients',
     href: '/patients',
     icon: 'users',
-    keywords: ['chart', 'register', 'search', 'demographics', 'mrn'],
+    keywordsKey: 'nav.patients.keywords',
   },
   {
-    label: 'Inbox',
+    id: 'inbox',
+    labelKey: 'nav.inbox',
     href: '/inbox',
     icon: 'inbox',
-    keywords: ['tasks', 'messages', 'refills', 'cosign', 'worklist'],
+    keywordsKey: 'nav.inbox.keywords',
   },
   {
-    label: 'Orders',
+    id: 'orders',
+    labelKey: 'nav.orders',
     href: '/orders',
     icon: 'clipboard-list',
-    keywords: ['labs', 'imaging', 'prescriptions', 'erx', 'requisition'],
+    keywordsKey: 'nav.orders.keywords',
   },
   {
-    label: 'Billing',
+    id: 'billing',
+    labelKey: 'nav.billing',
     href: '/billing',
     icon: 'receipt',
-    keywords: ['fee sheet', 'charges', 'claims', 'era', 'payments', 'aging'],
+    keywordsKey: 'nav.billing.keywords',
   },
   {
-    label: 'Reports',
+    id: 'reports',
+    labelKey: 'nav.reports',
     href: '/reports',
     icon: 'chart-column',
-    keywords: ['dashboard', 'kpi', 'exports', 'analytics'],
+    keywordsKey: 'nav.reports.keywords',
   },
   {
-    label: 'Admin',
+    id: 'admin',
+    labelKey: 'nav.admin',
     href: '/admin',
     icon: 'settings',
-    keywords: ['users', 'roles', 'facilities', 'form builder', 'settings', 'audit'],
+    keywordsKey: 'nav.admin.keywords',
   },
 ];
 
 /** Routes that are reachable but do not earn a rail row. */
 const SECONDARY_ROUTES: readonly NavArea[] = [
   {
-    label: 'Results',
+    id: 'results',
+    labelKey: 'nav.results',
     href: '/results',
     icon: 'flask-conical',
-    keywords: ['labs', 'flowsheet', 'sign off', 'abnormal', 'pending review'],
+    keywordsKey: 'nav.results.keywords',
   },
   {
-    label: 'New patient',
+    id: 'new-patient',
+    labelKey: 'nav.newPatient',
     href: '/patients/new',
     icon: 'user-plus',
-    keywords: ['register', 'registration', 'walk-in', 'add patient', 'new record'],
+    keywordsKey: 'nav.newPatient.keywords',
   },
   {
-    label: 'New order',
+    id: 'new-order',
+    labelKey: 'nav.newOrder',
     href: '/orders/new',
     icon: 'circle-plus',
-    keywords: ['order labs', 'order imaging', 'requisition', 'composer', 'procedure'],
+    keywordsKey: 'nav.newOrder.keywords',
   },
-  /* Billing is one rail row and five workbenches. Each one is named here so a
-     biller reaches the screen they mean by typing the word they use for it,
-     rather than landing on Billing and hunting. */
   {
-    label: 'Fee sheet',
+    id: 'fee-sheet',
+    labelKey: 'nav.feeSheet',
     href: '/billing/charges',
     icon: 'receipt-text',
-    keywords: ['charges', 'charge capture', 'superbill', 'cpt', 'justify', 'dx link'],
+    keywordsKey: 'nav.feeSheet.keywords',
   },
   {
-    label: 'Claim workbench',
+    id: 'claim-workbench',
+    labelKey: 'nav.claimWorkbench',
     href: '/billing/claims',
     icon: 'file-check',
-    keywords: ['claims', 'scrub', 'submit', 'denied', 'ageing', 'aging', '837'],
+    keywordsKey: 'nav.claimWorkbench.keywords',
   },
   {
-    label: 'Remittance',
+    id: 'remittance',
+    labelKey: 'nav.remittance',
     href: '/billing/remittance',
     icon: 'file-input',
-    keywords: ['era', '835', 'eob', 'auto-post', 'posting', 'exceptions'],
+    keywordsKey: 'nav.remittance.keywords',
   },
   {
-    label: 'Statements and AR',
+    id: 'statements-and-ar',
+    labelKey: 'nav.statements',
     href: '/billing/statements',
     icon: 'mail',
-    keywords: ['statements', 'ar', 'aging', 'ageing', 'dunning', 'balances', 'text to pay'],
+    keywordsKey: 'nav.statements.keywords',
   },
   {
-    label: 'Payments',
+    id: 'payments',
+    labelKey: 'nav.payments',
     href: '/billing/payments',
     icon: 'credit-card',
-    keywords: ['payment', 'copay', 'collect', 'receipt', 'card on file', 'allocation'],
+    keywordsKey: 'nav.payments.keywords',
   },
-  /* Admin is one rail row and six screens. Same reasoning as billing: an admin
-     types the thing they came to change, not the section it lives under. */
   {
-    label: 'Users and roles',
+    id: 'users-and-roles',
+    labelKey: 'nav.usersAndRoles',
     href: '/admin/users',
     icon: 'users',
-    keywords: ['staff', 'accounts', 'permissions', 'acl', 'invite', 'mfa', 'deactivate'],
+    keywordsKey: 'nav.usersAndRoles.keywords',
   },
   {
-    label: 'Facilities',
+    id: 'facilities',
+    labelKey: 'nav.facilities',
     href: '/admin/facilities',
     icon: 'building-2',
-    keywords: ['locations', 'sites', 'pos code', 'hours', 'rooms', 'npi'],
+    keywordsKey: 'nav.facilities.keywords',
   },
   {
-    label: 'Form builder',
+    id: 'form-builder',
+    labelKey: 'nav.formBuilder',
     href: '/admin/forms',
     icon: 'layout-template',
-    keywords: ['forms', 'layout', 'lbf', 'intake', 'questionnaire', 'fields', 'publish'],
+    keywordsKey: 'nav.formBuilder.keywords',
   },
   {
-    label: 'Audit trail',
+    id: 'audit-trail',
+    labelKey: 'nav.auditTrail',
     href: '/admin/audit',
     icon: 'scroll-text',
-    keywords: ['audit', 'access log', 'phi', 'breakglass', 'compliance', 'export'],
+    keywordsKey: 'nav.auditTrail.keywords',
   },
   {
-    label: 'Integrations',
+    id: 'integrations',
+    labelKey: 'nav.integrations',
     href: '/admin/integrations',
     icon: 'plug',
-    keywords: ['adapters', 'erx', 'clearinghouse', 'labs', 'payments', 'fax', 'connections'],
+    keywordsKey: 'nav.integrations.keywords',
   },
   {
-    label: 'Developer platform',
+    id: 'developer-platform',
+    labelKey: 'nav.developerPlatform',
     href: '/admin/developer',
     icon: 'code',
-    keywords: ['api', 'keys', 'smart', 'fhir', 'oauth', 'webhooks', 'subscriptions'],
+    keywordsKey: 'nav.developerPlatform.keywords',
   },
 ];
 
 /** The rail row that owns a path, so a chart route still lights up "Patients". */
-export function activeAreaLabel(pathname: string): string | undefined {
-  const match = [...NAV_AREAS]
+export function activeArea(pathname: string): NavArea | undefined {
+  return [...NAV_AREAS]
     .filter((area) => pathname === area.href || pathname.startsWith(`${area.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0];
-  return match?.label;
 }
 
 /**
- * Every route as a palette command. Registered once by the shell, so a new
- * screen becomes keyboard-reachable by adding one entry here and nothing else.
+ * Every route as a palette command, in the reader's language.
+ *
+ * A function rather than a constant, because the labels and the search words
+ * both depend on who is reading. The id does not: it comes from the area's own
+ * `id`, so a command keeps its identity when the language changes. It used to
+ * be the lowercased label, which meant every command silently got a new id the
+ * moment the reader switched language, and anything keyed on it stopped
+ * matching.
  */
-export const NAVIGATE_COMMANDS: Command[] = [...NAV_AREAS, ...SECONDARY_ROUTES].map(
-  (area): NavigateCommand => ({
-    id: `navigate.${area.label.toLowerCase()}`,
+export function navigateCommands(translate: (key: string) => string): Command[] {
+  return [...NAV_AREAS, ...SECONDARY_ROUTES].map((area): NavigateCommand => ({
+    id: `navigate.${area.id}`,
     group: 'navigate',
-    label: area.label,
+    label: translate(area.labelKey),
     href: area.href,
     icon: area.icon,
-    keywords: area.keywords,
-  })
-);
+    keywords: translate(area.keywordsKey)
+      .split(',')
+      .map((word) => word.trim())
+      .filter((word) => word !== ''),
+  }));
+}

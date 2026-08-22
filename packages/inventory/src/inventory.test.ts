@@ -18,6 +18,8 @@ import {
   itemBalance,
   lastUsableDay,
   lotBalance,
+  isStockPrecision,
+  MAX_STOCK_QUANTITY,
   movementProblems,
   movementsFor,
   needsReorder,
@@ -396,6 +398,40 @@ describe('posting rules', () => {
    */
   it.each([0, -1, Number.NaN])('refuses a quantity of %s', (quantity) => {
     expect(movementProblems(movement({ id: 'm', quantity })).length).toBeGreaterThan(0);
+  });
+
+  /**
+   * A validator must not be able to fail in the way it is meant to report.
+   *
+   * The grid check called `toStockPrecision`, which THROWS above the safe-step
+   * bound, so a finite number past it - `1e300`, or anything over about nine
+   * billion - escaped this function as a RangeError instead of coming back as a
+   * problem. Whatever called it then rendered a 500, which is an internal fault
+   * where the truth is "that quantity is not one we can hold".
+   */
+  it.each([1e300, Number.MAX_VALUE, MAX_STOCK_QUANTITY + 1, Number.POSITIVE_INFINITY, 1e10])(
+    'reports a quantity of %s as a problem rather than throwing',
+    (quantity) => {
+      expect(() => movementProblems(movement({ id: 'm', quantity }))).not.toThrow();
+      expect(movementProblems(movement({ id: 'm', quantity })).length).toBeGreaterThan(0);
+    }
+  );
+
+  it('still accepts the largest quantity the ledger can actually carry', () => {
+    expect(movementProblems(movement({ id: 'm', quantity: MAX_STOCK_QUANTITY }))).toEqual([]);
+  });
+
+  /**
+   * The bound is the arithmetic's, not the column's. DECIMAL(18,6) would take
+   * twelve integer digits; balances are summed as six-decimal grid steps, and
+   * step counts have to stay under MAX_SAFE_INTEGER for that sum to be exact.
+   */
+  it('bounds quantities by what the step arithmetic can carry', () => {
+    expect(MAX_STOCK_QUANTITY).toBe(Math.floor(Number.MAX_SAFE_INTEGER / 1e6));
+    expect(isStockPrecision(MAX_STOCK_QUANTITY)).toBe(true);
+    expect(isStockPrecision(MAX_STOCK_QUANTITY + 1)).toBe(false);
+    expect(isStockPrecision(0.1)).toBe(true);
+    expect(isStockPrecision(0.0000001)).toBe(false);
   });
 
   it.each(['WASTE', 'COUNT_SURPLUS', 'COUNT_SHORTFALL'] as MovementKind[])(

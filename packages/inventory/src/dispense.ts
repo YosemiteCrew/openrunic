@@ -1,5 +1,5 @@
 import { assertIsoDate, fefo, type IsoDate, type Lot } from './lots.js';
-import { balancesByLot, toStockPrecision, type StockMovement } from './ledger.js';
+import { balancesByLot, isStockPrecision, toStockPrecision, type StockMovement } from './ledger.js';
 
 /**
  * DISPENSING: TAKING STOCK OFF THE SHELF, AND FROM WHICH LOT.
@@ -307,7 +307,9 @@ export function allocate(
 const GRID = 1e6;
 
 function onGrid(quantity: number): boolean {
-  return Number.isInteger(Math.round(quantity * GRID)) && toStockPrecision(quantity) === quantity;
+  // The non-throwing form. This is a predicate, and one that raises on the
+  // values it exists to reject is not one.
+  return Number.isInteger(Math.round(quantity * GRID)) && isStockPrecision(quantity);
 }
 
 /** A figure as a whole number of grid steps, for an exact comparison. */

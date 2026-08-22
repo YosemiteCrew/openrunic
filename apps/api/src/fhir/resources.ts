@@ -4,6 +4,7 @@ import {
   MEDICATION_REQUEST_STATUS,
   OBSERVATION_STATUS,
   SERVICE_REQUEST_STATUS,
+  SYSTEMS,
   TASK_STATUS,
   type EnumMapping,
 } from '@openrunic/fhir';
@@ -343,10 +344,82 @@ async function prepareRoles(
  * `projections.ts` carries where `location` comes from, and why it is the
  * facility grants rather than the role assignment's own facility.
  */
+/**
+ * How many practitioners one `specialty` search will resolve.
+ *
+ * The parameter is a code on the practitioner and the rows are the role
+ * assignments hanging off them, so answering it means resolving the code to a
+ * set of user ids and filtering on the set. That set has to be complete: a
+ * truncated one silently drops practitioners, and a client that filtered on
+ * `specialty` and received a slice believing it received the whole is exactly
+ * the failure this boundary exists to prevent.
+ *
+ * So the bound is a refusal, not a truncation. The trade is real and worth
+ * naming: a practice with more than a thousand providers sharing one taxonomy
+ * code gets a 400 on this parameter rather than a wrong answer. That is a
+ * health system rather than a practice, and the honest fix there is a join
+ * rather than a wider bound, which is why this does not simply grow.
+ */
+const MAX_SPECIALTY_PRACTITIONERS = 1000;
+
+/**
+ * The NUCC code a `specialty` token asks for, or nothing.
+ *
+ * FHIR token syntax lets a client qualify a code with its system. A bare code
+ * is the common case and means "this code, any system". `system|code` with the
+ * NUCC system is the same question asked precisely. Anything else - another
+ * system, or the `|code` form that means "code with no system at all" - is a
+ * question about a vocabulary this server does not store, and the answer is
+ * that nothing matches.
+ *
+ * Nothing matching is a 200 with an empty bundle, not a 400. A system this
+ * server has no codes in is not a malformed search; it is a search whose answer
+ * is empty, and the two are different things to a client.
+ */
+function specialtyCode(token: string): string | undefined {
+  const separator = token.indexOf('|');
+  if (separator === -1) return token;
+  const system = token.slice(0, separator);
+  return system === SYSTEMS.nucc ? token.slice(separator + 1) : undefined;
+}
+
+/**
+ * The practitioners carrying a taxonomy code, as the user ids their role
+ * assignments are filtered by.
+ */
+async function practitionersWithSpecialty(
+  token: string,
+  repositories: Repositories
+): Promise<string[]> {
+  const code = specialtyCode(token);
+  if (code === undefined) return [];
+  const page = await repositories.users.list({
+    page: 1,
+    pageSize: MAX_SPECIALTY_PRACTITIONERS,
+    sort: 'familyName',
+    order: 'asc',
+    taxonomyCode: code,
+  });
+  if (page.total > MAX_SPECIALTY_PRACTITIONERS) {
+    throw ApiError.malformed(
+      `specialty matches more practitioners than this server will resolve in one search.`,
+      {
+        issues: [
+          {
+            path: 'specialty',
+            message: `${page.total} practitioners carry this code; the bound is ${MAX_SPECIALTY_PRACTITIONERS}`,
+          },
+        ],
+      }
+    );
+  }
+  return page.rows.map((row) => row.id);
+}
+
 const practitionerRoleModule = defineFhirResource({
   type: 'PractitionerRole',
   interactions: ['read', 'search-type'],
-  params: ['practitioner'],
+  params: ['practitioner', 'specialty'],
   // `role.read`, not `user.read`. This resource is a list of who holds which
   // access-control role, and `/users/:id/roles` - the same rows through the BFF
   // - is behind `role.read` already. Serving them under the weaker permission
@@ -356,7 +429,7 @@ const practitionerRoleModule = defineFhirResource({
   // one door will not is not a second door, it is the way round.
   permission: 'role.read',
   collection: (repositories) => repositories.roleAssignments,
-  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+  toQuery: async (query: SearchParams, paging: FhirPaging, repositories: Repositories) => ({
     ...pageOf(paging),
     // Through `referenceId` rather than straight through: a directory client
     // searches with the reference it was given, `Practitioner/{id}`, and a bare
@@ -365,6 +438,12 @@ const practitionerRoleModule = defineFhirResource({
     ...(query.practitioner === undefined
       ? {}
       : { userId: referenceId(query.practitioner, 'Practitioner', 'practitioner') }),
+    // `userIds` rather than a second `userId`: the spec meets the two rather
+    // than letting one overwrite the other, so `practitioner` and `specialty`
+    // together mean both, which is what a client sending both asked for.
+    ...(query.specialty === undefined
+      ? {}
+      : { userIds: await practitionersWithSpecialty(query.specialty, repositories) }),
     sort: 'createdAt' as const,
     order: 'asc' as const,
   }),

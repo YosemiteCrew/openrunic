@@ -46,7 +46,20 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
     list(query: TQuery): Promise<Page<TRow>>;
     findById(id: string): Promise<TRow | null>;
   };
-  toQuery(params: SearchParams, paging: FhirPaging): TQuery;
+  /**
+   * The collection query for a search.
+   *
+   * Takes `repositories` and may return a promise because one parameter cannot
+   * be answered from the search string alone: `PractitionerRole?specialty=` is
+   * a code on the practitioner, and the rows it filters are the role
+   * assignments hanging off them, so the code has to be resolved to its users
+   * before the query exists. Modules that need neither ignore both.
+   */
+  toQuery(
+    params: SearchParams,
+    paging: FhirPaging,
+    repositories: Repositories
+  ): TQuery | Promise<TQuery>;
   /**
    * Loads everything the page's rows need, once, before any of them is mapped.
    *
@@ -97,7 +110,7 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       const repositories = repositoriesOf(c);
       const page = await descriptor
         .collection(repositories)
-        .list(descriptor.toQuery(params, paging));
+        .list(await descriptor.toQuery(params, paging, repositories));
       // `toResource` may be synchronous for most resources and asynchronous
       // for the ones that resolve a child list, so the map is wrapped rather
       // than assumed to produce promises.

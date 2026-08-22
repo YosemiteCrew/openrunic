@@ -66,8 +66,6 @@ const KNOWN_GAPS: Readonly<Record<string, readonly string[]>> = {
   Appointment: ['status'],
   MedicationStatement: ['status'],
   Immunization: ['status'],
-  // Needs a joined filter the repository cannot express. #94, unblocked by #88.
-  PractitionerRole: ['specialty'],
 };
 
 describe('the must-support parameters this server does not implement', () => {

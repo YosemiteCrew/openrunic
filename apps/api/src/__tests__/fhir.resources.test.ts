@@ -43,6 +43,8 @@ const REPORT = testId(40);
 const NURSE_ROLE = testId(970);
 const SITE_GRANT = testId(971);
 const ORG_GRANT = testId(972);
+const SECOND_PROVIDER = testId(901);
+const SECOND_GRANT = testId(976);
 const SECOND_SITE = testId(975);
 
 function seedChart(dataset: MemoryDataset): void {
@@ -791,6 +793,175 @@ describe('the projections', () => {
     ).json()) as Bundle;
 
     expect(bundle.total).toBe(2);
+  });
+
+  /**
+   * `specialty` is a US Core must-support parameter and the code it searches
+   * lives on the practitioner, not on the role assignment the search returns.
+   * So every case below is really testing one thing: that the code is resolved
+   * to its practitioners and the rows narrowed to them.
+   *
+   * The second practitioner is seeded per test rather than in `harness()`,
+   * which is shared by every assertion in this file. A globally seeded extra
+   * user is the kind of fixture that makes an unrelated count assertion fail
+   * six months later for reasons nobody can reconstruct.
+   */
+  const seedSecondPractitioner = (dataset: MemoryDataset, taxonomyCode: string): void => {
+    seed(dataset, 'User', {
+      ...storageColumns(SECOND_PROVIDER),
+      email: 'r.mbeki@example.invalid',
+      givenName: 'Refilwe',
+      familyName: 'Mbeki',
+      credential: 'MD',
+      npi: '1234567810',
+      dea: null,
+      taxonomyCode,
+      isProvider: true,
+      locale: 'en-US',
+      status: 'ACTIVE',
+      lastLoginAt: null,
+    });
+    seed(dataset, 'RoleAssignment', {
+      ...storageColumns(SECOND_GRANT),
+      userId: SECOND_PROVIDER,
+      roleId: NURSE_ROLE,
+      facilityId: null,
+    });
+  };
+
+  const roleIds = async (app: ReturnType<typeof harness>['app'], query: string) => {
+    const res = await app.request(`/fhir/PractitionerRole?${query}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    if (res.status !== 200) return res.status;
+    const bundle = (await res.json()) as Bundle;
+    return (bundle.entry ?? [])
+      .map((entry) => (entry.resource as FhirResource).id)
+      .sort((left, right) => (left ?? '').localeCompare(right ?? ''));
+  };
+
+  it('finds the roles held by every practitioner carrying the code', async () => {
+    const created = harness();
+    // The same code the seeded provider carries, so both practitioners match.
+    seedSecondPractitioner(created.dataset, '207Q00000X');
+
+    await expect(roleIds(created.app, 'specialty=207Q00000X')).resolves.toEqual(
+      [SITE_GRANT, ORG_GRANT, SECOND_GRANT].sort((left, right) => left.localeCompare(right))
+    );
+  });
+
+  it('leaves out the practitioners carrying a different code', async () => {
+    const created = harness();
+    // Internal medicine, against the seeded provider's family medicine.
+    seedSecondPractitioner(created.dataset, '207R00000X');
+
+    await expect(roleIds(created.app, 'specialty=207R00000X')).resolves.toEqual([SECOND_GRANT]);
+    await expect(roleIds(created.app, 'specialty=207Q00000X')).resolves.toEqual(
+      [SITE_GRANT, ORG_GRANT].sort((left, right) => left.localeCompare(right))
+    );
+  });
+
+  /**
+   * Both parameters at once. This is the case where the two filters write the
+   * same `where` key: a spec that let one overwrite the other would answer with
+   * every family-medicine practitioner's grants here, rather than with the
+   * intersection the client asked for.
+   */
+  it('meets a practitioner filter and a specialty filter rather than picking one', async () => {
+    const created = harness();
+    seedSecondPractitioner(created.dataset, '207Q00000X');
+
+    // Both carry the code; only one is the named practitioner.
+    await expect(
+      roleIds(created.app, `practitioner=Practitioner/${SECOND_PROVIDER}&specialty=207Q00000X`)
+    ).resolves.toEqual([SECOND_GRANT]);
+
+    // And a pair that cannot both hold matches nothing rather than everything.
+    await expect(
+      roleIds(created.app, `practitioner=Practitioner/${SECOND_PROVIDER}&specialty=207R00000X`)
+    ).resolves.toEqual([]);
+  });
+
+  it('accepts the code qualified by the system it belongs to', async () => {
+    const { app } = harness();
+
+    await expect(
+      roleIds(app, 'specialty=http://nucc.org/provider-taxonomy|207Q00000X')
+    ).resolves.toEqual([SITE_GRANT, ORG_GRANT].sort((left, right) => left.localeCompare(right)));
+  });
+
+  /**
+   * A system this server stores no codes in is a search whose answer is empty,
+   * not a malformed search. The two are different things to a client: a 400
+   * says "fix your query" and an empty bundle says "nobody here matches", and
+   * only one of those is true.
+   */
+  it('matches nothing for a system it holds no codes in', async () => {
+    const { app } = harness();
+
+    await expect(roleIds(app, 'specialty=http://snomed.info/sct|207Q00000X')).resolves.toEqual([]);
+    // `|code` is the form that means "this code, in no system at all".
+    await expect(roleIds(app, 'specialty=|207Q00000X')).resolves.toEqual([]);
+  });
+
+  it('matches nothing for a code no practitioner carries, rather than refusing', async () => {
+    const { app } = harness();
+
+    await expect(roleIds(app, 'specialty=208D00000X')).resolves.toEqual([]);
+  });
+
+  /**
+   * The bound is a refusal rather than a truncation, and this is the test that
+   * says so. A truncated set would silently drop practitioners, and a client
+   * that filtered on `specialty` and received a slice believing it received the
+   * whole is the failure this boundary exists to prevent. The cost is stated
+   * plainly on the constant: a practice with more than a thousand providers
+   * sharing one code gets a 400 here rather than a wrong answer.
+   */
+  it('refuses to resolve a specialty more practitioners carry than it will read', async () => {
+    const created = harness();
+    for (let index = 0; index < 1001; index += 1) {
+      seed(created.dataset, 'User', {
+        ...storageColumns(testId(20_000 + index)),
+        email: `bulk-${index}@example.invalid`,
+        givenName: 'Bulk',
+        familyName: `Provider${index}`,
+        credential: 'MD',
+        npi: null,
+        dea: null,
+        taxonomyCode: '363L00000X',
+        isProvider: true,
+        locale: 'en-US',
+        status: 'ACTIVE',
+        lastLoginAt: null,
+      });
+    }
+
+    await expect(roleIds(created.app, 'specialty=363L00000X')).resolves.toBe(400);
+  });
+
+  it('resolves a specialty exactly at the bound rather than refusing it', async () => {
+    const created = harness();
+    for (let index = 0; index < 1000; index += 1) {
+      seed(created.dataset, 'User', {
+        ...storageColumns(testId(20_000 + index)),
+        email: `bulk-${index}@example.invalid`,
+        givenName: 'Bulk',
+        familyName: `Provider${index}`,
+        credential: 'MD',
+        npi: null,
+        dea: null,
+        taxonomyCode: '363L00000X',
+        isProvider: true,
+        locale: 'en-US',
+        status: 'ACTIVE',
+        lastLoginAt: null,
+      });
+    }
+
+    // None of them holds a role assignment, so the answer is empty - but it is
+    // a 200 with an empty bundle, which is the point: the bound was not hit.
+    await expect(roleIds(created.app, 'specialty=363L00000X')).resolves.toEqual([]);
   });
 
   it('refuses a practitioner filter that references the wrong resource type', async () => {

@@ -5,7 +5,7 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
 import type { RouteContract } from '../openapi/registry.js';
-import { requirePermission } from '../middleware/policy.js';
+import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
 import {
   joinTokenSchema,
   telehealthJoinSchema,
@@ -19,7 +19,7 @@ import {
 } from '../schemas/telehealth.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParam, idParamSchema, repositories, required } from './helpers.js';
+import { idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * TELEHEALTH: A ROOM FOR ONE VISIT, AND A TOKEN PER PERSON WHO MAY ENTER IT.
@@ -102,6 +102,15 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     const appointmentId = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     const appointment = required(await repos.appointments.findById(appointmentId), NO_APPOINTMENT);
+    // The appointment's own site, checked the same way `/appointments/:id`
+    // checks it. Without this a principal granted one site could open a room on
+    // an appointment at another, and opening a room is a write: it creates a
+    // TelehealthVisit and asks a vendor for a joinable address.
+    //
+    // `facilityId` is where the visit happens, so it is a containment boundary
+    // rather than an attribution, and narrowing on it costs a legitimate caller
+    // nothing.
+    assertFacilityAccess(policyOf(c), appointment.facilityId);
 
     const existing = await repos.telehealthVisits.list({
       page: 1,

@@ -142,12 +142,14 @@ function inFacility(facilityId: string | null, scope: RequestScope): boolean {
 /**
  * The same rule as a Prisma `where` fragment.
  *
- * Undefined when the caller is unrestricted, so the clause is absent from the
- * query rather than present and vacuously true - a filter that matches
- * everything reads, in a slow query log, exactly like one that was forgotten.
+ * Empty when the caller is unrestricted, so the clause is absent from the query
+ * rather than present and vacuously true - a filter that matches everything
+ * reads, in a slow query log, exactly like one that was forgotten. Returning
+ * the empty case rather than undefined is what lets both call sites spread it
+ * without each having to branch.
  */
-function facilityWhere(scope: RequestScope): Record<string, unknown> | undefined {
-  if (scope.facilityIds === undefined) return undefined;
+function facilityWhere(scope: RequestScope): Record<string, unknown> {
+  if (scope.facilityIds === undefined) return {};
   return { OR: [{ facilityId: { in: [...scope.facilityIds] } }, { facilityId: null }] };
 }
 
@@ -203,7 +205,7 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
           },
         }),
     ...(scope.compartmentPatientId === undefined ? {} : { patientId: scope.compartmentPatientId }),
-    ...(facilityWhere(scope) ?? {}),
+    ...facilityWhere(scope),
   });
 
   return {
@@ -227,7 +229,7 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
       const record = await delegate.findFirst({
         where: {
           id,
-          ...(facilityWhere(scope) ?? {}),
+          ...facilityWhere(scope),
           ...(scope.compartmentPatientId === undefined
             ? {}
             : { patientId: scope.compartmentPatientId }),

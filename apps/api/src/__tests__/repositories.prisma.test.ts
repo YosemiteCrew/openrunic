@@ -21,6 +21,7 @@ import { patientSpec } from '../repositories/specs/core.js';
 import { createFakePort, matchesWhere, type FakePort } from './fake-port.js';
 import {
   DEMO_FACILITY_A,
+  DEMO_FACILITY_B,
   DEMO_TENANT_A,
   FIXED_NOW,
   makeAppointmentRow,
@@ -462,7 +463,12 @@ describe('appointment rows survive the round trip', () => {
 });
 
 describe('the Prisma audit query', () => {
-  function seedChain(h: Harness): void {
+  /**
+   * Three linked events. `facilities` sites them, positionally, and is passed
+   * through `append` rather than stamped on the row afterwards so the chain
+   * hash covers the facility like it does in production.
+   */
+  function seedChain(h: Harness, facilities: readonly (string | undefined)[] = []): void {
     const store = createAuditChainStore(() => testId(700));
     const rows = [
       { action: 'patient.created', patientId: testId(1), outcome: 'success' as const },
@@ -472,6 +478,7 @@ describe('the Prisma audit query', () => {
     let index = 0;
     for (const entry of rows) {
       index += 1;
+      const facilityId = facilities[index - 1];
       const stored = store.append(
         DEMO_TENANT_A,
         {
@@ -481,6 +488,7 @@ describe('the Prisma audit query', () => {
           targetType: 'Patient',
           targetId: testId(index),
           ...(entry.patientId === undefined ? {} : { patientId: entry.patientId }),
+          ...(facilityId === undefined ? {} : { facilityId }),
           outcome: entry.outcome,
           metadata: {},
         },
@@ -491,7 +499,7 @@ describe('the Prisma audit query', () => {
         id: testId(600 + index),
         actorDisplay: null,
         encounterId: null,
-        facilityId: null,
+        facilityId: stored.facilityId ?? null,
         purposeOfUse: null,
         breakglass: false,
         sourceIp: null,
@@ -564,6 +572,47 @@ describe('the Prisma audit query', () => {
 
     expect(page.total).toBe(1);
     await expect(query.findById(testId(602))).resolves.toBeNull();
+  });
+
+  it('narrows a site-confined principal to its own sites, and to the unsited events', async () => {
+    const h = harness();
+    seedChain(h, [DEMO_FACILITY_A, DEMO_FACILITY_B, undefined]);
+    const scope: RequestScope = { ...h.scope, facilityIds: [DEMO_FACILITY_A] };
+    const query = createPrismaAuditQuery(h.port, scope);
+
+    const page = await query.list({ page: 1, pageSize: 25, sort: 'seq', order: 'asc' });
+
+    // Site A's event and the unsited one. The unsited event stays because an
+    // event with no facility is an organisation-wide act, and hiding those
+    // would empty an auditor's page of exactly what they most need to see.
+    expect(page.rows.map((row) => row.facilityId)).toEqual([DEMO_FACILITY_A, null]);
+    expect(page.total).toBe(2);
+  });
+
+  it('reports another site event as absent rather than serving it by id', async () => {
+    const h = harness();
+    seedChain(h, [DEMO_FACILITY_A, DEMO_FACILITY_B, undefined]);
+    const query = createPrismaAuditQuery(h.port, {
+      ...h.scope,
+      facilityIds: [DEMO_FACILITY_A],
+    });
+
+    await expect(query.findById(testId(602))).resolves.toBeNull();
+    await expect(query.findById(testId(601))).resolves.toMatchObject({
+      facilityId: DEMO_FACILITY_A,
+    });
+  });
+
+  it('leaves a principal holding every facility unnarrowed', async () => {
+    const h = harness();
+    seedChain(h, [DEMO_FACILITY_A, DEMO_FACILITY_B, undefined]);
+    // `facilityIds` undefined is how the middleware represents `facility.all`.
+    const query = createPrismaAuditQuery(h.port, h.scope);
+
+    const page = await query.list({ page: 1, pageSize: 25, sort: 'seq', order: 'asc' });
+
+    expect(page.total).toBe(3);
+    await expect(query.findById(testId(602))).resolves.not.toBeNull();
   });
 
   it('verifies the chain it reads back', async () => {

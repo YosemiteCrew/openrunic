@@ -7,6 +7,7 @@ import { TopBar } from '@/components/shell/TopBar';
 import { ABSOLUTE_LIFETIME_MS } from '@/lib/auth/session';
 import type { Session } from '@/lib/auth/session';
 import { heldSession, holdSession } from '@/lib/auth/store';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 
 /**
  * Who the top bar says you are, and how you stop being them.
@@ -89,7 +90,10 @@ describe('signing out', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     await waitFor(() => expect(heldSession()).toBeNull());
-    expect(fetchImpl).toHaveBeenCalledWith('/session', { method: 'DELETE' });
+    expect(fetchImpl).toHaveBeenCalledWith('/session', {
+      method: 'DELETE',
+      headers: { [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER },
+    });
   });
 
   it('reloads the document onto the sign-in screen, so no chart is left behind it', async () => {

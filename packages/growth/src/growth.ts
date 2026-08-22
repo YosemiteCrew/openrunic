@@ -143,6 +143,59 @@ function choose(query: GrowthQuery): TableChoice | GrowthRefusal {
   return { table, index: age };
 }
 
+/**
+ * The fields the TYPE promises and the runtime cannot.
+ *
+ * `GrowthQuery` says `measure` is one of six strings and `sex` is one of two,
+ * and TypeScript enforces that at every call site it compiles. This is a
+ * published library entry point though, so its callers include JavaScript, JSON
+ * that arrived over a wire, and a route handler that read a column. None of
+ * those are checked, and every unchecked field here fails SILENTLY rather than
+ * loudly: an unrecognised sex falls through to the female table, an unknown
+ * measure at a child age falls through to BMI, and a NaN age reads the birth
+ * row. Each of those returns a plausible percentile computed against the wrong
+ * reference, printed beside percentiles that are right.
+ *
+ * Refusing is the whole posture of this file - it answers `not-measurable`
+ * rather than extrapolating off the end of a table - and these are the same
+ * question one layer earlier.
+ */
+function refuseMalformed(query: GrowthQuery): GrowthRefusal | undefined {
+  if (!MEASURES.has(query.measure)) {
+    return {
+      reason: 'not-measurable',
+      detail: `${String(query.measure)} is not a measure these charts describe. Ask for one of ${[...MEASURES].join(', ')}.`,
+    };
+  }
+  if (query.sex !== 'male' && query.sex !== 'female') {
+    // Not a default. Every one of these references is sex-specific, so guessing
+    // charts a child against the other one - and a chart whose curves belong to
+    // the other sex is wrong in a way that looks like the child is.
+    return {
+      reason: 'not-measurable',
+      detail: `These charts are sex-specific and ${String(query.sex)} is not a sex they describe.`,
+    };
+  }
+  const index = query.measure === 'weight-for-length' ? query.lengthCm : query.ageMonths;
+  if (index !== undefined && (!Number.isFinite(index) || index < 0)) {
+    return {
+      reason: 'out-of-range',
+      detail: `${query.measure} was asked at an index of ${String(index)}, which is not a position on a chart.`,
+    };
+  }
+  return undefined;
+}
+
+/** The measures, as a set, so a runtime value can be checked against them. */
+const MEASURES: ReadonlySet<Measure> = new Set([
+  'weight-for-age',
+  'length-for-age',
+  'stature-for-age',
+  'head-circumference-for-age',
+  'bmi-for-age',
+  'weight-for-length',
+]);
+
 /** Says which chart the measure belongs to and why this age is not on it. */
 function whyNotCharted(measure: Measure, age: number): string {
   if (measure === 'length-for-age') {
@@ -198,6 +251,9 @@ export function isRefusal<T extends object>(result: T | GrowthRefusal): result i
  * 0th percentile" while being in quite different situations.
  */
 export function percentileFor(query: GrowthQuery): GrowthResult | GrowthRefusal {
+  const malformed = refuseMalformed(query);
+  if (malformed !== undefined) return malformed;
+
   if (!Number.isFinite(query.value) || query.value <= 0) {
     return { reason: 'not-measurable', detail: 'A measurement must be a positive number.' };
   }

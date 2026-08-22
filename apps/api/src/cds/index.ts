@@ -5,7 +5,8 @@ import {
   serviceById,
   type CdsResponse,
 } from '@openrunic/cds-hooks';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
+import { createMiddleware } from 'hono/factory';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -47,7 +48,22 @@ export function cdsRoutes(): Hono<AppEnv> {
     })
   );
 
-  router.post('/:id', requirePermission('patient.read'), async (c) => {
+  // No permission on the mount. Each service names the permission that protects
+  // the data IT reads, and the handler enforces that one, because the services
+  // do not all read the same thing and a single gate here would be the weakest
+  // of them - which is exactly what it was. The route was mounted behind
+  // `patient.read` while the services read allergies and medication statements,
+  // both of which sit behind `encounter.read` everywhere else, so a role given
+  // demographics and denied the chart could read the chart through a hook.
+  //
+  // Authentication is not deferred with it: `requirePermission` is still what
+  // answers 401 for a request with no principal, it just runs once the service
+  // is known. Resolving the service first is a lookup against a table compiled
+  // into the binary, and it reveals nothing an unauthenticated caller cannot
+  // already read from the public discovery document.
+  router.post('/:id', requireServicePermission(), async (c) => {
+    const service = translate(() => serviceById(CDS_SERVICES, c.req.param('id')));
+
     let body: unknown;
     try {
       body = await c.req.json();
@@ -55,7 +71,6 @@ export function cdsRoutes(): Hono<AppEnv> {
       throw ApiError.malformed('The request body is not valid JSON.');
     }
 
-    const service = translate(() => serviceById(CDS_SERVICES, c.req.param('id')));
     const request = translate(() => parseRequest(body));
 
     if (request.hook !== service.definition.hook) {
@@ -92,6 +107,28 @@ export function cdsRoutes(): Hono<AppEnv> {
   });
 
   return router;
+}
+
+/**
+ * Resolves the service, then guards the invocation with the permission that
+ * service declares.
+ *
+ * A middleware rather than a check inside the handler, so the guard is the same
+ * `requirePermission` every other route uses and a denial is audited the same
+ * way. Resolving the service twice - here and in the handler - is a lookup in a
+ * table compiled into the binary, which is a smaller price than a second
+ * spelling of "who may do this".
+ */
+function requireServicePermission(): MiddlewareHandler<AppEnv> {
+  return createMiddleware<AppEnv>(async (c, next) => {
+    // `?? ''` because a middleware is not bound to the path pattern the way a
+    // handler is, so the parameter reads as optional here. An empty id is no
+    // service, which `serviceById` refuses as a 404 - the same answer an unknown
+    // id gets, and one that reveals nothing the public discovery document does
+    // not already list.
+    const service = translate(() => serviceById(CDS_SERVICES, c.req.param('id') ?? ''));
+    return requirePermission(service.permission)(c, next);
+  });
 }
 
 /**

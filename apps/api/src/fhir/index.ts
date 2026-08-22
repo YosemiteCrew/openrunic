@@ -177,6 +177,9 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
         id,
         tenantId: principal.tenantId,
         subject: principal.subject,
+        // Kept so a retrieval can re-ask the scope question against the same
+        // entry point, rather than trusting the subject alone.
+        entry,
         requestUrl: c.req.url,
         transactionTime,
         files,
@@ -220,7 +223,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
    * "gone" from "still working" would wait forever.
    */
   router.get('/$export-status/:id', ...bulkGuards, (c) => {
-    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const job = jobFor(exports, c.req.param('id'), principalOf(c), c.get('policy'), modules);
     return c.json(manifestFor(job, new URL(c.req.url).origin));
   });
 
@@ -230,7 +233,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
    * array pretending.
    */
   router.get('/$export-file/:id/:type', ...bulkGuards, async (c) => {
-    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const job = jobFor(exports, c.req.param('id'), principalOf(c), c.get('policy'), modules);
     const type = c.req.param('type');
     const file = [...job.files, ...job.errors].find((candidate) => candidate.type === type);
     if (file === undefined) {
@@ -254,7 +257,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
   router.delete('/$export-status/:id', ...bulkGuards, (c) => {
     // Resolved through the same binding as a read: a caller may not delete a job
     // it could not have polled.
-    const job = jobFor(exports, c.req.param('id'), principalOf(c));
+    const job = jobFor(exports, c.req.param('id'), principalOf(c), c.get('policy'), modules);
     exports.delete(job.id);
     return c.body(null, 202);
   });

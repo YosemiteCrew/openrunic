@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { growthRouteContracts } from '../routes/growth.js';
+import { internalRouteContracts } from '../routes/index.js';
+
 import {
   bearer,
   createTestApp,
@@ -281,6 +284,44 @@ describe('who may see it', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('the permissions it is published behind', () => {
+  /**
+   * The response carries the patient's sex and birth date, and its 404 answers
+   * whether a given patient id exists at all. Those are demographics, and
+   * demographics are `patient.read` at `/patients/{id}` - so serving them from
+   * behind `encounter.read` alone made this a second, weaker door onto data the
+   * first one refuses.
+   *
+   * Asserted against the patient contract rather than against a permission name
+   * written out here, so moving the demographics boundary moves this with it.
+   *
+   * Structural rather than behavioural because no role this product ships holds
+   * `encounter.read` without `patient.read` - the split is one a tenant can
+   * create by forking a Role, which is exactly the deployment the finding is
+   * about, and not one the demo principals can express.
+   */
+  it('requires the demographics permission as well as the chart one', () => {
+    const growth = growthRouteContracts().find(
+      (contract) => contract.path === '/bff/v0/patients/{id}/growth'
+    );
+    const demographics = internalRouteContracts().find(
+      (contract) => contract.path === '/bff/v0/patients/{id}' && contract.method === 'get'
+    )?.permission;
+
+    expect(growth, 'the growth contract has moved').toBeDefined();
+    expect(demographics, 'the patient read contract has moved').toBeDefined();
+    expect([growth?.permission, ...(growth?.alsoRequires ?? [])]).toContain(demographics);
+  });
+
+  it('publishes both permissions in the spec, not just the first', () => {
+    const growth = growthRouteContracts().find(
+      (contract) => contract.path === '/bff/v0/patients/{id}/growth'
+    );
+
+    expect(growth?.alsoRequires ?? []).not.toHaveLength(0);
   });
 });
 

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { sealSessionCookie, sessionSealKey, unsealSessionCookie } from '@/lib/auth/seal';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 import {
   ABSOLUTE_LIFETIME_MS,
   IDLE_TIMEOUT_MS,
@@ -31,8 +32,15 @@ const NOON = Date.parse('2026-08-13T12:00:00Z');
 
 const ENDPOINT = 'http://localhost:3000/session';
 
+/**
+ * The header the application's own client sets on every call, and which a
+ * cross-site navigation cannot. Both verbs that change state require it; the
+ * tests below that omit it are the ones asserting that.
+ */
+const FROM_APP: Record<string, string> = { [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER };
+
 function post(body: string): NextRequest {
-  return new NextRequest(ENDPOINT, { method: 'POST', body });
+  return new NextRequest(ENDPOINT, { method: 'POST', body, headers: { ...FROM_APP } });
 }
 
 /**
@@ -43,7 +51,9 @@ function post(body: string): NextRequest {
 async function get(cookie?: SessionRecord): Promise<NextRequest> {
   const sealed = cookie === undefined ? undefined : await sealSessionCookie(cookie, key());
   const headers: Record<string, string> =
-    sealed === undefined ? {} : { cookie: `${SESSION_COOKIE}=${encodeURIComponent(sealed)}` };
+    sealed === undefined
+      ? { ...FROM_APP }
+      : { ...FROM_APP, cookie: `${SESSION_COOKIE}=${encodeURIComponent(sealed)}` };
   return new NextRequest(ENDPOINT, { headers });
 }
 
@@ -158,7 +168,7 @@ describe('reloading a page', () => {
 
   it('refuses a cookie somebody hand-wrote', async () => {
     const request = new NextRequest(ENDPOINT, {
-      headers: { cookie: `${SESSION_COOKIE}=nonsense` },
+      headers: { ...FROM_APP, cookie: `${SESSION_COOKIE}=nonsense` },
     });
 
     expect((await GET(request)).status).toBe(401);
@@ -213,7 +223,66 @@ describe('a deployment with no session key configured', () => {
   });
 
   it('says the same to a page asking for its token back', async () => {
-    expect((await GET(new NextRequest(ENDPOINT))).status).toBe(503);
+    expect((await GET(new NextRequest(ENDPOINT, { headers: { ...FROM_APP } }))).status).toBe(503);
+  });
+});
+
+/**
+ * THE KEEP-ALIVE, AND THE PAGE THAT COULD DRIVE IT.
+ *
+ * `GET /session` re-stamps the idle clock, which is a state change behind a safe
+ * method, and the cookie is `SameSite=Lax` - so a browser sends it on a
+ * cross-site top-level NAVIGATION. A page a signed-in clinician visits could
+ * open a window, point it here every few minutes, and hold the session open to
+ * its twelve-hour ceiling. Same-origin policy stops that page READING the token
+ * out of the window; it never stopped the server acting on the cookie, which is
+ * the whole of the fifteen-minute unattended-workstation control.
+ *
+ * The header these send is one a navigation cannot produce, and a cross-origin
+ * `fetch` that tries is stopped by a preflight this route does not answer.
+ */
+describe('a request that did not come from this application', () => {
+  it('refuses to hand back a token', async () => {
+    const started = startSessionRecord('dev-clinician-a', CLINICIAN, NOON);
+    const sealed = await sealSessionCookie(started, key());
+    const navigated = new NextRequest(ENDPOINT, {
+      headers: { cookie: `${SESSION_COOKIE}=${encodeURIComponent(sealed)}` },
+    });
+
+    expect((await GET(navigated)).status).toBe(403);
+  });
+
+  it('leaves the idle clock exactly where it was', async () => {
+    const started = startSessionRecord('dev-clinician-a', CLINICIAN, NOON);
+    const sealed = await sealSessionCookie(started, key());
+
+    vi.setSystemTime(NOON + IDLE_TIMEOUT_MS / 2);
+    const response = await GET(
+      new NextRequest(ENDPOINT, {
+        headers: { cookie: `${SESSION_COOKIE}=${encodeURIComponent(sealed)}` },
+      })
+    );
+
+    // No cookie at all, so nothing was re-stamped - and nothing was CLEARED
+    // either, because a page a clinician merely visited must not be able to sign
+    // them out any more than it can keep them signed in.
+    expect(response.status).toBe(403);
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('refuses to mint one either', async () => {
+    const response = await POST(
+      new NextRequest(ENDPOINT, {
+        method: 'POST',
+        body: JSON.stringify({ token: 'dev-clinician-a' }),
+      })
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('still signs out, because a refused sign-out leaves somebody signed in', () => {
+    expect(DELETE().status).toBe(204);
   });
 });
 

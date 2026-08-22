@@ -99,6 +99,17 @@ export interface CrudResource<
   /** The facility a create names, checked before anything is written. */
   facilityOfInput?(input: TCreate): string | null;
   /**
+   * The facility a list query names, when it names one.
+   *
+   * A list that names no facility is narrowed to the caller's grants by the
+   * repository, because there is nothing to refuse and hiding is the only
+   * answer. A list that names one is a question with a wrong answer, and this
+   * boundary gives it: 403, so a caller filtering on a site they were never
+   * granted is told so rather than handed an empty page that reads as "no
+   * charges today".
+   */
+  facilityOfQuery?(query: TQuery): string | null;
+  /**
    * A last check before a create is written, for rules the schema cannot state.
    *
    * Throws to refuse. Runs after the facility check and before anything reaches
@@ -268,6 +279,11 @@ function crudRoutes<
 
   router.get(base, requirePermission(resource.readPermission), async (c) => {
     const query = resource.toQuery(parseQuery(c, resource.listQuerySchema));
+    // Only when the caller named one. The rows themselves are narrowed to the
+    // caller's grants by the repository whether or not this fires, which is
+    // what stops an omitted filter returning the whole tenant.
+    const named = resource.facilityOfQuery?.(query) ?? null;
+    if (named !== null) assertFacilityAccess(policyOf(c), named);
     const page = await resource.collection(repositories(c)).list(query);
     return c.json(toListResponse(page, (row) => resource.toDto(row)));
   });

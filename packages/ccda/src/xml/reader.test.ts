@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CcdaError } from './errors.js';
-import { parseXml } from './reader.js';
+import { DEFAULT_XML_LIMITS, parseXml } from './reader.js';
 import { attr, childNamed, childrenNamed, textOf } from './tree.js';
 
 /**
@@ -75,7 +75,102 @@ describe('what it refuses', () => {
   });
 
   it('refuses a character reference outside the Unicode range', () => {
-    expect(() => parseXml('<a>&#1114112;</a>')).toThrow(/out of range/);
+    expect(() => parseXml('<a>&#1114112;</a>')).toThrow(/does not permit/);
+  });
+
+  /**
+   * The five predefined entities were held in an object literal and checked with
+   * `PREDEFINED[name] !== undefined`. An object's own keys are not the only ones
+   * a lookup finds: `constructor`, `toString` and `valueOf` all answer with
+   * something, so a document writing `&constructor;` was accepted as if it were
+   * one of the five, and a function's source was concatenated into a clinical
+   * value. This reader's whole posture is to fail closed on what it does not
+   * recognise; the prototype chain was the one way it did not.
+   */
+  it.each(['constructor', 'toString', 'valueOf', '__proto__'])(
+    'refuses &%s; rather than answering from the prototype chain',
+    (name) => {
+      expect(() => parseXml(`<a>&${name};</a>`)).toThrow(/Unknown entity/);
+    }
+  );
+
+  it('still resolves the five entities XML actually defines', () => {
+    expect(parseXml('<a>&amp;&lt;&gt;&quot;&apos;</a>').children[0]).toBe('&<>"\'');
+  });
+
+  /**
+   * `Number.parseInt` stops at the first character it cannot use, so `&#12abc;`
+   * was read as 12 and `&#x0zz;` as 0 - a character the sender did not write,
+   * substituted silently into a clinical value.
+   */
+  it.each(['&#12abc;', '&#x1fzz;', '&#;', '&#x;', '&#-1;', '&#1.5;'])(
+    'refuses %s rather than reading a prefix of it',
+    (reference) => {
+      expect(() => parseXml(`<a>${reference}</a>`)).toThrow(CcdaError);
+    }
+  );
+
+  /**
+   * A numeric reference can name a code point the document could not have
+   * contained literally. NUL and the C0 range are not XML characters, and
+   * storing one means a value later components did not expect.
+   */
+  it.each(['&#0;', '&#8;', '&#x1F;', '&#xD800;', '&#xFFFF;'])(
+    'refuses %s, which XML does not permit as a character',
+    (reference) => {
+      expect(() => parseXml(`<a>x${reference}y</a>`)).toThrow(/does not permit/);
+    }
+  );
+
+  it('still accepts a tab, a newline and an ordinary code point', () => {
+    expect(parseXml('<a>x&#9;&#10;&#x41;y</a>').children[0]).toBe('x\t\nAy');
+  });
+});
+
+/**
+ * THE BOUNDS.
+ *
+ * The reader is linear and does not backtrack, so its danger was never a
+ * pathological pattern - it was the absence of a ceiling. A caller holding
+ * `document.write`, which is a front-desk permission in the shipped role map,
+ * could post a document large enough, or nested deep enough, or with enough
+ * entries, to hold the event loop and the heap for as long as it took.
+ */
+describe('the bounds it parses within', () => {
+  it('refuses a document longer than the limit, before scanning a character', () => {
+    const huge = `<a>${'x'.repeat(200)}</a>`;
+
+    expect(() => parseXml(huge, { ...DEFAULT_XML_LIMITS, maxLength: 100 })).toThrow(/accepts 100/);
+  });
+
+  it('refuses a document nested deeper than the limit', () => {
+    const deep = `${'<a>'.repeat(50)}x${'</a>'.repeat(50)}`;
+
+    expect(() => parseXml(deep, { ...DEFAULT_XML_LIMITS, maxDepth: 10 })).toThrow(/nests more/);
+  });
+
+  it('refuses a document with more elements than the limit', () => {
+    const many = `<a>${'<b/>'.repeat(50)}</a>`;
+
+    expect(() => parseXml(many, { ...DEFAULT_XML_LIMITS, maxElements: 10 })).toThrow(
+      /more than 10 elements/
+    );
+  });
+
+  /**
+   * The defaults are far above any real chart. A discharge summary carrying a
+   * year of history is a few hundred kilobytes and a few thousand elements, and
+   * C-CDA's own structure nests well under twenty deep.
+   */
+  it('accepts a document of a size a real practice actually sends', () => {
+    const entries = Array.from(
+      { length: 2_000 },
+      (_, index) => `<entry><observation><value value="${String(index)}"/></observation></entry>`
+    ).join('');
+
+    expect(parseXml(`<ClinicalDocument>${entries}</ClinicalDocument>`).name).toBe(
+      'ClinicalDocument'
+    );
   });
 
   it('reports where it gave up', () => {
@@ -185,8 +280,14 @@ describe('the cost of parsing', () => {
     const depth = 2_000;
     const nested = `${'<a>'.repeat(depth)}${'x'.repeat(50_000)}${'</a>'.repeat(depth)}`;
 
+    // Explicit limits, because this test is about the SCANNER's cost and the
+    // shape that used to be expensive is deeper than any chart. The default
+    // depth bound refuses this document, and refuses it deliberately; the bound
+    // has its own tests above.
+    const limits = { ...DEFAULT_XML_LIMITS, maxDepth: depth + 1 };
+
     const started = performance.now();
-    const root = parseXml(nested);
+    const root = parseXml(nested, limits);
     const elapsed = performance.now() - started;
 
     expect(root.name).toBe('a');

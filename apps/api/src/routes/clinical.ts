@@ -269,6 +269,7 @@ function crudModules(): CrudModule[] {
       toDto: toEncounterDto,
       facilityOfRow: (row) => row.facilityId,
       facilityOfInput: (input) => input.facilityId,
+      facilityOfQuery: (query) => query.facilityId ?? null,
       writeResponses: [
         { status: 409, description: 'The visit cannot move to that status from this one.' },
       ],
@@ -602,6 +603,9 @@ const safetyPort = createBuiltInSafetyPort();
 /** Enough of a page of allergies to screen against; a chart with more is a chart with a problem. */
 const ALLERGY_SCREEN_LIMIT = 200;
 
+/** The same, for the active medication list the duplicate-therapy check reads. */
+const MEDICATION_SCREEN_LIMIT = 200;
+
 function registerMedicationSafety(router: Hono<AppEnv>): void {
   /**
    * Screens a proposed medication against the patient's recorded allergies.
@@ -633,6 +637,22 @@ function registerMedicationSafety(router: Hono<AppEnv>): void {
       clinicalStatus: 'ACTIVE',
     });
 
+    // The chart's own active medication list, read here rather than asked of the
+    // caller. The port answers duplicate therapy only when it is given one, and
+    // it was not - so `checked` named duplicate-therapy on every response while
+    // no duplicate could ever be found, which is precisely the false clean bill
+    // the checked/notChecked pair exists to prevent. Reading it from the record
+    // makes the claim true; taking it from the request body would have made the
+    // claim depend on whichever screen happened to send it.
+    const current = await repos.medicationStatements.list({
+      page: 1,
+      pageSize: MEDICATION_SCREEN_LIMIT,
+      sort: 'reportedAt',
+      order: 'desc',
+      patientId: body.patientId,
+      status: 'ACTIVE',
+    });
+
     const result = await safetyPort.screen({
       medication: { rxnormCode: body.rxnormCode, display: body.display },
       allergies: page.rows
@@ -646,6 +666,10 @@ function registerMedicationSafety(router: Hono<AppEnv>): void {
           criticality: row.criticality,
           reactionText: row.reactionText ?? undefined,
         })),
+      currentMedications: current.rows.map((row) => ({
+        ...(row.rxnormCode === null ? {} : { rxnormCode: row.rxnormCode }),
+        display: row.display,
+      })),
     });
 
     return c.json({

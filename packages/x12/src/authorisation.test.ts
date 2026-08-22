@@ -215,8 +215,43 @@ describe('reading the answer', () => {
     expect(answer?.message).toBe('Approved for three visits');
   });
 
+  /**
+   * The trace is what the caller matches a decision to the request that produced
+   * it, so an unmatched decision must fail rather than be attributed.
+   *
+   * The decoder used to keep one running trace and copy it into every HCR, and
+   * never cleared it. A response carrying TRACE-A and then a second
+   * authorisation with no TRN of its own came back stamped TRACE-A, so
+   * downstream posted the second payer's denial, approval or authorisation
+   * number against the first request - and therefore against a different
+   * patient. That is a wrong answer where a refusal is only a missing one.
+   */
+  it('refuses a decision that carries no trace of its own', () => {
+    const orphan = decode278(response('HCR*A1'));
+    expect(orphan.ok).toBe(false);
+    expect(orphan.ok ? '' : orphan.error.message).toContain('TRN');
+
+    const inherited = decode278(
+      response('TRN*2*TRACE-A*1', 'HCR*A1', 'REF*BB*AUTH-A', 'HCR*A3*!*E4')
+    );
+    expect(inherited.ok).toBe(false);
+    expect(inherited.ok ? '' : inherited.error.message).toContain('TRN');
+  });
+
+  it('gives each decision the trace on its own level', () => {
+    const result = decode278(
+      response('TRN*2*TRACE-A*1', 'HCR*A1', 'TRN*2*TRACE-B*1', 'HCR*A3*!*E4')
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.value.map((entry) => entry.traceNumber) : []).toEqual([
+      'TRACE-A',
+      'TRACE-B',
+    ]);
+  });
+
   it('reads a single-date span', () => {
-    const result = decode278(response('HCR*A1', 'DTP*007*D8*20260901'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'DTP*007*D8*20260901'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.effectiveFrom).toBe('2026-09-01');
@@ -232,14 +267,14 @@ describe('reading the answer', () => {
       ['A6', 'modified'],
       ['CT', 'cancelled'],
     ] as const) {
-      const result = decode278(response(`HCR*${code}`));
+      const result = decode278(response('TRN*2*TRACE-1*1', `HCR*${code}`));
 
       expect(result.ok && result.value[0]?.decision, code).toBe(expected);
     }
   });
 
   it('keeps the reason the payer gave', () => {
-    const result = decode278(response('HCR*A3*!*E4'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A3*!*E4'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.decision).toBe('denied');
@@ -265,7 +300,7 @@ describe('reading the answer', () => {
   });
 
   it('ignores segments that arrive before any decision', () => {
-    const result = decode278(response('REF*BB*ORPHAN', 'HCR*A1', 'REF*BB*REAL'));
+    const result = decode278(response('REF*BB*ORPHAN', 'TRN*2*TRACE-1*1', 'HCR*A1', 'REF*BB*REAL'));
     const [answer] = result.ok ? result.value : [];
 
     expect(result.ok && result.value).toHaveLength(1);
@@ -273,7 +308,7 @@ describe('reading the answer', () => {
   });
 
   it('refuses an action code it does not know, rather than guessing', () => {
-    const result = decode278(response('HCR*ZZ'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*ZZ'));
 
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error.message).toContain('ZZ');
@@ -284,7 +319,7 @@ describe('reading the answer', () => {
   });
 
   it('ignores a span it cannot read rather than inventing one', () => {
-    const result = decode278(response('HCR*A1', 'DTP*007*D8*not-a-date'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'DTP*007*D8*not-a-date'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.effectiveFrom).toBeUndefined();
@@ -378,7 +413,7 @@ describe('a response with fields the payer left out or wrote badly', () => {
   }
 
   it('ignores a quantity that is not a number rather than reading it as zero', () => {
-    const result = decode278(response('HCR*A1', 'HSD*VS*not-a-number'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'HSD*VS*not-a-number'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.certifiedUnit).toBe('VS');
@@ -386,7 +421,7 @@ describe('a response with fields the payer left out or wrote badly', () => {
   });
 
   it('reads an RD8 span whose second half is missing as an open one', () => {
-    const result = decode278(response('HCR*A1', 'DTP*007*RD8*20260901-'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'DTP*007*RD8*20260901-'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.effectiveFrom).toBe('2026-09-01');
@@ -394,21 +429,21 @@ describe('a response with fields the payer left out or wrote badly', () => {
   });
 
   it('ignores a date qualifier it is not looking for', () => {
-    const result = decode278(response('HCR*A1', 'DTP*472*D8*20260901'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'DTP*472*D8*20260901'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.effectiveFrom).toBeUndefined();
   });
 
   it('ignores a REF that is not the authorisation number', () => {
-    const result = decode278(response('HCR*A1', 'REF*ZZ*something-else'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'REF*ZZ*something-else'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.authorisationNumber).toBeUndefined();
   });
 
   it('answers with a decision carrying no reason at all', () => {
-    const result = decode278(response('HCR*A4'));
+    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A4'));
     const [answer] = result.ok ? result.value : [];
 
     expect(answer?.decision).toBe('pended');

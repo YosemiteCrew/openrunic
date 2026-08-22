@@ -437,7 +437,9 @@ const CRUD_CASES: readonly CrudCase[] = [
     invalidPatch: {},
     filters: [
       [`patientId=${PATIENT_ID}`, `patientId=${OTHER_PATIENT_ID}`],
-      [`facilityId=${DEMO_FACILITY_A}`, `facilityId=${DEMO_FACILITY_B}`],
+      // `facilityId` is not in this table, and cannot be: the "miss" half asks
+      // for an empty list, and naming a facility the caller has no grant for is
+      // a 403 rather than an empty list. Both halves have their own test below.
       [`providerId=${PROVIDER_ID}`, `providerId=${testId(901)}`],
       ['status=IN_PROGRESS', 'status=COMPLETED'],
       ['from=2026-08-13T00:00:00.000Z', 'from=2026-08-14T00:00:00.000Z'],
@@ -1060,6 +1062,40 @@ const ENCOUNTER_MOVES: readonly (readonly [
   ['CANCELLED', 'PLANNED', 409],
   ['ENTERED_IN_ERROR', 'PLANNED', 409],
 ];
+
+describe('GET /bff/v0/encounters, and the facilities a clinician was granted', () => {
+  it('narrows the list, and refuses a filter naming an ungranted facility', async () => {
+    const harness = createTestApp();
+    seed(
+      harness.dataset,
+      'Encounter',
+      makeEncounterRow(),
+      makeEncounterRow({ id: testId(60), facilityId: DEMO_FACILITY_B })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (await listOf(harness.app, `/bff/v0/encounters?${query}`)).data.map((row) => row.id);
+
+    // No facility named, so nothing for the route to refuse. Before lists were
+    // narrowed this returned the other site's visit too, which made every
+    // encounter in the organisation readable by anyone holding encounter.read.
+    expect(await ids('')).toEqual([ENCOUNTER_ID]);
+    expect(await ids(`facilityId=${DEMO_FACILITY_A}`)).toEqual([ENCOUNTER_ID]);
+
+    // Naming it is the wrong question, and gets an answer rather than an empty
+    // page: this boundary refuses where the FHIR one hides.
+    const refused = await harness.app.request(`/bff/v0/encounters?facilityId=${DEMO_FACILITY_B}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(refused.status).toBe(403);
+
+    // Unchanged, and stated here so the pair is visible together: one row
+    // addressed by its id is still refused rather than reported missing.
+    const read = await harness.app.request(`/bff/v0/encounters/${testId(60)}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(read.status).toBe(403);
+  });
+});
 
 describe('PATCH /bff/v0/encounters/:id, the status table', () => {
   it.each(ENCOUNTER_MOVES)('%s to %s answers %i', async (from, to, expected) => {

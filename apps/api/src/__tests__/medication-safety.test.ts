@@ -158,6 +158,67 @@ describe('medication screening', () => {
     expect(result.notChecked).toContain('drug-drug');
   });
 
+  /**
+   * The claim, made true.
+   *
+   * The response has always named `duplicate-therapy` in `checked`, and the
+   * handler never gave the port a medication list to check against - so the one
+   * field that exists to stop an empty result reading as a clean bill was
+   * itself the misleading part: a prescriber was told duplicate therapy had been
+   * assessed on every response, and it never had been.
+   *
+   * Read off the chart rather than taken from the request body, so the claim
+   * does not depend on which screen happened to send a list.
+   */
+  it('finds a duplicate against the medication list on the chart', async () => {
+    const { app, dataset } = harness();
+    seed(dataset, 'MedicationStatement', {
+      ...storageColumns(testId(500)),
+      patientId: PATIENT,
+      encounterId: null,
+      rxnormCode: '860975',
+      display: 'Metformin 500 mg oral tablet',
+      sigText: null,
+      status: 'ACTIVE',
+      source: 'REPORTED',
+      effectiveStart: null,
+      effectiveEnd: null,
+      reportedAt: FIXED_NOW,
+      note: null,
+    } as never);
+
+    const result = await screen(app, {
+      patientId: PATIENT,
+      rxnormCode: '860975',
+      display: 'Metformin 500 mg oral tablet',
+    });
+
+    expect(result.checked).toContain('duplicate-therapy');
+    expect(result.findings.length).toBeGreaterThan(0);
+  });
+
+  it('says nothing about a medication the patient is not already on', async () => {
+    const { app, dataset } = harness();
+    seed(dataset, 'MedicationStatement', {
+      ...storageColumns(testId(501)),
+      patientId: PATIENT,
+      encounterId: null,
+      rxnormCode: '860975',
+      display: 'Metformin 500 mg oral tablet',
+      sigText: null,
+      status: 'ACTIVE',
+      source: 'REPORTED',
+      effectiveStart: null,
+      effectiveEnd: null,
+      reportedAt: FIXED_NOW,
+      note: null,
+    } as never);
+
+    expect(
+      (await screen(app, { patientId: PATIENT, display: 'Lisinopril 10mg' })).findings
+    ).toEqual([]);
+  });
+
   it('refuses a request without the write capability', async () => {
     const { app } = harness();
 

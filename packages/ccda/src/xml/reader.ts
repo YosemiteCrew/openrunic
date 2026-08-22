@@ -32,17 +32,87 @@ import { element, type XmlElement, type XmlNode } from './tree.js';
  * accept.
  */
 
-const PREDEFINED: Readonly<Record<string, string>> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
+/**
+ * The five entities XML defines, in a Map rather than an object literal.
+ *
+ * An object's own keys are not the only ones a lookup finds. `PREDEFINED['constructor']`
+ * answers with a function rather than `undefined`, so a document writing
+ * `&constructor;` - or `&toString;`, or `&valueOf;` - was ACCEPTED by the
+ * `!== undefined` check that is supposed to mean "this is one of the five", and
+ * the reader concatenated a function's source into a clinical value. This reader
+ * exists to fail closed on anything it does not recognise; the prototype chain
+ * was the one way it did not.
+ */
+const PREDEFINED: ReadonlyMap<string, string> = new Map([
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+]);
+
+/**
+ * The characters XML 1.0 permits at all.
+ *
+ * A numeric reference may name a code point the document could not have
+ * contained literally - NUL, most of the C0 range, a lone surrogate - and this
+ * reader is the import boundary for documents another organisation sent, so
+ * accepting one means storing a value later components cannot handle and did not
+ * expect. Refused with the reference quoted, so the sender's defect is legible.
+ */
+function isXmlCharacter(code: number): boolean {
+  if (code === 0x9 || code === 0xa || code === 0xd) return true;
+  if (code >= 0x20 && code <= 0xd7ff) return true;
+  if (code >= 0xe000 && code <= 0xfffd) return true;
+  return code >= 0x10000 && code <= 0x10ffff;
+}
+
+/**
+ * THE BOUNDS, AND WHY THEY BELONG HERE RATHER THAN AT THE ROUTE.
+ *
+ * This reader is linear in the length of the document and does not backtrack, so
+ * it has no pathological input in the usual sense. What it had was no ceiling: a
+ * document is parsed into an in-memory tree, several section readers then walk
+ * every descendant of every entry, and a caller who can post a hundred-megabyte
+ * C-CDA - or a shallow one with a million entries - can hold the event loop and
+ * the heap for as long as that takes. `document.write` is a front-desk
+ * permission in the shipped role map, so that caller is an ordinary member of
+ * staff rather than an attacker who got somewhere.
+ *
+ * The limits sit on the parser, not on the one route that currently calls it,
+ * because the route is not the property: anything that parses a document
+ * somebody else composed wants the same ceiling, and the next caller will not
+ * remember to impose it. The route adds a body-size limit on top, which is
+ * cheaper still - it refuses before a single character is scanned.
+ *
+ * The numbers are far above any real chart and far below anything that hurts. A
+ * discharge summary carrying a year of history is a few hundred kilobytes and a
+ * few thousand elements, and C-CDA's own structure nests well under twenty deep.
+ */
+export interface XmlLimits {
+  /** Characters. A large real C-CDA is a few hundred kilobytes. */
+  readonly maxLength: number;
+  /** Elements, counted across the whole document. */
+  readonly maxElements: number;
+  /** Nesting depth. C-CDA's own structure needs well under twenty. */
+  readonly maxDepth: number;
+}
+
+export const DEFAULT_XML_LIMITS: XmlLimits = {
+  maxLength: 8_000_000,
+  maxElements: 200_000,
+  maxDepth: 100,
 };
 
 /** Parses a document and returns its root element. */
-export function parseXml(source: string): XmlElement {
-  const scanner = new Scanner(source);
+export function parseXml(source: string, limits: XmlLimits = DEFAULT_XML_LIMITS): XmlElement {
+  if (source.length > limits.maxLength) {
+    throw new CcdaError(
+      `This document is ${String(source.length)} characters; this reader accepts ${String(limits.maxLength)}. A clinical document larger than that is a transport or export defect rather than a chart.`,
+      0
+    );
+  }
+  const scanner = new Scanner(source, limits);
   const root = scanner.readDocument();
   return root;
 }
@@ -50,8 +120,13 @@ export function parseXml(source: string): XmlElement {
 class Scanner {
   private readonly source: string;
   private index = 0;
+  private elements = 0;
+  private depth = 0;
 
-  constructor(source: string) {
+  constructor(
+    source: string,
+    private readonly limits: XmlLimits
+  ) {
     // A leading byte-order mark is legal in a UTF-8 file and is not part of the
     // document. Systems that write one are common enough that refusing it would
     // reject correct files.
@@ -110,6 +185,14 @@ class Scanner {
     }
     this.index += 1;
 
+    this.elements += 1;
+    if (this.elements > this.limits.maxElements) {
+      throw new CcdaError(
+        `This document has more than ${String(this.limits.maxElements)} elements. That is not a chart; it is a way to hold this server.`,
+        this.index
+      );
+    }
+
     const name = this.readName('element name');
     const attributes = this.readAttributes();
 
@@ -122,7 +205,18 @@ class Scanner {
     }
     this.index += 1;
 
+    // Depth is bounded because `readChildren` recurses into `readElement`, so a
+    // document nested deeply enough exhausts the stack rather than the heap -
+    // and a RangeError from a blown stack is not a refusal a caller can read.
+    this.depth += 1;
+    if (this.depth > this.limits.maxDepth) {
+      throw new CcdaError(
+        `This document nests more than ${String(this.limits.maxDepth)} elements deep; C-CDA's own structure needs a fraction of that.`,
+        this.index
+      );
+    }
     const children = this.readChildren(name);
+    this.depth -= 1;
     return element(name, attributes, children);
   }
 
@@ -259,15 +353,26 @@ class Scanner {
   }
 
   private resolve(name: string): string {
-    const predefined = PREDEFINED[name];
+    const predefined = PREDEFINED.get(name);
     if (predefined !== undefined) return predefined;
 
     if (name.startsWith('#')) {
       const hex = name.startsWith('#x') || name.startsWith('#X');
       const digits = name.slice(hex ? 2 : 1);
+      // The WHOLE string, not a prefix of it. `Number.parseInt` stops at the
+      // first character it cannot use, so `&#12abc;` was read as 12 and
+      // `&#x0zz;` as 0 - a character the sender did not write, substituted
+      // silently into a clinical value.
+      const pattern = hex ? HEX_DIGITS : DECIMAL_DIGITS;
+      if (!pattern.test(digits)) {
+        throw new CcdaError(`Character reference &${name}; is not a number`, this.index);
+      }
       const code = Number.parseInt(digits, hex ? 16 : 10);
-      if (!Number.isInteger(code) || digits === '' || code < 0 || code > 0x10ffff) {
-        throw new CcdaError(`Character reference &${name}; is out of range`, this.index);
+      if (!isXmlCharacter(code)) {
+        throw new CcdaError(
+          `Character reference &${name}; names a code point XML does not permit`,
+          this.index
+        );
       }
       return String.fromCodePoint(code);
     }
@@ -278,6 +383,9 @@ class Scanner {
     );
   }
 }
+
+const DECIMAL_DIGITS = /^[0-9]+$/;
+const HEX_DIGITS = /^[0-9A-Fa-f]+$/;
 
 function isSpace(character: string | undefined): boolean {
   return character === ' ' || character === '\t' || character === '\n' || character === '\r';

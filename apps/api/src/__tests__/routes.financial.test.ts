@@ -657,8 +657,12 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 /* ------------------------------------------------------------------ charges */
 
 describe('charges', () => {
-  it('filters by patient, encounter, facility, status and a service-date window', async () => {
+  it('filters by patient, encounter, status and a service-date window', async () => {
     const { app, dataset } = createTestApp();
+    // Both at facility A, which is the only site this principal is granted. A
+    // row at another site is not a filtering question at all - it is invisible,
+    // which the test below is about - and seeding one here would have made
+    // every assertion in this test depend on which of the two rules refused it.
     seed(
       dataset,
       'ChargeItem',
@@ -667,7 +671,6 @@ describe('charges', () => {
         id: testId(21),
         patientId: OTHER_PATIENT_ID,
         encounterId: OTHER_ENCOUNTER_ID,
-        facilityId: DEMO_FACILITY_B,
         status: 'BILLED',
         serviceDate: new Date('2026-09-01T00:00:00.000Z'),
       })
@@ -681,12 +684,45 @@ describe('charges', () => {
 
     expect(await search(`patientId=${PATIENT_ID}`)).toEqual([testId(20)]);
     expect(await search(`encounterId=${OTHER_ENCOUNTER_ID}`)).toEqual([testId(21)]);
-    expect(await search(`facilityId=${DEMO_FACILITY_A}`)).toEqual([testId(20)]);
     expect(await search('status=BILLED')).toEqual([testId(21)]);
     expect(await search('from=2026-08-01&to=2026-08-31')).toEqual([testId(20)]);
     expect(await search('order=asc')).toEqual([testId(20), testId(21)]);
     expect(await search('sort=totalPriceCents&order=desc')).toEqual([testId(20), testId(21)]);
     expect(await search('sort=createdAt')).toEqual([testId(20), testId(21)]);
+  });
+
+  it('keeps an ungranted facility out of the list, and refuses a filter naming one', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'ChargeItem',
+      makeChargeRow({ id: testId(20) }),
+      makeChargeRow({ id: testId(22), facilityId: DEMO_FACILITY_B })
+    );
+    const search = async (query: string): Promise<Response> =>
+      app.request(`/bff/v0/charges?${query}`, { headers: bearer(TOKENS.billerA) });
+    const ids = async (query: string): Promise<string[]> =>
+      (await json<ListResponse<ChargeDto>>(await search(query))).data.map((row) => row.id);
+
+    // The case this exists for: no facilityId in the query at all. There is
+    // nothing for the route to refuse, so the repository narrows instead, and
+    // the charge at the other site is simply not in the page. Before the
+    // narrowing this returned both, which handed a biller granted one site
+    // every billing row in the organisation.
+    expect(await ids('')).toEqual([testId(20)]);
+    expect(await ids('status=OPEN')).toEqual([testId(20)]);
+    expect(await ids(`facilityId=${DEMO_FACILITY_A}`)).toEqual([testId(20)]);
+
+    // Naming the ungranted site is a different answer on this boundary: 403,
+    // not an empty page that reads as "no charges there".
+    expect((await search(`facilityId=${DEMO_FACILITY_B}`)).status).toBe(403);
+
+    // And the single read still refuses rather than hides, which is the BFF
+    // contract the FHIR boundary deliberately does not share.
+    expect(
+      (await app.request(`/bff/v0/charges/${testId(22)}`, { headers: bearer(TOKENS.billerA) }))
+        .status
+    ).toBe(403);
   });
 
   it('reads one charge, records one, and amends one', async () => {

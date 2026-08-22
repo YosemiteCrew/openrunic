@@ -1,6 +1,6 @@
 import type { Delimiters } from './encoding.js';
 import type { CodedValue, MessageHeader, Patient, Visit } from './domain.js';
-import { buildSegment, component, field, joinComponents, type Segment } from './message.js';
+import { buildSegment, component, field, verbatim, type Segment } from './message.js';
 import { dateFromHl7, fromHl7, hl7Instant, writeTime } from './time.js';
 
 /**
@@ -15,10 +15,17 @@ import { dateFromHl7, fromHl7, hl7Instant, writeTime } from './time.js';
  * `PID-7` means nothing to a reader and "date of birth" means everything.
  */
 
-/** `code^display^system`, the CE/CWE data type most fields use. */
-export function writeCoded(value: CodedValue | undefined, delimiters: Delimiters): string {
-  if (value === undefined) return '';
-  return joinComponents([value.code, value.display ?? '', value.system ?? ''], delimiters);
+/**
+ * `code^display^system`, the CE/CWE data type most fields use.
+ *
+ * Returns the components rather than a joined string, so `buildSegment` does the
+ * joining and the escaping. A helper that returned already-encoded text was
+ * indistinguishable at the call site from one returning raw text, which is how
+ * half the fields in this package came to be written unescaped.
+ */
+export function writeCoded(value: CodedValue | undefined): readonly string[] {
+  if (value === undefined) return [];
+  return [value.code, value.display ?? '', value.system ?? ''];
 }
 
 export function readCoded(
@@ -52,19 +59,30 @@ export function buildMsh(
   structure: string,
   delimiters: Delimiters
 ): Segment {
-  return buildSegment('MSH', {
-    1: delimiters.field,
-    2: `${delimiters.component}${delimiters.repetition}${delimiters.escape}${delimiters.subcomponent}`,
-    3: header.sendingApplication,
-    4: header.sendingFacility,
-    5: header.receivingApplication,
-    6: header.receivingFacility,
-    7: hl7Instant(header.sentAt),
-    9: joinComponents([messageType, triggerEvent, structure], delimiters),
-    10: header.controlId,
-    11: header.processingId,
-    12: header.version,
-  });
+  return buildSegment(
+    'MSH',
+    {
+      // The only two verbatim fields in the package: MSH-1 IS the field
+      // separator and MSH-2 the other four, so escaping them would announce
+      // delimiters no message uses.
+      1: verbatim(delimiters.field),
+      2: verbatim(
+        `${delimiters.component}${delimiters.repetition}${delimiters.escape}${delimiters.subcomponent}`
+      ),
+      3: header.sendingApplication,
+      4: header.sendingFacility,
+      5: header.receivingApplication,
+      6: header.receivingFacility,
+      7: hl7Instant(header.sentAt),
+      9: [messageType, triggerEvent, structure],
+      // Caller-supplied on the registry route, and the field a control id
+      // carrying a carriage return would have used to append its own segments.
+      10: header.controlId,
+      11: header.processingId,
+      12: header.version,
+    },
+    delimiters
+  );
 }
 
 export function readMsh(segment: Segment, delimiters: Delimiters): MessageHeader {
@@ -104,38 +122,36 @@ export function readMessageType(segment: Segment, delimiters: Delimiters): strin
 export function buildPid(patient: Patient, delimiters: Delimiters): Segment {
   const address =
     patient.address === undefined
-      ? ''
-      : joinComponents(
-          [
-            patient.address.line1 ?? '',
-            '',
-            patient.address.city ?? '',
-            patient.address.state ?? '',
-            patient.address.postalCode ?? '',
-            patient.address.country ?? '',
-          ],
-          delimiters
-        );
+      ? []
+      : [
+          patient.address.line1 ?? '',
+          '',
+          patient.address.city ?? '',
+          patient.address.state ?? '',
+          patient.address.postalCode ?? '',
+          patient.address.country ?? '',
+        ];
 
-  return buildSegment('PID', {
-    1: '1',
-    // `MR` is the identifier type: a medical record number rather than a social
-    // security number or a driving licence, which the same field can carry.
-    3: joinComponents([patient.mrn, '', '', '', 'MR'], delimiters),
-    5: joinComponents(
-      [patient.familyName, patient.givenName, patient.middleName ?? ''],
-      delimiters
-    ),
-    7: patient.birthDate === undefined ? '' : writeTime(patient.birthDate),
-    8: patient.sex ?? '',
-    11: address,
-    13: patient.phone ?? '',
-    // `PID-30` is the death indicator and `PID-29` the date. Writing the date
-    // without the indicator leaves a receiver deciding for itself whether a date
-    // means the patient died.
-    29: patient.deceasedAt === undefined ? '' : writeTime(patient.deceasedAt),
-    30: patient.deceasedAt === undefined ? '' : 'Y',
-  });
+  return buildSegment(
+    'PID',
+    {
+      1: '1',
+      // `MR` is the identifier type: a medical record number rather than a social
+      // security number or a driving licence, which the same field can carry.
+      3: [patient.mrn, '', '', '', 'MR'],
+      5: [patient.familyName, patient.givenName, patient.middleName ?? ''],
+      7: patient.birthDate === undefined ? '' : writeTime(patient.birthDate),
+      8: patient.sex ?? '',
+      11: address,
+      13: patient.phone ?? '',
+      // `PID-30` is the death indicator and `PID-29` the date. Writing the date
+      // without the indicator leaves a receiver deciding for itself whether a date
+      // means the patient died.
+      29: patient.deceasedAt === undefined ? '' : writeTime(patient.deceasedAt),
+      30: patient.deceasedAt === undefined ? '' : 'Y',
+    },
+    delimiters
+  );
 }
 
 export function readPid(segment: Segment | undefined, delimiters: Delimiters): Patient {
@@ -182,21 +198,19 @@ function readAddress(segment: Segment | undefined, delimiters: Delimiters): Pati
 
 /** PV1: the visit. `PV1-2` is the patient class and `PV1-19` the visit number. */
 export function buildPv1(visit: Visit, delimiters: Delimiters): Segment {
-  return buildSegment('PV1', {
-    1: '1',
-    2: visit.patientClass,
-    3: visit.location ?? '',
-    7:
-      visit.attendingProviderId === undefined
-        ? ''
-        : joinComponents(
-            [visit.attendingProviderId, visit.attendingProviderName ?? ''],
-            delimiters
-          ),
-    19: visit.visitNumber,
-    44: visit.admittedAt === undefined ? '' : writeTime(visit.admittedAt),
-    45: visit.dischargedAt === undefined ? '' : writeTime(visit.dischargedAt),
-  });
+  return buildSegment(
+    'PV1',
+    {
+      1: '1',
+      2: visit.patientClass,
+      3: visit.location ?? '',
+      7: writeProvider(visit.attendingProviderId, visit.attendingProviderName),
+      19: visit.visitNumber,
+      44: visit.admittedAt === undefined ? '' : writeTime(visit.admittedAt),
+      45: visit.dischargedAt === undefined ? '' : writeTime(visit.dischargedAt),
+    },
+    delimiters
+  );
 }
 
 export function readPv1(segment: Segment | undefined, delimiters: Delimiters): Visit | undefined {
@@ -219,12 +233,8 @@ export function readPv1(segment: Segment | undefined, delimiters: Delimiters): V
   };
 }
 
-/** A provider reference: `id^family^given`. */
-export function writeProvider(
-  id: string | undefined,
-  name: string | undefined,
-  delimiters: Delimiters
-): string {
-  if (id === undefined || id === '') return '';
-  return joinComponents([id, name ?? ''], delimiters);
+/** A provider reference: `id^family^given`, as components for `buildSegment`. */
+export function writeProvider(id: string | undefined, name: string | undefined): readonly string[] {
+  if (id === undefined || id === '') return [];
+  return [id, name ?? ''];
 }

@@ -344,6 +344,7 @@ function chargeModule(): CrudModule {
     // the permission, and it is asked before the write rather than after.
     facilityOfRow: (row) => row.facilityId,
     facilityOfInput: (input) => input.facilityId,
+    facilityOfQuery: (query) => query.facilityId ?? null,
   });
 }
 

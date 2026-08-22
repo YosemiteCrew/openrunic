@@ -1,4 +1,5 @@
 import { STOCK_LOT_STATUSES, STOCK_MOVEMENT_KINDS, STOCK_POSTING_KINDS } from '@openrunic/database';
+import { isStockPrecision, MAX_STOCK_QUANTITY } from '@openrunic/inventory';
 import { z } from 'zod';
 
 import { toIsoDate } from '../inventory/marshal.js';
@@ -75,24 +76,21 @@ const prose = (max: number): z.ZodType<string> => z.string().trim().min(1).max(m
  * discovered later: a figure that cannot be stored unchanged is refused where
  * the client can still be told which field is wrong.
  */
-const MAX_STOCK_QUANTITY = 999_999_999_999;
-
 const quantityField = z
   .number()
   .positive()
+  // The LEDGER's bound, imported, not the column's written out again. The column
+  // stores twelve integer digits and the arithmetic stops two orders of
+  // magnitude sooner, because balances are summed as six-decimal grid steps and
+  // step counts have to stay under MAX_SAFE_INTEGER. Everything between the two
+  // figures passed this schema, reached `movementProblems`, and came back as a
+  // bare 500 from the routine whose whole job is to report a bad quantity as a
+  // field error - so the receipt handler had a crash path an authorised
+  // inventory writer could reach with one number.
   .max(MAX_STOCK_QUANTITY)
-  .refine(
-    // Arithmetic, not `toStockPrecision`. That function throws above the
-    // safe-integer bound, and a throw inside a Zod check escapes the validator
-    // and renders as a bare 500 - so a quantity of 1e300 produced an internal
-    // error rather than the 422 naming the field this schema exists to produce.
-    // A validator must not be able to fail in the way it is meant to report,
-    // and `.max` above does not save it, because Zod runs every check.
-    (value) => Math.round(value * 1e6) / 1e6 === value,
-    {
-      message: 'must be a whole number of six-decimal stock units',
-    }
-  );
+  .refine(isStockPrecision, {
+    message: 'must be a whole number of six-decimal stock units',
+  });
 
 /** A boolean carried in a query string, where everything is a string. */
 const booleanFlag = z.enum(['true', 'false']).optional();

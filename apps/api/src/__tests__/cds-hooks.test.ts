@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CDS_SERVICES, checkedLine } from '../cds/services.js';
+import { internalRouteContracts } from '../routes/index.js';
 
 import {
   createTestApp,
@@ -153,7 +154,7 @@ describe('invocation is a read of the chart, and is authorised as one', () => {
     expect(res.status).toBe(401);
   });
 
-  it('refuses a caller whose role cannot read a patient', async () => {
+  it('refuses a caller whose role cannot read the chart, and says which permission', async () => {
     const { app } = harness();
 
     const res = await app.request('/cds-services/allergy-summary', {
@@ -163,6 +164,38 @@ describe('invocation is a read of the chart, and is authorised as one', () => {
     });
 
     expect(res.status).toBe(403);
+    // The permission NAMED matters as much as the refusal. The mount used to
+    // demand `patient.read` while every service read allergies and medication
+    // statements, so a role given demographics and denied the chart could read
+    // the chart through a hook. This asserts the gate is the one the service
+    // declares, not one fixed for the surface.
+    expect(((await res.json()) as { detail?: string }).detail).toContain('encounter.read');
+  });
+
+  /**
+   * The rule the fix is actually about: the same data may not sit behind two
+   * different gates.
+   *
+   * A behavioural test can only show that the permission the route enforces is
+   * the one the service declares. This shows the declaration is the RIGHT one,
+   * by reading it off the BFF contract for the collection the service reads
+   * rather than restating a permission name here - so a change to either side
+   * that separates them fails, which is how they came apart in the first place.
+   */
+  it('gates each service with the permission its own data sits behind elsewhere', () => {
+    const contracts = internalRouteContracts();
+    const readPermissionOf = (path: string): string | undefined =>
+      contracts.find((contract) => contract.path === path && contract.method === 'get')?.permission;
+
+    const allergies = readPermissionOf('/bff/v0/allergies');
+    const statements = readPermissionOf('/bff/v0/medications/statements');
+    expect(allergies, 'the allergy list contract has moved').toBeDefined();
+    expect(statements, 'the medication statement list contract has moved').toBeDefined();
+    expect(statements).toBe(allergies);
+
+    for (const service of CDS_SERVICES) {
+      expect(service.permission, service.definition.id).toBe(allergies);
+    }
   });
 
   it('records the invocation as the chart read it is', async () => {

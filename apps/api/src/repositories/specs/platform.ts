@@ -684,6 +684,7 @@ export const userFacilitySpec: CollectionSpec<
   targetType: 'UserFacility',
   action: 'user.facility',
   facilityColumn: 'facilityId',
+  facilityScoped: true,
   compartment: 'closed',
 
   newRow(input: UserFacilityCreateInput): Writable<'UserFacility'> {

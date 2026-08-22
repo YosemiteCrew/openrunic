@@ -40,6 +40,15 @@ export interface RouteContract {
   tags: string[];
   /** The capability the route requires. Absent means the route is public. */
   permission?: Permission;
+  /**
+   * Further capabilities the route ALSO requires, all of them.
+   *
+   * For a route that answers with data belonging to two boundaries at once. The
+   * growth chart is the case: the readings are `encounter.read` and the sex and
+   * birth date it plots them against are `patient.read`, and publishing only one
+   * of the two would describe a door that is narrower than it looks.
+   */
+  alsoRequires?: readonly Permission[];
   pathParams?: PathParameterContract[];
   query?: z.ZodType;
   body?: z.ZodType;

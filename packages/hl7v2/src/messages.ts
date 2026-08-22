@@ -95,7 +95,7 @@ export function buildAdt(adt: AdtMessage, delimiters: Delimiters = DEFAULT_DELIM
     // EVN carries when the event happened, which is not when the message was
     // sent. A registration entered at nine and transmitted at eleven is two
     // hours of difference that matters to anybody reconciling a timeline.
-    buildSegment('EVN', { 1: adt.event, 2: hl7Instant(adt.occurredAt) }),
+    buildSegment('EVN', { 1: adt.event, 2: hl7Instant(adt.occurredAt) }, delimiters),
     buildPid(adt.patient, delimiters),
   ];
   if (adt.visit !== undefined) segments.push(buildPv1(adt.visit, delimiters));
@@ -153,7 +153,7 @@ export function buildOru(oru: OruMessage, delimiters: Delimiters = DEFAULT_DELIM
     for (const [resultIndex, result] of order.results.entries()) {
       segments.push(buildObx(result, resultIndex + 1, delimiters));
       for (const [noteIndex, note] of (result.notes ?? []).entries()) {
-        segments.push(buildSegment('NTE', { 1: String(noteIndex + 1), 3: note }));
+        segments.push(buildSegment('NTE', { 1: String(noteIndex + 1), 3: note }, delimiters));
       }
     }
   }
@@ -162,29 +162,40 @@ export function buildOru(oru: OruMessage, delimiters: Delimiters = DEFAULT_DELIM
 }
 
 function buildObr(order: ObservationRequest, sequence: number, delimiters: Delimiters): Segment {
-  return buildSegment('OBR', {
-    1: String(sequence),
-    2: order.placerOrderNumber,
-    3: order.fillerOrderNumber ?? '',
-    4: writeCoded(order.service, delimiters),
-    6: order.requestedAt === undefined ? '' : writeTime(order.requestedAt),
-    7: order.observedAt === undefined ? '' : writeTime(order.observedAt),
-    16: writeProvider(order.orderingProviderId, order.orderingProviderName, delimiters),
-  });
+  return buildSegment(
+    'OBR',
+    {
+      1: String(sequence),
+      2: order.placerOrderNumber,
+      3: order.fillerOrderNumber ?? '',
+      4: writeCoded(order.service),
+      6: order.requestedAt === undefined ? '' : writeTime(order.requestedAt),
+      7: order.observedAt === undefined ? '' : writeTime(order.observedAt),
+      16: writeProvider(order.orderingProviderId, order.orderingProviderName),
+    },
+    delimiters
+  );
 }
 
 function buildObx(result: ObservationResult, sequence: number, delimiters: Delimiters): Segment {
-  return buildSegment('OBX', {
-    1: String(sequence),
-    2: result.valueType,
-    3: writeCoded(result.identifier, delimiters),
-    5: result.value,
-    6: result.units ?? '',
-    7: result.referenceRange ?? '',
-    8: result.abnormalFlag ?? '',
-    11: result.status,
-    14: result.observedAt === undefined ? '' : writeTime(result.observedAt),
-  });
+  return buildSegment(
+    'OBX',
+    {
+      1: String(sequence),
+      2: result.valueType,
+      3: writeCoded(result.identifier),
+      // The value out of an inbound result, when this is a forward. A parsed
+      // `\X0D\` decodes to a real carriage return, so before escaping covered
+      // it this one field could append an OBX the sender never wrote.
+      5: result.value,
+      6: result.units ?? '',
+      7: result.referenceRange ?? '',
+      8: result.abnormalFlag ?? '',
+      11: result.status,
+      14: result.observedAt === undefined ? '' : writeTime(result.observedAt),
+    },
+    delimiters
+  );
 }
 
 export function parseOru(raw: string): OruMessage {
@@ -275,27 +286,35 @@ export function buildOrm(orm: OrmMessage, delimiters: Delimiters = DEFAULT_DELIM
 
   for (const [index, order] of orm.orders.entries()) {
     segments.push(
-      buildSegment('ORC', {
-        1: order.orderControl,
-        2: order.placerOrderNumber,
-        3: order.fillerOrderNumber ?? '',
-        9: order.requestedAt === undefined ? '' : writeTime(order.requestedAt),
-        12: writeProvider(order.orderingProviderId, order.orderingProviderName, delimiters),
-      })
+      buildSegment(
+        'ORC',
+        {
+          1: order.orderControl,
+          2: order.placerOrderNumber,
+          3: order.fillerOrderNumber ?? '',
+          9: order.requestedAt === undefined ? '' : writeTime(order.requestedAt),
+          12: writeProvider(order.orderingProviderId, order.orderingProviderName),
+        },
+        delimiters
+      )
     );
     segments.push(
-      buildSegment('OBR', {
-        1: String(index + 1),
-        2: order.placerOrderNumber,
-        3: order.fillerOrderNumber ?? '',
-        4: writeCoded(order.service, delimiters),
-        6: order.requestedAt === undefined ? '' : writeTime(order.requestedAt),
-        16: writeProvider(order.orderingProviderId, order.orderingProviderName, delimiters),
-        27: order.priority ?? '',
-      })
+      buildSegment(
+        'OBR',
+        {
+          1: String(index + 1),
+          2: order.placerOrderNumber,
+          3: order.fillerOrderNumber ?? '',
+          4: writeCoded(order.service),
+          6: order.requestedAt === undefined ? '' : writeTime(order.requestedAt),
+          16: writeProvider(order.orderingProviderId, order.orderingProviderName),
+          27: order.priority ?? '',
+        },
+        delimiters
+      )
     );
     for (const [noteIndex, note] of (order.notes ?? []).entries()) {
-      segments.push(buildSegment('NTE', { 1: String(noteIndex + 1), 3: note }));
+      segments.push(buildSegment('NTE', { 1: String(noteIndex + 1), 3: note }, delimiters));
     }
   }
 
@@ -356,7 +375,7 @@ export function buildVxu(vxu: VxuMessage, delimiters: Delimiters = DEFAULT_DELIM
 
   for (const immunisation of vxu.immunisations) {
     segments.push(
-      buildSegment('ORC', { 1: 'RE', 3: String(immunisation.sequence) }),
+      buildSegment('ORC', { 1: 'RE', 3: String(immunisation.sequence) }, delimiters),
       buildRxa(immunisation, delimiters)
     );
   }
@@ -365,24 +384,30 @@ export function buildVxu(vxu: VxuMessage, delimiters: Delimiters = DEFAULT_DELIM
 }
 
 function buildRxa(immunisation: Immunisation, delimiters: Delimiters): Segment {
-  return buildSegment('RXA', {
-    // RXA-1 and RXA-2 are the give sub-id pair; a single administration is 0/1,
-    // which is what every registry expects and what nothing else parses.
-    1: '0',
-    2: String(immunisation.sequence),
-    3: writeTime(immunisation.administeredAt),
-    5: writeCoded(immunisation.vaccine, delimiters),
-    // `999` is the code for "amount not recorded". A registry reading an empty
-    // amount cannot tell it from a zero dose.
-    6: immunisation.amount ?? '999',
-    7: immunisation.units ?? '',
-    9: writeCoded(immunisation.route, delimiters),
-    10: writeProvider(immunisation.administeringProviderId, undefined, delimiters),
-    11: writeCoded(immunisation.site, delimiters),
-    15: immunisation.lotNumber ?? '',
-    17: writeCoded(immunisation.manufacturer, delimiters),
-    20: immunisation.completionStatus,
-  });
+  return buildSegment(
+    'RXA',
+    {
+      // RXA-1 and RXA-2 are the give sub-id pair; a single administration is 0/1,
+      // which is what every registry expects and what nothing else parses.
+      1: '0',
+      2: String(immunisation.sequence),
+      3: writeTime(immunisation.administeredAt),
+      5: writeCoded(immunisation.vaccine),
+      // `999` is the code for "amount not recorded". A registry reading an empty
+      // amount cannot tell it from a zero dose.
+      6: immunisation.amount ?? '999',
+      7: immunisation.units ?? '',
+      9: writeCoded(immunisation.route),
+      10: writeProvider(immunisation.administeringProviderId, undefined),
+      11: writeCoded(immunisation.site),
+      // A lot number is transcribed off a vial by hand and stored as free text,
+      // so it is exactly the sort of field an injected separator arrives in.
+      15: immunisation.lotNumber ?? '',
+      17: writeCoded(immunisation.manufacturer),
+      20: immunisation.completionStatus,
+    },
+    delimiters
+  );
 }
 
 export function parseVxu(raw: string): VxuMessage {
@@ -446,11 +471,17 @@ export function buildAck(
   return renderMessage(
     message([
       buildMsh(ack.header, 'ACK', 'R01', 'ACK', delimiters),
-      buildSegment('MSA', {
-        1: ack.code,
-        2: ack.acknowledgedControlId,
-        3: ack.text ?? '',
-      }),
+      buildSegment(
+        'MSA',
+        {
+          1: ack.code,
+          // Echoed straight back off the message being acknowledged, which makes
+          // it the shortest path from an inbound value to an outbound segment.
+          2: ack.acknowledgedControlId,
+          3: ack.text ?? '',
+        },
+        delimiters
+      ),
     ])
   );
 }

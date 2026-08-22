@@ -1,11 +1,11 @@
-import { referralInput } from '@openrunic/database';
+import { REFERRAL_PRIORITIES, REFERRAL_STATUSES, referralInput } from '@openrunic/database';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
-import { parseJsonBody, parseParam } from '../http/validate.js';
+import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { ReferralStatus } from '../repositories/specs/clinical.js';
@@ -99,9 +99,14 @@ const referralListQuerySchema = z.object({
   patientId: z.uuid().optional(),
   encounterId: z.uuid().optional(),
   referredById: z.uuid().optional(),
-  status: z.string().optional(),
-  priority: z.string().optional(),
-  specialtyCode: z.string().optional(),
+  // The enums themselves, not `z.string()` cast to them at the call site. A
+  // cast is a promise the schema was not making: `status=nonsense` type-checked,
+  // reached the repository, and came back as a 500 from a filter no column can
+  // satisfy. Naming the values here refuses it as the 400 it is, and publishes
+  // them in the OpenAPI document as well.
+  status: z.enum(REFERRAL_STATUSES).optional(),
+  priority: z.enum(REFERRAL_PRIORITIES).optional(),
+  specialtyCode: z.string().min(1).max(64).optional(),
   /** `true` for the outstanding-referrals tray. */
   openOnly: z.enum(['true', 'false']).optional(),
   page: z.coerce.number().int().positive().optional(),
@@ -212,7 +217,12 @@ export function referralRoutes(router: Hono<AppEnv>): void {
   };
 
   router.get('/referrals', requirePermission('order.read'), async (c) => {
-    const query = referralListQuerySchema.parse(c.req.query());
+    // `parseQuery`, not `schema.parse`. A bare parse throws ZodError, which is
+    // not an ApiError, so the error boundary logged it as an unexpected internal
+    // fault and answered 500: every other list route on this surface answers 400
+    // for the same input, and a caller sending `patientId=x` could turn their own
+    // typo into this server's incident.
+    const query = parseQuery(c, referralListQuerySchema);
     const page = await repositories(c).referrals.list({
       page: query.page ?? 1,
       pageSize: query.pageSize ?? 25,
@@ -221,10 +231,8 @@ export function referralRoutes(router: Hono<AppEnv>): void {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.referredById === undefined ? {} : { referredById: query.referredById }),
-      ...(query.status === undefined ? {} : { status: query.status as ReferralStatus }),
-      ...(query.priority === undefined
-        ? {}
-        : { priority: query.priority as ScopedRow<'Referral'>['priority'] }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.priority === undefined ? {} : { priority: query.priority }),
       ...(query.specialtyCode === undefined ? {} : { specialtyCode: query.specialtyCode }),
       ...(query.openOnly === 'true' ? { openOnly: true } : {}),
     });

@@ -9,7 +9,8 @@
 
 export { generateCcd, parseCcd, parseDocumentTree } from './document.js';
 export { CcdaError } from './xml/errors.js';
-export { parseXml } from './xml/reader.js';
+export { DEFAULT_XML_LIMITS, parseXml } from './xml/reader.js';
+export type { XmlLimits } from './xml/reader.js';
 export { renderDocument, renderElement, escapeText, escapeAttribute } from './xml/writer.js';
 export {
   attr,

@@ -693,6 +693,33 @@ describe('the projections', () => {
   });
 
   /**
+   * The same organisation-wide grant, read by somebody granted one site.
+   *
+   * `location` is derived from `UserFacility`, which is a different table from
+   * the one the resource is built on, and it used to be read by user id alone.
+   * So a principal confined to facility A could ask this boundary where a
+   * colleague works and be told about facility B - the caller's own confinement
+   * narrowed the assignments it could list and then said nothing at all about
+   * the sites those assignments were enriched with.
+   *
+   * `read-only` is the role that makes this reachable in a real deployment: it
+   * holds every `.read` permission, `role.read` included, and does not hold
+   * `facility.all`. The admin tokens the tests above use hold `facility.all`
+   * and would pass this whether or not the narrowing existed.
+   */
+  it('shows a site-confined reader only the facilities they were granted', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${ORG_GRANT}`, {
+        headers: bearer(TOKENS.siteReaderA),
+      })
+    ).json()) as { location?: { reference?: string }[] };
+
+    expect(role.location?.map((entry) => entry.reference)).toEqual([`Location/${DEMO_FACILITY_A}`]);
+  });
+
+  /**
    * The absent-versus-empty property, asserted rather than assumed.
    *
    * A role granted at a site the person is not attached to intersects to

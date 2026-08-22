@@ -109,6 +109,28 @@ export interface OpenApiDocument {
   tags: { name: string }[];
 }
 
+/**
+ * The permission a route requires, as the vendor extensions the document
+ * publishes.
+ *
+ * Not an OpenAPI keyword, but the one fact a reader of this spec most needs:
+ * which role bundle can call the endpoint. Lifted out of the builder because it
+ * is the only part with a nested condition, and the builder is already at the
+ * complexity the linter allows.
+ *
+ * The plural form appears only when a route requires more than one, so the
+ * common case reads exactly as it did and the exception is visible as one.
+ */
+function permissionExtensions(contract: RouteContract): Record<string, unknown> {
+  if (contract.permission === undefined) return {};
+
+  const also = contract.alsoRequires ?? [];
+  return {
+    'x-openrunic-permission': contract.permission,
+    ...(also.length === 0 ? {} : { 'x-openrunic-permissions': [contract.permission, ...also] }),
+  };
+}
+
 export function buildOpenApiDocument(
   contracts: readonly RouteContract[],
   info: OpenApiInfo = DEFAULT_INFO
@@ -161,11 +183,7 @@ export function buildOpenApiDocument(
         content: { 'application/json': { schema: toJsonSchema(contract.body) } },
       };
     }
-    if (contract.permission !== undefined) {
-      // Not an OpenAPI keyword, but the one fact a reader of this spec most
-      // needs: which role bundle can call the endpoint.
-      operation['x-openrunic-permission'] = contract.permission;
-    }
+    Object.assign(operation, permissionExtensions(contract));
 
     paths[contract.path] = { ...paths[contract.path], [contract.method]: operation };
   }

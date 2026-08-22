@@ -8,6 +8,8 @@ import {
   OLDEST_MONTHS,
   percentileFor,
   REFERENCE_TABLES,
+  type GrowthQuery,
+  type GrowthRefusal,
   type GrowthResult,
 } from './index.js';
 import { lmsAt, percentileOf, valueAtZ, zScore } from './lms.js';
@@ -435,5 +437,73 @@ describe('the reference tables themselves', () => {
         }
       }
     }
+  });
+});
+
+/**
+ * WHAT THE TYPE PROMISES AND THE RUNTIME CANNOT.
+ *
+ * `GrowthQuery` says `measure` is one of six strings and `sex` is one of two,
+ * and TypeScript holds every call site it compiles to that. This is a published
+ * entry point though, and its callers include JavaScript, JSON that arrived over
+ * a wire, and a handler that read a column - none of which are checked.
+ *
+ * Every one of these used to fail SILENTLY. An unrecognised sex fell through to
+ * the female table, an unknown measure at a child age fell through to BMI, and a
+ * non-finite age read the birth row. Each returned a plausible percentile
+ * computed against the wrong reference, printed beside percentiles that were
+ * right - which is worse than no answer, because nothing about it looks wrong.
+ */
+describe('a query whose fields the type promised and the caller did not', () => {
+  const valid = { measure: 'weight-for-age', sex: 'female', value: 9, ageMonths: 12 } as const;
+
+  const refusal = (overrides: Record<string, unknown>): GrowthResult | GrowthRefusal =>
+    percentileFor({ ...valid, ...overrides } as unknown as GrowthQuery);
+
+  it.each(['', 'weight', 'WEIGHT-FOR-AGE', 'height-for-age', null, undefined, 7])(
+    'refuses a measure of %s rather than falling through to another chart',
+    (measure) => {
+      const answer = refusal({ measure });
+      expect(answer).toHaveProperty('reason');
+      expect((answer as GrowthRefusal).detail).toContain('not a measure');
+    }
+  );
+
+  it.each(['', 'Female', 'F', 'other', null, undefined, 1])(
+    'refuses a sex of %s rather than charting against the female tables',
+    (sex) => {
+      const answer = refusal({ sex });
+      expect(answer).toHaveProperty('reason');
+      expect((answer as GrowthRefusal).detail).toContain('sex-specific');
+    }
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, null])(
+    'refuses an age of %s rather than reading the birth row',
+    (ageMonths) => {
+      expect(refusal({ ageMonths })).toHaveProperty('reason');
+    }
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    'refuses a length of %s on weight-for-length',
+    (lengthCm) => {
+      expect(refusal({ measure: 'weight-for-length', lengthCm })).toHaveProperty('reason');
+    }
+  );
+
+  it('still answers the query it was always able to answer', () => {
+    const answer = percentileFor(valid);
+
+    expect(answer).not.toHaveProperty('reason');
+    expect((answer as GrowthResult).measure).toBe('weight-for-age');
+  });
+
+  /**
+   * The silent-fallthrough property, stated directly: a female query and a
+   * malformed-sex query must not agree, because they used to.
+   */
+  it('does not answer a malformed sex the way it answers female', () => {
+    expect(refusal({ sex: 'other' })).not.toEqual(percentileFor({ ...valid, sex: 'female' }));
   });
 });

@@ -25,6 +25,8 @@ export {
   negativeBalances,
   packsToUnits,
   signedQuantity,
+  isStockPrecision,
+  MAX_STOCK_QUANTITY,
   toStockPrecision,
   usableBalance,
   type CountVariance,

@@ -176,7 +176,7 @@ export function movementProblems(movement: StockMovement): readonly string[] {
 
   if (!Number.isFinite(movement.quantity)) {
     problems.push('A movement quantity must be a number.');
-  } else if (movement.quantity > 0 && toStockPrecision(movement.quantity) !== movement.quantity) {
+  } else if (movement.quantity > 0 && !isStockPrecision(movement.quantity)) {
     // On the grid, like an allocation line. A quantity finer than six decimal
     // places is not one this system carries - it becomes something else in the
     // column it is stored in - so accepting it would mean the figure that was
@@ -294,6 +294,40 @@ export function signedQuantity(movement: StockMovement): number {
  * so it removes the artefact without rounding away anything a practice meant.
  */
 const PLACES = 1e6;
+
+/**
+ * The largest quantity this system can carry, and the reason it is not the
+ * column's limit.
+ *
+ * `DECIMAL(18,6)` stores twelve integer digits, so the column would take
+ * 999,999,999,999. The arithmetic will not: balances are accumulated as
+ * six-decimal grid STEPS, and above `MAX_SAFE_INTEGER` steps two counts can sum
+ * to a third that equals one of them. So the real ceiling is
+ * `MAX_SAFE_INTEGER / 1e6`, about nine billion units - two orders of magnitude
+ * above anything a practice holds, and the number every validator must use.
+ *
+ * Exported because the API's own schema had the column's figure written into it
+ * instead. Everything between the two limits passed validation, reached
+ * `movementProblems`, and came back as a bare 500 from the routine whose whole
+ * job is to report a bad quantity as a field error.
+ */
+export const MAX_STOCK_QUANTITY = Math.floor(Number.MAX_SAFE_INTEGER / PLACES);
+
+/**
+ * Whether a quantity is one this system can hold exactly: on the six-decimal
+ * grid, and within the bound above.
+ *
+ * The predicate exists because {@link toStockPrecision} THROWS, and a validator
+ * must not be able to fail in the way it is meant to report. `movementProblems`
+ * called the throwing form inside its quantity branch, so a finite
+ * attacker-chosen number past the safe bound escaped as a RangeError rather
+ * than being returned as the problem it is.
+ */
+export function isStockPrecision(quantity: number): boolean {
+  const scaled = quantity * PLACES;
+  if (!Number.isFinite(scaled) || Math.abs(scaled) > Number.MAX_SAFE_INTEGER) return false;
+  return Math.round(scaled) / PLACES === quantity;
+}
 
 export function toStockPrecision(quantity: number): number {
   const scaled = quantity * PLACES;

@@ -110,92 +110,103 @@ export function growthRoutes(router: Hono<AppEnv>): void {
    * two years" and "we have one and could not plot it" are different problems
    * with different fixes.
    */
-  router.get('/patients/:id/growth', requirePermission('encounter.read'), async (c) => {
-    const patientId = parseParam(c.req.param('id'), idParamSchema, 'id');
-    const query = parseQuery(c, growthQuerySchema);
-    const patient = required(
-      await repositories(c).patients.findById(patientId),
-      'No such patient.'
-    );
-
-    const sex = sexOf(patient.sexAtBirth);
-    if (sex === undefined) {
-      // Every one of these charts is sex-specific, and there is no neutral one
-      // to fall back to. Answering with an empty chart would read as "this child
-      // has no measurements"; this says what is actually missing.
-      throw ApiError.malformed(
-        'These growth charts are sex-specific and this patient has no sex recorded at birth, so there is no reference to plot against.'
+  // Both, and both are load bearing. The readings are chart data, which is
+  // `encounter.read`. The sex and birth date the response returns - and which
+  // the reference tables are selected by - are demographics, which is
+  // `patient.read` at `/patients/:id`. Asking only for the first let a role
+  // denied demographics read them here, along with whether a given patient id
+  // exists at all, which the 404 answers.
+  router.get(
+    '/patients/:id/growth',
+    requirePermission('encounter.read'),
+    requirePermission('patient.read'),
+    async (c) => {
+      const patientId = parseParam(c.req.param('id'), idParamSchema, 'id');
+      const query = parseQuery(c, growthQuerySchema);
+      const patient = required(
+        await repositories(c).patients.findById(patientId),
+        'No such patient.'
       );
-    }
 
-    const readings = await readingsFor(c, patientId);
-    const wanted = query.measure;
-
-    const points: z.infer<typeof growthPointSchema>[] = [];
-    const uncharted: z.infer<typeof growthUnchartedSchema>[] = [];
-
-    for (const reading of readings) {
-      const measure = LOINC_TO_MEASURE[reading.loincCode ?? reading.code];
-      if (measure === undefined) {
-        uncharted.push({
-          observationId: reading.id,
-          code: reading.loincCode ?? reading.code,
-          display: reading.display,
-          reason: 'This code is not one of the measurements the growth charts describe.',
-        });
-        continue;
-      }
-      if (wanted !== undefined && measure !== wanted) continue;
-
-      const value = reading.valueNumber === null ? undefined : Number(reading.valueNumber);
-      if (value === undefined) {
-        uncharted.push({
-          observationId: reading.id,
-          code: reading.loincCode ?? reading.code,
-          display: reading.display,
-          reason: 'The reading has no numeric value to plot.',
-        });
-        continue;
+      const sex = sexOf(patient.sexAtBirth);
+      if (sex === undefined) {
+        // Every one of these charts is sex-specific, and there is no neutral one
+        // to fall back to. Answering with an empty chart would read as "this child
+        // has no measurements"; this says what is actually missing.
+        throw ApiError.malformed(
+          'These growth charts are sex-specific and this patient has no sex recorded at birth, so there is no reference to plot against.'
+        );
       }
 
-      const ageMonths = monthsBetween(patient.birthDate, reading.effectiveAt);
-      const result = percentileFor({ measure, sex, value, ageMonths });
+      const readings = await readingsFor(c, patientId);
+      const wanted = query.measure;
 
-      if (isRefusal(result)) {
-        uncharted.push({
+      const points: z.infer<typeof growthPointSchema>[] = [];
+      const uncharted: z.infer<typeof growthUnchartedSchema>[] = [];
+
+      for (const reading of readings) {
+        const measure = LOINC_TO_MEASURE[reading.loincCode ?? reading.code];
+        if (measure === undefined) {
+          uncharted.push({
+            observationId: reading.id,
+            code: reading.loincCode ?? reading.code,
+            display: reading.display,
+            reason: 'This code is not one of the measurements the growth charts describe.',
+          });
+          continue;
+        }
+        if (wanted !== undefined && measure !== wanted) continue;
+
+        const value = reading.valueNumber === null ? undefined : Number(reading.valueNumber);
+        if (value === undefined) {
+          uncharted.push({
+            observationId: reading.id,
+            code: reading.loincCode ?? reading.code,
+            display: reading.display,
+            reason: 'The reading has no numeric value to plot.',
+          });
+          continue;
+        }
+
+        const ageMonths = monthsBetween(patient.birthDate, reading.effectiveAt);
+        const result = percentileFor({ measure, sex, value, ageMonths });
+
+        if (isRefusal(result)) {
+          uncharted.push({
+            observationId: reading.id,
+            code: reading.loincCode ?? reading.code,
+            display: reading.display,
+            reason: result.detail,
+          });
+          continue;
+        }
+
+        points.push({
           observationId: reading.id,
-          code: reading.loincCode ?? reading.code,
-          display: reading.display,
-          reason: result.detail,
+          measure,
+          ageMonths: round(ageMonths, 2),
+          value,
+          unit: result.unit,
+          z: result.z,
+          percentile: result.percentile,
+          median: result.median,
+          recordedAt: reading.effectiveAt.toISOString(),
         });
-        continue;
       }
 
-      points.push({
-        observationId: reading.id,
-        measure,
-        ageMonths: round(ageMonths, 2),
-        value,
-        unit: result.unit,
-        z: result.z,
-        percentile: result.percentile,
-        median: result.median,
-        recordedAt: reading.effectiveAt.toISOString(),
+      return c.json({
+        patientId,
+        sex,
+        birthDate: patient.birthDate.toISOString().slice(0, 10),
+        points,
+        curves: curvesFor(points, sex),
+        uncharted,
+        // Named on the response rather than assumed, because a percentile whose
+        // reference is unstated is one a clinician cannot weigh.
+        reference: 'CDC 2000 growth charts',
       });
     }
-
-    return c.json({
-      patientId,
-      sex,
-      birthDate: patient.birthDate.toISOString().slice(0, 10),
-      points,
-      curves: curvesFor(points, sex),
-      uncharted,
-      // Named on the response rather than assumed, because a percentile whose
-      // reference is unstated is one a clinician cannot weigh.
-      reference: 'CDC 2000 growth charts',
-    });
-  });
+  );
 }
 
 /**
@@ -322,6 +333,9 @@ export function growthRouteContracts(): RouteContract[] {
         'Reads the vital signs already recorded for a patient, scores each against the CDC 2000 growth charts, and returns a point per reading alongside the percentile curves to draw them on. Which chart a reading belongs to is decided by its LOINC code and nothing else, because recumbent length and standing height are different codes precisely because they are different measurements. A reading that cannot be charted is returned in `uncharted` with the reason rather than omitted: a chart missing a measurement looks like a measurement that was never taken.',
       tags: ['observations'],
       permission: 'encounter.read',
+      // The response carries the patient's sex and birth date, so it is behind
+      // the demographics permission as well as the chart one.
+      alsoRequires: ['patient.read'],
       pathParams: [{ name: 'id', description: 'Patient id (UUIDv7).', schema: idParamSchema }],
       query: growthQuerySchema,
       responses: [

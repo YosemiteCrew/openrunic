@@ -375,6 +375,15 @@ export interface ClaimListQuery extends BaseQuery {
   payerId?: string;
   encounterId?: string;
   status?: ClaimStatus;
+  /**
+   * Several statuses at once, intersected with `status` when both are given.
+   *
+   * The FHIR boundary sends this: `Claim.status` collapses ten domain states
+   * into three FHIR codes, so `?status=active` names seven of them and a scalar
+   * filter would answer with one. An empty array is a filter that matches
+   * nothing, not an absent one.
+   */
+  statuses?: readonly ClaimStatus[];
   /** Which instant the window applies to. A claim has two that matter. */
   window: 'createdAt' | 'submittedAt';
   from?: Date;
@@ -426,6 +435,25 @@ function claimWindow(query: ClaimListQuery) {
   if (stamp === undefined) return {};
   if (query.window === 'submittedAt') return { submittedAt: stamp };
   return { createdAt: stamp };
+}
+
+/**
+ * One status filter from the two ways a caller can ask for one.
+ *
+ * `status` is the collection's own scalar parameter; `statuses` is the set the
+ * FHIR boundary sends. They are resolved here rather than spread side by side
+ * because both write the same `where` key, and two clauses writing one key is
+ * how one of them silently stops applying. Intersecting is the safe direction:
+ * a search that quietly widens hands somebody rows they did not ask for.
+ *
+ * `undefined` means no status filter. An empty array means one that matches
+ * nothing, which is what an impossible intersection deserves.
+ */
+function claimStatusFilter(query: ClaimListQuery): readonly ClaimStatus[] | undefined {
+  const { status, statuses } = query;
+  if (statuses === undefined) return status === undefined ? undefined : [status];
+  if (status === undefined) return statuses;
+  return statuses.includes(status) ? [status] : [];
 }
 
 export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInput, ClaimListQuery> =
@@ -488,18 +516,20 @@ export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInpu
       if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
       if (query.payerId !== undefined && row.payerId !== query.payerId) return false;
       if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
-      if (query.status !== undefined && row.status !== query.status) return false;
+      const wanted = claimStatusFilter(query);
+      if (wanted !== undefined && !wanted.includes(row.status)) return false;
       const stamp = query.window === 'submittedAt' ? row.submittedAt : row.createdAt;
       return inWindow(stamp, query.from, query.to);
     },
 
     where(query: ClaimListQuery) {
       const windowed = claimWindow(query);
+      const wanted = claimStatusFilter(query);
       return {
         ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
         ...(query.payerId === undefined ? {} : { payerId: query.payerId }),
         ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
-        ...(query.status === undefined ? {} : { status: query.status }),
+        ...(wanted === undefined ? {} : { status: { in: [...wanted] } }),
         ...windowed,
       };
     },

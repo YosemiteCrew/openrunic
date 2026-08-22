@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { SERVED_MODULES } from '../fhir/resources.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
+import type { ScopedRow } from '../repositories/rows.js';
+import type { ClaimStatus } from '../repositories/specs/financial.js';
 
 import {
   DEMO_TENANT_A,
@@ -35,6 +37,7 @@ const PATIENT = testId(1);
 const PROVIDER = testId(900);
 const ENCOUNTER = testId(20);
 const CLAIM = testId(940);
+const SECOND_CLAIM = testId(941);
 const ORDER = testId(30);
 const REPORT = testId(40);
 const NURSE_ROLE = testId(970);
@@ -468,6 +471,40 @@ function seedChart(dataset: MemoryDataset): void {
  * difference between "grouped the lines correctly" and "returned whatever came
  * back first", and the sequence ordering has nothing to prove with one row.
  */
+/**
+ * A claim in a given state, on the seeded patient and encounter.
+ *
+ * Both are load bearing rather than incidental: `claimSpec` compartments on
+ * `patientId`, and `prepareClaims` resolves the billing provider through
+ * `encounterId` and falls back to the tenant when the encounter is unreadable.
+ * A claim seeded against anything else would quietly exercise that fallback
+ * instead of the path under test.
+ */
+function claimRow(id: string, status: ClaimStatus): ScopedRow<'Claim'> {
+  return {
+    ...storageColumns(id),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    coverageId: testId(10),
+    payerId: testId(11),
+    status,
+    frequency: 'ORIGINAL',
+    diagnosisCodes: ['E11.9'],
+    totalChargedCents: 24_500,
+    totalPaidCents: 0,
+    totalAdjustedCents: 0,
+    patientResponsibilityCents: 0,
+    secondaryOfId: null,
+    priorClaimId: null,
+    controlNumbers: {},
+    snapshot: {},
+    statusReason: null,
+    submittedAt: FIXED_NOW,
+    acknowledgedAt: null,
+    adjudicatedAt: null,
+  };
+}
+
 function seedClaim(dataset: MemoryDataset): void {
   seed(dataset, 'Claim', {
     ...storageColumns(CLAIM),
@@ -1062,30 +1099,76 @@ describe('Claim', () => {
   });
 
   /**
-   * The search parameter is a free string and the column is an enum. Passing an
-   * unmapped value through would filter on something the database cannot hold
-   * and return an empty bundle, which a client reads as "no claims" rather than
-   * "that is not a status".
+   * `status` answers the FHIR code, not the ten domain states behind it.
+   *
+   * `CLAIM_STATUS` collapses seven of those states into `active`, so the test
+   * that matters is not that `active` is accepted but that it returns all of
+   * them. A scalar filter resolving the code to its canonical state would pass
+   * an "is it accepted" test and return one claim out of two here.
    */
-  it('refuses a status the column cannot hold, rather than returning nothing', async () => {
-    const { app } = harness();
-
-    const res = await app.request('/fhir/Claim?status=not-a-status', {
+  const claimStatuses = async (app: ReturnType<typeof harness>['app'], value: string) => {
+    const res = await app.request(`/fhir/Claim?status=${value}`, {
       headers: bearer(TOKENS.adminA),
     });
+    if (res.status !== 200) return res.status;
+    const bundle = (await res.json()) as Bundle;
+    return (bundle.entry ?? [])
+      .map((entry) => (entry.resource as FhirResource).id)
+      .sort((left, right) => (left ?? '').localeCompare(right ?? ''));
+  };
 
-    expect(res.status).toBe(400);
+  it('answers a FHIR code with every domain state it collapses', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'DENIED'));
+
+    // SUBMITTED and DENIED are different domain states that both map to
+    // `active`, and both have to come back.
+    await expect(claimStatuses(created.app, 'active')).resolves.toEqual(
+      [CLAIM, SECOND_CLAIM].sort((left, right) => left.localeCompare(right))
+    );
   });
 
-  it('accepts a known status, in either case', async () => {
+  it('does not match a code none of the seeded states map to', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'DENIED'));
+
+    await expect(claimStatuses(created.app, 'draft')).resolves.toEqual([]);
+    await expect(claimStatuses(created.app, 'cancelled')).resolves.toEqual([]);
+  });
+
+  it('finds the one claim whose state maps to the code, not its neighbours', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'VOID'));
+
+    await expect(claimStatuses(created.app, 'cancelled')).resolves.toEqual([SECOND_CLAIM]);
+    await expect(claimStatuses(created.app, 'active')).resolves.toEqual([CLAIM]);
+  });
+
+  /**
+   * The domain names used to work here, and that was the bug: an integrator who
+   * read `active` in the CapabilityStatement, got a 400 and went looking would
+   * find `SUBMITTED` and write an integration against a vocabulary no client
+   * outside this repository can discover.
+   */
+  it('refuses the domain status names it used to accept', async () => {
     const { app } = harness();
 
-    for (const value of ['SUBMITTED', 'submitted']) {
-      const bundle = (await (
-        await app.request(`/fhir/Claim?status=${value}`, { headers: bearer(TOKENS.adminA) })
-      ).json()) as Bundle;
-      expect(bundle.total, `status=${value}`).toBe(1);
-    }
+    await expect(claimStatuses(app, 'SUBMITTED')).resolves.toBe(400);
+    await expect(claimStatuses(app, 'submitted')).resolves.toBe(400);
+  });
+
+  /**
+   * `entered-in-error` is inside R4's Claim status value set and no domain state
+   * maps to it. Refused rather than answered with an empty bundle, because an
+   * empty bundle reads as "no claims" rather than "this server has no such
+   * state" - and because `Observation` already 400s `status=unknown` for the
+   * same reason, fourteen lines away in the same file.
+   */
+  it('refuses a legal FHIR code no domain state maps to', async () => {
+    const { app } = harness();
+
+    await expect(claimStatuses(app, 'entered-in-error')).resolves.toBe(400);
+    await expect(claimStatuses(app, 'not-a-status')).resolves.toBe(400);
   });
 });
 

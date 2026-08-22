@@ -1235,7 +1235,10 @@ export const MOCK_WEBHOOKS: readonly Webhook[] = [
   {
     id: 'hook-claims',
     event: 'Claim',
-    criteria: 'Claim?status=denied',
+    // `active` rather than `denied`: FHIR R4 has no code for a denied claim, and
+    // `Claim.status=active` is the code every denied claim carries. The hook
+    // subscribes to that and sorts denials out at its own end.
+    criteria: 'Claim?status=active',
     endpoint: 'https://rcm.example.invalid/hooks/denials',
     status: 'PAUSED',
     secretRef: 'secret://webhooks/denials',

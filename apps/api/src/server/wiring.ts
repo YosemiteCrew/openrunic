@@ -1,7 +1,8 @@
-import { createPrismaClient, type PrismaClient } from '@openrunic/database';
+import { createPrismaClient, withTenantSession, type PrismaClient } from '@openrunic/database';
 import { z } from 'zod';
 
-import { createPrismaAuditSink, type AuditWriteScope } from '../audit/prisma-sink.js';
+import { createPrismaAuditSink, type StandaloneAuditWork } from '../audit/prisma-sink.js';
+import type { AuditEventDelegate } from '../repositories/db-port.js';
 import type { AuditSink } from '../audit/types.js';
 import type { PrincipalResolver } from '../auth/principal.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
@@ -109,11 +110,12 @@ function buildPrincipalResolver(
  * The audit sink's fallback write path, for events with no transaction of their
  * own: an authorisation denial, or a batch of reads.
  *
- * The unscoped client on purpose - every audit event carries its own tenantId
- * into the row, and a denial has to be recorded even when no tenant transaction
- * was ever opened. The chain's tail lookup names its tenant explicitly rather
- * than relying on this scope to narrow it, which is what makes that safe; see
- * the `where` in `prisma-sink.ts`.
+ * It opens a tenant session, because `AuditEvent` is policied like every other
+ * table and a write outside a declared session is refused - and a refused audit
+ * write is the quietest failure in this system, since the collector logs the
+ * flush error after the response has already gone. One transaction also gives
+ * the hash chain what it has always needed: the tail read and the linked write
+ * with nothing between them.
  *
  * Written as an explicit adapter rather than a cast. `PrismaClient.auditEvent`
  * is not assignable to `AuditEventDelegate`: Prisma's generated methods are
@@ -122,22 +124,33 @@ function buildPrincipalResolver(
  * promise honest - the sink is handed exactly the two fields it declares it
  * needs, and nothing about the caller's shape is asserted.
  */
-function standaloneAuditScope(prisma: PrismaClient): AuditWriteScope {
-  return {
-    auditEvent: {
-      create: async (args) => {
-        const created = await prisma.auditEvent.create({ ...args, select: { id: true } });
-        return { id: created.id };
-      },
-      findFirst: async (args) => {
-        const row = await prisma.auditEvent.findFirst({
-          ...args,
-          select: { seq: true, hash: true },
-        });
-        return row === null ? null : { seq: row.seq, hash: row.hash };
-      },
-    },
-  };
+function standaloneAuditWork(prisma: PrismaClient): StandaloneAuditWork {
+  return (tenantId, run) =>
+    withTenantSession(prisma, { tenantId }, (tx) => {
+      // Narrowed to the port's type BEFORE anything is called on it. Spreading
+      // the sink's own `args` into the transaction client's generic delegate
+      // makes TypeScript compare two deeply instantiated argument types and give
+      // up ("excessive stack depth"); through `AuditEventDelegate` it is one
+      // concrete signature. `tenantTransactionSatisfiesPort` in `db-port.ts`
+      // proves the assignment is sound.
+      const delegate: AuditEventDelegate = tx.auditEvent;
+
+      return run({
+        auditEvent: {
+          create: async (args) => {
+            const created = await delegate.create({ ...args, select: { id: true } });
+            return { id: created.id };
+          },
+          findFirst: async (args) => {
+            const row = await delegate.findFirst({
+              ...args,
+              select: { seq: true, hash: true },
+            });
+            return row === null ? null : { seq: row.seq, hash: row.hash };
+          },
+        },
+      });
+    });
 }
 
 /**
@@ -166,7 +179,7 @@ export function buildServerWiring(env: WiringEnv, client?: PrismaClient): Server
   // nothing rather than everything, because the policies deny by default.
   const repositories = createPrismaRepositoryRegistry(createRlsDbPortFactory(prisma));
 
-  const auditSink = createPrismaAuditSink({ standalone: standaloneAuditScope(prisma) });
+  const auditSink = createPrismaAuditSink({ standalone: standaloneAuditWork(prisma) });
 
   return {
     repositories,

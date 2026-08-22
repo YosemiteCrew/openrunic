@@ -1,4 +1,5 @@
-import type { PrismaClient } from '@openrunic/database';
+import { withTenantSession, type PrismaClient } from '@openrunic/database';
+import { demoOrganisationId } from '@openrunic/database/seed';
 
 import type { Principal, PrincipalResolver } from '../auth/principal.js';
 
@@ -82,20 +83,54 @@ export const DEMO_TOKENS: readonly DemoTokenSpec[] = [
 export function createDemoPrincipalResolver(client: PrismaClient): PrincipalResolver {
   let table: Map<string, Principal> | null = null;
 
+  /**
+   * THE ONE READ THIS SYSTEM CANNOT MAKE BY QUERYING.
+   *
+   * Row-level security is on for every table including `Organisation`, and that
+   * table's policy keys on `id` - so a connection that has not declared a tenant
+   * sees no organisations at all, not even to look one up by slug. This used to
+   * do exactly that lookup, and it worked only because the API connected as the
+   * superuser initdb creates, which bypasses every policy. Giving the API its
+   * own role broke the lookup, and rightly: it was reading across the boundary
+   * the policies exist to draw.
+   *
+   * A deployment with a real identity provider never has this problem - the
+   * organisation comes out of the verified token. The demo mode has no token to
+   * read one from, so the id arrives another way: `demoOrganisationId()` derives
+   * it from the same pure builder the seed writes from, and `seedDemoPractice`
+   * refuses to write a practice under any other id.
+   *
+   * The slug stays in the `where`. It is no longer how the practice is found,
+   * but it is how a database seeded by something else is told apart from this
+   * one: no row, no principals, 401 - the right answer for a deployment with no
+   * identity provider and no demo data.
+   */
   const load = async (): Promise<Map<string, Principal>> => {
-    const organisation = await client.organisation.findUnique({
-      where: { slug: DEMO_ORGANISATION_SLUG },
-      select: {
-        id: true,
-        facilities: { select: { id: true } },
-        users: {
-          where: { email: { in: DEMO_TOKENS.map((spec) => spec.email) } },
-          // The User model stores the parts, not a composed label: there is no
-          // displayName column, because a person's name is not one string.
-          select: { id: true, email: true, givenName: true, familyName: true, credential: true },
-        },
-      },
-    });
+    const organisation = await withTenantSession(
+      client,
+      { tenantId: demoOrganisationId() },
+      async (tx) =>
+        tx.organisation.findFirst({
+          where: { slug: DEMO_ORGANISATION_SLUG },
+          select: {
+            id: true,
+            facilities: { select: { id: true } },
+            users: {
+              where: { email: { in: DEMO_TOKENS.map((spec) => spec.email) } },
+              // The User model stores the parts, not a composed label: there is
+              // no displayName column, because a person's name is not one
+              // string.
+              select: {
+                id: true,
+                email: true,
+                givenName: true,
+                familyName: true,
+                credential: true,
+              },
+            },
+          },
+        })
+    );
 
     const resolved = new Map<string, Principal>();
     if (organisation === null) return resolved;

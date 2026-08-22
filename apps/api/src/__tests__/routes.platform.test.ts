@@ -2198,7 +2198,7 @@ describe('every filter has a matching Prisma projection', () => {
         roleId: ROLE_ID,
         facilityId: DEMO_FACILITY_A,
       })
-    ).toEqual({ userId: USER_ID, roleId: ROLE_ID, facilityId: DEMO_FACILITY_A });
+    ).toEqual({ userId: { in: [USER_ID] }, roleId: ROLE_ID, facilityId: DEMO_FACILITY_A });
     expect(roleAssignmentSpec.where({ ...base, sort: 'createdAt' })).toEqual({});
     expect(roleAssignmentSpec.orderBy({ ...base, sort: 'createdAt' })).toEqual([
       { createdAt: 'asc' },
@@ -2321,5 +2321,56 @@ describe('the published contracts', () => {
     // would let an actor forge their own alibi.
     const { app } = createTestApp();
     expect((await send(app, 'POST', '/bff/v0/audit', {})).status).toBe(404);
+  });
+});
+
+/**
+ * The two ways a caller can ask for a role assignment's user, and what happens
+ * when both arrive.
+ *
+ * `userId` is the collection's scalar parameter. `userIds` is the set the FHIR
+ * boundary sends once it has resolved `PractitionerRole?specialty=` to its
+ * practitioners. Both write the same `where` key, so these assert the emitted
+ * shape and not only the in-memory answer: two spreads onto one key diverge
+ * exactly where the memory port cannot see it, which is a green suite and a
+ * Postgres query that returns every practitioner's grants to a client that
+ * asked for one practitioner's.
+ */
+describe('the role assignment user filter', () => {
+  const paged = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+  const other = testId(902);
+  const assignment = (userId: string): ScopedRow<'RoleAssignment'> => ({
+    ...makeRoleAssignmentRow(),
+    userId,
+  });
+
+  it('sends a set through as a set', () => {
+    const query = { ...paged, userIds: [USER_ID, other] } as const;
+
+    expect(roleAssignmentSpec.where(query)).toEqual({ userId: { in: [USER_ID, other] } });
+    expect(roleAssignmentSpec.matches(assignment(other), query)).toBe(true);
+    expect(roleAssignmentSpec.matches(assignment(testId(903)), query)).toBe(false);
+  });
+
+  it('intersects the two rather than letting one overwrite the other', () => {
+    const query = { ...paged, userId: USER_ID, userIds: [USER_ID, other] } as const;
+
+    expect(roleAssignmentSpec.where(query)).toEqual({ userId: { in: [USER_ID] } });
+    expect(roleAssignmentSpec.matches(assignment(USER_ID), query)).toBe(true);
+    // The row the scalar excludes. Were `userIds` to win, this would be true.
+    expect(roleAssignmentSpec.matches(assignment(other), query)).toBe(false);
+  });
+
+  it('matches nothing when the two cannot both hold', () => {
+    const query = { ...paged, userId: testId(903), userIds: [USER_ID, other] } as const;
+
+    expect(roleAssignmentSpec.where(query)).toEqual({ userId: { in: [] } });
+    expect(roleAssignmentSpec.matches(assignment(USER_ID), query)).toBe(false);
+    expect(roleAssignmentSpec.matches(assignment(testId(903)), query)).toBe(false);
+  });
+
+  it('leaves the clause out when neither is given', () => {
+    expect(roleAssignmentSpec.where({ ...paged })).toEqual({});
+    expect(roleAssignmentSpec.matches(assignment(USER_ID), { ...paged })).toBe(true);
   });
 });

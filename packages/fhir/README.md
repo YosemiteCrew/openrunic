@@ -50,11 +50,14 @@ absent when empty, because FHIR cannot represent an empty array.
 
 ## Search, bundles and outcomes
 
-- `SEARCH_SUPPORT` is typed metadata describing every implemented search parameter per resource
-  type, with `mustSupport` marking the US Core ones. `findSearchParam` / `isSupportedSearchParam`
-  let the API reject an unimplemented parameter with an OperationOutcome instead of ignoring it,
-  and `capabilityStatementResources()` generates the `/metadata` resource list from the same
-  registry so it cannot drift.
+- `SEARCH_SUPPORT` is the typed **catalogue** of search parameters per resource type, with
+  `mustSupport` marking the US Core ones. It is what a parameter means, not what the API implements:
+  a parameter can be catalogued here and unimplemented, and `apps/api`'s
+  `fhir.must-support.test.ts` is what keeps that gap written down. `findSearchParam` /
+  `isSupportedSearchParam` let the API reject an unknown parameter with an OperationOutcome instead
+  of ignoring it, and the API's `/metadata` takes the list of parameters from the mounted resource
+  modules and their definitions from here, so the published CapabilityStatement describes what is
+  actually answered.
 - `searchsetBundle` and `transactionBundle` build the two bundle types the API serves.
 - `operationOutcome` plus the named helpers (`notFound`, `invalid`, `required`, `forbidden`,
   `loginRequired`, `notSupported`, `unsupportedSearchParameter`, `conflict`, `exception`) cover the

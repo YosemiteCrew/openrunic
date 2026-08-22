@@ -79,7 +79,7 @@ truthful-looking "no claims". The domain names are no longer accepted through th
 | --------------------- | --------------------------------------------------------------------- |
 | `Patient`             | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
 | `Practitioner`        | `name`                                                                |
-| `PractitionerRole`    | `practitioner`                                                        |
+| `PractitionerRole`    | `practitioner`, `specialty`                                           |
 | `Location`            | `name`                                                                |
 | `Coverage`            | `patient`                                                             |
 | `Appointment`         | `_id`, `patient`, `date`, `practitioner`, `location`                  |

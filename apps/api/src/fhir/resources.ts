@@ -1,4 +1,5 @@
 import {
+  CLAIM_STATUS,
   DOCUMENT_STATUS,
   MEDICATION_REQUEST_STATUS,
   OBSERVATION_STATUS,
@@ -42,10 +43,8 @@ import {
   specimenResource,
   taskResource,
 } from './projections.js';
-import { CLAIM_STATUSES } from '@openrunic/database';
 
 import type { ScopedRow } from '../repositories/rows.js';
-import type { ClaimStatus } from '../repositories/specs/financial.js';
 import type { Repositories } from '../repositories/types.js';
 
 import { defineFhirResource, type FhirResourceModule } from './resource-module.js';
@@ -61,14 +60,25 @@ import { defineFhirResource, type FhirResourceModule } from './resource-module.j
  * avoid, because a client that filters on an ignored parameter receives the
  * whole practice and believes it received a slice.
  *
- * A coded parameter is advertised only when the domain enum and the FHIR value
- * set agree one-for-one. Several of the workflow enums are deliberately wider
- * than FHIR's - the schedule needs a state for "roomed" and R4 has no code for
- * it - and `packages/fhir` derives that loss rather than asserting it. Where a
- * mapping loses information, searching by the FHIR code would silently match
- * one of the states it collapses and miss the others, so the parameter is left
- * out and the loss is visible in the CapabilityStatement as an absence rather
- * than hidden behind a filter that half works.
+ * A coded parameter is advertised only when the server can answer the FHIR code
+ * itself, rather than a private vocabulary wearing its name. Several of the
+ * workflow enums are deliberately wider than FHIR's - the schedule needs a
+ * state for "roomed" and R4 has no code for it - and `packages/fhir` derives
+ * that loss rather than asserting it. A lossy mapping therefore takes one of
+ * two routes, and never a third:
+ *
+ * - The parameter is left out, so the loss is visible in the CapabilityStatement
+ *   as an absence rather than hidden behind a filter that half works. This is
+ *   the default, and `losslessStatus` applies it from the mapping itself.
+ * - The parameter is advertised and the FHIR code is answered as the *set* of
+ *   domain states it stands for, via `statusTokens`. This costs a set-valued
+ *   filter in the repository query and is worth it where the parameter earns
+ *   its keep; `Claim` is the one resource that takes this route today.
+ *
+ * The route never taken is advertising the parameter and answering domain
+ * tokens through it. A client reading the CapabilityStatement sends the FHIR
+ * code, and a server that only understands its own names has published a
+ * capability nobody outside this repository can use.
  */
 
 const CHART_SORT = { order: 'desc' } as const;
@@ -131,6 +141,36 @@ function statusToken<D extends string>(
     });
   }
   return domain;
+}
+
+/**
+ * Every domain state a FHIR status code stands for, or a refusal.
+ *
+ * The set-valued counterpart to `statusToken`, for a mapping that collapses
+ * several domain states into one FHIR code. Answering such a code with a single
+ * domain value - the canonical one - would match one state and silently miss
+ * the rest, which is the failure the module header exists to prevent.
+ *
+ * An empty preimage is a code no domain state maps to, and it is refused rather
+ * than answered with an empty bundle. `Observation` already behaves this way:
+ * R4's `ObservationStatus` binding has eight codes and `OBSERVATION_STATUS`
+ * maps seven, so `?status=unknown` is a 400 today even though the code is
+ * inside the required binding. Two status readers in one file should not
+ * disagree about what a legal-but-unmapped code means.
+ */
+function statusTokens<D extends string>(
+  mapping: EnumMapping<D, string>,
+  raw: string,
+  param: string
+): D[] {
+  const code = tokenValue(raw);
+  const domains = mapping.domainValues.filter((value) => mapping.toFhir(value) === code);
+  if (domains.length === 0) {
+    throw ApiError.malformed(`${param} is not a status this server recognises.`, {
+      issues: [{ path: param, message: 'not a value from the resource status value set' }],
+    });
+  }
+  return domains;
 }
 
 /** Spreads a date parameter's window onto a query's `from` and `to`. */
@@ -698,24 +738,6 @@ const provenanceModule = defineFhirResource({
   toResource: provenanceResource,
 });
 
-/**
- * A FHIR `status` token as the collection's enum, or a refusal.
- *
- * The search parameter is a free string and the column is an enum, so an
- * unmapped value has to fail loudly. Passing it through would filter on
- * something the database cannot hold and return an empty bundle, which reads to
- * a client as "no claims" rather than "that is not a status".
- */
-function claimStatusToken(value: string): ClaimStatus {
-  const upper = value.toUpperCase();
-  if (!(CLAIM_STATUSES as readonly string[]).includes(upper)) {
-    throw ApiError.malformed(`status must be one of ${CLAIM_STATUSES.join(', ')}.`, {
-      issues: [{ path: 'status', message: `unknown claim status ${value}` }],
-    });
-  }
-  return upper as ClaimStatus;
-}
-
 /** What a page of Claims needs loading before any of it can be mapped. */
 interface ClaimPageData {
   readonly linesByClaim: ReadonlyMap<string, ScopedRow<'ClaimLine'>[]>;
@@ -778,7 +800,11 @@ const claimModule = defineFhirResource({
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...patientFilter(query.patient),
-    ...(query.status === undefined ? {} : { status: claimStatusToken(tokenValue(query.status)) }),
+    // The FHIR code, as the set of domain states it stands for. `active` alone
+    // covers seven of the ten, so a scalar here would answer with one of them.
+    ...(query.status === undefined
+      ? {}
+      : { statuses: statusTokens(CLAIM_STATUS, query.status, 'status') }),
     ...(query.created === undefined ? {} : dateWindow(query.created, 'created')),
     // A claim has two instants that matter and the collection makes the caller
     // say which. `created` is the one FHIR names, so it is the one this maps.

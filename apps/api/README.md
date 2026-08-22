@@ -55,18 +55,25 @@ modules. Twenty-one resource types are served with `read` and `search-type`; `Pa
 
 Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
 
-`Observation` passes the rule: a coded parameter is advertised only where the domain enum and the
-FHIR value set agree one for one. Where the mapping loses states - the schedule has a code for
+`Observation` takes the lossless route: its domain enum and the FHIR value set agree one for one, so
+the parameter is a plain scalar filter. Where a mapping loses states - the schedule has a code for
 "roomed" and R4 does not - the parameter is left out rather than answered with a filter that
 silently matches one collapsed state and misses the rest. `losslessStatus` in `resources.ts` decides
 that per resource from the mapping itself, which is why those absences are visible here rather than
 buried in a half-working filter.
 
-`Claim` is an exception and not a good one. `CLAIM_STATUS` collapses ten domain states into three
-FHIR codes, so the rule says it should not advertise `status` - but it does, and
-`claimStatusToken` reads the **domain** name rather than the FHIR code. `status=SUBMITTED` works;
-`status=active`, which is what the published CapabilityStatement tells an integrator to send, is
-refused with a 400. Tracked in #91.
+`Claim` takes the other route. `CLAIM_STATUS` collapses ten domain states into three FHIR codes, so
+a scalar filter would be exactly the half-working kind: `status=active` covers seven of the ten, and
+answering it with one of them would look like a working search returning almost nothing. Instead
+`statusTokens` resolves the FHIR code to the whole set of domain states it stands for, and the
+collection filters on the set. `status=active` returns every submitted, acknowledged, rejected,
+denied, paid, partial and rebilled claim.
+
+A FHIR code no domain state maps to is refused rather than answered with an empty bundle, which is
+how `Observation` already behaves for `status=unknown`. For `Claim` that code is `entered-in-error`:
+it is inside R4's value set and this server has no state for it, so it is a 400 rather than a
+truthful-looking "no claims". The domain names are no longer accepted through this parameter;
+`/claims?status=SUBMITTED` on the collection endpoint is where they belong.
 
 | Resource              | Search parameters implemented                                         |
 | --------------------- | --------------------------------------------------------------------- |

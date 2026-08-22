@@ -9,6 +9,8 @@ import {
   type MemoryDataset,
 } from '../repositories/memory.js';
 import { financialSpecs } from '../repositories/specs/financial.js';
+import type { ClaimStatus } from '../repositories/specs/financial.js';
+import type { ScopedRow } from '../repositories/rows.js';
 import type { Repositories } from '../repositories/types.js';
 import { financialRouteContracts } from '../routes/financial.js';
 import type {
@@ -2172,7 +2174,7 @@ describe('the specs agree with themselves', () => {
       patientId: PATIENT_ID,
       payerId: PAYER_ID,
       encounterId: ENCOUNTER_ID,
-      status: 'SUBMITTED',
+      status: { in: ['SUBMITTED'] },
       submittedAt: { lt: new Date('2026-09-01T00:00:00.000Z') },
     });
 
@@ -3216,5 +3218,63 @@ describe('financialRouteContracts', () => {
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(contracts.every((contract) => contract.permission !== undefined)).toBe(true);
+  });
+});
+
+/**
+ * The two ways a caller can ask for a claim status, and what happens when both
+ * arrive.
+ *
+ * `status` is the collection's own scalar parameter. `statuses` is the set the
+ * FHIR boundary sends, because `Claim.status` collapses ten domain states into
+ * three FHIR codes. Both write the same `where` key, so the interesting cases
+ * are the ones where they disagree: spread side by side, one of them would
+ * silently stop applying, and a search that quietly widens hands somebody rows
+ * they did not ask for.
+ */
+describe('the claim status filter', () => {
+  const paged = {
+    page: 1,
+    pageSize: 25,
+    sort: 'createdAt',
+    order: 'asc',
+    window: 'createdAt',
+  } as const;
+  const claim = (status: ClaimStatus): ScopedRow<'Claim'> =>
+    ({ status }) as unknown as ScopedRow<'Claim'>;
+
+  it('sends a set through as a set', () => {
+    const query = { ...paged, statuses: ['SUBMITTED', 'DENIED'] } as const;
+
+    expect(financialSpecs.claims.where(query)).toEqual({
+      status: { in: ['SUBMITTED', 'DENIED'] },
+    });
+    expect(financialSpecs.claims.matches(claim('DENIED'), query)).toBe(true);
+    expect(financialSpecs.claims.matches(claim('PAID'), query)).toBe(false);
+  });
+
+  it('intersects the two rather than letting one overwrite the other', () => {
+    const query = { ...paged, status: 'DENIED', statuses: ['SUBMITTED', 'DENIED'] } as const;
+
+    expect(financialSpecs.claims.where(query)).toEqual({ status: { in: ['DENIED'] } });
+    expect(financialSpecs.claims.matches(claim('DENIED'), query)).toBe(true);
+    // The row the scalar excludes. Were `statuses` to win, this would be true.
+    expect(financialSpecs.claims.matches(claim('SUBMITTED'), query)).toBe(false);
+  });
+
+  it('matches nothing when the two cannot both hold', () => {
+    const query = { ...paged, status: 'PAID', statuses: ['SUBMITTED', 'DENIED'] } as const;
+
+    // `{ in: [] }` is this repository's spelling for a filter that matches
+    // nothing, and it is the honest answer to an impossible intersection. An
+    // absent clause would return every claim in the practice.
+    expect(financialSpecs.claims.where(query)).toEqual({ status: { in: [] } });
+    expect(financialSpecs.claims.matches(claim('PAID'), query)).toBe(false);
+    expect(financialSpecs.claims.matches(claim('SUBMITTED'), query)).toBe(false);
+  });
+
+  it('leaves the clause out when neither is given', () => {
+    expect(financialSpecs.claims.where({ ...paged })).toEqual({});
+    expect(financialSpecs.claims.matches(claim('PAID'), { ...paged })).toBe(true);
   });
 });

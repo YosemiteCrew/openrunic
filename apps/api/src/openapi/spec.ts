@@ -165,6 +165,11 @@ export function buildOpenApiDocument(
       // Not an OpenAPI keyword, but the one fact a reader of this spec most
       // needs: which role bundle can call the endpoint.
       operation['x-openrunic-permission'] = contract.permission;
+      // Published as a list only when there is more than one, so the common
+      // case reads exactly as it did and the exception is visible as one.
+      if (contract.alsoRequires !== undefined && contract.alsoRequires.length > 0) {
+        operation['x-openrunic-permissions'] = [contract.permission, ...contract.alsoRequires];
+      }
     }
 
     paths[contract.path] = { ...paths[contract.path], [contract.method]: operation };

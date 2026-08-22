@@ -36,20 +36,46 @@ deliberately: a gate that silently disappears when a service is unreachable is n
 
 ### Its licence, and why there is an exception for it
 
-`react-doctor` and `oxlint-plugin-react-doctor` declare `SEE LICENSE IN LICENSE`, which is not an
-SPDX identifier, so the licence-compliance gate cannot classify them and denies them by default.
-That default is correct; `.grant.yaml` carries a deliberate package-level exception with the full
-reasoning.
+`react-doctor`, `oxlint-plugin-react-doctor` and `deslop-js` declare `SEE LICENSE IN LICENSE`, which
+is not an SPDX identifier, so the licence-compliance gate cannot classify them and denies them by
+default. That default is correct; `.grant.yaml` carries a deliberate package-level exception with
+the full reasoning.
 
-In short: both carry a "Modified MIT License" - the MIT grant verbatim, plus two uses that need
+In short: all three carry a "Modified MIT License" - the MIT grant verbatim, plus two uses that need
 prior written permission (using the software as ML training data, and selling or hosting it as a
 service whose value derives substantially from it). Neither is engaged by running it as a dev-time
 analyser. It is a devDependency, so it is not linked into or shipped with the product, and no AGPL
 combination question arises.
 
-The exception names the two packages specifically rather than allow-listing the licence string, so
-the permission cannot generalise to some other package that happens to ship the same nonstandard
-field. It carries an owner and a re-review date.
+The exception names the packages specifically rather than allow-listing the licence string, so the
+permission cannot generalise to some other package that happens to ship the same nonstandard field.
+Each carries an owner and a re-review date.
+
+## The licence policy, and what an exception in it is worth
+
+`.grant.yaml` is deny-by-default: a dependency licence is either on an allow list of SPDX
+identifiers verified as AGPL-compatible, or it is a named package exception with the reason written
+down.
+
+**It currently adjudicates far fewer packages than it appears to.** The SBOM the gate reads reports
+1190 of 1202 packages as having no licence, against 850 that declare one on disk, so the allow list
+is deciding twelve of them. That is a defect in how the SBOM is catalogued rather than in this
+policy, it is why `require-license` cannot be turned on, and it is tracked separately. Read the gate
+as a floor on the packages it can see, not as coverage of the tree.
+
+Two things an exception in that file is **not**.
+
+It is not a finding that the licence is compatible. `elkjs` is Eclipse Public License 2.0, which is
+not on the FSF GPL-compatible list, and its exception says so in as many words. What the exception
+records is that no combination exists to be incompatible: it arrives under the dev-time Prisma
+Studio GUI, nothing in `apps/` or `packages/` imports it, and `apps/api/Dockerfile` deletes it by
+name before the image is published. Each such entry names the condition that would invalidate it.
+
+It is not a grant of rights over third-party content either. The licensed clinical terminology this
+project deliberately does not vendor - the code sets behind CPT, the VSAC value sets a quality
+measure reads - is governed by its publishers, and nothing openrunic writes in a policy file changes
+what a deployment may redistribute. That separation is `packages/terminology`'s subject, and
+`THIRD-PARTY-NOTICES.md` records what actually ships.
 
 ## The other gates
 

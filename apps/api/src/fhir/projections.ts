@@ -625,10 +625,16 @@ export function provenanceResource(row: ScopedRow<'AuditEvent'>): Provenance {
  * unit, and DomainClaimLine wants a number, so it is converted once here rather
  * than left for the mapper to guess at.
  */
+/** Who a claim names as its biller, and which kind of thing that is. */
+export interface ClaimBiller {
+  readonly id: string;
+  readonly type: 'Practitioner' | 'Organization';
+}
+
 export function claimResource(
   row: ScopedRow<'Claim'>,
   lines: readonly ScopedRow<'ClaimLine'>[],
-  providerId: string
+  biller: ClaimBiller
 ): Claim {
   return toFhirClaim(
     compactDomain({
@@ -636,7 +642,8 @@ export function claimResource(
       patientId: row.patientId,
       coverageId: row.coverageId,
       payerId: row.payerId,
-      providerId: providerId,
+      providerId: biller.id,
+      providerType: biller.type,
       status: row.status,
       frequency: row.frequency,
       diagnosisCodes: row.diagnosisCodes,

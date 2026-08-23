@@ -112,11 +112,16 @@ other id is a 404 rather than a 403. `address` and `identifier` are must-support
 the columns do not exist, because the practice's postal address and NPI live on `Facility`, which is
 what `Location` serves.
 
-That makes the references pointing at the tenant resolve - `PractitionerRole.organization` and
-`Location.managingOrganization`. Two others still do not, and for a different reason:
-`Coverage.payor` and `Claim.insurer` point at `Payer` rows, which are a separate table this server
-does not project as `Organization`. And `Claim.provider` emits `Practitioner/{id}` even when the id
-it carries is the organisation's, which is a bug in the projection rather than a missing resource.
+That makes the references pointing at the tenant resolve: `PractitionerRole.organization`,
+`Location.managingOrganization`, and `Claim.provider` when the claim's encounter is unreadable and
+the practice is the truthful biller. `Claim.provider` carries its own type for that reason - R4
+allows Practitioner or Organization there, and naming the practice as a Practitioner shipped a
+reference to somebody who does not exist.
+
+Two references still do not resolve, and for a different reason: `Coverage.payor` and
+`Claim.insurer` point at `Payer` rows, a separate table this server does not project as
+`Organization`. Whether it should is a real design question - two row types through one resource,
+sharing one id space - and it is not answered yet.
 
 ### The internal surface
 

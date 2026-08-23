@@ -1243,6 +1243,65 @@ describe('Provenance', () => {
 });
 
 describe('Claim', () => {
+  /**
+   * The biller, and the one case where it is not a person.
+   *
+   * `provider` normally names the clinician the encounter records. When the
+   * encounter is unreadable in the caller's scope there is no clinician to
+   * name, and the truthful answer is the practice - a claim naming no biller at
+   * all would fail validation at the clearinghouse.
+   *
+   * The reference has to say which it is. Emitting the practice as
+   * `Practitioner/{id}` named a practitioner that does not exist, and once this
+   * server began serving Organization it resolved at the wrong type, which a
+   * client is less likely to catch than a 404.
+   */
+  const providerOf = async (app: ReturnType<typeof harness>['app'], id: string) => {
+    const claim = (await (
+      await app.request(`/fhir/Claim/${id}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { provider?: { reference?: string; type?: string } };
+    return claim.provider;
+  };
+
+  it('names the encounter clinician as a Practitioner', async () => {
+    const { app } = harness();
+
+    await expect(providerOf(app, CLAIM)).resolves.toMatchObject({
+      type: 'Practitioner',
+      reference: `Practitioner/${PROVIDER}`,
+    });
+  });
+
+  it('names the practice as an Organization when no clinician can be resolved', async () => {
+    const created = harness();
+    // A claim on an encounter this dataset does not hold, which is the shape a
+    // caller sees when the encounter is outside their scope.
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'SUBMITTED'));
+    const orphan = created.dataset.table('Claim').find((row) => row.id === SECOND_CLAIM);
+    if (orphan !== undefined) orphan.encounterId = testId(9_999);
+
+    await expect(providerOf(created.app, SECOND_CLAIM)).resolves.toMatchObject({
+      type: 'Organization',
+      reference: `Organization/${DEMO_TENANT_A}`,
+    });
+  });
+
+  it('emits a provider reference that resolves at the type it claims', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'SUBMITTED'));
+    const orphan = created.dataset.table('Claim').find((row) => row.id === SECOND_CLAIM);
+    if (orphan !== undefined) orphan.encounterId = testId(9_999);
+
+    const reference = (await providerOf(created.app, SECOND_CLAIM))?.reference ?? '';
+    const followed = await created.app.request(`/fhir/${reference}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    // The whole point: following the pointer as the type it names finds
+    // something. Before this it named Practitioner and found nothing.
+    expect(followed.status).toBe(200);
+  });
+
   it('carries every line of the claim, in sequence order', async () => {
     const { app } = harness();
 

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
+import { REFERRAL_STATUSES } from '@openrunic/database';
+
 import { clinicalSpecs } from '../repositories/specs/clinical.js';
+import type { ScopedRow } from '../repositories/rows.js';
+
+import { matchesWhere } from './fake-port.js';
 
 import {
   bearer,
   createTestApp,
+  FIXED_NOW,
   jsonBearer,
   makePatientRow,
   seed,
@@ -582,7 +588,64 @@ describe('the referral status filter', () => {
     );
   });
 
+  it('emits a filter that matches nothing for a DRAFT asked for inside the tray', () => {
+    // DRAFT is the status the reproducer on this bug used, and it was the case
+    // furthest from the fix: nothing that is still a draft has been sent, so it
+    // can never be open.
+    expect(clinicalSpecs.referrals.where({ ...paged, openOnly: true, status: 'DRAFT' })).toEqual({
+      status: { in: [] },
+    });
+  });
+
   it('leaves the clause out when neither is given', () => {
     expect(clinicalSpecs.referrals.where({ ...paged })).toEqual({});
+  });
+
+  /**
+   * The invariant the fix exists to establish, asserted directly.
+   *
+   * Every test above pins the shape `where` emits, which is necessary but not
+   * sufficient: a shape can be pinned correctly and still disagree with what
+   * `matches` does with the same query, and it is that disagreement - not the
+   * shape - that let the two ports return different rows.
+   *
+   * So this evaluates the emitted `where` against the same row `matches` sees,
+   * using `matchesWhere`, the same Prisma-where interpreter the fake port uses
+   * to answer queries. Every combination of the two parameters against every
+   * referral status: 9 statuses x (9 + 1 status values) x 2 openOnly values.
+   *
+   * `CollectionSpec` says the two must agree (`collection.ts`, on `matches` and
+   * on `where`). Before this, nothing in the repository checked that they did.
+   */
+  it('agrees with matches for every status, in and out of the tray', () => {
+    // Only the columns either side reads for this query. `createdAt` is here
+    // because `matches` ends on the date window, which is open at both ends.
+    const referral = (status: string): ScopedRow<'Referral'> =>
+      ({ status, createdAt: FIXED_NOW }) as unknown as ScopedRow<'Referral'>;
+
+    const disagreements: string[] = [];
+    for (const asked of [...REFERRAL_STATUSES, undefined]) {
+      for (const openOnly of [true, false]) {
+        const query = {
+          ...paged,
+          ...(asked === undefined ? {} : { status: asked }),
+          ...(openOnly ? { openOnly: true } : {}),
+        } as Parameters<typeof clinicalSpecs.referrals.where>[0];
+        const emitted = clinicalSpecs.referrals.where(query);
+
+        for (const rowStatus of REFERRAL_STATUSES) {
+          const row = referral(rowStatus);
+          const memory = clinicalSpecs.referrals.matches(row, query);
+          const prisma = matchesWhere(row as unknown as Record<string, unknown>, emitted);
+          if (memory !== prisma) {
+            disagreements.push(
+              `status=${asked ?? 'any'} openOnly=${openOnly} row=${rowStatus}: memory=${memory} prisma=${prisma}`
+            );
+          }
+        }
+      }
+    }
+
+    expect(disagreements).toEqual([]);
   });
 });

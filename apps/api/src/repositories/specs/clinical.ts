@@ -1181,6 +1181,13 @@ const PRIORITY_RANK: Readonly<Record<ReferralPriority, number>> = {
  * status filter; an empty array is one that matches nothing, which is the
  * honest answer for a status that is not open being asked for inside the open
  * tray.
+ *
+ * This is the ONLY place either port reads the status decision from, and it has
+ * to stay that way. `matches` used to keep a scalar `row.status === query.status`
+ * test alongside this one. That was inert - the two agreed on all 270
+ * combinations - but it meant `matches` narrowed on something `where` did not,
+ * so any future widening here would have split the ports again while the scalar
+ * quietly held the memory side together. One decision, read twice.
  */
 function referralStatuses(query: ReferralListQuery): readonly ReferralStatus[] | undefined {
   const open = query.openOnly === true ? OPEN_REFERRAL_STATUSES : undefined;
@@ -1260,7 +1267,6 @@ export const referralSpec: CollectionSpec<
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
     if (query.referredById !== undefined && row.referredById !== query.referredById) return false;
-    if (query.status !== undefined && row.status !== query.status) return false;
     if (query.priority !== undefined && row.priority !== query.priority) return false;
     if (query.specialtyCode !== undefined && row.specialtyCode !== query.specialtyCode) {
       return false;

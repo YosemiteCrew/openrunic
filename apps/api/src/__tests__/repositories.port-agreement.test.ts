@@ -848,6 +848,22 @@ describe('the patient birth-date filter states one rule, not two', () => {
     }
   });
 
+  it('rolls the upper bound over a month and a year end', () => {
+    // The range is built from `Date.UTC(y, m, d + 1)`, which carries into the
+    // next month or year on its own. These are the days where a hand-rolled
+    // `+ 1` would have produced 32 December.
+    for (const day of ['1985-12-31', '1984-02-29', '1985-01-31']) {
+      const dayQuery = { ...query, birthDate: new Date(`${day}T00:00:00.000Z`) };
+      const where = COLLECTION_SPECS.patients.where(dayQuery);
+      const late = born(`${day}T23:59:59.999Z`);
+
+      expect(COLLECTION_SPECS.patients.matches(late as never, dayQuery), `memory ${day}`).toBe(
+        true
+      );
+      expect(matchesWhere(late, where), `Prisma ${day}`).toBe(true);
+    }
+  });
+
   it('rejects the instants either side of it, through both ports', () => {
     const where = COLLECTION_SPECS.patients.where(query);
 

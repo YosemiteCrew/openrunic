@@ -76,12 +76,15 @@ function sameUtcDay(left: Date, right: Date): boolean {
  * arithmetic happening to coincide in three files nobody reads together.
  */
 function utcDayRange(day: Date): { gte: Date; lt: Date } {
-  const start = new Date(
-    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 0, 0, 0, 0)
-  );
-  const next = new Date(start.getTime());
-  next.setUTCDate(next.getUTCDate() + 1);
-  return { gte: start, lt: next };
+  const year = day.getUTCFullYear();
+  const month = day.getUTCMonth();
+  const date = day.getUTCDate();
+  // `Date.UTC` rolls `date + 1` over a month or year end on its own, so the
+  // upper bound needs no special case for the 31st or for December.
+  return {
+    gte: new Date(Date.UTC(year, month, date)),
+    lt: new Date(Date.UTC(year, month, date + 1)),
+  };
 }
 
 export const patientSpec: CollectionSpec<

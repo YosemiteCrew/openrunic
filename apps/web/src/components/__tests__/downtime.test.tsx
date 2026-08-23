@@ -29,6 +29,20 @@ function databaseDown(): Promise<Response> {
 function apiUnreachable(): Promise<Response> {
   return Promise.resolve({ ok: false, status: 502 } as Response);
 }
+/**
+ * What `fetch` returns for a redirect it was told not to follow: an opaque
+ * response, `ok: false`, status 0.
+ *
+ * This is the case the probe existed in for most of the application's life
+ * without anyone noticing. `/api/health` was not a public path, the proxy sent
+ * the probe to the sign-in screen, and `fetch` followed - so the probe read the
+ * sign-in page's 200 and reported health. The banner that tells a receptionist
+ * the records system is unreachable could never fire.
+ */
+function redirected(): Promise<Response> {
+  return Promise.resolve({ ok: false, status: 0, type: 'opaqueredirect' } as Response);
+}
+
 function unreachable(): Promise<Response> {
   return Promise.reject(new TypeError('Failed to fetch'));
 }
@@ -108,6 +122,28 @@ describe('DowntimeBanner', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('downtime-banner')).not.toBeInTheDocument();
     });
+  });
+
+  it('reports an outage when something redirects the probe away from the health route', async () => {
+    const seen: RequestInit[] = [];
+    const capturing = (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (init !== undefined) seen.push(init);
+      return redirected();
+    };
+
+    render(
+      <ConnectivityProvider fetchImpl={capturing} healthUrl="/api/health">
+        <DowntimeBanner />
+      </ConnectivityProvider>
+    );
+
+    const banner = await screen.findByTestId('downtime-banner');
+
+    // Not health. Something stood between the probe and the health route, so
+    // what that route would have said is unknown - and unknown is not health.
+    expect(banner).toHaveAttribute('data-status', 'offline');
+    // And the reason it can tell: it asked fetch not to follow.
+    expect(seen[0]?.redirect).toBe('manual');
   });
 
   it('tells staff the API is unreachable, and what to do about it', async () => {

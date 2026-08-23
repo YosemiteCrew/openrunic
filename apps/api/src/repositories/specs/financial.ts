@@ -608,6 +608,27 @@ function claimLineColumns(input: ClaimLineCreateInput): Writable<'ClaimLine'> {
   };
 }
 
+/**
+ * One claim filter from the two ways a caller can ask for one.
+ *
+ * `claimId` is the single-claim routes; `claimIds` is the FHIR boundary asking
+ * for a whole page's lines at once. They used to be two spreads writing the
+ * same `where` key, so with both set the later won and the scalar vanished from
+ * the Prisma query while `matches` went on ANDing them. Nothing could reach it -
+ * each caller sets exactly one - but a filter that is only correct because
+ * nobody has combined it yet is a trap with a date on it rather than a design.
+ *
+ * `undefined` is no claim filter. An empty array is one that matches nothing,
+ * which is what the caller asked for when they named an empty set of claims:
+ * widening that to every line in the table is the opposite of the request.
+ */
+function claimLineClaims(query: ClaimLineListQuery): readonly string[] | undefined {
+  const { claimId, claimIds } = query;
+  if (claimIds === undefined) return claimId === undefined ? undefined : [claimId];
+  if (claimId === undefined) return claimIds;
+  return claimIds.includes(claimId) ? [claimId] : [];
+}
+
 export const claimLineSpec: CollectionSpec<
   'ClaimLine',
   ClaimLineCreateInput,
@@ -631,18 +652,15 @@ export const claimLineSpec: CollectionSpec<
   },
 
   matches(row: ScopedRow<'ClaimLine'>, query: ClaimLineListQuery): boolean {
-    if (query.claimId !== undefined && row.claimId !== query.claimId) return false;
-    // An empty list means "no claims", not "every claim". The distinction
-    // matters because a page with no rows would otherwise widen to the whole
-    // table, which is the opposite of what the caller asked for.
-    if (query.claimIds !== undefined && !query.claimIds.includes(row.claimId)) return false;
+    const wanted = claimLineClaims(query);
+    if (wanted !== undefined && !wanted.includes(row.claimId)) return false;
     return query.chargeItemId === undefined || row.chargeItemId === query.chargeItemId;
   },
 
   where(query: ClaimLineListQuery) {
+    const wanted = claimLineClaims(query);
     return {
-      ...(query.claimId === undefined ? {} : { claimId: query.claimId }),
-      ...(query.claimIds === undefined ? {} : { claimId: { in: [...query.claimIds] } }),
+      ...(wanted === undefined ? {} : { claimId: { in: [...wanted] } }),
       ...(query.chargeItemId === undefined ? {} : { chargeItemId: query.chargeItemId }),
     };
   },

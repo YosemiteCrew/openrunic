@@ -1427,6 +1427,98 @@ describe('taking a lot out of use', () => {
   });
 
   /**
+   * A lot with nothing recorded against it at all.
+   *
+   * Not hypothetical: a lot that predates the history table and slipped the
+   * backfill has none, and `statusAt` is documented to fall back to the column
+   * for exactly that case. The recall has to work anyway, take sequence one, and
+   * report the column as the state it replaced.
+   */
+  it('records the first entry a lot has ever had', async () => {
+    const { app, dataset } = harness();
+    seed(dataset, 'StockLot', lotRow({ status: 'AVAILABLE' }));
+
+    // Listed first, so the list is asked about a lot with no history to resolve
+    // from - the case `statusAt` documents a fallback for and the one the whole
+    // table was added because nothing had.
+    expect((await lotsAt(app, `asOf=${BEFORE}&lotNumber=LOT-OLD`))[0]?.status).toBe('AVAILABLE');
+
+    const res = await post(app, 'status-changes', recall(LOT_OLD));
+    const body = (await res.json()) as StatusChangeResponse;
+
+    expect(res.status).toBe(201);
+    expect(body.lots[0]?.from).toBe('AVAILABLE');
+    expect(dataset.table('StockLotStatusChange')).toMatchObject([{ lotId: LOT_OLD, lotSeq: 1 }]);
+    expect((await lotsAt(app, 'status=RECALLED')).map((lot) => lot.id)).toEqual([LOT_OLD]);
+  });
+
+  /**
+   * Two changes on one day, which is what `lotSeq` exists for.
+   *
+   * A carton held in the morning and recalled in the afternoon has two entries
+   * carrying the same `effectiveOn`, and the day alone cannot order them. If the
+   * sequence did not break the tie the lot's column could end on either, so a
+   * recalled carton could read as merely quarantined.
+   */
+  it('orders two changes on one day by the sequence that recorded them', async () => {
+    const { app, dataset } = harness();
+    const lotId = await received(app);
+
+    expect(
+      (await post(app, 'status-changes', recall(lotId, { status: 'QUARANTINED' }))).status
+    ).toBe(201);
+    const second = await post(app, 'status-changes', recall(lotId));
+    const body = (await second.json()) as StatusChangeResponse;
+
+    expect(second.status).toBe(201);
+    expect(body.lots[0]?.from).toBe('QUARANTINED');
+
+    // A third on the same day, so the tie is broken against a history that
+    // already holds two entries sharing a date. Two is not enough to exercise
+    // it: the second entry wins on the date alone.
+    const third = await post(
+      app,
+      'status-changes',
+      recall(lotId, { status: 'RETIRED', reason: 'destroyed under the recall' })
+    );
+    expect(third.status).toBe(201);
+    expect(((await third.json()) as StatusChangeResponse).lots[0]?.from).toBe('RECALLED');
+
+    expect(
+      dataset
+        .table('StockLotStatusChange')
+        .map((row) => row as unknown as { lotSeq: number; status: string })
+        .map((row) => [row.lotSeq, row.status])
+    ).toEqual([
+      [1, 'AVAILABLE'],
+      [2, 'QUARANTINED'],
+      [3, 'RECALLED'],
+      [4, 'RETIRED'],
+    ]);
+    expect((await lotsAt(app, 'status=RETIRED')).map((lot) => lot.id)).toEqual([lotId]);
+  });
+
+  /** The notice number is optional; the vials were visibly wrong and there is no notice. */
+  it('takes a note with no reference', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(
+      app,
+      'status-changes',
+      recall(lotId, {
+        status: 'QUARANTINED',
+        reference: undefined,
+        note: 'two vials cloudy, whole carton held pending the supplier',
+      })
+    );
+    const body = (await res.json()) as StatusChangeResponse;
+
+    expect(res.status).toBe(201);
+    expect(body.posting.reference).toBeNull();
+  });
+
+  /**
    * Refused rather than resolved either way. The filter is a column predicate
    * applied before paging and the reported status is resolved after it, so the
    * pair pages one question and answers another - and they agree for every lot

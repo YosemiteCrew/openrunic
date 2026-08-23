@@ -92,7 +92,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p security/sbom
+          # `--select-catalogers` is load bearing, not tuning.
+          #
+          # syft picks catalogers by source type: a `dir:` scan gets the ones
+          # tagged `declared` (lockfiles) and an image scan gets the ones tagged
+          # `installed`. `javascript-package-cataloger` is `installed`, so a
+          # directory scan never ran it, and every JavaScript package in the
+          # SBOM came from `pnpm-lock.yaml` - which records names and versions
+          # and no licences at all. The licence gate downstream was therefore
+          # adjudicating 12 packages out of 1202 and passing, which read as
+          # coverage and was not.
+          #
+          # Adding the package cataloger reads the installed `package.json`
+          # files, where the licences actually are. Dropping the lock cataloger
+          # removes the duplicate, licence-free copy of every package it would
+          # otherwise contribute; the installed tree is also the more truthful
+          # basis for an SBOM, because it describes what ships rather than what
+          # was asked for.
           syft scan dir:. \
+            --select-catalogers '+javascript-package-cataloger,-javascript-lock-cataloger' \
             -o spdx-json=security/sbom/openrunic.spdx.json \
             -o cyclonedx-json=security/sbom/openrunic.cdx.json
 

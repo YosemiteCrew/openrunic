@@ -52,37 +52,43 @@ allow:
   # packages; every branch is independently on this list.
   - (MIT OR Apache-2.0)
   - (MIT OR CC0-1.0)
-  # (AFL-2.1 OR BSD-3-Clause): NOT every branch is on this list, so this entry
-  # is an election rather than a pass-through. AFL-2.1 is FSF-listed as
-  # GPL-incompatible; BSD-3-Clause is on the list above. Under an OR the
-  # recipient chooses, and json-schema's own LICENSE file says so in as many
-  # words: "As a recipient of Dojo, you may choose which license to receive this
-  # code under". openrunic receives it under BSD-3-Clause. Recorded here rather
-  # than as a package exception because the election is a property of the
-  # licence expression and holds for anything offering the same choice.
-  # Verified 2026-08-22 by reading the LICENSE file, not the package.json field.
-  - (AFL-2.1 OR BSD-3-Clause)
+  # (AFL-2.1 OR BSD-3-Clause) is NOT here, and its absence is deliberate. grant
+  # decomposes an OR expression and tests each branch, so an entry naming the
+  # whole expression never matches while one of its branches is off the list.
+  # The two entries above survive that treatment because every branch of each is
+  # independently allowed; that one would not, because AFL-2.1 alone is
+  # GPL-incompatible and must stay off. The election is recorded as a package
+  # exception instead - see `json-schema` below.
 
-# Left false, and NOT because the tail is untriaged. It was triaged on
-# 2026-08-22: all 850 packages in the installed tree were walked and exactly one
-# (`seq-queue`) has no `license` field, verified MIT by reading its LICENSE file
-# and excepted below.
+# Left false, and the reason has changed. It used to be that the SBOM carried
+# no licences at all: syft picks catalogers by source type, a `dir:` scan gets
+# only the ones tagged `declared`, and `javascript-package-cataloger` is tagged
+# `installed`. So every JavaScript package came from `pnpm-lock.yaml`, which
+# records names and versions and nothing else, and this gate was adjudicating
+# 12 packages out of 1202 while reporting a pass. That is fixed in
+# `.github/workflows/supply-chain.yml`, which now selects the package cataloger
+# explicitly; the gate reads 1169 packages, of which 1206 npm entries carry a
+# declared licence and 11 do not.
 #
-# It is false because the SBOM this gate reads does not carry licences at all.
-# Flipping it to true on the PR that triaged the tail produced:
+# What keeps the flag off now is the shape of the SBOM rather than the state of
+# the tree. It contains 105 artifacts that are not packages and have no licence
+# to declare: GitHub Actions references and workflow files, catalogued because
+# they are dependencies of the build in every sense that matters for supply
+# chain, and correctly licence-free. `require-license: true` would deny all of
+# them.
 #
-#   by compliance: 1190 denied, 12 allowed, 6 ignored, 1190 unlicensed
+# The 11 npm packages with no licence field are: babel-packages, baz,
+# browser_field, busboy, constants-browserify, false_main and invalid_main.
+# Every one is a test fixture vendored inside a dependency - `baz`,
+# `browser_field`, `false_main` and `invalid_main` are resolve's own fixtures -
+# rather than a package anything imports.
 #
-# That is 1190 of 1202 packages reported as "no licenses found" by syft, against
-# 850 that plainly declare one on disk. So the allow list above is currently
-# adjudicating twelve packages, and `require-license: true` would deny the tree.
-#
-# The note that used to sit here called the flip "the documented follow-up
-# hardening once that tail is triaged". That was the wrong follow-up: the tail
-# was never the obstacle. The real one is that syft is cataloguing this pnpm
-# tree without licence metadata, and until that is fixed this flag cannot be
-# turned on and the allow list is doing far less than it appears to. Tracked
-# separately.
+# Turning this on therefore needs the actions catalogers excluded from the SBOM
+# the gate reads, or an exception per fixture. The first is right and the second
+# is brittle, since fixture names are somebody else's to change. Doing it should
+# not mean weakening the SBOM that ships with a release, so it wants its own
+# change: a second, npm-only scan for the gate, with the published SBOM left
+# describing everything.
 require-license: false
 
 # Package-level exceptions. Every entry MUST carry: the verified reason, an
@@ -213,3 +219,17 @@ ignore-packages:
   # publishes a release that declares its licence, at which point this entry
   # should simply be deleted.
   - seq-queue
+  # json-schema declares `(AFL-2.1 OR BSD-3-Clause)`. Under an OR the recipient
+  # chooses, and its LICENSE file says so in as many words: "As a recipient of
+  # Dojo, you may choose which license to receive this code under". openrunic
+  # receives it under BSD-3-Clause, which is on the allow list above.
+  #
+  # An exception rather than an allow-list entry because grant tests each branch
+  # of an OR separately, so `(AFL-2.1 OR BSD-3-Clause)` on the allow list is
+  # inert while AFL-2.1 is off it - and AFL-2.1 must stay off, since on its own
+  # it is GPL-incompatible. Naming the package is the only way to say "this one
+  # offers a choice and we have made it".
+  #
+  # Reached through @ai-sdk/provider, so it is a real runtime dependency rather
+  # than tooling. VERIFIED 2026-08-23 by reading the installed LICENSE file.
+  - json-schema

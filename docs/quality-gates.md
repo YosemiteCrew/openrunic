@@ -57,11 +57,17 @@ Each carries an owner and a re-review date.
 identifiers verified as AGPL-compatible, or it is a named package exception with the reason written
 down.
 
-**It currently adjudicates far fewer packages than it appears to.** The SBOM the gate reads reports
-1190 of 1202 packages as having no licence, against 850 that declare one on disk, so the allow list
-is deciding twelve of them. That is a defect in how the SBOM is catalogued rather than in this
-policy, it is why `require-license` cannot be turned on, and it is tracked separately. Read the gate
-as a floor on the packages it can see, not as coverage of the tree.
+It used to adjudicate far fewer packages than it appeared to. syft picks catalogers by source type,
+a `dir:` scan gets only the ones tagged `declared`, and the cataloger that reads installed
+`package.json` files is tagged `installed` - so every JavaScript package in the SBOM came from
+`pnpm-lock.yaml`, which carries no licences, and the gate was deciding twelve packages out of 1202
+while reporting a pass. Fixed in `supply-chain.yml` by selecting the package cataloger explicitly.
+The gate now reads 1169 packages, 1206 npm entries of which declare a licence.
+
+`require-license` is still false, and the reason is now the shape of the SBOM rather than the state
+of the tree: it contains 105 GitHub Actions and workflow artifacts that have no licence to declare,
+plus 11 npm entries that are test fixtures vendored inside dependencies. `.grant.yaml` carries the
+detail and what turning it on would take.
 
 Two things an exception in that file is **not**.
 

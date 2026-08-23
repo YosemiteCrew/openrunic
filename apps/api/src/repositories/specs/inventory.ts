@@ -4,14 +4,15 @@ import { ApiError } from '../../errors.js';
 import { movementColumns, toIsoDate } from '../../inventory/marshal.js';
 import { assertPostable } from '../../inventory/posting.js';
 import {
+  type BaseQuery,
   childBatch,
+  type ChildBatch,
+  type CollectionSpec,
   containsFold,
   equalsIfSet,
   inWindow,
+  likeContains,
   windowFilter,
-  type BaseQuery,
-  type ChildBatch,
-  type CollectionSpec,
   type Writable,
 } from '../collection.js';
 import { STOCK_ITEM_DEFAULTS, STOCK_LOT_DEFAULTS } from '../defaults.js';
@@ -164,10 +165,7 @@ export const stockItemSpec: CollectionSpec<
       ...(query.q === undefined
         ? {}
         : {
-            OR: [
-              { sku: { contains: query.q, mode: 'insensitive' as const } },
-              { name: { contains: query.q, mode: 'insensitive' as const } },
-            ],
+            OR: [{ sku: likeContains(query.q) }, { name: likeContains(query.q) }],
           }),
     };
   },

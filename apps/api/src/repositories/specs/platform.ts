@@ -5,13 +5,14 @@ import type {
 } from '@openrunic/database';
 
 import {
+  type BaseQuery,
+  type CollectionSpec,
   containsFold,
   inWindow,
   jsonColumn,
-  windowFilter,
-  type BaseQuery,
-  type CollectionSpec,
+  likeContains,
   type RowContext,
+  windowFilter,
   type Writable,
 } from '../collection.js';
 import type { Row, ScopedRow } from '../rows.js';
@@ -461,9 +462,9 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
         ? {}
         : {
             OR: [
-              { givenName: { contains: query.q, mode: 'insensitive' as const } },
-              { familyName: { contains: query.q, mode: 'insensitive' as const } },
-              { email: { contains: query.q, mode: 'insensitive' as const } },
+              { givenName: likeContains(query.q) },
+              { familyName: likeContains(query.q) },
+              { email: likeContains(query.q) },
             ],
           }),
     };
@@ -886,10 +887,7 @@ export const facilitySpec: CollectionSpec<
       ...(query.q === undefined
         ? {}
         : {
-            OR: [
-              { name: { contains: query.q, mode: 'insensitive' as const } },
-              { code: { contains: query.q, mode: 'insensitive' as const } },
-            ],
+            OR: [{ name: likeContains(query.q) }, { code: likeContains(query.q) }],
           }),
     };
   },
@@ -989,9 +987,7 @@ export const terminologyCodeSpec: CollectionSpec<
       ...(query.system === undefined ? {} : { system: query.system }),
       ...(query.code === undefined ? {} : { code: query.code }),
       ...(query.isActive === undefined ? {} : { isActive: query.isActive }),
-      ...(query.q === undefined
-        ? {}
-        : { display: { contains: query.q, mode: 'insensitive' as const } }),
+      ...(query.q === undefined ? {} : { display: likeContains(query.q) }),
     };
   },
 

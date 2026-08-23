@@ -19,7 +19,7 @@ import { STOCK_ITEM_DEFAULTS, STOCK_LOT_DEFAULTS } from '../defaults.js';
 import type { PrismaModelName, Row, ScopedRow } from '../rows.js';
 
 /**
- * THE STOCKROOM'S FOUR TABLES.
+ * THE STOCKROOM'S FIVE TABLES.
  *
  * `StockItem` is the catalogue, `StockLot` is a carton at a site, `StockPosting`
  * is one thing that happened, and `StockMovement` is the append-only ledger line
@@ -27,6 +27,13 @@ import type { PrismaModelName, Row, ScopedRow } from '../rows.js';
  * is asked for, because a stored quantity can be set, and once it can be set it
  * will be, by a well-meant repair of a number that looked wrong - which is
  * exactly what a controlled-substance audit exists to detect.
+ *
+ * `StockLotStatusChange` is the fifth, and it is there for the same reason the
+ * ledger is. A lot's status was one mutable value, so every as-of question was
+ * answered with today's answer: a lot retired on the 10th dropped out of a
+ * query about the 1st, and a reconciliation of the 1st came up short against a
+ * shelf that had been correct. A quantity that can be set and a status that can
+ * be overwritten are the same mistake twice.
  *
  * ## Why all four are `closed`
  *
@@ -601,9 +608,116 @@ function mentionedColumns<M extends PrismaModelName>(
   return data as Partial<Writable<M>>;
 }
 
+export interface StockLotStatusChangeCreateInput {
+  lotId: string;
+  status: StockLotStatus;
+  /** The first day this status was in force, inclusive. */
+  effectiveOn: Date;
+  /** Order within one lot, so two changes on one day still have a sequence. */
+  lotSeq: number;
+  reason?: string;
+  actorId?: string;
+}
+
+export interface StockLotStatusChangeListQuery extends BaseQuery {
+  lotId?: string;
+  lotIds?: readonly string[];
+  status?: StockLotStatus;
+  sort: 'effectiveOn' | 'lotSeq' | 'createdAt';
+}
+
+/**
+ * One lot filter from the two ways a caller can ask for one.
+ *
+ * `lotId` is a single lot's history; `lotIds` is a page of lots at once. They
+ * resolve through one function and intersect, because two spreads writing the
+ * same `where` key is how one of them silently stops applying - the shape that
+ * has gone wrong four times in this repository and is now checked for every
+ * spec by `repositories.port-agreement.test.ts`.
+ */
+function statusChangeLots(query: StockLotStatusChangeListQuery): readonly string[] | undefined {
+  const { lotId, lotIds } = query;
+  if (lotIds === undefined) return lotId === undefined ? undefined : [lotId];
+  if (lotId === undefined) return lotIds;
+  return lotIds.includes(lotId) ? [lotId] : [];
+}
+
+/**
+ * Every status a lot has held, append-only.
+ *
+ * `closed` for the same reason the other four are: a chart is two joins away
+ * and this layer performs neither, so the fail-closed reading is the right one.
+ *
+ * The patch is empty and its type says so. A transition that was recorded
+ * happened, and a record of it that can be edited is not a record of anything -
+ * which is the whole point of the table, because a back-dated report is only
+ * reproducible if the history behind it cannot be rewritten. The database
+ * agrees: the migration revokes UPDATE and DELETE from the application role.
+ */
+export const stockLotStatusChangeSpec: CollectionSpec<
+  'StockLotStatusChange',
+  StockLotStatusChangeCreateInput,
+  Record<string, never>,
+  StockLotStatusChangeListQuery
+> = {
+  model: 'StockLotStatusChange',
+  targetType: 'StockLotStatusChange',
+  action: 'stockLotStatus',
+  compartment: 'closed',
+
+  newRow(input: StockLotStatusChangeCreateInput): Writable<'StockLotStatusChange'> {
+    return {
+      lotId: input.lotId,
+      status: input.status,
+      effectiveOn: input.effectiveOn,
+      lotSeq: input.lotSeq,
+      reason: input.reason ?? null,
+      actorId: input.actorId ?? null,
+    };
+  },
+
+  patchData(): Partial<Writable<'StockLotStatusChange'>> {
+    return {};
+  },
+
+  matches(row: ScopedRow<'StockLotStatusChange'>, query: StockLotStatusChangeListQuery): boolean {
+    const wanted = statusChangeLots(query);
+    if (wanted !== undefined && !wanted.includes(row.lotId)) return false;
+    return query.status === undefined || row.status === query.status;
+  },
+
+  where(query: StockLotStatusChangeListQuery) {
+    const wanted = statusChangeLots(query);
+    return {
+      ...(wanted === undefined ? {} : { lotId: { in: [...wanted] } }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+    };
+  },
+
+  sortValue(
+    row: ScopedRow<'StockLotStatusChange'>,
+    sort: StockLotStatusChangeListQuery['sort']
+  ): number {
+    if (sort === 'lotSeq') return row.lotSeq;
+    if (sort === 'createdAt') return row.createdAt.getTime();
+    return row.effectiveOn.getTime();
+  },
+
+  orderBy(query: StockLotStatusChangeListQuery) {
+    const { order } = query;
+    if (query.sort === 'lotSeq') return [{ lotSeq: order }, { id: 'asc' as const }];
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    // `lotSeq` breaks the tie rather than `id`: two changes on one day are
+    // ordered by the sequence that made them, not by whichever uuid sorted
+    // first.
+    return [{ effectiveOn: order }, { lotSeq: order }];
+  },
+};
+
 export const inventorySpecs = {
   stockItems: stockItemSpec,
   stockLots: stockLotSpec,
   stockPostings: stockPostingSpec,
   stockMovements: stockMovementSpec,
+  stockLotStatusChanges: stockLotStatusChangeSpec,
 } as const;

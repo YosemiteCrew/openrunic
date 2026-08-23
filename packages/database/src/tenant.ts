@@ -36,6 +36,7 @@ export const TENANT_SCOPED_MODELS = [
   'StockLot',
   'StockPosting',
   'StockMovement',
+  'StockLotStatusChange',
   'Role',
   'Permission',
   'RolePermission',

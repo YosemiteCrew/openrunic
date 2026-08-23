@@ -732,63 +732,64 @@ model Organisation {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  facilities           Facility[]
-  users                User[]
-  userFacilities       UserFacility[]
-  roles                Role[]
-  permissions          Permission[]
-  rolePermissions      RolePermission[]
-  roleAssignments      RoleAssignment[]
-  patients             Patient[]
-  patientIdentifiers   PatientIdentifier[]
-  relatedPersons       RelatedPerson[]
-  payers               Payer[]
-  coverages            Coverage[]
-  documents            Document[]
-  appointments         Appointment[]
-  appointmentHistory   AppointmentStatusHistory[]
-  encounters           Encounter[]
-  clinicalNotes        ClinicalNote[]
-  noteAddenda          NoteAddendum[]
-  conditions           Condition[]
-  medicationStatements MedicationStatement[]
-  medicationRequests   MedicationRequest[]
-  allergies            AllergyIntolerance[]
-  immunizations        Immunization[]
-  observations         Observation[]
-  serviceRequests      ServiceRequest[]
-  referrals            Referral[]
-  stockItems           StockItem[]
-  stockLots            StockLot[]
-  stockPostings        StockPosting[]
-  stockMovements       StockMovement[]
-  specimens            Specimen[]
-  diagnosticReports    DiagnosticReport[]
-  resultObservations   ResultObservation[]
-  tasks                Task[]
-  messageThreads       MessageThread[]
-  messages             Message[]
-  chargeItems          ChargeItem[]
-  claims               Claim[]
-  claimLines           ClaimLine[]
-  claimStatusHistory   ClaimStatusHistory[]
-  payments             Payment[]
-  paymentAllocations   PaymentAllocation[]
-  remittances          Remittance[]
-  remittanceLines      RemittanceLine[]
-  statements           Statement[]
-  formDefinitions      FormDefinition[]
-  formSubmissions      FormSubmission[]
-  formPromotedValues   FormPromotedValue[]
-  terminologyCodes     TerminologyCode[]
-  consentGrants        ConsentGrant[]
-  auditEvents          AuditEvent[]
-  telehealthVisits     TelehealthVisit[]
+  facilities            Facility[]
+  users                 User[]
+  userFacilities        UserFacility[]
+  roles                 Role[]
+  permissions           Permission[]
+  rolePermissions       RolePermission[]
+  roleAssignments       RoleAssignment[]
+  patients              Patient[]
+  patientIdentifiers    PatientIdentifier[]
+  relatedPersons        RelatedPerson[]
+  payers                Payer[]
+  coverages             Coverage[]
+  documents             Document[]
+  appointments          Appointment[]
+  appointmentHistory    AppointmentStatusHistory[]
+  encounters            Encounter[]
+  clinicalNotes         ClinicalNote[]
+  noteAddenda           NoteAddendum[]
+  conditions            Condition[]
+  medicationStatements  MedicationStatement[]
+  medicationRequests    MedicationRequest[]
+  allergies             AllergyIntolerance[]
+  immunizations         Immunization[]
+  observations          Observation[]
+  serviceRequests       ServiceRequest[]
+  referrals             Referral[]
+  stockItems            StockItem[]
+  stockLots             StockLot[]
+  stockLotStatusChanges StockLotStatusChange[]
+  stockPostings         StockPosting[]
+  stockMovements        StockMovement[]
+  specimens             Specimen[]
+  diagnosticReports     DiagnosticReport[]
+  resultObservations    ResultObservation[]
+  tasks                 Task[]
+  messageThreads        MessageThread[]
+  messages              Message[]
+  chargeItems           ChargeItem[]
+  claims                Claim[]
+  claimLines            ClaimLine[]
+  claimStatusHistory    ClaimStatusHistory[]
+  payments              Payment[]
+  paymentAllocations    PaymentAllocation[]
+  remittances           Remittance[]
+  remittanceLines       RemittanceLine[]
+  statements            Statement[]
+  formDefinitions       FormDefinition[]
+  formSubmissions       FormSubmission[]
+  formPromotedValues    FormPromotedValue[]
+  terminologyCodes      TerminologyCode[]
+  consentGrants         ConsentGrant[]
+  auditEvents           AuditEvent[]
+  telehealthVisits      TelehealthVisit[]
 
-  valueSets            ValueSet[]
+  valueSets      ValueSet[]
+  imagingStudies ImagingStudy[]
 
   @@index([status])
-  imagingStudies       ImagingStudy[]
 }
 
 /// A place of service. Unlimited per organisation; scheduling, encounters and
@@ -1043,14 +1044,14 @@ model Patient {
   /// Patient search: by MRN (exact), by name, by date of birth. The `active`
   /// prefix keeps the default "search living, non-merged patients" path on one
   /// index.
-  stockPostings StockPosting[]
+  stockPostings  StockPosting[]
+  imagingStudies ImagingStudy[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
   @@index([tenantId, birthDate])
   @@index([tenantId, active, familyName, givenName])
   @@index([tenantId, primaryFacilityId, active])
-  imagingStudies    ImagingStudy[]
 }
 
 /// Every identifier that is not the MRN: SSN, driving licence, payer member id,
@@ -1343,12 +1344,12 @@ model Encounter {
   claims               Claim[]
   formSubmissions      FormSubmission[]
 
-  stockPostings StockPosting[]
+  stockPostings  StockPosting[]
+  imagingStudies ImagingStudy[]
 
   @@index([tenantId, patientId, startedAt])
   @@index([tenantId, facilityId, status, startedAt])
   @@index([tenantId, providerId, startedAt])
-  imagingStudies ImagingStudy[]
 }
 
 /// A block-structured clinical document. `blocks` is a JSONB block list, not
@@ -1655,15 +1656,15 @@ model ServiceRequest {
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
   orderedBy    User         @relation(fields: [orderedById], references: [id], onDelete: Restrict)
 
-  specimens Specimen[]
-  reports   DiagnosticReport[]
+  specimens      Specimen[]
+  reports        DiagnosticReport[]
+  imagingStudies ImagingStudy[]
 
   /// The pended-orders tray and the outstanding-orders report.
   @@index([tenantId, status, requestedAt])
   @@index([tenantId, patientId, requestedAt])
   @@index([tenantId, orderedById, status])
   @@index([tenantId, category, status, priority])
-  imagingStudies ImagingStudy[]
 }
 
 model Specimen {
@@ -1733,14 +1734,14 @@ model DiagnosticReport {
   serviceRequest ServiceRequest? @relation(fields: [serviceRequestId], references: [id], onDelete: Restrict)
   specimen       Specimen?       @relation(fields: [specimenId], references: [id], onDelete: Restrict)
 
-  results ResultObservation[]
+  results        ResultObservation[]
+  imagingStudies ImagingStudy[]
 
   /// Results by patient and date, plus the unreviewed-results sign-off queue.
   @@index([tenantId, patientId, issuedAt])
   @@index([tenantId, status, issuedAt])
   @@index([tenantId, reviewedAt, abnormalFlag])
   @@index([tenantId, serviceRequestId])
-  imagingStudies ImagingStudy[]
 }
 
 /// One discrete analyte within a DiagnosticReport.
@@ -2622,7 +2623,8 @@ model StockLot {
   item         StockItem    @relation(fields: [tenantId, itemId], references: [tenantId, id], onDelete: Restrict)
   facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Restrict)
 
-  movements StockMovement[]
+  movements     StockMovement[]
+  statusChanges StockLotStatusChange[]
 
   /// Receiving the same carton number again is a second delivery into the same
   /// box, never a second box. The receipt path finds-or-creates on this key.
@@ -2637,6 +2639,54 @@ model StockLot {
   @@index([tenantId, facilityId, expiresOn])
   /// Somebody is holding a carton and does not know what it is.
   @@index([tenantId, lotNumber])
+}
+
+/// Every status a lot has held, and the day each took effect.
+///
+/// `StockLot.status` is one mutable value, so before this table every as-of
+/// question was answered with today's answer. A lot retired on the 10th dropped
+/// out of a query about the 1st, and a reconciliation of the 1st then came up
+/// short against a shelf that had been correct - with the discrepancy pointing
+/// at nothing, because the lot that explained it had been filtered out of the
+/// answer. The direction is the dangerous one.
+///
+/// Append-only by intent: the spec that reads it declares an empty patch, so a
+/// row cannot be edited into saying something else happened. A correction is a
+/// new row, which is also what makes the sequence readable as a history rather
+/// than as a current value with extra steps.
+///
+/// `effectiveOn` is a DATE and not a timestamp, because every other stock date
+/// is a day and the package compares them lexicographically. Two changes on one
+/// day are ordered by `lotSeq`, which is monotonic per lot: without it a recall
+/// and the quarantine it followed could not be told apart on the day they both
+/// happened.
+model StockLotStatusChange {
+  id          String         @id @db.Uuid
+  tenantId    String         @db.Uuid
+  lotId       String         @db.Uuid
+  status      StockLotStatus
+  /// The first day this status was in force, inclusive.
+  effectiveOn DateTime       @db.Date
+  /// Order within one lot, so two changes on the same day still have a sequence.
+  lotSeq      Int
+  /// Why. A recall notice number, a cold-chain excursion, an inspection outcome.
+  reason      String?
+  /// Who acted. Nullable, and the nullability is load bearing: rows written by
+  /// the backfill describe lots whose transitions predate this table, and there
+  /// is nobody to name for them. Inventing one would be a fact the record never
+  /// stated.
+  actorId     String?        @db.Uuid
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lot          StockLot     @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  /// One sequence number per lot, so the total order is enforced rather than
+  /// assumed by whatever wrote last.
+  @@unique([tenantId, lotId, lotSeq])
+  /// The whole history of one lot, oldest first: what `toLot` fetches.
+  @@index([tenantId, lotId, effectiveOn])
 }
 
 /// One thing that happened in the stockroom, and the ledger lines it produced.
@@ -2754,16 +2804,16 @@ model StockMovement {
   /// role holds no UPDATE privilege on this table.
   updatedAt          DateTime          @updatedAt
 
-  organisation Organisation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  posting      StockPosting   @relation(fields: [postingId], references: [id], onDelete: Restrict)
+  organisation Organisation    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posting      StockPosting    @relation(fields: [postingId], references: [id], onDelete: Restrict)
   /// Four columns, and every one is load-bearing. `tenantId` because
   /// referential-integrity checks run as the table owner and no policy filters
   /// them. `itemId` and `facilityId` because the package cannot check them and
   /// their disagreement is silent. `onUpdate: NoAction` because a cascading
   /// update runs with the owner's privileges and would rewrite ledger rows
   /// straight past the revoked UPDATE.
-  lot          StockLot       @relation(fields: [tenantId, lotId, itemId, facilityId], references: [tenantId, id, itemId, facilityId], onDelete: Restrict, onUpdate: NoAction)
-  corrects     StockMovement? @relation("StockMovementCorrection", fields: [correctsMovementId], references: [id], onDelete: Restrict)
+  lot          StockLot        @relation(fields: [tenantId, lotId, itemId, facilityId], references: [tenantId, id, itemId, facilityId], onDelete: Restrict, onUpdate: NoAction)
+  corrects     StockMovement?  @relation("StockMovementCorrection", fields: [correctsMovementId], references: [id], onDelete: Restrict)
   /// Declared as a list rather than a one-to-one because Prisma refuses the
   /// one-to-one form here - it wants a single-column `@unique` on the defining
   /// side, and the rule is tenant-scoped. The at-most-one guarantee is the
@@ -2806,14 +2856,14 @@ model StockMovement {
 /// it. A study that arrives without one cannot be attached to anything and has
 /// to be matched by a human.
 model ImagingStudy {
-  id                 String              @id @db.Uuid
-  tenantId           String              @db.Uuid
-  patientId          String              @db.Uuid
-  encounterId        String?             @db.Uuid
+  id                 String             @id @db.Uuid
+  tenantId           String             @db.Uuid
+  patientId          String             @db.Uuid
+  encounterId        String?            @db.Uuid
   /// The order that asked for it, when there was one. Null for an outside study.
-  serviceRequestId   String?             @db.Uuid
+  serviceRequestId   String?            @db.Uuid
   /// The radiologist's report, once it exists.
-  diagnosticReportId String?             @db.Uuid
+  diagnosticReportId String?            @db.Uuid
   /// DICOM Study Instance UID (0020,000D). Globally unique by the standard.
   studyInstanceUid   String
   /// Shared by the order, the worklist and the PACS. How a study is reconciled.
@@ -2821,21 +2871,21 @@ model ImagingStudy {
   /// DICOM modality codes present in the study: CT, MR, US, CR, DX, and so on.
   modalities         String[]
   description        String?
-  status             ImagingStudyStatus  @default(AVAILABLE)
+  status             ImagingStudyStatus @default(AVAILABLE)
   startedAt          DateTime
-  numberOfSeries     Int                 @default(0)
-  numberOfInstances  Int                 @default(0)
+  numberOfSeries     Int                @default(0)
+  numberOfInstances  Int                @default(0)
   /// Where a viewer retrieves the study, normally a DICOMweb WADO-RS study URL.
   /// Null when the deployment's viewer resolves studies by UID on its own.
   retrieveUrl        String?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  organisation  Organisation      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  patient       Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  encounter     Encounter?        @relation(fields: [encounterId], references: [id], onDelete: Restrict)
-  order         ServiceRequest?   @relation(fields: [serviceRequestId], references: [id], onDelete: Restrict)
-  report        DiagnosticReport? @relation(fields: [diagnosticReportId], references: [id], onDelete: Restrict)
+  organisation Organisation      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter    Encounter?        @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  order        ServiceRequest?   @relation(fields: [serviceRequestId], references: [id], onDelete: Restrict)
+  report       DiagnosticReport? @relation(fields: [diagnosticReportId], references: [id], onDelete: Restrict)
 
   /// A study instance UID identifies one study. Two rows claiming the same one
   /// is a study with two records that can disagree about which order it answers.

@@ -425,6 +425,15 @@ const FILTERS: {
     controlled: true,
     unit: 'tablet',
   },
+  stockLotStatusChanges: {
+    page: 1,
+    pageSize: 25,
+    sort: 'effectiveOn',
+    order: 'asc',
+    lotId: 'id-lotId',
+    lotIds: ['id-lotId'],
+    status: 'AVAILABLE',
+  },
   stockLots: {
     page: 1,
     pageSize: 25,

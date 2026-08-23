@@ -139,13 +139,66 @@ describe('the write door', () => {
       CONTEXT
     );
 
-    expect(batches?.map((batch) => batch.model)).toEqual(['StockLot', 'StockMovement']);
+    // Order is the contract: the lot exists before the row that names it, and
+    // before the movement that references it.
+    expect(batches?.map((batch) => batch.model)).toEqual([
+      'StockLot',
+      'StockLotStatusChange',
+      'StockMovement',
+    ]);
     expect(batches?.[0]?.rows[0]).toMatchObject({
       id: LOT,
       lotNumber: 'LOT-NEW',
       status: 'AVAILABLE',
     });
-    expect(batches?.[1]?.rows[0]).toMatchObject({ postingId: POSTING, lotSeq: 1, quantity: 40 });
+    expect(batches?.[2]?.rows[0]).toMatchObject({ postingId: POSTING, lotSeq: 1, quantity: 40 });
+  });
+
+  /**
+   * A lot minted here starts its history in the same transaction.
+   *
+   * Without the opening entry the first recorded change would also be the
+   * earliest one, and `statusAt` takes the earliest entry as the state before
+   * it. A carton received in August and recalled in September would read as
+   * recalled in August too - the fail-safe direction, but not what happened,
+   * and a back-dated reconciliation would come up short by a carton that was
+   * genuinely on the shelf.
+   */
+  it('opens a status history for every lot it mints', () => {
+    const input = reasonlessWaste();
+    const receivedOn = new Date('2026-08-17T00:00:00.000Z');
+    const batches = stockPostingSpec.childRows?.(
+      {
+        ...input,
+        kind: 'RECEIPT',
+        newLots: [
+          {
+            id: LOT,
+            itemId: ITEM,
+            facilityId: DEMO_FACILITY_A,
+            lotNumber: 'LOT-NEW',
+            receivedOn,
+          },
+        ],
+        lines: [],
+      },
+      postingRow(),
+      CONTEXT
+    );
+
+    const openings = batches?.find((batch) => batch.model === 'StockLotStatusChange');
+
+    expect(openings?.rows).toHaveLength(1);
+    expect(openings?.rows[0]).toMatchObject({
+      lotId: LOT,
+      status: 'AVAILABLE',
+      effectiveOn: receivedOn,
+      lotSeq: 1,
+      // The person who booked the delivery in is the person who put the lot
+      // into the state it starts in.
+      actorId: input.postedById,
+      reason: null,
+    });
   });
 
   /**

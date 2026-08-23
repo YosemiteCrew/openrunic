@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addDays,
-  assertIsoDate,
   allocate,
+  assertIsoDate,
   balancesByLot,
   countVariance,
   courseTotal,
@@ -11,30 +11,31 @@ import {
   expiringWithin,
   fefo,
   isExpired,
-  isKnownLotStatus,
   isInbound,
   isKnownKind,
+  isKnownLotStatus,
+  isStockPrecision,
   isUsable,
   itemBalance,
   lastUsableDay,
+  type Lot,
   lotBalance,
-  isStockPrecision,
+  type LotStatus,
   MAX_STOCK_QUANTITY,
+  type MovementKind,
   movementProblems,
   movementsFor,
   needsReorder,
   negativeBalances,
   packsToUnits,
   signedQuantity,
-  unusableReason,
-  usableBalance,
-  toStockPrecision,
   signedQuantity as signed,
-  type Lot,
-  type LotStatus,
-  type MovementKind,
+  statusAt,
   type StockItem,
   type StockMovement,
+  toStockPrecision,
+  unusableReason,
+  usableBalance,
 } from './index.js';
 
 const TODAY = '2026-08-17';
@@ -2065,5 +2066,120 @@ describe('branches the coverage report pointed at', () => {
    */
   it('hands the parsed parts back rather than making the caller re-derive them', () => {
     expect(assertIsoDate('2026-08-17', 'date')).toEqual({ year: 2026, month: 8, day: 17 });
+  });
+});
+
+/**
+ * The status a lot had on the day asked about, rather than the status it has
+ * now.
+ *
+ * `status` alone is a single mutable value, so every as-of question was
+ * answered with today's answer. The direction is the dangerous one: a lot
+ * retired on the 10th dropped out of a query about the 1st, so a reconciliation
+ * of the 1st came up short against a shelf that had been correct - and the
+ * discrepancy pointed at nothing, because the lot that explained it had been
+ * filtered out of the answer.
+ */
+describe('lot status, as of a date', () => {
+  const retiredOnTheTenth = lot({
+    id: 'lot-history',
+    status: 'RETIRED',
+    receivedOn: '2026-08-01',
+    statusHistory: [
+      { status: 'AVAILABLE', effectiveOn: '2026-08-01' },
+      { status: 'RETIRED', effectiveOn: '2026-09-10' },
+    ],
+  });
+
+  it('reads the status in force, not the one on the row', () => {
+    expect(statusAt(retiredOnTheTenth, '2026-09-01')).toBe('AVAILABLE');
+    expect(statusAt(retiredOnTheTenth, '2026-09-20')).toBe('RETIRED');
+    // The boundary is inclusive: the day a status takes effect, it is in force.
+    expect(statusAt(retiredOnTheTenth, '2026-09-10')).toBe('RETIRED');
+    expect(statusAt(retiredOnTheTenth, '2026-09-09')).toBe('AVAILABLE');
+  });
+
+  it('includes the lot in a FEFO question about a day it was available', () => {
+    // The acceptance case from the issue, in both directions.
+    expect(fefo([retiredOnTheTenth], '2026-09-01').map((entry) => entry.id)).toEqual([
+      'lot-history',
+    ]);
+    expect(fefo([retiredOnTheTenth], '2026-09-20')).toEqual([]);
+  });
+
+  it('names the status that was in force, not the one now', () => {
+    expect(unusableReason(retiredOnTheTenth, '2026-09-01')).toBeUndefined();
+    expect(unusableReason(retiredOnTheTenth, '2026-09-20')).toContain('retired');
+  });
+
+  it('reads the row when no history is recorded, which is what it always did', () => {
+    const noHistory = lot({ id: 'lot-plain', status: 'RETIRED' });
+
+    expect(statusAt(noHistory, '2026-09-01')).toBe('RETIRED');
+    expect(unusableReason(noHistory, '2026-09-01')).toContain('retired');
+  });
+
+  it('reads the row when the history is present but empty', () => {
+    const empty = lot({ id: 'lot-empty', status: 'QUARANTINED', statusHistory: [] });
+
+    expect(statusAt(empty, '2026-09-01')).toBe('QUARANTINED');
+  });
+
+  it('takes the earliest recorded state for a day before any change', () => {
+    // The record says nothing about the period before its first entry, and the
+    // earliest entry is the only thing it does say. Reading `status` here would
+    // be today's answer wearing an as-of question's clothes.
+    expect(statusAt(retiredOnTheTenth, '2026-07-01')).toBe('AVAILABLE');
+  });
+
+  it('does not care what order the history arrives in', () => {
+    const shuffled = lot({
+      id: 'lot-shuffled',
+      status: 'RETIRED',
+      receivedOn: '2026-08-01',
+      statusHistory: [
+        { status: 'RETIRED', effectiveOn: '2026-09-10' },
+        { status: 'QUARANTINED', effectiveOn: '2026-09-05' },
+        { status: 'AVAILABLE', effectiveOn: '2026-08-01' },
+      ],
+    });
+
+    expect(statusAt(shuffled, '2026-09-01')).toBe('AVAILABLE');
+    expect(statusAt(shuffled, '2026-09-06')).toBe('QUARANTINED');
+    expect(statusAt(shuffled, '2026-09-20')).toBe('RETIRED');
+  });
+
+  /**
+   * The ordering `unusableReason` keeps on purpose: status is decided before
+   * any date is validated, so a held lot with a corrupt date is discarded by
+   * its status rather than throwing. Resolving history must not put a
+   * `RangeError` in front of that - one corrupt row would take `fefo`,
+   * allocation and every expiry report for the whole item offline.
+   */
+  it('refuses a history it cannot order, rather than throwing on it', () => {
+    const corrupt = lot({
+      id: 'lot-corrupt',
+      status: 'AVAILABLE',
+      receivedOn: '2026-08-01',
+      statusHistory: [{ status: 'AVAILABLE', effectiveOn: 'not-a-date' }],
+    });
+
+    expect(() => statusAt(corrupt, '2026-09-01')).not.toThrow();
+    // Fails closed, through the same branch an unrecognised column value takes.
+    expect(unusableReason(corrupt, '2026-09-01')).toContain('not one this system knows');
+    expect(fefo([corrupt], '2026-09-01')).toEqual([]);
+  });
+
+  it('still discards a held lot whose receipt date is corrupt', () => {
+    const held = lot({
+      id: 'lot-held',
+      status: 'AVAILABLE',
+      receivedOn: 'not-a-date',
+      statusHistory: [{ status: 'RECALLED', effectiveOn: '2026-08-01' }],
+    });
+
+    // The status wins before the date is read, which is the whole reason the
+    // clauses are in this order.
+    expect(unusableReason(held, '2026-09-01')).toContain('recalled');
   });
 });

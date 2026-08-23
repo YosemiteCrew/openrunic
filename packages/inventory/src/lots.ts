@@ -10,9 +10,9 @@
  *
  * ## Everything here is asked "as of" a date
  *
- * No function in this package reads the clock. Expiry, beyond-use, usability -
- * each takes the date to judge against. Three reasons, in ascending order of how
- * much they matter:
+ * No function in this package reads the clock. Expiry, beyond-use, usability
+ * and status - each takes the date to judge against. Three reasons, in
+ * ascending order of how much they matter:
  *
  * - A test that cannot fix the date tests a different thing every day it runs.
  * - A back-dated correction has to be judged against the date of the event, not
@@ -20,6 +20,14 @@
  *   from a lot that expired on the 5th was not an expired dose, and the record
  *   has to be able to say so in June.
  * - A clock read deep inside a calculation is a dependency nothing declares.
+ *
+ * Status was the one field that did not keep this promise, and it needed a
+ * schema change rather than a code fix. A lot's status is now resolved through
+ * `statusAt`, from a recorded history, so a question about the first of the
+ * month is answered with the status in force on the first. A lot with no
+ * recorded history still reads its current status, which is the previous
+ * behaviour: the promise is kept for every lot whose history is written, and
+ * degrades honestly rather than silently for the rest.
  *
  * ## What this file does not decide
  *
@@ -104,13 +112,92 @@ export type LotStatus =
   /** Disposed of, returned, or otherwise gone. Kept for the audit trail. */
   | 'RETIRED';
 
+/** A recorded change of a lot's status, and the day it took effect. */
+export interface LotStatusChange {
+  readonly status: LotStatus;
+  /** The first day this status was in force, inclusive. */
+  readonly effectiveOn: IsoDate;
+}
+
+/**
+ * Sentinel for a history this package cannot order.
+ *
+ * Deliberately not a `LotStatus`: it flows into the same fail-closed branch an
+ * unrecognised column value takes, so a corrupt history refuses the lot rather
+ * than throwing out of a comparison. See `statusAt`.
+ */
+const UNORDERABLE_HISTORY = 'UNORDERABLE_STATUS_HISTORY';
+
+/**
+ * The status in force on a given day.
+ *
+ * The reason this exists: `status` alone is a single mutable value, so every
+ * as-of question was answered with today's answer. A lot retired on the 10th
+ * dropped out of a query about the 1st, and a reconciliation of the 1st then
+ * came up short against a shelf that had been correct - with the discrepancy
+ * pointing at nothing, because the lot that explained it had been filtered out.
+ * The direction is the dangerous one.
+ *
+ * Two properties this has to keep, both of them load bearing:
+ *
+ * It never throws. `unusableReason` checks status BEFORE it validates any date,
+ * on purpose - a held lot with a corrupt `receivedOn` is discarded by its status
+ * without anyone reading the date. Validating history dates here would put a
+ * `RangeError` in front of that, and a single corrupt row would take `fefo`,
+ * allocation and every expiry report for the whole item offline. So entries are
+ * compared as written, and anything unorderable returns the sentinel above,
+ * which the caller's fail-closed branch refuses.
+ *
+ * It degrades to today's answer only when there is nothing better. A lot with no
+ * recorded history reads `status`, which is exactly the behaviour that existed
+ * before this - so nothing changes until the history is being written.
+ */
+export function statusAt(lot: Lot, asOf: IsoDate): string {
+  const history = lot.statusHistory;
+  if (history === undefined || history.length === 0) return lot.status;
+  if (!ISO_DATE.test(asOf)) return UNORDERABLE_HISTORY;
+
+  let inForce: LotStatusChange | undefined;
+  let earliest: LotStatusChange | undefined;
+  for (const change of history) {
+    // Unvalidated on purpose, and tested rather than asserted: a history this
+    // package cannot order must not decide anything, and must not throw either.
+    if (!ISO_DATE.test(change.effectiveOn)) return UNORDERABLE_HISTORY;
+    if (earliest === undefined || change.effectiveOn < earliest.effectiveOn) earliest = change;
+    if (change.effectiveOn > asOf) continue;
+    if (inForce === undefined || change.effectiveOn >= inForce.effectiveOn) inForce = change;
+  }
+
+  // Nothing had taken effect yet. The earliest recorded state is the only thing
+  // the record says about that period, and it is the honest answer: reading
+  // `status` here would be today's answer wearing an as-of question's clothes.
+  return (inForce ?? earliest)?.status ?? lot.status;
+}
+
 export interface Lot {
   readonly id: string;
   /** The stock item this is a batch of. */
   readonly itemId: string;
   /** The manufacturer's lot number, as printed on the carton. */
   readonly lotNumber: string;
+  /**
+   * The lot's status today.
+   *
+   * Read directly only when `statusHistory` is absent. Anything judging the lot
+   * as of a date goes through `statusAt`, because this field alone cannot
+   * answer a question about last month.
+   */
   readonly status: LotStatus;
+  /**
+   * Every recorded change of status, in any order.
+   *
+   * Absent means no history is available, and the lot is then judged on
+   * `status` - which is what every caller did before this existed. Present, it
+   * is the whole record: `statusAt` resolves the day, and a lot's state before
+   * its earliest entry is taken to be that entry's status, since that is the
+   * only thing the record says about the period.
+   */
+  readonly statusHistory?: readonly LotStatusChange[];
   /**
    * The last day the lot may be used, inclusive.
    *
@@ -247,16 +334,20 @@ export function unusableReason(lot: Lot, asOf: IsoDate): string | undefined {
   // Recalled stock reading as available is the one outcome in this file that
   // reaches a patient, so an unknown status is refused rather than assumed
   // benign. The type does not help here: the string arrives from a database.
-  if (!isKnownLotStatus(lot.status)) {
-    return `Lot ${lot.lotNumber} has status ${JSON.stringify(lot.status)}, which is not one this system knows, so it cannot be treated as available.`;
+  // The status in force on the day asked about, not the status today. Falls
+  // back to `lot.status` when no history is recorded, so this is the previous
+  // behaviour exactly until the history is being written.
+  const status = statusAt(lot, asOf);
+  if (!isKnownLotStatus(status)) {
+    return `Lot ${lot.lotNumber} has status ${JSON.stringify(status)}, which is not one this system knows, so it cannot be treated as available.`;
   }
-  if (lot.status === 'RECALLED') {
+  if (status === 'RECALLED') {
     return `Lot ${lot.lotNumber} was recalled and must not be used.`;
   }
-  if (lot.status === 'QUARANTINED') {
+  if (status === 'QUARANTINED') {
     return `Lot ${lot.lotNumber} is quarantined pending inspection.`;
   }
-  if (lot.status === 'RETIRED') {
+  if (status === 'RETIRED') {
     return `Lot ${lot.lotNumber} has been retired from stock.`;
   }
   assertIsoDate(lot.receivedOn, `lot ${lot.lotNumber} receivedOn`);

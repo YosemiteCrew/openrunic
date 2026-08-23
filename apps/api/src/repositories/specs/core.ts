@@ -46,7 +46,7 @@ export interface PatientListQuery extends BaseQuery {
   sexAtBirth?: AdministrativeGender;
   family?: string;
   given?: string;
-  /** Exact date of birth, midnight UTC. */
+  /** Date of birth. Selects any birth recorded on this UTC day. */
   birthDate?: Date;
   active?: boolean;
   facilityId?: string;

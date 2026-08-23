@@ -5,17 +5,19 @@ import type {
 } from '@openrunic/database';
 
 import {
+  type BaseQuery,
+  type CollectionSpec,
   containsFold,
   equalsIfSet,
-  jsonColumn,
-  matchesIfSet,
   inWindow,
+  jsonColumn,
+  likeContains,
+  likeStartsWith,
+  matchesIfSet,
+  type RowContext,
   startsWithFold,
   statusMetadata,
   windowFilter,
-  type BaseQuery,
-  type CollectionSpec,
-  type RowContext,
   type Writable,
 } from '../collection.js';
 import { APPOINTMENT_DEFAULTS, PATIENT_DEFAULTS } from '../defaults.js';
@@ -138,12 +140,8 @@ export const patientSpec: CollectionSpec<
       ...(query.id === undefined ? {} : { id: query.id }),
       ...(query.mrn === undefined ? {} : { mrn: query.mrn }),
       ...(query.sexAtBirth === undefined ? {} : { sexAtBirth: query.sexAtBirth }),
-      ...(query.family === undefined
-        ? {}
-        : { familyName: { startsWith: query.family, mode: 'insensitive' as const } }),
-      ...(query.given === undefined
-        ? {}
-        : { givenName: { startsWith: query.given, mode: 'insensitive' as const } }),
+      ...(query.family === undefined ? {} : { familyName: likeStartsWith(query.family) }),
+      ...(query.given === undefined ? {} : { givenName: likeStartsWith(query.given) }),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.facilityId === undefined ? {} : { primaryFacilityId: query.facilityId }),
       ...(query.birthDate === undefined ? {} : { birthDate: query.birthDate }),
@@ -151,10 +149,10 @@ export const patientSpec: CollectionSpec<
         ? {}
         : {
             OR: [
-              { familyName: { contains: query.q, mode: 'insensitive' as const } },
-              { givenName: { contains: query.q, mode: 'insensitive' as const } },
-              { preferredName: { contains: query.q, mode: 'insensitive' as const } },
-              { mrn: { contains: query.q, mode: 'insensitive' as const } },
+              { familyName: likeContains(query.q) },
+              { givenName: likeContains(query.q) },
+              { preferredName: likeContains(query.q) },
+              { mrn: likeContains(query.q) },
             ],
           }),
     };

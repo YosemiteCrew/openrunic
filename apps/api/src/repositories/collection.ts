@@ -255,6 +255,46 @@ export function matchesIfSet<T>(expected: T | undefined, test: (value: T) => boo
 }
 
 /** Case-insensitive substring match over several columns. */
+/**
+ * Escapes the LIKE metacharacters in a caller's search string.
+ *
+ * Prisma's `contains` and `startsWith` are not literal substring tests. They
+ * compile to `ILIKE ('%' || $1 || '%')`, splicing the value straight into the
+ * pattern, so a `%` in what the caller typed is a wildcard and a `_` matches any
+ * single character. `containsFold` below, which answers the same filter in
+ * memory, uses `String.includes` and treats both literally.
+ *
+ * That is a divergence rather than a nuisance, and it fails in the dangerous
+ * direction: a search for `%` returned nothing in memory and every row the
+ * caller could reach from Postgres. It is not hypothetical for `_` either -
+ * stock SKUs and terminology codes carry underscores routinely, and each one
+ * was quietly matching more rows than the caller asked for.
+ *
+ * Escaping here rather than refusing the characters at the schema keeps a
+ * literal search for them possible, which for an SKU or a code is a search
+ * somebody will actually want. The backslash is Postgres's default LIKE escape
+ * character and Prisma emits no `ESCAPE` clause, so it is the one that applies.
+ */
+export function escapeLike(value: string): string {
+  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+}
+
+/** A case-insensitive substring filter over a literal needle. */
+export function likeContains(needle: string): {
+  contains: string;
+  mode: 'insensitive';
+} {
+  return { contains: escapeLike(needle), mode: 'insensitive' };
+}
+
+/** A case-insensitive prefix filter over a literal prefix. */
+export function likeStartsWith(prefix: string): {
+  startsWith: string;
+  mode: 'insensitive';
+} {
+  return { startsWith: escapeLike(prefix), mode: 'insensitive' };
+}
+
 export function containsFold(values: readonly (string | null)[], needle: string): boolean {
   const folded = needle.toLowerCase();
   return values.some((value) => value?.toLowerCase().includes(folded) ?? false);

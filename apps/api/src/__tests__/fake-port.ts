@@ -55,10 +55,6 @@ function isRecord(value: unknown): value is Row {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function fold(value: unknown, mode: unknown): string {
-  return mode === 'insensitive' ? String(value).toLowerCase() : String(value);
-}
-
 function comparableOf(value: unknown): number | string | boolean | null {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'bigint') return Number(value);
@@ -77,6 +73,54 @@ function equal(left: unknown, right: unknown): boolean {
 }
 
 /** Evaluates one column's condition, which is either a literal or an operator object. */
+/** The operand of a `contains` / `startsWith`, as the pattern Prisma splices it into. */
+function asPattern(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * `contains` and `startsWith` as Postgres actually answers them.
+ *
+ * These used to be `String.includes` and `String.startsWith`, which made this
+ * fake agree with the in-memory port and disagree with the database both were
+ * standing in for. Prisma compiles them to `ILIKE ('%' || $1 || '%')` and
+ * `ILIKE ($1 || '%')`, splicing the operand into a LIKE pattern, so a `%` in it
+ * matches any run of characters and a `_` matches exactly one. Modelling them
+ * as literal substring tests made a whole class of divergence invisible: both
+ * test ports said one thing and only production said the other.
+ *
+ * The backslash is Postgres's default escape character, and Prisma emits no
+ * `ESCAPE` clause, so `\%` here is a literal per cent exactly as it is there.
+ */
+function likeMatches(actual: unknown, pattern: string, mode: unknown): boolean {
+  if (typeof actual !== 'string') return false;
+  const quote = (char: string): string => char.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  let source = '';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index] ?? '';
+    if (char === '\\') {
+      const escaped = pattern[index + 1];
+      if (escaped === undefined) {
+        source += quote('\\');
+      } else {
+        source += quote(escaped);
+        index += 1;
+      }
+      continue;
+    }
+    if (char === '%') {
+      source += '[\\s\\S]*';
+      continue;
+    }
+    if (char === '_') {
+      source += '[\\s\\S]';
+      continue;
+    }
+    source += quote(char);
+  }
+  return new RegExp(`^${source}$`, mode === 'insensitive' ? 'iu' : 'u').test(actual);
+}
+
 function matchesCondition(actual: unknown, condition: unknown): boolean {
   if (!isRecord(condition) || condition instanceof Date) return equal(actual, condition);
 
@@ -93,14 +137,10 @@ function matchesCondition(actual: unknown, condition: unknown): boolean {
     checks.push(Array.isArray(actual) && actual.some((item) => equal(item, condition.has)));
   }
   if ('startsWith' in condition) {
-    checks.push(
-      typeof actual === 'string' && fold(actual, mode).startsWith(fold(condition.startsWith, mode))
-    );
+    checks.push(likeMatches(actual, `${asPattern(condition.startsWith)}%`, mode));
   }
   if ('contains' in condition) {
-    checks.push(
-      typeof actual === 'string' && fold(actual, mode).includes(fold(condition.contains, mode))
-    );
+    checks.push(likeMatches(actual, `%${asPattern(condition.contains)}%`, mode));
   }
   for (const [key, compare] of [
     ['gte', (a: number | string, b: number | string): boolean => a >= b],

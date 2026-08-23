@@ -36,6 +36,7 @@ import type {
   StockItemListQuery,
   StockLotCreateInput,
   StockLotListQuery,
+  StockLotStatusChangeListQuery,
   StockMovementListQuery,
   StockPostingCreateInput,
   StockPostingLine,
@@ -252,6 +253,36 @@ function allMovements(
   query: Omit<StockMovementListQuery, 'page' | 'pageSize'>
 ): Promise<MovementRow[]> {
   return collect((q: StockMovementListQuery) => repositories(c).stockMovements.list(q), query);
+}
+
+/**
+ * Every recorded status change for a page of lots, in one query.
+ *
+ * One query and not one per lot: the spec carries a `lotIds` set filter for
+ * exactly this, so a site with two hundred cartons costs the same read as a
+ * site with one. `findByIds` is the wrong tool here - this is a list of many
+ * rows per lot rather than a lookup of one row per id.
+ *
+ * Grouped by lot rather than returned flat, because the mapper needs one lot's
+ * history and reading it out of a flat list would be a scan per lot.
+ */
+async function statusHistoryByLot(
+  c: Context<AppEnv>,
+  lotIds: readonly string[]
+): Promise<ReadonlyMap<string, ScopedRow<'StockLotStatusChange'>[]>> {
+  const byLot = new Map<string, ScopedRow<'StockLotStatusChange'>[]>();
+  if (lotIds.length === 0) return byLot;
+
+  const rows = await collect(
+    (q: StockLotStatusChangeListQuery) => repositories(c).stockLotStatusChanges.list(q),
+    { lotIds, sort: 'effectiveOn' as const, order: 'asc' as const }
+  );
+  for (const row of rows) {
+    const held = byLot.get(row.lotId);
+    if (held === undefined) byLot.set(row.lotId, [row]);
+    else held.push(row);
+  }
+  return byLot;
 }
 
 /** One lot's whole ledger at one site, oldest first. */
@@ -509,7 +540,17 @@ async function snapshot(
 }> {
   const lotRows = await allLots(c, { ...where, sort: 'receivedOn', order: 'asc' });
   const movementRows = await allMovements(c, { ...where, sort: 'occurredOn', order: 'asc' });
-  return { lots: lotRows.map(toLot), movements: movementRows.map(toMovement), movementRows };
+  // Fetched after the lots because it is keyed on their ids, and in one query
+  // for all of them rather than one per lot.
+  const history = await statusHistoryByLot(
+    c,
+    lotRows.map((row) => row.id)
+  );
+  return {
+    lots: lotRows.map((row) => toLot(row, history.get(row.id) ?? [])),
+    movements: movementRows.map(toMovement),
+    movementRows,
+  };
 }
 
 /** The variance a line found, or nothing when the shelf and the ledger agree. */

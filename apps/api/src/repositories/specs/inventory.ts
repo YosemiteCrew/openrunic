@@ -12,6 +12,7 @@ import {
   equalsIfSet,
   inWindow,
   likeContains,
+  type RowContext,
   windowFilter,
   type Writable,
 } from '../collection.js';
@@ -423,7 +424,11 @@ export const stockPostingSpec: CollectionSpec<
    * when it found nothing would make a clean count indistinguishable from a
    * count nobody did.
    */
-  childRows(input: StockPostingCreateInput, parent: ScopedRow<'StockPosting'>): ChildBatch[] {
+  childRows(
+    input: StockPostingCreateInput,
+    parent: ScopedRow<'StockPosting'>,
+    context: RowContext
+  ): ChildBatch[] {
     const lots = (input.newLots ?? []).map((lot) => ({ id: lot.id, ...lotColumns(lot) }));
     const movements = input.lines.map((line, index) => ({
       id: line.movement.id,
@@ -434,9 +439,37 @@ export const stockPostingSpec: CollectionSpec<
       }),
     }));
 
+    /**
+     * The opening entry in each new lot's status history, written in the same
+     * transaction as the lot itself.
+     *
+     * Without it a lot minted today has no history, so the first recorded
+     * change would also be the earliest one - and `statusAt` takes the earliest
+     * entry as the state before it. A carton received in August and recalled in
+     * September would then read as recalled in August too, which is the
+     * fail-safe direction but is not what happened, and a back-dated
+     * reconciliation would be short by a carton that was genuinely on the shelf.
+     *
+     * `postedById` is the actor: the person who booked the delivery in is the
+     * person who put the lot into the state it starts in.
+     */
+    const openings = lots.map((lot) => ({
+      id: context.nextId(),
+      lotId: lot.id,
+      status: lot.status,
+      effectiveOn: lot.receivedOn,
+      lotSeq: 1,
+      reason: null,
+      actorId: input.postedById,
+    }));
+
     return lots.length === 0
       ? [childBatch('StockMovement', movements)]
-      : [childBatch('StockLot', lots), childBatch('StockMovement', movements)];
+      : [
+          childBatch('StockLot', lots),
+          childBatch('StockLotStatusChange', openings),
+          childBatch('StockMovement', movements),
+        ];
   },
 
   /**

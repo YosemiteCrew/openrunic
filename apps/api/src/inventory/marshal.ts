@@ -120,12 +120,27 @@ export function todayAt(timeZone: string, now: Date): IsoDate {
 }
 
 /** A stored lot, as `fefo`, `lastUsableDay` and `unusableReason` read it. */
-export function toLot(row: ScopedRow<'StockLot'>): Lot {
+export function toLot(
+  row: ScopedRow<'StockLot'>,
+  statusHistory: readonly ScopedRow<'StockLotStatusChange'>[] = []
+): Lot {
   return {
     id: row.id,
     itemId: row.itemId,
     lotNumber: row.lotNumber,
     status: row.status,
+    // Absent rather than empty when nothing is recorded, because the package
+    // reads the two differently: an absent history means "judge on `status`",
+    // which is what every caller did before the table existed, while an empty
+    // one would be a history that says the lot has never had a status.
+    ...(statusHistory.length === 0
+      ? {}
+      : {
+          statusHistory: statusHistory.map((change) => ({
+            status: change.status,
+            effectiveOn: toIsoDate(change.effectiveOn),
+          })),
+        }),
     ...(row.expiresOn === null ? {} : { expiresOn: toIsoDate(row.expiresOn) }),
     ...(row.openedOn === null ? {} : { openedOn: toIsoDate(row.openedOn) }),
     ...(row.beyondUseDays === null ? {} : { beyondUseDays: row.beyondUseDays }),

@@ -96,8 +96,47 @@ export const patientSpec: CollectionSpec<
   model: 'Patient',
   targetType: 'Patient',
   action: 'patient',
+  /**
+   * The patient's usual site. It narrows lists and it does NOT refuse an
+   * addressed read. This is #139, decided.
+   *
+   * Every other facility-scoped collection narrows on `facilityId`, which is
+   * containment: the appointment happened there, the encounter happened there,
+   * the charge was raised there. `primaryFacilityId` is attribution - the site
+   * that registered them. Patient was the only one of nine narrowing on a
+   * column that is not `facilityId`, and that uniqueness is the tell.
+   *
+   * The two halves want different answers, which is why this spec is the only
+   * one that sets `facilityHidesAddressed`.
+   *
+   * A LIST stays narrowed. A work queue should be local, and this is what keeps
+   * a site-limited caller from paging the whole practice's index of names, MRNs
+   * and birth dates. Removing that was the first draft of this change and it
+   * was wrong: it widened a listing surface to fix a lookup problem.
+   *
+   * An addressed READ is not refused. The caller already has the id and is
+   * treating the person, and a patient registered at the north clinic standing
+   * in front of the south clinic is the ordinary case rather than the edge. The
+   * old behaviour failed in both directions at once - it hid that chart from
+   * the clinician holding it, while still showing a patient registered here who
+   * has only ever been seen elsewhere.
+   *
+   * The portal made it sharper. The facility and compartment clauses are ANDed
+   * rather than alternatives, so pinning a token to one chart did not exempt
+   * it, and `Principal.facilityIds` comes from an IdP claim - so an IdP that
+   * omits `facilities` locked every portal user out of their own record. That
+   * is an addressed read, and it works now.
+   *
+   * What this is NOT is a care-relationship model. Nothing here asks whether
+   * the caller is treating this patient; it asks whether they know the id. The
+   * real answer is an explicit care relationship or an audited break-glass, and
+   * that is filed rather than pretended at. Every read is recorded in the audit
+   * trail meanwhile, which is detection rather than prevention and is worth
+   * being honest about.
+   */
   facilityColumn: 'primaryFacilityId',
   facilityScoped: true,
+  facilityHidesAddressed: false,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.
   compartment: { column: 'id' },

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fromIsoDate,
   movementColumns,
+  statusOf,
   toIsoDate,
   toLot,
   toMovement,
@@ -163,6 +164,59 @@ describe('a stored lot, as the package reads one', () => {
     expect(lot.expiresOn).toBe('2027-06-30');
     expect(lot.openedOn).toBe('2026-08-01');
     expect(lot.beyondUseDays).toBe(28);
+  });
+});
+
+/**
+ * The status a listing renders, which has to be one of the four.
+ *
+ * `statusAt` returns a plain string because it must never throw: a history it
+ * cannot order comes back as a sentinel, and the package's own callers have
+ * fail-closed branches to take. A list has no such branch - every row it renders
+ * carries a status - so the sentinel has to be turned back into something the
+ * contract allows before it reaches a response.
+ */
+describe('the status a listing reports', () => {
+  const lot = (
+    status: string,
+    history?: { status: string; effectiveOn: string }[]
+  ): Parameters<typeof statusOf>[0] =>
+    ({
+      id: LOT,
+      itemId: ITEM,
+      lotNumber: 'LOT-A',
+      status,
+      receivedOn: '2026-01-05',
+      ...(history === undefined ? {} : { statusHistory: history }),
+    }) as Parameters<typeof statusOf>[0];
+
+  it('resolves the day from the recorded history', () => {
+    const held = lot('RECALLED', [
+      { status: 'AVAILABLE', effectiveOn: '2026-01-05' },
+      { status: 'RECALLED', effectiveOn: '2026-03-10' },
+    ]);
+
+    expect(statusOf(held, '2026-03-01')).toBe('AVAILABLE');
+    expect(statusOf(held, '2026-03-10')).toBe('RECALLED');
+  });
+
+  it('reads the column when nothing is recorded', () => {
+    expect(statusOf(lot('QUARANTINED'), '2026-03-01')).toBe('QUARANTINED');
+  });
+
+  /**
+   * The fallback the route cannot reach: `effectiveOn` is a date column rendered
+   * canonically, and `asOf` is either validated by the schema or produced by
+   * `todayAt`. It is here because the parameter type says `string`, and the next
+   * caller will have no reason to know that.
+   */
+  it('falls back to the column when the history cannot be ordered', () => {
+    // Unpadded, and the dangerous case rather than obvious garbage: every
+    // comparison in the package is lexicographic, so `'2026-3-10'` sorts after
+    // `'2026-09-01'` and a recall would read as not yet in force.
+    const corrupt = lot('AVAILABLE', [{ status: 'RECALLED', effectiveOn: '2026-3-10' }]);
+
+    expect(statusOf(corrupt, '2026-04-01')).toBe('AVAILABLE');
   });
 });
 

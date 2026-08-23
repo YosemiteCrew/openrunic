@@ -1,9 +1,12 @@
 import type {
   IsoDate,
   Lot,
+  LotStatus,
   StockItem as PackageStockItem,
   StockMovement as PackageMovement,
 } from '@openrunic/inventory';
+
+import { isKnownLotStatus, statusAt } from '@openrunic/inventory';
 
 import type { Writable } from '../repositories/collection.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -146,6 +149,26 @@ export function toLot(
     ...(row.beyondUseDays === null ? {} : { beyondUseDays: row.beyondUseDays }),
     receivedOn: toIsoDate(row.receivedOn),
   };
+}
+
+/**
+ * The status in force on a day, as one of the four this system stores.
+ *
+ * `statusAt` returns a plain string on purpose: it must never throw, so a
+ * history it cannot order comes back as a sentinel that the package's own
+ * fail-closed branches refuse. A listing has no fail-closed branch to take -
+ * every row it renders has to carry one of the four - so an unorderable history
+ * falls back to the stored column, which is the answer this API gave for that
+ * lot before it could be asked about a date at all.
+ *
+ * That fallback is unreachable through the routes: `effectiveOn` is a `@db.Date`
+ * column rendered by {@link toIsoDate}, and `asOf` is either validated by the
+ * schema or produced by {@link todayAt}. It is written and tested anyway,
+ * because the type says `string` and the next caller will not know why.
+ */
+export function statusOf(lot: Lot, asOf: IsoDate): LotStatus {
+  const resolved = statusAt(lot, asOf);
+  return isKnownLotStatus(resolved) ? resolved : lot.status;
 }
 
 /**

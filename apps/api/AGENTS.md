@@ -80,6 +80,33 @@ to an impossible intersection - dropping the clause instead would widen the quer
 colliding pair deliberately in conflict, and the query table it drives from fails to compile when a
 spec or a filter parameter is added. That is the guard; this section is why it exists.
 
+## A stale column is the same bug wearing a different hat
+
+`StockLot.status` is the truth about a lot today and `StockLotStatusChange` is the truth about every
+day, and the list route narrows on the column because that is the half a database can index. Write a
+recall to the history and not to the column and `status=RECALLED` returns a page with the recalled
+carton missing from it - the same shape as the section above, a filter that quietly answers a
+different question, and the same direction: the wrong answer is the reassuring one.
+
+Two writes from a route cannot fix it, because the second one can fail. So the amendment travels in
+the parent's transaction, through `childPatches` on the spec, next to `childRows`:
+
+```ts
+childPatches(input: StockPostingCreateInput): ChildPatch[] {
+  return (input.statusChanges ?? []).map((change) =>
+    childPatch('StockLot', change.lotId, { status: change.status })
+  );
+},
+```
+
+Both ports refuse an amendment that matches no row in scope rather than treating it as a no-op: in
+Postgres RLS makes a cross-tenant id a count of zero, and the in-memory store resolves every target
+before it writes anything, because it has no transaction to roll back and would otherwise leave the
+parent behind.
+
+Reach for it only for a column another write makes stale. It takes an id and no `where`, deliberately:
+a patch that could match a set is a patch that could match the wrong set.
+
 ## FHIR lives at the edge
 
 Read `docs/adr/0002`. Resources are produced at the boundary from relational rows; they are never

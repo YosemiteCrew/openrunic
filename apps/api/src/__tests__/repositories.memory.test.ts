@@ -19,6 +19,7 @@ import {
   makePatientRow,
   seedPatients,
   seed,
+  storageColumns,
   testId,
 } from './support.js';
 
@@ -574,5 +575,86 @@ describe('the in-memory appointment repository', () => {
     const row = await repos.appointments.create(CREATE_INPUT);
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(registry.dataset.table('Appointment')).toHaveLength(1);
+  });
+});
+
+/**
+ * The amendment half of a composite write, against the real spec that uses it.
+ *
+ * A recall writes a status-history row and brings the lot's own column up to
+ * date with it. The history is the truth and the column is what the lot list
+ * narrows on, so the two travel together: a recall in one and not the other
+ * produces a `status=RECALLED` listing with the recalled carton missing.
+ */
+describe('a write that amends a row alongside its own', () => {
+  const LOT = testId(20);
+
+  function withLot(tenantId = DEMO_TENANT_A): MemoryDataset {
+    const dataset = createEmptyDataset();
+    seed(dataset, 'StockLot', {
+      ...storageColumns(LOT, tenantId),
+      itemId: testId(10),
+      facilityId: DEMO_FACILITY_A,
+      lotNumber: 'LOT-R',
+      status: 'AVAILABLE',
+      expiresOn: null,
+      openedOn: null,
+      beyondUseDays: null,
+      manufacturer: null,
+      ndcCode: null,
+      receivedOn: new Date('2026-01-05T00:00:00.000Z'),
+    });
+    return dataset;
+  }
+
+  function recall(dataset: MemoryDataset, repos: Repositories): Promise<unknown> {
+    return repos.stockPostings.create({
+      kind: 'STATUS_CHANGE',
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: new Date('2026-03-10T00:00:00.000Z'),
+      postedById: testId(900),
+      statusChanges: [
+        {
+          id: testId(80),
+          lotId: LOT,
+          status: 'RECALLED',
+          effectiveOn: new Date('2026-03-10T00:00:00.000Z'),
+          lotSeq: 2,
+          reason: 'manufacturer notice',
+        },
+      ],
+      lines: [],
+    });
+  }
+
+  it('writes the history row and the column together', async () => {
+    const dataset = withLot();
+    const { repos } = harness(dataset);
+
+    await recall(dataset, repos());
+
+    expect(dataset.table('StockLot')[0]?.status).toBe('RECALLED');
+    expect(dataset.table('StockLotStatusChange')).toHaveLength(1);
+    expect(dataset.table('StockPosting')).toHaveLength(1);
+  });
+
+  /**
+   * Nothing narrows the arrays this implementation stores, so without a tenant
+   * check a posting in one organisation would amend a lot in another - and every
+   * HTTP test in this repository runs here, so no test could find it.
+   *
+   * Refused *before* anything is written, because there is no transaction to
+   * roll back: Postgres would have rolled the posting back, and a posting left
+   * behind with no amendment is the half-written state the hook exists for.
+   */
+  it('refuses to amend a row in another organisation, and writes nothing at all', async () => {
+    const dataset = withLot(DEMO_TENANT_B);
+    const { repos } = harness(dataset);
+
+    await expect(recall(dataset, repos())).rejects.toThrow(/to amend/u);
+
+    expect(dataset.table('StockLot')[0]?.status).toBe('AVAILABLE');
+    expect(dataset.table('StockPosting')).toHaveLength(0);
+    expect(dataset.table('StockLotStatusChange')).toHaveLength(0);
   });
 });

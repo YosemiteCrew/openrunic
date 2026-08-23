@@ -27,15 +27,24 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
-import { fromIsoDate, toLot, toMovement, toStockItem, todayAt } from '../inventory/marshal.js';
+import {
+  fromIsoDate,
+  statusOf,
+  toIsoDate,
+  toLot,
+  toMovement,
+  toStockItem,
+  todayAt,
+} from '../inventory/marshal.js';
 import { causeText, dispensedQuantity } from '../inventory/posting.js';
-import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
+import { assertFacilityAccess, assertPermission, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { BaseQuery, Page } from '../repositories/collection.js';
 import type {
   StockItemListQuery,
   StockLotCreateInput,
   StockLotListQuery,
+  StockLotStatusChangeCreateInput,
   StockLotStatusChangeListQuery,
   StockMovementListQuery,
   StockPostingCreateInput,
@@ -61,6 +70,8 @@ import {
   stockItemPatchSchema,
   stockLotDtoSchema,
   stockLotListQuerySchema,
+  statusChangeResultSchema,
+  statusChangeSchema,
   stockPostingDtoSchema,
   toStockItemCreateInput,
   toStockItemDto,
@@ -72,6 +83,7 @@ import {
   wastageSchema,
   type AdministrationResult,
   type CountResult,
+  type StatusChangeResult,
   type StockPostingDto,
   type ReceiptBody,
 } from '../schemas/inventory.js';
@@ -285,6 +297,31 @@ async function statusHistoryByLot(
   return byLot;
 }
 
+/**
+ * The newest entry in a lot's status history, or nothing when it has none.
+ *
+ * Newest by `effectiveOn`, with `lotSeq` breaking the tie - two changes on one
+ * day are ordered by the sequence that recorded them, which is the same rule
+ * the spec's `orderBy` uses. Computed here rather than by asking the repository
+ * for one row, because the caller already holds every entry for the page.
+ */
+function latestChange(
+  history: readonly ScopedRow<'StockLotStatusChange'>[]
+): ScopedRow<'StockLotStatusChange'> | undefined {
+  let newest: ScopedRow<'StockLotStatusChange'> | undefined;
+  for (const change of history) {
+    if (
+      newest === undefined ||
+      change.effectiveOn > newest.effectiveOn ||
+      (change.effectiveOn.getTime() === newest.effectiveOn.getTime() &&
+        change.lotSeq > newest.lotSeq)
+    ) {
+      newest = change;
+    }
+  }
+  return newest;
+}
+
 /** One lot's whole ledger at one site, oldest first. */
 function ledgerOfLot(
   c: Context<AppEnv>,
@@ -402,6 +439,20 @@ async function writeAct(
         kind: line.kind,
         quantity: line.quantity,
       })),
+      // The status changes are named for the same reason the movements are, and
+      // it matters more here: a recall writes no movement at all, so without
+      // this the audit trail would record that a posting happened and not which
+      // cartons it took out of use. The reason is not repeated - it is on the
+      // posting and on every row this wrote.
+      ...(input.statusChanges === undefined
+        ? {}
+        : {
+            statusChanges: input.statusChanges.map((change) => ({
+              id: change.id,
+              lotId: change.lotId,
+              status: change.status,
+            })),
+          }),
     },
   });
 
@@ -612,17 +663,49 @@ export function inventoryRoutes(): Hono<AppEnv> {
     } satisfies z.infer<typeof itemStockDtoSchema>);
   });
 
+  /**
+   * The cartons at one site, each carrying the status in force on the day asked
+   * about.
+   *
+   * The status is resolved per lot from the recorded history rather than read
+   * off the column, so a question about the first of the month is answered with
+   * the state on the first. The history is fetched for the page rather than for
+   * the site: a page of fifty lots costs one extra query whatever the stockroom
+   * holds.
+   */
   router.get('/inventory/lots', requirePermission('inventory.read'), async (c) => {
     const query = parseQuery(c, stockLotListQuerySchema);
     assertFacilityAccess(policyOf(c), query.facilityId);
 
+    // Refused rather than resolved either way. `status` is a column predicate
+    // the database applies before paging, and the status this route reports is
+    // resolved afterwards from the history - so the pair pages one question and
+    // answers another. They agree for every lot whose status has not changed,
+    // which is most of them, which is exactly why a silent mismatch would go
+    // unnoticed until it mattered.
+    if (query.status !== undefined && query.asOf !== undefined) {
+      throw ApiError.validation('Ask for a status filter or an as-of date, not both.', [
+        { path: 'asOf', message: 'cannot be combined with status' },
+      ]);
+    }
+
+    const asOf = await resolveAsOf(c, query.facilityId, query.asOf);
     const page = await repositories(c).stockLots.list(
       toStockLotListQuery(
         query,
         query.expiringBefore === undefined ? undefined : fromIsoDate(query.expiringBefore)
       )
     );
-    return c.json(toListResponse(page, toStockLotDto));
+    const history = await statusHistoryByLot(
+      c,
+      page.rows.map((row) => row.id)
+    );
+
+    return c.json(
+      toListResponse(page, (row) =>
+        toStockLotDto(row, statusOf(toLot(row, history.get(row.id) ?? []), asOf))
+      )
+    );
   });
 
   /**
@@ -1111,6 +1194,125 @@ export function inventoryRoutes(): Hono<AppEnv> {
     return c.json({ posting, variances, agreed } satisfies CountResult, 201);
   });
 
+  /**
+   * A recall, a quarantine, a retirement, or a release back into use.
+   *
+   * The one posting that moves no stock. The cartons stay where they are and
+   * stop being drawable, so the ledger is untouched and the lot's status
+   * history gains an entry - which is what makes a back-dated report reproduce
+   * what could actually have been drawn on the day.
+   *
+   * `inventory.write`, with one exception below. Quarantining is the act of
+   * whoever notices the problem: a nurse holding a tray of cloudy vials should
+   * not have to fetch an administrator on the first shift, which is the same
+   * argument that keeps deliberate wastage out of `inventory.adjust`.
+   */
+  router.post('/inventory/status-changes', requirePermission('inventory.write'), async (c) => {
+    const body = await parseJsonBody(c, statusChangeSchema);
+
+    // The exception, and the only asymmetric permission in this file. Putting a
+    // hold on stock and taking one off are not the same act: the first refuses
+    // stock nobody has proved is bad, and the second hands out stock somebody
+    // thought was. Only the second can reach a patient, so only the second is
+    // the privileged grant.
+    if (body.status === 'AVAILABLE') await assertPermission(c, 'inventory.adjust');
+
+    beginWrite(c, body.facilityId);
+    const actorId = attributedTo(c);
+    const repos = repositories(c);
+
+    // Today where the stock physically is, for the same reason every computed
+    // read resolves it that way: a clinic in Los Angeles at five in the
+    // afternoon is already tomorrow in UTC, and a recall entered then would be
+    // refused as future-dated.
+    const today = await resolveAsOf(c, body.facilityId, undefined);
+    if (body.occurredOn > today) {
+      // Refused so that `StockLot.status` can be maintained at all. The column
+      // is what the lot list narrows on, and it is written to the status this
+      // posting records - which is only correct if that status is in force the
+      // moment it lands. A change dated for next week would leave the column
+      // asserting something that has not happened, with nothing scheduled to
+      // come back and fix it on the day.
+      throw ApiError.validation('A status change cannot be dated in the future.', [
+        { path: 'occurredOn', message: `later than ${today} at that site` },
+      ]);
+    }
+
+    const lots: LotRow[] = [];
+    for (const [index, lotId] of body.lotIds.entries()) {
+      const lot = required(await repos.stockLots.findById(lotId), NO_LOT);
+      // A lot at another site is a 422 rather than a 404: it exists and the
+      // caller may well be able to see it, and filing its change under this
+      // posting would attribute the act to a stockroom that never held it. The
+      // path names the line so a notice covering eleven lots says which one.
+      if (lot.facilityId !== body.facilityId) {
+        throw ApiError.validation('That lot is held at another site.', [
+          { path: `lotIds.${String(index)}`, message: 'not at this facility' },
+        ]);
+      }
+      lots.push(lot);
+    }
+
+    const effectiveOn = fromIsoDate(body.occurredOn);
+    const recorded = await statusHistoryByLot(c, body.lotIds);
+    const changes: (StockLotStatusChangeCreateInput & { id: string })[] = [];
+    const changed: StatusChangeResult['lots'] = [];
+
+    for (const [index, lot] of lots.entries()) {
+      const history = recorded.get(lot.id) ?? [];
+      const latest = latestChange(history);
+
+      // The history is append-only and the lot's status column is written from
+      // the newest entry, so an entry inserted behind a later one would leave
+      // the column asserting a state the history no longer supports - and the
+      // append-only table offers no way to put it back. Practically it is also
+      // a nonsense: a notice arriving after a retirement does not un-retire the
+      // carton, and one dated before the delivery cannot describe stock that
+      // was not here yet.
+      if (latest !== undefined && toIsoDate(latest.effectiveOn) > body.occurredOn) {
+        throw ApiError.validation('That lot has a later status change already recorded.', [
+          {
+            path: `lotIds.${String(index)}`,
+            message: `not before ${toIsoDate(latest.effectiveOn)}`,
+          },
+        ]);
+      }
+
+      changes.push({
+        id: uuidv7(),
+        lotId: lot.id,
+        status: body.status,
+        effectiveOn,
+        lotSeq: (latest?.lotSeq ?? 0) + 1,
+        reason: body.reason,
+        actorId,
+      });
+      changed.push({
+        lotId: lot.id,
+        lotNumber: lot.lotNumber,
+        // The state this change replaced, resolved from the history as it stood
+        // rather than read off the column. They agree today; they would not for
+        // a change dated back to a day an earlier entry still covered.
+        from: statusOf(toLot(lot, history), body.occurredOn),
+        to: body.status,
+        effectiveOn: body.occurredOn,
+      });
+    }
+
+    const posting = await writeAct(c, {
+      kind: 'STATUS_CHANGE',
+      facilityId: body.facilityId,
+      occurredOn: effectiveOn,
+      postedById: actorId,
+      ...(body.reference === undefined ? {} : { reference: body.reference }),
+      ...(body.note === undefined ? {} : { note: body.note }),
+      statusChanges: changes,
+      lines: [],
+    });
+
+    return c.json({ posting, lots: changed } satisfies StatusChangeResult, 201);
+  });
+
   // Last, and deliberately: `/inventory/items/:id` would otherwise swallow
   // `/inventory/items/:id/stock`, and the failure would be a wrong-handler 200.
   for (const module of crudModules()) {
@@ -1192,7 +1394,7 @@ export function inventoryRouteContracts(): RouteContract[] {
       operationId: 'listStockLots',
       summary: 'List the cartons at one site.',
       description:
-        '`facilityId` is required rather than optional. A spec’s facility column is an audit stamp and narrows nothing, so naming the site is what lets this route ask `assertFacilityAccess` - and without it a principal holding no grant could list another site’s lots by guessing its id.',
+        '`facilityId` is required rather than optional. A spec’s facility column is an audit stamp and narrows nothing, so naming the site is what lets this route ask `assertFacilityAccess` - and without it a principal holding no grant could list another site’s lots by guessing its id.\n\n`status` on each lot is the status in force on `asOf`, resolved from the recorded history rather than read off the column, so a question about the first of the month is answered with the state on the first. `asOf` defaults to today at the site. The `status` *filter* narrows on the column the database can index, which is the status now, so the two cannot be combined: the pair would page one question and answer another.',
       tags: ['inventory'],
       permission: 'inventory.read',
       query: stockLotListQuerySchema,
@@ -1316,6 +1518,25 @@ export function inventoryRouteContracts(): RouteContract[] {
           status: 201,
           description: 'The posting, the variances it wrote, and the lines that agreed.',
           schema: countResultSchema,
+        },
+        ...WRITE_ERRORS,
+      ],
+    },
+    {
+      method: 'post',
+      path: '/bff/v0/inventory/status-changes',
+      operationId: 'changeLotStatus',
+      summary: 'Recall, quarantine, retire, or release lots.',
+      description:
+        'The one posting that writes no movement: the cartons stay on the shelf and stop being drawable, so the ledger is untouched and each lot gains a status-history entry. `inventory.write` covers putting a hold on stock, because the person who notices the problem should not have to fetch an administrator; releasing back to `AVAILABLE` additionally requires `inventory.adjust`, because only that direction can reach a patient. A change cannot be dated in the future, nor before a change already recorded against the same lot.',
+      tags: ['inventory'],
+      permission: 'inventory.write',
+      body: statusChangeSchema,
+      responses: [
+        {
+          status: 201,
+          description: 'The posting, and what each lot moved from and to.',
+          schema: statusChangeResultSchema,
         },
         ...WRITE_ERRORS,
       ],

@@ -9,6 +9,7 @@ import {
   paginate,
   type BaseQuery,
   type ChildBatch,
+  type ChildPatch,
   type Collection,
   type CollectionSpec,
   type Page,
@@ -229,10 +230,24 @@ export function createMemoryCollection<
         createdAt: now,
         updatedAt: now,
       } as ScopedRow<M>;
-      table().push(row);
 
+      // Every amendment's target is resolved before anything is written, which
+      // is what makes a refused patch leave nothing behind. There is no
+      // transaction to roll back here: rows are pushed into arrays, so an
+      // amendment that threw after the parent was pushed would leave the parent
+      // written and Postgres would have rolled it back. Resolving first is the
+      // cheapest way to make both implementations refuse identically.
+      const patches = (spec.childPatches?.(input, row, context) ?? []).map((patch) => ({
+        target: findInScope(dataset, patch, tenantId),
+        data: patch.data,
+      }));
+
+      table().push(row);
       for (const batch of spec.childRows?.(input, row, context) ?? []) {
         appendChildren(dataset, batch, tenantId, now);
+      }
+      for (const { target, data } of patches) {
+        Object.assign(target, data, { updatedAt: now });
       }
 
       await recordWrite(row, null, Object.keys(columns));
@@ -252,6 +267,33 @@ export function createMemoryCollection<
       return row;
     },
   };
+}
+
+/**
+ * The row an amendment names, or a refusal.
+ *
+ * The tenant check is the whole point. Postgres refuses a cross-tenant id
+ * through RLS and never sees the row; here nothing narrows the array, so a
+ * missing check would let a posting in one organisation amend a lot in another
+ * - and every HTTP test in this repository runs against this implementation, so
+ * it would be a hole no test could find.
+ *
+ * A refusal is a 500, not a 404: the id came from a spec that had already read
+ * the row in this same request, so it not being there is a bug in this process
+ * rather than something a client did.
+ */
+function findInScope(
+  dataset: MemoryDataset,
+  patch: ChildPatch,
+  tenantId: string
+): ScopedRow<PrismaModelName> {
+  const found = dataset
+    .table(patch.model)
+    .find((row) => row.id === patch.id && row.tenantId === tenantId);
+  if (found === undefined) {
+    throw new Error(`No ${patch.model} ${patch.id} in this tenant to amend.`);
+  }
+  return found;
 }
 
 /** Appends child rows, stamping the columns storage owns. */

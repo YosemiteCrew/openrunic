@@ -33,6 +33,7 @@ import {
   encounterResource,
   immunizationResource,
   locationResource,
+  organizationResource,
   medicationRequestResource,
   medicationStatementResource,
   observationResource,
@@ -464,6 +465,47 @@ const practitionerRoleModule = defineFhirResource({
   },
 });
 
+/**
+ * The practice itself.
+ *
+ * One row, always the caller's own, because `Organisation` *is* the tenant: its
+ * id is what every other row's `tenantId` points at. A search returns a page of
+ * one and a read of any other id is a 404, which is the truthful answer rather
+ * than a permission error - another practice's record does not exist as far as
+ * this caller is concerned. `organisation-query.ts` carries why that narrowing
+ * is hand-written rather than a spec.
+ *
+ * It is served because four resources already emit references to it -
+ * `Location.managingOrganization`, `PractitionerRole.organization`,
+ * `Coverage.payor` and `Claim.provider` - and a reference that 404s is worse
+ * than no reference: a client cannot tell "this pointer is broken" from "you
+ * are not allowed to follow it".
+ *
+ * `address` and `identifier` are must-support and absent, because the columns
+ * are: the practice's postal address and NPI live on `Facility`, which is what
+ * `Location` serves. Inventing one from the first facility would be a fact the
+ * record never stated, and a practice may have several sites. The gap is
+ * written down in `fhir.must-support.test.ts` the way `Location`'s is.
+ */
+const organizationModule = defineFhirResource({
+  type: 'Organization',
+  interactions: ['read', 'search-type'],
+  params: ['name'],
+  // `facility.read`, the same permission `Location` needs. Reading which
+  // practice this is, is the same question as reading its sites.
+  permission: 'facility.read',
+  collection: (repositories) => repositories.organisations,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    // Paging is accepted and ignored: the result is one row or none, so there
+    // is no second page to ask for and no ordering to choose between.
+    ...pageOf(paging),
+    ...(query.name === undefined ? {} : { name: query.name }),
+    sort: 'name' as const,
+    order: 'asc' as const,
+  }),
+  toResource: organizationResource,
+});
+
 const locationModule = defineFhirResource({
   type: 'Location',
   interactions: ['read', 'search-type'],
@@ -766,17 +808,6 @@ const taskModule = defineFhirResource({
 });
 
 /**
- * The mounted resources, in the order the CapabilityStatement lists them.
- *
- * Claim and Organization are deliberately absent. A Claim resource without its
- * lines misrepresents what was billed, and resolving lines per row across a
- * search is a query shape this boundary does not yet support; an Organization
- * would have to be either the tenant itself, which is not addressable through a
- * tenant-scoped client, or a payer, whose directory is not part of this
- * workstream. Serving either half-formed would be worse than not serving it,
- * and the CapabilityStatement says so by not listing them.
- */
-/**
  * `target` accepts any resource type, unlike every other reference parameter
  * here.
  *
@@ -896,10 +927,18 @@ const claimModule = defineFhirResource({
     claimResource(
       row,
       context.prepared.linesByClaim.get(row.id) ?? [],
-      // Falls back to the tenant when the encounter is unreadable in this
-      // scope. A claim naming no biller at all would fail validation at the
-      // clearinghouse, and the organisation is the truthful answer: the
-      // practice billed it.
+      // Falls back to the tenant id when the encounter is unreadable in this
+      // scope, because a claim naming no biller at all would fail validation at
+      // the clearinghouse.
+      //
+      // This comment used to say the organisation is the truthful answer. The
+      // id is; the reference is not. `toFhirClaim` emits `provider` as
+      // `Practitioner/{id}` unconditionally, so the fallback ships a
+      // Practitioner reference to an id that is an Organization. Serving
+      // Organization does not fix that - it makes the reference resolvable at
+      // the wrong type, which is arguably worse than the 404 it used to be.
+      // Fixing it needs a discriminator on `DomainClaim` and a round-trip
+      // change in `packages/fhir`, so it is filed rather than smuggled in here.
       context.prepared.providerByEncounter.get(row.encounterId) ?? row.tenantId
     ),
 });
@@ -908,6 +947,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   patientModule,
   practitionerModule,
   practitionerRoleModule,
+  organizationModule,
   locationModule,
   coverageModule,
   appointmentModule,

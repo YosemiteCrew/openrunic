@@ -4,6 +4,7 @@ import { createAuditChainStore, type AuditChainStore } from '../audit/chain-stor
 import { ApiError } from '../errors.js';
 
 import { createMemoryAuditQuery } from './audit-query.js';
+import { createMemoryOrganisationQuery } from './organisation-query.js';
 import {
   paginate,
   type BaseQuery,
@@ -89,7 +90,8 @@ export function createMemoryRepositoryRegistry(
       return buildRepositories(
         scope,
         (spec) => createMemoryCollection(spec, dataset, scope, clock, nextId),
-        createMemoryAuditQuery(auditStore, scope)
+        createMemoryAuditQuery(auditStore, scope),
+        createMemoryOrganisationQuery(dataset, scope)
       );
     },
   };

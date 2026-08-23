@@ -4,6 +4,8 @@ import type {
   DbTransaction,
   ModelDelegate,
 } from '../repositories/db-port.js';
+import { isTenantScopedModel } from '@openrunic/database';
+
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ModelRecord, PrismaModelName } from '../repositories/rows.js';
 
@@ -177,11 +179,22 @@ export function createFakePort(options: FakePortOptions): FakePort {
 
   const table = (model: PrismaModelName): Row[] => dataset.table(model) as unknown as Row[];
 
-  /** The tenant extension's rule, reproduced: AND the caller's filter with the tenant. */
-  const scopedWhere = (where: unknown): unknown => ({ AND: [where ?? {}, { tenantId }] });
+  /**
+   * The tenant extension's rule, reproduced: AND the caller's filter with the
+   * tenant, but only for the models the extension actually scopes.
+   *
+   * `createTenantClient` returns `query(args)` untouched for anything outside
+   * `TENANT_SCOPED_MODELS`, and `Organisation` is outside it because it has no
+   * `tenantId` column - it IS the tenant. A fake that ANDed `tenantId` for
+   * every model would make every read of that table return nothing here and
+   * everything in production, which is the wrong way round for a fake whose
+   * whole job is to be stricter than the thing it stands in for.
+   */
+  const scopedWhere = (model: PrismaModelName, where: unknown): unknown =>
+    isTenantScopedModel(model) ? { AND: [where ?? {}, { tenantId }] } : (where ?? {});
 
   const select = (model: PrismaModelName, where: unknown): Row[] =>
-    table(model).filter((row) => matchesWhere(row, scopedWhere(where)));
+    table(model).filter((row) => matchesWhere(row, scopedWhere(model, where)));
 
   const delegateFor = <M extends PrismaModelName>(model: M): ModelDelegate<M> => {
     const record = (operation: string, args: unknown): void => {

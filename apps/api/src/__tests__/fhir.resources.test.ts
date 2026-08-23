@@ -1440,8 +1440,20 @@ const ANNEXE_GRANT = testId(993);
 const UNSITED_PATIENT = testId(994);
 
 /** Rows at the annexe, one per resource type that carries a facility. */
+/**
+ * The rows a site-limited caller must not reach, and Patient is not among them.
+ *
+ * Every entry here narrows on `facilityId`: the appointment happened at that
+ * site, the encounter happened there, the grant is held there. Containment.
+ *
+ * `Patient.primaryFacilityId` is attribution - the site that registered
+ * somebody - and #139 decided it is not a boundary. It hid the chart of a
+ * patient registered at one site from the clinician treating them at another,
+ * while still showing a patient registered here who has only ever been seen
+ * elsewhere. The `patients` collection carries the column and does not narrow
+ * on it; `repositories.facility-scope.test.ts` records the exemption.
+ */
 const ANNEXE_ROWS = [
-  { type: 'Patient', id: ANNEXE_PATIENT },
   { type: 'Appointment', id: ANNEXE_APPOINTMENT },
   { type: 'Encounter', id: ANNEXE_ENCOUNTER },
   { type: 'PractitionerRole', id: ANNEXE_GRANT },
@@ -1522,6 +1534,31 @@ async function bundleIds(
 }
 
 describe('the facility scope the caller arrived with', () => {
+  /**
+   * The decision in #139, asserted on the boundary that used to implement the
+   * opposite.
+   *
+   * The FHIR boundary narrowed patient reads on `primaryFacilityId` and the BFF
+   * did not, so the same caller got 404 from one and 200 from the other for the
+   * same chart. They agree now, and they agree on the answer that lets a
+   * clinician open the chart of the patient in front of them.
+   */
+  it('serves a chart registered at another site, because that is not containment', async () => {
+    const { app } = scopedHarness();
+
+    const res = await app.request(`/fhir/Patient/${ANNEXE_PATIENT}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('lists a chart registered at another site', async () => {
+    const { app } = scopedHarness();
+
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(ANNEXE_PATIENT);
+  });
+
   it.each(ANNEXE_ROWS)(
     '$type: a row at another site reads as absent, not as forbidden',
     async ({ type, id }) => {

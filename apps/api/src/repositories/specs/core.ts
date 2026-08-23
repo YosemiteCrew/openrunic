@@ -96,8 +96,36 @@ export const patientSpec: CollectionSpec<
   model: 'Patient',
   targetType: 'Patient',
   action: 'patient',
+  /**
+   * The patient's usual site, and NOT a boundary. This is #139, decided.
+   *
+   * Every other facility-scoped collection narrows on `facilityId`, which is
+   * containment: the appointment happened there, the encounter happened there,
+   * the charge was raised there. `Patient.primaryFacilityId` is attribution -
+   * the site that registered them. Patient was the only one of nine narrowing
+   * on a column that is not `facilityId`, and that uniqueness is the tell.
+   *
+   * Narrowing on it fails in both directions at once. It over-blocks, and
+   * dangerously: a patient registered at the north clinic and standing in front
+   * of a clinician at the south clinic has a chart that clinician cannot open.
+   * And it under-blocks: a patient registered south but only ever seen north is
+   * visible to south regardless. A guard that hides the wrong charts and
+   * reveals the wrong charts is not a guard, it is a mailing address being
+   * asked to do a job it was never given.
+   *
+   * The portal made it sharper still. The facility and compartment clauses are
+   * ANDed rather than alternatives, so pinning a token to one chart does not
+   * exempt it - and `Principal.facilityIds` comes from an IdP claim, so an IdP
+   * that omits `facilities` locked every portal user out of their own record.
+   *
+   * So this collection carries the column and does not narrow on it, which is
+   * the exemption `repositories.facility-scope.test.ts` provides for exactly
+   * this case: the column is the subject rather than the boundary. What
+   * confines a site-limited clinician is the sited collections - appointments,
+   * encounters, charges, grants - which is where the acts they should not see
+   * actually live.
+   */
   facilityColumn: 'primaryFacilityId',
-  facilityScoped: true,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.
   compartment: { column: 'id' },

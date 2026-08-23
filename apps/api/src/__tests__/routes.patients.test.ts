@@ -7,6 +7,8 @@ import type { ListResponse } from '../schemas/pagination.js';
 import {
   bearer,
   createTestApp,
+  DEMO_FACILITY_B,
+  makeAppointmentRow,
   jsonBearer,
   makePatientRow,
   seedPatients,
@@ -302,5 +304,80 @@ describe('audit', () => {
       transactional: true,
       event: { action: 'patient.created', actorId: '01890000-0000-7000-8000-000000000102' },
     });
+  });
+});
+
+/**
+ * The decision in #139, asserted on the surface a clinician actually uses.
+ *
+ * `Patient.primaryFacilityId` is the site that registered somebody, not the
+ * site an act happened at. Narrowing reads on it hid the chart of a patient
+ * registered at the north clinic from the clinician treating them at the south
+ * clinic - and still showed a patient registered south who has only ever been
+ * seen north. Wrong in both directions is not a boundary.
+ *
+ * These pin the answer on the BFF. `fhir.resources.test.ts` pins the same
+ * answer on the FHIR boundary, which used to implement the opposite, and the
+ * point of having both is that the two cannot drift apart again silently.
+ */
+describe('a site-limited clinician and a chart registered somewhere else', () => {
+  const ELSEWHERE = testId(4242);
+
+  function seedElsewhere(dataset: ReturnType<typeof createTestApp>['dataset']): void {
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({
+        id: ELSEWHERE,
+        mrn: 'OR-100990',
+        familyName: 'Annexeson',
+        primaryFacilityId: DEMO_FACILITY_B,
+      })
+    );
+  }
+
+  it('opens the chart of the patient in front of them', async () => {
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+
+    const res = await app.request(`/bff/v0/patients/${ELSEWHERE}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('finds them in the list, because knowing a patient exists is practice-wide', async () => {
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+
+    const res = await app.request('/bff/v0/patients?pageSize=50', {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+    const body = (await res.json()) as ListResponse<PatientDto>;
+
+    expect(body.data.map((item) => item.id)).toContain(ELSEWHERE);
+  });
+
+  /**
+   * And what does still confine them. The sited collections narrow on
+   * `facilityId` - where the act happened - which is where the things a
+   * site-limited clinician should not see actually live.
+   */
+  it('still cannot see an appointment at the other site', async () => {
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(4243), patientId: ELSEWHERE, facilityId: DEMO_FACILITY_B })
+    );
+
+    const res = await app.request('/bff/v0/appointments?pageSize=50', {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+    const body = (await res.json()) as ListResponse<{ id: string }>;
+
+    expect(body.data.map((item) => item.id)).not.toContain(testId(4243));
   });
 });

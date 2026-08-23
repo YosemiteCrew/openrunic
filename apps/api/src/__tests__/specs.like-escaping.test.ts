@@ -69,6 +69,13 @@ const CASES: readonly Case[] = [
     prefix: true,
   },
   {
+    name: 'patients given',
+    spec: coreSpecs.patients as never,
+    query: (q) => ({ ...BASE, sort: 'familyName', given: q }),
+    row: (value) => ({ givenName: value, familyName: null, preferredName: null, mrn: null }),
+    prefix: true,
+  },
+  {
     name: 'users q',
     spec: platformSpecs.users as never,
     query: (q) => ({ ...BASE, sort: 'familyName', q }),

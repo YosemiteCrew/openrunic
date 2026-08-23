@@ -276,7 +276,12 @@ export function matchesIfSet<T>(expected: T | undefined, test: (value: T) => boo
  * character and Prisma emits no `ESCAPE` clause, so it is the one that applies.
  */
 export function escapeLike(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+  // The backslash goes first, or escaping the other two would double-escape
+  // the backslashes this adds.
+  return value
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('%', String.raw`\%`)
+    .replaceAll('_', String.raw`\_`);
 }
 
 /** A case-insensitive substring filter over a literal needle. */

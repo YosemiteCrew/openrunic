@@ -198,6 +198,16 @@ export function createMemoryCollection<
       return Promise.resolve(row);
     },
 
+    findByIds(ids: readonly string[]): Promise<ScopedRow<M>[]> {
+      if (ids.length === 0) return Promise.resolve([]);
+      // `mine` is the same narrowing `findById` reads through, so a row this
+      // scope cannot see is already gone before the id set is consulted.
+      const wanted = new Set(ids);
+      const rows = mine(hideAddressed).filter((candidate) => wanted.has(candidate.id));
+      rows.forEach(recordRead);
+      return Promise.resolve(rows);
+    },
+
     async create(input: TCreate): Promise<ScopedRow<M>> {
       const unique = spec.uniqueBy;
       if (unique !== undefined && mine(false).some((row) => unique.matches(row, input))) {

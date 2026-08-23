@@ -33,6 +33,7 @@ type ErasedSpec = CollectionSpec<PrismaModelName, unknown, unknown, BaseQuery>;
 interface ErasedCollection {
   list(query: BaseQuery): Promise<{ rows: unknown[]; total: number }>;
   findById(id: string): Promise<unknown>;
+  findByIds(ids: readonly string[]): Promise<unknown[]>;
   update(id: string, patch: unknown): Promise<unknown>;
 }
 
@@ -120,6 +121,60 @@ export function runIsolationContract(subject: () => IsolationSubject): void {
         await expect(collectionOf(repositories, key).findById(testId(1))).resolves.toMatchObject({
           id: testId(1),
         });
+      });
+
+      /**
+       * The set read has to narrow exactly as the single read does. A batched
+       * query is the classic place for a scope check to be skipped, because the
+       * filter that used to name one row now names many and it is easy to build
+       * the second without the first's guards.
+       *
+       * So these are the same three questions the single-id path is asked
+       * above, put to `findByIds` with the same fixtures.
+       */
+      it("does not reach another organisation's row by id set", async () => {
+        const { dataset, registry } = subject();
+        dataset.table(model).push(bareRow(model, testId(1), DEMO_TENANT_B));
+
+        const repositories = scopedRepositories(registry, DEMO_TENANT_A);
+
+        await expect(collectionOf(repositories, key).findByIds([testId(1)])).resolves.toEqual([]);
+      });
+
+      it('reaches its own row by id set, and agrees with the single read', async () => {
+        const { dataset, registry } = subject();
+        dataset.table(model).push(bareRow(model, testId(1), DEMO_TENANT_A));
+
+        const repositories = scopedRepositories(registry, DEMO_TENANT_A);
+        const one = await collectionOf(repositories, key).findById(testId(1));
+        const many = await collectionOf(repositories, key).findByIds([testId(1)]);
+
+        expect(many).toHaveLength(1);
+        expect(many[0]).toEqual(one);
+      });
+
+      it('mixes its own and another organisation, and returns only its own', async () => {
+        const { dataset, registry } = subject();
+        dataset.table(model).push(bareRow(model, testId(1), DEMO_TENANT_A));
+        dataset.table(model).push(bareRow(model, testId(2), DEMO_TENANT_B));
+
+        const repositories = scopedRepositories(registry, DEMO_TENANT_A);
+
+        // The interesting shape: one id the caller may see and one it may not,
+        // in a single call. A set read that ANDed the tenant only when the set
+        // was homogeneous would pass every test above and fail this one.
+        await expect(
+          collectionOf(repositories, key).findByIds([testId(1), testId(2)])
+        ).resolves.toMatchObject([{ id: testId(1) }]);
+      });
+
+      it('asks nothing at all for an empty id set', async () => {
+        const { dataset, registry } = subject();
+        dataset.table(model).push(bareRow(model, testId(1), DEMO_TENANT_A));
+
+        const repositories = scopedRepositories(registry, DEMO_TENANT_A);
+
+        await expect(collectionOf(repositories, key).findByIds([])).resolves.toEqual([]);
       });
     }
   );

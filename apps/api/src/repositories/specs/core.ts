@@ -46,7 +46,7 @@ export interface PatientListQuery extends BaseQuery {
   sexAtBirth?: AdministrativeGender;
   family?: string;
   given?: string;
-  /** Exact date of birth, midnight UTC. */
+  /** Date of birth; selects any birth recorded on this UTC day. */
   birthDate?: Date;
   active?: boolean;
   facilityId?: string;
@@ -59,6 +59,11 @@ function sameUtcDay(left: Date, right: Date): boolean {
     left.getUTCMonth() === right.getUTCMonth() &&
     left.getUTCDate() === right.getUTCDate()
   );
+}
+
+function utcDayWindow(day: Date): { gte: Date; lt: Date } {
+  const start = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()));
+  return { gte: start, lt: new Date(start.getTime() + 86_400_000) };
 }
 
 export const patientSpec: CollectionSpec<
@@ -144,7 +149,9 @@ export const patientSpec: CollectionSpec<
       ...(query.given === undefined ? {} : { givenName: likeStartsWith(query.given) }),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.facilityId === undefined ? {} : { primaryFacilityId: query.facilityId }),
-      ...(query.birthDate === undefined ? {} : { birthDate: query.birthDate }),
+      // The range must equal the sameUtcDay window matches uses, so the two
+      // ports select the same rows even for a non-midnight birthDate instant.
+      ...(query.birthDate === undefined ? {} : { birthDate: utcDayWindow(query.birthDate) }),
       ...(query.q === undefined
         ? {}
         : {

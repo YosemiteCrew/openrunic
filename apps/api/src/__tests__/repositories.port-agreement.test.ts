@@ -699,6 +699,27 @@ describe('every spec answers the same question through both ports', () => {
     expect(Object.keys(FILTERS)).toHaveLength(SPECS.length);
   });
 
+  it('agrees on a birthDate recorded at a non-midnight instant on the queried UTC day', () => {
+    // satisfy() only ever builds midnight instants - it reads the gte bound off
+    // the window - so the generic pass above cannot reach a row whose birthDate
+    // falls later in the same UTC day. This case pins that row directly: it is
+    // red on exact-equality where (memory=true, prisma=false) and green once
+    // where emits the same UTC-day window matches already tests.
+    const spec = COLLECTION_SPECS.patients as unknown as Loose;
+    const query = {
+      page: 1,
+      pageSize: 25,
+      sort: 'familyName',
+      order: 'asc',
+      birthDate: new Date('2026-08-01T00:00:00.000Z'),
+    };
+    const row = { birthDate: new Date('2026-08-01T13:00:00.000Z') };
+    const where = spec.where(query as never);
+
+    expect(spec.matches(row as never, query as never)).toBe(matchesWhere(row, where));
+    expect(matchesWhere(row, where)).toBe(true);
+  });
+
   describe.each(SPECS)('%s', (key, spec) => {
     const query = FILTERS[key] as never;
 

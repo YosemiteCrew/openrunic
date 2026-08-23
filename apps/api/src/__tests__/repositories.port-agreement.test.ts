@@ -807,3 +807,56 @@ describe('every spec answers the same question through both ports', () => {
     });
   });
 });
+
+/**
+ * The one divergence the walk above cannot see.
+ *
+ * It synthesises its row from the emitted `where`, so for a date filter it
+ * builds exactly the instant the filter asks for - and an exact-equality
+ * `where` and a same-day `matches` both accept that. Catching the difference
+ * needs a row whose birthDate carries a time, which nothing in the tree
+ * constructs, because `@db.Date` and both parsers conspire to make midnight the
+ * only value that ever arrives.
+ *
+ * That conspiracy is the point. It holds today across three files that never
+ * change together, and this is what notices when one of them moves.
+ */
+describe('the patient birth-date filter states one rule, not two', () => {
+  const query = {
+    page: 1,
+    pageSize: 25,
+    sort: 'familyName',
+    order: 'asc',
+    birthDate: new Date('1985-03-14T00:00:00.000Z'),
+  } as const;
+
+  const born = (iso: string): Record<string, unknown> => ({ birthDate: new Date(iso) });
+
+  it('accepts any instant on the day, through both ports', () => {
+    const where = COLLECTION_SPECS.patients.where(query);
+
+    for (const iso of [
+      '1985-03-14T00:00:00.000Z',
+      '1985-03-14T09:30:00.000Z',
+      '1985-03-14T23:59:59.999Z',
+    ]) {
+      const row = born(iso);
+      const memory = COLLECTION_SPECS.patients.matches(row as never, query);
+      const prisma = matchesWhere(row, where);
+      expect(memory, `memory accepts ${iso}`).toBe(true);
+      expect(prisma, `Prisma accepts ${iso}`).toBe(true);
+    }
+  });
+
+  it('rejects the instants either side of it, through both ports', () => {
+    const where = COLLECTION_SPECS.patients.where(query);
+
+    for (const iso of ['1985-03-13T23:59:59.999Z', '1985-03-15T00:00:00.000Z']) {
+      const row = born(iso);
+      expect(COLLECTION_SPECS.patients.matches(row as never, query), `memory rejects ${iso}`).toBe(
+        false
+      );
+      expect(matchesWhere(row, where), `Prisma rejects ${iso}`).toBe(false);
+    }
+  });
+});

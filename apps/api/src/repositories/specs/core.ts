@@ -61,6 +61,29 @@ function sameUtcDay(left: Date, right: Date): boolean {
   );
 }
 
+/**
+ * The same rule as `sameUtcDay`, as a half-open range Prisma can filter with.
+ *
+ * `where` used to emit exact instant equality here while `matches` compared the
+ * UTC day, which are two different rules for one filter. They agreed only
+ * because three unrelated facts held at once: `birthDate` is `@db.Date` so
+ * Postgres stores no time, and both entry points parse a bare `YYYY-MM-DD` and
+ * append midnight UTC. Any one of those changing - a column type, or accepting
+ * an ISO instant the way the window parameters already do - would have split
+ * the two ports silently.
+ *
+ * A range says what `matches` says, so the agreement no longer rests on
+ * arithmetic happening to coincide in three files nobody reads together.
+ */
+function utcDayRange(day: Date): { gte: Date; lt: Date } {
+  const start = new Date(
+    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 0, 0, 0, 0)
+  );
+  const next = new Date(start.getTime());
+  next.setUTCDate(next.getUTCDate() + 1);
+  return { gte: start, lt: next };
+}
+
 export const patientSpec: CollectionSpec<
   'Patient',
   PatientCreateInput,
@@ -144,7 +167,7 @@ export const patientSpec: CollectionSpec<
       ...(query.given === undefined ? {} : { givenName: likeStartsWith(query.given) }),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.facilityId === undefined ? {} : { primaryFacilityId: query.facilityId }),
-      ...(query.birthDate === undefined ? {} : { birthDate: query.birthDate }),
+      ...(query.birthDate === undefined ? {} : { birthDate: utcDayRange(query.birthDate) }),
       ...(query.q === undefined
         ? {}
         : {

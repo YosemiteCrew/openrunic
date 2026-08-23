@@ -1,3 +1,5 @@
+import { SUPPORTED_LOCALES } from '@openrunic/i18n';
+
 /**
  * Which URLs a stranger may reach, and where a signed-in clinician belongs.
  *
@@ -58,13 +60,38 @@ export const SESSION_FETCH_MARKER = 'same-origin';
  */
 export const SIGNED_IN_HOME = '/schedule';
 
-/** The `(marketing)` route group, which is public by design. */
-const MARKETING_PATHS: readonly string[] = [
+/**
+ * The public pages, as they were addressed before they carried a language.
+ *
+ * These four are the only routes a stranger is meant to reach. They are also
+ * the addresses that still arrive from bookmarks, links and anything written
+ * down before the change, which is why the list survives: `proxy.ts` matches it
+ * to send those readers on to the same page in their own language.
+ */
+export const UNPREFIXED_MARKETING_PATHS: readonly string[] = [
   '/',
   '/for/developers',
   '/for/hospitals',
   '/for/patients',
 ];
+
+/** The same page under a language segment: `/` becomes `/es`, not `/es/`. */
+export function localisedPath(pathname: string, locale: string): string {
+  return pathname === '/' ? `/${locale}` : `/${locale}${pathname}`;
+}
+
+/**
+ * Every address the public pages actually answer on.
+ *
+ * Still exact matches, and still a set rather than a pattern - the reasoning at
+ * the top of this file has not changed, and a `startsWith('/en')` rule here
+ * would be one typo away from publishing an area of the chart. It is built from
+ * the supported languages rather than typed out so that adding a language stays
+ * a catalogue file and one line, which it would not be if this were a literal.
+ */
+const MARKETING_PATHS: readonly string[] = SUPPORTED_LOCALES.flatMap((locale) =>
+  UNPREFIXED_MARKETING_PATHS.map((path) => localisedPath(path, locale))
+);
 
 const PUBLIC_PATHS: ReadonlySet<string> = new Set([...MARKETING_PATHS, SIGN_IN_PATH, SESSION_PATH]);
 

@@ -12,11 +12,40 @@ import {
 } from '@/lib/auth/routes';
 
 describe('which pages a stranger may reach', () => {
-  it('lets anyone read the marketing pages', () => {
-    expect(isPublicPath('/')).toBe(true);
-    expect(isPublicPath('/for/developers')).toBe(true);
-    expect(isPublicPath('/for/hospitals')).toBe(true);
-    expect(isPublicPath('/for/patients')).toBe(true);
+  it('lets anyone read the marketing pages, in every language they exist in', () => {
+    for (const locale of ['en', 'es']) {
+      expect(isPublicPath(`/${locale}`)).toBe(true);
+      expect(isPublicPath(`/${locale}/for/developers`)).toBe(true);
+      expect(isPublicPath(`/${locale}/for/hospitals`)).toBe(true);
+      expect(isPublicPath(`/${locale}/for/patients`)).toBe(true);
+    }
+  });
+
+  /**
+   * The addresses the public pages used to have are no longer routes: they are
+   * redirected to a language by the proxy. They must not be public HERE, or the
+   * set would be answering for URLs that do not exist, and the next person to
+   * read it would take the list for the truth about what is served.
+   */
+  it('does not treat the unprefixed addresses as pages in their own right', () => {
+    expect(isPublicPath('/')).toBe(false);
+    expect(isPublicPath('/for/developers')).toBe(false);
+  });
+
+  /**
+   * The property that made this a list rather than a pattern, restated now that
+   * it is built rather than typed: a language segment must not open anything
+   * behind it.
+   */
+  it('does not publish a clinical route by putting a language in front of it', () => {
+    expect(isPublicPath('/en/patients')).toBe(false);
+    expect(isPublicPath('/es/admin/users')).toBe(false);
+    expect(isPublicPath('/en/for/developers/../../patients')).toBe(false);
+  });
+
+  it('refuses a language this build carries no catalogue for', () => {
+    expect(isPublicPath('/fr')).toBe(false);
+    expect(isPublicPath('/fr/for/hospitals')).toBe(false);
   });
 
   it('lets anyone reach the sign-in screen and the session endpoint', () => {

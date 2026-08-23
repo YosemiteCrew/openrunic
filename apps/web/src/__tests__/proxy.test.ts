@@ -50,6 +50,11 @@ async function request(path: string, cookie?: SessionRecord | string): Promise<N
   });
 }
 
+/** An anonymous request carrying whatever headers the case is about. */
+function anonymous(path: string, headers: Record<string, string>): NextRequest {
+  return new NextRequest(`http://localhost:3000${path}`, { headers });
+}
+
 function live(): SessionRecord {
   return startSessionRecord('dev-clinician-a', CLINICIAN, NOON);
 }
@@ -94,9 +99,42 @@ describe('an anonymous browser', () => {
   });
 
   it('still reads the marketing pages and the sign-in screen', async () => {
-    for (const path of ['/', '/for/developers', '/for/hospitals', '/for/patients', '/sign-in']) {
+    for (const path of ['/en', '/en/for/developers', '/es/for/hospitals', '/sign-in']) {
       expect((await proxy(await request(path))).headers.get('location')).toBeNull();
     }
+  });
+
+  /**
+   * The addresses the public pages used to have. They still arrive - from
+   * bookmarks, from links, from anything written down before the pages started
+   * carrying a language - and they have to land on the same page in the reader's
+   * own language rather than 404.
+   */
+  it('sends an unprefixed public address on to the reader own language', async () => {
+    for (const [path, expected] of [
+      ['/', '/en'],
+      ['/for/developers', '/en/for/developers'],
+      ['/for/hospitals', '/en/for/hospitals'],
+      ['/for/patients', '/en/for/patients'],
+    ] as const) {
+      const response = await proxy(await request(path));
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toContain(expected);
+    }
+  });
+
+  it("honours the reader's own choice over the browser's when it redirects", async () => {
+    const spanish = anonymous('/', { 'accept-language': 'en', cookie: 'or_locale=es' });
+
+    expect((await proxy(spanish)).headers.get('location')).toContain('/es');
+  });
+
+  it('redirects rather than caching, because the answer can change', async () => {
+    // 307 and not 308: the destination depends on a cookie the reader can
+    // change, and a permanent redirect is cached against a URL with no fixed
+    // answer. Somebody switching to Spanish would keep landing on English.
+    expect((await proxy(await request('/'))).status).toBe(307);
   });
 
   it('can still reach the endpoint that would sign it in', async () => {
@@ -198,7 +236,7 @@ describe('a deployment with no session key configured', () => {
   });
 
   it('still serves the pages that never needed a session', async () => {
-    expect((await proxy(await request('/'))).headers.get('location')).toBeNull();
+    expect((await proxy(await request('/en'))).headers.get('location')).toBeNull();
     expect((await proxy(await request('/sign-in'))).headers.get('location')).toBeNull();
   });
 });

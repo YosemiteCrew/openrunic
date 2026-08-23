@@ -16,6 +16,16 @@ export interface SiteHeaderProps {
    * page a stranger loads first.
    */
   active?: PublicRoute;
+  /**
+   * The language segment these links live under.
+   *
+   * The public pages are prerendered once per language, so their addresses
+   * carry it: the masthead on `/es` has to point at `/es/for/hospitals` and not
+   * at `/for/hospitals`, which no longer exists. Passed rather than read,
+   * because reading the URL would make the masthead a client component - the
+   * same reason `active` is a prop.
+   */
+  locale: string;
 }
 
 /**
@@ -27,11 +37,11 @@ export interface SiteHeaderProps {
  * labels fit a 375px viewport on two rows, and a row that wraps needs no
  * disclosure, no focus trap and no JavaScript.
  */
-export function SiteHeader({ active }: Readonly<SiteHeaderProps>) {
+export function SiteHeader({ active, locale }: Readonly<SiteHeaderProps>) {
   return (
     <header className="or-mk-header">
       <div className="or-mk-header__inner">
-        <Link className="or-mk-header__home" href="/" aria-label="openrunic home">
+        <Link className="or-mk-header__home" href={`/${locale}`} aria-label="openrunic home">
           <Lockup />
         </Link>
 
@@ -47,7 +57,7 @@ export function SiteHeader({ active }: Readonly<SiteHeaderProps>) {
                         ? 'or-mk-header__link or-mk-header__link--current'
                         : 'or-mk-header__link'
                     }
-                    href={item.href}
+                    href={item.href === '/' ? `/${locale}` : `/${locale}${item.href}`}
                     aria-current={current ? 'page' : undefined}
                   >
                     {item.label}

@@ -2,56 +2,62 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MOCK_ENCOUNTER_IDS } from '@/lib/api/mock/chart';
 
-import { AdminScreen } from '../admin/AdminScreen';
-import AdminPage, { metadata as adminMetadata } from '../admin/page';
-import { AuditScreen } from '../admin/audit/AuditScreen';
-import AuditPage, { metadata as auditMetadata } from '../admin/audit/page';
-import { DeveloperScreen } from '../admin/developer/DeveloperScreen';
-import DeveloperPage, { metadata as developerMetadata } from '../admin/developer/page';
-import { FacilitiesScreen } from '../admin/facilities/FacilitiesScreen';
-import FacilitiesPage, { metadata as facilitiesMetadata } from '../admin/facilities/page';
-import { FormsScreen } from '../admin/forms/FormsScreen';
-import FormsPage, { metadata as formsMetadata } from '../admin/forms/page';
-import { IntegrationsScreen } from '../admin/integrations/IntegrationsScreen';
-import IntegrationsPage, { metadata as integrationsMetadata } from '../admin/integrations/page';
-import { UsersScreen } from '../admin/users/UsersScreen';
-import UsersPage, { metadata as usersMetadata } from '../admin/users/page';
-import { BillingScreen } from '../billing/BillingScreen';
-import BillingPage, { metadata as billingMetadata } from '../billing/page';
-import { ChargesScreen } from '../billing/charges/ChargesScreen';
-import ChargesPage, { metadata as chargesMetadata } from '../billing/charges/page';
-import { ClaimsScreen } from '../billing/claims/ClaimsScreen';
-import ClaimsPage, { metadata as claimsMetadata } from '../billing/claims/page';
-import { PaymentsScreen } from '../billing/payments/PaymentsScreen';
-import PaymentsPage, { metadata as paymentsMetadata } from '../billing/payments/page';
-import { RemittanceScreen } from '../billing/remittance/RemittanceScreen';
-import RemittancePage, { metadata as remittanceMetadata } from '../billing/remittance/page';
-import { StatementsScreen } from '../billing/statements/StatementsScreen';
-import StatementsPage, { metadata as statementsMetadata } from '../billing/statements/page';
-import { EncounterNoteScreen } from '../encounters/[id]/EncounterNoteScreen';
-import EncounterPage, { generateMetadata as encounterMetadata } from '../encounters/[id]/page';
-import { InboxScreen } from '../inbox/InboxScreen';
-import InboxPage, { metadata as inboxMetadata } from '../inbox/page';
-import { OrdersScreen } from '../orders/OrdersScreen';
-import OrdersPage, { metadata as ordersMetadata } from '../orders/page';
-import { NewOrderScreen } from '../orders/new/NewOrderScreen';
-import NewOrderPage, { metadata as newOrderMetadata } from '../orders/new/page';
-import { PatientsScreen } from '../patients/PatientsScreen';
-import PatientsPage, { metadata as patientsMetadata } from '../patients/page';
-import { PatientChartScreen } from '../patients/[id]/PatientChartScreen';
-import PatientChartPage, { generateMetadata as chartMetadata } from '../patients/[id]/page';
-import { InsuranceScreen } from '../patients/[id]/insurance/InsuranceScreen';
-import InsurancePage, { metadata as insuranceMetadata } from '../patients/[id]/insurance/page';
-import { RegisterPatientScreen } from '../patients/new/RegisterPatientScreen';
-import RegisterPatientPage, { metadata as registerMetadata } from '../patients/new/page';
-import { ReportsScreen } from '../reports/ReportsScreen';
-import ReportsPage, { metadata as reportsMetadata } from '../reports/page';
-import { ResultsScreen } from '../results/ResultsScreen';
-import ResultsPage, { metadata as resultsMetadata } from '../results/page';
-import { ScheduleScreen } from '../schedule/ScheduleScreen';
-import SchedulePage, { metadata as scheduleMetadata } from '../schedule/page';
-import { FlowBoardScreen } from '../schedule/flow-board/FlowBoardScreen';
-import FlowBoardPage, { metadata as flowBoardMetadata } from '../schedule/flow-board/page';
+import { AdminScreen } from '../(app)/admin/AdminScreen';
+import AdminPage, { metadata as adminMetadata } from '../(app)/admin/page';
+import { AuditScreen } from '../(app)/admin/audit/AuditScreen';
+import AuditPage, { metadata as auditMetadata } from '../(app)/admin/audit/page';
+import { DeveloperScreen } from '../(app)/admin/developer/DeveloperScreen';
+import DeveloperPage, { metadata as developerMetadata } from '../(app)/admin/developer/page';
+import { FacilitiesScreen } from '../(app)/admin/facilities/FacilitiesScreen';
+import FacilitiesPage, { metadata as facilitiesMetadata } from '../(app)/admin/facilities/page';
+import { FormsScreen } from '../(app)/admin/forms/FormsScreen';
+import FormsPage, { metadata as formsMetadata } from '../(app)/admin/forms/page';
+import { IntegrationsScreen } from '../(app)/admin/integrations/IntegrationsScreen';
+import IntegrationsPage, {
+  metadata as integrationsMetadata,
+} from '../(app)/admin/integrations/page';
+import { UsersScreen } from '../(app)/admin/users/UsersScreen';
+import UsersPage, { metadata as usersMetadata } from '../(app)/admin/users/page';
+import { BillingScreen } from '../(app)/billing/BillingScreen';
+import BillingPage, { metadata as billingMetadata } from '../(app)/billing/page';
+import { ChargesScreen } from '../(app)/billing/charges/ChargesScreen';
+import ChargesPage, { metadata as chargesMetadata } from '../(app)/billing/charges/page';
+import { ClaimsScreen } from '../(app)/billing/claims/ClaimsScreen';
+import ClaimsPage, { metadata as claimsMetadata } from '../(app)/billing/claims/page';
+import { PaymentsScreen } from '../(app)/billing/payments/PaymentsScreen';
+import PaymentsPage, { metadata as paymentsMetadata } from '../(app)/billing/payments/page';
+import { RemittanceScreen } from '../(app)/billing/remittance/RemittanceScreen';
+import RemittancePage, { metadata as remittanceMetadata } from '../(app)/billing/remittance/page';
+import { StatementsScreen } from '../(app)/billing/statements/StatementsScreen';
+import StatementsPage, { metadata as statementsMetadata } from '../(app)/billing/statements/page';
+import { EncounterNoteScreen } from '../(app)/encounters/[id]/EncounterNoteScreen';
+import EncounterPage, {
+  generateMetadata as encounterMetadata,
+} from '../(app)/encounters/[id]/page';
+import { InboxScreen } from '../(app)/inbox/InboxScreen';
+import InboxPage, { metadata as inboxMetadata } from '../(app)/inbox/page';
+import { OrdersScreen } from '../(app)/orders/OrdersScreen';
+import OrdersPage, { metadata as ordersMetadata } from '../(app)/orders/page';
+import { NewOrderScreen } from '../(app)/orders/new/NewOrderScreen';
+import NewOrderPage, { metadata as newOrderMetadata } from '../(app)/orders/new/page';
+import { PatientsScreen } from '../(app)/patients/PatientsScreen';
+import PatientsPage, { metadata as patientsMetadata } from '../(app)/patients/page';
+import { PatientChartScreen } from '../(app)/patients/[id]/PatientChartScreen';
+import PatientChartPage, { generateMetadata as chartMetadata } from '../(app)/patients/[id]/page';
+import { InsuranceScreen } from '../(app)/patients/[id]/insurance/InsuranceScreen';
+import InsurancePage, {
+  metadata as insuranceMetadata,
+} from '../(app)/patients/[id]/insurance/page';
+import { RegisterPatientScreen } from '../(app)/patients/new/RegisterPatientScreen';
+import RegisterPatientPage, { metadata as registerMetadata } from '../(app)/patients/new/page';
+import { ReportsScreen } from '../(app)/reports/ReportsScreen';
+import ReportsPage, { metadata as reportsMetadata } from '../(app)/reports/page';
+import { ResultsScreen } from '../(app)/results/ResultsScreen';
+import ResultsPage, { metadata as resultsMetadata } from '../(app)/results/page';
+import { ScheduleScreen } from '../(app)/schedule/ScheduleScreen';
+import SchedulePage, { metadata as scheduleMetadata } from '../(app)/schedule/page';
+import { FlowBoardScreen } from '../(app)/schedule/flow-board/FlowBoardScreen';
+import FlowBoardPage, { metadata as flowBoardMetadata } from '../(app)/schedule/flow-board/page';
 
 /**
  * The route layer: what each URL is called in the browser tab, and which screen
@@ -217,8 +223,8 @@ describe('route titles that name the patient', () => {
     vi.resetModules();
     vi.stubEnv('NEXT_PUBLIC_API_MODE', 'live');
     try {
-      const chart = await import('../patients/[id]/page');
-      const encounter = await import('../encounters/[id]/page');
+      const chart = await import('../(app)/patients/[id]/page');
+      const encounter = await import('../(app)/encounters/[id]/page');
 
       await expect(
         chart.generateMetadata({ params: Promise.resolve({ id: CHART_PATIENT_ID }) })

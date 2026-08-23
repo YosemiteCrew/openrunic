@@ -21,6 +21,19 @@ export const SIGN_IN_PATH = '/sign-in';
 export const SESSION_PATH = '/session';
 
 /**
+ * The connectivity probe's target: the route handler in `app/api/health/route.ts`
+ * that answers with a bare `{status}` and nothing else.
+ *
+ * It is public because there is nothing here to protect - no PHI, no clue to the
+ * topology behind it - and because the probe has to reach it while signed out, so
+ * a browser that has lost its session still learns whether the server is up rather
+ * than being redirected to sign in. It mirrors `HEALTH_PATH` in
+ * `ConnectivityProvider`, the caller on the other end. It stays an exact match,
+ * never a prefix, for the reason written at the top of this file.
+ */
+export const HEALTH_PATH = '/api/health';
+
+/**
  * The header that says a request to {@link SESSION_PATH} came from this
  * application's own code.
  *
@@ -93,7 +106,12 @@ const MARKETING_PATHS: readonly string[] = SUPPORTED_LOCALES.flatMap((locale) =>
   UNPREFIXED_MARKETING_PATHS.map((path) => localisedPath(path, locale))
 );
 
-const PUBLIC_PATHS: ReadonlySet<string> = new Set([...MARKETING_PATHS, SIGN_IN_PATH, SESSION_PATH]);
+const PUBLIC_PATHS: ReadonlySet<string> = new Set([
+  ...MARKETING_PATHS,
+  SIGN_IN_PATH,
+  SESSION_PATH,
+  HEALTH_PATH,
+]);
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname);

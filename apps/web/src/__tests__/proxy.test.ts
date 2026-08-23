@@ -140,6 +140,10 @@ describe('an anonymous browser', () => {
   it('can still reach the endpoint that would sign it in', async () => {
     expect((await proxy(await request('/session'))).headers.get('location')).toBeNull();
   });
+
+  it('reaches the health probe instead of the sign-in form', async () => {
+    expect((await proxy(await request('/api/health'))).headers.get('location')).toBeNull();
+  });
 });
 
 describe('a cookie that has run out', () => {

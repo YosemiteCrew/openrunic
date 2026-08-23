@@ -26,6 +26,7 @@ import {
   allergyResource,
   appointmentResource,
   claimResource,
+  type ClaimBiller,
   conditionResource,
   coverageResource,
   diagnosticReportResource,
@@ -901,6 +902,23 @@ async function prepareClaims(
   return { linesByClaim, providerByEncounter };
 }
 
+/**
+ * The biller a claim names, and which kind of thing it is.
+ *
+ * Separated from the mapper so the fallback is a decision with a name rather
+ * than a `??` at the end of an argument list, and so the two branches state
+ * their own type instead of one being inferred from the other's absence.
+ */
+function billerFor(
+  row: ScopedRow<'Claim'>,
+  providerByEncounter: ReadonlyMap<string, string>
+): ClaimBiller {
+  const practitioner = providerByEncounter.get(row.encounterId);
+  return practitioner === undefined
+    ? { id: row.tenantId, type: 'Organization' }
+    : { id: practitioner, type: 'Practitioner' };
+}
+
 const claimModule = defineFhirResource({
   type: 'Claim',
   interactions: ['read', 'search-type'],
@@ -927,19 +945,16 @@ const claimModule = defineFhirResource({
     claimResource(
       row,
       context.prepared.linesByClaim.get(row.id) ?? [],
-      // Falls back to the tenant id when the encounter is unreadable in this
+      // Falls back to the practice when the encounter is unreadable in this
       // scope, because a claim naming no biller at all would fail validation at
-      // the clearinghouse.
+      // the clearinghouse. The organisation is the truthful answer: the
+      // practice billed it.
       //
-      // This comment used to say the organisation is the truthful answer. The
-      // id is; the reference is not. `toFhirClaim` emits `provider` as
-      // `Practitioner/{id}` unconditionally, so the fallback ships a
-      // Practitioner reference to an id that is an Organization. Serving
-      // Organization does not fix that - it makes the reference resolvable at
-      // the wrong type, which is arguably worse than the 404 it used to be.
-      // Fixing it needs a discriminator on `DomainClaim` and a round-trip
-      // change in `packages/fhir`, so it is filed rather than smuggled in here.
-      context.prepared.providerByEncounter.get(row.encounterId) ?? row.tenantId
+      // The type travels with the id. Emitting the fallback as
+      // `Practitioner/{id}` used to ship a reference to a practitioner that
+      // does not exist, and once Organization was served it resolved at the
+      // wrong type, which is harder to notice than the 404 it had been.
+      billerFor(row, context.prepared.providerByEncounter)
     ),
 });
 

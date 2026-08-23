@@ -7,6 +7,7 @@ import { createPrismaOrganisationQuery } from './organisation-query.js';
 import {
   type BaseQuery,
   type ChildBatch,
+  type ChildPatch,
   type Collection,
   type CollectionSpec,
   type Page,
@@ -252,6 +253,9 @@ export function createPrismaCollection<
         for (const batch of spec.childRows?.(input, row, context) ?? []) {
           await writeChildren(tx, batch);
         }
+        for (const patch of spec.childPatches?.(input, row, context) ?? []) {
+          await patchChild(tx, patch);
+        }
 
         await audit.write(writeEvent(row, null, Object.keys(columns)), tx);
         return row;
@@ -299,6 +303,32 @@ async function writeChildren(tx: DbTransaction, batch: ChildBatch): Promise<void
     await tx.model(batch.model).create({
       data: { ...omitNulls(child), tenantId: TENANT_STAMPED_BY_CLIENT },
     } as CreateArgs<PrismaModelName>);
+  }
+}
+
+/**
+ * Amends one row the parent's write depends on, inside its transaction.
+ *
+ * `updateMany` rather than `update`, so a row RLS hides is a count of zero
+ * rather than a Prisma exception about a record that, from this connection's
+ * point of view, does not exist. The zero is then refused here, which rolls the
+ * parent back: a posting whose denormalised column was never updated is exactly
+ * the half-written state this hook exists to prevent, and completing it quietly
+ * would be worse than failing.
+ *
+ * Through {@link byId} rather than the `{ id: patch.id }` shorthand, and the
+ * reason that helper exists matters more here than at any read: this is an
+ * `updateMany`, so an id that reached the layer as an object would have its keys
+ * read as filter operators and amend every row of the model rather than merely
+ * select them.
+ */
+async function patchChild(tx: DbTransaction, patch: ChildPatch): Promise<void> {
+  const result = await tx.model(patch.model).updateMany({
+    where: byId(patch.id),
+    data: patch.data,
+  });
+  if (result.count === 0) {
+    throw new Error(`No ${patch.model} ${patch.id} in this tenant to amend.`);
   }
 }
 

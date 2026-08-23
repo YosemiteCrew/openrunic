@@ -7,6 +7,8 @@ import {
   type BaseQuery,
   childBatch,
   type ChildBatch,
+  childPatch,
+  type ChildPatch,
   type CollectionSpec,
   containsFold,
   equalsIfSet,
@@ -355,6 +357,20 @@ export interface StockPostingCreateInput {
    * row and an opening movement, and they are one act.
    */
   readonly newLots?: readonly (StockLotCreateInput & { readonly id: string })[];
+  /**
+   * Status changes this posting records, one per lot at most.
+   *
+   * A recall, a quarantine, a retirement or a release. Each writes a history
+   * row and amends the lot's own `status` column, and the two travel together
+   * for the reason `ChildPatch` exists: the history is the truth, the column is
+   * what the lot list narrows on, and a recall in one and not the other
+   * produces a `status=RECALLED` listing with the recalled carton missing.
+   *
+   * The route refuses a change dated before the lot's latest recorded entry, so
+   * the newest entry is always the one in force - which is why amending the
+   * column needs no comparison here.
+   */
+  readonly statusChanges?: readonly (StockLotStatusChangeCreateInput & { readonly id: string })[];
   readonly lines: readonly StockPostingLine[];
 }
 
@@ -455,21 +471,41 @@ export const stockPostingSpec: CollectionSpec<
      */
     const openings = lots.map((lot) => ({
       id: context.nextId(),
-      lotId: lot.id,
-      status: lot.status,
-      effectiveOn: lot.receivedOn,
-      lotSeq: 1,
-      reason: null,
-      actorId: input.postedById,
+      ...statusChangeColumns({
+        lotId: lot.id,
+        status: lot.status,
+        effectiveOn: lot.receivedOn,
+        lotSeq: 1,
+        actorId: input.postedById,
+      }),
     }));
 
-    return lots.length === 0
+    const changes = (input.statusChanges ?? []).map((change) => ({
+      id: change.id,
+      ...statusChangeColumns(change),
+    }));
+    const history = [...openings, ...changes];
+
+    return lots.length === 0 && history.length === 0
       ? [childBatch('StockMovement', movements)]
       : [
           childBatch('StockLot', lots),
-          childBatch('StockLotStatusChange', openings),
+          childBatch('StockLotStatusChange', history),
           childBatch('StockMovement', movements),
         ];
+  },
+
+  /**
+   * The lot's own status column, brought up to date with the history.
+   *
+   * Only for lots this posting changed the status of. A receipt mints lots
+   * already carrying the status its opening entry records, so amending them
+   * would be a write that changes nothing.
+   */
+  childPatches(input: StockPostingCreateInput): ChildPatch[] {
+    return (input.statusChanges ?? []).map((change) =>
+      childPatch('StockLot', change.lotId, { status: change.status })
+    );
   },
 
   /**
@@ -600,6 +636,27 @@ export const stockMovementSpec: CollectionSpec<
 /* ------------------------------------------------------------------ shared */
 
 /**
+ * A status-history row's columns, built in one place.
+ *
+ * Three callers: the spec's own `newRow`, the opening entry a receipt writes,
+ * and the change a recall writes. A second copy is how the opening entry would
+ * come to carry a different default from the change that follows it, in a table
+ * whose whole purpose is that the entries can be compared with each other.
+ */
+function statusChangeColumns(
+  input: StockLotStatusChangeCreateInput
+): Writable<'StockLotStatusChange'> {
+  return {
+    lotId: input.lotId,
+    status: input.status,
+    effectiveOn: input.effectiveOn,
+    lotSeq: input.lotSeq,
+    reason: input.reason ?? null,
+    actorId: input.actorId ?? null,
+  };
+}
+
+/**
  * The lot's columns, built in one place.
  *
  * Two callers: `stockLotSpec.newRow`, and the posting's `childRows` when a
@@ -699,14 +756,7 @@ export const stockLotStatusChangeSpec: CollectionSpec<
   compartment: 'closed',
 
   newRow(input: StockLotStatusChangeCreateInput): Writable<'StockLotStatusChange'> {
-    return {
-      lotId: input.lotId,
-      status: input.status,
-      effectiveOn: input.effectiveOn,
-      lotSeq: input.lotSeq,
-      reason: input.reason ?? null,
-      actorId: input.actorId ?? null,
-    };
+    return statusChangeColumns(input);
   },
 
   patchData(): Partial<Writable<'StockLotStatusChange'>> {

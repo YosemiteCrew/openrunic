@@ -141,6 +141,18 @@ export const STOCK_POSTING_KINDS = [
   'CORRECTION',
   'SUPPLIER_RETURN',
   'PATIENT_RETURN',
+  /**
+   * A lot changed status: a recall, a quarantine, a retirement, or a release
+   * back into use. The only posting kind that moves no stock - the cartons stay
+   * on the shelf and stop being usable - which is why it is a posting at all:
+   * without a header the change would have an actor and no reference, no note
+   * and no way to say that eleven lots were held by one notice.
+   *
+   * Appended rather than filed next to the other whole-lot acts, because
+   * `ALTER TYPE ... ADD VALUE` appends and the drift gate compares the two
+   * orders.
+   */
+  'STATUS_CHANGE',
 ] as const;
 
 export const REFERRAL_STATUSES = [

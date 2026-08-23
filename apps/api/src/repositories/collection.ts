@@ -112,6 +112,41 @@ export function childBatch<C extends PrismaModelName>(
   return { model, rows: rows };
 }
 
+/**
+ * A row the parent's write amends, in the parent's transaction.
+ *
+ * The narrow sibling of {@link ChildBatch}, and it exists for one shape: a
+ * denormalised column that a child insert makes stale. `StockLot.status` is
+ * that column. The truth of a lot's status lives in its history table, but the
+ * lot list narrows on the column, so a recall recorded in the history and not
+ * copied to the column produces a `status=RECALLED` listing that omits the
+ * recalled carton. That is the direction that hurts somebody.
+ *
+ * Two writes from the route would leave the two disagreeing whenever the second
+ * one failed, and the append-only history cannot then be corrected. So the
+ * amendment travels with the insert or neither happens.
+ *
+ * Deliberately not a general update facility. There is no `where`, only an id:
+ * a patch that could match a set is a patch that could match the wrong set, and
+ * nothing needs one. Both implementations refuse a patch that matches no row in
+ * scope by rolling the parent back, so a cross-tenant id cannot be a silent
+ * no-op that leaves the parent written.
+ */
+export interface ChildPatch {
+  readonly model: PrismaModelName;
+  readonly id: string;
+  readonly data: Record<string, unknown>;
+}
+
+/** Types one amendment against its own model, for the reason {@link childBatch} does. */
+export function childPatch<C extends PrismaModelName>(
+  model: C,
+  id: string,
+  data: Partial<Writable<C>>
+): ChildPatch {
+  return { model, id, data };
+}
+
 /** A natural key the database enforces and the API should refuse before it. */
 export interface UniqueBy<M extends PrismaModelName, TCreate> {
   where(input: TCreate): FindManyArgs<M>['where'];
@@ -214,6 +249,19 @@ export interface CollectionSpec<
     parent: ScopedRow<NoInfer<M>>,
     context: RowContext
   ): ChildBatch[];
+  /**
+   * Rows the parent's write amends, in the parent's transaction, after
+   * {@link CollectionSpec.childRows} have been written.
+   *
+   * After rather than before, so an amendment can name a row the same write
+   * created. Nothing does today; the order is fixed anyway, because "it happened
+   * to work" is not a thing to leave for a spec author to discover.
+   */
+  childPatches?(
+    input: NoInfer<TCreate>,
+    parent: ScopedRow<NoInfer<M>>,
+    context: RowContext
+  ): ChildPatch[];
   /**
    * Columns a patch changes. An absent key means "not mentioned", never
    * "clear". The context carries the request's clock, so a column a patch

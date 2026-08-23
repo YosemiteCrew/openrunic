@@ -1118,6 +1118,333 @@ describe('counting the shelf', () => {
   });
 });
 
+/**
+ * A recall, a quarantine, a retirement, and the release that undoes one.
+ *
+ * The point of the endpoint is not that it flips a column. It is that after it
+ * has run, a question about a day before the change still gets the answer that
+ * was true on that day - which is the whole promise `lots.ts` opens with and the
+ * one field that could not keep it.
+ *
+ * The dates are all comfortably in the past, deliberately. The route refuses a
+ * change dated after today at the site, and today is read from the real clock,
+ * so a scenario built on dates near it would start failing on a particular
+ * morning for a reason nobody would look for.
+ */
+describe('taking a lot out of use', () => {
+  const RECEIVED = '2026-01-05';
+  const RECALLED_ON = '2026-03-10';
+  const BEFORE = '2026-03-01';
+  const AFTER = '2026-03-20';
+
+  interface LotView {
+    id: string;
+    lotNumber: string;
+    status: string;
+  }
+
+  interface StatusChangeResponse {
+    posting: Posting;
+    lots: { lotId: string; lotNumber: string; from: string; to: string; effectiveOn: string }[];
+  }
+
+  async function lotsAt(app: App, query: string): Promise<LotView[]> {
+    const res = await app.request(`/bff/v0/inventory/lots?facilityId=${DEMO_FACILITY_A}&${query}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(res.status, query).toBe(200);
+    return ((await res.json()) as { data: LotView[] }).data;
+  }
+
+  /** One carton, delivered through the route so it carries an opening entry. */
+  async function received(app: App, lotNumber = 'LOT-R'): Promise<string> {
+    const posting = await postOk(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: RECEIVED,
+      lines: [{ itemId: ITEM_CAPSULE, lotNumber, quantity: 60 }],
+    });
+    return posting.movements[0]?.lotId ?? '';
+  }
+
+  function recall(lotId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: RECALLED_ON,
+      status: 'RECALLED',
+      reason: 'manufacturer notice: particulate matter in the fill',
+      reference: 'FDA-2026-114',
+      lotIds: [lotId],
+      ...overrides,
+    };
+  }
+
+  /**
+   * The acceptance criterion this whole feature was raised for.
+   *
+   * A carton available on the first and recalled on the tenth reads available on
+   * the first, in both directions, and the failure this replaces was the
+   * dangerous one: a reconciliation of the first came up short against a shelf
+   * that had been correct, with the discrepancy pointing at nothing.
+   */
+  it('answers a question about a day before the recall with the state on that day', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(app, 'status-changes', recall(lotId));
+    expect(res.status).toBe(201);
+
+    const before = await lotsAt(app, `asOf=${BEFORE}&lotNumber=LOT-R`);
+    const after = await lotsAt(app, `asOf=${AFTER}&lotNumber=LOT-R`);
+    expect(before[0]?.status).toBe('AVAILABLE');
+    expect(after[0]?.status).toBe('RECALLED');
+
+    // And the same question of the balance report, which reaches the package
+    // through an entirely different path: the recalled carton is drawable on the
+    // first and carries a reason naming its status on the twentieth.
+    const stockBefore = await stockOf(
+      app,
+      ITEM_CAPSULE,
+      `facilityId=${DEMO_FACILITY_A}&asOf=${BEFORE}`
+    );
+    const stockAfter = await stockOf(
+      app,
+      ITEM_CAPSULE,
+      `facilityId=${DEMO_FACILITY_A}&asOf=${AFTER}`
+    );
+    expect(stockBefore.usable).toBe(60);
+    expect(stockAfter.usable).toBe(0);
+    expect(stockAfter.unusable[0]?.unusableReason).toContain('recalled');
+  });
+
+  /**
+   * The column and the history cannot disagree about today.
+   *
+   * The lot list narrows on `StockLot.status`, which the database can index, and
+   * reports the status resolved from the history. A recall written to the
+   * history and not copied to the column would produce a `status=RECALLED`
+   * listing with the recalled carton missing from it - which is the query a
+   * pharmacist runs first and the one direction that hurts somebody.
+   */
+  it('puts the lot into the status filter it now belongs to', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    expect((await lotsAt(app, 'status=RECALLED')).map((lot) => lot.id)).not.toContain(lotId);
+    expect((await post(app, 'status-changes', recall(lotId))).status).toBe(201);
+
+    expect((await lotsAt(app, 'status=RECALLED')).map((lot) => lot.id)).toEqual([lotId]);
+    expect((await lotsAt(app, 'status=AVAILABLE')).map((lot) => lot.id)).not.toContain(lotId);
+  });
+
+  /** The one posting kind that moves no stock: the cartons stay where they are. */
+  it('writes no movement and leaves the balance alone', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(app, 'status-changes', recall(lotId));
+    const body = (await res.json()) as StatusChangeResponse;
+
+    expect(body.posting.kind).toBe('STATUS_CHANGE');
+    expect(body.posting.movements).toEqual([]);
+    expect(body.posting.reference).toBe('FDA-2026-114');
+    expect(body.lots).toEqual([
+      {
+        lotId,
+        lotNumber: 'LOT-R',
+        from: 'AVAILABLE',
+        to: 'RECALLED',
+        effectiveOn: RECALLED_ON,
+      },
+    ]);
+
+    // Still physically present. A recall is not a disposal, and reporting it as
+    // one would lose the stock somebody has to account for and destroy.
+    const stock = await stockOf(app, ITEM_CAPSULE, `facilityId=${DEMO_FACILITY_A}&asOf=${AFTER}`);
+    expect(stock.onHand).toBe(60);
+    expect(stock.usable).toBe(0);
+  });
+
+  /** One notice, eleven cartons, one act - and one sequence per lot. */
+  it('holds every lot a single notice names', async () => {
+    const { app } = harness();
+    const first = await received(app, 'LOT-R1');
+    const second = await received(app, 'LOT-R2');
+
+    const res = await post(app, 'status-changes', recall(first, { lotIds: [first, second] }));
+    const body = (await res.json()) as StatusChangeResponse;
+
+    expect(body.lots.map((lot) => lot.lotId)).toEqual([first, second]);
+    expect((await lotsAt(app, 'status=RECALLED')).map((lot) => lot.id)).toEqual([first, second]);
+  });
+
+  it('records who acted, when, and why', async () => {
+    const { app, dataset } = harness();
+    const lotId = await received(app);
+
+    await post(app, 'status-changes', recall(lotId));
+
+    const changes = dataset
+      .table('StockLotStatusChange')
+      .filter((row) => (row as unknown as { lotId: string }).lotId === lotId);
+    expect(changes).toHaveLength(2);
+    expect(changes[1]).toMatchObject({
+      status: 'RECALLED',
+      lotSeq: 2,
+      actorId: CLINICIAN_A,
+      reason: 'manufacturer notice: particulate matter in the fill',
+    });
+  });
+
+  it('refuses a change dated after today at the site', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(app, 'status-changes', recall(lotId, { occurredOn: '2099-01-01' }));
+
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(await res.json())).toContain('occurredOn');
+  });
+
+  /**
+   * An entry behind one already recorded would leave the lot's column asserting
+   * a state the history no longer supports, in a table that offers no way to put
+   * it back.
+   */
+  it('refuses a change dated before one already recorded against the lot', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+    expect((await post(app, 'status-changes', recall(lotId))).status).toBe(201);
+
+    const res = await post(app, 'status-changes', recall(lotId, { occurredOn: '2026-02-01' }));
+
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(await res.json())).toContain('lotIds.0');
+  });
+
+  /** Including the opening entry, so a recall cannot predate the delivery. */
+  it('refuses a change dated before the lot was received', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(app, 'status-changes', recall(lotId, { occurredOn: '2025-12-01' }));
+
+    expect(res.status).toBe(422);
+  });
+
+  it('refuses a lot held at another site', async () => {
+    const { app, dataset } = harness();
+    seed(
+      dataset,
+      'StockLot',
+      lotRow({ ...storageColumns(LOT_THIRD), facilityId: DEMO_FACILITY_B, lotNumber: 'LOT-ELSE' })
+    );
+
+    const res = await post(app, 'status-changes', recall(LOT_THIRD), TOKENS.adminA);
+
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(await res.json())).toContain('not at this facility');
+  });
+
+  it('refuses a lot that does not exist', async () => {
+    const { app } = harness();
+
+    expect((await post(app, 'status-changes', recall(testId(99)))).status).toBe(404);
+  });
+
+  it('refuses a notice naming one lot twice', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(app, 'status-changes', recall(lotId, { lotIds: [lotId, lotId] }));
+
+    expect(res.status).toBe(422);
+  });
+
+  it('refuses a change with no reason', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const res = await post(app, 'status-changes', recall(lotId, { reason: '   ' }));
+
+    expect(res.status).toBe(422);
+  });
+
+  /**
+   * The asymmetry, and the reason for it: putting a hold on stock refuses stock
+   * nobody has proved is bad, and taking one off hands out stock somebody
+   * thought was. Only the second can reach a patient.
+   */
+  it('lets a clinician quarantine and refuses them the release', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    const held = await post(app, 'status-changes', recall(lotId, { status: 'QUARANTINED' }));
+    expect(held.status).toBe(201);
+
+    const release = await post(
+      app,
+      'status-changes',
+      recall(lotId, {
+        status: 'AVAILABLE',
+        occurredOn: AFTER,
+        reason: 'supplier confirmed the lot',
+      })
+    );
+    expect(release.status).toBe(403);
+
+    const byAdmin = await post(
+      app,
+      'status-changes',
+      recall(lotId, {
+        status: 'AVAILABLE',
+        occurredOn: AFTER,
+        reason: 'supplier confirmed the lot',
+      }),
+      TOKENS.adminA
+    );
+    expect(byAdmin.status).toBe(201);
+    expect((await lotsAt(app, 'status=AVAILABLE')).map((lot) => lot.id)).toContain(lotId);
+    // And the quarantine is still the answer for the fortnight it was in force.
+    expect((await lotsAt(app, `asOf=${RECALLED_ON}&lotNumber=LOT-R`))[0]?.status).toBe(
+      'QUARANTINED'
+    );
+  });
+
+  it('refuses a role holding no inventory grant', async () => {
+    const { app } = harness();
+    const lotId = await received(app);
+
+    expect((await post(app, 'status-changes', recall(lotId), TOKENS.billerA)).status).toBe(403);
+    expect(
+      (
+        await app.request('/bff/v0/inventory/status-changes', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(recall(lotId)),
+        })
+      ).status
+    ).toBe(401);
+  });
+
+  /**
+   * Refused rather than resolved either way. The filter is a column predicate
+   * applied before paging and the reported status is resolved after it, so the
+   * pair pages one question and answers another - and they agree for every lot
+   * whose status has never changed, which is why nobody would notice.
+   */
+  it('refuses a status filter and an as-of date together', async () => {
+    const { app } = harness();
+
+    const res = await app.request(
+      `/bff/v0/inventory/lots?facilityId=${DEMO_FACILITY_A}&status=AVAILABLE&asOf=${BEFORE}`,
+      { headers: bearer(TOKENS.clinicianA) }
+    );
+
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(await res.json())).toContain('asOf');
+  });
+});
+
 describe('what the shelf says', () => {
   /**
    * Four acts, one number. Every figure here is a literal somebody could arrive

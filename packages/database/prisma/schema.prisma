@@ -432,6 +432,7 @@ enum StockPostingKind {
   CORRECTION
   SUPPLIER_RETURN
   PATIENT_RETURN
+  STATUS_CHANGE
 }
 
 enum ObservationCategory {

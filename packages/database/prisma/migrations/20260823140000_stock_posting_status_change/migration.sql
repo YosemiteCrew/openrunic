@@ -1,0 +1,19 @@
+-- A recall, a quarantine, a retirement or a release back into use.
+--
+-- The one posting kind that moves no stock. Every other kind writes movements
+-- and the balance changes; this one leaves the cartons where they are and
+-- changes what may be drawn from them. It is still a posting because the header
+-- is the half that matters here: who held the stock, on whose authority, under
+-- which notice, and which lots one notice covered.
+--
+-- Appended rather than inserted next to the other whole-lot acts. `ALTER TYPE
+-- ... ADD VALUE` without `BEFORE`/`AFTER` appends, and the drift gate compares
+-- the enum in `schema.prisma` against the one this produces, order included -
+-- so putting it anywhere else would mean a `BEFORE` clause whose only purpose
+-- was to make the list read nicely.
+--
+-- Safe inside Prisma's transaction on PostgreSQL 12 and later: the restriction
+-- is on *using* a new value in the same transaction that added it, and nothing
+-- here does. The backfill that would have used it does not exist, because no
+-- status change was recordable before this migration.
+ALTER TYPE "StockPostingKind" ADD VALUE 'STATUS_CHANGE';

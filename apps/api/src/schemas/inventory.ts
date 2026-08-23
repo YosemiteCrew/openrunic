@@ -9,6 +9,7 @@ import type {
   StockItemListQuery,
   StockItemUpdateInput,
   StockLotListQuery,
+  StockLotStatus,
 } from '../repositories/specs/inventory.js';
 import type { ScopedRow } from '../repositories/types.js';
 
@@ -238,6 +239,16 @@ export const stockLotDtoSchema = z.strictObject({
   itemId: z.string(),
   facilityId: z.string(),
   lotNumber: z.string(),
+  /**
+   * The status in force on the day asked about, which is today at the site
+   * unless the query named an `asOf`.
+   *
+   * Resolved from the lot's recorded history rather than read off the column,
+   * so a carton recalled on the tenth still reads AVAILABLE in a question about
+   * the first. The column and the history cannot disagree about today - a
+   * status change writes both, in one transaction - so this is the same answer
+   * the column carries whenever `asOf` is absent.
+   */
   status: z.enum(STOCK_LOT_STATUSES),
   expiresOn: z.string().nullable(),
   openedOn: z.string().nullable(),
@@ -251,13 +262,21 @@ export const stockLotDtoSchema = z.strictObject({
 
 export type StockLotDto = z.infer<typeof stockLotDtoSchema>;
 
-export function toStockLotDto(row: ScopedRow<'StockLot'>): StockLotDto {
+/**
+ * The lot as the API publishes it, with the status resolved by the caller.
+ *
+ * `status` is a parameter rather than read off the row, and it is required
+ * rather than defaulted to `row.status`. A default is what a caller that has
+ * not thought about `asOf` would silently take, and it would be right until the
+ * day somebody asked about last month.
+ */
+export function toStockLotDto(row: ScopedRow<'StockLot'>, status: StockLotStatus): StockLotDto {
   return {
     id: row.id,
     itemId: row.itemId,
     facilityId: row.facilityId,
     lotNumber: row.lotNumber,
-    status: row.status,
+    status,
     expiresOn: dayOrNull(row.expiresOn),
     openedOn: dayOrNull(row.openedOn),
     beyondUseDays: row.beyondUseDays,
@@ -280,10 +299,22 @@ export const stockLotListQuerySchema = z.strictObject({
    */
   facilityId: z.uuid(),
   itemId: z.uuid().optional(),
+  /**
+   * Narrows on the status in force *now*, and so cannot be combined with
+   * `asOf`.
+   *
+   * The filter is a column predicate the database applies before paging; the
+   * status this route reports is resolved per lot from the history afterwards.
+   * Asking for both would page one question and answer another, and the two
+   * would agree often enough that nobody noticed the times they did not. The
+   * route refuses the pair rather than picking one.
+   */
   status: z.enum(STOCK_LOT_STATUSES).optional(),
   lotNumber: prose(64).optional(),
   /** Exclusive. A lot that cannot expire is outside every bounded window. */
   expiringBefore: dayField.optional(),
+  /** The day each lot's status is reported as of. Defaults to today at the site. */
+  asOf: dayField.optional(),
   sort: z.enum(['expiresOn', 'receivedOn', 'lotNumber', 'createdAt']).default('expiresOn'),
   order: sortOrderField,
 });
@@ -568,6 +599,38 @@ export const countSchema = z.strictObject({
 
 export type CountBody = z.infer<typeof countSchema>;
 
+/**
+ * A recall, a quarantine, a retirement, or a release back into use.
+ *
+ * One status for the whole posting rather than one per line, because a notice
+ * puts the lots it names into one state. A body that recalled two cartons and
+ * released a third would be three decisions filed under one reference, one
+ * actor and one reason, and the record would not say which reason belonged to
+ * which lot.
+ *
+ * `reason` is required and `reference` is not. The reason is the sentence a
+ * person reads six months later; the reference is the notice number, and a
+ * clinician quarantining a carton of cloudy vials has a reason and no notice.
+ */
+export const statusChangeSchema = z.strictObject({
+  ...postingFields,
+  /** The manufacturer's or regulator's notice, where there is one. */
+  reference: prose(120).optional(),
+  status: z.enum(STOCK_LOT_STATUSES),
+  reason: prose(500),
+  lotIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(200)
+    // One notice covering one lot twice is one change entered twice. Merged
+    // would be harmless and refusing is still right: each lot's next `lotSeq`
+    // is read once, before anything is written, so a second entry for the same
+    // lot would take the sequence the first one already has.
+    .refine((ids) => new Set(ids).size === ids.length, { message: 'each lot may be named once' }),
+});
+
+export type StatusChangeBody = z.infer<typeof statusChangeSchema>;
+
 /* ----------------------------------------------------------- read contracts */
 
 /** The window a computed read was taken through. */
@@ -679,6 +742,29 @@ export const countResultSchema = z.strictObject({
 });
 
 export type CountResult = z.infer<typeof countResultSchema>;
+
+/**
+ * What a status change answers with.
+ *
+ * `from` as well as `to`, because the posting alone does not say what changed.
+ * A carton already quarantined and named again by a wider recall is a real
+ * entry in the history and a real no-op on the shelf, and a response that
+ * showed only the new status would read the same for both.
+ */
+export const statusChangeResultSchema = z.strictObject({
+  posting: stockPostingDtoSchema,
+  lots: z.array(
+    z.strictObject({
+      lotId: z.string(),
+      lotNumber: z.string(),
+      from: z.enum(STOCK_LOT_STATUSES),
+      to: z.enum(STOCK_LOT_STATUSES),
+      effectiveOn: z.string(),
+    })
+  ),
+});
+
+export type StatusChangeResult = z.infer<typeof statusChangeResultSchema>;
 
 export const reorderDtoSchema = z.strictObject({
   asOf: z.string(),

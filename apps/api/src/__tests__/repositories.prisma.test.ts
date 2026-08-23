@@ -6,7 +6,12 @@ import { createMemoryAuditSink, type MemoryAuditSink } from '../audit/memory-sin
 import type { AuditUnitOfWork } from '../audit/types.js';
 import { createPrismaAuditQuery } from '../repositories/audit-query.js';
 import { createPrismaOrganisationQuery } from '../repositories/organisation-query.js';
-import { childBatch, type CollectionSpec, type Writable } from '../repositories/collection.js';
+import {
+  childBatch,
+  childPatch,
+  type CollectionSpec,
+  type Writable,
+} from '../repositories/collection.js';
 import {
   createDbPort,
   delegateKey,
@@ -447,6 +452,41 @@ describe('composite writes', () => {
     const line = h.dataset.table('ClaimStatusHistory')[0];
     expect(line?.tenantId).toBe(DEMO_TENANT_A);
   });
+
+  /**
+   * The amendment half, which exists for a denormalised column a child insert
+   * makes stale: a lot's status lives in its history and the lot list narrows on
+   * the column, so the two have to move together or neither does.
+   */
+  it('amends the row it names, in the same transaction', async () => {
+    const h = harness();
+    h.dataset.table('Patient').push(makePatientRow({ id: testId(1), familyName: 'Before' }));
+    const collection = createPrismaCollection(childBearingSpec(), h.port, h.scope);
+
+    await collection.create({ note: 'After', amends: testId(1) });
+
+    expect(h.dataset.table('Patient')[0]?.familyName).toBe('After');
+    expect(h.port.transactions).toBe(1);
+  });
+
+  /**
+   * A row in another organisation is not there to amend, and it must not be a
+   * quiet no-op that leaves the parent written: half of a composite write is the
+   * state the whole hook exists to prevent.
+   */
+  it('refuses an amendment that matches no row in scope', async () => {
+    const h = harness();
+    h.dataset.table('Patient').push({
+      ...makePatientRow({ id: testId(1), familyName: 'Before' }),
+      tenantId: DEMO_TENANT_B,
+    });
+    const collection = createPrismaCollection(childBearingSpec(), h.port, h.scope);
+
+    await expect(collection.create({ note: 'After', amends: testId(1) })).rejects.toThrow(
+      /to amend/u
+    );
+    expect(h.dataset.table('Patient')[0]?.familyName).toBe('Before');
+  });
 });
 
 /** A spec whose rows reach a chart only through a join, for the closed-compartment path. */
@@ -480,7 +520,7 @@ function closedSpec(): CollectionSpec<
 /** A minimal composite spec, so the child-row path is exercised in isolation. */
 function childBearingSpec(): CollectionSpec<
   'Claim',
-  { note: string },
+  { note: string; amends?: string },
   Record<string, never>,
   { page: number; pageSize: number; sort: 'createdAt'; order: 'asc' | 'desc' }
 > {
@@ -527,6 +567,11 @@ function childBearingSpec(): CollectionSpec<
           },
         ]),
       ];
+    },
+    childPatches(input) {
+      return input.amends === undefined
+        ? []
+        : [childPatch('Patient', input.amends, { familyName: input.note })];
     },
     patchData: () => ({}),
     matches: () => true,

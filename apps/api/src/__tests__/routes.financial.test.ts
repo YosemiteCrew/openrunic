@@ -2208,7 +2208,7 @@ describe('the specs agree with themselves', () => {
         claimId: testId(30),
         chargeItemId: testId(20),
       })
-    ).toEqual({ claimId: testId(30), chargeItemId: testId(20) });
+    ).toEqual({ claimId: { in: [testId(30)] }, chargeItemId: testId(20) });
 
     expect(
       financialSpecs.claimStatusHistory.where({
@@ -2480,6 +2480,59 @@ describe('the specs agree with themselves', () => {
         { tenantId: DEMO_TENANT_A, now: FIXED_NOW, nextId: () => testId(801) }
       )
     ).toEqual({ allowedCents: 10_000 });
+  });
+});
+
+/**
+ * The two ways a caller can ask a claim-line list for its claims, and what
+ * happens when both arrive.
+ *
+ * `claimId` is the single-claim routes' scalar parameter. `claimIds` is the set
+ * the FHIR boundary sends to page a claim's lines in one query. Both write the
+ * same `where` key, so the interesting cases are the ones where they disagree:
+ * spread side by side, one of them would silently stop applying, and a search
+ * that quietly widens hands somebody rows they did not ask for.
+ */
+describe('the claim-line claim filter', () => {
+  const paged = { page: 1, pageSize: 25, sort: 'sequence', order: 'asc' } as const;
+
+  it('sends a bare claim through as a set of one', () => {
+    expect(financialSpecs.claimLines.where({ ...paged, claimId: testId(30) })).toEqual({
+      claimId: { in: [testId(30)] },
+    });
+  });
+
+  it('sends a set of claims through as a set', () => {
+    expect(
+      financialSpecs.claimLines.where({ ...paged, claimIds: [testId(30), testId(31)] })
+    ).toEqual({ claimId: { in: [testId(30), testId(31)] } });
+  });
+
+  it('intersects the two rather than letting one overwrite the other', () => {
+    expect(
+      financialSpecs.claimLines.where({
+        ...paged,
+        claimId: testId(30),
+        claimIds: [testId(30), testId(31)],
+      })
+    ).toEqual({ claimId: { in: [testId(30)] } });
+  });
+
+  it('emits a filter that matches nothing when the scalar is outside the set', () => {
+    // Before the fix this emitted `{ claimId: { in: [...claimIds] } }` - the set
+    // won and the scalar filter was silently dropped, handing back lines for
+    // claims the caller had narrowed away.
+    expect(
+      financialSpecs.claimLines.where({
+        ...paged,
+        claimId: testId(30),
+        claimIds: [testId(31), testId(32)],
+      })
+    ).toEqual({ claimId: { in: [] } });
+  });
+
+  it('leaves the clause out when neither is given', () => {
+    expect(financialSpecs.claimLines.where({ ...paged })).toEqual({});
   });
 });
 

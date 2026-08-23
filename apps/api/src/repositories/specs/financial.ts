@@ -608,6 +608,26 @@ function claimLineColumns(input: ClaimLineCreateInput): Writable<'ClaimLine'> {
   };
 }
 
+/**
+ * One claim filter from the two ways a caller can ask for one.
+ *
+ * `claimId` is the single-claim routes' scalar parameter; `claimIds` is the set
+ * the FHIR boundary sends to page a claim's lines in one query. They are
+ * resolved here rather than spread side by side because both write the same
+ * `where` key, and two clauses writing one key is how one of them silently stops
+ * applying. Intersecting is the safe direction: a search that quietly widens
+ * hands somebody rows they did not ask for.
+ *
+ * `undefined` means no claim filter. An empty array means one that matches
+ * nothing, which is what an impossible intersection deserves.
+ */
+function claimLineClaimIds(query: ClaimLineListQuery): readonly string[] | undefined {
+  const { claimId, claimIds } = query;
+  if (claimIds === undefined) return claimId === undefined ? undefined : [claimId];
+  if (claimId === undefined) return claimIds;
+  return claimIds.includes(claimId) ? [claimId] : [];
+}
+
 export const claimLineSpec: CollectionSpec<
   'ClaimLine',
   ClaimLineCreateInput,
@@ -631,18 +651,18 @@ export const claimLineSpec: CollectionSpec<
   },
 
   matches(row: ScopedRow<'ClaimLine'>, query: ClaimLineListQuery): boolean {
-    if (query.claimId !== undefined && row.claimId !== query.claimId) return false;
     // An empty list means "no claims", not "every claim". The distinction
     // matters because a page with no rows would otherwise widen to the whole
     // table, which is the opposite of what the caller asked for.
-    if (query.claimIds !== undefined && !query.claimIds.includes(row.claimId)) return false;
+    const claims = claimLineClaimIds(query);
+    if (claims !== undefined && !claims.includes(row.claimId)) return false;
     return query.chargeItemId === undefined || row.chargeItemId === query.chargeItemId;
   },
 
   where(query: ClaimLineListQuery) {
+    const claims = claimLineClaimIds(query);
     return {
-      ...(query.claimId === undefined ? {} : { claimId: query.claimId }),
-      ...(query.claimIds === undefined ? {} : { claimId: { in: [...query.claimIds] } }),
+      ...(claims === undefined ? {} : { claimId: { in: [...claims] } }),
       ...(query.chargeItemId === undefined ? {} : { chargeItemId: query.chargeItemId }),
     };
   },

@@ -98,13 +98,35 @@ describe('Lockup', () => {
 
 describe('SiteHeader', () => {
   it('reaches home through the lockup and names where that goes', () => {
-    render(<SiteHeader />);
+    render(<SiteHeader locale="en" />);
 
-    expect(screen.getByRole('link', { name: 'openrunic home' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'openrunic home' })).toHaveAttribute('href', '/en');
+  });
+
+  /**
+   * The masthead on a Spanish page has to point at Spanish pages. These are
+   * prerendered one per language, so `/for/hospitals` does not exist as an
+   * address any more, and a masthead that kept linking there would bounce every
+   * reader through the redirect and back into whichever language their browser
+   * asked for - discarding the one they are visibly reading.
+   */
+  it('keeps every internal link inside the language being read', () => {
+    render(<SiteHeader locale="es" />);
+    const nav = screen.getByRole('navigation', { name: 'Site' });
+
+    expect(screen.getByRole('link', { name: 'openrunic home' })).toHaveAttribute('href', '/es');
+    expect(within(nav).getByRole('link', { name: 'Hospitals' })).toHaveAttribute(
+      'href',
+      '/es/for/hospitals'
+    );
+    // The repository link is off-site and keeps its absolute URL.
+    expect(within(nav).getByRole('link', { name: 'Source' }).getAttribute('href')).toMatch(
+      /^https?:\/\//u
+    );
   });
 
   it('offers the three audiences and the source', () => {
-    render(<SiteHeader />);
+    render(<SiteHeader locale="en" />);
     const nav = screen.getByRole('navigation', { name: 'Site' });
 
     expect(
@@ -115,7 +137,7 @@ describe('SiteHeader', () => {
   });
 
   it('marks the section being read, and marks only that one', () => {
-    render(<SiteHeader active="/for/developers" />);
+    render(<SiteHeader active="/for/developers" locale="en" />);
 
     expect(screen.getByRole('link', { name: 'Developers' })).toHaveAttribute(
       'aria-current',
@@ -125,7 +147,7 @@ describe('SiteHeader', () => {
   });
 
   it('marks nothing when the page is not one of the sections', () => {
-    render(<SiteHeader active="/" />);
+    render(<SiteHeader active="/" locale="en" />);
 
     for (const link of screen.getAllByRole('link')) {
       expect(link).not.toHaveAttribute('aria-current');
@@ -340,7 +362,7 @@ describe('OtherAudiences', () => {
 describe('PublicPage', () => {
   it('lands the root layout skip link on a focusable main landmark', () => {
     render(
-      <PublicPage active="/">
+      <PublicPage active="/" locale="en">
         <p>Content</p>
       </PublicPage>
     );
@@ -352,7 +374,7 @@ describe('PublicPage', () => {
 
   it('frames its content with the masthead and the closing band', () => {
     render(
-      <PublicPage active="/for/patients">
+      <PublicPage active="/for/patients" locale="en">
         <p>Content</p>
       </PublicPage>
     );

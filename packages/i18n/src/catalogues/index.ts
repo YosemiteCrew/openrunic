@@ -21,4 +21,18 @@ export const appCatalogue: Catalogue = {
 /** The locales this build actually carries, for content negotiation. */
 export const SUPPORTED_LOCALES = Object.keys(appCatalogue.messages);
 
+const SUPPORTED: ReadonlySet<string> = new Set(SUPPORTED_LOCALES);
+
+/**
+ * Whether this build has a catalogue for a locale.
+ *
+ * For anywhere a locale arrives from outside: a URL segment, a cookie, a stored
+ * user preference. `Locale` is a string, so the type system cannot tell a
+ * supported one from a typo, and rendering a page in a language with no
+ * catalogue shows the reader every message key instead of every message.
+ */
+export function isSupportedLocale(locale: string): boolean {
+  return SUPPORTED.has(locale);
+}
+
 export { en, es };

@@ -9,39 +9,26 @@
  */
 
 /* --- Fonts ---------------------------------------------------------------
- * NOT VENDORED. The three families are self-hosted by policy (no hotlinking,
- * no third-party font CDN on a surface that renders PHI), but the binaries are
- * not committed to this repo and are not shipped inside @openrunic/ui.
+ * Declared once, in `@openrunic/ui`, which ships the binaries.
  *
- * To install them: copy the variable builds from the design system's
- * `assets/fonts/` into `apps/web/public/fonts/`, keeping these filenames. The
- * declarations below then resolve; until they do, `local()` picks up a machine
- * that already has the family, and otherwise the fallback stacks carry the UI.
- * Nothing breaks without them: only the optical-size axis is lost.
+ * This file used to declare Bricolage Grotesque and Spline Sans Mono itself,
+ * pointing at `/fonts/*.woff2` under a header saying the binaries were "not
+ * shipped inside @openrunic/ui" and had to be copied into `public/fonts` by
+ * hand. That stopped being true: the library vendors all three families in
+ * `src/assets/fonts/`, declares them with bundler-relative URLs that resolve to
+ * hashed assets, and ships the OFL licences beside them.
  *
- * Licences: SIL OFL 1.1 for all three (Bricolage Grotesque, Fraunces, Spline
- * Sans Mono). Copy the OFL files alongside the binaries.
+ * So the declarations here were a second `@font-face` for a family that already
+ * had one, pointing at a path with nothing behind it - a 404 on every page load
+ * for a font that was loading fine from elsewhere. Worse than the wasted
+ * request: two declarations of one family means which wins depends on import
+ * order, so a reordering would have swapped a working face for a broken one
+ * with nothing in the diff to explain the page falling back to a system font.
+ *
+ * The fallback stacks below are still this app's, deliberately - they widen the
+ * library's so a Linux or Windows workstation without the family gets a
+ * humanist sans rather than Times.
  */
-@font-face {
-  font-family: 'Bricolage Grotesque';
-  src:
-    local('Bricolage Grotesque'),
-    url('/fonts/BricolageGrotesque-variable.woff2') format('woff2-variations');
-  font-weight: 200 800;
-  font-stretch: 75% 100%;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Spline Sans Mono';
-  src:
-    local('Spline Sans Mono'),
-    url('/fonts/SplineSansMono-variable.woff2') format('woff2-variations');
-  font-weight: 300 700;
-  font-style: normal;
-  font-display: swap;
-}
 
 :root {
   /* Widen the library's fallback stacks so a Linux or Windows workstation

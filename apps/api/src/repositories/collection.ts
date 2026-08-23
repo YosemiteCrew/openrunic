@@ -48,6 +48,25 @@ export interface Collection<TRow, TCreate, TPatch, TQuery extends BaseQuery> {
   list(query: TQuery): Promise<Page<TRow>>;
   /** Resolves to `null` when the id belongs to no row *in this scope*. */
   findById(id: string): Promise<TRow | null>;
+  /**
+   * The rows for these ids that exist in this scope, in no particular order.
+   *
+   * For loaders. A `prepare` hook resolving a page's references had only
+   * `findById`, so it issued one read per distinct id: a page of fifty grants
+   * naming fifty different practitioners was fifty reads, and a bulk-export
+   * page of five hundred could put a thousand concurrent reads through a
+   * connection pool sized for far fewer.
+   *
+   * Ids that name nothing are simply absent from the result, which is what the
+   * loaders already expect - a grant can name a user that has since been
+   * deleted. An empty input is an empty result and no query.
+   *
+   * The narrowing is `findById`'s, exactly: same tenant binding, same
+   * compartment refusal, same facility hiding, and a read recorded against the
+   * audit trail for every row returned. Passing many ids must not reach a row
+   * that passing one would not.
+   */
+  findByIds(ids: readonly string[]): Promise<TRow[]>;
   create(input: TCreate): Promise<TRow>;
   update(id: string, patch: TPatch): Promise<TRow | null>;
 }

@@ -82,6 +82,14 @@ const TENANT_STAMPED_BY_CLIENT = '';
  */
 const byId = (id: string): Record<string, unknown> => ({ id: { equals: id } });
 
+/**
+ * The same rule for a set. Deduplicated because the caller's list is theirs and
+ * a repeated id would otherwise widen the `IN` for no reason.
+ */
+const byIds = (ids: readonly string[]): Record<string, unknown> => ({
+  id: { in: [...new Set(ids)] },
+});
+
 export function createPrismaCollection<
   M extends PrismaModelName,
   TCreate,
@@ -201,6 +209,19 @@ export function createPrismaCollection<
       const row = toPlainRow<M>(record) as ScopedRow<M>;
       recordRead(row);
       return row;
+    },
+
+    async findByIds(ids: readonly string[]): Promise<ScopedRow<M>[]> {
+      // Both guards come first and in this order, so a compartment-refused
+      // caller and an empty set each cost no query at all.
+      if (closed) return [];
+      if (ids.length === 0) return [];
+      const records = await delegate.findMany({
+        where: scoped(byIds(ids), hideAddressed),
+      });
+      const rows = records.map((record) => toPlainRow<M>(record) as ScopedRow<M>);
+      rows.forEach(recordRead);
+      return rows;
     },
 
     create(input: TCreate): Promise<ScopedRow<M>> {

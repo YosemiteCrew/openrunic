@@ -246,12 +246,16 @@ const practitionerModule = defineFhirResource({
  * costs seven reads rather than a hundred - which is the win in practice, since
  * grants cluster hard on both.
  *
- * It is worth being exact about what this is not: seven reads, not one. The
- * repository layer has no set-based read, so these are still individual
- * `findById` calls, merely deduped and issued concurrently. On a page where
- * every grant belongs to a different practitioner the dedupe buys nothing and
- * the count is back to one per row. Issue #88 tracks the set-based read that
- * would fix that properly, for every module's loader rather than this one.
+ * The roles and the users are now one read each, whatever the page holds, via
+ * the repository's `findByIds`. This used to be a dedupe of individual
+ * `findById` calls, which bought nothing on a page where every grant belonged
+ * to a different practitioner: a five-hundred-row bulk-export page put up to a
+ * thousand concurrent reads through a connection pool sized for far fewer.
+ *
+ * The facility grants are still one list per user, because they are a list
+ * rather than a lookup and each is separately bounded by `MAX_FACILITY_GRANTS`.
+ * A set-based version of that wants a different shape - grouping a single
+ * bounded page by user - and is not this change.
  */
 interface RolePageData {
   roleKeyById: Map<string, string>;
@@ -278,8 +282,8 @@ async function prepareRoles(
   const userIds = [...new Set(rows.map((row) => row.userId))];
 
   const [roles, users, grants] = await Promise.all([
-    Promise.all(roleIds.map(async (id) => repositories.roles.findById(id))),
-    Promise.all(userIds.map(async (id) => repositories.users.findById(id))),
+    repositories.roles.findByIds(roleIds),
+    repositories.users.findByIds(userIds),
     Promise.all(
       userIds.map(async (userId) =>
         repositories.userFacilities.list({
@@ -293,12 +297,10 @@ async function prepareRoles(
     ),
   ]);
 
-  for (const role of roles) {
-    if (role !== null) roleKeyById.set(role.id, role.key);
-  }
-  for (const user of users) {
-    if (user !== null) userById.set(user.id, user);
-  }
+  // No null check: `findByIds` omits ids that name nothing rather than
+  // returning a hole for them, which is what the callers wanted anyway.
+  for (const role of roles) roleKeyById.set(role.id, role.key);
+  for (const user of users) userById.set(user.id, user);
   for (const [index, page] of grants.entries()) {
     const userId = userIds[index];
     if (userId === undefined) continue;

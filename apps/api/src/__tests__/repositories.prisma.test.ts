@@ -28,6 +28,7 @@ import {
   FIXED_NOW,
   makeAppointmentRow,
   makePatientRow,
+  storageColumns,
   testId,
 } from './support.js';
 
@@ -290,6 +291,79 @@ describe('the generic Prisma collection', () => {
       targets: [{ type: 'Patient', id: testId(1) }],
     });
   });
+
+  it('records the read of every row a set read returned', async () => {
+    const h = harness();
+    h.dataset.table('Patient').push(makePatientRow({ id: testId(1) }));
+    h.dataset.table('Patient').push(makePatientRow({ id: testId(2), mrn: 'OR-2' }));
+
+    await patients(h).findByIds([testId(1), testId(2)]);
+    await h.scope.audit.flush();
+
+    // Every row, not the call. A batched read that recorded nothing would put a
+    // chart in front of somebody with no trace that it happened, which is the
+    // one thing this layer cannot do quietly.
+    expect(h.sink.reads()[0]?.event.metadata).toMatchObject({
+      targets: [
+        { type: 'Patient', id: testId(1) },
+        { type: 'Patient', id: testId(2) },
+      ],
+    });
+  });
+});
+
+/**
+ * A row addressed by id is hidden from a facility-limited caller only when the
+ * scope asks for it - see `RequestScope.hideFacilityRows`. Whatever the answer
+ * is for `findById`, it has to be the same for the set read, because a set read
+ * is an addressed read with more than one address.
+ */
+describe('the facility narrowing on an addressed set read', () => {
+  function seedTwoSites(h: Harness): void {
+    h.dataset
+      .table('Appointment')
+      .push(
+        makeAppointmentRow({ id: testId(1), facilityId: DEMO_FACILITY_A }),
+        makeAppointmentRow({ id: testId(2), facilityId: DEMO_FACILITY_B })
+      );
+  }
+
+  const confined = (h: Harness, hide: boolean): RequestScope => ({
+    ...h.scope,
+    facilityIds: [DEMO_FACILITY_A],
+    ...(hide ? { hideFacilityRows: true } : {}),
+  });
+
+  it('hides the other site by id set when the scope hides it by id', async () => {
+    const h = harness();
+    seedTwoSites(h);
+    const scope = confined(h, true);
+    const registry = createPrismaRepositoryRegistry(() => h.port);
+
+    // The single-id answer first, so the set read is measured against it rather
+    // than against an assumption about what the rule is.
+    await expect(registry.forRequest(scope).appointments.findById(testId(2))).resolves.toBeNull();
+    await expect(
+      registry.forRequest(scope).appointments.findByIds([testId(1), testId(2)])
+    ).resolves.toMatchObject([{ id: testId(1) }]);
+  });
+
+  it('serves the other site by id set when the scope serves it by id', async () => {
+    const h = harness();
+    seedTwoSites(h);
+    const scope = confined(h, false);
+    const registry = createPrismaRepositoryRegistry(() => h.port);
+
+    // The other half of the rule, and the reason this is two tests: a set read
+    // that always hid would be wrong in the direction nobody notices, because
+    // it looks like a stricter version of correct.
+    await expect(
+      registry.forRequest(scope).appointments.findById(testId(2))
+    ).resolves.not.toBeNull();
+    await expect(
+      registry.forRequest(scope).appointments.findByIds([testId(1), testId(2)])
+    ).resolves.toHaveLength(2);
+  });
 });
 
 describe('the patient compartment', () => {
@@ -308,6 +382,13 @@ describe('the patient compartment', () => {
 
     expect(page.rows.map((row) => row.id)).toEqual([testId(1)]);
     await expect(patients(h).findById(testId(2))).resolves.toBeNull();
+    // And by set, asking for both at once. The compartment column is applied by
+    // `scoped()` rather than by the tenant client, so a batched read that built
+    // its own `where` would reach the chart the launch context excludes while
+    // every tenant-isolation test in the suite stayed green.
+    await expect(patients(h).findByIds([testId(1), testId(2)])).resolves.toMatchObject([
+      { id: testId(1) },
+    ]);
   });
 
   it('refuses a collection that reaches a chart only through a join', async () => {
@@ -325,6 +406,9 @@ describe('the patient compartment', () => {
       collection.list({ page: 1, pageSize: 25, sort: 'sentAt', order: 'asc' })
     ).resolves.toMatchObject({ total: 0 });
     await expect(collection.findById(testId(3))).resolves.toBeNull();
+    // The set read is refused on the same terms. A batched path that checked
+    // the compartment only on the single-id route would answer here.
+    await expect(collection.findByIds([testId(3)])).resolves.toEqual([]);
     await expect(collection.update(testId(3), {})).resolves.toBeNull();
     // Refused without asking Postgres: a query that cannot return a row should
     // not be sent at all.
@@ -716,5 +800,83 @@ describe('the Prisma organisation query', () => {
     await expect(repository.list({ ...query, name: 'Practice B' })).resolves.toMatchObject({
       total: 0,
     });
+  });
+});
+
+/**
+ * The property `findByIds` exists for: a page's worth of ids costs one query.
+ *
+ * `prepareRoles` used to dedupe ids and issue `findById` for each, which bought
+ * nothing on a page where every grant belonged to a different practitioner. A
+ * five-hundred-row bulk-export page put up to a thousand concurrent reads
+ * through a connection pool sized for far fewer, and the fix had to be at the
+ * repository layer because every `prepare` hook wants the same thing.
+ */
+describe('the Prisma set read', () => {
+  const PEOPLE = 200;
+
+  function seedPeople(h: Harness): string[] {
+    const ids: string[] = [];
+    for (let index = 0; index < PEOPLE; index += 1) {
+      const id = testId(30_000 + index);
+      ids.push(id);
+      h.dataset.table('User').push({
+        ...storageColumns(id),
+        email: `person-${index}@example.invalid`,
+        givenName: 'Person',
+        familyName: String(index),
+        credential: null,
+        npi: null,
+        dea: null,
+        taxonomyCode: null,
+        isProvider: true,
+        locale: 'en-US',
+        status: 'ACTIVE',
+        lastLoginAt: null,
+      } as unknown as ScopedRow<'User'>);
+    }
+    return ids;
+  }
+
+  it('reads two hundred distinct ids in a single query', async () => {
+    const h = harness();
+    const ids = seedPeople(h);
+    const repositories = createPrismaRepositoryRegistry(() => h.port).forRequest(h.scope);
+
+    const rows = await repositories.users.findByIds(ids);
+
+    expect(rows).toHaveLength(PEOPLE);
+    const userReads = h.port.calls.filter((call) => call.model === 'User');
+    // One. Not two hundred, and not two hundred deduped down to some smaller
+    // number that still grows with the page.
+    expect(userReads).toHaveLength(1);
+    expect(userReads[0]?.operation).toBe('findMany');
+  });
+
+  it('costs no query at all for an empty set', async () => {
+    const h = harness();
+    seedPeople(h);
+    const repositories = createPrismaRepositoryRegistry(() => h.port).forRequest(h.scope);
+
+    await expect(repositories.users.findByIds([])).resolves.toEqual([]);
+
+    expect(h.port.calls.filter((call) => call.model === 'User')).toHaveLength(0);
+  });
+
+  it('sends the ids deduplicated, so a repeated id does not widen the query', async () => {
+    const h = harness();
+    const ids = seedPeople(h);
+    const first = ids[0] ?? '';
+    const repositories = createPrismaRepositoryRegistry(() => h.port).forRequest(h.scope);
+
+    await repositories.users.findByIds([first, first, first]);
+
+    const where = h.port.calls.find((call) => call.model === 'User')?.args as {
+      where?: { AND?: { id?: { in?: string[] } }[]; id?: { in?: string[] } };
+    };
+    const flattened = JSON.stringify(where);
+    expect(flattened).toContain(first);
+    // Three copies in, one out.
+    expect(flattened.split(first).length - 1).toBe(1);
   });
 });

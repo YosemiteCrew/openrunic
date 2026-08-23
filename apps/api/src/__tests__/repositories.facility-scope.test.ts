@@ -23,22 +23,8 @@ import { COLLECTION_SPECS } from '../repositories/specs/index.js';
  * down is one somebody has to defend.
  */
 
-/**
- * Collections allowed to carry a facility column without narrowing reads to it.
- *
- * `patients` is the one, decided in #139. `Patient.primaryFacilityId` is the
- * site that registered somebody, not the site an act happened at - attribution
- * rather than containment - and it is the only facility column in the schema
- * that is not called `facilityId`. Narrowing on it hid the chart of a patient
- * registered at one site from the clinician treating them at another, while
- * still showing a patient registered here who has only ever been seen
- * elsewhere. Wrong in both directions is not a boundary.
- *
- * The column stays because it is a real fact about a patient and lists filter
- * on it deliberately. What confines a site-limited clinician is the sited
- * collections, where the acts live.
- */
-const EXEMPT: ReadonlySet<string> = new Set(['patients']);
+/** Collections allowed to carry a facility column without narrowing reads to it. */
+const EXEMPT: ReadonlySet<string> = new Set([]);
 
 describe('every facility-sited collection narrows to the caller grants', () => {
   const sited = Object.entries(COLLECTION_SPECS).filter(

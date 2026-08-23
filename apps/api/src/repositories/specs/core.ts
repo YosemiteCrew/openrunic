@@ -97,35 +97,46 @@ export const patientSpec: CollectionSpec<
   targetType: 'Patient',
   action: 'patient',
   /**
-   * The patient's usual site, and NOT a boundary. This is #139, decided.
+   * The patient's usual site. It narrows lists and it does NOT refuse an
+   * addressed read. This is #139, decided.
    *
    * Every other facility-scoped collection narrows on `facilityId`, which is
    * containment: the appointment happened there, the encounter happened there,
-   * the charge was raised there. `Patient.primaryFacilityId` is attribution -
-   * the site that registered them. Patient was the only one of nine narrowing
-   * on a column that is not `facilityId`, and that uniqueness is the tell.
+   * the charge was raised there. `primaryFacilityId` is attribution - the site
+   * that registered them. Patient was the only one of nine narrowing on a
+   * column that is not `facilityId`, and that uniqueness is the tell.
    *
-   * Narrowing on it fails in both directions at once. It over-blocks, and
-   * dangerously: a patient registered at the north clinic and standing in front
-   * of a clinician at the south clinic has a chart that clinician cannot open.
-   * And it under-blocks: a patient registered south but only ever seen north is
-   * visible to south regardless. A guard that hides the wrong charts and
-   * reveals the wrong charts is not a guard, it is a mailing address being
-   * asked to do a job it was never given.
+   * The two halves want different answers, which is why this spec is the only
+   * one that sets `facilityHidesAddressed`.
    *
-   * The portal made it sharper still. The facility and compartment clauses are
-   * ANDed rather than alternatives, so pinning a token to one chart does not
-   * exempt it - and `Principal.facilityIds` comes from an IdP claim, so an IdP
-   * that omits `facilities` locked every portal user out of their own record.
+   * A LIST stays narrowed. A work queue should be local, and this is what keeps
+   * a site-limited caller from paging the whole practice's index of names, MRNs
+   * and birth dates. Removing that was the first draft of this change and it
+   * was wrong: it widened a listing surface to fix a lookup problem.
    *
-   * So this collection carries the column and does not narrow on it, which is
-   * the exemption `repositories.facility-scope.test.ts` provides for exactly
-   * this case: the column is the subject rather than the boundary. What
-   * confines a site-limited clinician is the sited collections - appointments,
-   * encounters, charges, grants - which is where the acts they should not see
-   * actually live.
+   * An addressed READ is not refused. The caller already has the id and is
+   * treating the person, and a patient registered at the north clinic standing
+   * in front of the south clinic is the ordinary case rather than the edge. The
+   * old behaviour failed in both directions at once - it hid that chart from
+   * the clinician holding it, while still showing a patient registered here who
+   * has only ever been seen elsewhere.
+   *
+   * The portal made it sharper. The facility and compartment clauses are ANDed
+   * rather than alternatives, so pinning a token to one chart did not exempt
+   * it, and `Principal.facilityIds` comes from an IdP claim - so an IdP that
+   * omits `facilities` locked every portal user out of their own record. That
+   * is an addressed read, and it works now.
+   *
+   * What this is NOT is a care-relationship model. Nothing here asks whether
+   * the caller is treating this patient; it asks whether they know the id. The
+   * real answer is an explicit care relationship or an audited break-glass, and
+   * that is filed rather than pretended at. Every read is recorded in the audit
+   * trail meanwhile, which is detection rather than prevention and is worth
+   * being honest about.
    */
   facilityColumn: 'primaryFacilityId',
+  facilityScoped: true,
+  facilityHidesAddressed: false,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.
   compartment: { column: 'id' },

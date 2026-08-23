@@ -347,7 +347,15 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     expect(res.status).toBe(200);
   });
 
-  it('finds them in the list, because knowing a patient exists is practice-wide', async () => {
+  /**
+   * And still does not get them in a listing.
+   *
+   * The two halves of #139 want different answers, which is the whole point:
+   * the clinician holding an id is treating that person, while a caller paging
+   * a list is browsing. Narrowing the list is what keeps a site-limited caller
+   * out of the practice's whole index of names, MRNs and birth dates.
+   */
+  it('does not find them in the list, because that is browsing rather than treating', async () => {
     const { app, dataset } = createTestApp();
     seedElsewhere(dataset);
 
@@ -356,7 +364,7 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     });
     const body = (await res.json()) as ListResponse<PatientDto>;
 
-    expect(body.data.map((item) => item.id)).toContain(ELSEWHERE);
+    expect(body.data.map((item) => item.id)).not.toContain(ELSEWHERE);
   });
 
   /**

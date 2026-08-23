@@ -174,6 +174,25 @@ export interface CollectionSpec<
    * `RequestScope.hideFacilityRows`, not this flag.
    */
   readonly facilityScoped?: true;
+  /**
+   * Whether a row addressed by its own id may also be hidden by the facility
+   * narrowing. Defaults to true; only `Patient` sets it false.
+   *
+   * The distinction already exists for every spec - a list is always narrowed,
+   * an addressed read only when `RequestScope.hideFacilityRows` says so - and
+   * this is the one collection where the answer has to differ from the scope's.
+   *
+   * `Patient.primaryFacilityId` is the site that registered somebody, not the
+   * site an act happened at. Narrowing a LIST on it is defensible and useful: a
+   * work queue should be local, and that is what keeps a site-limited caller
+   * from paging through the whole practice. Refusing an addressed READ on it is
+   * not, because the caller already has the id and is treating the person - and
+   * a patient registered at the north clinic is standing in front of the south
+   * clinic often enough that it is the ordinary case, not the edge.
+   *
+   * See #139 for the decision and `specs/core.ts` for the reasoning in full.
+   */
+  readonly facilityHidesAddressed?: false;
   /** The column naming the visit, when the row hangs off one. */
   readonly encounterColumn?: keyof Row<NoInfer<M>> & string;
   /** What a patient-scoped token may see of this aggregate. */

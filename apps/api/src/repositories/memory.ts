@@ -147,7 +147,7 @@ export function createMemoryCollection<
 
   /** Mirrors the Prisma port: a list is always narrowed, a row by id only when
    * the scope says to hide it rather than let the route refuse it. */
-  const hideAddressed = scope.hideFacilityRows === true;
+  const hideAddressed = scope.hideFacilityRows === true && spec.facilityHidesAddressed !== false;
 
   const inScope = (row: ScopedRow<M>, narrowFacility: boolean): boolean => {
     if (row.tenantId !== tenantId) return false;

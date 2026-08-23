@@ -1553,10 +1553,18 @@ describe('the facility scope the caller arrived with', () => {
     expect(res.status).toBe(200);
   });
 
-  it('lists a chart registered at another site', async () => {
+  /**
+   * The other half of #139, and the half the first draft of it got wrong.
+   *
+   * A list stays narrowed. A work queue should be local, and this is what keeps
+   * a site-limited caller from paging the whole practice's index of names, MRNs
+   * and birth dates. Dropping it would have widened a listing surface to fix a
+   * lookup problem.
+   */
+  it('still leaves that chart out of a search, because a work queue is local', async () => {
     const { app } = scopedHarness();
 
-    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(ANNEXE_PATIENT);
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).not.toContain(ANNEXE_PATIENT);
   });
 
   it.each(ANNEXE_ROWS)(

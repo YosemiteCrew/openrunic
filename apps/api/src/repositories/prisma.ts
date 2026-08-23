@@ -135,7 +135,7 @@ export function createPrismaCollection<
    * route to refuse and nothing but the narrowing standing between a
    * facility-limited caller and the rest of the tenant.
    */
-  const hideAddressed = scope.hideFacilityRows === true;
+  const hideAddressed = scope.hideFacilityRows === true && spec.facilityHidesAddressed !== false;
 
   const scoped = (
     where: Record<string, unknown> | undefined,

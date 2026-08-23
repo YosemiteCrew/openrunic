@@ -46,6 +46,40 @@ operators, so a value arriving as `{ not: '' }` would select every row instead o
 parses its id with `z.uuid()` first, so this is not reachable today, and the explicit form is what
 keeps it unreachable when a future caller arrives from somewhere else.
 
+## One `where` key, one clause
+
+A spec's `where` is built from conditional spreads, so two parameters constraining the same column
+write the same key and the later spread wins at construction. The earlier clause does not conflict,
+it disappears, and the query runs happily without it.
+
+`matches`, answering the same filter in memory, tests both conditions independently. So the two ports
+return different rows, and only when the two parameters disagree - which is why this survives review.
+It also survives the test suite: every HTTP test runs against the memory registry, where `matches`
+decides, so the port that is wrong is the one nothing exercises.
+
+It has gone wrong four times: `Claim.status`/`statuses`, `RoleAssignment.userId`/`userIds`,
+`ClaimLine.claimId`/`claimIds`, and `Referral.status`/`openOnly`, which shipped and returned the whole
+outstanding-referral tray to a caller who had asked for one status inside it.
+
+Resolve the parameters into one clause through a single function, so both ports read one decision:
+
+```ts
+function referralStatuses(query: ReferralListQuery): readonly ReferralStatus[] | undefined {
+  const open = query.openOnly === true ? OPEN_REFERRAL_STATUSES : undefined;
+  const { status } = query;
+  if (open === undefined) return status === undefined ? undefined : [status];
+  if (status === undefined) return open;
+  return open.includes(status) ? [status] : [];
+}
+```
+
+`undefined` means no filter. An empty array means one that matches nothing, which is the honest answer
+to an impossible intersection - dropping the clause instead would widen the query to every row.
+
+`repositories.port-agreement.test.ts` asserts the two ports agree for every spec, including with a
+colliding pair deliberately in conflict, and the query table it drives from fails to compile when a
+spec or a filter parameter is added. That is the guard; this section is why it exists.
+
 ## FHIR lives at the edge
 
 Read `docs/adr/0002`. Resources are produced at the boundary from relational rows; they are never

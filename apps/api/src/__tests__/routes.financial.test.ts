@@ -2208,7 +2208,7 @@ describe('the specs agree with themselves', () => {
         claimId: testId(30),
         chargeItemId: testId(20),
       })
-    ).toEqual({ claimId: testId(30), chargeItemId: testId(20) });
+    ).toEqual({ claimId: { in: [testId(30)] }, chargeItemId: testId(20) });
 
     expect(
       financialSpecs.claimStatusHistory.where({

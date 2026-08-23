@@ -46,7 +46,7 @@ export interface PatientListQuery extends BaseQuery {
   sexAtBirth?: AdministrativeGender;
   family?: string;
   given?: string;
-  /** Exact date of birth, midnight UTC. */
+  /** Date of birth. Selects any birth recorded on this UTC day. */
   birthDate?: Date;
   active?: boolean;
   facilityId?: string;
@@ -59,6 +59,32 @@ function sameUtcDay(left: Date, right: Date): boolean {
     left.getUTCMonth() === right.getUTCMonth() &&
     left.getUTCDate() === right.getUTCDate()
   );
+}
+
+/**
+ * The same rule as `sameUtcDay`, as a half-open range Prisma can filter with.
+ *
+ * `where` used to emit exact instant equality here while `matches` compared the
+ * UTC day, which are two different rules for one filter. They agreed only
+ * because three unrelated facts held at once: `birthDate` is `@db.Date` so
+ * Postgres stores no time, and both entry points parse a bare `YYYY-MM-DD` and
+ * append midnight UTC. Any one of those changing - a column type, or accepting
+ * an ISO instant the way the window parameters already do - would have split
+ * the two ports silently.
+ *
+ * A range says what `matches` says, so the agreement no longer rests on
+ * arithmetic happening to coincide in three files nobody reads together.
+ */
+function utcDayRange(day: Date): { gte: Date; lt: Date } {
+  const year = day.getUTCFullYear();
+  const month = day.getUTCMonth();
+  const date = day.getUTCDate();
+  // `Date.UTC` rolls `date + 1` over a month or year end on its own, so the
+  // upper bound needs no special case for the 31st or for December.
+  return {
+    gte: new Date(Date.UTC(year, month, date)),
+    lt: new Date(Date.UTC(year, month, date + 1)),
+  };
 }
 
 export const patientSpec: CollectionSpec<
@@ -144,7 +170,7 @@ export const patientSpec: CollectionSpec<
       ...(query.given === undefined ? {} : { givenName: likeStartsWith(query.given) }),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.facilityId === undefined ? {} : { primaryFacilityId: query.facilityId }),
-      ...(query.birthDate === undefined ? {} : { birthDate: query.birthDate }),
+      ...(query.birthDate === undefined ? {} : { birthDate: utcDayRange(query.birthDate) }),
       ...(query.q === undefined
         ? {}
         : {

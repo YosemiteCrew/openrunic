@@ -5,7 +5,7 @@ import { isSupportedLocale, SUPPORTED_LOCALES } from '@openrunic/i18n';
 import { notFound } from 'next/navigation';
 
 import { AppShell } from '@/app/_shell/AppShell';
-import { baseMetadata, baseViewport } from '@/app/_shell/metadata';
+import { baseMetadata } from '@/app/_shell/metadata';
 
 /**
  * THE PUBLIC PAGES, AND WHY THEY HAVE A LOCALE IN THEIR URL.
@@ -62,7 +62,7 @@ export async function generateMetadata({
   };
 }
 
-export const viewport = baseViewport;
+export { baseViewport as viewport } from '@/app/_shell/metadata';
 
 export default async function PublicLayout({
   children,

@@ -84,13 +84,11 @@ import { SESSION_COOKIE, sessionState } from '@/lib/auth/session';
  * and the destination is assigned field by field, so leaving this origin is not
  * something a value can express.
  */
-function redirect(request: NextRequest, pathname: string, query = '', status?: 307): NextResponse {
+function redirect(request: NextRequest, pathname: string, query = ''): NextResponse {
   const destination = request.nextUrl.clone();
   destination.pathname = pathname;
   destination.search = query;
-  return status === undefined
-    ? NextResponse.redirect(destination)
-    : NextResponse.redirect(destination, status);
+  return NextResponse.redirect(destination);
 }
 
 /**
@@ -123,16 +121,19 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // because two answers to "what language is this person reading in" drift, and
   // the first symptom is a reader sent to `/es` and then served English.
   //
-  // 307 rather than 308: the destination depends on a cookie the reader can
-  // change, and a permanent redirect is cached by the browser against a URL
-  // with no fixed answer. Somebody switching to Spanish would keep landing on
-  // the English page with no way to tell why.
+  // Temporary rather than permanent, which `NextResponse.redirect` already is:
+  // it answers 307 unless told otherwise. That matters here rather than being
+  // incidental - the destination depends on a cookie the reader can change, and
+  // a permanent redirect is cached by the browser against a URL with no fixed
+  // answer, so somebody switching to Spanish would keep landing on the English
+  // page with no way to tell why. The proxy test pins the 307 so a future
+  // `status` argument cannot quietly make it permanent.
   if (UNPREFIXED_MARKETING_PATHS.includes(pathname)) {
     const locale = localeFrom(
       request.headers.get('cookie'),
       request.headers.get('accept-language')
     );
-    return redirect(request, localisedPath(pathname, locale), search, 307);
+    return redirect(request, localisedPath(pathname, locale), search);
   }
 
   if (isPublicPath(pathname)) return NextResponse.next();

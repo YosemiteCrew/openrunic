@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 
 import { AppShell } from '@/app/_shell/AppShell';
-import { baseMetadata, baseViewport } from '@/app/_shell/metadata';
 import { resolveLocale } from '@/lib/i18n/locale';
 
 /**
@@ -28,8 +27,7 @@ import { resolveLocale } from '@/lib/i18n/locale';
  * every one of them to buy a prerender these routes cannot use would be a cost
  * with nothing on the other side of it.
  */
-export const metadata = baseMetadata;
-export const viewport = baseViewport;
+export { baseMetadata as metadata, baseViewport as viewport } from '@/app/_shell/metadata';
 
 export default async function AppLayout({ children }: Readonly<{ children: ReactNode }>) {
   // Resolved here, before the first byte. A page that renders in English and

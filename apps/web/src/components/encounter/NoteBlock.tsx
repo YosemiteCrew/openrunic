@@ -41,13 +41,15 @@ import { SlashCommandMenu } from './SlashCommandMenu';
  *
  * A flat catalogue has no room for a plural inside one message, so each form
  * English distinguishes is its own key and `Intl.PluralRules` picks between
- * them on the reader's locale rather than on `count === 1`. Written as literals
- * because the drift test reads keys out of the source and cannot see one that
- * is assembled at runtime.
+ * them on the reader's locale rather than on `count === 1`.
+ *
+ * `oneKey` and `otherKey` rather than `one` and `other`, because the drift test
+ * finds a key held in data only under a `somethingKey` property. A key under
+ * any other name is a key nothing checks exists.
  */
 const COMMANDS_AVAILABLE_KEYS = {
-  one: 'encounter.block.commandsAvailable.one',
-  other: 'encounter.block.commandsAvailable.other',
+  oneKey: 'encounter.block.commandsAvailable.one',
+  otherKey: 'encounter.block.commandsAvailable.other',
 } as const;
 
 export interface NoteBlockProps {
@@ -224,8 +226,8 @@ export function NoteBlock({
             {menu
               ? t(
                   new Intl.PluralRules(t.locale).select(visible.length) === 'one'
-                    ? COMMANDS_AVAILABLE_KEYS.one
-                    : COMMANDS_AVAILABLE_KEYS.other,
+                    ? COMMANDS_AVAILABLE_KEYS.oneKey
+                    : COMMANDS_AVAILABLE_KEYS.otherKey,
                   { count: visible.length }
                 )
               : ''}

@@ -71,28 +71,32 @@ const SEVERITY_TONE = {
  *
  * A flat catalogue has no room for a plural inside one message, so each form
  * English distinguishes is its own key and `Intl.PluralRules` picks between
- * them on the reader's locale rather than on `count === 1`. Written as a
- * literal map because the drift test reads keys out of the source and cannot
- * see one that is assembled at runtime - which is also why nobody could find it
- * when it broke.
+ * them on the reader's locale rather than on `count === 1`.
+ *
+ * The properties are named `oneKey` and `otherKey` rather than `one` and
+ * `other` because that is the shape the drift test looks for: a direct
+ * translator call, or a property whose name ends in `Key`. A catalogue key held
+ * under any other property name is a key nothing checks exists. Naming these
+ * for the plural category alone read better and left six catalogue entries
+ * unguarded.
  */
 interface CountKeys {
-  readonly one: string;
-  readonly other: string;
+  readonly oneKey: string;
+  readonly otherKey: string;
 }
 
 function countKey(forms: CountKeys, count: number, locale: string): string {
-  return new Intl.PluralRules(locale).select(count) === 'one' ? forms.one : forms.other;
+  return new Intl.PluralRules(locale).select(count) === 'one' ? forms.oneKey : forms.otherKey;
 }
 
 const MEDICATION_COUNT_KEYS: CountKeys = {
-  one: 'chart.rail.medications.count.one',
-  other: 'chart.rail.medications.count.other',
+  oneKey: 'chart.rail.medications.count.one',
+  otherKey: 'chart.rail.medications.count.other',
 };
 
 const UNSIGNED_NOTE_KEYS: CountKeys = {
-  one: 'chart.rail.documentation.unsigned.one',
-  other: 'chart.rail.documentation.unsigned.other',
+  oneKey: 'chart.rail.documentation.unsigned.one',
+  otherKey: 'chart.rail.documentation.unsigned.other',
 };
 
 /**

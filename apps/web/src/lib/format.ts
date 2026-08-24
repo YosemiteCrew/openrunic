@@ -42,26 +42,29 @@ import type { PatientName } from '@/lib/api/types';
  */
 export const CLINIC_TIME_ZONE = 'UTC';
 
-/** The locale every formatter uses. en-US primary; DE ships at v1. */
-const LOCALE = 'en-US';
-
 /**
  * Built formatters, kept for the life of the page.
  *
  * Constructing an `Intl.NumberFormat` is one of the more expensive things in
  * the standard library, and a ledger screen formats one per cell per render.
  * The options cannot be hoisted to a constant because the currency comes from
- * the row, so they are memoised on the option set instead. The key space is the
- * currencies a practice actually bills in, which is a handful, so this cannot
- * grow without bound.
+ * the row and the locale comes from the reader, so they are memoised on both
+ * instead. The key space is the currencies a practice bills in times the
+ * languages this build ships, both of which are a handful, so this cannot grow
+ * without bound.
+ *
+ * The locale is part of the key rather than fixed, and that is the whole reason
+ * this function changed: keyed on the options alone, the first reader to open a
+ * ledger would decide how every later reader saw one, whatever language they
+ * had asked for.
  */
 const NUMBER_FORMATTERS = new Map<string, Intl.NumberFormat>();
 
-function numberFormatter(options: Intl.NumberFormatOptions): Intl.NumberFormat {
-  const key = JSON.stringify(options);
+function numberFormatter(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
   const cached = NUMBER_FORMATTERS.get(key);
   if (cached) return cached;
-  const built = new Intl.NumberFormat(LOCALE, options);
+  const built = new Intl.NumberFormat(locale, options);
   NUMBER_FORMATTERS.set(key, built);
   return built;
 }
@@ -332,14 +335,35 @@ export function formatElapsed(
 /* Money                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export type NegativeLabel = 'Credit' | 'Refund';
+/**
+ * What a negative amount means on this screen, as a discriminator rather than as
+ * the word.
+ *
+ * It used to be `'Credit' | 'Refund'`, which made a display string double as a
+ * type: the value a screen passed in was also the text a reader saw, so there
+ * was no seam to translate at without changing what every call site typed. The
+ * words now live in the catalogue and this names which pair to look up.
+ */
+export type NegativeLabel = 'credit' | 'refund';
+
+interface NegativeWords {
+  /** The standalone word beside the amount. */
+  readonly labelKey: string;
+  /** The whole spoken sentence, amount included. Never the label glued on. */
+  readonly spokenKey: string;
+}
+
+const NEGATIVE_WORDS = {
+  credit: { labelKey: 'billing.money.credit', spokenKey: 'billing.money.spokenCredit' },
+  refund: { labelKey: 'billing.money.refund', spokenKey: 'billing.money.spokenRefund' },
+} as const satisfies Readonly<Record<NegativeLabel, NegativeWords>>;
 
 export interface MoneyOptions {
   /** ISO 4217. Always explicit: a bare number on a billing screen is a defect. */
   currency?: string;
   /**
-   * What a negative amount means on this screen. Billing surfaces read "Credit"
-   * (money the practice owes the patient); payment surfaces read "Refund".
+   * What a negative amount means on this screen. Billing surfaces read a credit
+   * (money the practice owes the patient); payment surfaces read a refund.
    */
   negativeLabel?: NegativeLabel;
 }
@@ -347,8 +371,8 @@ export interface MoneyOptions {
 export interface Money {
   /** "$38.00", or "($38.00)" when negative. Right-align it, tabular figures. */
   text: string;
-  /** "Credit" or "Refund" for a negative amount, otherwise null. Render it. */
-  label: NegativeLabel | null;
+  /** The word for a negative amount, in the reader's language, otherwise null. Render it. */
+  label: string | null;
   /** "38.00 US dollars credit". For `aria-label` where the parentheses do not read. */
   srText: string;
   negative: boolean;
@@ -360,19 +384,28 @@ export interface Money {
  * Negatives are rendered in parentheses AND carry an explicit word, because
  * a minus sign is easy to miss at the end of a long ledger column and colour is
  * never the only signal.
+ *
+ * The digits, the separators and the symbol's position come from the reader's
+ * locale, so a Spanish reader sees "38,00 $" where an English one sees "$38.00".
+ * The parentheses do not. `Intl` can produce them itself with
+ * `currencySign: 'accounting'`, and for Spanish and German it produces a leading
+ * minus instead - which is exactly the signal this wraps them for. The
+ * parentheses are this product's rule about not losing a negative in a column,
+ * the way day-month-year above is its rule about not losing a date, and neither
+ * is the reader's language to decide.
  */
-export function formatMoney(amount: number, options: MoneyOptions = {}): Money {
+export function formatMoney(t: Translator, amount: number, options: MoneyOptions = {}): Money {
   const currency = options.currency ?? 'USD';
   const negative = amount < 0;
-  const label = negative ? (options.negativeLabel ?? 'Credit') : null;
+  const words = negative ? NEGATIVE_WORDS[options.negativeLabel ?? 'credit'] : null;
 
-  const magnitude = numberFormatter({
+  const magnitude = numberFormatter(t.locale, {
     style: 'currency',
     currency,
     currencyDisplay: 'narrowSymbol',
   }).format(Math.abs(amount));
 
-  const spoken = numberFormatter({
+  const spoken = numberFormatter(t.locale, {
     style: 'currency',
     currency,
     currencyDisplay: 'name',
@@ -380,8 +413,12 @@ export function formatMoney(amount: number, options: MoneyOptions = {}): Money {
 
   return {
     text: negative ? `(${magnitude})` : magnitude,
-    label,
-    srText: label ? `${spoken} ${label.toLowerCase()}` : spoken,
+    label: words ? t(words.labelKey) : null,
+    // One message rather than the amount with the label lowercased onto the end.
+    // "credit" is lower case mid-sentence in English and the label beside the
+    // number is not, which is a fact about English rather than a rule to apply
+    // to every language.
+    srText: words ? t(words.spokenKey, { amount: spoken }) : spoken,
     negative,
   };
 }

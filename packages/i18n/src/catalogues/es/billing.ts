@@ -28,6 +28,13 @@ import type { Messages } from '../../catalogue.js';
 export const billing: Messages = {
   'billing.drawer.close': 'Cerrar',
 
+  /* ------------------------------------------------------------------ money */
+
+  'billing.money.credit': 'Saldo a favor',
+  'billing.money.refund': 'Reembolso',
+  'billing.money.spokenCredit': '{amount} de saldo a favor',
+  'billing.money.spokenRefund': '{amount} de reembolso',
+
   'billing.claimStatus.captured': 'Capturada',
   'billing.claimStatus.scrubbed': 'Depurada',
   'billing.claimStatus.submitted': 'Enviada',

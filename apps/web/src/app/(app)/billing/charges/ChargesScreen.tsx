@@ -78,7 +78,8 @@ function readyHint(isReady: boolean, blockingCount: number, translate: Translato
  */
 function CopayBadge({ sheet }: Readonly<{ sheet: FeeSheet }>): ReactElement {
   const t = useTranslator();
-  const money = (amount: number): string => formatMoney(amount, { currency: sheet.currency }).text;
+  const money = (amount: number): string =>
+    formatMoney(t, amount, { currency: sheet.currency }).text;
 
   if (sheet.copayDue === 0) {
     return (
@@ -210,7 +211,7 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
   );
   const isReady = sheet ? (marked[sheet.id] ?? sheet.status !== 'OPEN') : false;
 
-  const findings = useMemo(() => (sheet ? scrubFeeSheet(sheet, lines) : []), [sheet, lines]);
+  const findings = useMemo(() => (sheet ? scrubFeeSheet(t, sheet, lines) : []), [t, sheet, lines]);
   const blocking = blockingFindings(findings);
   const totals = useMemo(() => (sheet ? feeSheetTotals(sheet, lines) : null), [sheet, lines]);
 

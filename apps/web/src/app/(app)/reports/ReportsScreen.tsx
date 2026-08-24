@@ -345,10 +345,10 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
                     id: bucket.id,
                     label: bucket.label,
                     value: bucket.payerAmount + bucket.patientAmount,
-                    valueText: formatMoney(bucket.payerAmount + bucket.patientAmount).text,
+                    valueText: formatMoney(t, bucket.payerAmount + bucket.patientAmount).text,
                     detail: t('reports.aging.split', {
-                      payer: formatMoney(bucket.payerAmount).text,
-                      patient: formatMoney(bucket.patientAmount).text,
+                      payer: formatMoney(t, bucket.payerAmount).text,
+                      patient: formatMoney(t, bucket.patientAmount).text,
                     }),
                     attention: bucket.id === '90-plus',
                   }))}
@@ -400,7 +400,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
               ? t('reports.visits.summary', {
                   visits: report.data.totals.visits,
                   minutes: report.data.totals.minutes,
-                  charges: formatMoney(report.data.totals.charges).text,
+                  charges: formatMoney(t, report.data.totals.charges).text,
                 })
               : null
           }
@@ -478,7 +478,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
                   visitType: <span className="or-small">{row.visitType}</span>,
                   status: <span className="or-small">{statusLabel(t, row.status)}</span>,
                   duration: String(row.durationMinutes),
-                  charge: formatMoney(row.chargeAmount).text,
+                  charge: formatMoney(t, row.chargeAmount).text,
                   claim: <span className="or-small">{row.claimState}</span>,
                 }))}
               />
@@ -496,7 +496,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
                 </div>
                 <div>
                   <dt className="or-small">{t('reports.totals.charges')}</dt>
-                  <dd className="or-mono">{formatMoney(data.totals.charges).text}</dd>
+                  <dd className="or-mono">{formatMoney(t, data.totals.charges).text}</dd>
                 </div>
               </dl>
             </>

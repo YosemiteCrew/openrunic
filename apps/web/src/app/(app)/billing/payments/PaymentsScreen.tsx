@@ -138,7 +138,7 @@ function RecentPayments({
                   <span className="or-mono or-caption">{payment.receiptNumber}</span>
                   <span className="or-era-list__meta">
                     <span className="or-mono">
-                      {formatMoney(payment.amount, { currency: payment.currency }).text}
+                      {formatMoney(t, payment.amount, { currency: payment.currency }).text}
                     </span>
                     <span className="or-caption">{formatDate(payment.takenAt, 'dense')}</span>
                   </span>
@@ -326,7 +326,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
     toasts.push({
       tone: 'success',
       title: t('billing.payments.toast.taken', {
-        amount: formatMoney(payment.amount, { currency: payment.currency }).text,
+        amount: formatMoney(t, payment.amount, { currency: payment.currency }).text,
       }),
       message: t('billing.payments.toast.takenMessage', { number: payment.receiptNumber }),
     });
@@ -445,7 +445,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                     options={accounts.map((candidate) => ({
                       value: candidate.id,
                       label: `${formatName(candidate.patient.name, 'listing')} ${
-                        formatMoney(candidate.balance, { currency: candidate.currency }).text
+                        formatMoney(t, candidate.balance, { currency: candidate.currency }).text
                       }`,
                     }))}
                     value={account.id}
@@ -469,7 +469,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                   <span className="or-mono">{formatMrn(account.patient.mrn)}</span>
                   <span className="or-small">
                     {t('billing.payments.balance', {
-                      amount: formatMoney(account.balance, { currency: account.currency }).text,
+                      amount: formatMoney(t, account.balance, { currency: account.currency }).text,
                     })}
                   </span>
                   {account.cardOnFile ? (
@@ -500,9 +500,9 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                     <VitalStat
                       label={t('billing.payments.unallocated')}
                       value={
-                        formatMoney(state.unallocated, {
+                        formatMoney(t, state.unallocated, {
                           currency: account.currency,
-                          negativeLabel: 'Credit',
+                          negativeLabel: 'credit',
                         }).text
                       }
                       state={state.balanced ? 'success' : 'danger'}

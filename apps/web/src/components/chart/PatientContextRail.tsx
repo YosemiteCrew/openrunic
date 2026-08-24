@@ -377,7 +377,7 @@ function BalanceLine({
   balanceDue,
   t,
 }: Readonly<{ balanceDue: number; t: Translator }>): ReactElement {
-  const balance = formatMoney(balanceDue);
+  const balance = formatMoney(t, balanceDue);
   const due = balanceDue > 0;
 
   return (

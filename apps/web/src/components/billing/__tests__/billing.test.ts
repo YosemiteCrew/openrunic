@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -76,10 +77,13 @@ describe('fee sheet totals', () => {
   });
 });
 
+/** The scrubber quotes an amount, so it needs a reader to quote it to. */
+const english = createTranslator(appCatalogue, 'en');
+
 describe('scrubFeeSheet', () => {
   it('blocks on a line with no diagnosis linked, naming the code', () => {
     const first = sheet(0);
-    const blocking = blockingFindings(scrubFeeSheet(first, first.lines));
+    const blocking = blockingFindings(scrubFeeSheet(english, first, first.lines));
     expect(blocking).toHaveLength(1);
     // The sentence is a catalogue key now, so the code it names is a value on
     // the finding rather than a substring of it. Same assertion, one layer down.
@@ -93,17 +97,17 @@ describe('scrubFeeSheet', () => {
     const justified = first.lines.map((line) =>
       line.justifiedBy.length === 0 ? { ...line, justifiedBy: ['I10'] } : line
     );
-    expect(blockingFindings(scrubFeeSheet(first, justified))).toHaveLength(0);
+    expect(blockingFindings(scrubFeeSheet(english, first, justified))).toHaveLength(0);
   });
 
   it('blocks a sheet with no charges at all', () => {
-    const blocking = blockingFindings(scrubFeeSheet(sheet(0), []));
+    const blocking = blockingFindings(scrubFeeSheet(english, sheet(0), []));
     expect(blocking[0]?.id).toBe('no-charges');
   });
 
   it('raises an uncollected copay and an exhausted authorisation as advisory only', () => {
     const second = sheet(1);
-    const findings = scrubFeeSheet(second, second.lines);
+    const findings = scrubFeeSheet(english, second, second.lines);
     const ids = findings.map((finding) => finding.id);
     expect(ids).toContain('copay-outstanding');
     expect(ids).toContain('auth');
@@ -120,7 +124,7 @@ describe('scrubFeeSheet', () => {
         justifiedBy: ['I10'],
       },
     ];
-    const findings = scrubFeeSheet(first, doubled);
+    const findings = scrubFeeSheet(english, first, doubled);
     expect(findings.some((finding) => finding.id.startsWith('duplicate-'))).toBe(true);
   });
 });

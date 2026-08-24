@@ -30,6 +30,27 @@ export const billing: Messages = {
   /* --------------------------------------------------------- shared surface */
   'billing.drawer.close': 'Close',
 
+  /* ------------------------------------------------------------------ money */
+
+  /*
+   * What a negative amount means, and how it is spoken.
+   *
+   * Two keys per meaning rather than one lowercased into the other. "Credit" is
+   * the word printed beside the number and "credit" is the word inside the
+   * sentence a screen reader hears, and in English the only difference is a
+   * capital. That is a fact about English: German capitalises the noun in both
+   * places, and a language that reorders the sentence needs to move the whole
+   * thing rather than a fragment.
+   *
+   * `{amount}` arrives already formatted by `Intl` with `currencyDisplay: 'name'`
+   * ("38.00 US dollars"), so the currency is named in the reader's language by
+   * the runtime and this message only decides where it sits in the sentence.
+   */
+  'billing.money.credit': 'Credit',
+  'billing.money.refund': 'Refund',
+  'billing.money.spokenCredit': '{amount} credit',
+  'billing.money.spokenRefund': '{amount} refund',
+
   /* ------------------------------------------------ claim states and ageing */
   /* openrunic's own claim workflow, not an X12 vocabulary. */
   'billing.claimStatus.captured': 'Captured',

@@ -101,7 +101,7 @@ export function RemittanceLines({
       variance: (
         <span className="or-variance">
           <Badge tone={variance.tone}>{t(variance.labelKey)}</Badge>
-          <Money amount={variance.amount} currency={currency} negativeLabel="Credit" />
+          <Money amount={variance.amount} currency={currency} negativeLabel="credit" />
           {line.adjustmentCode ? <Tag mono>{line.adjustmentCode}</Tag> : null}
           {line.exceptionReason ? <span className="or-small">{line.exceptionReason}</span> : null}
           {line.secondaryPayerName ? (

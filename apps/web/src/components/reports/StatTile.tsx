@@ -30,17 +30,15 @@ export interface StatTileProps {
 /**
  * A money tile formats as money; everything else keeps its own unit word.
  *
- * The count goes through `formatCount` on the reader's own locale rather than
- * `toLocaleString('en-US')`, which put "10,000" in front of a Spanish reader
- * whose language groups it "10.000". Money still goes through `formatMoney`,
- * which reads a fixed locale of its own in `lib/format.ts`; that is the same
- * problem one layer down and is being fixed with the rest of that file.
+ * Both halves read the reader's own locale rather than a fixed `en-US`, which
+ * put "10,000" in front of a Spanish reader whose language groups it "10.000"
+ * and "$38.00" where that reader writes "38,00 $".
  */
-function readValue(tile: DashboardTile, locale: string): { text: string; unit: string | null } {
+function readValue(t: Translator, tile: DashboardTile): { text: string; unit: string | null } {
   if (tile.unit === '$') {
-    return { text: formatMoney(tile.value).text, unit: null };
+    return { text: formatMoney(t, tile.value).text, unit: null };
   }
-  return { text: formatCount(tile.value, locale), unit: tile.unit };
+  return { text: formatCount(tile.value, t.locale), unit: tile.unit };
 }
 
 /**
@@ -65,7 +63,7 @@ function trendSentence(t: Translator, tile: DashboardTile): string {
 
 export function StatTile({ tile }: Readonly<StatTileProps>): ReactElement {
   const t = useTranslator();
-  const { text, unit } = readValue(tile, t.locale);
+  const { text, unit } = readValue(t, tile);
 
   return (
     <Card className="or-stat" data-state={tile.state}>

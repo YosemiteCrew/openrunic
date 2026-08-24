@@ -161,7 +161,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                     <span className="or-era-list__meta">
                       <span className="or-mono">
                         {
-                          formatMoney(candidate.paymentAmount, { currency: candidate.currency })
+                          formatMoney(t, candidate.paymentAmount, { currency: candidate.currency })
                             .text
                         }
                       </span>
@@ -228,7 +228,8 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                   <VitalStat
                     label={t('billing.remittance.payment')}
                     value={
-                      formatMoney(remittance.paymentAmount, { currency: remittance.currency }).text
+                      formatMoney(t, remittance.paymentAmount, { currency: remittance.currency })
+                        .text
                     }
                     state="neutral"
                     stateLabel={t('billing.remittance.serviceLineCount', { count: summary.lines })}
@@ -256,7 +257,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                   <VitalStat
                     label={t('billing.remittance.patientResponsibility')}
                     value={
-                      formatMoney(summary.patientResponsibility, {
+                      formatMoney(t, summary.patientResponsibility, {
                         currency: remittance.currency,
                       }).text
                     }

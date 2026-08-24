@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -236,6 +236,48 @@ test('refuses a source path that escapes the root', () => {
 
   try {
     assert.throws(() => checkWith(directory, '2026-08-24', [escaping]), /escapes/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/**
+ * A dangling symlink fails the read with ENOENT, the same code a missing file
+ * gives, so an error-code check alone would call it absent and report a clean
+ * scan. The path exists, somebody put it there deliberately, and whatever it
+ * pointed at is gone - the unreadable case wearing the missing case's error
+ * code.
+ *
+ * Raised in review of this file, and it is the second time the same
+ * fail-open shape has been found in a script written to prevent exactly that.
+ */
+test('a dangling symlink is a read failure, not an absent file', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+  symlinkSync(path.join(directory, 'nowhere.yaml'), path.join(directory, '.grype.yaml'));
+
+  try {
+    assert.throws(() => check(directory, '2026-08-24'), /ENOENT|no such file/iu);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** And a symlink that resolves is read through, so the guard is not just strict. */
+test('a symlink that resolves is read normally', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+  writeFileSync(
+    path.join(directory, 'real.yaml'),
+    'ignore:\n  # CVE-2025-00001 in foo. Owner: someone.\n  # Re-review by: 2030-01-01.\n  - vulnerability: CVE-2025-00001\n'
+  );
+  symlinkSync(path.join(directory, 'real.yaml'), path.join(directory, '.grype.yaml'));
+
+  try {
+    const { exceptions, problems } = check(directory, '2026-08-24');
+    assert.deepEqual(
+      exceptions.map((exception) => exception.id),
+      ['CVE-2025-00001']
+    );
+    assert.deepEqual(problems, []);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

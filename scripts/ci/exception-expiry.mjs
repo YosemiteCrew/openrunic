@@ -43,7 +43,7 @@
 // Exit code 0 when every exception is current, 1 when one has expired or is
 // missing a date, 2 on a usage error.
 
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -149,6 +149,13 @@ export function todayUtc(now = new Date()) {
  * failure this script was written to stop happening to a re-review date. So
  * anything other than "not found" is raised.
  *
+ * "Not found" is decided by `lstat` rather than by the read's error code,
+ * because a dangling symlink fails the read with ENOENT too. The path exists,
+ * somebody put it there deliberately, and whatever it was meant to point at is
+ * gone - which is exactly the unreadable case, wearing the missing case's error
+ * code. `lstat` sees the link itself and does not follow it, so the two are
+ * told apart.
+ *
  * The path goes through `resolveWithin` for the reason the other CI scripts do.
  * It is not reachable input today, {@link SOURCES} being a constant in this
  * file, but a guard that reads paths is a guard somebody will later hand a path
@@ -160,11 +167,15 @@ function readIfPresent(root, file) {
     throw new Error(`exception-expiry: refusing to read ${file}, which escapes ${root}`);
   }
   try {
-    return readFileSync(resolved, 'utf8');
+    lstatSync(resolved);
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
     throw error;
   }
+
+  // Past this point the path exists, so every failure is a real one - including
+  // the ENOENT a dangling symlink raises.
+  return readFileSync(resolved, 'utf8');
 }
 
 /** Every exception in a given set of sources, and the ones that fail the build. */

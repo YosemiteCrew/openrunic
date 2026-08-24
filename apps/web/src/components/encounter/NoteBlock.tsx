@@ -6,7 +6,9 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
 import { useActiveOptionInView } from '@/lib/active-option';
 import type { EmittedItem, NoteSection, SlashCommand } from '@/lib/api/chart';
-import { formatCount, formatEnumLabel } from '@/lib/format';
+import { formatEnumLabel } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { optionId } from './ids';
 import { SlashCommandMenu } from './SlashCommandMenu';
@@ -28,7 +30,28 @@ import { SlashCommandMenu } from './SlashCommandMenu';
  * A signed block renders as text. There is no editable state to fall back to,
  * because signed content that can still be typed into is the one defect a note
  * editor must never have.
+ *
+ * The block's own heading and hint come from the note rather than from the
+ * catalogue, so the sentences here that name a block take it as a value. A
+ * section is named once, by the record, and naming it a second time in the
+ * interface is how two names for one thing get shipped.
  */
+
+/**
+ * How many commands the list is offering, spoken rather than seen.
+ *
+ * A flat catalogue has no room for a plural inside one message, so each form
+ * English distinguishes is its own key and `Intl.PluralRules` picks between
+ * them on the reader's locale rather than on `count === 1`.
+ *
+ * `oneKey` and `otherKey` rather than `one` and `other`, because the drift test
+ * finds a key held in data only under a `somethingKey` property. A key under
+ * any other name is a key nothing checks exists.
+ */
+const COMMANDS_AVAILABLE_KEYS = {
+  oneKey: 'encounter.block.commandsAvailable.one',
+  otherKey: 'encounter.block.commandsAvailable.other',
+} as const;
 
 export interface NoteBlockProps {
   section: NoteSection;
@@ -61,6 +84,7 @@ export function NoteBlock({
   onChange,
   onEmit,
 }: Readonly<NoteBlockProps>): ReactElement {
+  const t = useTranslator();
   const blockId = `note-block-${section.key}`;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [menu, setMenu] = useState<{ start: number; query: string } | null>(null);
@@ -145,6 +169,8 @@ export function NoteBlock({
     setActiveIndex(0);
   };
 
+  const sectionName = section.label.toLowerCase();
+
   return (
     <Card id={blockId} title={section.label} className="or-note-block">
       <p className="or-caption or-note-block__hint" id={`${blockId}-hint`}>
@@ -159,7 +185,7 @@ export function NoteBlock({
                it was signed, and nothing about it is reconstructed. */
             <p className="or-body or-note-block__text">{section.text}</p>
           ) : (
-            <p className="or-body or-note-block__absent">Nothing recorded in this block.</p>
+            <p className="or-body or-note-block__absent">{t('encounter.block.empty')}</p>
           )}
         </div>
       ) : (
@@ -167,7 +193,7 @@ export function NoteBlock({
           <div className="or-note-block__margin">
             <IconButton
               icon="slash"
-              label={`Insert a command in ${section.label.toLowerCase()}`}
+              label={t('encounter.block.insertCommand', { section: sectionName })}
               variant="ghost"
               size="sm"
               onClick={openFromButton}
@@ -198,9 +224,7 @@ export function NoteBlock({
           ) : null}
 
           <output className="or-visually-hidden">
-            {menu
-              ? `${formatCount(visible.length, 'command')} available. Use the arrow keys and Enter.`
-              : ''}
+            {menu ? counted(t, COMMANDS_AVAILABLE_KEYS, visible.length) : ''}
           </output>
         </>
       )}
@@ -208,7 +232,7 @@ export function NoteBlock({
       {section.emitted.length > 0 ? (
         <ul
           className="or-note-block__emitted"
-          aria-label={`Written to the chart from ${section.label.toLowerCase()}`}
+          aria-label={t('encounter.block.writtenToChart', { section: sectionName })}
         >
           {section.emitted.map((item) => (
             <li key={item.id}>

@@ -123,7 +123,7 @@ export const marketing: Messages = {
     'El registro de auditoría, el diseño de acceso con el mínimo privilegio y el hecho de que una clínica pueda ejecutar todo el sistema en equipo que ella controla están hechos para que alguien competente pueda construir encima una instalación que cumpla. Respaldan ese trabajo. No lo hacen por usted, y distribuirlos no vuelve conforme a ninguna instalación.',
   'marketing.home.position.advice.title': 'No da consejo médico',
   'marketing.home.position.advice.body':
-    'openrunic no está pensado para dar consejo médico, diagnóstico ni recomendaciones de tratamiento, y ninguna parte de él interpreta un valor clínico para un paciente ni ordena nada por riesgo clínico. Las decisiones clínicas son responsabilidad de profesionales de la salud calificados.',
+    'openrunic no está pensado para dar consejo médico, diagnóstico ni recomendaciones de tratamiento, y ninguna parte de él interpreta un valor clínico para un paciente ni clasifica nada por riesgo clínico. Las decisiones clínicas son responsabilidad de profesionales de la salud calificados.',
   'marketing.home.contribute.title': 'Léalo, ejecútelo, modifíquelo',
   'marketing.home.contribute.lead':
     'AGPL-3.0-only, sin una edición de núcleo abierto que retenga funciones. Si ejecuta una versión modificada como servicio en red, la licencia le obliga a ofrecer su código a sus usuarios.',

@@ -1,10 +1,13 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, IconButton, Tag } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { CoveragePriority, MockCoverage, MockEligibilityResult } from '@/lib/api';
 import { formatDate, formatDateTime, formatMoney, NOT_RECORDED } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { presentEligibility, PRIORITY_LABEL } from './eligibility';
 
@@ -18,6 +21,12 @@ import { presentEligibility, PRIORITY_LABEL } from './eligibility';
  *
  * Nothing here handles a file. The legacy 270/271 flow was a batch-file shuffle; this
  * is one button and one sentence back.
+ *
+ * The field names and the status words come from the catalogue. What the
+ * coverage carries - payer, plan, member id, group, subscriber and their
+ * relationship to the patient, and the sentence the payer sent back as
+ * `detail` - renders exactly as it arrived, because each of those already has
+ * one name and does not need a second.
  */
 
 export interface CoverageCardProps {
@@ -44,36 +53,48 @@ function moneyText(amount: number | null | undefined): string {
 
 /** What the card knows about the policy itself, before anyone verifies it. */
 function CoverageFacts({ coverage }: Readonly<{ coverage: MockCoverage }>): ReactElement {
+  const t = useTranslator();
   return (
     <dl className="or-coverage__facts">
       <div>
-        <dt className="or-caption">Member id</dt>
+        <dt className="or-caption">{t('insurance.card.memberId')}</dt>
         <dd className="or-mono">{coverage.memberId}</dd>
       </div>
       <div>
-        <dt className="or-caption">Group</dt>
+        <dt className="or-caption">{t('insurance.card.group')}</dt>
         <dd className="or-mono">{coverage.groupNumber ?? NOT_RECORDED}</dd>
       </div>
       <div>
-        <dt className="or-caption">Subscriber</dt>
+        <dt className="or-caption">{t('insurance.card.subscriber')}</dt>
+        {/* The relationship is a code the coverage carries
+            (`subscriberRelationshipCode` in the schema), so it is shown as it
+            arrived rather than given a second, translated name here. */}
         <dd>
           {coverage.subscriberName} ({coverage.subscriberRelationship.toLowerCase()})
         </dd>
       </div>
       <div>
-        <dt className="or-caption">Effective</dt>
+        <dt className="or-caption">{t('insurance.card.effective')}</dt>
         <dd>
-          {formatDate(coverage.effectiveFrom)} to{' '}
-          {coverage.effectiveTo ? formatDate(coverage.effectiveTo) : 'no end date'}
+          {t('insurance.card.effectiveRange', {
+            from: formatDate(coverage.effectiveFrom),
+            to: coverage.effectiveTo
+              ? formatDate(coverage.effectiveTo)
+              : t('insurance.card.noEndDate'),
+          })}
         </dd>
       </div>
       <div>
-        <dt className="or-caption">Copay</dt>
+        <dt className="or-caption">{t('insurance.card.copay')}</dt>
         <dd className="or-mono">{moneyText(coverage.copayAmount)}</dd>
       </div>
       <div>
-        <dt className="or-caption">Assignment of benefits</dt>
-        <dd>{coverage.assignmentOfBenefits ? 'Accepted' : 'Not accepted'}</dd>
+        <dt className="or-caption">{t('insurance.card.assignment')}</dt>
+        <dd>
+          {coverage.assignmentOfBenefits
+            ? t('insurance.card.assignmentAccepted')
+            : t('insurance.card.assignmentNotAccepted')}
+        </dd>
       </div>
     </dl>
   );
@@ -81,14 +102,15 @@ function CoverageFacts({ coverage }: Readonly<{ coverage: MockCoverage }>): Reac
 
 /** The numbers a payer returns only when the policy is actually active. */
 function ActiveBenefits({ result }: Readonly<{ result: MockEligibilityResult }>): ReactElement {
+  const t = useTranslator();
   return (
     <dl className="or-coverage__benefits">
       <div>
-        <dt className="or-caption">Copay today</dt>
+        <dt className="or-caption">{t('insurance.card.copayToday')}</dt>
         <dd className="or-mono">{moneyText(result.copayAmount)}</dd>
       </div>
       <div>
-        <dt className="or-caption">Deductible remaining</dt>
+        <dt className="or-caption">{t('insurance.card.deductibleRemaining')}</dt>
         <dd className="or-mono">{moneyText(result.deductibleRemaining)}</dd>
       </div>
     </dl>
@@ -112,28 +134,51 @@ function EligibilityStatus({
   result,
   presented,
 }: Readonly<EligibilityStatusProps>): ReactElement {
+  const t = useTranslator();
+
   if (checking) {
-    return <output className="or-body">Checking eligibility with {coverage.payerName}</output>;
+    return (
+      <output className="or-body">
+        {t('insurance.card.checking', { payer: coverage.payerName })}
+      </output>
+    );
   }
 
   return (
     <>
       <div className="or-coverage__chips">
-        <Badge tone={presented.tone}>{presented.label}</Badge>
-        {presented.degraded ? <Tag>Queued</Tag> : null}
+        <Badge tone={presented.tone}>{t(presented.labelKey)}</Badge>
+        {presented.degraded ? <Tag>{t('insurance.card.queued')}</Tag> : null}
       </div>
       {result ? (
+        /* The payer's own sentence, not ours to rewrite. */
         <p className="or-body">{result.detail}</p>
       ) : (
         <p className="or-small">
           {coverage.lastVerifiedAt
-            ? `Last verified ${formatDateTime(coverage.lastVerifiedAt)}.`
-            : 'This coverage has never been verified.'}
+            ? t('insurance.card.lastVerified', {
+                when: formatDateTime(coverage.lastVerifiedAt),
+              })
+            : t('insurance.card.neverVerified')}
         </p>
       )}
-      {presented.guidance ? <p className="or-small">{presented.guidance}</p> : null}
+      {presented.guidanceKey ? <p className="or-small">{t(presented.guidanceKey)}</p> : null}
       {result?.outcome === 'ACTIVE' ? <ActiveBenefits result={result} /> : null}
     </>
+  );
+}
+
+/** One earlier answer in this session: when it was asked, and what came back. */
+function HistoryRow({
+  t,
+  entry,
+}: Readonly<{ t: Translator; entry: MockEligibilityResult }>): ReactElement {
+  return (
+    <li className="or-small">
+      <span className="or-mono">{formatDateTime(entry.checkedAt)}</span>
+      {' · '}
+      {t(presentEligibility(entry.outcome).labelKey)}
+    </li>
   );
 }
 
@@ -148,11 +193,12 @@ export function CoverageCard({
   canMoveUp,
   canMoveDown,
 }: Readonly<CoverageCardProps>): ReactElement {
+  const t = useTranslator();
   const presented = presentEligibility(result?.outcome ?? coverage.lastOutcome);
 
   return (
     <Card
-      overline={`${PRIORITY_LABEL[priority]} coverage`}
+      overline={t('insurance.card.priority', { priority: t(PRIORITY_LABEL[priority].labelKey) })}
       title={coverage.payerName}
       className="or-coverage"
       data-degraded={presented.degraded || undefined}
@@ -162,7 +208,7 @@ export function CoverageCard({
         <div className="or-coverage__reorder">
           <IconButton
             icon="arrow-up"
-            label={`Move ${coverage.payerName} up the priority order`}
+            label={t('insurance.card.moveUp', { payer: coverage.payerName })}
             variant="ghost"
             size="sm"
             disabled={!canMoveUp}
@@ -170,7 +216,7 @@ export function CoverageCard({
           />
           <IconButton
             icon="arrow-down"
-            label={`Move ${coverage.payerName} down the priority order`}
+            label={t('insurance.card.moveDown', { payer: coverage.payerName })}
             variant="ghost"
             size="sm"
             disabled={!canMoveDown}
@@ -192,16 +238,14 @@ export function CoverageCard({
 
       {history.length > 0 ? (
         <details className="or-coverage__history">
-          <summary className="or-small">Eligibility history ({history.length})</summary>
+          <summary className="or-small">
+            {t('insurance.card.history', { count: formatCount(history.length, t.locale) })}
+          </summary>
           <ul>
             {history.map((entry) => (
               /* One coverage cannot be checked twice in the same instant, so the
                  pair identifies the row even when the list is refiltered. */
-              <li key={`${entry.coverageId}-${entry.checkedAt}`} className="or-small">
-                <span className="or-mono">{formatDateTime(entry.checkedAt)}</span>
-                {' · '}
-                {presentEligibility(entry.outcome).label}
-              </li>
+              <HistoryRow key={`${entry.coverageId}-${entry.checkedAt}`} t={t} entry={entry} />
             ))}
           </ul>
         </details>
@@ -212,9 +256,9 @@ export function CoverageCard({
           iconLeft="shield-check"
           disabled={checking}
           onClick={() => onVerify(coverage)}
-          aria-label={`Verify eligibility with ${coverage.payerName} now`}
+          aria-label={t('insurance.card.verifyFor', { payer: coverage.payerName })}
         >
-          {checking ? 'Checking' : 'Verify now'}
+          {checking ? t('insurance.card.verifying') : t('insurance.card.verify')}
         </Button>
       </div>
     </Card>

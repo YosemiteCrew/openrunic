@@ -1,3 +1,4 @@
+import { en } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -20,6 +21,22 @@ import { MOCK_NOW, MOCK_PATIENTS } from '@/lib/api';
  */
 
 const NOW = new Date(MOCK_NOW);
+
+/**
+ * The words behind a key.
+ *
+ * These rules are pure and run before anything has rendered, so they produce
+ * catalogue keys rather than sentences. Reading the source catalogue keeps every
+ * assertion below about what the front desk actually sees, and adds one the
+ * previous version could not make: a key that is not in the catalogue fails
+ * here rather than rendering as itself under an input.
+ */
+function message(key: string | undefined): string {
+  if (key === undefined) throw new Error('the rule produced no message key');
+  const text = en[key];
+  if (text === undefined) throw new Error(`${key} is not in the source catalogue`);
+  return text;
+}
 
 /** The form as the screen presents it: empty, but with an MRN already proposed. */
 const PROPOSED: RegistrationDraft = { ...EMPTY_DRAFT, mrn: proposeMrn(NOW) };
@@ -44,7 +61,9 @@ describe('validateRegistration', () => {
   });
 
   it('asks for a record number only when somebody has cleared the proposal', () => {
-    expect(validateRegistration({ ...draft(), mrn: '   ' }, NOW).mrn).toMatch(/record number/);
+    expect(message(validateRegistration({ ...draft(), mrn: '   ' }, NOW).mrn)).toMatch(
+      /record number/
+    );
     expect(validateRegistration(draft(), NOW).mrn).toBeUndefined();
   });
 
@@ -53,15 +72,15 @@ describe('validateRegistration', () => {
   });
 
   it('rejects a date of birth that is not a date', () => {
-    expect(validateRegistration(draft({ birthDate: '17/02/1991' }), NOW).birthDate).toMatch(
-      /YYYY-MM-DD/
-    );
+    expect(
+      message(validateRegistration(draft({ birthDate: '17/02/1991' }), NOW).birthDate)
+    ).toMatch(/YYYY-MM-DD/);
   });
 
   it('rejects a date of birth in the future and says which part to check', () => {
-    expect(validateRegistration(draft({ birthDate: '2027-01-01' }), NOW).birthDate).toMatch(
-      /future/
-    );
+    expect(
+      message(validateRegistration(draft({ birthDate: '2027-01-01' }), NOW).birthDate)
+    ).toMatch(/future/);
   });
 
   it('rejects an impossible calendar date', () => {
@@ -104,12 +123,14 @@ describe('validateRegistration', () => {
   });
 
   it('asks for an email when the portal invitation needs somewhere to go', () => {
-    expect(validateRegistration(draft({ portalEnabled: true }), NOW).email).toMatch(/Portal/);
+    expect(message(validateRegistration(draft({ portalEnabled: true }), NOW).email)).toMatch(
+      /Portal/
+    );
   });
 
   it('says what to do, not only what is wrong', () => {
-    for (const message of Object.values(validateRegistration(EMPTY_DRAFT, NOW))) {
-      expect(message).toMatch(/^Enter |^Use |^Check /);
+    for (const key of Object.values(validateRegistration(EMPTY_DRAFT, NOW))) {
+      expect(message(key)).toMatch(/^Enter |^Use |^Check /);
     }
   });
 });
@@ -133,7 +154,7 @@ describe('findDuplicates', () => {
       draft({ given: 'Tess', family: 'Patientsson', birthDate: '1987-03-14' }),
       MOCK_PATIENTS
     );
-    expect(matches[0]?.reasons).toContain('Same given name');
+    expect(matches[0]?.reasonKeys.map(message)).toContain('Same given name');
   });
 
   it('treats a phone number that already exists as the strongest signal', () => {
@@ -141,7 +162,7 @@ describe('findDuplicates', () => {
       draft({ given: 'Different', family: 'Person', phoneMobile: '5550142118' }),
       MOCK_PATIENTS
     );
-    expect(matches[0]?.reasons).toContain('Same mobile number');
+    expect(matches[0]?.reasonKeys.map(message)).toContain('Same mobile number');
     expect(isBlocking(matches)).toBe(true);
   });
 
@@ -163,7 +184,12 @@ describe('findDuplicates', () => {
       draft({ given: 'Testina', family: 'Patientsson', birthDate: '1987-03-14' }),
       MOCK_PATIENTS
     );
-    for (const match of matches) expect(match.reasons.length).toBeGreaterThan(0);
+    // Every key resolves to words, so "a reason" is a sentence the front desk
+    // can check rather than a key that happens to be in the array.
+    for (const match of matches) {
+      expect(match.reasonKeys.map(message).every((reason) => reason.length > 0)).toBe(true);
+      expect(match.reasonKeys.length).toBeGreaterThan(0);
+    }
   });
 
   it('caps the candidate list so the panel stays readable', () => {

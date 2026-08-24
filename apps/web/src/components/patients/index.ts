@@ -4,6 +4,7 @@
  */
 export { DuplicatePanel } from './DuplicatePanel';
 export type { DuplicatePanelProps } from './DuplicatePanel';
+export { LANGUAGE_OPTIONS, SENSITIVITY_LABELS, SEX_AT_BIRTH_LABELS } from './labels';
 export { PatientTable } from './PatientTable';
 export type { PatientTableProps } from './PatientTable';
 export {

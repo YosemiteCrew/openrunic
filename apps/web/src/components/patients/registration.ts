@@ -60,7 +60,44 @@ export const EMPTY_DRAFT: RegistrationDraft = {
 
 export type RegistrationField = keyof RegistrationDraft;
 
+/**
+ * What is wrong with a field, as a catalogue key rather than as the sentence.
+ *
+ * The rules are pure and run before anything has rendered, so the reader's
+ * language is not known here. The screen looks each key up at the moment it
+ * paints the field, which is the only place that knows.
+ */
 export type FieldErrors = Partial<Record<RegistrationField, string>>;
+
+/**
+ * The messages this file can produce, as the keys that hold them.
+ *
+ * Written as `somethingKey:` properties because that is the shape
+ * `catalogue-drift.test.ts` reads out of the source: a rule pointing at a key
+ * nobody defined fails the build rather than putting `patients.register.error.given`
+ * under an input at a front desk.
+ */
+const ERROR = {
+  givenKey: 'patients.register.error.given',
+  familyKey: 'patients.register.error.family',
+  mrnKey: 'patients.register.error.mrn',
+  birthDateRequiredKey: 'patients.register.error.birthDateRequired',
+  birthDateFormatKey: 'patients.register.error.birthDateFormat',
+  birthDateUnrealKey: 'patients.register.error.birthDateUnreal',
+  birthDateFutureKey: 'patients.register.error.birthDateFuture',
+  phoneRequiredKey: 'patients.register.error.phoneRequired',
+  phoneFormatKey: 'patients.register.error.phoneFormat',
+  emailFormatKey: 'patients.register.error.emailFormat',
+  emailPortalKey: 'patients.register.error.emailPortal',
+} as const;
+
+/** Why a candidate looks like the same person, as the keys that say so. */
+const REASON = {
+  familyNameKey: 'patients.duplicate.reason.familyName',
+  givenNameKey: 'patients.duplicate.reason.givenName',
+  birthDateKey: 'patients.duplicate.reason.birthDate',
+  phoneMobileKey: 'patients.duplicate.reason.phoneMobile',
+} as const;
 
 /** The four fields that make a record bookable. Nothing else blocks a save. */
 export const REQUIRED_FIELDS: readonly RegistrationField[] = [
@@ -138,8 +175,9 @@ const PHONE = /^[+\d][\d\s()-]{6,}$/;
 const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 /**
- * Errors keyed by field. Messages say what to do, never just what is wrong, and
- * carry no filler: the person reading them has a patient at the desk.
+ * Errors keyed by field, as catalogue keys. The messages behind them say what
+ * to do, never just what is wrong, and carry no filler: the person reading them
+ * has a patient at the desk.
  */
 export function validateRegistration(
   draft: RegistrationDraft,
@@ -147,37 +185,37 @@ export function validateRegistration(
 ): FieldErrors {
   const errors: FieldErrors = {};
 
-  if (!draft.given.trim()) errors.given = 'Enter the given name.';
-  if (!draft.family.trim()) errors.family = 'Enter the family name.';
+  if (!draft.given.trim()) errors.given = ERROR.givenKey;
+  if (!draft.family.trim()) errors.family = ERROR.familyKey;
   // Not one of the four required fields, because the form proposes it: this
   // only fires when somebody has cleared the proposal by hand.
-  if (!draft.mrn.trim()) errors.mrn = 'Enter the medical record number to file this record under.';
+  if (!draft.mrn.trim()) errors.mrn = ERROR.mrnKey;
 
   if (!draft.birthDate.trim()) {
-    errors.birthDate = 'Enter the date of birth as YYYY-MM-DD.';
+    errors.birthDate = ERROR.birthDateRequiredKey;
   } else if (!ISO_DATE.test(draft.birthDate.trim())) {
-    errors.birthDate = 'Use the format YYYY-MM-DD, for example 1987-03-14.';
+    errors.birthDate = ERROR.birthDateFormatKey;
   } else {
     const born = new Date(`${draft.birthDate.trim()}T00:00:00.000Z`);
     if (Number.isNaN(born.getTime())) {
-      errors.birthDate = 'That is not a real date. Check the day and month.';
+      errors.birthDate = ERROR.birthDateUnrealKey;
     } else if (born.getTime() > asOf.getTime()) {
-      errors.birthDate = 'The date of birth is in the future. Check the year.';
+      errors.birthDate = ERROR.birthDateFutureKey;
     }
   }
 
   if (!draft.phoneMobile.trim()) {
-    errors.phoneMobile = 'Enter a contact number. The practice needs one way to reach the patient.';
+    errors.phoneMobile = ERROR.phoneRequiredKey;
   } else if (!PHONE.test(draft.phoneMobile.trim())) {
-    errors.phoneMobile = 'Enter digits only, with an optional country code.';
+    errors.phoneMobile = ERROR.phoneFormatKey;
   }
 
   if (draft.email.trim() && !EMAIL.test(draft.email.trim())) {
-    errors.email = 'Check the email address; it is missing an @ or a domain.';
+    errors.email = ERROR.emailFormatKey;
   }
 
   if (draft.portalEnabled && !draft.email.trim()) {
-    errors.email = 'Portal access needs an email address to send the invitation to.';
+    errors.email = ERROR.emailPortalKey;
   }
 
   return errors;
@@ -187,8 +225,11 @@ export interface DuplicateMatch {
   patient: Patient;
   /** Higher is a stronger match. Compared against {@link BLOCKING_SCORE}. */
   score: number;
-  /** Plain-language reasons, shown next to the candidate. */
-  reasons: string[];
+  /**
+   * Why this candidate matched, as catalogue keys. Plain language once the
+   * panel has looked them up, and shown next to the candidate.
+   */
+  reasonKeys: string[];
 }
 
 /** At or above this, the save is blocked until the front desk overrides it. */
@@ -229,28 +270,28 @@ export function findDuplicates(
 
   const matches: DuplicateMatch[] = [];
   for (const patient of patients) {
-    const reasons: string[] = [];
+    const reasonKeys: string[] = [];
     let score = 0;
 
     if (same(draft.family, patient.name.family)) {
       score += 2;
-      reasons.push('Same family name');
+      reasonKeys.push(REASON.familyNameKey);
     }
     if (same(draft.given, patient.name.given) || same(draft.given, patient.name.preferred ?? '')) {
       score += 2;
-      reasons.push('Same given name');
+      reasonKeys.push(REASON.givenNameKey);
     }
     if (draft.birthDate.trim() && draft.birthDate.trim() === patient.birthDate) {
       score += 3;
-      reasons.push('Same date of birth');
+      reasonKeys.push(REASON.birthDateKey);
     }
     if (samePhone(draftPhone, digits(patient.telecom.phoneMobile ?? ''))) {
       // On its own this blocks: two people do not share a mobile number by chance.
       score += 5;
-      reasons.push('Same mobile number');
+      reasonKeys.push(REASON.phoneMobileKey);
     }
 
-    if (score > 0) matches.push({ patient, score, reasons });
+    if (score > 0) matches.push({ patient, score, reasonKeys });
   }
 
   return matches

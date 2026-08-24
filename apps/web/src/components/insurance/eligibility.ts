@@ -12,12 +12,28 @@ import type { CoveragePriority, EligibilityOutcome } from '@/lib/api';
  * take a new card off the patient standing in front of you.
  */
 
+/**
+ * The words are carried as catalogue keys rather than as the words themselves,
+ * because this is a pure function that runs before anything has rendered and
+ * the reader's language is not known here. `catalogue-drift.test.ts` reads
+ * `somethingKey:` out of the source, so an outcome pointing at a key nobody
+ * defined fails the build rather than putting the key in a badge beside a
+ * coverage.
+ *
+ * These are labels this codebase wrote for an adapter answer this codebase
+ * defines. The payer's own sentence arrives on the result as `detail` and is
+ * never given a second name here.
+ */
 export interface EligibilityPresentation {
   /** Always rendered. Status is never colour alone. */
-  label: string;
+  labelKey: string;
   tone: BadgeTone;
-  /** What to do next, in one sentence. Empty when there is nothing to do. */
-  guidance: string;
+  /**
+   * What to do next, in one sentence. Null when there is nothing to do, which
+   * is a different statement from an empty message: a catalogue key must
+   * always resolve to words, so "nothing to say" is the absence of a key.
+   */
+  guidanceKey: string | null;
   /** True when the failure is a partner outage rather than a coverage problem. */
   degraded: boolean;
 }
@@ -26,40 +42,37 @@ export function presentEligibility(outcome: EligibilityOutcome | null): Eligibil
   switch (outcome) {
     case 'ACTIVE':
       return {
-        label: 'Coverage active',
+        labelKey: 'insurance.eligibility.active.label',
         tone: 'success',
-        guidance: '',
+        guidanceKey: null,
         degraded: false,
       };
     case 'INACTIVE':
       return {
-        label: 'Coverage terminated',
+        labelKey: 'insurance.eligibility.inactive.label',
         tone: 'danger',
-        guidance:
-          'Ask the patient for a current insurance card, or record this visit as self-pay before check-in.',
+        guidanceKey: 'insurance.eligibility.inactive.guidance',
         degraded: false,
       };
     case 'NOT_FOUND':
       return {
-        label: 'Member not found',
+        labelKey: 'insurance.eligibility.notFound.label',
         tone: 'danger',
-        guidance:
-          'Check the member id and date of birth against the card, correct them here, and verify again.',
+        guidanceKey: 'insurance.eligibility.notFound.guidance',
         degraded: false,
       };
     case 'UNAVAILABLE':
       return {
-        label: 'Payer did not answer',
+        labelKey: 'insurance.eligibility.unavailable.label',
         tone: 'neutral',
-        guidance:
-          'The eligibility service is unavailable. The check is queued; check-in can continue and this will answer when the service returns.',
+        guidanceKey: 'insurance.eligibility.unavailable.guidance',
         degraded: true,
       };
     default:
       return {
-        label: 'Not verified',
+        labelKey: 'insurance.eligibility.unverified.label',
         tone: 'neutral',
-        guidance: 'Verify now to get today’s answer before the patient is roomed.',
+        guidanceKey: 'insurance.eligibility.unverified.guidance',
         degraded: false,
       };
   }
@@ -68,10 +81,11 @@ export function presentEligibility(outcome: EligibilityOutcome | null): Eligibil
 /** Coverage slots, in the order claims are billed. */
 export const PRIORITY_SEQUENCE: readonly CoveragePriority[] = ['PRIMARY', 'SECONDARY', 'TERTIARY'];
 
-export const PRIORITY_LABEL: Record<CoveragePriority, string> = {
-  PRIMARY: 'Primary',
-  SECONDARY: 'Secondary',
-  TERTIARY: 'Tertiary',
+/** What this application calls its own billing slots, as catalogue keys. */
+export const PRIORITY_LABEL: Record<CoveragePriority, { labelKey: string }> = {
+  PRIMARY: { labelKey: 'insurance.priority.primary' },
+  SECONDARY: { labelKey: 'insurance.priority.secondary' },
+  TERTIARY: { labelKey: 'insurance.priority.tertiary' },
 };
 
 /**

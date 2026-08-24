@@ -1,3 +1,4 @@
+import { en } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -14,10 +15,26 @@ import { mockCoveragesForPatient, mockVerifyEligibility, MOCK_PATIENTS } from '@
  * different actions at the desk.
  */
 
+/**
+ * The words behind a key.
+ *
+ * `presentEligibility` is pure and runs before anything has rendered, so it
+ * carries catalogue keys rather than sentences. Reading the source catalogue
+ * keeps every assertion below about what the front desk actually sees, and adds
+ * one the previous version could not make: a key that is not in the catalogue
+ * fails here rather than rendering as itself in a badge.
+ */
+function message(key: string | null): string {
+  if (key === null) throw new Error('the outcome carried no message key');
+  const text = en[key];
+  if (text === undefined) throw new Error(`${key} is not in the source catalogue`);
+  return text;
+}
+
 describe('presentEligibility', () => {
   it('gives every outcome a word, so colour is never the message', () => {
     for (const outcome of ['ACTIVE', 'INACTIVE', 'NOT_FOUND', 'UNAVAILABLE', null] as const) {
-      expect(presentEligibility(outcome).label.length).toBeGreaterThan(0);
+      expect(message(presentEligibility(outcome).labelKey).length).toBeGreaterThan(0);
     }
   });
 
@@ -31,16 +48,19 @@ describe('presentEligibility', () => {
     const outage = presentEligibility('UNAVAILABLE');
     expect(outage.degraded).toBe(true);
     expect(outage.tone).not.toBe('danger');
-    expect(outage.guidance).toMatch(/check-in can continue/);
+    expect(message(outage.guidanceKey)).toMatch(/check-in can continue/);
   });
 
   it('tells the desk what to do about every problem outcome', () => {
-    expect(presentEligibility('INACTIVE').guidance.length).toBeGreaterThan(0);
-    expect(presentEligibility('NOT_FOUND').guidance).toMatch(/member id/);
+    expect(message(presentEligibility('INACTIVE').guidanceKey).length).toBeGreaterThan(0);
+    expect(message(presentEligibility('NOT_FOUND').guidanceKey)).toMatch(/member id/);
   });
 
   it('says nothing extra when the coverage is simply fine', () => {
-    expect(presentEligibility('ACTIVE').guidance).toBe('');
+    // The absence of a key rather than an empty message: a catalogue key must
+    // always resolve to words, so "nothing to say" cannot be one that resolves
+    // to nothing.
+    expect(presentEligibility('ACTIVE').guidanceKey).toBeNull();
   });
 });
 

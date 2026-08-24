@@ -12,6 +12,7 @@ import {
   moveItem,
   presentEligibility,
   priorityForIndex,
+  PRIORITY_LABEL,
   useCoverages,
 } from '@/components/insurance';
 import { clinicNow } from '@/components/schedule';
@@ -19,7 +20,10 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { IS_MOCK_MODE, mockVerifyEligibility, usePatient } from '@/lib/api';
 import type { MockCoverage, MockEligibilityResult } from '@/lib/api';
-import { formatAge, formatCount, formatDate, formatMrn, formatName } from '@/lib/format';
+import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * FD-08 Insurance and eligibility.
@@ -34,6 +38,11 @@ import { formatAge, formatCount, formatDate, formatMrn, formatName } from '@/lib
  * is unreachable from a keyboard and this list is short. Drag-to-reorder can be
  * added on top of the same handler when a Drawer and a drag primitive land in
  * the library.
+ *
+ * Everything a person reads comes from the catalogue. What a coverage carries -
+ * the payer's name, the plan, the member id, and the sentence the payer sent
+ * back - is rendered as it arrived, and so is everything on the patient record
+ * in the rail.
  */
 
 export interface InsuranceScreenProps {
@@ -48,6 +57,33 @@ interface ToastMessage {
 
 const NO_RESULTS: readonly MockEligibilityResult[] = [];
 
+/*
+ * What the verify-all toast says, as pairs of keys rather than sentences.
+ *
+ * The title counts what was asked. The body is a list of the answers, and each
+ * entry is a whole phrase rather than a fragment of a sentence, because which
+ * entries appear at all depends on what came back from the payers.
+ */
+const CHECKED: CountedMessage = {
+  oneKey: 'insurance.screen.checkedOne',
+  otherKey: 'insurance.screen.checkedOther',
+};
+
+const ACTIVE: CountedMessage = {
+  oneKey: 'insurance.screen.activeOne',
+  otherKey: 'insurance.screen.activeOther',
+};
+
+const ATTENTION: CountedMessage = {
+  oneKey: 'insurance.screen.attentionOne',
+  otherKey: 'insurance.screen.attentionOther',
+};
+
+const UNAVAILABLE: CountedMessage = {
+  oneKey: 'insurance.screen.unavailableOne',
+  otherKey: 'insurance.screen.unavailableOther',
+};
+
 /** Toast tone per outcome: a refusal interrupts, an outage waits for a pause. */
 function toneFor(result: MockEligibilityResult): ToastTone {
   if (result.outcome === 'ACTIVE') return 'success';
@@ -56,6 +92,7 @@ function toneFor(result: MockEligibilityResult): ToastTone {
 }
 
 export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): ReactElement {
+  const t = useTranslator();
   const [asOf] = useState<Date>(() => clinicNow());
   const [order, setOrder] = useState<string[] | null>(null);
   const [checking, setChecking] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -102,12 +139,13 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       void verify(coverage).then((result) => {
         setToast({
           tone: toneFor(result),
-          title: presentEligibility(result.outcome).label,
+          title: t(presentEligibility(result.outcome).labelKey),
+          // The payer's own sentence, carried through rather than restated.
           message: result.detail,
         });
       });
     },
-    [verify]
+    [t, verify]
   );
 
   const verifyAll = useCallback(() => {
@@ -119,29 +157,38 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       const problems = all.length - active - unavailable;
       setToast({
         tone: problems > 0 ? 'danger' : 'success',
-        title: `${formatCount(all.length, 'coverage')} checked`,
+        title: counted(t, CHECKED, all.length),
+        /* A list of whole phrases rather than one sentence, because which
+           entries appear depends on what came back. The comma and the full stop
+           stay here as punctuation: a catalogue message may not be blank, so a
+           separator cannot be one, and each entry is already a complete phrase
+           in whatever language it was written. */
         message: [
-          `${active} active`,
-          problems > 0 ? `${problems} needing attention` : null,
-          unavailable > 0 ? `${unavailable} queued for a payer that did not answer` : null,
+          counted(t, ACTIVE, active),
+          problems > 0 ? counted(t, ATTENTION, problems) : null,
+          unavailable > 0 ? counted(t, UNAVAILABLE, unavailable) : null,
         ]
           .filter(Boolean)
           .join(', ')
           .concat('.'),
       });
     });
-  }, [ordered, verify]);
+  }, [ordered, t, verify]);
 
   const move = (coverage: MockCoverage, direction: -1 | 1) => {
     const from = ordered.findIndex((entry) => entry.id === coverage.id);
     const next = moveItem(ordered, from, from + direction);
     setOrder(next.map((entry) => entry.id));
+    const slot = priorityForIndex(next.findIndex((entry) => entry.id === coverage.id));
     setToast({
       tone: 'info',
-      title: 'Coverage priority changed',
-      message: `${coverage.payerName} is now the ${priorityForIndex(
-        next.findIndex((entry) => entry.id === coverage.id)
-      ).toLowerCase()} coverage. Claims bill in this order.`,
+      title: t('insurance.screen.priorityChanged'),
+      message: t('insurance.screen.priorityMessage', {
+        payer: coverage.payerName,
+        /* Lower-cased with the reader's own rules: the word is a translated
+           one, and the runtime default is wrong for Turkish. */
+        priority: t(PRIORITY_LABEL[slot].labelKey).toLocaleLowerCase(t.locale),
+      }),
     });
   };
 
@@ -150,64 +197,66 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       {
         id: 'insurance.verify-all',
         group: 'actions',
-        label: 'Verify every coverage now',
-        keywords: ['eligibility', '270', '271', 'check coverage', 'benefits'],
+        label: t('insurance.screen.command.verifyAll'),
+        keywords: searchWords(t('insurance.screen.command.verifyAllKeywords')),
         icon: 'shield-check',
         perform: verifyAll,
       },
       {
         id: 'insurance.open-chart',
         group: 'navigate',
-        label: 'Open this chart',
-        keywords: ['chart', 'summary', 'patient'],
+        label: t('insurance.screen.command.openChart'),
+        keywords: searchWords(t('insurance.screen.command.openChartKeywords')),
         icon: 'folder-open',
         href: `/patients/${patientId}`,
       },
     ],
-    [patientId, verifyAll]
+    [patientId, t, verifyAll]
   );
 
   return (
     <AppShell
-      title="Insurance and eligibility"
-      description="Coverage in billing order, verified against the payer in one click."
+      title={t('insurance.screen.title')}
+      description={t('insurance.screen.description')}
       actions={
         <Button iconLeft="shield-check" onClick={verifyAll} disabled={ordered.length === 0}>
-          Verify all coverages
+          {t('insurance.screen.verifyAll')}
         </Button>
       }
       rightRail={
         <AsyncBoundary
           state={patient}
-          subject="this patient"
+          subject={t('insurance.screen.patientSubject')}
           loadingVariant="text"
           loadingRows={4}
           empty={{
-            title: 'No patient loaded',
-            message: 'Open this screen from a patient record, or press Cmd-K to search.',
+            title: t('insurance.screen.noPatient.title'),
+            message: t('insurance.screen.noPatient.message'),
           }}
         >
           {(record) => (
-            <Card overline="Patient" title={formatName(record.name)}>
+            <Card overline={t('insurance.screen.patientOverline')} title={formatName(record.name)}>
               <p className="or-small">
                 <span className="or-mono">{formatMrn(record.mrn)}</span>
                 {' · '}
                 {formatAge(record.birthDate, asOf)}
                 {' · '}
-                born {formatDate(record.birthDate)}
+                {t('insurance.screen.born', { date: formatDate(record.birthDate) })}
               </p>
+              {/* The patient's own pronouns, as recorded. */}
               {record.pronouns ? <p className="or-small">{record.pronouns}</p> : null}
 
               <div className="or-coverage__summary">
                 {ordered.length === 0 ? (
-                  <Badge tone="neutral">No coverage on file</Badge>
+                  <Badge tone="neutral">{t('insurance.screen.noCoverageBadge')}</Badge>
                 ) : (
                   ordered.map((coverage) => {
                     const latest = (results[coverage.id] ?? NO_RESULTS)[0];
                     const presented = presentEligibility(latest?.outcome ?? coverage.lastOutcome);
                     return (
                       <p key={coverage.id} className="or-small or-coverage__summary-line">
-                        <Badge tone={presented.tone}>{presented.label}</Badge> {coverage.payerName}
+                        <Badge tone={presented.tone}>{t(presented.labelKey)}</Badge>{' '}
+                        {coverage.payerName}
                       </p>
                     );
                   })
@@ -215,7 +264,7 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
               </div>
 
               <Button variant="secondary" iconLeft="folder-open" href={`/patients/${patientId}`}>
-                Open chart
+                {t('insurance.screen.openChart')}
               </Button>
             </Card>
           )}
@@ -226,18 +275,17 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
 
       <AsyncBoundary
         state={coverages}
-        subject="this patient's coverage"
+        subject={t('insurance.screen.subject')}
         loadingVariant="cards"
         loadingRows={2}
         isEmpty={(rows) => rows.length === 0}
         empty={{
-          title: 'No coverage on file',
-          message:
-            'This patient has no insurance recorded, so visits bill as self-pay. Add a coverage from the insurance card at check-in.',
+          title: t('insurance.screen.empty.title'),
+          message: t('insurance.screen.empty.message'),
           icon: 'shield',
           action: (
             <Button iconLeft="folder-open" href={`/patients/${patientId}`}>
-              Open chart
+              {t('insurance.screen.openChart')}
             </Button>
           ),
         }}
@@ -266,10 +314,7 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       </AsyncBoundary>
 
       {IS_MOCK_MODE ? (
-        <p className="or-caption or-fd-mock-note">
-          Mock mode: eligibility answers come from fixtures, and the priority order is held for this
-          session only.
-        </p>
+        <p className="or-caption or-fd-mock-note">{t('insurance.screen.mockNote')}</p>
       ) : null}
 
       {toast ? (

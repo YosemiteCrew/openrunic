@@ -10,14 +10,20 @@ import type { PatientListQuery } from '@/lib/api';
  *
  * Every view maps onto filters the API actually supports, so a view can never
  * quietly become a client-side lie about how many patients matched.
+ *
+ * The name and the one-line answer are carried as catalogue keys rather than as
+ * the words themselves, because this table is built at module scope and the
+ * reader's language is not known there. `catalogue-drift.test.ts` reads
+ * `somethingKey:` out of the source, so a view pointing at a key nobody defined
+ * fails the build rather than rendering the key as a button.
  */
 
 export interface SavedView {
   id: string;
   /** Sentence case. Also the palette command's label. */
-  label: string;
+  labelKey: string;
   /** One line: what this view answers. Shown under the roster heading. */
-  description: string;
+  descriptionKey: string;
   query: PatientListQuery;
 }
 
@@ -26,8 +32,8 @@ export const DEFAULT_VIEW_ID = 'all';
 /** The view every roster starts on, and falls back to when an id is unknown. */
 const ALL_PATIENTS: SavedView = {
   id: DEFAULT_VIEW_ID,
-  label: 'All patients',
-  description: 'Everyone in the practice, by family name.',
+  labelKey: 'patients.view.all.label',
+  descriptionKey: 'patients.view.all.description',
   query: { sort: 'familyName', order: 'asc' },
 };
 
@@ -35,20 +41,20 @@ export const SAVED_VIEWS: readonly SavedView[] = [
   ALL_PATIENTS,
   {
     id: 'active',
-    label: 'Active patients',
-    description: 'Patients the practice still sees.',
+    labelKey: 'patients.view.active.label',
+    descriptionKey: 'patients.view.active.description',
     query: { active: true, sort: 'familyName', order: 'asc' },
   },
   {
     id: 'inactive',
-    label: 'Inactive records',
-    description: 'Records closed, merged or marked deceased.',
+    labelKey: 'patients.view.inactive.label',
+    descriptionKey: 'patients.view.inactive.description',
     query: { active: false, sort: 'familyName', order: 'asc' },
   },
   {
     id: 'recent',
-    label: 'Recently registered',
-    description: 'Newest records first, for checking a walk-in went in correctly.',
+    labelKey: 'patients.view.recent.label',
+    descriptionKey: 'patients.view.recent.description',
     query: { sort: 'createdAt', order: 'desc' },
   },
 ];

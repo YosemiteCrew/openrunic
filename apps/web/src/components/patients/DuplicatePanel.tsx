@@ -4,6 +4,7 @@ import { Badge, Button, Card, Checkbox } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import type { DuplicateMatch } from './registration';
 
@@ -16,6 +17,11 @@ import type { DuplicateMatch } from './registration';
  * save, shows what matched and why, and offers the two things that are actually
  * useful: open the record that already exists, or state that this is a
  * different person.
+ *
+ * The reasons arrive from `findDuplicates` as catalogue keys and are looked up
+ * here, which is the first place that knows who is reading. What each candidate
+ * record carries - the name, the MRN, the date of birth - renders as it
+ * arrived.
  */
 
 export interface DuplicatePanelProps {
@@ -35,21 +41,17 @@ export function DuplicatePanel({
   onOverrideChange,
   asOf,
 }: Readonly<DuplicatePanelProps>): ReactElement {
+  const t = useTranslator();
+
   return (
     <Card
-      overline="Possible duplicate"
-      title={
-        blocking
-          ? 'This patient may already have a record'
-          : 'Similar records exist in the practice'
-      }
+      overline={t('patients.duplicate.overline')}
+      title={blocking ? t('patients.duplicate.blockingTitle') : t('patients.duplicate.title')}
       className="or-duplicates"
     >
       {/* A blocking match interrupts a save in progress, so it is announced. */}
       <p className="or-body" role={blocking ? 'alert' : undefined}>
-        {blocking
-          ? 'Registering a second record splits the history for this person. Open the existing record, or confirm below that this is a different person.'
-          : 'These records look close. Check them before registering a new one.'}
+        {blocking ? t('patients.duplicate.blockingBody') : t('patients.duplicate.body')}
       </p>
 
       <ul className="or-duplicates__list">
@@ -65,9 +67,9 @@ export function DuplicatePanel({
                 {formatAge(match.patient.birthDate, asOf)}
               </p>
               <div className="or-duplicates__reasons">
-                {match.reasons.map((reason) => (
-                  <Badge key={reason} tone="neutral">
-                    {reason}
+                {match.reasonKeys.map((reasonKey) => (
+                  <Badge key={reasonKey} tone="neutral">
+                    {t(reasonKey)}
                   </Badge>
                 ))}
               </div>
@@ -77,9 +79,11 @@ export function DuplicatePanel({
               size="sm"
               iconLeft="folder-open"
               href={`/patients/${match.patient.id}`}
-              aria-label={`Open the existing record for ${formatName(match.patient.name)}`}
+              aria-label={t('patients.duplicate.openFor', {
+                name: formatName(match.patient.name),
+              })}
             >
-              Open this record
+              {t('patients.duplicate.open')}
             </Button>
           </li>
         ))}
@@ -87,8 +91,8 @@ export function DuplicatePanel({
 
       {blocking ? (
         <Checkbox
-          label="This is a different person"
-          hint="Recorded with the registration, so the decision is auditable."
+          label={t('patients.duplicate.override')}
+          hint={t('patients.duplicate.overrideHint')}
           checked={overridden}
           onChange={(event) => onOverrideChange(event.target.checked)}
         />

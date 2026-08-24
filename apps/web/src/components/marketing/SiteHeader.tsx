@@ -1,6 +1,8 @@
 import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import Link from 'next/link';
 
+import { localisedPath } from '@/lib/auth/routes';
+
 import { Lockup } from './Lockup';
 import { OFFSITE, SITE_NAV } from './links';
 import type { PublicRoute } from './links';
@@ -39,6 +41,12 @@ export interface SiteHeaderProps {
  * 768px, which is the right answer for a bar of eight sections; four short
  * labels fit a 375px viewport on two rows, and a row that wraps needs no
  * disclosure, no focus trap and no JavaScript.
+ *
+ * The addresses go through `localisedPath` rather than being built here. They
+ * used to be built here, and `PillarCard` shipped rendering `pillar.href` raw
+ * because the rule lived in this file rather than in a function anything else
+ * could reach - so the masthead stayed inside the reader's language and the
+ * cards on the same page did not.
  */
 export function SiteHeader({ active, locale }: Readonly<SiteHeaderProps>) {
   const t = createTranslator(appCatalogue, locale);
@@ -48,7 +56,7 @@ export function SiteHeader({ active, locale }: Readonly<SiteHeaderProps>) {
       <div className="or-mk-header__inner">
         <Link
           className="or-mk-header__home"
-          href={`/${locale}`}
+          href={localisedPath('/', locale)}
           aria-label={t('marketing.header.home')}
         >
           <Lockup />
@@ -66,7 +74,7 @@ export function SiteHeader({ active, locale }: Readonly<SiteHeaderProps>) {
                         ? 'or-mk-header__link or-mk-header__link--current'
                         : 'or-mk-header__link'
                     }
-                    href={item.href === '/' ? `/${locale}` : `/${locale}${item.href}`}
+                    href={localisedPath(item.href, locale)}
                     aria-current={current ? 'page' : undefined}
                   >
                     {t(item.labelKey)}

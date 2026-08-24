@@ -1,6 +1,8 @@
 import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import Link from 'next/link';
 
+import { localisedPath } from '@/lib/auth/routes';
+
 import type { Pillar } from './links';
 
 export interface PillarCardProps {
@@ -11,6 +13,13 @@ export interface PillarCardProps {
    * A prop rather than a hook because the public pages are server components:
    * there is no provider above them, and reaching for one would pull the whole
    * client runtime onto the page a stranger loads first.
+   *
+   * It reaches the card's address as well as its words. `Pillar.href` is the
+   * unprefixed route, `/for/hospitals`, which no page answers on any more:
+   * `proxy.ts` matches it against `UNPREFIXED_MARKETING_PATHS` and redirects to
+   * whatever the reader's cookie or `Accept-Language` asks for. So a reader on
+   * `/es` who clicked one of these cards was bounced out of the language they
+   * were visibly reading, into the one their browser had asked for months ago.
    */
   locale: string;
 }
@@ -41,7 +50,7 @@ export function PillarCard({ pillar, locale }: Readonly<PillarCardProps>) {
           </li>
         ))}
       </ul>
-      <Link className="or-mk-pillar__link" href={pillar.href}>
+      <Link className="or-mk-pillar__link" href={localisedPath(pillar.href, locale)}>
         {t(pillar.linkKey)}
         <span aria-hidden="true"> &rarr;</span>
       </Link>

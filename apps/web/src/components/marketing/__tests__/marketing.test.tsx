@@ -217,7 +217,31 @@ describe('PillarCard', () => {
 
     expect(
       screen.getByRole('link', { name: /openrunic for hospitals and clinics/i })
-    ).toHaveAttribute('href', pillar.href);
+    ).toHaveAttribute('href', '/en/for/hospitals');
+  });
+
+  /**
+   * The same guarantee the masthead makes, and this card used to break.
+   *
+   * `Pillar.href` is the unprefixed `/for/hospitals`, which no page answers on:
+   * `proxy.ts` redirects it to whatever the reader's cookie or `Accept-Language`
+   * asks for. Rendering it raw meant a reader on `/es` who clicked a card was
+   * bounced out of the language they were visibly reading and into the one their
+   * browser had asked for, which is the failure `SiteHeader`'s own locale test
+   * exists to refuse.
+   *
+   * Asserted against the literal address rather than against `pillar.href` with
+   * a prefix built the same way the component builds it, because a test that
+   * repeats the implementation cannot fail when the implementation is wrong -
+   * which is exactly how the assertion above shipped pinning the bug.
+   */
+  it('keeps its link inside the language being read', () => {
+    render(<PillarCard pillar={pillar} locale="es" />);
+
+    expect(screen.getByRole('link', { name: /openrunic para hospitales/i })).toHaveAttribute(
+      'href',
+      '/es/for/hospitals'
+    );
   });
 
   it('lists what that audience gets', () => {

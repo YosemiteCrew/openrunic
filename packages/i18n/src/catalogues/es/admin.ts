@@ -4,6 +4,545 @@ import type { Messages } from '../../catalogue.js';
  * Users, facilities, forms, audit, integrations, developer platform.
  * Operational.
  *
- * Empty until the slice that fills it lands.
+ * Translated in full, because none of it is clinical: these are the words an
+ * administrator reads while configuring the practice. Latin American Spanish,
+ * and plain rather than literal where the two pull apart - "breakglass" is
+ * "acceso de emergencia" because that is what it is, not because that is what
+ * it says.
+ *
+ * What stays in English is what stays in English on every screen: the values
+ * that arrive from the API already named. A capability sentence, an adapter
+ * name, a CMS place-of-service label and a form field type are not in here to
+ * be translated, so they render in the language the server wrote them in.
  */
-export const admin: Messages = {};
+export const admin: Messages = {
+  /* ------------------------------------------------------ shared furniture */
+  'admin.action.cancel': 'Cancelar',
+  'admin.action.close': 'Cerrar',
+
+  'admin.confirm.typeToConfirm': 'Escriba {phrase} para confirmar',
+  'admin.confirm.frictionHint':
+    'Esta fricción es intencional. No se elimina nada; el registro se conserva para la pista de auditoría.',
+
+  /* -------------------------------------------------------------- the hub */
+  'admin.hub.description':
+    'Usuarios, sedes, formularios, la pista de auditoría y la configuración propia del consultorio.',
+
+  'admin.areas.users.label': 'Usuarios y roles',
+  'admin.areas.users.description':
+    'Cuentas del personal, los roles que tienen, las sedes donde trabajan y quién puede hacer qué.',
+  'admin.areas.users.keywords': 'personal, cuentas, permisos, acl, invitar, mfa, desactivar',
+  'admin.areas.facilities.label': 'Sedes',
+  'admin.areas.facilities.description':
+    'Ubicaciones con sus atributos de facturación, horarios de atención y salas.',
+  'admin.areas.facilities.keywords': 'ubicaciones, sedes, código pos, horarios, salas, npi',
+  'admin.areas.forms.label': 'Constructor de formularios',
+  'admin.areas.forms.description':
+    'Cree y publique los formularios de admisión, consultas, referencias y el portal.',
+  'admin.areas.forms.keywords':
+    'formularios, diseño, lbf, admisión, cuestionario, campos, publicar',
+  'admin.areas.audit.label': 'Pista de auditoría',
+  'admin.areas.audit.description':
+    'Cada acceso a los datos del paciente, solo se agrega y se puede exportar.',
+  'admin.areas.audit.keywords':
+    'auditoría, registro de acceso, phi, acceso de emergencia, cumplimiento, exportar',
+  'admin.areas.integrations.label': 'Integraciones',
+  'admin.areas.integrations.description':
+    'Las conexiones con socios: recetas, reclamaciones, laboratorios, pagos, fax, mensajes y video.',
+  'admin.areas.integrations.keywords':
+    'adaptadores, recetas electrónicas, cámara de compensación, laboratorios, pagos, fax, sms, conexiones',
+  'admin.areas.developer.label': 'Plataforma para desarrolladores',
+  'admin.areas.developer.description':
+    'Claves de API, aplicaciones SMART on FHIR y suscripciones a webhooks con sus entregas.',
+  'admin.areas.developer.keywords':
+    'api, claves, smart, fhir, oauth, webhooks, suscripciones, desarrollador',
+
+  /* ------------------------------------------------- the permission matrix */
+  'admin.permissions.caption':
+    'Capacidades por rol. Cada celda es una casilla que nombra su capacidad y su rol.',
+  'admin.permissions.capabilityColumn': 'Capacidad',
+  'admin.permissions.cellLabel': '{capability} para {role}',
+  'admin.permissions.none': 'Este rol todavía no puede hacer nada. Otorgue al menos una capacidad.',
+  'admin.permissions.can': 'Puede {capabilities}.',
+  'admin.permissions.cannot': 'No puede {capabilities}.',
+
+  /* ------------------------------------------------------- users and roles */
+  'admin.users.description': 'Quiénes trabajan aquí, qué pueden hacer y dónde pueden hacerlo.',
+  'admin.users.subject': 'cuentas del personal',
+  'admin.users.tableCaption': 'Cuentas del personal',
+  'admin.users.column.name': 'Nombre',
+  'admin.users.column.roles': 'Roles',
+  'admin.users.column.facilities': 'Sedes',
+  'admin.users.column.mfa': 'Doble factor',
+  'admin.users.column.lastActive': 'Última actividad',
+  'admin.users.column.status': 'Estado',
+  'admin.users.column.actions': 'Acciones',
+  'admin.users.status.active': 'Activa',
+  'admin.users.status.invited': 'Invitada',
+  'admin.users.status.deactivated': 'Desactivada',
+  'admin.users.filter.label': 'Filtrar las cuentas del personal',
+  'admin.users.filter.search': 'Buscar',
+  'admin.users.filter.searchPlaceholder': 'Nombre o correo',
+  'admin.users.filter.role': 'Rol',
+  'admin.users.filter.status': 'Estado',
+  'admin.users.filter.facility': 'Sede',
+  'admin.users.filter.allRoles': 'Todos los roles',
+  'admin.users.filter.allStatuses': 'Todos los estados',
+  'admin.users.filter.allFacilities': 'Todas las sedes',
+  'admin.users.accountCount.one': '{count} cuenta',
+  'admin.users.accountCount.other': '{count} cuentas',
+  'admin.users.empty.title': 'Ninguna cuenta coincide con estos filtros',
+  'admin.users.empty.message':
+    'Los filtros actuales de búsqueda, rol, estado o sede dejan fuera todas las cuentas. Borre los filtros o invite a la persona que está buscando.',
+  'admin.users.provider': 'Profesional de salud',
+  'admin.users.mfa.enrolled': 'Inscrito',
+  'admin.users.mfa.notEnrolled': 'Sin inscribir',
+  'admin.users.neverActive': 'Nunca',
+  'admin.users.openAccount': 'Abrir {name}',
+  'admin.users.exceptions': 'Excepciones',
+  'admin.users.detail.roles': 'Roles',
+  'admin.users.detail.facilities': 'Sedes',
+  'admin.users.detail.provider': 'Profesional de salud',
+  'admin.users.detail.npi': 'NPI',
+  'admin.users.detail.taxonomy': 'Taxonomía',
+  'admin.users.detail.mfa': 'Doble factor',
+  'admin.users.detail.lastActive': 'Última actividad',
+  'admin.users.yes': 'Sí',
+  'admin.users.no': 'No',
+  'admin.users.capabilities.title': 'Qué puede hacer esta persona',
+  'admin.users.deactivate': 'Desactivar la cuenta',
+  'admin.users.deactivatedToast':
+    '{name} ya no puede iniciar sesión. La cuenta se conserva para la pista de auditoría.',
+  'admin.users.confirmDeactivate.title': 'Desactivar a {name}',
+  'admin.users.confirmDeactivate.consequence':
+    'Ya no podrá iniciar sesión. Nada de lo que escribió se elimina y la cuenta sigue siendo identificable en la pista de auditoría.',
+  'admin.users.confirmDeactivate.detail':
+    'Las sesiones abiertas terminan en menos de un minuto. Si la reactiva más adelante, recupera los mismos roles.',
+  'admin.users.mfaNotice.title': '{count} cuentas activas no tienen segundo factor.',
+  'admin.users.mfaNotice.body':
+    'La autenticación de doble factor es obligatoria para quien abra una historia clínica. Pídales que se inscriban desde la configuración de su propia cuenta.',
+  'admin.users.invite.title': 'Invitar a un colega',
+  'admin.users.invite.description':
+    'Cada persona define su propia contraseña y su segundo factor desde el enlace de invitación.',
+  'admin.users.invite.name': 'Nombre completo',
+  'admin.users.invite.email': 'Correo de trabajo',
+  'admin.users.invite.role': 'Rol',
+  'admin.users.invite.facilities': 'Sedes',
+  'admin.users.invite.summaryPending': 'El resumen del rol aparece cuando carguen los permisos.',
+  'admin.users.invite.send': 'Enviar la invitación',
+  'admin.users.invite.sentToast': 'Invitación enviada a {email}. Vence en 7 días.',
+  'admin.users.roles.title': 'Permisos de los roles',
+  'admin.users.roles.description':
+    'Los roles son paquetes con nombre. Si cambia uno aquí, cambia para todas las personas que lo tienen.',
+  'admin.users.roles.edit': 'Editar los permisos de los roles',
+  'admin.users.roles.save': 'Guardar los permisos de los roles',
+  'admin.users.roles.savedToast':
+    'Permisos de los roles guardados. Afecta a todas las personas que tienen estos roles.',
+  'admin.users.roles.subject': 'permisos de roles',
+  'admin.users.roles.empty.title': 'No hay capacidades definidas',
+  'admin.users.roles.empty.message':
+    'Los roles no tienen nada que otorgar hasta que cargue la lista de capacidades. Vuelva a cargar la pantalla y repórtelo si la lista sigue vacía.',
+  'admin.users.roles.summarise': 'Resumir',
+  'admin.users.roles.summariseHint': 'La frase de abajo describe el rol que elija aquí.',
+  'admin.users.roles.summaryLoading': 'Cargando el resumen del rol.',
+  'admin.users.command.invite.keywords': 'usuario nuevo, agregar personal, incorporar',
+  'admin.users.command.roles.keywords': 'acl, permisos, matriz, qué puede hacer este rol',
+  'admin.users.command.active': 'Mostrar solo las cuentas activas',
+  'admin.users.command.active.keywords': 'filtrar, usuarios activos',
+
+  /* ------------------------------------------------------------ facilities */
+  'admin.facilities.description':
+    'Dónde trabaja el consultorio: atributos de facturación, horarios de atención y salas.',
+  'admin.facilities.subject': 'sedes',
+  'admin.facilities.showInactive': 'Mostrar las inactivas',
+  'admin.facilities.add': 'Agregar una sede',
+  'admin.facilities.empty.title': 'Todavía no hay sedes',
+  'admin.facilities.empty.message':
+    'Una sede es el lugar físico donde ocurre una consulta. Agregue primero el consultorio; las salas y los horarios vienen con él.',
+  'admin.facilities.status.active': 'Activa',
+  'admin.facilities.status.inactive': 'Inactiva',
+  'admin.facilities.primary': 'Principal',
+  'admin.facilities.pos': 'POS {code}',
+  'admin.facilities.roomCount.one': '{count} sala',
+  'admin.facilities.roomCount.other': '{count} salas',
+  'admin.facilities.hours.closedAllWeek': 'Cerrada toda la semana',
+  'admin.facilities.hours.daysAWeek': '{count} días a la semana',
+  'admin.facilities.edit': 'Editar {name}',
+  'admin.facilities.drawer.description':
+    'Los atributos de facturación alimentan las reclamaciones, los horarios alimentan el motor de citas y las salas alimentan el tablero de flujo.',
+  'admin.facilities.save': 'Guardar la sede',
+  'admin.facilities.identity.title': 'Identidad y facturación',
+  'admin.facilities.field.name': 'Nombre de la sede',
+  'admin.facilities.field.phone': 'Teléfono',
+  'admin.facilities.field.placeOfService': 'Lugar de atención',
+  'admin.facilities.field.npi': 'NPI de la sede',
+  'admin.facilities.field.taxId': 'Identificación fiscal',
+  'admin.facilities.field.street': 'Calle',
+  'admin.facilities.hours.title': 'Horarios de atención',
+  'admin.facilities.hours.explanation':
+    'El motor de citas solo ofrece turnos dentro de estos horarios. Los días cerrados no muestran ningún turno, en lugar de mostrarlos vacíos.',
+  'admin.facilities.hours.caption': 'Horarios de atención en {name}',
+  'admin.facilities.hours.column.day': 'Día',
+  'admin.facilities.hours.column.opens': 'Abre',
+  'admin.facilities.hours.column.closes': 'Cierra',
+  'admin.facilities.hours.closed': 'Cerrada',
+  'admin.facilities.rooms.title': 'Salas',
+  'admin.facilities.rooms.empty':
+    'Todavía no hay salas. El tablero de flujo necesita al menos una sala para poder mostrar dónde está un paciente.',
+  'admin.facilities.detail.providers': 'Profesionales que trabajan aquí',
+  'admin.facilities.detail.bookableMinutes': 'Minutos agendables por semana',
+  'admin.facilities.command.open': 'Abrir la sede principal',
+  'admin.facilities.command.open.keywords': 'ubicación, sede, horarios, salas',
+  'admin.facilities.command.inactive': 'Mostrar las sedes inactivas',
+  'admin.facilities.command.inactive.keywords': 'cerrada, ubicación retirada',
+
+  /* ----------------------------------------------------------- audit trail */
+  'admin.audit.description': 'Cada acceso a los datos del paciente, en el orden en que ocurrió.',
+  'admin.audit.subject': 'eventos de auditoría',
+  'admin.audit.export': 'Exportar estos eventos',
+  'admin.audit.exportCsv': 'Exportar CSV',
+  'admin.audit.exportedToast':
+    'Se exportaron {count} eventos. La exportación misma queda registrada en esta pista.',
+  'admin.audit.exportUnavailableToast':
+    'Este navegador no puede descargar archivos. Copie la tabla filtrada en su lugar.',
+  'admin.audit.readOnly.title': 'Este registro solo se agrega.',
+  'admin.audit.readOnly.body':
+    'Nada de esta pantalla puede editarse ni eliminarse, por nadie, ni siquiera por un administrador del consultorio. Cada evento se codifica junto con el anterior, así que un evento faltante o alterado se puede detectar.',
+  'admin.audit.chip.hashVerified': 'Cadena de hash verificada',
+  'admin.audit.chip.readOnly': 'Solo lectura',
+  'admin.audit.chip.retention': 'Se conserva 6 años',
+  'admin.audit.filter.label': 'Filtrar la pista de auditoría',
+  'admin.audit.filter.from': 'Desde',
+  'admin.audit.filter.to': 'Hasta',
+  'admin.audit.filter.actor': 'Quién',
+  'admin.audit.filter.action': 'Acción',
+  'admin.audit.filter.purpose': 'Motivo de uso',
+  'admin.audit.filter.mrn': 'Número de historia clínica',
+  'admin.audit.filter.breakglassOnly': 'Solo acceso de emergencia',
+  'admin.audit.filter.anyone': 'Cualquiera',
+  'admin.audit.filter.anyAction': 'Cualquier acción',
+  'admin.audit.filter.anyPurpose': 'Cualquier motivo',
+  'admin.audit.summary.one': '{count} evento',
+  'admin.audit.summary.other': '{count} eventos',
+  'admin.audit.summaryBreakglass.one': '{count} evento, {breakglass} de emergencia',
+  'admin.audit.summaryBreakglass.other': '{count} eventos, {breakglass} de emergencia',
+  'admin.audit.column.when': 'Cuándo',
+  'admin.audit.column.actor': 'Quién',
+  'admin.audit.column.action': 'Acción',
+  'admin.audit.column.target': 'Sobre qué',
+  'admin.audit.column.patient': 'Paciente',
+  'admin.audit.column.purpose': 'Motivo de uso',
+  'admin.audit.column.detail': 'Detalle',
+  'admin.audit.csv.sequence': 'Secuencia',
+  'admin.audit.csv.when': 'Cuándo',
+  'admin.audit.csv.actor': 'Quién',
+  'admin.audit.csv.role': 'Rol',
+  'admin.audit.csv.action': 'Acción',
+  'admin.audit.csv.target': 'Sobre qué',
+  'admin.audit.csv.patientMrn': 'Número de historia clínica',
+  'admin.audit.csv.purpose': 'Motivo de uso',
+  'admin.audit.csv.breakglass': 'Acceso de emergencia',
+  'admin.audit.csv.breakglassReason': 'Motivo del acceso de emergencia',
+  'admin.audit.csv.sourceAddress': 'Dirección de origen',
+  'admin.audit.csv.hash': 'Hash',
+  'admin.audit.csv.yes': 'Sí',
+  'admin.audit.csv.no': 'No',
+  'admin.audit.noChartContext': 'Sin historia clínica asociada',
+  'admin.audit.breakglass': 'Acceso de emergencia',
+  'admin.audit.openEvent': 'Abrir el evento {sequence}',
+  'admin.audit.tableCaption': 'Eventos de auditoría, del más reciente al más antiguo',
+  'admin.audit.empty.title': 'Ningún evento coincide con esta consulta',
+  'admin.audit.empty.message':
+    'No se registró nada con estos filtros. Amplíe el rango de fechas, o borre quién y la acción para ver todo lo del período.',
+  'admin.audit.empty.action': 'Borrar los filtros',
+  'admin.audit.detail.breakglassTitle': 'Acceso de emergencia fuera del equipo de atención.',
+  'admin.audit.detail.breakglassReason': 'El motivo indicado fue: "{reason}"',
+  'admin.audit.detail.actor': 'Quién',
+  'admin.audit.detail.role': 'Rol',
+  'admin.audit.detail.target': 'Sobre qué',
+  'admin.audit.detail.purpose': 'Motivo de uso',
+  'admin.audit.detail.patient': 'Paciente',
+  'admin.audit.detail.mrn': 'Historia clínica',
+  'admin.audit.detail.sourceAddress': 'Dirección de origen',
+  'admin.audit.detail.requestId': 'Id de la solicitud',
+  'admin.audit.hash.title': 'Cadena de hash',
+  'admin.audit.hash.explanation':
+    'Cada evento se codifica junto con el hash del evento anterior. Cambiar o quitar cualquier evento rompe todos los hash posteriores, y eso es lo que hace que esta pista delate una alteración en lugar de solo estar bloqueada.',
+  'admin.audit.hash.position': 'Posición',
+  'admin.audit.hash.previous': 'Hash anterior',
+  'admin.audit.hash.current': 'Este hash',
+  'admin.audit.hash.integrity': 'Integridad',
+  'admin.audit.hash.verified': 'Verificado contra la cadena',
+  'admin.audit.hash.unverified': 'Sin verificar. Repórtelo de inmediato.',
+  'admin.audit.command.export': 'Exportar la pista de auditoría filtrada',
+  'admin.audit.command.export.keywords': 'csv, descargar, cumplimiento',
+  'admin.audit.command.breakglass': 'Mostrar solo los accesos de emergencia',
+  'admin.audit.command.breakglass.keywords': 'acceso de emergencia, excepción, incidente',
+
+  /* ---------------------------------------------------------- form builder */
+  'admin.forms.description':
+    'Cree los formularios de admisión, consultas, referencias y el portal. Las versiones publicadas nunca cambian.',
+  'admin.forms.subject': 'definiciones de formularios',
+  'admin.forms.preview': 'Vista previa',
+  'admin.forms.publishVersion': 'Publicar la versión {version}',
+  'admin.forms.empty.title': 'Todavía no hay formularios',
+  'admin.forms.empty.message':
+    'Los formularios alimentan la admisión por el portal, la documentación de la consulta y las referencias. Cree el primero y publíquelo en las superficies que lo necesiten.',
+  'admin.forms.empty.action': 'Crear un formulario',
+  'admin.forms.purpose.demographics': 'Datos personales',
+  'admin.forms.purpose.encounter': 'Consulta',
+  'admin.forms.purpose.portalIntake': 'Admisión por el portal',
+  'admin.forms.purpose.referral': 'Referencia',
+  'admin.forms.formSelect': 'Formulario',
+  'admin.forms.formOption': '{name} ({purpose})',
+  'admin.forms.versionPublished': 'Versión {version}, publicada',
+  'admin.forms.versionDraft': 'Versión {version}, borrador',
+  'admin.forms.responses': '{count} respuestas',
+  'admin.forms.updated': 'Actualizado el {when} por {who}',
+  'admin.forms.immutable.title': 'La versión {version} está publicada y no puede cambiar.',
+  'admin.forms.immutable.dirty':
+    'Sus cambios se están acumulando en el borrador de la versión {version}. Las respuestas ya recibidas siguen unidas a la versión que las capturó.',
+  'admin.forms.immutable.clean':
+    'Editar cualquier cosa inicia el borrador de la versión {version}. Las respuestas ya recibidas siguen unidas a la versión que las capturó.',
+  'admin.forms.previewTitle': 'Vista previa: {name}',
+  'admin.forms.renderedAs': 'Mostrado como',
+  'admin.forms.surface.portal': 'Portal del paciente',
+  'admin.forms.surface.staff': 'Personal, compacto',
+  'admin.forms.fieldLabelRequired': '{label} (obligatorio)',
+  'admin.forms.fieldTypes.title': 'Tipos de campo',
+  'admin.forms.fieldTypes.hint':
+    'Al agregar un campo, queda al final de la primera sección. Selecciónelo en el lienzo para moverlo o configurarlo.',
+  'admin.forms.fieldTypes.subject': 'tipos de campo',
+  'admin.forms.fieldTypes.empty.title': 'No hay tipos de campo disponibles',
+  'admin.forms.fieldTypes.empty.message':
+    'El motor de formularios no reporta ningún tipo de campo, así que no se puede agregar nada. Vuelva a cargar la pantalla y repórtelo si la lista sigue vacía.',
+  'admin.forms.addField': 'Agregar {label}',
+  'admin.forms.canvas.title': 'Lienzo',
+  'admin.forms.chip.required': 'Obligatorio',
+  'admin.forms.chip.portal': 'Portal',
+  'admin.forms.chip.graphable': 'Graficable',
+  'admin.forms.chip.askedOnce': 'Se pregunta una vez',
+  'admin.forms.properties.title': 'Propiedades del campo',
+  'admin.forms.properties.empty':
+    'Seleccione un campo en el lienzo para cambiar su etiqueta, si es obligatorio y dónde aparece.',
+  'admin.forms.properties.label': 'Etiqueta',
+  'admin.forms.properties.helpText': 'Texto de ayuda',
+  'admin.forms.properties.helpTextHint':
+    'Una frase corta, en el lenguaje del paciente en los formularios del portal.',
+  'admin.forms.properties.required': 'Obligatorio',
+  'admin.forms.properties.portalVisible': 'Visible en el portal del paciente',
+  'admin.forms.properties.graphable': 'Graficable',
+  'admin.forms.properties.graphableHint':
+    'Las respuestas numéricas se pueden graficar en una hoja de seguimiento.',
+  'admin.forms.properties.askOnce': 'Preguntar una sola vez',
+  'admin.forms.properties.askOnceHint':
+    'Las visitas posteriores leen la respuesta guardada en lugar de volver a preguntar.',
+  'admin.forms.properties.showWhen': 'Mostrar cuando',
+  'admin.forms.properties.showWhenHint':
+    'Déjelo vacío para mostrarlo siempre. Ejemplo: Mostrar cuando ¿Usted fuma? sea Sí',
+  'admin.forms.publish.title': 'Publicar {name} versión {version}',
+  'admin.forms.publish.consequence':
+    'La versión {version} pasa a ser el formulario que usa cada respuesta nueva, y nunca podrá volver a editarse. Las respuestas ya recibidas se quedan en la versión que las capturó.',
+  'admin.forms.publish.summary': '{fields} campos, {sections} secciones.',
+  'admin.forms.publish.added': '{count} agregados desde la versión {version}.',
+  'admin.forms.publish.noneAdded': 'No se agregaron campos desde la última versión.',
+  'admin.forms.publishedToast':
+    '{name} versión {version} está en vivo en la admisión por el portal y en las consultas.',
+  'admin.forms.command.preview': 'Ver este formulario',
+  'admin.forms.command.preview.keywords': 'verlo, vista del portal, vista del personal',
+  'admin.forms.command.publish': 'Publicar una versión nueva',
+  'admin.forms.command.publish.keywords': 'lanzar, versión, poner en vivo',
+
+  /* ---------------------------------------------------------- integrations */
+  'admin.integrations.description':
+    'Las conexiones con socios: recetas, reclamaciones, laboratorios, pagos, fax, mensajes y video.',
+  'admin.integrations.subject': 'integraciones',
+  'admin.integrations.status.connected': 'Conectada',
+  'admin.integrations.status.demo': 'Modo demostración',
+  'admin.integrations.status.error': 'No funciona',
+  'admin.integrations.status.notConnected': 'Sin conectar',
+  'admin.integrations.test.connected':
+    'La conexión respondió en 142 ms y devolvió la respuesta esperada.',
+  'admin.integrations.test.demo':
+    'La conexión respondió en 142 ms y devolvió la respuesta esperada.',
+  'admin.integrations.test.error':
+    'El laboratorio volvió a rechazar las credenciales. Reemplace la cuenta de servicio y pruebe otra vez.',
+  'admin.integrations.test.notConnected':
+    'Todavía no hay nada que probar. Elija un adaptador y guarde sus credenciales primero.',
+  'admin.integrations.sentence.connected': 'Funcionando. Última actividad {when}.',
+  'admin.integrations.sentence.demo':
+    'Funcionando contra la red de demostración incluida. Nada sale de este consultorio.',
+  'admin.integrations.sentence.error':
+    'No funciona desde {when}. El trabajo queda en cola hasta que se arregle.',
+  'admin.integrations.sentence.notConnected':
+    'No hay adaptador configurado. Las funciones que necesitan esta conexión no están disponibles.',
+  'admin.integrations.webhookVerified': 'Webhook verificado',
+  'admin.integrations.configure': 'Configurar {name}',
+  'admin.integrations.lastWorking': 'Última vez que funcionó: {when}.',
+  'admin.integrations.demoNotice.title': 'Modo demostración.',
+  'admin.integrations.demoNotice.body':
+    'Las órdenes, los mensajes y los pagos que pasan por esta conexión van al simulador incluido y nunca llegan a un socio real. Cada pantalla que transmite por aquí lo dice en su propio botón.',
+  'admin.integrations.activity.empty':
+    'Todavía no ha pasado nada por esta conexión. La actividad aparece aquí en cuanto ocurra.',
+  'admin.integrations.activity.succeeded': 'Exitoso',
+  'admin.integrations.activity.failed': 'Fallido',
+  'admin.integrations.credentials.title': 'Credenciales',
+  'admin.integrations.credentials.explanation':
+    'openrunic guarda una referencia, no el secreto. El valor nunca se muestra, ni se registra, ni se exporta, tampoco aquí.',
+  'admin.integrations.credentials.label': 'Referencia del secreto',
+  'admin.integrations.credentials.none': 'Ninguna credencial guardada',
+  'admin.integrations.testResult.title': 'Resultado de la prueba',
+  'admin.integrations.detail.seam': 'Conexión',
+  'admin.integrations.detail.adapter': 'Adaptador',
+  'admin.integrations.detail.version': 'Versión',
+  'admin.integrations.detail.lastActivity': 'Última actividad',
+  'admin.integrations.detail.lastWorking': 'Última vez que funcionó',
+  'admin.integrations.detail.webhook': 'Webhook',
+  'admin.integrations.detail.noAdapter': 'Ninguno elegido',
+  'admin.integrations.detail.notApplicable': 'No aplica',
+  'admin.integrations.detail.verified': 'Verificado',
+  'admin.integrations.detail.notVerified': 'Sin verificar',
+  'admin.integrations.recentActivity.title': 'Actividad reciente',
+  'admin.integrations.broken.one': '{name} no está funcionando.',
+  'admin.integrations.broken.other': '{count} conexiones no están funcionando.',
+  'admin.integrations.broken.body':
+    'El trabajo que las necesita queda en cola, no se pierde. Abra la tarjeta para ver qué dijo el socio y qué hacer.',
+  'admin.integrations.openFailing': 'Abrir la conexión que falla',
+  'admin.integrations.command.problem.keywords': 'error, adaptador roto, caída',
+  'admin.integrations.empty.title': 'No hay conexiones configuradas',
+  'admin.integrations.empty.message':
+    'Las recetas, las reclamaciones, los laboratorios y los pagos pasan cada uno por un adaptador. Conecte el primero, o siga trabajando en modo demostración.',
+  'admin.integrations.testConnection': 'Probar la conexión',
+  'admin.integrations.saveConnection': 'Guardar la conexión',
+  'admin.integrations.testToast': '{name}: {result}',
+
+  /* ----------------------------------------------------- developer platform */
+  'admin.developer.description':
+    'Claves de API, aplicaciones SMART on FHIR y suscripciones a webhooks con cada entrega.',
+  'admin.developer.tabs.label': 'Secciones de la plataforma para desarrolladores',
+  'admin.developer.tabs.keys': 'Claves de API',
+  'admin.developer.tabs.apps': 'Aplicaciones SMART',
+  'admin.developer.tabs.webhooks': 'Webhooks',
+  'admin.developer.keys.column.key': 'Clave',
+  'admin.developer.keys.column.scopes': 'Ámbitos',
+  'admin.developer.keys.column.created': 'Creada',
+  'admin.developer.keys.column.lastUsed': 'Último uso',
+  'admin.developer.keys.column.status': 'Estado',
+  'admin.developer.keys.column.actions': 'Acciones',
+  'admin.developer.apps.column.app': 'Aplicación',
+  'admin.developer.apps.column.launch': 'Inicio',
+  'admin.developer.apps.column.scopes': 'Ámbitos',
+  'admin.developer.apps.column.lastLaunch': 'Último inicio',
+  'admin.developer.apps.column.status': 'Estado',
+  'admin.developer.apps.column.actions': 'Acciones',
+  'admin.developer.hooks.column.event': 'Evento',
+  'admin.developer.hooks.column.endpoint': 'Destino',
+  'admin.developer.hooks.column.health': 'Salud',
+  'admin.developer.hooks.column.status': 'Estado',
+  'admin.developer.hooks.column.actions': 'Acciones',
+  'admin.developer.deliveries.column.when': 'Cuándo',
+  'admin.developer.deliveries.column.event': 'Evento',
+  'admin.developer.deliveries.column.response': 'Respuesta',
+  'admin.developer.deliveries.column.latency': 'Latencia',
+  'admin.developer.deliveries.column.attempt': 'Intento',
+  'admin.developer.deliveries.column.outcome': 'Resultado',
+  'admin.developer.hookStatus.active': 'Entregando',
+  'admin.developer.hookStatus.failing': 'Fallando',
+  'admin.developer.hookStatus.paused': 'En pausa',
+  'admin.developer.delivery.delivered': 'Entregado',
+  'admin.developer.delivery.failed': 'Fallido',
+  'admin.developer.delivery.retrying': 'Reintentando',
+  'admin.developer.launch.ehr': 'Desde una historia clínica',
+  'admin.developer.launch.standalone': 'Por su cuenta',
+  'admin.developer.keys.neverUsed': 'Nunca usada',
+  'admin.developer.keys.active': 'Activa',
+  'admin.developer.keys.revoked': 'Revocada',
+  'admin.developer.keys.revoke': 'Revocar {label}',
+  'admin.developer.keys.subject': 'claves de API',
+  'admin.developer.keys.caption': 'Claves de API',
+  'admin.developer.keys.empty.title': 'Todavía no hay claves de API',
+  'admin.developer.keys.empty.message':
+    'Una clave permite que un servicio de backend lea este consultorio por la API FHIR. Cree una, elija sus ámbitos y copie el secreto una sola vez.',
+  'admin.developer.keys.create': 'Crear una clave de API',
+  'admin.developer.keys.revokeConsequence':
+    'Todo lo que use esta clave deja de funcionar de inmediato. La clave se conserva, revocada, para que la pista de auditoría siga pudiendo identificarla.',
+  'admin.developer.keys.revokeConfirm': 'Revocar la clave',
+  'admin.developer.keys.revokedToast':
+    '{label} deja de funcionar de inmediato. El registro se conserva para la pista de auditoría.',
+  'admin.developer.apps.neverLaunched': 'Nunca',
+  'admin.developer.apps.approved': 'Aprobada',
+  'admin.developer.apps.waiting': 'Esperando aprobación',
+  'admin.developer.apps.open': 'Abrir {name}',
+  'admin.developer.apps.subject': 'aplicaciones registradas',
+  'admin.developer.apps.caption': 'Aplicaciones SMART on FHIR',
+  'admin.developer.apps.empty.title': 'No hay aplicaciones registradas',
+  'admin.developer.apps.empty.message':
+    'Una aplicación SMART on FHIR se inicia desde una historia clínica o por su cuenta, y lee según los ámbitos que usted le otorgue. Registre la primera para probar un inicio.',
+  'admin.developer.apps.register': 'Registrar una aplicación',
+  'admin.developer.apps.drawerDescription':
+    'La configuración de inicio y cada inicio que esta aplicación ha intentado.',
+  'admin.developer.apps.testLaunch': 'Probar el inicio',
+  'admin.developer.apps.testLaunchToast':
+    'El inicio de prueba de {name} funcionó contra el entorno de demostración con el paciente OR-100482.',
+  'admin.developer.apps.detail.clientId': 'Id del cliente',
+  'admin.developer.apps.detail.launch': 'Inicio',
+  'admin.developer.apps.detail.redirectUris': 'URI de redirección',
+  'admin.developer.apps.detail.scopes': 'Ámbitos',
+  'admin.developer.launchHistory.title': 'Historial de inicios',
+  'admin.developer.launchHistory.empty':
+    'Esta aplicación nunca se ha iniciado. Use Probar el inicio para probarla contra el entorno de demostración.',
+  'admin.developer.launchHistory.patientContext': 'Paciente {mrn}.',
+  'admin.developer.launchHistory.launched': 'Iniciada',
+  'admin.developer.launchHistory.refused': 'Rechazada',
+  'admin.developer.hooks.health': '{percent}% fallaron de las últimas 100',
+  'admin.developer.hooks.open': 'Abrir las entregas de {event}',
+  'admin.developer.hooks.subject': 'suscripciones a webhooks',
+  'admin.developer.hooks.caption': 'Suscripciones a webhooks',
+  'admin.developer.hooks.empty.title': 'Todavía no hay suscripciones',
+  'admin.developer.hooks.empty.message':
+    'Una suscripción envía un evento a su destino en el momento en que ocurre, firmado con un secreto compartido. Cree una y dispare una entrega de prueba.',
+  'admin.developer.hooks.create': 'Crear una suscripción',
+  'admin.developer.hooks.drawerTitle': 'Entregas de {event}',
+  'admin.developer.hooks.retry': 'Reenviar la última entrega',
+  'admin.developer.hooks.retryToast':
+    'Se reenvió la última entrega de {event}. Observe el registro para ver la respuesta.',
+  'admin.developer.hooks.failingNotice.title': 'Este destino está fallando.',
+  'admin.developer.hooks.failingNotice.body':
+    'Las entregas se reintentan con espera creciente durante 24 horas, y la suscripción se pone en pausa sola después de 100 fallas seguidas para dejar de acumularse detrás de un destino muerto.',
+  'admin.developer.hooks.detail.criteria': 'Criterio',
+  'admin.developer.hooks.detail.secret': 'Secreto de firma',
+  'admin.developer.hooks.detail.failureRate': 'Tasa de falla',
+  'admin.developer.hooks.detail.failureRateValue': '{percent}% de las últimas 100',
+  'admin.developer.hooks.detail.created': 'Creada',
+  'admin.developer.hooks.deliveriesCaption': 'Entregas de {event}',
+  'admin.developer.deliveries.noAnswer': 'Sin respuesta',
+  'admin.developer.deliveries.timedOut': 'Tiempo agotado',
+  'admin.developer.deliveries.latencyMs': '{ms} ms',
+  'admin.developer.scopes.subject': 'ámbitos',
+  'admin.developer.scopes.legend': 'Ámbitos',
+  'admin.developer.scopes.empty.title': 'No hay ámbitos disponibles',
+  'admin.developer.scopes.empty.message':
+    'Una clave sin ámbito no puede leer nada. Vuelva a cargar la pantalla y repórtelo si la lista sigue vacía.',
+  'admin.developer.newKey.description':
+    'Los servicios de backend se autentican con esta clave. Se muestra una sola vez y no se puede recuperar.',
+  'admin.developer.newKey.copyTitle': 'Copie este secreto ahora.',
+  'admin.developer.newKey.copyBody':
+    'openrunic guarda un hash del secreto y no puede volver a mostrarlo. Si se pierde, cree una clave nueva y revoque esta.',
+  'admin.developer.newKey.secret': 'Secreto',
+  'admin.developer.newKey.purpose': '¿Para qué es esta clave?',
+  'admin.developer.newKey.purposeHint':
+    'Quien lea la lista dentro de un año debería saber si puede revocarla.',
+  'admin.developer.newKey.type': 'Tipo',
+  'admin.developer.newKey.typeBackend': 'Servicio de backend',
+  'admin.developer.newKey.typePortal': 'Integración del portal',
+  'admin.developer.newKey.copied': 'Ya copié el secreto',
+  'admin.developer.newKey.create': 'Crear la clave',
+  'admin.developer.newKey.createdToast':
+    '{label} creada. Copie el secreto ahora; no se vuelve a mostrar.',
+  'admin.developer.command.key.keywords': 'token, servicio de backend, credencial',
+  'admin.developer.command.apps': 'Mostrar las aplicaciones SMART on FHIR',
+  'admin.developer.command.apps.keywords': 'smart, inicio, oauth, registro de aplicaciones',
+  'admin.developer.command.webhooks': 'Mostrar las entregas de webhooks',
+  'admin.developer.command.webhooks.keywords':
+    'suscripciones, eventos, reintento, registro de entregas',
+};

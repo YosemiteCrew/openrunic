@@ -6,6 +6,7 @@ import type { ReactElement } from 'react';
 
 import { ADMIN_AREAS } from '@/components/admin';
 import { AppShell } from '@/components/shell';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The admin hub.
@@ -17,11 +18,10 @@ import { AppShell } from '@/components/shell';
  * middle-clickable, and announced as a link.
  */
 export function AdminScreen(): ReactElement {
+  const t = useTranslator();
+
   return (
-    <AppShell
-      title="Admin"
-      description="Users, facilities, forms, the audit trail and the practice's own configuration."
-    >
+    <AppShell title={t('nav.admin')} description={t('admin.hub.description')}>
       <ul className="or-hub">
         {ADMIN_AREAS.map((area) => (
           <li key={area.href}>
@@ -31,10 +31,10 @@ export function AdminScreen(): ReactElement {
               </span>
               <h2 className="or-h3 or-hub__title">
                 <Link className="or-hub__link" href={area.href}>
-                  {area.label}
+                  {t(area.labelKey)}
                 </Link>
               </h2>
-              <p className="or-small or-hub__description">{area.description}</p>
+              <p className="or-small or-hub__description">{t(area.descriptionKey)}</p>
             </Card>
           </li>
         ))}

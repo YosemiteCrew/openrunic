@@ -1,8 +1,14 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AdminScreen } from '@/app/(app)/admin/AdminScreen';
 import { ADMIN_AREAS, adminBreadcrumb } from '@/components/admin';
+
+/* The source locale, so the assertions below read in the language this file is
+   written in. The screens render through the provider the setup file installs,
+   which is built the same way. */
+const t = createTranslator(appCatalogue, 'en');
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -14,7 +20,7 @@ describe('AdminScreen', () => {
     render(<AdminScreen />);
 
     for (const area of ADMIN_AREAS) {
-      const link = screen.getByRole('link', { name: area.label });
+      const link = screen.getByRole('link', { name: t(area.labelKey) });
       expect(link).toHaveAttribute('href', area.href);
     }
     expect(screen.getByText(/Staff accounts, the roles they hold/)).toBeInTheDocument();
@@ -43,14 +49,14 @@ describe('AdminScreen', () => {
 
 describe('adminBreadcrumb', () => {
   it('trails Admin then the area, with the area as the current page', () => {
-    expect(adminBreadcrumb('Audit trail')).toEqual([
+    expect(adminBreadcrumb(t, 'audit')).toEqual([
       { label: 'Admin', href: '/admin' },
       { label: 'Audit trail' },
     ]);
   });
 
   it('links the area when a third crumb names the record being edited', () => {
-    expect(adminBreadcrumb('Form builder', 'Adult intake v3')).toEqual([
+    expect(adminBreadcrumb(t, 'forms', 'Adult intake v3')).toEqual([
       { label: 'Admin', href: '/admin' },
       { label: 'Form builder', href: '/admin/forms' },
       { label: 'Adult intake v3' },

@@ -47,11 +47,11 @@ export interface FormsScreenProps {
   client?: AdminClient;
 }
 
-const PURPOSE_KEY: Record<FormDefinition['purpose'], string> = {
-  DEMOGRAPHICS: 'admin.forms.purpose.demographics',
-  ENCOUNTER: 'admin.forms.purpose.encounter',
-  PORTAL_INTAKE: 'admin.forms.purpose.portalIntake',
-  REFERRAL: 'admin.forms.purpose.referral',
+const PURPOSE_KEY: Record<FormDefinition['purpose'], { labelKey: string }> = {
+  DEMOGRAPHICS: { labelKey: 'admin.forms.purpose.demographics' },
+  ENCOUNTER: { labelKey: 'admin.forms.purpose.encounter' },
+  PORTAL_INTAKE: { labelKey: 'admin.forms.purpose.portalIntake' },
+  REFERRAL: { labelKey: 'admin.forms.purpose.referral' },
 };
 
 /**
@@ -338,7 +338,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                     value: entry.id,
                     label: t('admin.forms.formOption', {
                       name: entry.name,
-                      purpose: t(PURPOSE_KEY[entry.purpose]),
+                      purpose: t(PURPOSE_KEY[entry.purpose].labelKey),
                     }),
                   }))}
                   value={current.id}

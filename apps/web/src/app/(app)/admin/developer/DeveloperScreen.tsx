@@ -120,9 +120,9 @@ function toggleScope(previous: readonly string[], id: string): string[] {
   return [...previous, id];
 }
 
-const LAUNCH_KEY: Record<SmartApp['launchType'], string> = {
-  EHR: 'admin.developer.launch.ehr',
-  STANDALONE: 'admin.developer.launch.standalone',
+const LAUNCH_KEY: Record<SmartApp['launchType'], { labelKey: string }> = {
+  EHR: { labelKey: 'admin.developer.launch.ehr' },
+  STANDALONE: { labelKey: 'admin.developer.launch.standalone' },
 };
 
 function chipList(values: readonly string[]): ReactElement {
@@ -191,7 +191,7 @@ function appRow(
         <span className="or-caption or-mono">{app.clientId}</span>
       </span>
     ),
-    launch: <span className="or-small">{t(LAUNCH_KEY[app.launchType])}</span>,
+    launch: <span className="or-small">{t(LAUNCH_KEY[app.launchType].labelKey)}</span>,
     scopes: chipList(app.scopes),
     lastLaunch: (
       <span className="or-small">
@@ -309,7 +309,10 @@ function AppDetail({ app }: Readonly<{ app: SmartApp }>): ReactElement {
         columns={2}
         items={[
           { label: t('admin.developer.apps.detail.clientId'), value: app.clientId, mono: true },
-          { label: t('admin.developer.apps.detail.launch'), value: t(LAUNCH_KEY[app.launchType]) },
+          {
+            label: t('admin.developer.apps.detail.launch'),
+            value: t(LAUNCH_KEY[app.launchType].labelKey),
+          },
           {
             label: t('admin.developer.apps.detail.redirectUris'),
             value: app.redirectUris.join(', '),

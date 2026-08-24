@@ -84,10 +84,10 @@ const STATUS_TONE: Record<StaffStatus, 'success' | 'neutral' | 'danger'> = {
  * from the status, because a key built at runtime is invisible to the drift
  * test and to whoever has to find it when it breaks.
  */
-const STATUS_KEY: Record<StaffStatus, string> = {
-  ACTIVE: 'admin.users.status.active',
-  INVITED: 'admin.users.status.invited',
-  DEACTIVATED: 'admin.users.status.deactivated',
+const STATUS_KEY: Record<StaffStatus, { labelKey: string }> = {
+  ACTIVE: { labelKey: 'admin.users.status.active' },
+  INVITED: { labelKey: 'admin.users.status.invited' },
+  DEACTIVATED: { labelKey: 'admin.users.status.deactivated' },
 };
 
 /** What a translator does, for the helpers below that are not components. */
@@ -222,7 +222,7 @@ function userRow(
           : t('admin.users.neverActive')}
       </span>
     ),
-    status: <Badge tone={STATUS_TONE[user.status]}>{t(STATUS_KEY[user.status])}</Badge>,
+    status: <Badge tone={STATUS_TONE[user.status]}>{t(STATUS_KEY[user.status].labelKey)}</Badge>,
     actions: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(user.id)}>
         {t('admin.users.openAccount', { name: user.name })}
@@ -655,7 +655,9 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
         onClose={closeDrawer}
         meta={
           selected ? (
-            <Badge tone={STATUS_TONE[selected.status]}>{t(STATUS_KEY[selected.status])}</Badge>
+            <Badge tone={STATUS_TONE[selected.status]}>
+              {t(STATUS_KEY[selected.status].labelKey)}
+            </Badge>
           ) : null
         }
         footer={

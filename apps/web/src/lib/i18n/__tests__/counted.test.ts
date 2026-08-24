@@ -26,6 +26,8 @@ function translator(locale: string) {
       messages: {
         en: { 'test.count.one': '{count} result', 'test.count.other': '{count} results' },
         es: { 'test.count.one': '{count} resultado', 'test.count.other': '{count} resultados' },
+        /* Russian, because it is the one that discriminates. See below. */
+        ru: { 'test.count.one': '{count} результат', 'test.count.other': '{count} результатов' },
       },
     },
     locale
@@ -41,15 +43,29 @@ describe('a counted message', () => {
   });
 
   /**
-   * The reason this is not `count === 1`. Spanish agrees with English about one
-   * and about four; it does not agree about zero, and a screen testing for one
-   * would say "0 resultado".
+   * The reason this is not `count === 1`, and the count is 21 for a reason.
+   *
+   * The first version of this test used Spanish and zero, and proved nothing:
+   * English and Spanish both select `other` for zero, so a hard-coded
+   * `count === 1 ? one : other` passes it identically. Its comment claimed such
+   * an implementation would render the singular, which was simply false.
+   *
+   * Russian is the one that discriminates. `Intl.PluralRules('ru').select(21)`
+   * is `one` where English is `other`, so an implementation that tested the
+   * number against 1 would pick the plural form here and this fails.
    */
   it('asks the locale rather than assuming English grammar', () => {
-    const es = translator('es');
+    expect(new Intl.PluralRules('ru').select(21)).toBe('one');
+    expect(new Intl.PluralRules('en').select(21)).toBe('other');
 
-    expect(counted(es, MESSAGE, 1)).toBe('1 resultado');
-    expect(counted(es, MESSAGE, 0)).toBe('0 resultados');
+    expect(counted(translator('ru'), MESSAGE, 21)).toBe('21 результат');
+    expect(counted(translator('en'), MESSAGE, 21)).toBe('21 results');
+  });
+
+  /** Spanish still gets its own words, which is the ordinary case. */
+  it('renders each locale in its own words', () => {
+    expect(counted(translator('es'), MESSAGE, 1)).toBe('1 resultado');
+    expect(counted(translator('es'), MESSAGE, 4)).toBe('4 resultados');
   });
 
   /**

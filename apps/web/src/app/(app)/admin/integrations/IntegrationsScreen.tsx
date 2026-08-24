@@ -36,11 +36,11 @@ export interface IntegrationsScreenProps {
 /** What a translator does, for the helpers below that are not components. */
 type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
 
-const STATUS_KEY: Record<IntegrationStatus, string> = {
-  CONNECTED: 'admin.integrations.status.connected',
-  DEMO: 'admin.integrations.status.demo',
-  ERROR: 'admin.integrations.status.error',
-  NOT_CONNECTED: 'admin.integrations.status.notConnected',
+const STATUS_KEY: Record<IntegrationStatus, { labelKey: string }> = {
+  CONNECTED: { labelKey: 'admin.integrations.status.connected' },
+  DEMO: { labelKey: 'admin.integrations.status.demo' },
+  ERROR: { labelKey: 'admin.integrations.status.error' },
+  NOT_CONNECTED: { labelKey: 'admin.integrations.status.notConnected' },
 };
 
 const STATUS_TONE: Record<IntegrationStatus, 'success' | 'neutral' | 'danger'> = {
@@ -56,15 +56,15 @@ const STATUS_TONE: Record<IntegrationStatus, 'success' | 'neutral' | 'danger'> =
  * a working seam reports the round trip. Listed per status rather than
  * branched, so adding a state forces a sentence to be written for it.
  */
-const TEST_RESULT_KEY: Record<IntegrationStatus, string> = {
-  CONNECTED: 'admin.integrations.test.connected',
-  DEMO: 'admin.integrations.test.demo',
-  ERROR: 'admin.integrations.test.error',
-  NOT_CONNECTED: 'admin.integrations.test.notConnected',
+const TEST_RESULT_KEY: Record<IntegrationStatus, { labelKey: string }> = {
+  CONNECTED: { labelKey: 'admin.integrations.test.connected' },
+  DEMO: { labelKey: 'admin.integrations.test.demo' },
+  ERROR: { labelKey: 'admin.integrations.test.error' },
+  NOT_CONNECTED: { labelKey: 'admin.integrations.test.notConnected' },
 };
 
 function testResultFor(t: Translate, status: IntegrationStatus): string {
-  return t(TEST_RESULT_KEY[status]);
+  return t(TEST_RESULT_KEY[status].labelKey);
 }
 
 /** One sentence under the chip, so the state is never only a colour and a word. */
@@ -96,7 +96,9 @@ function AdapterCard({
     <Card className="or-adapter" data-status={integration.status}>
       <div className="or-adapter__head">
         <h2 className="or-h3">{integration.name}</h2>
-        <Badge tone={STATUS_TONE[integration.status]}>{t(STATUS_KEY[integration.status])}</Badge>
+        <Badge tone={STATUS_TONE[integration.status]}>
+          {t(STATUS_KEY[integration.status].labelKey)}
+        </Badge>
       </div>
 
       <p className="or-small">{integration.description}</p>
@@ -340,7 +342,9 @@ export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>
         onClose={() => setOpenId(null)}
         meta={
           selected ? (
-            <Badge tone={STATUS_TONE[selected.status]}>{t(STATUS_KEY[selected.status])}</Badge>
+            <Badge tone={STATUS_TONE[selected.status]}>
+              {t(STATUS_KEY[selected.status].labelKey)}
+            </Badge>
           ) : null
         }
         footer={

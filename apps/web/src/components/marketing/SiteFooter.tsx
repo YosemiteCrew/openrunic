@@ -1,45 +1,55 @@
+import type { Translator } from '@openrunic/i18n';
+
 import { Lockup } from './Lockup';
 import { OFFSITE } from './links';
 
 interface FooterColumn {
-  readonly title: string;
-  readonly links: readonly { readonly label: string; readonly href: string }[];
+  readonly titleKey: string;
+  readonly links: readonly { readonly labelKey: string; readonly href: string }[];
 }
 
 /**
  * Three columns: how to read the project, how to work on it, and how it is
  * governed. Every link leaves for the repository or the wiki, because those are
  * the only places the project publishes anything.
+ *
+ * The labels are catalogue keys rather than words, because this is a module
+ * constant and the reader's language is not known until a request arrives.
  */
 const COLUMNS: readonly FooterColumn[] = [
   {
-    title: 'Project',
+    titleKey: 'marketing.footer.column.project',
     links: [
-      { label: 'Source', href: OFFSITE.repo },
-      { label: 'Documentation', href: OFFSITE.wiki },
-      { label: 'Architecture', href: OFFSITE.architecture },
-      { label: 'Roadmap', href: OFFSITE.roadmap },
+      { labelKey: 'marketing.link.source', href: OFFSITE.repo },
+      { labelKey: 'marketing.link.documentation', href: OFFSITE.wiki },
+      { labelKey: 'marketing.link.architecture', href: OFFSITE.architecture },
+      { labelKey: 'marketing.link.roadmap', href: OFFSITE.roadmap },
     ],
   },
   {
-    title: 'Contribute',
+    titleKey: 'marketing.footer.column.contribute',
     links: [
-      { label: 'Contributing guide', href: OFFSITE.contributing },
-      { label: 'Good first issues', href: OFFSITE.goodFirstIssues },
-      { label: 'Discussions', href: OFFSITE.discussions },
-      { label: 'Code of conduct', href: OFFSITE.conduct },
+      { labelKey: 'marketing.link.contributing', href: OFFSITE.contributing },
+      { labelKey: 'marketing.link.goodFirstIssues', href: OFFSITE.goodFirstIssues },
+      { labelKey: 'marketing.link.discussions', href: OFFSITE.discussions },
+      { labelKey: 'marketing.link.conduct', href: OFFSITE.conduct },
     ],
   },
   {
-    title: 'Governance',
+    titleKey: 'marketing.footer.column.governance',
     links: [
-      { label: 'Licence: AGPL-3.0-only', href: OFFSITE.licence },
-      { label: 'Regulatory posture', href: OFFSITE.compliance },
-      { label: 'Security policy', href: OFFSITE.security },
-      { label: 'Architecture decisions', href: OFFSITE.decisions },
+      { labelKey: 'marketing.link.licence', href: OFFSITE.licence },
+      { labelKey: 'marketing.link.compliance', href: OFFSITE.compliance },
+      { labelKey: 'marketing.link.security', href: OFFSITE.security },
+      { labelKey: 'marketing.link.decisions', href: OFFSITE.decisions },
     ],
   },
 ];
+
+export interface SiteFooterProps {
+  /** The translator. These are server components, so there is no hook to call. */
+  t: Translator;
+}
 
 /**
  * The closing espresso band.
@@ -51,39 +61,39 @@ const COLUMNS: readonly FooterColumn[] = [
  * The last line is the compliance footnote, and it stays on every public page:
  * the regulatory position is not a page someone has to click into.
  */
-export function SiteFooter() {
+export function SiteFooter({ t }: Readonly<SiteFooterProps>) {
   return (
     <footer className="or-mk-footer">
       <div className="or-mk-footer__inner">
         <div className="or-mk-footer__brand">
           <Lockup />
-          <p className="or-small or-mk-footer__note">
-            An open-source operating system for human health, built by Yosemite Crew. Pre-alpha:
-            there are no releases yet.
-          </p>
+          <p className="or-small or-mk-footer__note">{t('marketing.footer.note')}</p>
         </div>
 
         <div className="or-mk-footer__columns">
-          {COLUMNS.map((column) => (
-            <nav className="or-mk-footer__column" key={column.title} aria-label={column.title}>
-              <p className="or-overline or-mk-footer__column-title">{column.title}</p>
-              <ul className="or-mk-footer__links">
-                {column.links.map((link) => (
-                  <li key={link.label}>
-                    <a className="or-mk-footer__link" href={link.href}>
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ))}
+          {COLUMNS.map((column) => {
+            const title = t(column.titleKey);
+            return (
+              <nav className="or-mk-footer__column" key={column.titleKey} aria-label={title}>
+                <p className="or-overline or-mk-footer__column-title">{title}</p>
+                <ul className="or-mk-footer__links">
+                  {column.links.map((link) => (
+                    <li key={link.labelKey}>
+                      <a className="or-mk-footer__link" href={link.href}>
+                        {t(link.labelKey)}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            );
+          })}
         </div>
       </div>
 
       <div className="or-mk-footer__bottom">
-        <p>openrunic is open-source software, not a certified medical device.</p>
-        <p>Copyright (C) 2026 openrunic contributors. Licensed under AGPL-3.0-only.</p>
+        <p>{t('marketing.footer.notCertified')}</p>
+        <p>{t('marketing.footer.copyright')}</p>
       </div>
     </footer>
   );

@@ -1,3 +1,4 @@
+import type { Translator } from '@openrunic/i18n';
 import Link from 'next/link';
 
 import { Lockup } from './Lockup';
@@ -16,6 +17,8 @@ export interface SiteHeaderProps {
    * page a stranger loads first.
    */
   active?: PublicRoute;
+  /** The translator, for the same reason the route is a prop: no hooks here. */
+  t: Translator;
 }
 
 /**
@@ -27,15 +30,15 @@ export interface SiteHeaderProps {
  * labels fit a 375px viewport on two rows, and a row that wraps needs no
  * disclosure, no focus trap and no JavaScript.
  */
-export function SiteHeader({ active }: Readonly<SiteHeaderProps>) {
+export function SiteHeader({ active, t }: Readonly<SiteHeaderProps>) {
   return (
     <header className="or-mk-header">
       <div className="or-mk-header__inner">
-        <Link className="or-mk-header__home" href="/" aria-label="openrunic home">
+        <Link className="or-mk-header__home" href="/" aria-label={t('marketing.header.home')}>
           <Lockup />
         </Link>
 
-        <nav className="or-mk-header__nav" aria-label="Site">
+        <nav className="or-mk-header__nav" aria-label={t('marketing.header.nav')}>
           <ul className="or-mk-header__list">
             {SITE_NAV.map((item) => {
               const current = item.href === active;
@@ -50,14 +53,14 @@ export function SiteHeader({ active }: Readonly<SiteHeaderProps>) {
                     href={item.href}
                     aria-current={current ? 'page' : undefined}
                   >
-                    {item.label}
+                    {t(item.labelKey)}
                   </Link>
                 </li>
               );
             })}
             <li>
               <a className="or-mk-header__link" href={OFFSITE.repo}>
-                Source
+                {t('marketing.link.source')}
               </a>
             </li>
           </ul>

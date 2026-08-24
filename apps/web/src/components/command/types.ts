@@ -50,11 +50,28 @@ export interface ActionCommand extends CommandBase {
 
 export type Command = NavigateCommand | ActionCommand;
 
-/** Group headings, in the order the palette ranks them. */
-export const COMMAND_GROUP_ORDER: readonly CommandGroup[] = ['patients', 'navigate', 'actions'];
+export interface CommandGroupHeading {
+  readonly group: CommandGroup;
+  /** Catalogue key for the heading the palette draws above the group. */
+  readonly labelKey: string;
+}
 
-export const COMMAND_GROUP_LABELS: Record<CommandGroup, string> = {
-  patients: 'Patients',
-  navigate: 'Go to',
-  actions: 'Actions',
-};
+/**
+ * The group headings, in the order the palette ranks them.
+ *
+ * The key is carried as data beside the group rather than assembled at render.
+ * A template like `t(\`shell.palette.group.${group}\`)` would read the same and
+ * be invisible to the catalogue drift test, which is another way of saying it
+ * would be invisible to whoever has to find it when one of these three is
+ * renamed.
+ */
+export const COMMAND_GROUP_HEADINGS: readonly CommandGroupHeading[] = [
+  { group: 'patients', labelKey: 'shell.palette.group.patients' },
+  { group: 'navigate', labelKey: 'shell.palette.group.navigate' },
+  { group: 'actions', labelKey: 'shell.palette.group.actions' },
+];
+
+/** The same order on its own, for callers that only need the ranking. */
+export const COMMAND_GROUP_ORDER: readonly CommandGroup[] = COMMAND_GROUP_HEADINGS.map(
+  (heading) => heading.group
+);

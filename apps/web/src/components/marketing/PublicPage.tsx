@@ -1,3 +1,4 @@
+import type { Translator } from '@openrunic/i18n';
 import type { ReactNode } from 'react';
 
 import { SiteFooter } from './SiteFooter';
@@ -7,6 +8,15 @@ import type { PublicRoute } from './links';
 export interface PublicPageProps {
   /** The route being rendered, so the masthead can mark its own link. */
   active: PublicRoute;
+  /**
+   * The translator for this request.
+   *
+   * The public pages are server components: the locale is resolved before the
+   * first byte and the translator is built once per page, then handed to the
+   * chrome. Rendering the masthead in one language and the footer in another is
+   * exactly what passing it explicitly makes impossible.
+   */
+  t: Translator;
   children: ReactNode;
 }
 
@@ -23,14 +33,14 @@ export interface PublicPageProps {
  * (`tabIndex={-1}`) and carries the id that link points at. Its outline is
  * suppressed in CSS: it is a landmark, not a control.
  */
-export function PublicPage({ active, children }: Readonly<PublicPageProps>) {
+export function PublicPage({ active, t, children }: Readonly<PublicPageProps>) {
   return (
     <>
-      <SiteHeader active={active} />
+      <SiteHeader active={active} t={t} />
       <main id="main-content" className="or-mk-main" tabIndex={-1}>
         {children}
       </main>
-      <SiteFooter />
+      <SiteFooter t={t} />
     </>
   );
 }

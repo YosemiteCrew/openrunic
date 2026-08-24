@@ -1,15 +1,22 @@
 import type { Messages } from '../catalogue.js';
 
+import { common } from './es/common.js';
+import { marketing } from './es/marketing.js';
+import { nav } from './es/nav.js';
+import { reports } from './es/reports.js';
+import { shell } from './es/shell.js';
+
 /**
  * SPANISH.
  *
  * Deliberately not complete, and the gap is the point rather than a backlog
  * nobody got to.
  *
- * What is translated here is the shell, the connection notices, sign-in and the
- * public pages: navigation, plain statements about the state of the system, and
- * marketing copy. Those can be translated correctly by anyone who speaks the
- * language.
+ * What is translated here is the shell, the navigation, the shared error
+ * sentences, the reports area, the connection notices, sign-in and the public
+ * pages: furniture, plain statements about the state of the system, operational
+ * counting, and marketing copy. Those can be translated correctly by anyone who
+ * speaks the language.
  *
  * What is NOT translated here is anything clinical. A wrong clinical term is
  * more dangerous than English text a reader has to work through: `lookup` falls
@@ -17,38 +24,16 @@ import type { Messages } from '../catalogue.js';
  * medication label reads as obviously English rather than as confidently wrong
  * Spanish. Those strings need a Spanish-speaking clinician, not a developer with
  * a dictionary, and the coverage report names exactly which ones are waiting.
+ *
+ * The areas large enough to review on their own live in `es/`, one file per
+ * first segment, mirroring `en/`. The rest are in place below.
  */
 export const es: Messages = {
-  'shell.skipToContent': 'Saltar al contenido',
-  'shell.mainNavigation': 'Navegación principal',
-  'shell.breadcrumb': 'Ruta de navegación',
-  'shell.signOut': 'Cerrar sesión',
-  'shell.signedInAs': 'Sesión iniciada como {name}',
-  'shell.commandPalette': 'Buscar o ejecutar un comando',
-  'shell.pageContext': 'Contexto de la página',
-
-  'nav.schedule': 'Agenda',
-  'nav.schedule.keywords': 'calendario, vista diaria, citas, reservar, recepción',
-  'nav.flowBoard': 'Panel de flujo',
-  'nav.flowBoard.keywords': 'flujo, panel, espera, salas, admisión, llegado, tiempo de espera',
-  'nav.patients': 'Pacientes',
-  'nav.patients.keywords': 'historial, registrar, buscar, datos, expediente',
-  'nav.inbox': 'Bandeja de entrada',
-  'nav.inbox.keywords': 'tareas, mensajes, recetas, cofirma, lista de trabajo',
-  'nav.orders': 'Órdenes',
-  'nav.orders.keywords': 'laboratorio, imagen, recetas, solicitud',
-  'nav.billing': 'Facturación',
-  'nav.billing.keywords': 'cargos, reclamaciones, pagos, antigüedad',
-  'nav.reports': 'Informes',
-  'nav.reports.keywords': 'panel, indicadores, exportaciones, análisis',
-  'nav.admin': 'Administración',
-  'nav.admin.keywords': 'usuarios, roles, centros, formularios, ajustes, auditoría',
-  'nav.results': 'Resultados',
-  'nav.results.keywords': 'laboratorio, revisión, anormal, pendiente',
-  'nav.newPatient': 'Nuevo paciente',
-  'nav.newPatient.keywords': 'registrar, alta, sin cita, añadir paciente',
-  'nav.newOrder': 'Nueva orden',
-  'nav.newOrder.keywords': 'pedir laboratorio, pedir imagen, solicitud, procedimiento',
+  ...shell,
+  ...nav,
+  ...common,
+  ...reports,
+  ...marketing,
 
   'downtime.online.title': 'Conectado',
   'downtime.online.detail': 'openrunic funciona con normalidad.',
@@ -90,8 +75,4 @@ export const es: Messages = {
   'auth.signedOut.expired.title': 'Su sesión ha terminado.',
   'auth.signedOut.expired.body': 'Inicie sesión de nuevo para continuar.',
   'auth.holding': 'Restaurando su sesión',
-
-  'marketing.tagline': 'Sistema operativo de código abierto para la salud humana',
-  'marketing.readTheCode': 'Lea el código',
-  'marketing.licence': 'AGPL-3.0. Suyo para ejecutar, leer y modificar.',
 };

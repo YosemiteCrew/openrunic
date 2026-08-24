@@ -22,9 +22,9 @@ import type { LoadingVariant } from './LoadingState';
  */
 
 export interface AsyncBoundaryEmpty {
-  /** The fact, in one line: "No unsigned notes". */
+  /** The fact, in one line: "No unsigned notes". Already translated. */
   title: string;
-  /** Why it is empty and what happens next. One sentence. */
+  /** Why it is empty and what happens next. One sentence, already translated. */
   message?: string;
   /** Exactly one control. More than one is a screen that has not decided. */
   action?: ReactNode;
@@ -34,7 +34,10 @@ export interface AsyncBoundaryEmpty {
 
 export interface AsyncBoundaryProps<T> {
   state: AsyncState<T>;
-  /** Noun phrase, lower case: "today's schedule". Used by loading and error copy. */
+  /**
+   * Noun phrase, lower case: "today's schedule". Used by loading and error
+   * copy, so the screen translates it and this drops it into their sentences.
+   */
   subject: string;
   empty: AsyncBoundaryEmpty;
   /** Decides emptiness for this payload; a list is empty when its page has no rows. */

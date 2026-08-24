@@ -1,5 +1,11 @@
 import type { Messages } from '../catalogue.js';
 
+import { common } from './en/common.js';
+import { marketing } from './en/marketing.js';
+import { nav } from './en/nav.js';
+import { reports } from './en/reports.js';
+import { shell } from './en/shell.js';
+
 /**
  * THE SOURCE CATALOGUE: EVERY STRING THE STAFF APPLICATION SHOWS.
  *
@@ -18,6 +24,15 @@ import type { Messages } from '../catalogue.js';
  * lookup into a walk that can end on an object rather than a string, which then
  * renders as `[object Object]` in the one place nobody tested.
  *
+ * ## One file per area
+ *
+ * An area whose copy is large enough to review on its own lives in `en/`, one
+ * file per first segment, and is spread in below. The areas still in this file
+ * are the ones small enough to read in place. Splitting is a move, never a
+ * rewrite: the keys and their text are identical either side of it, and a key
+ * may appear in exactly one place, because two files claiming the same key
+ * makes which text wins a question about import order.
+ *
  * ## What belongs here and what does not
  *
  * Anything a person reads. Not: coded values that come from the API and are
@@ -26,66 +41,11 @@ import type { Messages } from '../catalogue.js';
  * has one.
  */
 export const en: Messages = {
-  /* ------------------------------------------------------------------ shell */
-  'shell.skipToContent': 'Skip to content',
-  'shell.mainNavigation': 'Main navigation',
-  'shell.breadcrumb': 'Breadcrumb',
-  'shell.signOut': 'Sign out',
-  'shell.signedInAs': 'Signed in as {name}',
-  'shell.commandPalette': 'Search or run a command',
-  'shell.pageContext': 'Page context',
-
-  /* The rail, the command palette, and the search words a tired person types
-     instead of the label. Keywords are per-language and not transliterations:
-     a Spanish speaker looking for the flow board does not type "flow". */
-  'nav.schedule': 'Schedule',
-  'nav.schedule.keywords': 'calendar, day view, appointments, book, front desk',
-  'nav.flowBoard': 'Flow Board',
-  'nav.flowBoard.keywords': 'flow, board, waiting, rooms, check in, arrived, wait time',
-  'nav.patients': 'Patients',
-  'nav.patients.keywords': 'chart, register, search, demographics, mrn',
-  'nav.inbox': 'Inbox',
-  'nav.inbox.keywords': 'tasks, messages, refills, cosign, worklist',
-  'nav.orders': 'Orders',
-  'nav.orders.keywords': 'labs, imaging, prescriptions, erx, requisition',
-  'nav.billing': 'Billing',
-  'nav.billing.keywords': 'fee sheet, charges, claims, era, payments, aging',
-  'nav.reports': 'Reports',
-  'nav.reports.keywords': 'dashboard, kpi, exports, analytics',
-  'nav.admin': 'Admin',
-  'nav.admin.keywords': 'users, roles, facilities, form builder, settings, audit',
-  'nav.results': 'Results',
-  'nav.results.keywords': 'labs, flowsheet, sign off, abnormal, pending review',
-  'nav.newPatient': 'New patient',
-  'nav.newPatient.keywords': 'register, registration, walk-in, add patient, new record',
-  'nav.newOrder': 'New order',
-  'nav.newOrder.keywords': 'order labs, order imaging, requisition, composer, procedure',
-
-  /* Billing is one rail row and five workbenches; admin is one and six. Each is
-     named so somebody reaches the screen they mean by typing the word they use
-     for it, rather than landing on the section and hunting. */
-  'nav.feeSheet': 'Fee sheet',
-  'nav.feeSheet.keywords': 'charges, charge capture, superbill, cpt, justify, dx link',
-  'nav.claimWorkbench': 'Claim workbench',
-  'nav.claimWorkbench.keywords': 'claims, scrub, submit, denied, ageing, aging, 837',
-  'nav.remittance': 'Remittance',
-  'nav.remittance.keywords': 'era, 835, eob, auto-post, posting, exceptions',
-  'nav.statements': 'Statements and AR',
-  'nav.statements.keywords': 'statements, ar, aging, ageing, dunning, balances, text to pay',
-  'nav.payments': 'Payments',
-  'nav.payments.keywords': 'payment, copay, collect, receipt, card on file, allocation',
-  'nav.usersAndRoles': 'Users and roles',
-  'nav.usersAndRoles.keywords': 'staff, accounts, permissions, acl, invite, mfa, deactivate',
-  'nav.facilities': 'Facilities',
-  'nav.facilities.keywords': 'locations, sites, pos code, hours, rooms, npi',
-  'nav.formBuilder': 'Form builder',
-  'nav.formBuilder.keywords': 'forms, layout, lbf, intake, questionnaire, fields, publish',
-  'nav.auditTrail': 'Audit trail',
-  'nav.auditTrail.keywords': 'audit, access log, phi, breakglass, compliance, export',
-  'nav.integrations': 'Integrations',
-  'nav.integrations.keywords': 'adapters, erx, clearinghouse, labs, payments, fax, connections',
-  'nav.developerPlatform': 'Developer platform',
-  'nav.developerPlatform.keywords': 'api, keys, smart, fhir, oauth, webhooks, subscriptions',
+  ...shell,
+  ...nav,
+  ...common,
+  ...reports,
+  ...marketing,
 
   /* ------------------------------------------------------------- connection */
   /* The single most important sentence this application ever shows, and the one
@@ -137,9 +97,4 @@ export const en: Messages = {
   'auth.signedOut.expired.title': 'Your session has ended.',
   'auth.signedOut.expired.body': 'Sign in again to continue.',
   'auth.holding': 'Restoring your session',
-
-  /* -------------------------------------------------------------- marketing */
-  'marketing.tagline': 'Open-source operating system for human health',
-  'marketing.readTheCode': 'Read the code',
-  'marketing.licence': 'AGPL-3.0. Yours to run, read and change.',
 };

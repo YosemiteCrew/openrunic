@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -42,24 +43,38 @@ describe('LoadingState', () => {
 });
 
 describe('explain', () => {
+  /* The real catalogue in the source language. `explain` is a plain function
+     rather than a component, so it takes the translator instead of reaching for
+     the hook, and building it from the shipped messages is what keeps these
+     assertions pinned to the sentences a reader actually sees. */
+  const t = createTranslator(appCatalogue, 'en');
+
   it('separates a partner outage from our own failure', () => {
-    const network = explain('the schedule', new ApiError('down', { kind: 'network' }));
+    const network = explain(t, 'the schedule', new ApiError('down', { kind: 'network' }));
     expect(network.title).toBe('No connection to the server');
     expect(network.retryable).toBe(true);
   });
 
   it('does not offer a retry for a permission failure', () => {
-    expect(explain('billing', problemError(403)).retryable).toBe(false);
+    expect(explain(t, 'billing', problemError(403)).retryable).toBe(false);
   });
 
   it('names an unbuilt aggregate honestly', () => {
-    expect(explain('orders', problemError(501)).title).toBe('Not built yet');
+    expect(explain(t, 'orders', problemError(501)).title).toBe('Not built yet');
   });
 
   it('always says what to do next', () => {
     for (const status of [401, 403, 404, 500, 501]) {
-      expect(explain('this', problemError(status)).message.length).toBeGreaterThan(0);
+      expect(explain(t, 'this', problemError(status)).message.length).toBeGreaterThan(0);
     }
+  });
+
+  it('names the subject inside the sentence rather than bolting it on the end', () => {
+    // The placeholder is the whole reason these are single messages: a language
+    // that puts the subject first has to be able to.
+    expect(explain(t, 'the visits report', problemError(500)).message).toContain(
+      'the visits report'
+    );
   });
 });
 

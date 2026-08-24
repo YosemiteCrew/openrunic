@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import type { ReactNode } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -30,6 +31,13 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+/* The real catalogue in the source language. These components are server
+   components and take the translator as a prop rather than calling the client
+   hook, so a test builds one the same way a page does - and the assertions stay
+   pinned to the words the shipped catalogue carries rather than to a second set
+   invented here. */
+const t = createTranslator(appCatalogue, 'en');
+
 describe('OFFSITE', () => {
   /*
    * These pages have exactly one failure mode a type-check cannot see: a link
@@ -44,7 +52,7 @@ describe('OFFSITE', () => {
 
 describe('PILLARS', () => {
   it('names the three audiences the project is organised around', () => {
-    expect(PILLARS.map((pillar) => pillar.title)).toEqual([
+    expect(PILLARS.map((pillar) => t(pillar.titleKey))).toEqual([
       'Hospitals and clinics',
       'Patients',
       'Developers',
@@ -63,7 +71,7 @@ describe('PILLARS', () => {
   });
 
   it('leaves out the pillar being read and keeps the other two in order', () => {
-    expect(otherPillars('/for/patients').map((pillar) => pillar.title)).toEqual([
+    expect(otherPillars('/for/patients').map((pillar) => t(pillar.titleKey))).toEqual([
       'Hospitals and clinics',
       'Developers',
     ]);
@@ -98,13 +106,13 @@ describe('Lockup', () => {
 
 describe('SiteHeader', () => {
   it('reaches home through the lockup and names where that goes', () => {
-    render(<SiteHeader />);
+    render(<SiteHeader t={t} />);
 
     expect(screen.getByRole('link', { name: 'openrunic home' })).toHaveAttribute('href', '/');
   });
 
   it('offers the three audiences and the source', () => {
-    render(<SiteHeader />);
+    render(<SiteHeader t={t} />);
     const nav = screen.getByRole('navigation', { name: 'Site' });
 
     expect(
@@ -115,7 +123,7 @@ describe('SiteHeader', () => {
   });
 
   it('marks the section being read, and marks only that one', () => {
-    render(<SiteHeader active="/for/developers" />);
+    render(<SiteHeader active="/for/developers" t={t} />);
 
     expect(screen.getByRole('link', { name: 'Developers' })).toHaveAttribute(
       'aria-current',
@@ -125,7 +133,7 @@ describe('SiteHeader', () => {
   });
 
   it('marks nothing when the page is not one of the sections', () => {
-    render(<SiteHeader active="/" />);
+    render(<SiteHeader active="/" t={t} />);
 
     for (const link of screen.getAllByRole('link')) {
       expect(link).not.toHaveAttribute('aria-current');
@@ -135,7 +143,7 @@ describe('SiteHeader', () => {
 
 describe('SiteFooter', () => {
   it('carries the compliance footnote', () => {
-    render(<SiteFooter />);
+    render(<SiteFooter t={t} />);
 
     expect(
       screen.getByText('openrunic is open-source software, not a certified medical device.')
@@ -143,7 +151,7 @@ describe('SiteFooter', () => {
   });
 
   it('names the licence rather than leaving it to be inferred', () => {
-    render(<SiteFooter />);
+    render(<SiteFooter t={t} />);
 
     expect(screen.getByRole('link', { name: 'Licence: AGPL-3.0-only' })).toHaveAttribute(
       'href',
@@ -152,7 +160,7 @@ describe('SiteFooter', () => {
   });
 
   it('groups its links into named navigation landmarks', () => {
-    render(<SiteFooter />);
+    render(<SiteFooter t={t} />);
 
     expect(screen.getAllByRole('navigation').map((nav) => nav.getAttribute('aria-label'))).toEqual([
       'Project',
@@ -163,23 +171,28 @@ describe('SiteFooter', () => {
 });
 
 describe('PillarCard', () => {
-  /* Its own pillar rather than one from PILLARS: the card is measured on its
-     contract, so the real copy can be rewritten without reds appearing here. */
+  /* Its own pillar rather than one from PILLARS, and asserted through the
+     translator rather than against a hard-coded word: the card is measured on
+     its contract, so the real copy can be rewritten without reds appearing
+     here. */
   const pillar: Pillar = {
-    title: 'Hospitals and clinics',
+    titleKey: 'marketing.pillar.hospitals.title',
     href: '/for/hospitals',
-    summary: 'What this audience gets, in one line.',
-    points: ['The first thing', 'The second thing'],
+    summaryKey: 'marketing.pillar.hospitals.summary',
+    points: [
+      { labelKey: 'marketing.pillar.hospitals.point1' },
+      { labelKey: 'marketing.pillar.hospitals.point2' },
+    ],
   };
 
   it('titles the card at level 3, under the band that holds it', () => {
-    render(<PillarCard pillar={pillar} />);
+    render(<PillarCard pillar={pillar} t={t} />);
 
-    expect(screen.getByRole('heading', { level: 3, name: pillar.title })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: t(pillar.titleKey) })).toBeInTheDocument();
   });
 
   it('names its link for the audience rather than "read more"', () => {
-    render(<PillarCard pillar={pillar} />);
+    render(<PillarCard pillar={pillar} t={t} />);
 
     expect(
       screen.getByRole('link', { name: /openrunic for hospitals and clinics/i })
@@ -187,7 +200,7 @@ describe('PillarCard', () => {
   });
 
   it('lists what that audience gets', () => {
-    render(<PillarCard pillar={pillar} />);
+    render(<PillarCard pillar={pillar} t={t} />);
 
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(
       pillar.points.length
@@ -321,7 +334,7 @@ describe('StatusNote', () => {
 
 describe('OtherAudiences', () => {
   it('offers the two audiences the page is not about', () => {
-    render(<OtherAudiences current="/for/hospitals" />);
+    render(<OtherAudiences current="/for/hospitals" t={t} />);
     const region = screen.getByRole('region', { name: 'The other audiences' });
 
     expect(within(region).getAllByRole('article')).toHaveLength(2);
@@ -329,7 +342,7 @@ describe('OtherAudiences', () => {
   });
 
   it('takes the band tone from the page, so the alternation survives', () => {
-    render(<OtherAudiences current="/for/developers" tone="bone" />);
+    render(<OtherAudiences current="/for/developers" t={t} tone="bone" />);
 
     expect(screen.getByRole('region', { name: 'The other audiences' })).toHaveClass(
       'or-mk-section--bone'
@@ -340,7 +353,7 @@ describe('OtherAudiences', () => {
 describe('PublicPage', () => {
   it('lands the root layout skip link on a focusable main landmark', () => {
     render(
-      <PublicPage active="/">
+      <PublicPage active="/" t={t}>
         <p>Content</p>
       </PublicPage>
     );
@@ -352,7 +365,7 @@ describe('PublicPage', () => {
 
   it('frames its content with the masthead and the closing band', () => {
     render(
-      <PublicPage active="/for/patients">
+      <PublicPage active="/for/patients" t={t}>
         <p>Content</p>
       </PublicPage>
     );

@@ -34,7 +34,8 @@ export const OFFSITE = {
 export type PublicRoute = '/' | '/for/hospitals' | '/for/patients' | '/for/developers';
 
 export interface NavItem {
-  readonly label: string;
+  /** Catalogue key for the label. The words themselves live in `marketing`. */
+  readonly labelKey: string;
   readonly href: PublicRoute;
 }
 
@@ -44,17 +45,29 @@ export interface NavItem {
  * expect. Home is reached through the lockup rather than a fourth link.
  */
 export const SITE_NAV: readonly NavItem[] = [
-  { label: 'Hospitals', href: '/for/hospitals' },
-  { label: 'Patients', href: '/for/patients' },
-  { label: 'Developers', href: '/for/developers' },
+  { labelKey: 'marketing.nav.hospitals', href: '/for/hospitals' },
+  { labelKey: 'marketing.nav.patients', href: '/for/patients' },
+  { labelKey: 'marketing.nav.developers', href: '/for/developers' },
 ];
 
+export interface PillarPoint {
+  readonly labelKey: string;
+}
+
 export interface Pillar {
-  readonly title: string;
+  readonly titleKey: string;
   readonly href: PublicRoute;
-  readonly summary: string;
-  /** What this audience actually gets today. Three at most: a card is not a list. */
-  readonly points: readonly string[];
+  readonly summaryKey: string;
+  /**
+   * What this audience actually gets today. Three at most: a card is not a
+   * list.
+   *
+   * A list of objects rather than a list of bare strings, so each key sits
+   * behind a `labelKey:` property. That is one of the two shapes the catalogue
+   * drift test can see; an array of loose strings is neither, and would be the
+   * only copy on the public site nothing checked.
+   */
+  readonly points: readonly PillarPoint[];
 }
 
 /**
@@ -63,39 +76,42 @@ export interface Pillar {
  * A fourth pillar covering research data-sharing is planned and unbuilt, so it
  * is deliberately absent: nothing on these pages describes something that does
  * not exist yet.
+ *
+ * The copy is carried as catalogue keys rather than words. This is a module
+ * constant, evaluated once at import, and there is no reader and therefore no
+ * language at that moment; the card translates at render. Keeping the words in
+ * one catalogue file also means the whole of the public site can be reviewed in
+ * one sitting, which is how the claims on it stay checkable.
  */
 export const PILLARS: readonly Pillar[] = [
   {
-    title: 'Hospitals and clinics',
+    titleKey: 'marketing.pillar.hospitals.title',
     href: '/for/hospitals',
-    summary:
-      'Run scheduling, charts, orders, results and billing on software your practice controls, on a database you can read.',
+    summaryKey: 'marketing.pillar.hospitals.summary',
     points: [
-      'A staff application covering the clinical day, from the schedule to the claim',
-      'Postgres you own, with no per-seat licence and no vendor holding the export',
-      'An audit trail the repositories cannot serve a record without writing to',
+      { labelKey: 'marketing.pillar.hospitals.point1' },
+      { labelKey: 'marketing.pillar.hospitals.point2' },
+      { labelKey: 'marketing.pillar.hospitals.point3' },
     ],
   },
   {
-    title: 'Patients',
+    titleKey: 'marketing.pillar.patients.title',
     href: '/for/patients',
-    summary:
-      'Your record belongs to you. openrunic keeps it in an open standard so it can travel with you between providers.',
+    summaryKey: 'marketing.pillar.patients.summary',
     points: [
-      'A portal for appointments, results, messages, forms and bills',
-      'FHIR R4 at the boundary, so the record is not locked in a private format',
-      'No interpretation of your results by software, by design',
+      { labelKey: 'marketing.pillar.patients.point1' },
+      { labelKey: 'marketing.pillar.patients.point2' },
+      { labelKey: 'marketing.pillar.patients.point3' },
     ],
   },
   {
-    title: 'Developers',
+    titleKey: 'marketing.pillar.developers.title',
     href: '/for/developers',
-    summary:
-      'An open platform with a typed monorepo, a generated FHIR conformance statement and no edition holding features back.',
+    summaryKey: 'marketing.pillar.developers.summary',
     points: [
-      'FHIR R4 at the service boundary, advertising only what it can answer',
-      'Typed workspace packages for FHIR mapping, the data model and the UI',
-      'AGPL-3.0-only, no open core, decisions recorded as ADRs in the repository',
+      { labelKey: 'marketing.pillar.developers.point1' },
+      { labelKey: 'marketing.pillar.developers.point2' },
+      { labelKey: 'marketing.pillar.developers.point3' },
     ],
   },
 ];

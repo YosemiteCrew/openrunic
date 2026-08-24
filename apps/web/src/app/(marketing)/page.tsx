@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import type { Metadata } from 'next';
 
 import {
@@ -10,13 +11,20 @@ import {
   PublicPage,
   Section,
   StatusNote,
+  resolvePoints,
 } from '@/components/marketing';
-import type { Point } from '@/components/marketing';
+import type { PointKeys } from '@/components/marketing';
+import { resolveLocale } from '@/lib/i18n/locale';
 
 export const metadata: Metadata = {
   /* Absolute rather than templated: "openrunic - openrunic" is what the root
      template would produce, and this is the one page whose tab should say what
-     the project is to someone who has never heard of it. */
+     the project is to someone who has never heard of it.
+
+     Still an English literal, unlike the page below it. `metadata` is a static
+     export the framework reads without a request, so translating it means
+     moving every route in the app to `generateMetadata`; that is one change
+     across every route rather than four, and it is tracked separately. */
   title: { absolute: 'openrunic - open-source operating system for human health' },
   description:
     'openrunic is an open-source operating system for human health, licensed AGPL-3.0-only. Its first product is a modern electronic medical record with FHIR R4 at the API boundary.',
@@ -28,113 +36,123 @@ export const metadata: Metadata = {
  * for the FHIR boundary, ADR-0004 and ADR-0005 for the position on models, and
  * `docs/compliance.md` for terminology licensing.
  */
-const FOUNDATIONS: readonly Point[] = [
+const FOUNDATIONS: readonly PointKeys[] = [
   {
-    title: 'Relational storage, FHIR at the edge',
-    body: 'PostgreSQL through Prisma is the single source of truth. FHIR R4 serialisation happens at the API boundary, and every mapped resource carries round-trip tests. The conformance statement is generated from the same registry the router serves, so the server advertises only the search parameters it can actually answer.',
+    titleKey: 'marketing.home.foundation.relational.title',
+    bodyKey: 'marketing.home.foundation.relational.body',
   },
   {
-    title: 'Audit is structural, not additive',
-    body: 'The audit event was the first model in the schema and the first migration in the repository. A request reaches a record through a repository that cannot run without an audit collector, so leaving a trail is not a thing a handler can forget. Events form a per-tenant hash chain, which makes tampering with history detectable rather than merely discouraged.',
+    titleKey: 'marketing.home.foundation.audit.title',
+    bodyKey: 'marketing.home.foundation.audit.body',
   },
   {
-    title: 'Nothing phones home',
-    body: 'openrunic transmits nothing to the project, its maintainers, or any third party the project chose. A deployer may configure an external inference endpoint for the optional assistant; if they do, the data goes to a processor they contracted with, under an agreement they hold, and the product states that plainly at configuration time.',
+    titleKey: 'marketing.home.foundation.telemetry.title',
+    bodyKey: 'marketing.home.foundation.telemetry.body',
   },
   {
-    title: 'No vendored content, no bundled models',
-    body: 'Clinical terminology is licence-restricted and is never committed to the repository: each deployment loads only what it is licensed for. The same rule covers model weights. No machine-learning runtime ships inside the deployment, and the optional assistant is off by default, calls an endpoint the deployer names, and is never on a clinical path.',
+    titleKey: 'marketing.home.foundation.content.title',
+    bodyKey: 'marketing.home.foundation.content.body',
   },
 ];
 
 /**
  * The regulatory band. Every sentence here is the wording from
- * `docs/compliance.md`, shortened but never softened.
+ * `docs/compliance.md`, shortened but never softened - in every language, which
+ * is why these three are the ones a translation review reads first.
  */
-const POSITION: readonly Point[] = [
+const POSITION: readonly PointKeys[] = [
   {
-    title: 'openrunic is not certified for anything',
-    body: 'It is not a medical device, and it is not a certified EHR. It holds no clearance or approval from any regulator, and none is implied. It is not HIPAA-compliant or GDPR-compliant out of the box, because compliance is a property of a deployment - its organisation, its agreements, its configuration and its jurisdiction - and never of source code by itself.',
+    titleKey: 'marketing.home.position.certified.title',
+    bodyKey: 'marketing.home.position.certified.body',
   },
   {
-    title: 'What it is designed to support',
-    body: 'The audit trail, the least-privilege access design, and the fact that a practice can run the whole system on hardware it controls are built so that a competent deployer can build a compliant deployment on top of them. They support that work. They do not perform it, and shipping them makes no deployment compliant.',
+    titleKey: 'marketing.home.position.support.title',
+    bodyKey: 'marketing.home.position.support.body',
   },
   {
-    title: 'It gives no medical advice',
-    body: 'openrunic is not intended to provide medical advice, diagnosis or treatment recommendations, and no part of it interprets a clinical value for a patient or ranks anything by clinical risk. Clinical decisions are the responsibility of qualified healthcare professionals.',
+    titleKey: 'marketing.home.position.advice.title',
+    bodyKey: 'marketing.home.position.advice.body',
   },
 ];
 
-export default function HomePage() {
+/**
+ * The home page.
+ *
+ * Asynchronous because the reader's language is resolved from the request
+ * before anything renders. A public page that arrived in English and swapped to
+ * Spanish once JavaScript loaded would have shown the wrong language to the
+ * person least able to read it, and moved the layout under their cursor while
+ * doing it.
+ */
+export default async function HomePage() {
+  const t = createTranslator(appCatalogue, await resolveLocale());
+
   return (
-    <PublicPage active="/">
+    <PublicPage active="/" t={t}>
       <Hero
-        eyebrow="Open source, AGPL-3.0-only"
-        title="Open-source operating system for human health"
-        lead="The first product is a modern, lightweight electronic medical record: registration, scheduling, encounters, orders, results and the revenue cycle, with FHIR R4 at the API boundary and an audit trail that was the first model in the schema."
+        eyebrow={t('marketing.home.eyebrow')}
+        title={t('marketing.home.title')}
+        lead={t('marketing.home.lead')}
         actions={
           <>
             <CtaLink href={OFFSITE.repo} variant="primary">
-              Read the source
+              {t('marketing.link.readTheSource')}
             </CtaLink>
-            <CtaLink href={OFFSITE.gettingStarted}>Getting started</CtaLink>
+            <CtaLink href={OFFSITE.gettingStarted}>{t('marketing.link.gettingStarted')}</CtaLink>
           </>
         }
       >
-        <StatusNote label="Where the project is">
-          Pre-alpha. There are no releases and no published container images, APIs and schemas
-          change without notice, and no part of this is ready for a live practice. Do not put real
-          patient data into it.
+        <StatusNote label={t('marketing.home.status.label')}>
+          {t('marketing.home.status.body')}
         </StatusNote>
       </Hero>
 
       <Section
         id="audiences"
-        title="Three audiences"
-        lead="The project is organised around three groups of people, and every surface belongs to one of them."
+        title={t('marketing.home.audiences.title')}
+        lead={t('marketing.home.audiences.lead')}
         tone="cream"
       >
         <div className="or-mk-grid">
           {PILLARS.map((pillar) => (
-            <PillarCard key={pillar.href} pillar={pillar} />
+            <PillarCard key={pillar.href} pillar={pillar} t={t} />
           ))}
         </div>
       </Section>
 
       <Section
         id="foundations"
-        title="How it is built"
-        lead="Four decisions that shape everything else. The reasoning behind each, including what was rejected, is written down in the repository."
+        title={t('marketing.home.foundations.title')}
+        lead={t('marketing.home.foundations.lead')}
       >
-        <PointList points={FOUNDATIONS} />
+        <PointList points={resolvePoints(FOUNDATIONS, t)} />
         <p className="or-small or-mk-section__aside">
-          <a href={OFFSITE.decisions}>Read the architecture decision records</a>
+          <a href={OFFSITE.decisions}>{t('marketing.link.readDecisions')}</a>
         </p>
       </Section>
 
       <Section
         id="position"
-        title="What openrunic does not claim"
-        lead="Healthcare software attracts confident language. This is the part of the site where being accurate matters more than being persuasive."
+        title={t('marketing.home.position.title')}
+        lead={t('marketing.home.position.lead')}
         tone="cream"
       >
-        <PointList points={POSITION} />
+        <PointList points={resolvePoints(POSITION, t)} />
         <p className="or-small or-mk-section__aside">
-          <a href={OFFSITE.compliance}>Read the full regulatory posture</a>
+          <a href={OFFSITE.compliance}>{t('marketing.link.readCompliance')}</a>
         </p>
       </Section>
 
       <Section
         id="contribute"
-        title="Read it, run it, change it"
-        lead="AGPL-3.0-only, with no open-core edition holding features back. If you run a modified version as a network service, the licence requires you to offer its source to your users."
+        title={t('marketing.home.contribute.title')}
+        lead={t('marketing.home.contribute.lead')}
       >
         <div className="or-mk-hero__actions">
           <CtaLink href={OFFSITE.contributing} variant="primary">
-            Contributing guide
+            {t('marketing.link.contributing')}
           </CtaLink>
-          <CtaLink href={OFFSITE.goodFirstIssues}>Good first issues</CtaLink>
+          <CtaLink href={OFFSITE.goodFirstIssues}>{t('marketing.link.goodFirstIssues')}</CtaLink>
         </div>
       </Section>
     </PublicPage>

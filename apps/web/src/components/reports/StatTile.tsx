@@ -6,9 +6,10 @@ import type { ReactElement } from 'react';
 
 import type { DashboardTile } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { Sparkline } from './Sparkline';
-import { trendWord } from './trend';
+import { trendKey } from './trend';
 
 /**
  * One number on the practice dashboard.
@@ -33,6 +34,7 @@ function readValue(tile: DashboardTile): { text: string; unit: string | null } {
 }
 
 export function StatTile({ tile }: Readonly<StatTileProps>): ReactElement {
+  const t = useTranslator();
   const { text, unit } = readValue(tile);
 
   return (
@@ -56,12 +58,14 @@ export function StatTile({ tile }: Readonly<StatTileProps>): ReactElement {
       <div className="or-stat__trend">
         <Sparkline values={tile.series} />
         <span className="or-caption or-stat__trend-label">
-          Last 7 days, {trendWord(tile.series)}
+          {t('reports.tile.trend', { trend: t(trendKey(tile.series)) })}
         </span>
       </div>
 
+      {/* The label is the API's own wording for the number, so the link is the
+          interface's sentence wrapped around a value it did not name. */}
       <Link className="or-stat__link" href={tile.href}>
-        Open {tile.label.toLowerCase()}
+        {t('reports.tile.open', { label: tile.label.toLowerCase() })}
       </Link>
     </Card>
   );

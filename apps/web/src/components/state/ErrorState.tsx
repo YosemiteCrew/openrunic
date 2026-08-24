@@ -4,6 +4,7 @@ import { Button, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import { ApiError } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { explain } from './explain';
 import type { ExplainableError } from './explain';
@@ -18,7 +19,11 @@ import type { ExplainableError } from './explain';
  */
 
 export interface ErrorStateProps {
-  /** What was being read: "today's schedule", "this patient". Lower case, no full stop. */
+  /**
+   * What was being read: "today's schedule", "this patient". Lower case, no
+   * full stop, and already in the reader's language - the screen translates its
+   * own noun phrase and this drops it into the sentence.
+   */
   subject: string;
   error?: ExplainableError;
   /** Overrides the derived sentence when a screen knows better. */
@@ -33,7 +38,8 @@ export function ErrorState({
   message,
   onRetry,
 }: Readonly<ErrorStateProps>): ReactElement {
-  const explanation = explain(subject, error);
+  const t = useTranslator();
+  const explanation = explain(t, subject, error);
   const requestId = error instanceof ApiError ? (error.problem?.requestId ?? null) : null;
 
   return (
@@ -44,13 +50,13 @@ export function ErrorState({
         <p className="or-body">{message ?? explanation.message}</p>
         {requestId ? (
           <p className="or-caption or-error-state__meta">
-            Request id <span className="or-mono">{requestId}</span>
+            {t('common.requestId')} <span className="or-mono">{requestId}</span>
           </p>
         ) : null}
       </div>
       {onRetry && explanation.retryable ? (
         <Button variant="secondary" iconLeft="rotate-ccw" onClick={onRetry}>
-          Try again
+          {t('common.tryAgain')}
         </Button>
       ) : null}
     </Card>

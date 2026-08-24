@@ -78,7 +78,7 @@ export function TopBar({
             <Tag className="or-topbar__facility">{MOCK_FACILITY.name}</Tag>
             {/* Demo data is never silent: every screen says so, in the same place. */}
             <Badge tone="neutral" icon="flask-conical">
-              Demo data
+              {t('shell.demoData')}
             </Badge>
           </>
         ) : null}
@@ -91,6 +91,10 @@ export function TopBar({
         <AssistantLauncher />
         <button type="button" className="or-topbar__command" onClick={open}>
           <span className="or-topbar__command-label">{t('shell.commandPalette')}</span>
+          {/* Key names, not copy. "Cmd" and "K" are what is printed on the
+              keyboard in front of the reader whatever language they read in,
+              and it is aria-hidden because the button beside it already says
+              what the control does. */}
           <kbd className="or-topbar__kbd" aria-hidden="true">
             Cmd K
           </kbd>
@@ -99,7 +103,7 @@ export function TopBar({
           <>
             <span className="or-topbar__user">{session.identity.displayName}</span>
             <Button variant="ghost" size="sm" onClick={() => void signOut()}>
-              Sign out
+              {t('shell.signOut')}
             </Button>
           </>
         )}

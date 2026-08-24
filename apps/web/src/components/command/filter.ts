@@ -1,5 +1,5 @@
 import type { Command, CommandGroup } from './types';
-import { COMMAND_GROUP_LABELS, COMMAND_GROUP_ORDER } from './types';
+import { COMMAND_GROUP_HEADINGS } from './types';
 
 /**
  * Ranking for the palette.
@@ -47,7 +47,11 @@ export function scoreCommand(command: Command, query: string): number {
 
 export interface CommandSection {
   group: CommandGroup;
-  label: string;
+  /**
+   * Catalogue key for the heading, not the heading itself. Filtering happens
+   * outside React and has no translator; the palette renders the word.
+   */
+  labelKey: string;
   commands: Command[];
 }
 
@@ -75,10 +79,10 @@ export function filterCommands(commands: Command[], query: string): CommandSecti
   }
 
   const sections: CommandSection[] = [];
-  for (const group of COMMAND_GROUP_ORDER) {
-    const groupCommands = buckets.get(group);
+  for (const heading of COMMAND_GROUP_HEADINGS) {
+    const groupCommands = buckets.get(heading.group);
     if (groupCommands) {
-      sections.push({ group, label: COMMAND_GROUP_LABELS[group], commands: groupCommands });
+      sections.push({ group: heading.group, labelKey: heading.labelKey, commands: groupCommands });
     }
   }
   return sections;

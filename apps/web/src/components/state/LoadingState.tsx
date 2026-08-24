@@ -1,4 +1,8 @@
+'use client';
+
 import type { ReactElement } from 'react';
+
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The one loading surface.
@@ -18,7 +22,10 @@ export type LoadingVariant =
   | 'text';
 
 export interface LoadingStateProps {
-  /** What is loading, as a noun phrase: "Patients", "Today's schedule". */
+  /**
+   * What is loading, as a noun phrase: "Patients", "Today's schedule". Already
+   * in the reader's language; it is lower cased into the announcement below.
+   */
   label: string;
   variant?: LoadingVariant;
   /** Rows or cards to draw. Match the density of the real thing. */
@@ -34,6 +41,8 @@ export function LoadingState({
   variant = 'table',
   rows = 6,
 }: Readonly<LoadingStateProps>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-loading" data-variant={variant}>
       <div className="or-loading__skeleton" aria-hidden="true">
@@ -43,7 +52,9 @@ export function LoadingState({
         ))}
       </div>
       {/* Polite, not assertive: a load is expected, so it waits for a pause. */}
-      <output className="or-loading__status or-small">Loading {label.toLowerCase()}</output>
+      <output className="or-loading__status or-small">
+        {t('common.loading', { subject: label.toLowerCase() })}
+      </output>
     </div>
   );
 }

@@ -71,6 +71,19 @@ export const SOURCES = [
     entry: /^(?<id>[A-Z]{2,}[A-Z0-9-]*)\s*$/u,
     comment: /^\s*#/u,
   },
+  {
+    file: '.grant.yaml',
+    what: 'licence exception',
+    // `  - some-package` under `ignore-packages:`, quoted or not.
+    entry: /^\s+-\s*'?(?<id>[@a-z0-9][^'\s]*)'?\s*$/u,
+    comment: /^\s*#/u,
+    // Scoped, and this is the whole reason the field exists. `allow:` in the
+    // same file is a list of the same shape, and every SPDX identifier on it
+    // would otherwise read as an undated exception - three dozen failures
+    // saying an allow-list entry needs a re-review date, which is not a thing
+    // an allow-list entry has.
+    section: /^ignore-packages:/u,
+  },
 ];
 
 const DATE = /Re-review by:\s*(?<date>\d{4}-\d{2}-\d{2})/u;
@@ -86,14 +99,38 @@ const DATE = /Re-review by:\s*(?<date>\d{4}-\d{2}-\d{2})/u;
 export function findExceptions(text, source) {
   const lines = text.split('\n');
   const found = [];
+  // A top-level YAML key: what ends the section, when a source names one.
+  const nextKey = /^[A-Za-z]/u;
+  let inSection = source.section === undefined;
 
   for (const [index, line] of lines.entries()) {
+    if (source.section !== undefined) {
+      if (source.section.test(line)) {
+        inSection = true;
+        continue;
+      }
+      if (inSection && nextKey.test(line)) inSection = false;
+    }
+    if (!inSection) continue;
+
     const match = source.entry.exec(line);
     if (match === null) continue;
 
-    // Walk up through the contiguous comment block above this entry.
+    // Walk up to the comment block that documents this entry.
+    //
+    // Adjacent entries share one block, because a run of list items written
+    // with nothing between them is one decision: `.grant.yaml` excepts
+    // `react-doctor` and `oxlint-plugin-react-doctor` on one argument, in two
+    // lines, and demanding the argument twice would be asking for a copy rather
+    // than a reason.
+    //
+    // A blank line or an intervening comment ends the run, which is what keeps
+    // the hazard closed: a dated entry cannot vouch for an unrelated one below
+    // it, only for the ones written as part of the same list item group.
     let block = '';
-    for (let above = index - 1; above >= 0; above -= 1) {
+    let above = index - 1;
+    while (above >= 0 && source.entry.test(lines[above] ?? '')) above -= 1;
+    for (; above >= 0; above -= 1) {
       const previous = lines[above] ?? '';
       if (!source.comment.test(previous)) break;
       block = `${previous}\n${block}`;

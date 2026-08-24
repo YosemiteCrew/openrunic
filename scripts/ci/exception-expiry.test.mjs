@@ -15,6 +15,7 @@ import {
 
 const GRYPE = SOURCES.find((source) => source.file === '.grype.yaml');
 const TRIVY = SOURCES.find((source) => source.file === '.trivyignore');
+const GRANT = SOURCES.find((source) => source.file === '.grant.yaml');
 
 const GRYPE_FILE = `ignore:
   # CVE-2025-00001 in foo: unreachable, no fix published. Owner: someone.
@@ -281,4 +282,109 @@ test('a symlink that resolves is read normally', () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+/**
+ * `.grant.yaml` holds two lists of the same shape, and only one of them is an
+ * exception list. Every SPDX identifier under `allow:` would otherwise read as
+ * an undated exception - three dozen failures saying an allow-list entry needs
+ * a re-review date, which is not a thing an allow-list entry has.
+ */
+test('reads only the ignore-packages section of a grant policy', () => {
+  const grant = `allow:
+  - MIT
+  - Apache-2.0
+require-license: false
+ignore-packages:
+  # some-package: metadata is not machine-readable. Owner: someone.
+  # Re-review by: 2027-01-01.
+  - some-package
+`;
+
+  const found = findExceptions(grant, GRANT);
+
+  assert.deepEqual(
+    found.map((exception) => exception.id),
+    ['some-package'],
+    'MIT and Apache-2.0 are allow-list entries, not exceptions'
+  );
+  assert.equal(found[0].date, '2027-01-01');
+});
+
+test('stops reading at the next top-level key', () => {
+  const grant = `ignore-packages:
+  # one: reason. Owner: someone. Re-review by: 2027-01-01.
+  - one
+allow:
+  - MIT
+`;
+
+  assert.deepEqual(
+    findExceptions(grant, GRANT).map((exception) => exception.id),
+    ['one']
+  );
+});
+
+/**
+ * A run of list items written with nothing between them is one decision.
+ * `.grant.yaml` excepts `react-doctor` and `oxlint-plugin-react-doctor` on one
+ * argument in two lines, and demanding the argument twice would be asking for a
+ * copy rather than a reason.
+ */
+test('adjacent entries share the block above them', () => {
+  const grant = `ignore-packages:
+  # both packages, one argument. Owner: someone. Re-review by: 2027-01-01.
+  - first
+  - second
+`;
+
+  const problems = expired(findExceptions(grant, GRANT), '2026-08-24');
+
+  assert.deepEqual(problems, []);
+});
+
+/**
+ * And the hazard stays closed: a blank line ends the run, so a dated entry
+ * cannot vouch for an unrelated one below it.
+ */
+test('a blank line ends the run', () => {
+  const grant = `ignore-packages:
+  # first only. Owner: someone. Re-review by: 2027-01-01.
+  - first
+
+  - unrelated
+`;
+
+  const problems = expired(findExceptions(grant, GRANT), '2026-08-24');
+
+  assert.deepEqual(
+    problems.map((problem) => problem.id),
+    ['unrelated']
+  );
+});
+
+test('an intervening comment ends the run too', () => {
+  const grant = `ignore-packages:
+  # first only. Owner: someone. Re-review by: 2027-01-01.
+  - first
+  # a note about the next one, with no date
+  - unrelated
+`;
+
+  assert.deepEqual(
+    expired(findExceptions(grant, GRANT), '2026-08-24').map((problem) => problem.id),
+    ['unrelated']
+  );
+});
+
+test('handles a quoted scoped package name', () => {
+  const grant = `ignore-packages:
+  # reason. Owner: someone. Re-review by: 2027-01-01.
+  - '@scope/name'
+`;
+
+  assert.deepEqual(
+    findExceptions(grant, GRANT).map((exception) => exception.id),
+    ['@scope/name']
+  );
 });

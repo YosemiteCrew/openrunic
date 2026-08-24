@@ -145,8 +145,8 @@ reasoning that justified it. That is the ordinary way a temporary suppression be
 it is worse than having no expiry field at all, because the field makes the process look rigorous
 while changing nothing.
 
-`exception-expiry.yml` runs `scripts/ci/exception-expiry.mjs` over `.grype.yaml` and `.trivyignore`
-and fails once a date has passed. Three things about it are deliberate:
+`exception-expiry.yml` runs `scripts/ci/exception-expiry.mjs` over all three and fails once a date
+has passed. Four things about it are deliberate:
 
 - **A missing date fails too.** Requiring the field only where somebody remembered it would let the
   next entry skip it, which is the one outcome that makes the gate decorative.
@@ -158,6 +158,11 @@ and fails once a date has passed. Three things about it are deliberate:
   fine, since a file that is not there has no exceptions to expire. A file that exists and cannot be
   read - permissions, a dangling symlink - would otherwise produce "0 accepted findings, all
   current" and exit zero, which is a gate passing because it could not do its job.
+- **`.grant.yaml` is read only under `ignore-packages:`.** Its `allow:` list is a list of the same
+  shape, and every SPDX identifier on it would otherwise read as an undated exception. Adjacent list
+  items share the comment above them, because a run written with nothing between them is one
+  decision; a blank line or an intervening comment ends the run, so a dated entry cannot vouch for
+  an unrelated one below it.
 
 An expiry is not an instruction to delete the entry. It is an instruction to re-read it: confirm the
 finding is still unreachable, check whether a fix has been published since, then either remove the

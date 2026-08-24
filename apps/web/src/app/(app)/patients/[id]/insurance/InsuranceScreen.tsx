@@ -1,5 +1,7 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Toast } from '@openrunic/ui';
 import type { ToastTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
@@ -11,6 +13,7 @@ import {
   CoverageCard,
   moveItem,
   presentEligibility,
+  PRIORITY_COPY,
   priorityForIndex,
   useCoverages,
 } from '@/components/insurance';
@@ -19,7 +22,10 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { IS_MOCK_MODE, mockVerifyEligibility, usePatient } from '@/lib/api';
 import type { MockCoverage, MockEligibilityResult } from '@/lib/api';
-import { formatAge, formatCount, formatDate, formatMrn, formatName } from '@/lib/format';
+import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * FD-08 Insurance and eligibility.
@@ -55,7 +61,48 @@ function toneFor(result: MockEligibilityResult): ToastTone {
   return 'danger';
 }
 
+/**
+ * How the batch went, as one sentence rather than three clauses joined by a
+ * comma.
+ *
+ * A summary assembled from fragments gets the English right and the word order
+ * wrong everywhere else, and a translator handed "needing attention" on its own
+ * has no sentence to agree with. Four whole messages, one per shape the answer
+ * can take, and the branch picks between literal keys the drift test can see.
+ */
+const SUMMARY = {
+  cleanKey: 'insurance.verifyAll.summaryClean',
+  problemsKey: 'insurance.verifyAll.summaryProblems',
+  queuedKey: 'insurance.verifyAll.summaryQueued',
+  bothKey: 'insurance.verifyAll.summaryBoth',
+} as const;
+
+function verifyAllSummary(
+  counts: Readonly<{ active: number; problems: number; unavailable: number }>,
+  t: Translator
+): string {
+  /* Digits through `formatCount`, the way `counted` does it: the plural form
+     and the numerals are two separate locale decisions, and a sentence that got
+     the grammar right and the numerals wrong would still be wrong. */
+  const active = formatCount(counts.active, t.locale);
+  const problems = formatCount(counts.problems, t.locale);
+  const unavailable = formatCount(counts.unavailable, t.locale);
+  if (counts.problems > 0 && counts.unavailable > 0) {
+    return t(SUMMARY.bothKey, { active, problems, unavailable });
+  }
+  if (counts.problems > 0) return t(SUMMARY.problemsKey, { active, problems });
+  if (counts.unavailable > 0) return t(SUMMARY.queuedKey, { active, unavailable });
+  return t(SUMMARY.cleanKey, { active });
+}
+
+/** "2 coverages checked", in the reader's language and its own plural rule. */
+const VERIFIED_TITLE: CountedMessage = {
+  oneKey: 'insurance.verifyAll.titleOne',
+  otherKey: 'insurance.verifyAll.titleOther',
+};
+
 export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): ReactElement {
+  const t = useTranslator();
   const [asOf] = useState<Date>(() => clinicNow());
   const [order, setOrder] = useState<string[] | null>(null);
   const [checking, setChecking] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -102,12 +149,13 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       void verify(coverage).then((result) => {
         setToast({
           tone: toneFor(result),
-          title: presentEligibility(result.outcome).label,
+          title: t(presentEligibility(result.outcome).labelKey),
+          // The payer's own sentence, relayed rather than reworded.
           message: result.detail,
         });
       });
     },
-    [verify]
+    [t, verify]
   );
 
   const verifyAll = useCallback(() => {
@@ -119,29 +167,24 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       const problems = all.length - active - unavailable;
       setToast({
         tone: problems > 0 ? 'danger' : 'success',
-        title: `${formatCount(all.length, 'coverage')} checked`,
-        message: [
-          `${active} active`,
-          problems > 0 ? `${problems} needing attention` : null,
-          unavailable > 0 ? `${unavailable} queued for a payer that did not answer` : null,
-        ]
-          .filter(Boolean)
-          .join(', ')
-          .concat('.'),
+        title: counted(t, VERIFIED_TITLE, all.length),
+        message: verifyAllSummary({ active, problems, unavailable }, t),
       });
     });
-  }, [ordered, verify]);
+  }, [ordered, t, verify]);
 
   const move = (coverage: MockCoverage, direction: -1 | 1) => {
     const from = ordered.findIndex((entry) => entry.id === coverage.id);
     const next = moveItem(ordered, from, from + direction);
     setOrder(next.map((entry) => entry.id));
+    /* The slot decides the whole sentence rather than supplying a word to drop
+       into one, because "secondary" is an adjective that agrees with its noun
+       in most of the languages this will be read in. */
+    const landed = priorityForIndex(next.findIndex((entry) => entry.id === coverage.id));
     setToast({
       tone: 'info',
-      title: 'Coverage priority changed',
-      message: `${coverage.payerName} is now the ${priorityForIndex(
-        next.findIndex((entry) => entry.id === coverage.id)
-      ).toLowerCase()} coverage. Claims bill in this order.`,
+      title: t('insurance.priority.changed'),
+      message: t(PRIORITY_COPY[landed].movedKey, { payer: coverage.payerName }),
     });
   };
 
@@ -150,64 +193,66 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       {
         id: 'insurance.verify-all',
         group: 'actions',
-        label: 'Verify every coverage now',
-        keywords: ['eligibility', '270', '271', 'check coverage', 'benefits'],
+        label: t('insurance.command.verifyAll'),
+        keywords: searchWords(t('insurance.command.verifyAll.keywords')),
         icon: 'shield-check',
         perform: verifyAll,
       },
       {
         id: 'insurance.open-chart',
         group: 'navigate',
-        label: 'Open this chart',
-        keywords: ['chart', 'summary', 'patient'],
+        label: t('insurance.command.openChart'),
+        keywords: searchWords(t('insurance.command.openChart.keywords')),
         icon: 'folder-open',
         href: `/patients/${patientId}`,
       },
     ],
-    [patientId, verifyAll]
+    [patientId, t, verifyAll]
   );
 
   return (
     <AppShell
-      title="Insurance and eligibility"
-      description="Coverage in billing order, verified against the payer in one click."
+      title={t('insurance.screen.title')}
+      description={t('insurance.screen.description')}
       actions={
         <Button iconLeft="shield-check" onClick={verifyAll} disabled={ordered.length === 0}>
-          Verify all coverages
+          {t('insurance.screen.verifyAll')}
         </Button>
       }
       rightRail={
         <AsyncBoundary
           state={patient}
-          subject="this patient"
+          subject={t('insurance.screen.patientSubject')}
           loadingVariant="text"
           loadingRows={4}
           empty={{
-            title: 'No patient loaded',
-            message: 'Open this screen from a patient record, or press Cmd-K to search.',
+            title: t('insurance.screen.noPatientTitle'),
+            message: t('insurance.screen.noPatientMessage'),
           }}
         >
           {(record) => (
-            <Card overline="Patient" title={formatName(record.name)}>
+            <Card overline={t('insurance.screen.patientOverline')} title={formatName(record.name)}>
               <p className="or-small">
                 <span className="or-mono">{formatMrn(record.mrn)}</span>
                 {' · '}
                 {formatAge(record.birthDate, asOf)}
                 {' · '}
-                born {formatDate(record.birthDate)}
+                {t('insurance.screen.born', { date: formatDate(record.birthDate) })}
               </p>
+              {/* Pronouns are the patient's own words, stored as typed. */}
               {record.pronouns ? <p className="or-small">{record.pronouns}</p> : null}
 
               <div className="or-coverage__summary">
                 {ordered.length === 0 ? (
-                  <Badge tone="neutral">No coverage on file</Badge>
+                  <Badge tone="neutral">{t('insurance.screen.noCoverageBadge')}</Badge>
                 ) : (
                   ordered.map((coverage) => {
                     const latest = (results[coverage.id] ?? NO_RESULTS)[0];
                     const presented = presentEligibility(latest?.outcome ?? coverage.lastOutcome);
                     return (
                       <p key={coverage.id} className="or-small or-coverage__summary-line">
-                        <Badge tone={presented.tone}>{presented.label}</Badge> {coverage.payerName}
+                        <Badge tone={presented.tone}>{t(presented.labelKey)}</Badge>{' '}
+                        {coverage.payerName}
                       </p>
                     );
                   })
@@ -215,7 +260,7 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
               </div>
 
               <Button variant="secondary" iconLeft="folder-open" href={`/patients/${patientId}`}>
-                Open chart
+                {t('insurance.screen.openChart')}
               </Button>
             </Card>
           )}
@@ -226,18 +271,17 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
 
       <AsyncBoundary
         state={coverages}
-        subject="this patient's coverage"
+        subject={t('insurance.screen.coverageSubject')}
         loadingVariant="cards"
         loadingRows={2}
         isEmpty={(rows) => rows.length === 0}
         empty={{
-          title: 'No coverage on file',
-          message:
-            'This patient has no insurance recorded, so visits bill as self-pay. Add a coverage from the insurance card at check-in.',
+          title: t('insurance.screen.emptyTitle'),
+          message: t('insurance.screen.emptyMessage'),
           icon: 'shield',
           action: (
             <Button iconLeft="folder-open" href={`/patients/${patientId}`}>
-              Open chart
+              {t('insurance.screen.openChart')}
             </Button>
           ),
         }}
@@ -266,10 +310,7 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
       </AsyncBoundary>
 
       {IS_MOCK_MODE ? (
-        <p className="or-caption or-fd-mock-note">
-          Mock mode: eligibility answers come from fixtures, and the priority order is held for this
-          session only.
-        </p>
+        <p className="or-caption or-fd-mock-note">{t('insurance.screen.mockNote')}</p>
       ) : null}
 
       {toast ? (

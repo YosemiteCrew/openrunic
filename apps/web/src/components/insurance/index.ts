@@ -6,10 +6,10 @@ export type { CoverageCardProps } from './CoverageCard';
 export {
   moveItem,
   presentEligibility,
-  PRIORITY_LABEL,
+  PRIORITY_COPY,
   PRIORITY_SEQUENCE,
   priorityForIndex,
 } from './eligibility';
-export type { EligibilityPresentation } from './eligibility';
+export type { EligibilityPresentation, PriorityCopy } from './eligibility';
 export { useCoverages } from './useCoverages';
 export type { UseCoveragesOptions } from './useCoverages';

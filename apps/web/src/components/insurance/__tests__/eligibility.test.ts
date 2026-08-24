@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -12,12 +13,22 @@ import { mockCoveragesForPatient, mockVerifyEligibility, MOCK_PATIENTS } from '@
  * Eligibility presentation. The line worth defending is the one between a payer
  * that said no and a payer that said nothing: they read differently and lead to
  * different actions at the desk.
+ *
+ * The presentation names its messages rather than writing them, so assertions
+ * about wording go through the catalogue the way the card does. Checking the
+ * key alone would pass forever while the sentence behind it rotted.
  */
+
+/** The source locale, which is the language these assertions are written in. */
+const t = createTranslator(appCatalogue, 'en');
 
 describe('presentEligibility', () => {
   it('gives every outcome a word, so colour is never the message', () => {
     for (const outcome of ['ACTIVE', 'INACTIVE', 'NOT_FOUND', 'UNAVAILABLE', null] as const) {
-      expect(presentEligibility(outcome).label.length).toBeGreaterThan(0);
+      const { labelKey } = presentEligibility(outcome);
+      expect(t(labelKey).length).toBeGreaterThan(0);
+      // An unknown key renders as itself, which is a label nobody can read.
+      expect(t(labelKey)).not.toBe(labelKey);
     }
   });
 
@@ -31,16 +42,18 @@ describe('presentEligibility', () => {
     const outage = presentEligibility('UNAVAILABLE');
     expect(outage.degraded).toBe(true);
     expect(outage.tone).not.toBe('danger');
-    expect(outage.guidance).toMatch(/check-in can continue/);
+    expect(t(outage.guidanceKey ?? '')).toMatch(/check-in can continue/);
   });
 
   it('tells the desk what to do about every problem outcome', () => {
-    expect(presentEligibility('INACTIVE').guidance.length).toBeGreaterThan(0);
-    expect(presentEligibility('NOT_FOUND').guidance).toMatch(/member id/);
+    expect(t(presentEligibility('INACTIVE').guidanceKey ?? '').length).toBeGreaterThan(0);
+    expect(t(presentEligibility('NOT_FOUND').guidanceKey ?? '')).toMatch(/member id/);
   });
 
   it('says nothing extra when the coverage is simply fine', () => {
-    expect(presentEligibility('ACTIVE').guidance).toBe('');
+    // Null rather than an empty message: an empty one would render as a blank
+    // paragraph and read as a sentence that failed to load.
+    expect(presentEligibility('ACTIVE').guidanceKey).toBeNull();
   });
 });
 

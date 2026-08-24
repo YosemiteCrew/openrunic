@@ -4,6 +4,7 @@ import { cx, Icon } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { SlashCommand } from '@/lib/api/chart';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { optionId } from './ids';
 
@@ -37,18 +38,29 @@ export function SlashCommandMenu({
   query,
   onSelect,
 }: Readonly<SlashCommandMenuProps>): ReactElement {
+  const t = useTranslator();
+
   if (commands.length === 0) {
     return (
       <div className="or-slash" id={`${idPrefix}-listbox`}>
+        {/* Two whole sentences rather than one with a hole in it. The version
+            that interpolated either a quoted query or the word "that" left a
+            translator with a sentence whose subject arrives mid-clause, which
+            several languages cannot inflect around. */}
         <p className="or-small or-slash__empty">
-          No command matches {query ? `"${query}"` : 'that'}. Keep typing to write plain text.
+          {query ? t('encounter.slash.noMatchQuery', { query }) : t('encounter.slash.noMatch')}
         </p>
       </div>
     );
   }
 
   return (
-    <ul className="or-slash" id={`${idPrefix}-listbox`} role="listbox" aria-label="Note commands">
+    <ul
+      className="or-slash"
+      id={`${idPrefix}-listbox`}
+      role="listbox"
+      aria-label={t('encounter.slash.label')}
+    >
       {commands.map((command) => (
         /* No key handler here, on purpose. These options are not focus targets:
            the caret stays in the note's textarea, which owns
@@ -74,7 +86,9 @@ export function SlashCommandMenu({
           <span className="or-slash__label">{command.label}</span>
           <span className="or-caption or-slash__group">{command.group}</span>
           <span className="or-caption or-slash__preview">
-            {command.emits ? `Writes ${command.emits.label}` : 'Text only'}
+            {command.emits
+              ? t('encounter.slash.writes', { item: command.emits.label })
+              : t('encounter.slash.textOnly')}
           </span>
         </li>
       ))}

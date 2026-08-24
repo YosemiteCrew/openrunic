@@ -12,6 +12,7 @@ import { AsyncBoundary } from '@/components/state';
 import { SLASH_COMMANDS, useEncounterNote } from '@/lib/api/chart';
 import type { ChartClient, SlashCommand } from '@/lib/api/chart';
 import { formatCredentialed, formatDate } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * CH-02 Visit workspace.
@@ -34,9 +35,20 @@ export function EncounterNoteScreen({
   chartClient,
   commands = SLASH_COMMANDS,
 }: Readonly<EncounterNoteScreenProps>): ReactElement {
+  const t = useTranslator();
   const note = useEncounterNote(encounterId, chartClient ? { client: chartClient } : {});
   const patientId = note.data?.patientId ?? null;
 
+  /* The palette entry depends on the reader as well as on the note, so the
+     translator joins the dependency list. That is only sound because the
+     translator is memoised on the locale: the registry registers whenever this
+     array's identity changes and registering sets state, so a translator with a
+     new identity every render would make this a render loop rather than a
+     wasted allocation.
+
+     Keywords are a comma-separated catalogue string split here, matching the
+     navigation table: somebody searching in another language does not type the
+     English word. */
   const screenCommands = useMemo<Command[]>(
     () =>
       patientId
@@ -44,23 +56,28 @@ export function EncounterNoteScreen({
             {
               id: 'note.open-chart',
               group: 'navigate',
-              label: 'Open the chart',
-              keywords: ['chart', 'summary', 'patient', 'problems'],
+              label: t('encounter.command.openChart'),
+              keywords: t('encounter.command.openChart.keywords')
+                .split(',')
+                .map((word) => word.trim())
+                .filter((word) => word !== ''),
               icon: 'user-round',
               href: `/patients/${patientId}`,
             },
           ]
         : [],
-    [patientId]
+    [patientId, t]
   );
 
+  /* Visit type, date and author, all from the note. Nothing in this line is
+     this screen's own words, so it is joined here rather than translated. */
   const description = note.data
     ? `${note.data.visitType}, ${formatDate(note.data.visitDate)}, ${formatCredentialed(note.data.providerName, note.data.providerCredential)}`
     : undefined;
 
   return (
     <AppShell
-      title="Visit note"
+      title={t('encounter.title')}
       description={description}
       rightRail={
         patientId ? (
@@ -77,12 +94,12 @@ export function EncounterNoteScreen({
 
       <AsyncBoundary
         state={note}
-        subject="this visit note"
+        subject={t('encounter.boundary.subject')}
         loadingVariant="cards"
         loadingRows={4}
         empty={{
-          title: 'No note for this visit',
-          message: 'Notes are created when a visit starts. Open the chart to see the visit list.',
+          title: t('encounter.empty.title'),
+          message: t('encounter.empty.message'),
         }}
       >
         {(loaded) => (

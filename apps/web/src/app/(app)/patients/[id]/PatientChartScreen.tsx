@@ -1,8 +1,9 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Button } from '@openrunic/ui';
 import { useMemo, useState } from 'react';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactElement } from 'react';
 
 import {
   appointmentOnDay,
@@ -23,11 +24,13 @@ import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
+import type { AsyncBoundaryEmpty } from '@/components/state';
 import { useAppointments, usePatient } from '@/lib/api';
 import type { ApiClient } from '@/lib/api';
 import { clinicNow, useChartSummary } from '@/lib/api/chart';
 import type { ChartClient, ChartSummary } from '@/lib/api/chart';
 import { formatDate, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * CH-01 Chart home.
@@ -41,87 +44,122 @@ import { formatDate, formatName } from '@/lib/format';
  *
  * Every tab is reachable from the command palette as well as from the strip,
  * because a provider between rooms types faster than they point.
+ *
+ * The tables below carry catalogue keys rather than words. A constant evaluated
+ * once at module scope cannot know who is reading, so a tab label or an empty
+ * state written there would be written in one language for everybody; carrying
+ * the key keeps the tables where they belong and moves only the lookup into the
+ * render.
  */
 
+interface ChartTab {
+  /**
+   * Stable identity, independent of what the tab is called.
+   *
+   * The palette command id is built from this rather than from the label, so a
+   * command keeps its identity when the reader's language changes and anything
+   * keyed on it goes on matching.
+   */
+  readonly id: string;
+  /**
+   * Catalogue key for the label on the strip. The palette entry is built from
+   * the same words, lower-cased into "Show {tab}" and added to that command's
+   * own keyword list, so a tab is searchable by the word it is labelled with.
+   */
+  readonly labelKey: string;
+}
+
 const CHART_TABS = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'visits', label: 'Visits' },
-  { id: 'results', label: 'Results' },
-  { id: 'medications', label: 'Medications' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'care-team', label: 'Care team' },
-] as const;
+  { id: 'summary', labelKey: 'chart.tab.summary' },
+  { id: 'visits', labelKey: 'chart.tab.visits' },
+  { id: 'results', labelKey: 'chart.tab.results' },
+  { id: 'medications', labelKey: 'chart.tab.medications' },
+  { id: 'documents', labelKey: 'chart.tab.documents' },
+  { id: 'care-team', labelKey: 'chart.tab.careTeam' },
+] as const satisfies readonly ChartTab[];
 
 type ChartTabId = (typeof CHART_TABS)[number]['id'];
 
 const TAB_IDS: ReadonlySet<string> = new Set(CHART_TABS.map((tab) => tab.id));
 
 interface TabEmpty {
-  title: string;
-  message: string;
-  icon?: string;
-  action?: ReactNode;
+  readonly titleKey: string;
+  readonly messageKey: string;
+  readonly icon?: string;
+  /**
+   * The one way on, as a label key and a route rather than as a built button.
+   *
+   * The button used to be constructed here, which put its words into a module
+   * constant. Carrying the key, the route and the variant instead lets the same
+   * table hold the action while the render decides what language it is in.
+   * `null` where a tab has nothing to offer: more than one control is a screen
+   * that has not decided, and none is a legitimate answer.
+   */
+  readonly action: {
+    readonly labelKey: string;
+    readonly href: string;
+    readonly variant: 'primary' | 'secondary';
+  } | null;
 }
 
 /** What each tab says when it is empty: the fact, why it is empty, one way on. */
 const TAB_EMPTY: Record<ChartTabId, TabEmpty> = {
   summary: {
-    title: 'No history yet',
-    message: 'Nothing has been recorded for this patient. The first visit starts the chart.',
+    titleKey: 'chart.empty.summary.title',
+    messageKey: 'chart.empty.summary.message',
     icon: 'notebook-pen',
-    action: (
-      <Button href="/schedule" variant="primary">
-        Go to today&apos;s schedule
-      </Button>
-    ),
+    action: { labelKey: 'chart.empty.summary.action', href: '/schedule', variant: 'primary' },
   },
   visits: {
-    title: 'No visits recorded',
-    message: 'Visits appear here once the patient has been seen or an appointment is fulfilled.',
+    titleKey: 'chart.empty.visits.title',
+    messageKey: 'chart.empty.visits.message',
     icon: 'calendar-days',
-    action: (
-      <Button href="/schedule" variant="primary">
-        Book an appointment
-      </Button>
-    ),
+    action: { labelKey: 'chart.empty.visits.action', href: '/schedule', variant: 'primary' },
   },
   results: {
-    title: 'No results for this patient',
-    message: 'Laboratory and imaging results file to the chart as they arrive from the lab.',
+    titleKey: 'chart.empty.results.title',
+    messageKey: 'chart.empty.results.message',
     icon: 'flask-conical',
-    action: (
-      <Button href="/results" variant="secondary">
-        Go to results
-      </Button>
-    ),
+    action: { labelKey: 'chart.empty.results.action', href: '/results', variant: 'secondary' },
   },
   medications: {
-    title: 'No medications recorded',
-    message:
-      'Prescriptions written here and medications the patient reports both appear on this list.',
+    titleKey: 'chart.empty.medications.title',
+    messageKey: 'chart.empty.medications.message',
     icon: 'pill',
-    action: (
-      <Button href="/orders" variant="secondary">
-        Go to orders
-      </Button>
-    ),
+    action: { labelKey: 'chart.empty.medications.action', href: '/orders', variant: 'secondary' },
   },
   documents: {
-    title: 'No documents filed',
-    message: 'Uploads, scans and inbound faxes filed to this chart appear here.',
+    titleKey: 'chart.empty.documents.title',
+    messageKey: 'chart.empty.documents.message',
     icon: 'file-text',
-    action: (
-      <Button href="/inbox" variant="secondary">
-        Go to the inbox
-      </Button>
-    ),
+    action: { labelKey: 'chart.empty.documents.action', href: '/inbox', variant: 'secondary' },
   },
   'care-team': {
-    title: 'No care team recorded',
-    message: 'The primary provider and anyone else responsible for this patient appear here.',
+    titleKey: 'chart.empty.careTeam.title',
+    messageKey: 'chart.empty.careTeam.message',
     icon: 'users',
+    action: null,
   },
 };
+
+/** The table above as the shared boundary wants it, in the reader's language. */
+function emptyState(tab: ChartTabId, t: Translator): AsyncBoundaryEmpty {
+  const spec = TAB_EMPTY[tab];
+  return {
+    title: t(spec.titleKey),
+    message: t(spec.messageKey),
+    ...(spec.icon === undefined ? {} : { icon: spec.icon }),
+    ...(spec.action === null
+      ? {}
+      : {
+          action: (
+            <Button href={spec.action.href} variant={spec.action.variant}>
+              {t(spec.action.labelKey)}
+            </Button>
+          ),
+        }),
+  };
+}
 
 function isTabEmpty(tab: ChartTabId, chart: ChartSummary): boolean {
   if (tab === 'visits') return chart.visits.length === 0;
@@ -152,6 +190,14 @@ function tabCount(tab: ChartTabId, chart: ChartSummary | null): number | null {
   return null;
 }
 
+/** A comma-separated catalogue string as the palette's keyword list. */
+function keywordList(t: Translator, key: string): string[] {
+  return t(key)
+    .split(',')
+    .map((word) => word.trim())
+    .filter((word) => word !== '');
+}
+
 export interface PatientChartScreenProps {
   patientId: string;
   /** Injectable for tests. */
@@ -164,6 +210,7 @@ export function PatientChartScreen({
   client,
   chartClient,
 }: Readonly<PatientChartScreenProps>): ReactElement {
+  const t = useTranslator();
   const now = clinicNow();
   const [activeTab, setActiveTab] = useState<ChartTabId>('summary');
 
@@ -185,7 +232,7 @@ export function PatientChartScreen({
 
   const tabs: ChartTabItem[] = CHART_TABS.map((tab) => ({
     id: tab.id,
-    label: tab.label,
+    label: t(tab.labelKey),
     count: tabCount(tab.id, summary),
   }));
 
@@ -198,23 +245,38 @@ export function PatientChartScreen({
     if (TAB_IDS.has(id)) setActiveTab(id as ChartTabId);
   };
 
+  /* The palette entries depend on the reader as well as on the note, so the
+     translator joins the dependency list: a list built once in English would
+     otherwise survive a language change intact.
+
+     That dependency is only sound because the translator is memoised on the
+     locale. The registry registers whenever this array's identity changes and
+     registering sets state, so a translator with a new identity every render
+     would make this a render loop rather than a wasted allocation.
+
+     The command ids are built from each tab's own `id` and so do not depend on
+     the reader, deliberately: anything keyed on one keeps matching when the
+     language changes. */
   const commands = useMemo<Command[]>(() => {
-    const tabCommands: Command[] = CHART_TABS.map((tab) => ({
-      id: `chart.tab.${tab.id}`,
-      group: 'actions',
-      label: `Show ${tab.label.toLowerCase()}`,
-      keywords: ['chart', 'tab', tab.label.toLowerCase()],
-      icon: 'panel-top',
-      perform: () => selectTab(tab.id),
-    }));
+    const tabCommands: Command[] = CHART_TABS.map((tab) => {
+      const label = t(tab.labelKey).toLowerCase();
+      return {
+        id: `chart.tab.${tab.id}`,
+        group: 'actions',
+        label: t('chart.command.showTab', { tab: label }),
+        keywords: [...keywordList(t, 'chart.command.showTab.keywords'), label],
+        icon: 'panel-top',
+        perform: () => selectTab(tab.id),
+      };
+    });
 
     const noteCommand: Command[] = openNoteId
       ? [
           {
             id: 'chart.open-note',
             group: 'navigate',
-            label: 'Open the visit note',
-            keywords: ['note', 'soap', 'documentation', 'sign'],
+            label: t('chart.summary.openVisitNote'),
+            keywords: keywordList(t, 'chart.command.openNote.keywords'),
             icon: 'notebook-pen',
             href: `/encounters/${openNoteId}`,
           },
@@ -227,34 +289,37 @@ export function PatientChartScreen({
       {
         id: 'chart.print',
         group: 'actions',
-        label: 'Print chart summary',
-        keywords: ['print', 'paper', 'record'],
+        label: t('chart.command.print'),
+        keywords: keywordList(t, 'chart.command.print.keywords'),
         icon: 'printer',
         perform: () => window.print(),
       },
     ];
-  }, [openNoteId]);
+  }, [openNoteId, t]);
 
-  const title = patient.data ? formatName(patient.data.name) : 'Chart';
+  const title = patient.data ? formatName(patient.data.name) : t('chart.title');
 
   const rail = (
     <AsyncBoundary
       state={patient}
-      subject="this patient"
+      subject={t('chart.boundary.patient.subject')}
       loadingVariant="text"
       loadingRows={8}
       empty={{
-        title: 'No patient loaded',
-        message: 'Open a chart from the patient index, or press Cmd-K to search.',
+        title: t('chart.boundary.patient.title'),
+        message: t('chart.boundary.patient.message'),
       }}
     >
       {(record) => (
         <AsyncBoundary
           state={chart}
-          subject="this chart"
+          subject={t('chart.boundary.chart.subject')}
           loadingVariant="text"
           loadingRows={8}
-          empty={{ title: 'No chart data', message: 'Nothing has been recorded for this patient.' }}
+          empty={{
+            title: t('chart.boundary.chart.title'),
+            message: t('chart.boundary.chart.message'),
+          }}
         >
           {(loaded) => (
             <PatientContextRail
@@ -273,11 +338,11 @@ export function PatientChartScreen({
   const actions = (
     <>
       <Button variant="secondary" iconLeft="printer" onClick={() => window.print()}>
-        Print summary
+        {t('chart.action.printSummary')}
       </Button>
       {openNoteId ? (
         <Button variant="primary" href={`/encounters/${openNoteId}`} iconLeft="notebook-pen">
-          Open visit note
+          {t('chart.action.openVisitNote')}
         </Button>
       ) : null}
     </>
@@ -293,7 +358,7 @@ export function PatientChartScreen({
         activeId={activeTab}
         onChange={selectTab}
         idPrefix="chart"
-        label="Chart sections"
+        label={t('chart.tabs.label')}
       />
 
       <div
@@ -305,11 +370,11 @@ export function PatientChartScreen({
       >
         <AsyncBoundary
           state={chart}
-          subject="this chart"
+          subject={t('chart.boundary.chart.subject')}
           loadingVariant="cards"
           loadingRows={4}
           isEmpty={(loaded) => isTabEmpty(activeTab, loaded)}
-          empty={TAB_EMPTY[activeTab]}
+          empty={emptyState(activeTab, t)}
         >
           {(loaded) => {
             if (activeTab === 'visits') return <VisitsPanel visits={loaded.visits} />;

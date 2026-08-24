@@ -1,5 +1,6 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Card, VitalStat } from '@openrunic/ui';
 import type { StatusTone } from '@openrunic/ui';
 import Link from 'next/link';
@@ -8,6 +9,7 @@ import type { ReactElement } from 'react';
 import type { Appointment } from '@/lib/api';
 import type { ChartSummary, ResultObservation } from '@/lib/api/chart';
 import { formatDate, formatDateTime, formatEnumLabel, formatTime, formatVital } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * CH-01, the 30-second pre-visit read.
@@ -17,6 +19,10 @@ import { formatDate, formatDateTime, formatEnumLabel, formatTime, formatVital } 
  * and off; here the rail carries what is dangerous to forget and this panel
  * carries what is being decided today, in one order that never changes. There
  * is nothing to configure and nothing to click before it reads.
+ *
+ * The headings and the absences are this screen's words and come from the
+ * catalogue. The visits, results, problems and medications named under them do
+ * not: each already carries the name the record gave it.
  */
 
 export interface SummaryPanelProps {
@@ -37,6 +43,15 @@ function appointmentTone(status: Appointment['status']): StatusTone {
  * `formatEnumLabel` turns `NOSHOW` into "Noshow", because the enum spells it as
  * one word. The glossary spells it as two, so the two statuses whose enum name
  * is not their English name get read out here.
+ *
+ * Not in the catalogue, and the reason is worth stating because these look like
+ * copy. Seven of the nine appointment statuses render straight from the enum
+ * through `formatEnumLabel`; only these two need a hand-written word. Moving
+ * the two into the catalogue and leaving the seven mechanical would give a
+ * reader a status vocabulary that is two-ninths in their language and
+ * seven-ninths not, which is worse than one that is honestly all English.
+ * Revisit when the statuses themselves are rendered through a catalogue, at
+ * which point all nine move together.
  */
 const STATUS_LABEL: Partial<Record<Appointment['status'], string>> = {
   NOSHOW: 'No show',
@@ -71,13 +86,66 @@ function reading(observation: ResultObservation): ReactElement {
   );
 }
 
+/** The strip at the top: what is happening with this patient today. */
+function TodayStrip({
+  chart,
+  todayAppointment,
+  today,
+  recentVisits,
+  t,
+}: Readonly<{
+  chart: ChartSummary;
+  todayAppointment: Appointment | null;
+  today: string;
+  recentVisits: readonly ChartSummary['visits'][number][];
+  t: Translator;
+}>): ReactElement {
+  const todayVisit = chart.visits.find((visit) => visit.date === today) ?? null;
+
+  if (!todayAppointment) {
+    return (
+      <p className="or-body">
+        {t('chart.summary.noVisitToday', {
+          // "never" is a word rather than a date, so the sentence still reads as
+          // a sentence on a chart with nothing in it. Interpolated rather than
+          // written as a second message, so a translator sees the whole line.
+          date: recentVisits[0] ? formatDate(recentVisits[0].date) : t('chart.summary.never'),
+        })}
+      </p>
+    );
+  }
+
+  return (
+    <div className="or-chart-strip__row">
+      <Badge tone={appointmentTone(todayAppointment.status)}>
+        {statusLabel(todayAppointment.status)}
+      </Badge>
+      {/* Time, visit type and reason, all from the appointment. */}
+      <p className="or-body">
+        {[
+          formatTime(todayAppointment.start),
+          todayAppointment.type.display.toLowerCase(),
+          todayAppointment.reasonText?.toLowerCase(),
+        ]
+          .filter(Boolean)
+          .join(', ')}
+      </p>
+      {todayVisit?.encounterId ? (
+        <Link className="or-chart-strip__link" href={`/encounters/${todayVisit.encounterId}`}>
+          {t('chart.summary.openVisitNote')}
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 export function SummaryPanel({
   chart,
   todayAppointment,
   now,
 }: Readonly<SummaryPanelProps>): ReactElement {
+  const t = useTranslator();
   const today = formatDate(now, 'iso');
-  const todayVisit = chart.visits.find((visit) => visit.date === today) ?? null;
   const recentVisits = [...chart.visits].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const recentResults = [...chart.results]
     .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt))
@@ -87,44 +155,26 @@ export function SummaryPanel({
 
   return (
     <div className="or-chart-summary">
-      <Card overline="Today" className="or-chart-strip">
-        {todayAppointment ? (
-          <div className="or-chart-strip__row">
-            <Badge tone={appointmentTone(todayAppointment.status)}>
-              {statusLabel(todayAppointment.status)}
-            </Badge>
-            <p className="or-body">
-              {[
-                formatTime(todayAppointment.start),
-                todayAppointment.type.display.toLowerCase(),
-                todayAppointment.reasonText?.toLowerCase(),
-              ]
-                .filter(Boolean)
-                .join(', ')}
-            </p>
-            {todayVisit?.encounterId ? (
-              <Link className="or-chart-strip__link" href={`/encounters/${todayVisit.encounterId}`}>
-                Open the visit note
-              </Link>
-            ) : null}
-          </div>
-        ) : (
-          <p className="or-body">
-            No visit today. The last recorded visit was{' '}
-            {recentVisits[0] ? formatDate(recentVisits[0].date) : 'never'}.
-          </p>
-        )}
+      <Card overline={t('chart.summary.today')} className="or-chart-strip">
+        <TodayStrip
+          chart={chart}
+          todayAppointment={todayAppointment}
+          today={today}
+          recentVisits={recentVisits}
+          t={t}
+        />
       </Card>
 
       <div className="or-chart-grid">
         <div className="or-chart-grid__column">
-          <Card title="Recent visits">
+          <Card title={t('chart.summary.recentVisits')}>
             {recentVisits.length === 0 ? (
-              <p className="or-body">No visits recorded.</p>
+              <p className="or-body">{t('chart.summary.noVisits')}</p>
             ) : (
               <ul className="or-chart-list">
                 {recentVisits.map((visit) => (
                   <li key={visit.id} className="or-chart-item">
+                    {/* Date and visit type, both from the record. */}
                     <p className="or-chart-item__title">
                       {formatDate(visit.date)}, {visit.type.toLowerCase()}
                     </p>
@@ -133,14 +183,16 @@ export function SummaryPanel({
                     </p>
                     <div className="or-chart-item__row">
                       <Badge tone={visit.noteState === 'SIGNED' ? 'success' : 'neutral'}>
-                        {visit.noteState === 'NONE' ? 'No note' : formatEnumLabel(visit.noteState)}
+                        {visit.noteState === 'NONE'
+                          ? t('chart.visits.noNote')
+                          : formatEnumLabel(visit.noteState)}
                       </Badge>
                       {visit.encounterId ? (
                         <Link
                           className="or-chart-item__link"
                           href={`/encounters/${visit.encounterId}`}
                         >
-                          Open note
+                          {t('chart.visits.openNote')}
                         </Link>
                       ) : null}
                     </div>
@@ -150,14 +202,16 @@ export function SummaryPanel({
             )}
           </Card>
 
-          <Card title="Recent results">
+          <Card title={t('chart.summary.recentResults')}>
             {recentResults.length === 0 ? (
-              <p className="or-body">No results recorded.</p>
+              <p className="or-body">{t('chart.summary.noResults')}</p>
             ) : (
               <div className="or-chart-readings">
                 {recentResults.map(reading)}
                 <p className="or-caption or-chart-item__meta">
-                  Collected {formatDateTime(recentResults[0]?.collectedAt, 'prose')}
+                  {t('chart.summary.collected', {
+                    when: formatDateTime(recentResults[0]?.collectedAt, 'prose'),
+                  })}
                 </p>
               </div>
             )}
@@ -165,17 +219,24 @@ export function SummaryPanel({
         </div>
 
         <div className="or-chart-grid__column">
-          <Card title="Active problems">
+          <Card title={t('chart.summary.activeProblems')}>
             {activeProblems.length === 0 ? (
-              <p className="or-body">No problems recorded.</p>
+              <p className="or-body">{t('chart.summary.noProblems')}</p>
             ) : (
               <ul className="or-chart-list">
                 {activeProblems.map((problem) => (
                   <li key={problem.id} className="or-chart-item">
                     <p className="or-chart-item__title">{problem.name}</p>
+                    {/* The code is rendered mono, so it stays outside the
+                        message; everything from the coding system onwards is
+                        one sentence a translator can reorder. */}
                     <p className="or-caption or-chart-item__meta">
-                      <span className="or-mono">{problem.code}</span> {problem.codeSystem}, since{' '}
-                      {formatDate(problem.onsetOn)}, {formatEnumLabel(problem.status).toLowerCase()}
+                      <span className="or-mono">{problem.code}</span>{' '}
+                      {t('chart.summary.problemMeta', {
+                        system: problem.codeSystem,
+                        onset: formatDate(problem.onsetOn),
+                        status: formatEnumLabel(problem.status).toLowerCase(),
+                      })}
                     </p>
                   </li>
                 ))}
@@ -183,9 +244,9 @@ export function SummaryPanel({
             )}
           </Card>
 
-          <Card title="Current medications">
+          <Card title={t('chart.medications.title')}>
             {activeMeds.length === 0 ? (
-              <p className="or-body">No current medications.</p>
+              <p className="or-body">{t('chart.summary.noMedications')}</p>
             ) : (
               <ul className="or-chart-list">
                 {activeMeds.map((med) => (
@@ -199,13 +260,15 @@ export function SummaryPanel({
           </Card>
 
           {chart.careGaps.length > 0 ? (
-            <Card title="Care gaps">
+            <Card title={t('chart.section.careGaps')}>
               <ul className="or-chart-list">
                 {chart.careGaps.map((gap) => (
                   <li key={gap.id} className="or-chart-item">
                     <p className="or-chart-item__title">{gap.label}</p>
                     <p className="or-caption or-chart-item__meta">
-                      {gap.dueOn ? `Due ${formatDate(gap.dueOn)}` : 'No target date'}
+                      {gap.dueOn
+                        ? t('chart.summary.careGapDue', { date: formatDate(gap.dueOn) })
+                        : t('chart.summary.careGapNoDate')}
                     </p>
                   </li>
                 ))}

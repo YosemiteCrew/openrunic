@@ -5,8 +5,9 @@ import type { ReactElement } from 'react';
 
 import { INBOX_STREAMS } from '@/lib/api';
 import type { InboxItem, InboxStream } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
-import { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './streams';
+import { INBOX_STREAM_ICON, INBOX_STREAM_LABEL_KEYS } from './streams';
 
 /**
  * The five typed streams, as filter chips with counts.
@@ -33,8 +34,10 @@ export function InboxStreamFilter({
   active,
   onChange,
 }: Readonly<InboxStreamFilterProps>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <fieldset className="or-filters" aria-label="Filter by stream">
+    <fieldset className="or-filters" aria-label={t('inbox.filter.label')}>
       <button
         type="button"
         className="or-filter"
@@ -42,7 +45,7 @@ export function InboxStreamFilter({
         onClick={() => onChange(null)}
       >
         <Icon name="inbox" size={16} />
-        <span>Everything</span>
+        <span>{t('inbox.filter.everything')}</span>
         <span className="or-filter__count">{items.length}</span>
       </button>
 
@@ -57,7 +60,7 @@ export function InboxStreamFilter({
             onClick={() => onChange(stream)}
           >
             <Icon name={INBOX_STREAM_ICON[stream]} size={16} />
-            <span>{INBOX_STREAM_LABELS[stream]}</span>
+            <span>{t(INBOX_STREAM_LABEL_KEYS[stream])}</span>
             <span className="or-filter__count">{count}</span>
           </button>
         );

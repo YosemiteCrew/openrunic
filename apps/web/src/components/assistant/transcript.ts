@@ -1,3 +1,5 @@
+import type { Translator } from '@openrunic/i18n';
+
 import type { AgentEvent, AgentSource } from '@/lib/agent';
 
 /**
@@ -224,21 +226,32 @@ export function transcriptReducer(
  * would make a screen reader read the answer again on every token, which is
  * unusable; this is one short sentence per state change instead, so the reader
  * hears that an answer started, and hears how it ended.
+ *
+ * The translator is a parameter because this is a plain function beside the
+ * reducer rather than a component, and because a sentence a screen reader
+ * speaks is the last one that should be left in a language its listener does
+ * not read. The source count picks between two whole messages rather than
+ * pluralising a fragment: a count is a grammatical decision in most languages
+ * and there is no version of `${n} record${n === 1 ? '' : 's'}` that survives
+ * translation.
  */
-export function announcementFor(state: TranscriptState): string {
+export function announcementFor(t: Translator, state: TranscriptState): string {
   const turn = state.turns.at(-1);
   if (turn === undefined) return '';
-  if (state.streaming) return 'The assistant is answering.';
+  if (state.streaming) return t('assistant.announce.answering');
 
-  if (turn.outcome === 'failed') return 'The assistant could not answer.';
+  if (turn.outcome === 'failed') return t('assistant.announce.failed');
   if (turn.withheld !== 'none') {
     return turn.outcome === 'stopped'
-      ? 'Stopped. No answer is shown.'
-      : 'No answer is shown, because it arrived without its sources.';
+      ? t('assistant.announce.stoppedNoAnswer')
+      : t('assistant.announce.unsourced');
   }
 
-  const sources = `drawn from ${turn.sources.length} record${turn.sources.length === 1 ? '' : 's'}`;
-  return turn.outcome === 'stopped'
-    ? `Stopped. Partial answer, ${sources}.`
-    : `Answer ready, ${sources}.`;
+  const count = turn.sources.length;
+  if (turn.outcome === 'stopped') {
+    return count === 1
+      ? t('assistant.announce.stoppedPartialOne')
+      : t('assistant.announce.stoppedPartial', { count });
+  }
+  return count === 1 ? t('assistant.announce.readyOne') : t('assistant.announce.ready', { count });
 }

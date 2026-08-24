@@ -6,6 +6,7 @@ import type { ReactElement } from 'react';
 
 import { slaState } from '@/lib/api';
 import type { SlaState } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { slaLabel } from './sla';
 
@@ -37,10 +38,11 @@ export interface SlaBadgeProps {
 }
 
 export function SlaBadge({ dueAt, now }: Readonly<SlaBadgeProps>): ReactElement {
+  const t = useTranslator();
   const state = slaState(dueAt, now);
   return (
     <Badge tone={TONE[state]} icon={ICON[state]}>
-      {slaLabel(dueAt, now)}
+      {slaLabel(t, dueAt, now)}
     </Badge>
   );
 }

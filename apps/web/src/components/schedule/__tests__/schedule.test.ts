@@ -1,3 +1,4 @@
+import { en as EN_MESSAGES } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -55,8 +56,11 @@ function appointment(id: string, at: string, minutes: number, providerId = 'p'):
 
 describe('presentStatus', () => {
   it('gives every status a word, never colour alone', () => {
+    // The word arrives as a catalogue key, so what is asserted here is that
+    // there is one. That it resolves to a real sentence rather than rendering
+    // as the key itself is the catalogue drift test's job.
     for (const status of ['BOOKED', 'ROOMED', 'FULFILLED', 'NOSHOW', 'CANCELLED'] as const) {
-      expect(presentStatus(status).label.length).toBeGreaterThan(0);
+      expect(EN_MESSAGES[presentStatus(status).labelKey]).toBeTruthy();
     }
   });
 

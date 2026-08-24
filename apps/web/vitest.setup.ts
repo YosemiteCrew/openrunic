@@ -20,10 +20,27 @@ if (!Element.prototype.scrollIntoView) {
  * The source locale, so assertions read in the language the tests are written
  * in. A test that cares about translation asks for a locale explicitly by
  * rendering its own provider, which nests and wins.
+ *
+ * ## One translator, not one per call
+ *
+ * `MessagesProvider` memoises its translator on the locale, so in the running
+ * application `useTranslator` returns the same function for as long as the
+ * language does not change. Components rely on that: a screen memoises its
+ * palette entries on the translator, and `useRegisterCommands` re-registers
+ * whenever that array changes.
+ *
+ * A stub that built a fresh translator per call broke the invariant rather than
+ * the assertion, so nothing failed - a component that re-registers on a context
+ * change would translate again, get a new array, register again, and go round
+ * until the worker ran out of memory. Built once here, the double behaves the
+ * way the thing it stands in for does.
  */
 vi.mock('@/lib/i18n/messages', async () => {
   const actual =
     await vi.importActual<typeof import('./src/lib/i18n/messages')>('@/lib/i18n/messages');
   const { appCatalogue, createTranslator } = await import('@openrunic/i18n');
-  return { ...actual, useTranslator: () => createTranslator(appCatalogue, 'en') };
+  // Built here rather than inside the hook: the factory runs once per test
+  // file's module registry, so every component in one test sees one translator.
+  const translator = createTranslator(appCatalogue, 'en');
+  return { ...actual, useTranslator: () => translator };
 });

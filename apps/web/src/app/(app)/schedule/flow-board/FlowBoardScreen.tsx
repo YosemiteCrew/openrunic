@@ -16,6 +16,8 @@ import {
   givenName,
   minutesBetween,
   nextStatus,
+  STATUS_INLINE_KEY,
+  STATUS_LABEL_KEY,
   useClinicDay,
 } from '@/components/schedule';
 import type { ScheduleProvider } from '@/components/schedule';
@@ -23,7 +25,10 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { api, MOCK_ROOMS, mockStatusSince, useMutation } from '@/lib/api';
 import type { ApiClient, ApiError, Appointment, AppointmentStatus, Patient } from '@/lib/api';
-import { formatEnumLabel, formatName, formatTime } from '@/lib/format';
+import { formatName, formatTime } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * FD-03 Patient Flow Board: where every patient physically is.
@@ -71,7 +76,32 @@ const ON_BOARD: ReadonlySet<AppointmentStatus> = new Set(
   FLOW_COLUMNS.flatMap((column) => [...column.statuses])
 );
 
+/**
+ * Palette synonyms from one comma-separated message.
+ *
+ * Per-language rather than transliterated: somebody searching in Spanish does
+ * not type "delay", so the Spanish catalogue carries the words they do type.
+ */
+function synonyms(list: string): string[] {
+  return list
+    .split(',')
+    .map((word) => word.trim())
+    .filter((word) => word !== '');
+}
+
+/**
+ * A column's label for a screen reader, which names the count aloud.
+ *
+ * A pair rather than one message: "Waiting, 1 patients" is the shape a
+ * catalogue is meant to remove.
+ */
+const COLUMN_LABEL: CountedMessage = {
+  oneKey: 'schedule.flowBoard.columnLabelOne',
+  otherKey: 'schedule.flowBoard.columnLabelOther',
+};
+
 export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): ReactElement {
+  const t = useTranslator();
   const [providerId, setProviderId] = useState('');
   const [room, setRoom] = useState('');
   const [delayedOnly, setDelayedOnly] = useState(false);
@@ -123,12 +153,12 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
       // comes back with the outcome rather than being read off the hook, which
       // at this point still holds the previous render's error.
       setToast({
-        title: 'That move was refused',
+        title: t('schedule.flowBoard.refused'),
         message: refusalOf(outcome.error),
         tone: 'danger',
       });
     },
-    [move, refetch]
+    [move, refetch, t]
   );
 
   const advance = (appointment: Appointment) => {
@@ -136,22 +166,26 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
     const to = nextStatus(from);
     if (!to) return;
     const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
+    /* The two states are interpolated in their mid-sentence form rather than
+       lower-cased here: casing is a per-language rule, and the catalogue
+       carries both forms so no call site has to guess at one. */
+    const moved = { from: t(STATUS_INLINE_KEY[from]), to: t(STATUS_INLINE_KEY[to]) };
 
     void apply(
       appointment.id,
       { status: to },
       {
-        title: formatEnumLabel(to),
-        message: `${patient ? formatName(patient.name) : 'This visit'} moved from ${formatEnumLabel(
-          from
-        ).toLowerCase()} to ${formatEnumLabel(to).toLowerCase()}.`,
+        title: t(STATUS_LABEL_KEY[to]),
+        message: patient
+          ? t('schedule.flowBoard.moved', { ...moved, name: formatName(patient.name) })
+          : t('schedule.flowBoard.movedUnassigned', moved),
         undo: () => {
           void apply(
             appointment.id,
             { status: from },
             {
-              title: formatEnumLabel(from),
-              message: `Moved back to ${formatEnumLabel(from).toLowerCase()}.`,
+              title: t(STATUS_LABEL_KEY[from]),
+              message: t('schedule.flowBoard.movedBack', { status: moved.from }),
             }
           );
         },
@@ -163,26 +197,43 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
     const previousRoom = appointment.room;
     const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
 
-    // Named once: the toast says the same "who" whichever branch it takes.
-    const who = patient ? givenName(patient.name) : 'This visit';
     // The API's patch schema takes a room of at least one character, so
     // clearing one is not a write it accepts. Until it does, the board offers
     // moving a patient between rooms and not emptying one.
     if (!next) return;
 
+    /* Two messages per sentence rather than one with a "who" the code
+       substitutes: "This visit" is a noun phrase that agrees differently from a
+       name in most languages, and a slot that takes either cannot be written
+       correctly in any of them. */
+    const title = t('schedule.flowBoard.roomAssigned');
+    const message = patient
+      ? t('schedule.flowBoard.roomMessage', { name: givenName(patient.name), room: next })
+      : t('schedule.flowBoard.roomMessageUnassigned', { room: next });
+
     void apply(
       appointment.id,
       { room: next },
       {
-        title: 'Room assigned',
-        message: `${who} is in ${next}.`,
+        title,
+        message,
         ...(previousRoom
           ? {
               undo: () => {
                 void apply(
                   appointment.id,
                   { room: previousRoom },
-                  { title: 'Room assigned', message: `${who} is back in ${previousRoom}.` }
+                  {
+                    title,
+                    message: patient
+                      ? t('schedule.flowBoard.roomUndoMessage', {
+                          name: givenName(patient.name),
+                          room: previousRoom,
+                        })
+                      : t('schedule.flowBoard.roomUndoMessageUnassigned', {
+                          room: previousRoom,
+                        }),
+                  }
                 );
               },
             }
@@ -196,16 +247,18 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
       {
         id: 'flow-board.delayed-only',
         group: 'actions',
-        label: delayedOnly ? 'Show every patient on the board' : 'Show delayed patients only',
-        keywords: ['delay', 'waiting', 'late', 'filter'],
+        label: delayedOnly
+          ? t('schedule.flowBoard.command.showAll')
+          : t('schedule.flowBoard.command.showDelayed'),
+        keywords: synonyms(t('schedule.flowBoard.command.delayed.keywords')),
         icon: 'timer',
         perform: () => setDelayedOnly((value) => !value),
       },
       {
         id: 'flow-board.clear-filters',
         group: 'actions',
-        label: 'Clear board filters',
-        keywords: ['reset', 'all providers', 'all rooms'],
+        label: t('schedule.flowBoard.command.clearFilters'),
+        keywords: synonyms(t('schedule.flowBoard.command.clearFilters.keywords')),
         icon: 'filter-x',
         perform: () => {
           setProviderId('');
@@ -216,40 +269,47 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
       {
         id: 'flow-board.refresh',
         group: 'actions',
-        label: 'Read the board again',
-        keywords: ['refresh', 'sync', 'reload'],
+        label: t('schedule.flowBoard.command.refresh'),
+        keywords: synonyms(t('schedule.flowBoard.command.refresh.keywords')),
         icon: 'rotate-ccw',
         perform: state.refetch,
       },
     ],
-    [delayedOnly, state.refetch]
+    [delayedOnly, state.refetch, t]
   );
 
   return (
     <AppShell
-      title="Flow Board"
-      description="Where every patient is right now, and how long they have been there."
+      title={t('schedule.flowBoard.title')}
+      description={t('schedule.flowBoard.description')}
       topBarActions={
+        /* The label and the clock are separate nodes because the instant is
+           rendered in the monospace face every time this application prints
+           one, which folding it into the message would take away. */
         <p className="or-small or-flow-sync">
-          Last read at <span className="or-mono">{formatTime(now.toISOString())}</span>
+          {t('schedule.flowBoard.lastRead')}{' '}
+          <span className="or-mono">{formatTime(now.toISOString())}</span>
         </p>
       }
       actions={
         <Button variant="secondary" iconLeft="calendar-days" href="/schedule">
-          Back to the schedule
+          {t('schedule.flowBoard.backToSchedule')}
         </Button>
       }
     >
       <ScreenCommands commands={commands} />
 
-      <Card overline="Filters" title="Narrow the board">
+      <Card
+        overline={t('schedule.flowBoard.filtersOverline')}
+        title={t('schedule.flowBoard.filtersTitle')}
+      >
         <div className="or-flow-filters">
           <Select
-            label="Provider"
+            label={t('schedule.filter.provider')}
             value={providerId}
             onChange={(event) => setProviderId(event.target.value)}
             options={[
-              { value: '', label: 'All providers' },
+              { value: '', label: t('schedule.filter.allProviders') },
               ...providers.map((provider) => ({
                 value: provider.id,
                 label: provider.name,
@@ -257,17 +317,17 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
             ]}
           />
           <Select
-            label="Room"
+            label={t('schedule.filter.room')}
             value={room}
             onChange={(event) => setRoom(event.target.value)}
             options={[
-              { value: '', label: 'All rooms' },
+              { value: '', label: t('schedule.filter.allRooms') },
               ...MOCK_ROOMS.map((option) => ({ value: option, label: option })),
             ]}
           />
           <Switch
-            label="Delayed patients only"
-            hint="Waiting 15 minutes or more in a pre-visit status."
+            label={t('schedule.flowBoard.delayedOnly')}
+            hint={t('schedule.flowBoard.delayedOnlyHint')}
             checked={delayedOnly}
             onChange={() => setDelayedOnly((value) => !value)}
           />
@@ -276,18 +336,17 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
 
       <AsyncBoundary
         state={state}
-        subject="the flow board"
+        subject={t('schedule.flowBoard.subject')}
         loadingVariant="cards"
         loadingRows={5}
         isEmpty={() => onBoard.length === 0}
         empty={{
-          title: 'No patients on the board yet',
-          message:
-            'Patients appear here the moment they are checked in. Check the first arrival in from the schedule.',
+          title: t('schedule.flowBoard.empty.title'),
+          message: t('schedule.flowBoard.empty.message'),
           icon: 'users',
           action: (
             <Button iconLeft="calendar-days" href="/schedule">
-              Go to the schedule
+              {t('schedule.flowBoard.goToSchedule')}
             </Button>
           ),
         }}
@@ -298,20 +357,23 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
               const cards = onBoard.filter((appointment) =>
                 column.statuses.includes(appointment.status)
               );
+              const heading = t(column.labelKey);
               return (
                 <section
                   key={column.id}
                   className="or-flow-column"
                   data-done={column.done || undefined}
-                  aria-label={`${column.label}, ${cards.length} patients`}
+                  aria-label={counted(t, COLUMN_LABEL, cards.length, { column: heading })}
                 >
                   <header className="or-flow-column__head">
-                    <h3 className="or-flow-column__title">{column.label}</h3>
+                    <h3 className="or-flow-column__title">{heading}</h3>
                     <span className="or-mono or-flow-column__count">{cards.length}</span>
                   </header>
 
                   {cards.length === 0 ? (
-                    <p className="or-caption or-flow-column__empty">Nobody here right now.</p>
+                    <p className="or-caption or-flow-column__empty">
+                      {t('schedule.flowBoard.columnEmpty')}
+                    </p>
                   ) : (
                     <ul className="or-flow-column__list">
                       {cards.map((appointment) => (
@@ -356,7 +418,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
                     setToast(null);
                   }}
                 >
-                  Undo
+                  {t('schedule.flowBoard.undo')}
                 </Button>
               ) : null
             }

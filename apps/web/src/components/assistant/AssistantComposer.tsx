@@ -9,6 +9,8 @@ import type {
   RefObject,
 } from 'react';
 
+import { useTranslator } from '@/lib/i18n/messages';
+
 /**
  * Where the question is typed, and the control that stops an answer.
  *
@@ -43,6 +45,7 @@ export function AssistantComposer({
   onStop,
   fieldRef,
 }: Readonly<AssistantComposerProps>): ReactElement {
+  const t = useTranslator();
   const [question, setQuestion] = useState('');
   const fallbackRef = useRef<HTMLDivElement>(null);
 
@@ -67,9 +70,9 @@ export function AssistantComposer({
     <form className="or-assistant__composer" onSubmit={onSubmit}>
       <div ref={fieldRef ?? fallbackRef} className="or-assistant__field">
         <Textarea
-          label="Ask about this record"
-          placeholder="What did the last visit record about the knee?"
-          hint="Enter sends, Shift and Enter start a new line."
+          label={t('assistant.composer.label')}
+          placeholder={t('assistant.composer.placeholder')}
+          hint={t('assistant.composer.hint')}
           rows={2}
           autoGrow
           maxLength={MAX_QUESTION}
@@ -82,11 +85,11 @@ export function AssistantComposer({
       <div className="or-assistant__controls">
         {streaming ? (
           <Button type="button" variant="secondary" iconLeft="square" onClick={onStop}>
-            Stop
+            {t('assistant.composer.stop')}
           </Button>
         ) : null}
         <Button type="submit" iconLeft="corner-down-left" disabled={question.trim() === ''}>
-          Ask
+          {t('assistant.composer.ask')}
         </Button>
       </div>
     </form>

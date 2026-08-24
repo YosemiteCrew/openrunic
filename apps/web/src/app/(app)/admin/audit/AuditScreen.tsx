@@ -1,11 +1,19 @@
 'use client';
 
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-import { adminBreadcrumb, DetailList, Drawer, FilterBar } from '@/components/admin';
+import {
+  adminArea,
+  adminBreadcrumb,
+  DetailList,
+  Drawer,
+  FilterBar,
+  pluralKey,
+  translateColumns,
+} from '@/components/admin';
+import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -21,6 +29,8 @@ import type { AdminClient, AuditAction, AuditEvent, PurposeOfUse } from '@/lib/a
 import { downloadCsv, toCsv } from '@/lib/csv';
 import type { CsvColumn } from '@/lib/csv';
 import { formatDateTime, formatEnumLabel } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * AD-06 Audit viewer.
@@ -40,64 +50,91 @@ export interface AuditScreenProps {
   client?: AdminClient;
 }
 
-const COLUMNS: TableColumn[] = [
-  { key: 'when', header: 'When' },
-  { key: 'actor', header: 'Actor' },
-  { key: 'action', header: 'Action' },
-  { key: 'target', header: 'Target' },
-  { key: 'patient', header: 'Patient' },
-  { key: 'purpose', header: 'Purpose of use' },
-  { key: 'open', header: 'Detail', align: 'right' },
+/** What a translator does, for the helpers below that are not components. */
+type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
+
+const COLUMNS: readonly AdminColumn[] = [
+  { key: 'when', headerKey: 'admin.audit.column.when' },
+  { key: 'actor', headerKey: 'admin.audit.column.actor' },
+  { key: 'action', headerKey: 'admin.audit.column.action' },
+  { key: 'target', headerKey: 'admin.audit.column.target' },
+  { key: 'patient', headerKey: 'admin.audit.column.patient' },
+  { key: 'purpose', headerKey: 'admin.audit.column.purpose' },
+  { key: 'open', headerKey: 'admin.audit.column.detail', align: 'right' },
 ];
 
-const CSV_COLUMNS: Array<CsvColumn<AuditEvent>> = [
-  { header: 'Sequence', value: (event) => event.sequence },
-  { header: 'When', value: (event) => formatDateTime(event.occurredAt, 'iso') },
-  { header: 'Actor', value: (event) => event.actorName },
-  { header: 'Role', value: (event) => formatEnumLabel(event.actorRole) },
-  { header: 'Action', value: (event) => formatEnumLabel(event.action) },
-  { header: 'Target', value: (event) => `${event.targetType}: ${event.targetLabel}` },
-  { header: 'Patient MRN', value: (event) => event.patientMrn ?? '' },
-  { header: 'Purpose of use', value: (event) => formatEnumLabel(event.purposeOfUse) },
-  { header: 'Breakglass', value: (event) => (event.breakglass ? 'Yes' : 'No') },
-  { header: 'Breakglass reason', value: (event) => event.breakglassReason ?? '' },
-  { header: 'Source address', value: (event) => event.sourceIp },
-  { header: 'Hash', value: (event) => event.hash },
-];
+/**
+ * The export's header row, in the reader's language.
+ *
+ * A function rather than a constant because the words depend on who is reading,
+ * and because `lib/csv` asks for the same wording as the on-screen column: a
+ * row that reads one way on screen has to read the same way in a spreadsheet,
+ * including when the screen is not in English.
+ */
+function csvColumns(t: Translate): Array<CsvColumn<AuditEvent>> {
+  return [
+    { header: t('admin.audit.csv.sequence'), value: (event) => event.sequence },
+    {
+      header: t('admin.audit.csv.when'),
+      value: (event) => formatDateTime(event.occurredAt, 'iso'),
+    },
+    { header: t('admin.audit.csv.actor'), value: (event) => event.actorName },
+    { header: t('admin.audit.csv.role'), value: (event) => formatEnumLabel(event.actorRole) },
+    { header: t('admin.audit.csv.action'), value: (event) => formatEnumLabel(event.action) },
+    {
+      header: t('admin.audit.csv.target'),
+      value: (event) => `${event.targetType}: ${event.targetLabel}`,
+    },
+    { header: t('admin.audit.csv.patientMrn'), value: (event) => event.patientMrn ?? '' },
+    {
+      header: t('admin.audit.csv.purpose'),
+      value: (event) => formatEnumLabel(event.purposeOfUse),
+    },
+    {
+      header: t('admin.audit.csv.breakglass'),
+      value: (event) => (event.breakglass ? t('admin.audit.csv.yes') : t('admin.audit.csv.no')),
+    },
+    {
+      header: t('admin.audit.csv.breakglassReason'),
+      value: (event) => event.breakglassReason ?? '',
+    },
+    { header: t('admin.audit.csv.sourceAddress'), value: (event) => event.sourceIp },
+    { header: t('admin.audit.csv.hash'), value: (event) => event.hash },
+  ];
+}
 
-const ACTOR_OPTIONS = [
-  { value: '', label: 'Anyone' },
-  ...MOCK_STAFF_USERS.map((user) => ({ value: user.id, label: user.name })),
-];
+const EVENT_COUNT = {
+  oneKey: 'admin.audit.summary.one',
+  otherKey: 'admin.audit.summary.other',
+};
 
-const ACTION_OPTIONS = [
-  { value: '', label: 'Any action' },
-  ...AUDIT_ACTIONS.map((action) => ({ value: action, label: formatEnumLabel(action) })),
-];
-
-const PURPOSE_OPTIONS = [
-  { value: '', label: 'Any purpose' },
-  ...PURPOSES_OF_USE.map((purpose) => ({ value: purpose, label: formatEnumLabel(purpose) })),
-];
+const EVENT_COUNT_BREAKGLASS = {
+  oneKey: 'admin.audit.summaryBreakglass.one',
+  otherKey: 'admin.audit.summaryBreakglass.other',
+};
 
 /**
  * The line under the filter bar: "42 events, 3 breakglass".
  *
  * Breakglass is only named when there is some, so the ordinary case reads as
- * one plain count rather than a count plus a reassuring zero.
+ * one plain count rather than a count plus a reassuring zero. Two whole
+ * messages rather than one with a clause appended, because the clause is not
+ * appendable in every language.
  */
-function filterSummary(total: number, breakglassCount: number): string {
-  const noun = total === 1 ? 'event' : 'events';
+function filterSummary(t: Translate, locale: string, total: number, breakglassCount: number) {
   if (breakglassCount === 0) {
-    return `${total} ${noun}`;
+    return t(pluralKey(EVENT_COUNT, total, locale), { count: total });
   }
-  return `${total} ${noun}, ${breakglassCount} breakglass`;
+  return t(pluralKey(EVENT_COUNT_BREAKGLASS, total, locale), {
+    count: total,
+    breakglass: breakglassCount,
+  });
 }
 
 /** The patient cell: an audit event does not always have a chart context. */
-function patientCell(event: AuditEvent): ReactElement {
+function patientCell(t: Translate, event: AuditEvent): ReactElement {
   if (!event.patientMrn) {
-    return <span className="or-caption">No chart context</span>;
+    return <span className="or-caption">{t('admin.audit.noChartContext')}</span>;
   }
   return (
     <span className="or-cell-stack">
@@ -108,14 +145,18 @@ function patientCell(event: AuditEvent): ReactElement {
 }
 
 /** Breakglass outranks the purpose of use: it is the thing an auditor scans for. */
-function purposeCell(event: AuditEvent): ReactElement {
+function purposeCell(t: Translate, event: AuditEvent): ReactElement {
   if (event.breakglass) {
-    return <Badge tone="danger">Breakglass</Badge>;
+    return <Badge tone="danger">{t('admin.audit.breakglass')}</Badge>;
   }
   return <Tag>{formatEnumLabel(event.purposeOfUse)}</Tag>;
 }
 
-function auditRow(event: AuditEvent, onOpen: (id: string) => void): Record<string, ReactNode> {
+function auditRow(
+  t: Translate,
+  event: AuditEvent,
+  onOpen: (id: string) => void
+): Record<string, ReactNode> {
   return {
     id: event.id,
     when: (
@@ -137,11 +178,11 @@ function auditRow(event: AuditEvent, onOpen: (id: string) => void): Record<strin
         <span className="or-caption">{event.targetType}</span>
       </span>
     ),
-    patient: patientCell(event),
-    purpose: purposeCell(event),
+    patient: patientCell(t, event),
+    purpose: purposeCell(t, event),
     open: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(event.id)}>
-        Open event {event.sequence}
+        {t('admin.audit.openEvent', { sequence: event.sequence })}
       </Button>
     ),
   };
@@ -155,13 +196,15 @@ function auditRow(event: AuditEvent, onOpen: (id: string) => void): Record<strin
  * inside an h2 and flatten the outline a screen reader moves through.
  */
 function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-stack">
       {event.breakglass ? (
         <Card className="or-notice" data-tone="critical">
           <p className="or-body">
-            <strong>Emergency access outside the care team.</strong> The reason given was:
-            {` "${event.breakglassReason ?? ''}"`}
+            <strong>{t('admin.audit.detail.breakglassTitle')}</strong>{' '}
+            {t('admin.audit.detail.breakglassReason', { reason: event.breakglassReason ?? '' })}
           </p>
         </Card>
       ) : null}
@@ -169,34 +212,43 @@ function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElem
       <DetailList
         columns={2}
         items={[
-          { label: 'Actor', value: event.actorName },
-          { label: 'Role', value: formatEnumLabel(event.actorRole) },
-          { label: 'Target', value: `${event.targetType}: ${event.targetLabel}` },
-          { label: 'Purpose of use', value: formatEnumLabel(event.purposeOfUse) },
-          { label: 'Patient', value: event.patientName ?? 'No chart context' },
-          { label: 'MRN', value: event.patientMrn ?? 'No chart context', mono: true },
-          { label: 'Source address', value: event.sourceIp, mono: true },
-          { label: 'Request id', value: event.requestId, mono: true },
+          { label: t('admin.audit.detail.actor'), value: event.actorName },
+          { label: t('admin.audit.detail.role'), value: formatEnumLabel(event.actorRole) },
+          {
+            label: t('admin.audit.detail.target'),
+            value: `${event.targetType}: ${event.targetLabel}`,
+          },
+          {
+            label: t('admin.audit.detail.purpose'),
+            value: formatEnumLabel(event.purposeOfUse),
+          },
+          {
+            label: t('admin.audit.detail.patient'),
+            value: event.patientName ?? t('admin.audit.noChartContext'),
+          },
+          {
+            label: t('admin.audit.detail.mrn'),
+            value: event.patientMrn ?? t('admin.audit.noChartContext'),
+            mono: true,
+          },
+          { label: t('admin.audit.detail.sourceAddress'), value: event.sourceIp, mono: true },
+          { label: t('admin.audit.detail.requestId'), value: event.requestId, mono: true },
           ...event.detail.map((entry) => ({ label: entry.label, value: entry.value })),
         ]}
       />
 
-      <Card tone="bone" headingLevel={3} title="Hash chain">
-        <p className="or-small">
-          Each event is hashed together with the hash of the event before it. Changing or removing
-          any event breaks every hash after it, which is what makes this trail tamper-evident rather
-          than merely locked.
-        </p>
+      <Card tone="bone" headingLevel={3} title={t('admin.audit.hash.title')}>
+        <p className="or-small">{t('admin.audit.hash.explanation')}</p>
         <DetailList
           items={[
-            { label: 'Position', value: `#${event.sequence}`, mono: true },
-            { label: 'Previous hash', value: event.previousHash, mono: true },
-            { label: 'This hash', value: event.hash, mono: true },
+            { label: t('admin.audit.hash.position'), value: `#${event.sequence}`, mono: true },
+            { label: t('admin.audit.hash.previous'), value: event.previousHash, mono: true },
+            { label: t('admin.audit.hash.current'), value: event.hash, mono: true },
             {
-              label: 'Integrity',
+              label: t('admin.audit.hash.integrity'),
               value: event.chainVerified
-                ? 'Verified against the chain'
-                : 'Not verified. Report this immediately.',
+                ? t('admin.audit.hash.verified')
+                : t('admin.audit.hash.unverified'),
             },
           ]}
         />
@@ -206,6 +258,7 @@ function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElem
 }
 
 export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElement {
+  const t = useTranslator();
   const options = useAdminClientOption(client);
 
   const [actorId, setActorId] = useState('');
@@ -237,14 +290,14 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
   const rows = useMemo(() => events.data?.data ?? [], [events.data]);
 
   const exportRows = useCallback(() => {
-    const csv = toCsv(CSV_COLUMNS, rows);
+    const csv = toCsv(csvColumns(t), rows);
     const wrote = downloadCsv(`audit-${from}-to-${to}.csv`, csv);
     setToast(
       wrote
-        ? `Exported ${rows.length} events. The export itself is recorded in this trail.`
-        : 'This browser cannot download files. Copy the filtered table instead.'
+        ? t('admin.audit.exportedToast', { count: rows.length })
+        : t('admin.audit.exportUnavailableToast')
     );
-  }, [rows, from, to]);
+  }, [rows, from, to, t]);
 
   const showBreakglass = useCallback(() => {
     setBreakglassOnly(true);
@@ -258,34 +311,47 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
       {
         id: 'admin.audit.export',
         group: 'actions',
-        label: 'Export the filtered audit trail',
-        keywords: ['csv', 'download', 'compliance'],
+        label: t('admin.audit.command.export'),
+        keywords: searchWords(t('admin.audit.command.export.keywords')),
         icon: 'download',
         perform: exportRows,
       },
       {
         id: 'admin.audit.breakglass',
         group: 'actions',
-        label: 'Show breakglass access only',
-        keywords: ['emergency access', 'override', 'incident'],
+        label: t('admin.audit.command.breakglass'),
+        keywords: searchWords(t('admin.audit.command.breakglass.keywords')),
         icon: 'shield-alert',
         perform: showBreakglass,
       },
     ],
-    [exportRows, showBreakglass]
+    [exportRows, showBreakglass, t]
   );
+
+  const actorOptions = [
+    { value: '', label: t('admin.audit.filter.anyone') },
+    ...MOCK_STAFF_USERS.map((user) => ({ value: user.id, label: user.name })),
+  ];
+  const actionOptions = [
+    { value: '', label: t('admin.audit.filter.anyAction') },
+    ...AUDIT_ACTIONS.map((entry) => ({ value: entry, label: formatEnumLabel(entry) })),
+  ];
+  const purposeOptions = [
+    { value: '', label: t('admin.audit.filter.anyPurpose') },
+    ...PURPOSES_OF_USE.map((purpose) => ({ value: purpose, label: formatEnumLabel(purpose) })),
+  ];
 
   const selected = rows.find((event) => event.id === openId) ?? null;
   const breakglassCount = rows.filter((event) => event.breakglass).length;
 
   return (
     <AppShell
-      title="Audit trail"
-      description="Every access to patient data, in the order it happened."
-      breadcrumb={adminBreadcrumb('Audit trail')}
+      title={t(adminArea('audit').labelKey)}
+      description={t('admin.audit.description')}
+      breadcrumb={adminBreadcrumb(t, 'audit')}
       actions={
         <Button variant="secondary" iconLeft="download" onClick={exportRows}>
-          Export these events
+          {t('admin.audit.export')}
         </Button>
       }
     >
@@ -293,60 +359,65 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
 
       <Card className="or-notice" data-tone="read-only">
         <p className="or-body">
-          <strong>This record is append-only.</strong> Nothing on this screen can be edited or
-          deleted, by anyone, including a practice admin. Each event is hashed together with the one
-          before it, so a missing or altered event is detectable.
+          <strong>{t('admin.audit.readOnly.title')}</strong> {t('admin.audit.readOnly.body')}
         </p>
         <div className="or-cell-chips">
-          <Badge tone="success">Hash chain verified</Badge>
-          <Tag>Read only</Tag>
-          <Tag>Kept for 6 years</Tag>
+          <Badge tone="success">{t('admin.audit.chip.hashVerified')}</Badge>
+          <Tag>{t('admin.audit.chip.readOnly')}</Tag>
+          <Tag>{t('admin.audit.chip.retention')}</Tag>
         </div>
       </Card>
 
       <FilterBar
-        label="Filter the audit trail"
-        summary={events.data ? filterSummary(rows.length, breakglassCount) : null}
+        label={t('admin.audit.filter.label')}
+        summary={events.data ? filterSummary(t, t.locale, rows.length, breakglassCount) : null}
         actions={
           <Button variant="ghost" size="sm" iconLeft="download" onClick={exportRows}>
-            Export CSV
+            {t('admin.audit.exportCsv')}
           </Button>
         }
       >
         <Input
-          label="From"
+          label={t('admin.audit.filter.from')}
           type="date"
           value={from}
           onChange={(event) => setFrom(event.target.value)}
         />
-        <Input label="To" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+        <Input
+          label={t('admin.audit.filter.to')}
+          type="date"
+          value={to}
+          onChange={(event) => setTo(event.target.value)}
+        />
         <Select
-          label="Actor"
-          options={ACTOR_OPTIONS}
+          label={t('admin.audit.filter.actor')}
+          options={actorOptions}
           value={actorId}
           onChange={(event) => setActorId(event.target.value)}
         />
         <Select
-          label="Action"
-          options={ACTION_OPTIONS}
+          label={t('admin.audit.filter.action')}
+          options={actionOptions}
           value={action}
           onChange={(event) => setAction(event.target.value as AuditAction | '')}
         />
         <Select
-          label="Purpose of use"
-          options={PURPOSE_OPTIONS}
+          label={t('admin.audit.filter.purpose')}
+          options={purposeOptions}
           value={purposeOfUse}
           onChange={(event) => setPurposeOfUse(event.target.value as PurposeOfUse | '')}
         />
         <Input
-          label="Patient MRN"
+          label={t('admin.audit.filter.mrn')}
           mono
+          /* An MRN pattern rather than words: it shows the shape of the
+             identifier, and translating it would be translating a format. */
           placeholder="OR-100482"
           value={patientMrn}
           onChange={(event) => setPatientMrn(event.target.value)}
         />
         <Checkbox
-          label="Breakglass only"
+          label={t('admin.audit.filter.breakglassOnly')}
           checked={breakglassOnly}
           onChange={() => setBreakglassOnly((value) => !value)}
         />
@@ -354,13 +425,12 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
 
       <AsyncBoundary
         state={events}
-        subject="audit events"
+        subject={t('admin.audit.subject')}
         isEmpty={isEmptyList}
         loadingRows={10}
         empty={{
-          title: 'No events match this query',
-          message:
-            'Nothing was recorded for these filters. Widen the date range, or clear the actor and action to see everything in the period.',
+          title: t('admin.audit.empty.title'),
+          message: t('admin.audit.empty.message'),
           icon: 'scroll-text',
           action: (
             <Button
@@ -373,16 +443,16 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
                 setBreakglassOnly(false);
               }}
             >
-              Clear the filters
+              {t('admin.audit.empty.action')}
             </Button>
           ),
         }}
       >
         {() => (
           <Table
-            caption="Audit events, newest first"
-            columns={COLUMNS}
-            rows={rows.map((event) => auditRow(event, setOpenId))}
+            caption={t('admin.audit.tableCaption')}
+            columns={translateColumns(t, COLUMNS)}
+            rows={rows.map((event) => auditRow(t, event, setOpenId))}
           />
         )}
       </AsyncBoundary>
@@ -397,14 +467,16 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
           selected ? (
             <span className="or-cell-chips">
               <Tag mono>#{selected.sequence}</Tag>
-              {selected.breakglass ? <Badge tone="danger">Breakglass</Badge> : null}
-              <Badge tone="success">Read only</Badge>
+              {selected.breakglass ? (
+                <Badge tone="danger">{t('admin.audit.breakglass')}</Badge>
+              ) : null}
+              <Badge tone="success">{t('admin.audit.chip.readOnly')}</Badge>
             </span>
           ) : null
         }
         footer={
           <Button variant="ghost" onClick={() => setOpenId(null)}>
-            Close
+            {t('admin.action.close')}
           </Button>
         }
       >

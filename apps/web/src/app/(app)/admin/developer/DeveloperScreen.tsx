@@ -1,18 +1,21 @@
 'use client';
 
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
-import type { BadgeTone, TableColumn } from '@openrunic/ui';
+import type { BadgeTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import {
+  adminArea,
   adminBreadcrumb,
   ConfirmDialog,
   DetailList,
   Drawer,
   TabPanel,
   Tabs,
+  translateColumns,
 } from '@/components/admin';
+import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -27,6 +30,8 @@ import {
 } from '@/lib/api';
 import type { AdminClient, ApiKey, SmartApp, Webhook, WebhookDelivery } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * DV-01 to DV-03, on one screen with three sections.
@@ -45,39 +50,42 @@ export interface DeveloperScreenProps {
 
 type SectionId = 'keys' | 'apps' | 'webhooks';
 
-const KEY_COLUMNS: TableColumn[] = [
-  { key: 'label', header: 'Key' },
-  { key: 'scopes', header: 'Scopes' },
-  { key: 'created', header: 'Created' },
-  { key: 'lastUsed', header: 'Last used' },
-  { key: 'status', header: 'Status' },
-  { key: 'actions', header: 'Actions', align: 'right' },
+/** What a translator does, for the helpers below that are not components. */
+type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
+
+const KEY_COLUMNS: readonly AdminColumn[] = [
+  { key: 'label', headerKey: 'admin.developer.keys.column.key' },
+  { key: 'scopes', headerKey: 'admin.developer.keys.column.scopes' },
+  { key: 'created', headerKey: 'admin.developer.keys.column.created' },
+  { key: 'lastUsed', headerKey: 'admin.developer.keys.column.lastUsed' },
+  { key: 'status', headerKey: 'admin.developer.keys.column.status' },
+  { key: 'actions', headerKey: 'admin.developer.keys.column.actions', align: 'right' },
 ];
 
-const APP_COLUMNS: TableColumn[] = [
-  { key: 'name', header: 'App' },
-  { key: 'launch', header: 'Launch' },
-  { key: 'scopes', header: 'Scopes' },
-  { key: 'lastLaunch', header: 'Last launch' },
-  { key: 'status', header: 'Status' },
-  { key: 'actions', header: 'Actions', align: 'right' },
+const APP_COLUMNS: readonly AdminColumn[] = [
+  { key: 'name', headerKey: 'admin.developer.apps.column.app' },
+  { key: 'launch', headerKey: 'admin.developer.apps.column.launch' },
+  { key: 'scopes', headerKey: 'admin.developer.apps.column.scopes' },
+  { key: 'lastLaunch', headerKey: 'admin.developer.apps.column.lastLaunch' },
+  { key: 'status', headerKey: 'admin.developer.apps.column.status' },
+  { key: 'actions', headerKey: 'admin.developer.apps.column.actions', align: 'right' },
 ];
 
-const HOOK_COLUMNS: TableColumn[] = [
-  { key: 'event', header: 'Event' },
-  { key: 'endpoint', header: 'Endpoint' },
-  { key: 'health', header: 'Health' },
-  { key: 'status', header: 'Status' },
-  { key: 'actions', header: 'Actions', align: 'right' },
+const HOOK_COLUMNS: readonly AdminColumn[] = [
+  { key: 'event', headerKey: 'admin.developer.hooks.column.event' },
+  { key: 'endpoint', headerKey: 'admin.developer.hooks.column.endpoint' },
+  { key: 'health', headerKey: 'admin.developer.hooks.column.health' },
+  { key: 'status', headerKey: 'admin.developer.hooks.column.status' },
+  { key: 'actions', headerKey: 'admin.developer.hooks.column.actions', align: 'right' },
 ];
 
-const DELIVERY_COLUMNS: TableColumn[] = [
-  { key: 'at', header: 'When' },
-  { key: 'event', header: 'Event' },
-  { key: 'code', header: 'Response', numeric: true },
-  { key: 'latency', header: 'Latency', numeric: true },
-  { key: 'attempt', header: 'Attempt', numeric: true },
-  { key: 'outcome', header: 'Outcome' },
+const DELIVERY_COLUMNS: readonly AdminColumn[] = [
+  { key: 'at', headerKey: 'admin.developer.deliveries.column.when' },
+  { key: 'event', headerKey: 'admin.developer.deliveries.column.event' },
+  { key: 'code', headerKey: 'admin.developer.deliveries.column.response', numeric: true },
+  { key: 'latency', headerKey: 'admin.developer.deliveries.column.latency', numeric: true },
+  { key: 'attempt', headerKey: 'admin.developer.deliveries.column.attempt', numeric: true },
+  { key: 'outcome', headerKey: 'admin.developer.deliveries.column.outcome' },
 ];
 
 /**
@@ -85,21 +93,23 @@ const DELIVERY_COLUMNS: TableColumn[] = [
  * place. A lookup keeps the three tables and the two drawers from drifting
  * apart on what "FAILING" is called.
  */
-const HOOK_STATUS: Record<Webhook['status'], { tone: BadgeTone; label: string }> = {
-  ACTIVE: { tone: 'success', label: 'Delivering' },
-  FAILING: { tone: 'danger', label: 'Failing' },
-  PAUSED: { tone: 'neutral', label: 'Paused' },
+const HOOK_STATUS: Record<Webhook['status'], { tone: BadgeTone; labelKey: string }> = {
+  ACTIVE: { tone: 'success', labelKey: 'admin.developer.hookStatus.active' },
+  FAILING: { tone: 'danger', labelKey: 'admin.developer.hookStatus.failing' },
+  PAUSED: { tone: 'neutral', labelKey: 'admin.developer.hookStatus.paused' },
 };
 
-const DELIVERY_OUTCOME: Record<WebhookDelivery['outcome'], { tone: BadgeTone; label: string }> = {
-  DELIVERED: { tone: 'success', label: 'Delivered' },
-  FAILED: { tone: 'danger', label: 'Failed' },
-  RETRYING: { tone: 'neutral', label: 'Retrying' },
-};
+const DELIVERY_OUTCOME: Record<WebhookDelivery['outcome'], { tone: BadgeTone; labelKey: string }> =
+  {
+    DELIVERED: { tone: 'success', labelKey: 'admin.developer.delivery.delivered' },
+    FAILED: { tone: 'danger', labelKey: 'admin.developer.delivery.failed' },
+    RETRYING: { tone: 'neutral', labelKey: 'admin.developer.delivery.retrying' },
+  };
 
 function HookStatusBadge({ status }: Readonly<{ status: Webhook['status'] }>): ReactElement {
-  const { tone, label } = HOOK_STATUS[status];
-  return <Badge tone={tone}>{label}</Badge>;
+  const t = useTranslator();
+  const { tone, labelKey } = HOOK_STATUS[status];
+  return <Badge tone={tone}>{t(labelKey)}</Badge>;
 }
 
 /** Toggle a value in a scope selection without mutating the previous array. */
@@ -110,9 +120,9 @@ function toggleScope(previous: readonly string[], id: string): string[] {
   return [...previous, id];
 }
 
-const LAUNCH_LABEL: Record<SmartApp['launchType'], string> = {
-  EHR: 'From a chart',
-  STANDALONE: 'On its own',
+const LAUNCH_KEY: Record<SmartApp['launchType'], { labelKey: string }> = {
+  EHR: { labelKey: 'admin.developer.launch.ehr' },
+  STANDALONE: { labelKey: 'admin.developer.launch.standalone' },
 };
 
 function chipList(values: readonly string[]): ReactElement {
@@ -127,7 +137,11 @@ function chipList(values: readonly string[]): ReactElement {
   );
 }
 
-function keyRow(key: ApiKey, onRevoke: (key: ApiKey) => void): Record<string, ReactNode> {
+function keyRow(
+  t: Translate,
+  key: ApiKey,
+  onRevoke: (key: ApiKey) => void
+): Record<string, ReactNode> {
   return {
     id: key.id,
     label: (
@@ -140,14 +154,16 @@ function keyRow(key: ApiKey, onRevoke: (key: ApiKey) => void): Record<string, Re
     created: <span className="or-small">{formatDateTime(key.createdAt, 'dense')}</span>,
     lastUsed: (
       <span className="or-small">
-        {key.lastUsedAt ? formatDateTime(key.lastUsedAt, 'dense') : 'Never used'}
+        {key.lastUsedAt
+          ? formatDateTime(key.lastUsedAt, 'dense')
+          : t('admin.developer.keys.neverUsed')}
       </span>
     ),
     status:
       key.status === 'ACTIVE' ? (
-        <Badge tone="success">Active</Badge>
+        <Badge tone="success">{t('admin.developer.keys.active')}</Badge>
       ) : (
-        <Badge tone="neutral">Revoked</Badge>
+        <Badge tone="neutral">{t('admin.developer.keys.revoked')}</Badge>
       ),
     actions: (
       <Button
@@ -156,13 +172,17 @@ function keyRow(key: ApiKey, onRevoke: (key: ApiKey) => void): Record<string, Re
         disabled={key.status === 'REVOKED'}
         onClick={() => onRevoke(key)}
       >
-        Revoke {key.label}
+        {t('admin.developer.keys.revoke', { label: key.label })}
       </Button>
     ),
   };
 }
 
-function appRow(app: SmartApp, onOpen: (id: string) => void): Record<string, ReactNode> {
+function appRow(
+  t: Translate,
+  app: SmartApp,
+  onOpen: (id: string) => void
+): Record<string, ReactNode> {
   return {
     id: app.id,
     name: (
@@ -171,28 +191,34 @@ function appRow(app: SmartApp, onOpen: (id: string) => void): Record<string, Rea
         <span className="or-caption or-mono">{app.clientId}</span>
       </span>
     ),
-    launch: <span className="or-small">{LAUNCH_LABEL[app.launchType]}</span>,
+    launch: <span className="or-small">{t(LAUNCH_KEY[app.launchType].labelKey)}</span>,
     scopes: chipList(app.scopes),
     lastLaunch: (
       <span className="or-small">
-        {app.lastLaunchAt ? formatDateTime(app.lastLaunchAt, 'dense') : 'Never'}
+        {app.lastLaunchAt
+          ? formatDateTime(app.lastLaunchAt, 'dense')
+          : t('admin.developer.apps.neverLaunched')}
       </span>
     ),
     status:
       app.status === 'APPROVED' ? (
-        <Badge tone="success">Approved</Badge>
+        <Badge tone="success">{t('admin.developer.apps.approved')}</Badge>
       ) : (
-        <Badge tone="neutral">Waiting for approval</Badge>
+        <Badge tone="neutral">{t('admin.developer.apps.waiting')}</Badge>
       ),
     actions: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(app.id)}>
-        Open {app.name}
+        {t('admin.developer.apps.open', { name: app.name })}
       </Button>
     ),
   };
 }
 
-function hookRow(hook: Webhook, onOpen: (id: string) => void): Record<string, ReactNode> {
+function hookRow(
+  t: Translate,
+  hook: Webhook,
+  onOpen: (id: string) => void
+): Record<string, ReactNode> {
   return {
     id: hook.id,
     event: (
@@ -203,38 +229,44 @@ function hookRow(hook: Webhook, onOpen: (id: string) => void): Record<string, Re
     ),
     endpoint: <span className="or-small or-mono">{hook.endpoint}</span>,
     health: (
-      <span className="or-small">{Math.round(hook.failureRate * 100)}% failed of the last 100</span>
+      <span className="or-small">
+        {t('admin.developer.hooks.health', { percent: Math.round(hook.failureRate * 100) })}
+      </span>
     ),
     status: <HookStatusBadge status={hook.status} />,
     actions: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(hook.id)}>
-        Open {hook.event} deliveries
+        {t('admin.developer.hooks.open', { event: hook.event })}
       </Button>
     ),
   };
 }
 
-function deliveryRow(delivery: WebhookDelivery): Record<string, ReactNode> {
-  const { tone, label } = DELIVERY_OUTCOME[delivery.outcome];
+function deliveryRow(t: Translate, delivery: WebhookDelivery): Record<string, ReactNode> {
+  const { tone, labelKey } = DELIVERY_OUTCOME[delivery.outcome];
   return {
     id: delivery.id,
     at: formatDateTime(delivery.at, 'dense'),
     event: delivery.event,
-    code: delivery.responseCode === null ? 'No answer' : String(delivery.responseCode),
-    latency: delivery.latencyMs === null ? 'Timed out' : `${delivery.latencyMs} ms`,
+    code:
+      delivery.responseCode === null
+        ? t('admin.developer.deliveries.noAnswer')
+        : String(delivery.responseCode),
+    latency:
+      delivery.latencyMs === null
+        ? t('admin.developer.deliveries.timedOut')
+        : t('admin.developer.deliveries.latencyMs', { ms: delivery.latencyMs }),
     attempt: String(delivery.attempt),
-    outcome: <Badge tone={tone}>{label}</Badge>,
+    outcome: <Badge tone={tone}>{t(labelKey)}</Badge>,
   };
 }
 
 /** The launch log for one SMART app. Empty is a sentence, not a blank card. */
 function LaunchHistory({ app }: Readonly<{ app: SmartApp }>): ReactElement {
+  const t = useTranslator();
+
   if (app.launches.length === 0) {
-    return (
-      <p className="or-body">
-        This app has never launched. Use Test launch to try it against the demo tenant.
-      </p>
-    );
+    return <p className="or-body">{t('admin.developer.launchHistory.empty')}</p>;
   }
   return (
     <ul className="or-log">
@@ -242,11 +274,19 @@ function LaunchHistory({ app }: Readonly<{ app: SmartApp }>): ReactElement {
         <li key={launch.id} className="or-log__row">
           <span className="or-caption or-mono">{formatDateTime(launch.at, 'dense')}</span>
           <span className="or-small">
+            {/* The detail line comes from the launch record; only the sentence
+                naming the patient context is this screen's to write. */}
             {launch.detail}
-            {launch.patientContext ? ` Patient ${launch.patientContext}.` : ''}
+            {launch.patientContext
+              ? ` ${t('admin.developer.launchHistory.patientContext', {
+                  mrn: launch.patientContext,
+                })}`
+              : ''}
           </span>
           <Badge tone={launch.outcome === 'SUCCESS' ? 'success' : 'danger'}>
-            {launch.outcome === 'SUCCESS' ? 'Launched' : 'Refused'}
+            {launch.outcome === 'SUCCESS'
+              ? t('admin.developer.launchHistory.launched')
+              : t('admin.developer.launchHistory.refused')}
           </Badge>
         </li>
       ))}
@@ -261,19 +301,32 @@ function LaunchHistory({ app }: Readonly<{ app: SmartApp }>): ReactElement {
  * and the Card default of 2 would nest an h2 inside an h2.
  */
 function AppDetail({ app }: Readonly<{ app: SmartApp }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-stack">
       <DetailList
         columns={2}
         items={[
-          { label: 'Client id', value: app.clientId, mono: true },
-          { label: 'Launch', value: LAUNCH_LABEL[app.launchType] },
-          { label: 'Redirect URIs', value: app.redirectUris.join(', '), mono: true },
-          { label: 'Scopes', value: app.scopes.join(' '), mono: true },
+          { label: t('admin.developer.apps.detail.clientId'), value: app.clientId, mono: true },
+          {
+            label: t('admin.developer.apps.detail.launch'),
+            value: t(LAUNCH_KEY[app.launchType].labelKey),
+          },
+          {
+            label: t('admin.developer.apps.detail.redirectUris'),
+            value: app.redirectUris.join(', '),
+            mono: true,
+          },
+          {
+            label: t('admin.developer.apps.detail.scopes'),
+            value: app.scopes.join(' '),
+            mono: true,
+          },
         ]}
       />
 
-      <Card tone="bone" headingLevel={3} title="Launch history">
+      <Card tone="bone" headingLevel={3} title={t('admin.developer.launchHistory.title')}>
         <LaunchHistory app={app} />
       </Card>
     </div>
@@ -281,14 +334,15 @@ function AppDetail({ app }: Readonly<{ app: SmartApp }>): ReactElement {
 }
 
 function HookDetail({ hook }: Readonly<{ hook: Webhook }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-stack">
       {hook.status === 'FAILING' ? (
         <Card className="or-notice" data-tone="serious">
           <p className="or-body">
-            <strong>This endpoint is failing.</strong> Deliveries retry with backoff for 24 hours,
-            and the subscription pauses itself after 100 consecutive failures so it stops queueing
-            behind a dead endpoint.
+            <strong>{t('admin.developer.hooks.failingNotice.title')}</strong>{' '}
+            {t('admin.developer.hooks.failingNotice.body')}
           </p>
         </Card>
       ) : null}
@@ -296,20 +350,25 @@ function HookDetail({ hook }: Readonly<{ hook: Webhook }>): ReactElement {
       <DetailList
         columns={2}
         items={[
-          { label: 'Criteria', value: hook.criteria, mono: true },
-          { label: 'Signing secret', value: hook.secretRef, mono: true },
+          { label: t('admin.developer.hooks.detail.criteria'), value: hook.criteria, mono: true },
+          { label: t('admin.developer.hooks.detail.secret'), value: hook.secretRef, mono: true },
           {
-            label: 'Failure rate',
-            value: `${Math.round(hook.failureRate * 100)}% of the last 100`,
+            label: t('admin.developer.hooks.detail.failureRate'),
+            value: t('admin.developer.hooks.detail.failureRateValue', {
+              percent: Math.round(hook.failureRate * 100),
+            }),
           },
-          { label: 'Created', value: formatDateTime(hook.createdAt, 'prose') },
+          {
+            label: t('admin.developer.hooks.detail.created'),
+            value: formatDateTime(hook.createdAt, 'prose'),
+          },
         ]}
       />
 
       <Table
-        caption={`Deliveries for ${hook.event}`}
-        columns={DELIVERY_COLUMNS}
-        rows={hook.deliveries.map(deliveryRow)}
+        caption={t('admin.developer.hooks.deliveriesCaption', { event: hook.event })}
+        columns={translateColumns(t, DELIVERY_COLUMNS)}
+        rows={hook.deliveries.map((delivery) => deliveryRow(t, delivery))}
       />
     </div>
   );
@@ -326,27 +385,29 @@ interface ScopePickerProps {
  * plain callback rather than a closure nested five deep inside the screen.
  */
 function ScopePicker({ scopes, selected, onToggle }: Readonly<ScopePickerProps>): ReactElement {
+  const t = useTranslator();
   /* A set, because the answer is asked once per scope row and `includes` would
      rescan the whole selection each time. */
   const chosen = new Set(selected);
   return (
     <AsyncBoundary
       state={scopes}
-      subject="scopes"
+      subject={t('admin.developer.scopes.subject')}
       isEmpty={(rows) => rows.length === 0}
       loadingVariant="text"
       loadingRows={5}
       empty={{
-        title: 'No scopes available',
-        message:
-          'A key with no scope can read nothing. Reload the screen, and report it if the list stays empty.',
+        title: t('admin.developer.scopes.empty.title'),
+        message: t('admin.developer.scopes.empty.message'),
         icon: 'shield',
       }}
     >
       {(rows) => (
         <fieldset className="or-fieldset">
-          <legend className="or-overline">Scopes</legend>
+          <legend className="or-overline">{t('admin.developer.scopes.legend')}</legend>
           {rows.map((scope) => (
+            /* The scope's id and its description are the API's own vocabulary:
+               a scope means what the server says it means. */
             <Checkbox
               key={scope.id}
               label={scope.id}
@@ -383,16 +444,18 @@ function KeyCreationBody({
   onLabelChange: (value: string) => void;
   onToggleScope: (id: string) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   if (newSecret) {
     return (
       <div className="or-stack">
         <Card className="or-notice" data-tone="serious">
           <p className="or-body">
-            <strong>Copy this secret now.</strong> openrunic stores a hash of it and cannot show it
-            again. If it is lost, create a new key and revoke this one.
+            <strong>{t('admin.developer.newKey.copyTitle')}</strong>{' '}
+            {t('admin.developer.newKey.copyBody')}
           </p>
         </Card>
-        <Input label="Secret" mono readOnly value={newSecret} />
+        <Input label={t('admin.developer.newKey.secret')} mono readOnly value={newSecret} />
       </div>
     );
   }
@@ -400,17 +463,17 @@ function KeyCreationBody({
   return (
     <div className="or-stack">
       <Input
-        label="What is this key for?"
-        hint="A person reading the list in a year should know whether they can revoke it."
+        label={t('admin.developer.newKey.purpose')}
+        hint={t('admin.developer.newKey.purposeHint')}
         value={keyLabel}
         onChange={(event) => onLabelChange(event.target.value)}
         required
       />
       <Select
-        label="Type"
+        label={t('admin.developer.newKey.type')}
         options={[
-          { value: 'backend', label: 'Backend service' },
-          { value: 'portal', label: 'Portal integration' },
+          { value: 'backend', label: t('admin.developer.newKey.typeBackend') },
+          { value: 'portal', label: t('admin.developer.newKey.typePortal') },
         ]}
         defaultValue="backend"
       />
@@ -452,30 +515,31 @@ function DeveloperRegistries({
   onOpenApp: (id: string) => void;
   onOpenHook: (id: string) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <>
       <TabPanel id="keys" active={section === 'keys'}>
         <AsyncBoundary
           state={keys}
-          subject="API keys"
+          subject={t('admin.developer.keys.subject')}
           isEmpty={isEmptyList}
           empty={{
-            title: 'No API keys yet',
-            message:
-              'A key lets a backend service read this practice through the FHIR API. Create one, choose its scopes, and copy the secret once.',
+            title: t('admin.developer.keys.empty.title'),
+            message: t('admin.developer.keys.empty.message'),
             icon: 'key',
             action: (
               <Button variant="primary" onClick={onStartKey}>
-                Create an API key
+                {t('admin.developer.keys.create')}
               </Button>
             ),
           }}
         >
           {() => (
             <Table
-              caption="API keys"
-              columns={KEY_COLUMNS}
-              rows={keyRows.map((key) => keyRow(key, onRevoke))}
+              caption={t('admin.developer.keys.caption')}
+              columns={translateColumns(t, KEY_COLUMNS)}
+              rows={keyRows.map((key) => keyRow(t, key, onRevoke))}
             />
           )}
         </AsyncBoundary>
@@ -485,21 +549,20 @@ function DeveloperRegistries({
       <TabPanel id="apps" active={section === 'apps'}>
         <AsyncBoundary
           state={apps}
-          subject="registered apps"
+          subject={t('admin.developer.apps.subject')}
           isEmpty={isEmptyList}
           empty={{
-            title: 'No apps registered',
-            message:
-              'A SMART on FHIR app launches from a chart or on its own and reads through scopes you grant. Register the first one to test a launch.',
+            title: t('admin.developer.apps.empty.title'),
+            message: t('admin.developer.apps.empty.message'),
             icon: 'app-window',
-            action: <Button variant="primary">Register an app</Button>,
+            action: <Button variant="primary">{t('admin.developer.apps.register')}</Button>,
           }}
         >
           {() => (
             <Table
-              caption="SMART on FHIR apps"
-              columns={APP_COLUMNS}
-              rows={appRows.map((app) => appRow(app, onOpenApp))}
+              caption={t('admin.developer.apps.caption')}
+              columns={translateColumns(t, APP_COLUMNS)}
+              rows={appRows.map((app) => appRow(t, app, onOpenApp))}
             />
           )}
         </AsyncBoundary>
@@ -509,21 +572,20 @@ function DeveloperRegistries({
       <TabPanel id="webhooks" active={section === 'webhooks'}>
         <AsyncBoundary
           state={webhooks}
-          subject="webhook subscriptions"
+          subject={t('admin.developer.hooks.subject')}
           isEmpty={isEmptyList}
           empty={{
-            title: 'No subscriptions yet',
-            message:
-              'A subscription posts an event to your endpoint as it happens, signed with a shared secret. Create one and fire a test delivery.',
+            title: t('admin.developer.hooks.empty.title'),
+            message: t('admin.developer.hooks.empty.message'),
             icon: 'webhook',
-            action: <Button variant="primary">Create a subscription</Button>,
+            action: <Button variant="primary">{t('admin.developer.hooks.create')}</Button>,
           }}
         >
           {() => (
             <Table
-              caption="Webhook subscriptions"
-              columns={HOOK_COLUMNS}
-              rows={hookRows.map((hook) => hookRow(hook, onOpenHook))}
+              caption={t('admin.developer.hooks.caption')}
+              columns={translateColumns(t, HOOK_COLUMNS)}
+              rows={hookRows.map((hook) => hookRow(t, hook, onOpenHook))}
             />
           )}
         </AsyncBoundary>
@@ -533,6 +595,7 @@ function DeveloperRegistries({
 }
 
 export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): ReactElement {
+  const t = useTranslator();
   const options = useAdminClientOption(client);
   const keys = useApiKeys(options);
   const scopes = useApiScopes(options);
@@ -563,29 +626,29 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
       {
         id: 'admin.developer.key',
         group: 'actions',
-        label: 'Create an API key',
-        keywords: ['token', 'backend service', 'credential'],
+        label: t('admin.developer.keys.create'),
+        keywords: searchWords(t('admin.developer.command.key.keywords')),
         icon: 'key',
         perform: startKey,
       },
       {
         id: 'admin.developer.apps',
         group: 'actions',
-        label: 'Show SMART on FHIR apps',
-        keywords: ['smart', 'launch', 'oauth', 'app registration'],
+        label: t('admin.developer.command.apps'),
+        keywords: searchWords(t('admin.developer.command.apps.keywords')),
         icon: 'app-window',
         perform: showApps,
       },
       {
         id: 'admin.developer.webhooks',
         group: 'actions',
-        label: 'Show webhook deliveries',
-        keywords: ['subscriptions', 'events', 'retry', 'delivery log'],
+        label: t('admin.developer.command.webhooks'),
+        keywords: searchWords(t('admin.developer.command.webhooks.keywords')),
         icon: 'webhook',
         perform: showWebhooks,
       },
     ],
-    [startKey, showApps, showWebhooks]
+    [startKey, showApps, showWebhooks, t]
   );
 
   const revokedIds = new Set(revoked);
@@ -605,39 +668,41 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
   const createKey = () => {
     if (!keyLabel.trim()) return;
     setNewSecret(MOCK_NEW_KEY_DISPLAY);
-    setToast(`${keyLabel.trim()} created. Copy the secret now; it is not shown again.`);
+    setToast(t('admin.developer.newKey.createdToast', { label: keyLabel.trim() }));
   };
 
   const confirmRevoke = () => {
     if (!revoking) return;
     setRevoked((previous) => [...previous, revoking.id]);
-    setToast(
-      `${revoking.label} stops working immediately. The record is kept for the audit trail.`
-    );
+    setToast(t('admin.developer.keys.revokedToast', { label: revoking.label }));
     setRevoking(null);
   };
 
   return (
     <AppShell
-      title="Developer platform"
-      description="API keys, SMART on FHIR apps, and webhook subscriptions with every delivery."
-      breadcrumb={adminBreadcrumb('Developer platform')}
+      title={t(adminArea('developer').labelKey)}
+      description={t('admin.developer.description')}
+      breadcrumb={adminBreadcrumb(t, 'developer')}
       actions={
         <Button variant="primary" iconLeft="key" onClick={startKey}>
-          Create an API key
+          {t('admin.developer.keys.create')}
         </Button>
       }
     >
       <ScreenCommands commands={commands} />
 
       <Tabs
-        label="Developer platform sections"
+        label={t('admin.developer.tabs.label')}
         active={section}
         onChange={(id) => setSection(id as SectionId)}
         items={[
-          { id: 'keys', label: 'API keys', hint: `${keyRows.length}` },
-          { id: 'apps', label: 'SMART apps', hint: `${appRows.length}` },
-          { id: 'webhooks', label: 'Webhooks', hint: `${hookRows.length}` },
+          { id: 'keys', label: t('admin.developer.tabs.keys'), hint: `${keyRows.length}` },
+          { id: 'apps', label: t('admin.developer.tabs.apps'), hint: `${appRows.length}` },
+          {
+            id: 'webhooks',
+            label: t('admin.developer.tabs.webhooks'),
+            hint: `${hookRows.length}`,
+          },
         ]}
       />
 
@@ -659,22 +724,22 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
       {/* ---- Create key ------------------------------------------------ */}
       <Drawer
         open={creatingKey}
-        title="Create an API key"
-        description="Backend services authenticate with this key. It is shown once and cannot be recovered."
+        title={t('admin.developer.keys.create')}
+        description={t('admin.developer.newKey.description')}
         width={640}
         onClose={() => setCreatingKey(false)}
         footer={
           newSecret ? (
             <Button variant="primary" onClick={() => setCreatingKey(false)}>
-              I have copied the secret
+              {t('admin.developer.newKey.copied')}
             </Button>
           ) : (
             <>
               <Button variant="ghost" onClick={() => setCreatingKey(false)}>
-                Cancel
+                {t('admin.action.cancel')}
               </Button>
               <Button variant="primary" onClick={createKey}>
-                Create key
+                {t('admin.developer.newKey.create')}
               </Button>
             </>
           )
@@ -694,13 +759,15 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
       <Drawer
         open={selectedApp !== null}
         title={selectedApp?.name ?? ''}
-        description="Launch configuration and every launch this app has attempted."
+        description={t('admin.developer.apps.drawerDescription')}
         width={720}
         onClose={() => setOpenApp(null)}
         meta={
           selectedApp ? (
             <Badge tone={selectedApp.status === 'APPROVED' ? 'success' : 'neutral'}>
-              {selectedApp.status === 'APPROVED' ? 'Approved' : 'Waiting for approval'}
+              {selectedApp.status === 'APPROVED'
+                ? t('admin.developer.apps.approved')
+                : t('admin.developer.apps.waiting')}
             </Badge>
           ) : null
         }
@@ -708,17 +775,15 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
           selectedApp ? (
             <>
               <Button variant="ghost" onClick={() => setOpenApp(null)}>
-                Close
+                {t('admin.action.close')}
               </Button>
               <Button
                 variant="secondary"
                 onClick={() =>
-                  setToast(
-                    `Test launch of ${selectedApp.name} succeeded against the demo tenant with patient OR-100482.`
-                  )
+                  setToast(t('admin.developer.apps.testLaunchToast', { name: selectedApp.name }))
                 }
               >
-                Test launch
+                {t('admin.developer.apps.testLaunch')}
               </Button>
             </>
           ) : null
@@ -730,7 +795,9 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
       {/* ---- Webhook detail -------------------------------------------- */}
       <Drawer
         open={selectedHook !== null}
-        title={selectedHook ? `${selectedHook.event} deliveries` : ''}
+        title={
+          selectedHook ? t('admin.developer.hooks.drawerTitle', { event: selectedHook.event }) : ''
+        }
         description={selectedHook?.endpoint}
         width={720}
         onClose={() => setOpenHook(null)}
@@ -739,17 +806,15 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
           selectedHook ? (
             <>
               <Button variant="ghost" onClick={() => setOpenHook(null)}>
-                Close
+                {t('admin.action.close')}
               </Button>
               <Button
                 variant="secondary"
                 onClick={() =>
-                  setToast(
-                    `Re-sent the last ${selectedHook.event} delivery. Watch the log for the response.`
-                  )
+                  setToast(t('admin.developer.hooks.retryToast', { event: selectedHook.event }))
                 }
               >
-                Retry last delivery
+                {t('admin.developer.hooks.retry')}
               </Button>
             </>
           ) : null
@@ -760,9 +825,9 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
 
       <ConfirmDialog
         open={revoking !== null}
-        title={`Revoke ${revoking?.label ?? ''}`}
-        consequence="Anything using this key stops working immediately. The key is kept, revoked, so the audit trail still resolves it."
-        confirmLabel="Revoke key"
+        title={t('admin.developer.keys.revoke', { label: revoking?.label ?? '' })}
+        consequence={t('admin.developer.keys.revokeConsequence')}
+        confirmLabel={t('admin.developer.keys.revokeConfirm')}
         typedConfirmation={revoking?.label}
         onCancel={() => setRevoking(null)}
         onConfirm={confirmRevoke}

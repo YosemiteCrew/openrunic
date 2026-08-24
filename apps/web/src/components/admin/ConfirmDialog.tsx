@@ -4,6 +4,8 @@ import { Button, Input, Modal } from '@openrunic/ui';
 import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { useTranslator } from '@/lib/i18n/messages';
+
 /**
  * The two grades of confirmation (canon C20), on the library's `Modal`.
  *
@@ -55,6 +57,7 @@ function ConfirmPanel({
   onConfirm,
   onCancel,
 }: Readonly<Omit<ConfirmDialogProps, 'open'>>): ReactElement {
+  const t = useTranslator();
   const [typed, setTyped] = useState('');
   const ready = typedConfirmation === undefined || typed.trim() === typedConfirmation;
 
@@ -69,7 +72,7 @@ function ConfirmPanel({
       footer={
         <>
           <Button variant="ghost" onClick={onCancel}>
-            Cancel
+            {t('admin.action.cancel')}
           </Button>
           <Button variant="danger" disabled={!ready} onClick={onConfirm}>
             {confirmLabel}
@@ -80,10 +83,10 @@ function ConfirmPanel({
       {children}
       {typedConfirmation === undefined ? null : (
         <Input
-          label={`Type ${typedConfirmation} to confirm`}
+          label={t('admin.confirm.typeToConfirm', { phrase: typedConfirmation })}
           value={typed}
           onChange={(event) => setTyped(event.target.value)}
-          hint="This is deliberate friction. Nothing is deleted; the record is kept for the audit trail."
+          hint={t('admin.confirm.frictionHint')}
         />
       )}
     </Modal>

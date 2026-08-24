@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import type { PermissionRow, StaffRole } from '@/lib/api';
 import { STAFF_ROLE_LABELS } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { isAllowed } from './permissions';
 
@@ -36,16 +37,16 @@ export function PermissionMatrix({
   onToggle,
   disabled = false,
 }: Readonly<PermissionMatrixProps>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-matrix">
       <table className="or-matrix__grid">
-        <caption className="or-visually-hidden">
-          Capabilities by role. Each cell is a checkbox naming its capability and role.
-        </caption>
+        <caption className="or-visually-hidden">{t('admin.permissions.caption')}</caption>
         <thead>
           <tr>
             <th scope="col" className="or-matrix__capability">
-              Capability
+              {t('admin.permissions.capabilityColumn')}
             </th>
             {roles.map((role) => (
               <th key={role} scope="col" className="or-matrix__role">
@@ -70,10 +71,15 @@ export function PermissionMatrix({
                       disabled={disabled}
                       onChange={() => onToggle(row.id, role, !allowed)}
                       // The whole sentence, because a row of nine bare
-                      // checkboxes is useless read aloud.
+                      // checkboxes is useless read aloud. The capability and
+                      // the role name are values rather than words this screen
+                      // owns, so they go into the message as placeholders.
                       label={
                         <span className="or-visually-hidden">
-                          {row.capability} for {STAFF_ROLE_LABELS[role]}
+                          {t('admin.permissions.cellLabel', {
+                            capability: row.capability,
+                            role: STAFF_ROLE_LABELS[role],
+                          })}
                         </span>
                       }
                     />

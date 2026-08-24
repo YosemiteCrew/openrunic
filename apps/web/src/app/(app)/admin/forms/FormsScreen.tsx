@@ -15,7 +15,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import { adminBreadcrumb, ConfirmDialog } from '@/components/admin';
+import { adminArea, adminBreadcrumb, ConfirmDialog } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -23,6 +23,10 @@ import { AsyncBoundary } from '@/components/state';
 import { useAdminClientOption, useFormDefinitions, useFormFieldTypes } from '@/lib/api';
 import type { AdminClient, FormDefinition, FormField, FormFieldType, FormSection } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { formatCount } from '@openrunic/i18n';
+
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * AD-03 Form builder.
@@ -43,11 +47,11 @@ export interface FormsScreenProps {
   client?: AdminClient;
 }
 
-const PURPOSE_LABEL: Record<FormDefinition['purpose'], string> = {
-  DEMOGRAPHICS: 'Demographics',
-  ENCOUNTER: 'Encounter',
-  PORTAL_INTAKE: 'Portal intake',
-  REFERRAL: 'Referral',
+const PURPOSE_KEY: Record<FormDefinition['purpose'], { labelKey: string }> = {
+  DEMOGRAPHICS: { labelKey: 'admin.forms.purpose.demographics' },
+  ENCOUNTER: { labelKey: 'admin.forms.purpose.encounter' },
+  PORTAL_INTAKE: { labelKey: 'admin.forms.purpose.portalIntake' },
+  REFERRAL: { labelKey: 'admin.forms.purpose.referral' },
 };
 
 /**
@@ -62,7 +66,15 @@ function nextVersionOf(definition: FormDefinition | null): number {
   return definition.status === 'PUBLISHED' ? definition.version + 1 : definition.version;
 }
 
-/** A field added from the catalogue starts sensible and editable, never blank. */
+/**
+ * A field added from the catalogue starts sensible and editable, never blank.
+ *
+ * The label and the first option are the record's own content rather than this
+ * screen's copy: they are written into the form definition and read back by
+ * every later render, so they are not translated here. The label comes from the
+ * field type the API described; "Option 1" is the placeholder the author is
+ * expected to replace before publishing.
+ */
 function newField(type: FormFieldType, sectionId: string, index: number): FormField {
   return {
     id: `new-${type.id}-${index}`,
@@ -93,55 +105,54 @@ function FieldProperties({
   selectedField: FormField | null;
   onEdit: (patch: Partial<FormField>) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <Card className="or-builder__pane" title="Field properties">
+    <Card className="or-builder__pane" title={t('admin.forms.properties.title')}>
       {selectedField ? (
         <div className="or-stack">
           <Input
-            label="Label"
+            label={t('admin.forms.properties.label')}
             value={selectedField.label}
             onChange={(event) => onEdit({ label: event.target.value })}
           />
           <Input
-            label="Help text"
+            label={t('admin.forms.properties.helpText')}
             value={selectedField.helpText ?? ''}
-            hint="One short sentence, in the patient's register on portal forms."
+            hint={t('admin.forms.properties.helpTextHint')}
             onChange={(event) => onEdit({ helpText: event.target.value })}
           />
           <Checkbox
-            label="Required"
+            label={t('admin.forms.properties.required')}
             checked={selectedField.required}
             onChange={() => onEdit({ required: !selectedField.required })}
           />
           <Checkbox
-            label="Visible in the patient portal"
+            label={t('admin.forms.properties.portalVisible')}
             checked={selectedField.portalVisible}
             onChange={() => onEdit({ portalVisible: !selectedField.portalVisible })}
           />
           <Checkbox
-            label="Graphable"
-            hint="Numeric answers can be plotted on a flowsheet."
+            label={t('admin.forms.properties.graphable')}
+            hint={t('admin.forms.properties.graphableHint')}
             checked={selectedField.graphable}
             onChange={() => onEdit({ graphable: !selectedField.graphable })}
           />
           <Checkbox
-            label="Ask once"
-            hint="Later visits read the stored answer instead of asking again."
+            label={t('admin.forms.properties.askOnce')}
+            hint={t('admin.forms.properties.askOnceHint')}
             checked={selectedField.writeOnce}
             onChange={() => onEdit({ writeOnce: !selectedField.writeOnce })}
           />
           <Input
-            label="Show when"
+            label={t('admin.forms.properties.showWhen')}
             value={selectedField.condition ?? ''}
-            hint="Leave empty to always show. Example: Show when Do you smoke? is Yes"
+            hint={t('admin.forms.properties.showWhenHint')}
             onChange={(event) => onEdit({ condition: event.target.value || null })}
           />
         </div>
       ) : (
-        <p className="or-body">
-          Select a field on the canvas to change its label, whether it is required, and where it
-          appears.
-        </p>
+        <p className="or-body">{t('admin.forms.properties.empty')}</p>
       )}
     </Card>
   );
@@ -165,8 +176,10 @@ function FormCanvas({
   selectedFieldId: string | null;
   onSelectField: (id: string) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <Card className="or-builder__pane or-builder__canvas" title="Canvas">
+    <Card className="or-builder__pane or-builder__canvas" title={t('admin.forms.canvas.title')}>
       {sections.map((section) => (
         <section key={section.id} className="or-canvas__section">
           <h3 className="or-overline">{section.title}</h3>
@@ -181,11 +194,13 @@ function FormCanvas({
                 >
                   <span className="or-body">{field.label}</span>
                   <span className="or-cell-chips">
+                    {/* The field type is the form engine's own vocabulary, read
+                        back from the definition rather than named here. */}
                     <Tag>{field.type.replaceAll('-', ' ')}</Tag>
-                    {field.required ? <Tag>Required</Tag> : null}
-                    {field.portalVisible ? <Tag>Portal</Tag> : null}
-                    {field.graphable ? <Tag>Graphable</Tag> : null}
-                    {field.writeOnce ? <Tag>Asked once</Tag> : null}
+                    {field.required ? <Tag>{t('admin.forms.chip.required')}</Tag> : null}
+                    {field.portalVisible ? <Tag>{t('admin.forms.chip.portal')}</Tag> : null}
+                    {field.graphable ? <Tag>{t('admin.forms.chip.graphable')}</Tag> : null}
+                    {field.writeOnce ? <Tag>{t('admin.forms.chip.askedOnce')}</Tag> : null}
                   </span>
                   {field.condition ? <span className="or-caption">{field.condition}</span> : null}
                 </button>
@@ -199,6 +214,7 @@ function FormCanvas({
 }
 
 export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElement {
+  const t = useTranslator();
   const options = useAdminClientOption(client);
   const forms = useFormDefinitions(options);
   const fieldTypes = useFormFieldTypes(options);
@@ -220,21 +236,21 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
       {
         id: 'admin.forms.preview',
         group: 'actions',
-        label: 'Preview this form',
-        keywords: ['see it', 'portal view', 'staff view'],
+        label: t('admin.forms.command.preview'),
+        keywords: searchWords(t('admin.forms.command.preview.keywords')),
         icon: 'eye',
         perform: startPreview,
       },
       {
         id: 'admin.forms.publish',
         group: 'actions',
-        label: 'Publish a new version',
-        keywords: ['release', 'version', 'go live'],
+        label: t('admin.forms.command.publish'),
+        keywords: searchWords(t('admin.forms.command.publish.keywords')),
         icon: 'upload',
         perform: startPublish,
       },
     ],
-    [startPreview, startPublish]
+    [startPreview, startPublish, t]
   );
 
   const definitions = forms.data?.data ?? [];
@@ -276,21 +292,22 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
 
   return (
     <AppShell
-      title="Form builder"
-      description="Build the forms behind intake, encounters, referrals and the portal. Published versions never change."
+      title={t(adminArea('forms').labelKey)}
+      description={t('admin.forms.description')}
       breadcrumb={adminBreadcrumb(
-        'Form builder',
+        t,
+        'forms',
         definition ? `${definition.name} v${definition.version}` : undefined
       )}
       actions={
         <>
           <Switch
-            label="Preview"
+            label={t('admin.forms.preview')}
             checked={preview}
             onChange={() => setPreview((value) => !value)}
           />
           <Button variant="primary" iconLeft="upload" disabled={!definition} onClick={startPublish}>
-            Publish version {nextVersion}
+            {t('admin.forms.publishVersion', { version: nextVersion })}
           </Button>
         </>
       }
@@ -299,14 +316,13 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
 
       <AsyncBoundary
         state={forms}
-        subject="form definitions"
+        subject={t('admin.forms.subject')}
         isEmpty={(payload) => payload.data.length === 0}
         empty={{
-          title: 'No forms yet',
-          message:
-            'Forms drive portal intake, encounter documentation and referrals. Build the first one and publish it to the surfaces that need it.',
+          title: t('admin.forms.empty.title'),
+          message: t('admin.forms.empty.message'),
           icon: 'layout-template',
-          action: <Button variant="primary">Build a form</Button>,
+          action: <Button variant="primary">{t('admin.forms.empty.action')}</Button>,
         }}
       >
         {(payload) => {
@@ -317,10 +333,13 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
             <>
               <div className="or-builder__bar">
                 <Select
-                  label="Form"
+                  label={t('admin.forms.formSelect')}
                   options={payload.data.map((entry) => ({
                     value: entry.id,
-                    label: `${entry.name} (${PURPOSE_LABEL[entry.purpose]})`,
+                    label: t('admin.forms.formOption', {
+                      name: entry.name,
+                      purpose: t(PURPOSE_KEY[entry.purpose].labelKey),
+                    }),
                   }))}
                   value={current.id}
                   onChange={(event) => {
@@ -333,12 +352,19 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                 <div className="or-cell-chips">
                   <Badge tone={current.status === 'PUBLISHED' ? 'success' : 'neutral'}>
                     {current.status === 'PUBLISHED'
-                      ? `Version ${current.version}, published`
-                      : `Version ${current.version}, draft`}
+                      ? t('admin.forms.versionPublished', { version: current.version })
+                      : t('admin.forms.versionDraft', { version: current.version })}
                   </Badge>
-                  <Tag>{current.responseCount.toLocaleString('en-US')} responses</Tag>
                   <Tag>
-                    Updated {formatDateTime(current.updatedAt, 'dense')} by {current.updatedBy}
+                    {t('admin.forms.responses', {
+                      count: formatCount(current.responseCount, t.locale),
+                    })}
+                  </Tag>
+                  <Tag>
+                    {t('admin.forms.updated', {
+                      when: formatDateTime(current.updatedAt, 'dense'),
+                      who: current.updatedBy,
+                    })}
                   </Tag>
                 </div>
               </div>
@@ -346,24 +372,24 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
               {current.status === 'PUBLISHED' ? (
                 <Card className="or-notice" data-tone="info">
                   <p className="or-body">
-                    <strong>Version {current.version} is published and cannot change.</strong>{' '}
+                    <strong>
+                      {t('admin.forms.immutable.title', { version: current.version })}
+                    </strong>{' '}
                     {dirty || current.hasUnpublishedChanges
-                      ? `Your edits are collecting in draft version ${nextVersion}. Responses already
-                         collected stay attached to the version that captured them.`
-                      : `Editing anything starts draft version ${nextVersion}. Responses already
-                         collected stay attached to the version that captured them.`}
+                      ? t('admin.forms.immutable.dirty', { version: nextVersion })
+                      : t('admin.forms.immutable.clean', { version: nextVersion })}
                   </p>
                 </Card>
               ) : null}
 
               {preview ? (
-                <Card title={`Preview: ${current.name}`}>
+                <Card title={t('admin.forms.previewTitle', { name: current.name })}>
                   <div className="or-builder__preview-switch">
                     <Select
-                      label="Rendered as"
+                      label={t('admin.forms.renderedAs')}
                       options={[
-                        { value: 'portal', label: 'Patient portal' },
-                        { value: 'staff', label: 'Staff, compact' },
+                        { value: 'portal', label: t('admin.forms.surface.portal') },
+                        { value: 'staff', label: t('admin.forms.surface.staff') },
                       ]}
                       value={previewSurface}
                       onChange={(event) =>
@@ -385,7 +411,11 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                           {sectionFields.map((field) => (
                             <div key={field.id} className="or-preview__field">
                               <Input
-                                label={`${field.label}${field.required ? ' (required)' : ''}`}
+                                label={
+                                  field.required
+                                    ? t('admin.forms.fieldLabelRequired', { label: field.label })
+                                    : field.label
+                                }
                                 hint={field.helpText ?? undefined}
                                 placeholder={
                                   field.options.length > 0 ? field.options.join(' / ') : undefined
@@ -405,21 +435,17 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
               ) : (
                 <div className="or-builder">
                   {/* ---- Catalogue ---------------------------------------- */}
-                  <Card className="or-builder__pane" title="Field types">
-                    <p className="or-small">
-                      Adding a field puts it at the end of the first section. Select it on the
-                      canvas to move or configure it.
-                    </p>
+                  <Card className="or-builder__pane" title={t('admin.forms.fieldTypes.title')}>
+                    <p className="or-small">{t('admin.forms.fieldTypes.hint')}</p>
                     <AsyncBoundary
                       state={fieldTypes}
-                      subject="field types"
+                      subject={t('admin.forms.fieldTypes.subject')}
                       isEmpty={(types) => types.length === 0}
                       loadingVariant="text"
                       loadingRows={8}
                       empty={{
-                        title: 'No field types available',
-                        message:
-                          'The form engine reports no field types, so nothing can be added. Reload the screen, and report it if the list stays empty.',
+                        title: t('admin.forms.fieldTypes.empty.title'),
+                        message: t('admin.forms.fieldTypes.empty.message'),
                         icon: 'shapes',
                       }}
                     >
@@ -436,7 +462,12 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                                   <Icon name={type.icon} size={16} />
                                 </span>
                                 <span className="or-catalog__text">
-                                  <span className="or-body">Add {type.label}</span>
+                                  {/* The type's name and hint come from the form
+                                      engine, so only the verb around them is
+                                      this screen's to translate. */}
+                                  <span className="or-body">
+                                    {t('admin.forms.addField', { label: type.label })}
+                                  </span>
                                   <span className="or-caption">{type.hint}</span>
                                 </span>
                               </button>
@@ -460,22 +491,34 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
 
               <ConfirmDialog
                 open={publishing}
-                title={`Publish ${current.name} version ${nextVersion}`}
-                consequence={`Version ${nextVersion} becomes the form every new response uses, and it can never be edited again. Responses already collected stay on the version that captured them.`}
-                confirmLabel={`Publish version ${nextVersion}`}
+                title={t('admin.forms.publish.title', {
+                  name: current.name,
+                  version: nextVersion,
+                })}
+                consequence={t('admin.forms.publish.consequence', { version: nextVersion })}
+                confirmLabel={t('admin.forms.publishVersion', { version: nextVersion })}
                 onCancel={() => setPublishing(false)}
                 onConfirm={() => {
                   setPublishing(false);
                   setToast(
-                    `${current.name} version ${nextVersion} is live on portal intake and encounters.`
+                    t('admin.forms.publishedToast', {
+                      name: current.name,
+                      version: nextVersion,
+                    })
                   );
                 }}
               >
                 <p className="or-body">
-                  {fields.length} fields, {current.sections.length} sections.{' '}
+                  {t('admin.forms.publish.summary', {
+                    fields: fields.length,
+                    sections: current.sections.length,
+                  })}{' '}
                   {added.length > 0
-                    ? `${added.length} added since version ${current.version}.`
-                    : 'No fields added since the last version.'}
+                    ? t('admin.forms.publish.added', {
+                        count: added.length,
+                        version: current.version,
+                      })
+                    : t('admin.forms.publish.noneAdded')}
                 </p>
               </ConfirmDialog>
             </>

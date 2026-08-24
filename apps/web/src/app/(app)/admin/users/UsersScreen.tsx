@@ -1,11 +1,11 @@
 'use client';
 
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import {
+  adminArea,
   adminBreadcrumb,
   ConfirmDialog,
   DetailList,
@@ -13,8 +13,11 @@ import {
   FilterBar,
   PermissionMatrix,
   permissionKey,
+  pluralKey,
   summariseRole,
+  translateColumns,
 } from '@/components/admin';
+import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -28,7 +31,9 @@ import {
   useStaffUsers,
 } from '@/lib/api';
 import type { AdminClient, PermissionRow, StaffRole, StaffStatus, StaffUser } from '@/lib/api';
-import { formatCount, formatDateTime, NOT_RECORDED } from '@/lib/format';
+import { formatDateTime, NOT_RECORDED } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * AD-01 Users and roles.
@@ -52,32 +57,20 @@ export interface UsersScreenProps {
   client?: AdminClient;
 }
 
-const ROLE_OPTIONS = [
-  { value: '', label: 'All roles' },
-  ...STAFF_ROLES.map((role) => ({ value: role, label: STAFF_ROLE_LABELS[role] })),
+const COLUMNS: readonly AdminColumn[] = [
+  { key: 'name', headerKey: 'admin.users.column.name' },
+  { key: 'roles', headerKey: 'admin.users.column.roles' },
+  { key: 'facilities', headerKey: 'admin.users.column.facilities' },
+  { key: 'mfa', headerKey: 'admin.users.column.mfa' },
+  { key: 'lastActive', headerKey: 'admin.users.column.lastActive' },
+  { key: 'status', headerKey: 'admin.users.column.status' },
+  { key: 'actions', headerKey: 'admin.users.column.actions', align: 'right' },
 ];
 
-const STATUS_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'ACTIVE', label: 'Active' },
-  { value: 'INVITED', label: 'Invited' },
-  { value: 'DEACTIVATED', label: 'Deactivated' },
-];
-
-const FACILITY_OPTIONS = [
-  { value: '', label: 'All facilities' },
-  ...MOCK_FACILITIES.map((facility) => ({ value: facility.id, label: facility.name })),
-];
-
-const COLUMNS: TableColumn[] = [
-  { key: 'name', header: 'Name' },
-  { key: 'roles', header: 'Roles' },
-  { key: 'facilities', header: 'Facilities' },
-  { key: 'mfa', header: 'Two-factor' },
-  { key: 'lastActive', header: 'Last active' },
-  { key: 'status', header: 'Status' },
-  { key: 'actions', header: 'Actions', align: 'right' },
-];
+const ACCOUNT_COUNT = {
+  oneKey: 'admin.users.accountCount.one',
+  otherKey: 'admin.users.accountCount.other',
+};
 
 const STATUS_TONE: Record<StaffStatus, 'success' | 'neutral' | 'danger'> = {
   ACTIVE: 'success',
@@ -85,11 +78,20 @@ const STATUS_TONE: Record<StaffStatus, 'success' | 'neutral' | 'danger'> = {
   DEACTIVATED: 'neutral',
 };
 
-const STATUS_LABEL: Record<StaffStatus, string> = {
-  ACTIVE: 'Active',
-  INVITED: 'Invited',
-  DEACTIVATED: 'Deactivated',
+/**
+ * The status word, as keys rather than words: this table is module scope and
+ * cannot know who is reading it. A literal map rather than a key assembled
+ * from the status, because a key built at runtime is invisible to the drift
+ * test and to whoever has to find it when it breaks.
+ */
+const STATUS_KEY: Record<StaffStatus, { labelKey: string }> = {
+  ACTIVE: { labelKey: 'admin.users.status.active' },
+  INVITED: { labelKey: 'admin.users.status.invited' },
+  DEACTIVATED: { labelKey: 'admin.users.status.deactivated' },
 };
+
+/** What a translator does, for the helpers below that are not components. */
+type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
 
 function facilityNames(ids: readonly string[]): string {
   const wanted = new Set(ids);
@@ -133,23 +135,25 @@ function InviteFields({
   permissions: readonly PermissionRow[] | null;
   onChange: (next: InviteDraft) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-stack">
       <Input
-        label="Full name"
+        label={t('admin.users.invite.name')}
         value={invite.name}
         onChange={(event) => onChange({ ...invite, name: event.target.value })}
         required
       />
       <Input
-        label="Work email"
+        label={t('admin.users.invite.email')}
         type="email"
         value={invite.email}
         onChange={(event) => onChange({ ...invite, email: event.target.value })}
         required
       />
       <Select
-        label="Role"
+        label={t('admin.users.invite.role')}
         options={STAFF_ROLES.map((entry) => ({
           value: entry,
           label: STAFF_ROLE_LABELS[entry],
@@ -158,7 +162,7 @@ function InviteFields({
         onChange={(event) => onChange({ ...invite, role: event.target.value as StaffRole })}
       />
       <fieldset className="or-fieldset">
-        <legend className="or-overline">Facilities</legend>
+        <legend className="or-overline">{t('admin.users.invite.facilities')}</legend>
         {MOCK_FACILITIES.map((facility) => (
           <Checkbox
             key={facility.id}
@@ -177,14 +181,18 @@ function InviteFields({
       </fieldset>
       <p className="or-small">
         {permissions
-          ? summariseRole([...permissions], invite.role, {})
-          : 'The role summary appears once permissions load.'}
+          ? summariseRole(t, [...permissions], invite.role, {})
+          : t('admin.users.invite.summaryPending')}
       </p>
     </div>
   );
 }
 
-function userRow(user: StaffUser, onOpen: (id: string) => void): Record<string, ReactNode> {
+function userRow(
+  t: Translate,
+  user: StaffUser,
+  onOpen: (id: string) => void
+): Record<string, ReactNode> {
   return {
     id: user.id,
     name: (
@@ -198,24 +206,26 @@ function userRow(user: StaffUser, onOpen: (id: string) => void): Record<string, 
         {user.roles.map((entry) => (
           <Tag key={entry}>{STAFF_ROLE_LABELS[entry]}</Tag>
         ))}
-        {user.isProvider ? <Tag>Provider</Tag> : null}
+        {user.isProvider ? <Tag>{t('admin.users.provider')}</Tag> : null}
       </span>
     ),
     facilities: <span className="or-small">{facilityNames(user.facilityIds)}</span>,
     mfa: user.mfaEnrolled ? (
-      <Badge tone="success">Enrolled</Badge>
+      <Badge tone="success">{t('admin.users.mfa.enrolled')}</Badge>
     ) : (
-      <Badge tone="danger">Not enrolled</Badge>
+      <Badge tone="danger">{t('admin.users.mfa.notEnrolled')}</Badge>
     ),
     lastActive: (
       <span className="or-small">
-        {user.lastActiveAt ? formatDateTime(user.lastActiveAt, 'dense') : 'Never'}
+        {user.lastActiveAt
+          ? formatDateTime(user.lastActiveAt, 'dense')
+          : t('admin.users.neverActive')}
       </span>
     ),
-    status: <Badge tone={STATUS_TONE[user.status]}>{STATUS_LABEL[user.status]}</Badge>,
+    status: <Badge tone={STATUS_TONE[user.status]}>{t(STATUS_KEY[user.status].labelKey)}</Badge>,
     actions: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(user.id)}>
-        Open {user.name}
+        {t('admin.users.openAccount', { name: user.name })}
       </Button>
     ),
   };
@@ -223,10 +233,11 @@ function userRow(user: StaffUser, onOpen: (id: string) => void): Record<string, 
 
 /** The exceptions granted on top of this person's role, when there are any. */
 function RoleExceptions({ user }: Readonly<{ user: StaffUser }>): ReactElement | null {
+  const t = useTranslator();
   if (user.exceptions.length === 0) return null;
   return (
     <div className="or-stack">
-      <p className="or-overline">Exceptions</p>
+      <p className="or-overline">{t('admin.users.exceptions')}</p>
       <ul className="or-list">
         {user.exceptions.map((exception) => (
           <li key={exception} className="or-small">
@@ -250,24 +261,39 @@ interface UserDetailProps {
  * and the Card default of 2 would nest an h2 inside an h2.
  */
 function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElement {
+  const t = useTranslator();
+
   return (
     <div className="or-stack">
       <DetailList
         items={[
-          { label: 'Roles', value: user.roles.map((r) => STAFF_ROLE_LABELS[r]).join(', ') },
-          { label: 'Facilities', value: facilityNames(user.facilityIds) },
-          { label: 'Provider', value: user.isProvider ? 'Yes' : 'No' },
-          { label: 'NPI', value: user.npi ?? NOT_RECORDED, mono: true },
-          { label: 'Taxonomy', value: user.taxonomy ?? NOT_RECORDED },
-          { label: 'Two-factor', value: user.mfaEnrolled ? 'Enrolled' : 'Not enrolled' },
           {
-            label: 'Last active',
-            value: user.lastActiveAt ? formatDateTime(user.lastActiveAt, 'prose') : 'Never',
+            label: t('admin.users.detail.roles'),
+            value: user.roles.map((r) => STAFF_ROLE_LABELS[r]).join(', '),
+          },
+          { label: t('admin.users.detail.facilities'), value: facilityNames(user.facilityIds) },
+          {
+            label: t('admin.users.detail.provider'),
+            value: user.isProvider ? t('admin.users.yes') : t('admin.users.no'),
+          },
+          { label: t('admin.users.detail.npi'), value: user.npi ?? NOT_RECORDED, mono: true },
+          { label: t('admin.users.detail.taxonomy'), value: user.taxonomy ?? NOT_RECORDED },
+          {
+            label: t('admin.users.detail.mfa'),
+            value: user.mfaEnrolled
+              ? t('admin.users.mfa.enrolled')
+              : t('admin.users.mfa.notEnrolled'),
+          },
+          {
+            label: t('admin.users.detail.lastActive'),
+            value: user.lastActiveAt
+              ? formatDateTime(user.lastActiveAt, 'prose')
+              : t('admin.users.neverActive'),
           },
         ]}
       />
 
-      <Card tone="bone" headingLevel={3} title="What this person can do">
+      <Card tone="bone" headingLevel={3} title={t('admin.users.capabilities.title')}>
         <p className="or-body">{roleSummary}</p>
         <RoleExceptions user={user} />
       </Card>
@@ -296,23 +322,24 @@ function RoleEditor({
   onRoleFocusChange: (role: StaffRole) => void;
   onToggle: (capabilityId: string, role: StaffRole, allowed: boolean) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <AsyncBoundary
       state={permissions}
-      subject="role permissions"
+      subject={t('admin.users.roles.subject')}
       isEmpty={(rows) => rows.length === 0}
       empty={{
-        title: 'No capabilities are defined',
-        message:
-          'Roles have nothing to grant until the capability list is loaded. Reload the screen, and report it if the list stays empty.',
+        title: t('admin.users.roles.empty.title'),
+        message: t('admin.users.roles.empty.message'),
         icon: 'shield',
       }}
     >
       {(rows: PermissionRow[]) => (
         <div className="or-stack">
           <Select
-            label="Summarise"
-            hint="The sentence below describes the role you pick here."
+            label={t('admin.users.roles.summarise')}
+            hint={t('admin.users.roles.summariseHint')}
             options={STAFF_ROLES.map((entry) => ({
               value: entry,
               label: STAFF_ROLE_LABELS[entry],
@@ -322,7 +349,7 @@ function RoleEditor({
           />
           <Card tone="bone">
             <p className="or-body" data-testid="role-summary">
-              {summariseRole(rows, roleFocus, grants)}
+              {summariseRole(t, rows, roleFocus, grants)}
             </p>
           </Card>
           <PermissionMatrix
@@ -371,34 +398,55 @@ function StaffAccounts({
   onInvite: () => void;
   onOpenUser: (id: string) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
+  const roleOptions = [
+    { value: '', label: t('admin.users.filter.allRoles') },
+    ...STAFF_ROLES.map((entry) => ({ value: entry, label: STAFF_ROLE_LABELS[entry] })),
+  ];
+  const statusOptions = [
+    { value: '', label: t('admin.users.filter.allStatuses') },
+    { value: 'ACTIVE', label: t('admin.users.status.active') },
+    { value: 'INVITED', label: t('admin.users.status.invited') },
+    { value: 'DEACTIVATED', label: t('admin.users.status.deactivated') },
+  ];
+  const facilityOptions = [
+    { value: '', label: t('admin.users.filter.allFacilities') },
+    ...MOCK_FACILITIES.map((facility) => ({ value: facility.id, label: facility.name })),
+  ];
+
   return (
     <>
       <FilterBar
-        label="Filter staff accounts"
-        summary={users.data ? formatCount(allUsers.length, 'account') : null}
+        label={t('admin.users.filter.label')}
+        summary={
+          users.data
+            ? t(pluralKey(ACCOUNT_COUNT, allUsers.length, t.locale), { count: allUsers.length })
+            : null
+        }
       >
         <Input
-          label="Search"
+          label={t('admin.users.filter.search')}
           iconLeft="search"
-          placeholder="Name or email"
+          placeholder={t('admin.users.filter.searchPlaceholder')}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />
         <Select
-          label="Role"
-          options={ROLE_OPTIONS}
+          label={t('admin.users.filter.role')}
+          options={roleOptions}
           value={role}
           onChange={(event) => onRoleChange(event.target.value as StaffRole | '')}
         />
         <Select
-          label="Status"
-          options={STATUS_OPTIONS}
+          label={t('admin.users.filter.status')}
+          options={statusOptions}
           value={status}
           onChange={(event) => onStatusChange(event.target.value as StaffStatus | '')}
         />
         <Select
-          label="Facility"
-          options={FACILITY_OPTIONS}
+          label={t('admin.users.filter.facility')}
+          options={facilityOptions}
           value={facilityId}
           onChange={(event) => onFacilityChange(event.target.value)}
         />
@@ -406,25 +454,24 @@ function StaffAccounts({
 
       <AsyncBoundary
         state={users}
-        subject="staff accounts"
+        subject={t('admin.users.subject')}
         isEmpty={isEmptyList}
         empty={{
-          title: 'No accounts match these filters',
-          message:
-            'Every account is filtered out by the current search, role, status or facility. Clear the filters, or invite the colleague you are looking for.',
+          title: t('admin.users.empty.title'),
+          message: t('admin.users.empty.message'),
           icon: 'users',
           action: (
             <Button variant="primary" onClick={onInvite}>
-              Invite a colleague
+              {t('admin.users.invite.title')}
             </Button>
           ),
         }}
       >
         {() => (
           <Table
-            caption="Staff accounts"
-            columns={COLUMNS}
-            rows={allUsers.map((user) => userRow(user, onOpenUser))}
+            caption={t('admin.users.tableCaption')}
+            columns={translateColumns(t, COLUMNS)}
+            rows={allUsers.map((user) => userRow(t, user, onOpenUser))}
           />
         )}
       </AsyncBoundary>
@@ -433,6 +480,7 @@ function StaffAccounts({
 }
 
 export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElement {
+  const t = useTranslator();
   const options = useAdminClientOption(client);
 
   const [search, setSearch] = useState('');
@@ -479,29 +527,29 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       {
         id: 'admin.users.invite',
         group: 'actions',
-        label: 'Invite a colleague',
-        keywords: ['new user', 'add staff', 'onboard'],
+        label: t('admin.users.invite.title'),
+        keywords: searchWords(t('admin.users.command.invite.keywords')),
         icon: 'user-plus',
         perform: openInvite,
       },
       {
         id: 'admin.users.roles',
         group: 'actions',
-        label: 'Edit role permissions',
-        keywords: ['acl', 'permissions', 'matrix', 'what can this role do'],
+        label: t('admin.users.roles.edit'),
+        keywords: searchWords(t('admin.users.command.roles.keywords')),
         icon: 'shield-check',
         perform: openRoles,
       },
       {
         id: 'admin.users.active',
         group: 'actions',
-        label: 'Show active accounts only',
-        keywords: ['filter', 'active users'],
+        label: t('admin.users.command.active'),
+        keywords: searchWords(t('admin.users.command.active.keywords')),
         icon: 'filter',
         perform: showUnenrolled,
       },
     ],
-    [openInvite, openRoles, showUnenrolled]
+    [openInvite, openRoles, showUnenrolled, t]
   );
 
   const applyOverlay = (rows: StaffUser[]): StaffUser[] => {
@@ -516,7 +564,7 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
   const confirmDeactivation = () => {
     if (!confirmUser) return;
     setDeactivated((previous) => [...previous, confirmUser.id]);
-    setToast(`${confirmUser.name} can no longer sign in. The account is kept for the audit trail.`);
+    setToast(t('admin.users.deactivatedToast', { name: confirmUser.name }));
     setConfirmUser(null);
     setDrawer({ kind: 'none' });
   };
@@ -545,7 +593,7 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       },
       ...previous,
     ]);
-    setToast(`Invite sent to ${invite.email.trim()}. It expires in 7 days.`);
+    setToast(t('admin.users.invite.sentToast', { email: invite.email.trim() }));
     setInvite(EMPTY_INVITE);
     setDrawer({ kind: 'none' });
   };
@@ -559,16 +607,16 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
 
   return (
     <AppShell
-      title="Users and roles"
-      description="Who works here, what they can do, and where they can do it."
-      breadcrumb={adminBreadcrumb('Users and roles')}
+      title={t(adminArea('users').labelKey)}
+      description={t('admin.users.description')}
+      breadcrumb={adminBreadcrumb(t, 'users')}
       actions={
         <>
           <Button variant="secondary" iconLeft="shield-check" onClick={openRoles}>
-            Edit role permissions
+            {t('admin.users.roles.edit')}
           </Button>
           <Button variant="primary" iconLeft="user-plus" onClick={openInvite}>
-            Invite a colleague
+            {t('admin.users.invite.title')}
           </Button>
         </>
       }
@@ -578,9 +626,8 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       {unenrolled > 0 ? (
         <Card className="or-notice" data-tone="serious">
           <p className="or-body">
-            <strong>{unenrolled} active accounts have no second factor.</strong> Two-factor
-            authentication is required for anyone who opens a chart. Ask them to enrol from their
-            own account settings.
+            <strong>{t('admin.users.mfaNotice.title', { count: unenrolled })}</strong>{' '}
+            {t('admin.users.mfaNotice.body')}
           </p>
         </Card>
       ) : null}
@@ -608,21 +655,23 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
         onClose={closeDrawer}
         meta={
           selected ? (
-            <Badge tone={STATUS_TONE[selected.status]}>{STATUS_LABEL[selected.status]}</Badge>
+            <Badge tone={STATUS_TONE[selected.status]}>
+              {t(STATUS_KEY[selected.status].labelKey)}
+            </Badge>
           ) : null
         }
         footer={
           selected ? (
             <>
               <Button variant="ghost" onClick={closeDrawer}>
-                Close
+                {t('admin.action.close')}
               </Button>
               <Button
                 variant="danger"
                 disabled={selected.status === 'DEACTIVATED'}
                 onClick={() => setConfirmUser(selected)}
               >
-                Deactivate account
+                {t('admin.users.deactivate')}
               </Button>
             </>
           ) : null
@@ -633,8 +682,8 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
             user={selected}
             roleSummary={
               permissions.data
-                ? summariseRole(permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
-                : 'Loading the role summary.'
+                ? summariseRole(t, permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
+                : t('admin.users.roles.summaryLoading')
             }
           />
         ) : null}
@@ -643,16 +692,16 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       {/* ---- Invite ---------------------------------------------------- */}
       <Drawer
         open={drawer.kind === 'invite'}
-        title="Invite a colleague"
-        description="They set their own password and second factor from the invite link."
+        title={t('admin.users.invite.title')}
+        description={t('admin.users.invite.description')}
         onClose={closeDrawer}
         footer={
           <>
             <Button variant="ghost" onClick={closeDrawer}>
-              Cancel
+              {t('admin.action.cancel')}
             </Button>
             <Button variant="primary" onClick={sendInvite}>
-              Send invite
+              {t('admin.users.invite.send')}
             </Button>
           </>
         }
@@ -663,23 +712,23 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       {/* ---- Role editor ----------------------------------------------- */}
       <Drawer
         open={drawer.kind === 'roles'}
-        title="Role permissions"
-        description="Roles are named bundles. Change one here and it changes for everyone who holds it."
+        title={t('admin.users.roles.title')}
+        description={t('admin.users.roles.description')}
         width={720}
         onClose={closeDrawer}
         footer={
           <>
             <Button variant="ghost" onClick={closeDrawer}>
-              Cancel
+              {t('admin.action.cancel')}
             </Button>
             <Button
               variant="primary"
               onClick={() => {
-                setToast('Role permissions saved. Everyone holding these roles is affected.');
+                setToast(t('admin.users.roles.savedToast'));
                 setDrawer({ kind: 'none' });
               }}
             >
-              Save role permissions
+              {t('admin.users.roles.save')}
             </Button>
           </>
         }
@@ -700,16 +749,14 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
 
       <ConfirmDialog
         open={confirmUser !== null}
-        title={`Deactivate ${confirmUser?.name ?? ''}`}
-        consequence="They can no longer sign in. Nothing they wrote is removed, and the account stays resolvable in the audit trail."
-        confirmLabel="Deactivate account"
+        title={t('admin.users.confirmDeactivate.title', { name: confirmUser?.name ?? '' })}
+        consequence={t('admin.users.confirmDeactivate.consequence')}
+        confirmLabel={t('admin.users.deactivate')}
         typedConfirmation={confirmUser?.name}
         onCancel={() => setConfirmUser(null)}
         onConfirm={confirmDeactivation}
       >
-        <p className="or-body">
-          Open sessions end within a minute. Re-activating later restores the same roles.
-        </p>
+        <p className="or-body">{t('admin.users.confirmDeactivate.detail')}</p>
       </ConfirmDialog>
 
       {toast ? (

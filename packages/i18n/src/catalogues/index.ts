@@ -1,7 +1,7 @@
 import type { Catalogue } from '../catalogue.js';
 
-import { en } from './en.js';
-import { es } from './es.js';
+import { en } from './en/index.js';
+import { es } from './es/index.js';
 
 /**
  * The catalogue the applications render from.
@@ -10,8 +10,8 @@ import { es } from './es.js';
  * strings are Spanish is a fork where falling back to English would be falling
  * back to a language nobody involved wrote.
  *
- * Adding a locale is adding a file and one line here. No code changes, which is
- * the property that makes translation something a contributor can do.
+ * Adding a locale is adding a directory and one line here. No code changes,
+ * which is the property that makes translation something a contributor can do.
  */
 export const appCatalogue: Catalogue = {
   sourceLocale: 'en',
@@ -36,3 +36,4 @@ export function isSupportedLocale(locale: string): boolean {
 }
 
 export { en, es };
+export { enAreas } from './en/index.js';

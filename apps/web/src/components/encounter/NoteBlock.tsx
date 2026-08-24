@@ -7,6 +7,7 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 import { useActiveOptionInView } from '@/lib/active-option';
 import type { EmittedItem, NoteSection, SlashCommand } from '@/lib/api/chart';
 import { formatEnumLabel } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { optionId } from './ids';
@@ -223,14 +224,7 @@ export function NoteBlock({
           ) : null}
 
           <output className="or-visually-hidden">
-            {menu
-              ? t(
-                  new Intl.PluralRules(t.locale).select(visible.length) === 'one'
-                    ? COMMANDS_AVAILABLE_KEYS.oneKey
-                    : COMMANDS_AVAILABLE_KEYS.otherKey,
-                  { count: visible.length }
-                )
-              : ''}
+            {menu ? counted(t, COMMANDS_AVAILABLE_KEYS, visible.length) : ''}
           </output>
         </>
       )}

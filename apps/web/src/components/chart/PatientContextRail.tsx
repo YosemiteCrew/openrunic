@@ -18,6 +18,8 @@ import {
   formatName,
   NOT_RECORDED,
 } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -80,21 +82,12 @@ const SEVERITY_TONE = {
  * for the plural category alone read better and left six catalogue entries
  * unguarded.
  */
-interface CountKeys {
-  readonly oneKey: string;
-  readonly otherKey: string;
-}
-
-function countKey(forms: CountKeys, count: number, locale: string): string {
-  return new Intl.PluralRules(locale).select(count) === 'one' ? forms.oneKey : forms.otherKey;
-}
-
-const MEDICATION_COUNT_KEYS: CountKeys = {
+const MEDICATION_COUNT_KEYS: CountedMessage = {
   oneKey: 'chart.rail.medications.count.one',
   otherKey: 'chart.rail.medications.count.other',
 };
 
-const UNSIGNED_NOTE_KEYS: CountKeys = {
+const UNSIGNED_NOTE_KEYS: CountedMessage = {
   oneKey: 'chart.rail.documentation.unsigned.one',
   otherKey: 'chart.rail.documentation.unsigned.other',
 };
@@ -318,9 +311,7 @@ function MedicationSummary({
       <p className="or-small or-rail__line">
         {medications.length === 0
           ? t('chart.rail.medications.none')
-          : t(countKey(MEDICATION_COUNT_KEYS, medications.length, t.locale), {
-              count: medications.length,
-            })}
+          : counted(t, MEDICATION_COUNT_KEYS, medications.length)}
       </p>
       {medications.length > 0 ? (
         <ul className="or-rail__list">
@@ -468,9 +459,7 @@ export function PatientContextRail({
         <section className="or-rail__section" aria-label={documentation}>
           {heading(documentation, 'visits')}
           <p className="or-small or-rail__line">
-            {t(countKey(UNSIGNED_NOTE_KEYS, unsigned.length, t.locale), {
-              count: unsigned.length,
-            })}
+            {counted(t, UNSIGNED_NOTE_KEYS, unsigned.length)}
           </p>
           {unsigned[0]?.encounterId ? (
             <Link className="or-rail__link" href={`/encounters/${unsigned[0].encounterId}`}>

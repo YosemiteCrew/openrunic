@@ -8,8 +8,10 @@ import type { ReactElement } from 'react';
 
 import type { Appointment } from '@/lib/api';
 import type { ChartSummary, ResultObservation } from '@/lib/api/chart';
-import { formatDate, formatDateTime, formatEnumLabel, formatTime, formatVital } from '@/lib/format';
+import { formatDate, formatDateTime, formatTime, formatVital } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
+
+import { APPOINTMENT_STATUS_LABELS, NOTE_STATE_LABELS, PROBLEM_STATUS_INLINE } from './labels';
 
 /**
  * CH-01, the 30-second pre-visit read.
@@ -40,25 +42,15 @@ function appointmentTone(status: Appointment['status']): StatusTone {
 }
 
 /**
- * `formatEnumLabel` turns `NOSHOW` into "Noshow", because the enum spells it as
- * one word and the glossary spells it as two. It is the only one of the twelve
- * appointment statuses whose enum name is not its English name: the other
- * eleven, `ENTERED_IN_ERROR` included, come out correctly from splitting on the
- * underscore.
+ * The words for one appointment's state, in the reader's language.
  *
- * Not in the catalogue, and the reason is worth stating because it looks like
- * copy. Moving this one word in and leaving eleven mechanical would give a
- * reader a status vocabulary one-twelfth in their language and eleven-twelfths
- * not, which is worse than one that is honestly all English. It goes when the
- * statuses themselves are rendered through the catalogue, at which point all
- * twelve move together and this map and `formatEnumLabel` both disappear.
+ * All twelve come from the catalogue now. The hand-written `NOSHOW` override
+ * and the `formatEnumLabel` fallback it sat on are both gone: the enum spelling
+ * it as one word and the glossary spelling it as two was a problem only while
+ * the English was being derived from the enum name at all.
  */
-const STATUS_LABEL: Partial<Record<Appointment['status'], string>> = {
-  NOSHOW: 'No show',
-};
-
-function statusLabel(status: Appointment['status']): string {
-  return STATUS_LABEL[status] ?? formatEnumLabel(status);
+function statusLabel(t: Translator, status: Appointment['status']): string {
+  return t(APPOINTMENT_STATUS_LABELS[status].labelKey);
 }
 
 function reading(observation: ResultObservation): ReactElement {
@@ -117,7 +109,7 @@ function TodayStrip({
   return (
     <div className="or-chart-strip__row">
       <Badge tone={appointmentTone(todayAppointment.status)}>
-        {statusLabel(todayAppointment.status)}
+        {statusLabel(t, todayAppointment.status)}
       </Badge>
       {/* Time, visit type and reason, all from the appointment. */}
       <p className="or-body">
@@ -184,7 +176,7 @@ export function SummaryPanel({
                       <Badge tone={visit.noteState === 'SIGNED' ? 'success' : 'neutral'}>
                         {visit.noteState === 'NONE'
                           ? t('chart.visits.noNote')
-                          : formatEnumLabel(visit.noteState)}
+                          : t(NOTE_STATE_LABELS[visit.noteState].labelKey)}
                       </Badge>
                       {visit.encounterId ? (
                         <Link
@@ -234,7 +226,7 @@ export function SummaryPanel({
                       {t('chart.summary.problemMeta', {
                         system: problem.codeSystem,
                         onset: formatDate(problem.onsetOn),
-                        status: formatEnumLabel(problem.status).toLowerCase(),
+                        status: t(PROBLEM_STATUS_INLINE[problem.status].labelKey),
                       })}
                     </p>
                   </li>

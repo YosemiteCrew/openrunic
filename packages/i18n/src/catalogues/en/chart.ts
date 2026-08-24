@@ -31,6 +31,56 @@ import type { Messages } from '../../catalogue.js';
  * which is a translation job rather than a code change.
  */
 export const chart: Messages = {
+  /* ------------------------------------------ this codebase's own enums */
+  /* Every enum below is declared in `lib/api/chart/types.ts` or
+     `lib/api/types.ts` and mirrors one in `@openrunic/database`. None comes
+     from a terminology server, so the words are ours to write and ours to
+     translate. The `inline` variants are written for the middle of a sentence
+     rather than produced by lowercasing the label: not every language
+     lowercases a noun mid-sentence, and `.toLowerCase()` on a translated word
+     is a rule this codebase would be applying to somebody else's grammar. */
+  'chart.allergySeverity.severe': 'Severe',
+  'chart.allergySeverity.moderate': 'Moderate',
+  'chart.allergySeverity.mild': 'Mild',
+  'chart.allergyCategory.drug': 'Drug',
+  'chart.allergyCategory.food': 'Food',
+  'chart.allergyCategory.environment': 'Environment',
+  'chart.medicationSource.prescribedHere': 'Prescribed here',
+  'chart.medicationSource.patientReported': 'Patient reported',
+  'chart.medicationSource.reconciled': 'Reconciled',
+  'chart.careTeam.primary': 'Primary',
+  'chart.careTeam.careTeam': 'Care team',
+  'chart.careTeam.external': 'External',
+  'chart.noteState.none': 'No note',
+  'chart.noteState.draft': 'Draft',
+  'chart.noteState.unsigned': 'Unsigned',
+  'chart.noteState.cosignPending': 'Cosign pending',
+  'chart.noteState.signed': 'Signed',
+  'chart.appointmentStatus.proposed': 'Proposed',
+  'chart.appointmentStatus.pending': 'Pending',
+  'chart.appointmentStatus.booked': 'Booked',
+  'chart.appointmentStatus.arrived': 'Arrived',
+  'chart.appointmentStatus.checkedIn': 'Checked in',
+  'chart.appointmentStatus.roomed': 'Roomed',
+  'chart.appointmentStatus.inProgress': 'In progress',
+  'chart.appointmentStatus.checkedOut': 'Checked out',
+  'chart.appointmentStatus.fulfilled': 'Fulfilled',
+  'chart.appointmentStatus.cancelled': 'Cancelled',
+  'chart.appointmentStatus.noshow': 'No show',
+  'chart.appointmentStatus.enteredInError': 'Entered in error',
+  'chart.sexAtBirth.inline.female': 'female',
+  'chart.sexAtBirth.inline.male': 'male',
+  'chart.sexAtBirth.inline.other': 'other',
+  'chart.sexAtBirth.inline.unknown': 'unknown',
+  'chart.sensitivity.inline.normal': 'normal',
+  'chart.sensitivity.inline.restricted': 'restricted',
+  'chart.sensitivity.inline.veryRestricted': 'very restricted',
+  'chart.problemStatus.inline.active': 'active',
+  'chart.problemStatus.inline.chronic': 'chronic',
+  'chart.problemStatus.inline.resolved': 'resolved',
+  'chart.problemStatus.active': 'Active',
+  'chart.problemStatus.chronic': 'Chronic',
+  'chart.problemStatus.resolved': 'Resolved',
   /* ------------------------------------------------------------------ shell */
   'chart.title': 'Chart',
   'chart.tabs.label': 'Chart sections',

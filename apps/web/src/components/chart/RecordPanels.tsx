@@ -13,8 +13,10 @@ import type {
   ResultObservation,
   Visit,
 } from '@/lib/api/chart';
-import { formatDate, formatEnumLabel, formatVital, NOT_RECORDED } from '@/lib/format';
+import { formatDate, formatVital, NOT_RECORDED } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
+
+import { CARE_TEAM_LABELS, MEDICATION_SOURCE_LABELS, NOTE_STATE_LABELS } from './labels';
 
 /**
  * The five record tabs behind the chart's summary.
@@ -81,7 +83,7 @@ export function VisitsPanel({ visits }: Readonly<{ visits: readonly Visit[] }>):
       reason: visit.reason,
       note: (
         <Badge tone={noteTone(visit.noteState)}>
-          {visit.noteState === 'NONE' ? t('chart.visits.noNote') : formatEnumLabel(visit.noteState)}
+          {t(NOTE_STATE_LABELS[visit.noteState].labelKey)}
         </Badge>
       ),
       open: visit.encounterId ? (
@@ -189,14 +191,14 @@ const STOPPED_COLUMN: ColumnSpec = {
   headerKey: 'chart.medications.column.stopped',
 };
 
-function medicationRow(med: Medication): Record<string, ReactNode> {
+function medicationRow(t: Translator, med: Medication): Record<string, ReactNode> {
   return {
     id: med.id,
     drug: med.drug,
     sig: med.sig,
     prescriber: med.prescriber,
     started: formatDate(med.startedOn),
-    source: formatEnumLabel(med.source),
+    source: t(MEDICATION_SOURCE_LABELS[med.source].labelKey),
     refills: med.refillsRemaining === null ? NOT_RECORDED : String(med.refillsRemaining),
   };
 }
@@ -216,7 +218,7 @@ export function MedicationsPanel({
         <Table
           caption={t('chart.medications.caption')}
           columns={columns(MEDICATION_COLUMNS, t)}
-          rows={active.map(medicationRow)}
+          rows={active.map((med) => medicationRow(t, med))}
         />
       </Card>
       {discontinued.length > 0 ? (
@@ -225,7 +227,7 @@ export function MedicationsPanel({
             caption={t('chart.medications.discontinued.caption')}
             columns={columns([...MEDICATION_COLUMNS, STOPPED_COLUMN], t)}
             rows={discontinued.map((med) => ({
-              ...medicationRow(med),
+              ...medicationRow(t, med),
               stopped: formatDate(med.stoppedOn),
             }))}
           />
@@ -326,7 +328,7 @@ export function CareTeamPanel({ chart }: Readonly<{ chart: ChartSummary }>): Rea
             <p className="or-caption or-chart-item__meta">
               {member.role}, {member.contact}
             </p>
-            <Tag>{formatEnumLabel(member.relationship)}</Tag>
+            <Tag>{t(CARE_TEAM_LABELS[member.relationship].labelKey)}</Tag>
           </li>
         ))}
       </ul>

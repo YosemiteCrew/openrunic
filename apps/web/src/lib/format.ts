@@ -425,18 +425,3 @@ export function formatVital(input: VitalInput): FormattedVital {
     rangeText: bounds,
   };
 }
-
-/* -------------------------------------------------------------------------- */
-/* Enum labels                                                                 */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Turns a schema enum into sentence case: `CHECKED_IN` becomes "Checked in".
- * Sentence case is the system's only casing; overline is the sole exception.
- */
-export function formatEnumLabel(value: string): string {
-  const words = value.toLowerCase().split('_').filter(Boolean);
-  const [first, ...rest] = words;
-  if (!first) return '';
-  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' ');
-}

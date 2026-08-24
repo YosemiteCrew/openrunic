@@ -11,13 +11,18 @@ import {
   formatAge,
   formatDate,
   formatDateTime,
-  formatEnumLabel,
   formatInitials,
   formatMoney,
   formatMrn,
   formatName,
   NOT_RECORDED,
 } from '@/lib/format';
+import {
+  ALLERGY_CATEGORY_LABELS,
+  ALLERGY_SEVERITY_LABELS,
+  SENSITIVITY_INLINE,
+  SEX_AT_BIRTH_INLINE,
+} from './labels';
 import { counted } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
@@ -95,18 +100,19 @@ const UNSIGNED_NOTE_KEYS: CountedMessage = {
 /**
  * The chip for one allergy.
  *
- * Allergen, severity, category and reaction all come from the record. The chip
- * is punctuation around them and nothing else, which is why no message key
- * appears here.
+ * The allergen and the reaction come from the record and are rendered as they
+ * arrived. The severity and the category do not: the API sends `SEVERE` and
+ * `DRUG` and no display for either, so the words are this codebase's and it
+ * takes a translator to write them.
  */
-function allergyChip(allergy: Allergy): ReactElement {
+function allergyChip(t: Translator, allergy: Allergy): ReactElement {
   return (
     <li key={allergy.id} className="or-rail__allergy">
       <Badge tone={SEVERITY_TONE[allergy.severity]}>
-        {allergy.allergen} - {formatEnumLabel(allergy.severity)}
+        {allergy.allergen} - {t(ALLERGY_SEVERITY_LABELS[allergy.severity].labelKey)}
       </Badge>
       <p className="or-caption or-rail__reaction">
-        {formatEnumLabel(allergy.category)}, {allergy.reaction.toLowerCase()}
+        {t(ALLERGY_CATEGORY_LABELS[allergy.category].labelKey)}, {allergy.reaction.toLowerCase()}
       </p>
     </li>
   );
@@ -136,7 +142,11 @@ function AllergyBlock({
     );
   }
 
-  return <ul className="or-rail__allergy-list">{record.entries.map(allergyChip)}</ul>;
+  return (
+    <ul className="or-rail__allergy-list">
+      {record.entries.map((allergy) => allergyChip(t, allergy))}
+    </ul>
+  );
 }
 
 /** The heading of a rail section: a button on the chart, a link everywhere else. */
@@ -228,7 +238,7 @@ function IdentityBlock({
           {t('chart.rail.identity.demographics', {
             age: formatAge(patient.birthDate, now),
             birthDate: formatDate(patient.birthDate),
-            sex: formatEnumLabel(patient.sexAtBirth).toLowerCase(),
+            sex: t(SEX_AT_BIRTH_INLINE[patient.sexAtBirth].labelKey),
           })}
         </p>
         <p className="or-caption or-rail__meta">
@@ -253,7 +263,7 @@ function FlagList({ patient, t }: Readonly<{ patient: Patient; t: Translator }>)
   if (patient.sensitivityClass !== 'NORMAL') {
     flags.push(
       t('chart.rail.flags.privacy', {
-        level: formatEnumLabel(patient.sensitivityClass).toLowerCase(),
+        level: t(SENSITIVITY_INLINE[patient.sensitivityClass].labelKey),
       })
     );
   }

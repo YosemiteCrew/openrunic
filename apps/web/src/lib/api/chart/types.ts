@@ -14,8 +14,11 @@
  * `Patient` and `Appointment`, and nothing in the screens changes.
  *
  * Every enum here mirrors an enum that already exists in `@openrunic/database`,
- * uppercase and underscored, so `formatEnumLabel` renders it and no screen ever
- * hard-codes a display string for a state.
+ * uppercase and underscored. The API sends the member and no display for it, so
+ * the words a screen shows are this codebase's to write: they live in the
+ * message catalogue and reach a screen through `components/chart/labels.ts`.
+ * They were derived from the member by a formatter until #132, which is the
+ * same thing as hard-coding a display string, only harder to find.
  */
 
 /* -------------------------------------------------------------------------- */

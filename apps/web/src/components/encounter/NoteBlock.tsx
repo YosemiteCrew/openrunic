@@ -6,8 +6,9 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
 import { useActiveOptionInView } from '@/lib/active-option';
 import type { EmittedItem, NoteSection, SlashCommand } from '@/lib/api/chart';
-import { formatEnumLabel } from '@/lib/format';
 import { counted } from '@/lib/i18n/counted';
+
+import { EMITTED_KIND_LABELS } from './labels';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { optionId } from './ids';
@@ -237,7 +238,7 @@ export function NoteBlock({
           {section.emitted.map((item) => (
             <li key={item.id}>
               <Tag>
-                {formatEnumLabel(item.kind)}: {item.label}
+                {t(EMITTED_KIND_LABELS[item.kind].labelKey)}: {item.label}
               </Tag>
             </li>
           ))}

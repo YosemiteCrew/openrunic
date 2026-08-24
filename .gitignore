@@ -62,3 +62,16 @@ react-doctor.json
 # against a mock-mode server - but it is a credential shaped thing with a clock
 # in it, and a stale one committed here would fail as a confusing redirect.
 apps/e2e/.auth/
+
+# Git worktrees the agent tooling checks out inside the repository.
+#
+# Not because git would stage their contents - it will not. A linked worktree
+# carries its own .git, so `git add -A` warns "adding embedded git repository"
+# and writes a single mode-160000 gitlink instead, which is the quieter and
+# worse outcome: the commit then points at a worktree that exists on one
+# machine, clones do not contain it and cannot fetch it, and the tree looks like
+# it has a submodule that nobody declared.
+#
+# Narrower than `.claude/` on purpose: a team that wants to commit
+# `.claude/settings.json` or a shared agent definition still can.
+.claude/worktrees/

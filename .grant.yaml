@@ -231,5 +231,15 @@ ignore-packages:
   # offers a choice and we have made it".
   #
   # Reached through @ai-sdk/provider, so it is a real runtime dependency rather
-  # than tooling. VERIFIED 2026-08-23 by reading the installed LICENSE file.
+  # than tooling - the only entry in this list that is not confined to dev-time.
+  #
+  # VERIFIED 2026-08-23 by reading the installed LICENSE file, and re-verified
+  # 2026-08-24 at json-schema@0.4.0: package.json still declares
+  # `(AFL-2.1 OR BSD-3-Clause)`, the LICENSE still says the recipient chooses,
+  # and `@ai-sdk/provider@4.0.7` is still the only thing in the lockfile that
+  # depends on it.
+  #
+  # Owner: ankit-yc. Re-review by: 2027-02-22, with the three entries above.
+  # Revisit condition: json-schema changing its licence expression, or ceasing
+  # to reach the tree, at which point this entry should simply be deleted.
   - json-schema

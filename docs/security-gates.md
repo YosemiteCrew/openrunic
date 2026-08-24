@@ -20,9 +20,10 @@ stated explicitly.
 | **Workflow security**                            | `workflow-audit.yml`    | Template injection, credential persistence, over-broad tokens     | `.github/zizmor.yml`                     |
 | **Synthetic data only**                          | `phi-guard.yml`         | Real patient data reaching the repository                         | Allowlists in `scripts/ci/phi-guard.mjs` |
 | **Release provenance**                           | `release-attest.yml`    | An operator installing an image nobody can trace                  | Not applicable                           |
+| **Exception expiry**                             | `exception-expiry.yml`  | An accepted finding outliving the reasoning that accepted it      | None, deliberately: it guards the others |
 | PR governance                                    | `pr-governance.yml`     | Untitled or unscoped changes entering history                     | None                                     |
 
-The five in bold are the subject of the rest of this page. The others are documented where they are
+The six in bold are the subject of the rest of this page. The others are documented where they are
 configured.
 
 ## Container image vulnerabilities
@@ -130,6 +131,46 @@ strictly worse than no gate. So every rule answers one question - what distingui
 data from the synthetic data this repository legitimately contains - and the guard's unit tests
 assert both halves: that each rule catches its shape, and that it stays silent on the repository's
 real fixtures.
+
+## Exception expiry
+
+Three of the gates above accept a finding rather than fixing it, through `.grype.yaml`,
+`.trivyignore` and `.grant.yaml`. Each of those files asks an entry for the same three things - a
+reason, an owner, and a date it must be looked at again - and `.trivyignore` puts the reasoning
+plainly: an exception without all three "is not an exception, it is a hole".
+
+The date was the part nothing checked. An accepted finding therefore stayed accepted forever: the
+comment said November, nobody was told when November arrived, and the exception outlived the
+reasoning that justified it. That is the ordinary way a temporary suppression becomes permanent, and
+it is worse than having no expiry field at all, because the field makes the process look rigorous
+while changing nothing.
+
+`exception-expiry.yml` runs `scripts/ci/exception-expiry.mjs` over all three and fails once a date
+has passed. Five things about it are deliberate:
+
+- **A missing date fails too.** Requiring the field only where somebody remembered it would let the
+  next entry skip it, which is the one outcome that makes the gate decorative.
+- **It runs weekly, not only on pull requests.** An expiry reached between merges would otherwise be
+  found by whoever opened the next unrelated change, which is late and somebody else's problem. The
+  scheduled run checks `dev` and `main` separately, because a scheduled workflow is dispatched from
+  the default branch and would otherwise never see an exception that has not been promoted yet.
+- **An unreadable exception file is a failure, not an empty scan.** A missing `.trivyignore` is
+  fine, since a file that is not there has no exceptions to expire. A file that exists and cannot be
+  read - permissions, a dangling symlink - would otherwise produce "0 accepted findings, all
+  current" and exit zero, which is a gate passing because it could not do its job.
+- **An entry the script cannot parse is an error, not a skip.** Three separate fail-open bugs
+  turned up in review of this guard, and all three had one shape: something it could not read
+  became something it did not check. A suppression the scanner honours and this does not is an
+  exception with no expiry, which is the state the gate exists to make impossible.
+- **`.grant.yaml` is read only under `ignore-packages:`.** Its `allow:` list is a list of the same
+  shape, and every SPDX identifier on it would otherwise read as an undated exception. Adjacent list
+  items share the comment above them, because a run written with nothing between them is one
+  decision; a blank line or an intervening comment ends the run, so a dated entry cannot vouch for
+  an unrelated one below it.
+
+An expiry is not an instruction to delete the entry. It is an instruction to re-read it: confirm the
+finding is still unreachable, check whether a fix has been published since, then either remove the
+exception or renew it with a fresh date and a note saying what was checked.
 
 ## Release provenance
 

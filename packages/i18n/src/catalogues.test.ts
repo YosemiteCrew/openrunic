@@ -99,7 +99,15 @@ describe('the composed catalogues', () => {
    */
   it('leave the clinical areas untranslated', () => {
     const spanish = appCatalogue.messages['es'] ?? {};
-    const clinical = ['chart.', 'encounter.', 'orders.', 'results.', 'insurance.', 'assistant.'];
+    const clinical = [
+      'chart.',
+      'clinical.',
+      'encounter.',
+      'orders.',
+      'results.',
+      'insurance.',
+      'assistant.',
+    ];
 
     const translated = Object.keys(spanish).filter((key) =>
       clinical.some((area) => key.startsWith(area))

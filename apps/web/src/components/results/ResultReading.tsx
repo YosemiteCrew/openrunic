@@ -168,7 +168,7 @@ export function ResultReading({
 }
 
 function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {
-  const reading = formatVital({
+  const reading = formatVital(t, {
     label: analyte.label,
     value: analyte.value,
     unit: analyte.unit,

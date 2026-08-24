@@ -19,6 +19,27 @@ export const common: Messages = {
   'common.requestId': 'Request id',
   'common.loading': 'Loading {subject}',
 
+  // What a formatter renders when a value is genuinely absent. Never an empty
+  // cell: a blank reads as a field that failed to load, and on a chart the
+  // difference between "we did not record this" and "this did not arrive" is
+  // the difference between a gap and a fault.
+  'common.notRecorded': 'Not recorded',
+
+  // Age, in the unit a clinician would say it in. Abbreviations rather than
+  // words, because these render inside a patient banner beside the name.
+  'common.age.days': '{count} d',
+  'common.age.months': '{count} mo',
+  'common.age.years': '{count} y',
+
+  // Elapsed time for wait timers and status ages. Under a minute reads as a
+  // phrase rather than a count of seconds, because a second-by-second number on
+  // a clinical board invites watching it.
+  'common.elapsed.justNow': 'just now',
+  'common.elapsed.minutes': '{count} min',
+  'common.elapsed.hours': '{count} h',
+  'common.elapsed.hoursMinutes': '{count} h {minutes} min',
+  'common.elapsed.days': '{count} d',
+
   'common.error.network.title': 'No connection to the server',
   'common.error.network.message':
     'openrunic could not reach the server, so {subject} did not load. Check the connection and try again.',

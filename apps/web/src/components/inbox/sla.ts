@@ -41,7 +41,7 @@ export function slaLabel(
 ): string {
   const state = slaState(dueAt, now);
   const key = (form === 'inline' ? INLINE_KEY : HEADING_KEY)[state].labelKey;
-  if (state === 'OVERDUE') return t(key, { elapsed: formatElapsed(dueAt, now) });
-  if (state === 'DUE_SOON') return t(key, { elapsed: formatElapsed(now, dueAt) });
+  if (state === 'OVERDUE') return t(key, { elapsed: formatElapsed(t, dueAt, now) });
+  if (state === 'DUE_SOON') return t(key, { elapsed: formatElapsed(t, now, dueAt) });
   return t(key, { when: formatDateTime(dueAt, 'dense') });
 }

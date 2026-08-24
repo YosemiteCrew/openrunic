@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator, en } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import type { PatientName } from '@/lib/api/types';
@@ -15,7 +16,26 @@ import {
   formatTime,
   formatVital,
   pluralise,
+  vitalState,
 } from '@/lib/format';
+
+/**
+ * The three readers these formatters have to answer to.
+ *
+ * `spanish` is the one that matters: an assertion that passes in English and in
+ * Spanish for the same reason proves nothing about either. Every conversion
+ * below is checked against a Spanish string that differs from the English one,
+ * or against a fallback that is asserted to *be* a fallback.
+ *
+ * `arabic` is not a locale this build offers a reader, and it is here for the
+ * one thing only an unsupported locale can show: the count and the message are
+ * two separate decisions. Every message falls back to English for it, so an
+ * Arabic-Indic numeral inside an English sentence is proof the number went
+ * through `formatCount` rather than through a template literal.
+ */
+const english = createTranslator(appCatalogue, 'en');
+const spanish = createTranslator(appCatalogue, 'es');
+const arabic = createTranslator(appCatalogue, 'ar-EG');
 
 const testina: PatientName = {
   given: 'Testina',
@@ -104,43 +124,77 @@ describe('formatTime and formatDateTime', () => {
 
 describe('formatAge', () => {
   it('reads adults in years', () => {
-    expect(formatAge('1987-03-14', '2026-08-12')).toBe('39 y');
+    expect(formatAge(english, '1987-03-14', '2026-08-12')).toBe('39 y');
   });
 
   it('reads infants in months', () => {
-    expect(formatAge('2025-11-02', '2026-08-12')).toBe('9 mo');
+    expect(formatAge(english, '2025-11-02', '2026-08-12')).toBe('9 mo');
   });
 
   it('reads newborns in days', () => {
-    expect(formatAge('2026-08-01', '2026-08-12')).toBe('11 d');
+    expect(formatAge(english, '2026-08-01', '2026-08-12')).toBe('11 d');
   });
 
   it('refuses a birth date in the future', () => {
-    expect(formatAge('2027-01-01', '2026-08-12')).toBe(NOT_RECORDED);
+    expect(formatAge(english, '2027-01-01', '2026-08-12')).toBe(NOT_RECORDED);
+  });
+
+  it('gives a Spanish reader the abbreviations Spanish uses', () => {
+    // "39 a" and "9 m." rather than "39 y" and "9 mo". Both differ from the
+    // English, which is what makes this an assertion rather than a coincidence:
+    // "11 d" is the same in both languages and would have passed unconverted.
+    expect(formatAge(spanish, '1987-03-14', '2026-08-12')).toBe('39 a');
+    expect(formatAge(spanish, '2025-11-02', '2026-08-12')).toBe('9 m.');
+    expect(formatAge(spanish, '2027-01-01', '2026-08-12')).toBe('No registrado');
   });
 });
 
 describe('formatElapsed', () => {
   it('counts minutes inside the first hour', () => {
-    expect(formatElapsed('2026-08-12T09:56:00.000Z', '2026-08-12T10:20:00.000Z')).toBe('24 min');
+    expect(formatElapsed(english, '2026-08-12T09:56:00.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+      '24 min'
+    );
   });
 
   it('counts hours and minutes past the hour', () => {
-    expect(formatElapsed('2026-08-12T08:15:00.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+    expect(formatElapsed(english, '2026-08-12T08:15:00.000Z', '2026-08-12T10:20:00.000Z')).toBe(
       '2 h 05 min'
     );
   });
 
   it('drops the minutes on a whole hour', () => {
-    expect(formatElapsed('2026-08-12T08:20:00.000Z', '2026-08-12T10:20:00.000Z')).toBe('2 h');
+    expect(formatElapsed(english, '2026-08-12T08:20:00.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+      '2 h'
+    );
   });
 
   it('counts days past a day', () => {
-    expect(formatElapsed('2026-08-09T08:20:00.000Z', '2026-08-12T10:20:00.000Z')).toBe('3 d');
+    expect(formatElapsed(english, '2026-08-09T08:20:00.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+      '3 d'
+    );
   });
 
   it('does not count seconds', () => {
-    expect(formatElapsed('2026-08-12T10:19:40.000Z', '2026-08-12T10:20:00.000Z')).toBe('just now');
+    expect(formatElapsed(english, '2026-08-12T10:19:40.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+      'just now'
+    );
+  });
+
+  it('says "just now" in the reader\'s language', () => {
+    // The one elapsed string that is a phrase rather than an abbreviation, and
+    // therefore the one where a Spanish reader could tell.
+    expect(formatElapsed(spanish, '2026-08-12T10:19:40.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+      'ahora mismo'
+    );
+  });
+
+  it("writes the number in the reader's numerals, not only the words", () => {
+    // Arabic has no catalogue here, so "min" falls back to English. The digits
+    // do not, because the count goes through `formatCount` rather than into a
+    // template literal - which is the whole reason that call is there.
+    expect(formatElapsed(arabic, '2026-08-12T09:56:00.000Z', '2026-08-12T10:20:00.000Z')).toBe(
+      '٢٤ min'
+    );
   });
 });
 
@@ -167,7 +221,7 @@ describe('formatMoney', () => {
 
 describe('formatVital', () => {
   it('flags a value above the range, with a word not a colour', () => {
-    const vital = formatVital({
+    const vital = formatVital(english, {
       label: 'Glucose',
       value: 7.4,
       unit: 'mmol/L',
@@ -181,13 +235,17 @@ describe('formatVital', () => {
 
   it('flags a value below the range', () => {
     expect(
-      formatVital({ label: 'Potassium', value: 2.9, unit: 'mmol/L', range: { low: 3.5 } })
-        .stateLabel
+      formatVital(english, {
+        label: 'Potassium',
+        value: 2.9,
+        unit: 'mmol/L',
+        range: { low: 3.5 },
+      }).stateLabel
     ).toBe('Below range');
   });
 
   it('reports an in-range value as success', () => {
-    const vital = formatVital({
+    const vital = formatVital(english, {
       label: 'Heart rate',
       value: 68,
       unit: 'bpm',
@@ -198,20 +256,93 @@ describe('formatVital', () => {
   });
 
   it('never claims a range it does not have', () => {
-    const vital = formatVital({ label: 'Weight', value: 71, unit: 'kg' });
+    const vital = formatVital(english, { label: 'Weight', value: 71, unit: 'kg' });
     expect(vital.state).toBe('neutral');
     expect(vital.stateLabel).toBe('No range recorded');
     expect(vital.rangeText).toBeNull();
   });
 
   it('says not recorded rather than rendering a blank number', () => {
-    const vital = formatVital({ label: 'BMI', value: null, unit: 'kg/m2' });
+    const vital = formatVital(english, { label: 'BMI', value: null, unit: 'kg/m2' });
     expect(vital.value).toBe(NOT_RECORDED);
     expect(vital.stateLabel).toBe('Not recorded');
+    expect(vital.text).toBe('BMI: Not recorded');
   });
 
   it('honours a requested precision', () => {
-    expect(formatVital({ label: 'Temp', value: 37, unit: 'C', decimals: 1 }).value).toBe('37.0');
+    expect(formatVital(english, { label: 'Temp', value: 37, unit: 'C', decimals: 1 }).value).toBe(
+      '37.0'
+    );
+  });
+
+  it('reads the reading as one sentence rather than a lowercased label', () => {
+    // `text` used to be built as `${value} ${unit}, ${stateLabel.toLowerCase()}`.
+    // The lowercasing is an English capitalisation rule applied to every
+    // language, and the comma is English word order. Both are now inside one
+    // message a translator can rewrite whole, so the sentence and the standalone
+    // label are allowed to disagree about case.
+    const vital = formatVital(english, {
+      label: 'Glucose',
+      value: 7.4,
+      unit: 'mmol/L',
+      range: { low: 3.9, high: 5.8 },
+    });
+
+    expect(vital.stateLabel).toBe('Above range');
+    expect(vital.text).toBe('7.4 mmol/L, above range');
+    expect(vital.text).not.toContain(vital.stateLabel);
+  });
+
+  it('leaves a Spanish reader in English, and says that it did', () => {
+    // The `clinical.` area has no Spanish file, for the same reason `chart.` and
+    // `results.` have none: a wrong range state is more dangerous than an
+    // English one. What makes that a decision rather than an oversight is that
+    // the translator records the fallback, so the coverage report can name it.
+    const reader = createTranslator(appCatalogue, 'es');
+    const vital = formatVital(reader, {
+      label: 'Glucose',
+      value: 7.4,
+      unit: 'mmol/L',
+      range: { low: 3.9, high: 5.8 },
+    });
+
+    expect(vital.stateLabel).toBe('Above range');
+    expect(reader.fallbacks.map((fallback) => fallback.key)).toContain('clinical.range.above');
+  });
+
+  it('says a shared absence in Spanish, because that one is not clinical', () => {
+    // The contrast with the test above. "Not recorded" lives in `common.`, is
+    // translated, and reaches a Spanish reader as Spanish - so the untranslated
+    // clinical words above are a deliberate gap rather than a broken lookup.
+    const vital = formatVital(spanish, { label: 'BMI', value: null, unit: 'kg/m2' });
+    expect(vital.value).toBe('No registrado');
+    expect(vital.stateLabel).toBe('No registrado');
+  });
+});
+
+describe('vitalState', () => {
+  it('answers what is out of range without being told a language', () => {
+    // The results list flags and sorts on this before it renders anything. It
+    // used to build a whole formatted vital and read one field off it, which
+    // meant deciding what was abnormal required first deciding what language to
+    // say so in.
+    expect(vitalState(7.4, { low: 3.9, high: 5.8 })).toBe('danger');
+    expect(vitalState(2.9, { low: 3.5 })).toBe('danger');
+    expect(vitalState(68, { low: 60, high: 100 })).toBe('success');
+    expect(vitalState(71)).toBe('neutral');
+  });
+
+  it('calls nothing recorded neutral rather than abnormal', () => {
+    expect(vitalState(null, { low: 3.9, high: 5.8 })).toBe('neutral');
+    expect(vitalState(undefined)).toBe('neutral');
+    expect(vitalState(Number.NaN, { low: 1 })).toBe('neutral');
+  });
+
+  it('agrees with the tone formatVital reports', () => {
+    // Two entry points to one decision. They are the same code today; this
+    // refuses a future where one of them grows a rule the other does not.
+    const input = { label: 'Glucose', value: 7.4, unit: 'mmol/L', range: { low: 3.9, high: 5.8 } };
+    expect(vitalState(input.value, input.range)).toBe(formatVital(english, input).state);
   });
 });
 
@@ -251,6 +382,22 @@ describe('formatCount', () => {
  * renders "NaN" or "Invalid Date" into a chart is worse than one that admits it
  * has nothing.
  */
+describe('the shared absence', () => {
+  /**
+   * `NOT_RECORDED` is still a module constant because the date formatters still
+   * return it and have not been given a translator yet. While both spellings
+   * exist they have to be the same words, or a screen would say "Not recorded"
+   * in one column and something else in the next for the same missing value.
+   */
+  it('is the same words in the constant and in the catalogue', () => {
+    expect(NOT_RECORDED).toBe(en['common.notRecorded']);
+  });
+
+  it('reaches a Spanish reader in Spanish', () => {
+    expect(spanish('common.notRecorded')).toBe('No registrado');
+  });
+});
+
 describe('the date and time formatters, with nothing to format', () => {
   const nothing = [null, undefined, ''] as const;
 
@@ -263,36 +410,38 @@ describe('the date and time formatters, with nothing to format', () => {
   });
 
   it.each(nothing)('formatAge says not recorded for %p', (value) => {
-    expect(formatAge(value)).toBe(NOT_RECORDED);
+    expect(formatAge(english, value)).toBe(NOT_RECORDED);
   });
 
   it.each(nothing)('formatElapsed says not recorded for %p', (value) => {
-    expect(formatElapsed(value)).toBe(NOT_RECORDED);
+    expect(formatElapsed(english, value)).toBe(NOT_RECORDED);
   });
 
   it('refuses an unparseable timestamp rather than rendering Invalid Date', () => {
     expect(formatDate('not a date')).toBe(NOT_RECORDED);
     expect(formatTime('not a date')).toBe(NOT_RECORDED);
     expect(formatDateTime('not a date')).toBe(NOT_RECORDED);
-    expect(formatAge('1990-13-45')).toBe(NOT_RECORDED);
-    expect(formatElapsed('not a date', '2026-08-12T10:00:00.000Z')).toBe(NOT_RECORDED);
-    expect(formatElapsed('2026-08-12T10:00:00.000Z', new Date('not a date'))).toBe(NOT_RECORDED);
+    expect(formatAge(english, '1990-13-45')).toBe(NOT_RECORDED);
+    expect(formatElapsed(english, 'not a date', '2026-08-12T10:00:00.000Z')).toBe(NOT_RECORDED);
+    expect(formatElapsed(english, '2026-08-12T10:00:00.000Z', new Date('not a date'))).toBe(
+      NOT_RECORDED
+    );
   });
 
   it('refuses a start in the future rather than counting backwards', () => {
     // Two clocks disagreeing is common; a wait timer reading "-3 min" is not
     // something a flow board should ever show.
-    expect(formatElapsed('2026-08-12T10:05:00.000Z', new Date('2026-08-12T10:00:00.000Z'))).toBe(
-      NOT_RECORDED
-    );
+    expect(
+      formatElapsed(english, '2026-08-12T10:05:00.000Z', new Date('2026-08-12T10:00:00.000Z'))
+    ).toBe(NOT_RECORDED);
   });
 
   it('measures against the wall clock when no as-of instant is given', () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
-    expect(formatElapsed(twoHoursAgo)).toBe('2 h');
+    expect(formatElapsed(english, twoHoursAgo)).toBe('2 h');
     // Someone born today is zero days old, not "not recorded".
-    expect(formatAge(new Date().toISOString())).toBe('0 d');
+    expect(formatAge(english, new Date().toISOString())).toBe('0 d');
   });
 
   it('names every month rather than leaving a gap for December', () => {

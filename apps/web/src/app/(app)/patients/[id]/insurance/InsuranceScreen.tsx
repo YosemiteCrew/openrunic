@@ -235,7 +235,7 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
               <p className="or-small">
                 <span className="or-mono">{formatMrn(record.mrn)}</span>
                 {' · '}
-                {formatAge(record.birthDate, asOf)}
+                {formatAge(t, record.birthDate, asOf)}
                 {' · '}
                 {t('insurance.screen.born', { date: formatDate(record.birthDate) })}
               </p>

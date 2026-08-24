@@ -67,12 +67,13 @@ const COUNTERS: readonly Counter[] = [
 function PatientMeta({
   patient,
   asOf,
-}: Readonly<{ patient: Patient; asOf: string }>): ReactElement {
+  t,
+}: Readonly<{ patient: Patient; asOf: string; t: Translator }>): ReactElement {
   return (
     <p className="or-small or-day-rail__meta">
       <span className="or-mono">{formatMrn(patient.mrn)}</span>
       {' · '}
-      {formatAge(patient.birthDate, new Date(asOf))}
+      {formatAge(t, patient.birthDate, new Date(asOf))}
     </p>
   );
 }
@@ -150,7 +151,7 @@ function SelectedVisit({
       <p className="or-body-lg or-day-rail__patient">
         {patient ? formatName(patient.name) : t('schedule.visit.unassignedSlot')}
       </p>
-      {patient ? <PatientMeta patient={patient} asOf={appointment.start} /> : null}
+      {patient ? <PatientMeta patient={patient} asOf={appointment.start} t={t} /> : null}
 
       <p className="or-body">{appointment.type.display}</p>
       {appointment.reasonText ? <p className="or-small">{appointment.reasonText}</p> : null}

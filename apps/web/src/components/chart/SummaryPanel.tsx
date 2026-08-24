@@ -53,8 +53,8 @@ function statusLabel(t: Translator, status: Appointment['status']): string {
   return t(APPOINTMENT_STATUS_LABELS[status].labelKey);
 }
 
-function reading(observation: ResultObservation): ReactElement {
-  const vital = formatVital({
+function reading(t: Translator, observation: ResultObservation): ReactElement {
+  const vital = formatVital(t, {
     label: observation.analyte,
     value: observation.value,
     unit: observation.unit,
@@ -198,7 +198,7 @@ export function SummaryPanel({
               <p className="or-body">{t('chart.summary.noResults')}</p>
             ) : (
               <div className="or-chart-readings">
-                {recentResults.map(reading)}
+                {recentResults.map((observation) => reading(t, observation))}
                 <p className="or-caption or-chart-item__meta">
                   {t('chart.summary.collected', {
                     when: formatDateTime(recentResults[0]?.collectedAt, 'prose'),

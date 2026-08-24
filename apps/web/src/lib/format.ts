@@ -1,3 +1,6 @@
+import { formatCount as countInLocale } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
+
 import type { PatientName } from '@/lib/api/types';
 
 /**
@@ -12,6 +15,25 @@ import type { PatientName } from '@/lib/api/types';
  * timezone, passed explicitly and defaulting to {@link CLINIC_TIME_ZONE}, never
  * in the machine's local zone: an appointment must not move by an hour because
  * the front desk's laptop travelled.
+ *
+ * ## Why some of these take a translator and others do not
+ *
+ * A formatter that produces a word has to produce it in the reader's language,
+ * and a shared helper is the one place a `useTranslator` call cannot reach. So
+ * `formatAge`, `formatElapsed` and `formatVital` take the translator as their
+ * first argument, the way `counted` in `lib/i18n/counted.ts` already does. That
+ * is a deliberately dull mechanism: no hook, no context, nothing that stops
+ * these being called from a plain module like `components/inbox/sla.ts`.
+ *
+ * `formatName`, `formatInitials`, `formatMrn` and `formatCredentialed` do not,
+ * because they produce no words. They rearrange a name the server supplied and
+ * uppercase an identifier, and neither is a language decision.
+ *
+ * The numbers inside a translated string go through `formatCount` from
+ * `@openrunic/i18n` rather than being interpolated raw. The form and the digits
+ * are two separate locale decisions - Arabic writes its numerals differently -
+ * and a message that got the wording right and the numerals wrong would still
+ * be wrong.
  */
 
 /**
@@ -59,7 +81,14 @@ const MONTHS = [
   'Dec',
 ] as const;
 
-/** What a formatter renders when a value is genuinely absent. Never an empty cell. */
+/**
+ * What a formatter renders when a value is genuinely absent. Never an empty cell.
+ *
+ * Still a constant because the date formatters below still return it, and they
+ * have not been given a translator yet. The catalogue holds the same words under
+ * `common.notRecorded`, and `format.test.ts` asserts the two are equal, so the
+ * two spellings cannot drift while both exist.
+ */
 export const NOT_RECORDED = 'Not recorded';
 
 /**
@@ -241,21 +270,25 @@ export function formatDateTime(
  * month, days before that. Pass `asOf` on any surface that must not move with
  * the clock (fixtures, tests, printed records).
  */
-export function formatAge(birthDate: DateInput, asOf: string | Date = new Date()): string {
-  if (!birthDate) return NOT_RECORDED;
+export function formatAge(
+  t: Translator,
+  birthDate: DateInput,
+  asOf: string | Date = new Date()
+): string {
+  if (!birthDate) return t('common.notRecorded');
   const born = toDate(birthDate);
   const now = toDate(asOf);
-  if (!born || !now || born > now) return NOT_RECORDED;
+  if (!born || !now || born > now) return t('common.notRecorded');
 
   const days = Math.floor((now.getTime() - born.getTime()) / 86_400_000);
-  if (days < 31) return `${days} d`;
+  if (days < 31) return t('common.age.days', { count: countInLocale(days, t.locale) });
 
   const months =
     (now.getUTCFullYear() - born.getUTCFullYear()) * 12 +
     (now.getUTCMonth() - born.getUTCMonth()) -
     (now.getUTCDate() < born.getUTCDate() ? 1 : 0);
-  if (months < 24) return `${months} mo`;
-  return `${Math.floor(months / 12)} y`;
+  if (months < 24) return t('common.age.months', { count: countInLocale(months, t.locale) });
+  return t('common.age.years', { count: countInLocale(Math.floor(months / 12), t.locale) });
 }
 
 /**
@@ -263,23 +296,36 @@ export function formatAge(birthDate: DateInput, asOf: string | Date = new Date()
  * Under a minute reads "just now" rather than counting seconds, because a
  * second-by-second number on a clinical board invites watching it.
  */
-export function formatElapsed(from: DateInput, to: string | Date = new Date()): string {
-  if (!from) return NOT_RECORDED;
+export function formatElapsed(
+  t: Translator,
+  from: DateInput,
+  to: string | Date = new Date()
+): string {
+  if (!from) return t('common.notRecorded');
   const start = toDate(from);
   const end = toDate(to);
-  if (!start || !end) return NOT_RECORDED;
+  if (!start || !end) return t('common.notRecorded');
 
   const minutes = Math.floor((end.getTime() - start.getTime()) / 60_000);
-  if (minutes < 0) return NOT_RECORDED;
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 0) return t('common.notRecorded');
+  if (minutes < 1) return t('common.elapsed.justNow');
+  if (minutes < 60) return t('common.elapsed.minutes', { count: countInLocale(minutes, t.locale) });
 
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
     const rest = minutes % 60;
-    return rest === 0 ? `${hours} h` : `${hours} h ${pad(rest)} min`;
+    // The minutes are zero-padded and the hours are not, because these render
+    // in an `or-mono` column on the flow board where "1 h 05 min" lines up under
+    // "1 h 40 min" and "1 h 5 min" does not. A padded field is a column width
+    // rather than a count, which is why it does not go through `countInLocale`.
+    return rest === 0
+      ? t('common.elapsed.hours', { count: countInLocale(hours, t.locale) })
+      : t('common.elapsed.hoursMinutes', {
+          count: countInLocale(hours, t.locale),
+          minutes: pad(rest),
+        });
   }
-  return `${Math.floor(hours / 24)} d`;
+  return t('common.elapsed.days', { count: countInLocale(Math.floor(hours / 24), t.locale) });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -375,13 +421,53 @@ export interface FormattedVital {
   rangeText: string | null;
 }
 
-function rangeState(value: number, range: ReferenceRange | undefined): [RangeState, string] {
-  if (!range || (range.low === undefined && range.high === undefined)) {
-    return ['neutral', 'No range recorded'];
-  }
-  if (range.high !== undefined && value > range.high) return ['danger', 'Above range'];
-  if (range.low !== undefined && value < range.low) return ['danger', 'Below range'];
-  return ['success', 'In range'];
+/**
+ * The tone, the standalone label and the whole sentence for one range state.
+ *
+ * Three things rather than two because the label and the sentence are separate
+ * messages, not one lowercased into the other. "Above range" beside a number and
+ * "7.4 mmol/L, above range" read to a screen reader are different strings in
+ * English and stay different strings in every other language, so a translator
+ * gets both rather than a rule for deriving one from the other.
+ *
+ * The keys are written out as `labelKey` and `readingKey` properties so
+ * `catalogue-drift.test.ts` can see them. A key built from the state name would
+ * be invisible to it, and therefore invisible to whoever has to find it later.
+ */
+interface RangeWords {
+  readonly state: RangeState;
+  readonly labelKey: string;
+  readonly readingKey: string;
+}
+
+const RANGE_WORDS = {
+  in: {
+    state: 'success',
+    labelKey: 'clinical.range.in',
+    readingKey: 'clinical.vital.reading.in',
+  },
+  above: {
+    state: 'danger',
+    labelKey: 'clinical.range.above',
+    readingKey: 'clinical.vital.reading.above',
+  },
+  below: {
+    state: 'danger',
+    labelKey: 'clinical.range.below',
+    readingKey: 'clinical.vital.reading.below',
+  },
+  none: {
+    state: 'neutral',
+    labelKey: 'clinical.range.none',
+    readingKey: 'clinical.vital.reading.none',
+  },
+} as const satisfies Readonly<Record<string, RangeWords>>;
+
+function rangeWords(value: number, range: ReferenceRange | undefined): RangeWords {
+  if (!range || (range.low === undefined && range.high === undefined)) return RANGE_WORDS.none;
+  if (range.high !== undefined && value > range.high) return RANGE_WORDS.above;
+  if (range.low !== undefined && value < range.low) return RANGE_WORDS.below;
+  return RANGE_WORDS.in;
 }
 
 /**
@@ -391,37 +477,62 @@ function rangeState(value: number, range: ReferenceRange | undefined): [RangeSta
  * and a labelled range state. The colour that goes with the state is decoration
  * on top of `stateLabel`, never a substitute for it.
  */
-export function formatVital(input: VitalInput): FormattedVital {
+/**
+ * The tone a reading carries, without the words.
+ *
+ * Separate from {@link formatVital} because a caller that only needs to know
+ * whether a value is out of range is not making a language decision, and should
+ * not have to hold a translator to ask. The results list sorts and flags on this
+ * before it renders anything; it used to build a whole formatted vital and read
+ * one field off it, which meant a screen could not decide what was abnormal
+ * without first deciding what language to say so in.
+ *
+ * An absent value is `neutral` rather than an error: nothing recorded is not out
+ * of range, it is not measured.
+ */
+export function vitalState(value: number | null | undefined, range?: ReferenceRange): RangeState {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'neutral';
+  return rangeWords(value, range).state;
+}
+
+export function formatVital(t: Translator, input: VitalInput): FormattedVital {
   const { label, unit, range, decimals } = input;
 
   if (input.value === null || input.value === undefined || Number.isNaN(input.value)) {
     return {
       label,
-      value: NOT_RECORDED,
+      value: t('common.notRecorded'),
       unit,
       state: 'neutral',
-      stateLabel: 'Not recorded',
-      text: `${label}: ${NOT_RECORDED}`,
+      stateLabel: t('common.notRecorded'),
+      text: t('clinical.vital.absent', { label }),
       rangeText: null,
     };
   }
 
-  const [state, stateLabel] = rangeState(input.value, range);
+  const words = rangeWords(input.value, range);
+
+  // The number itself is not locale-formatted, so 7.4 stays 7.4 rather than
+  // becoming 7,4. That is deliberate and it is tied to the `clinical.` area
+  // having no Spanish file: while the sentence around it falls back to English,
+  // a Spanish decimal comma inside an English sentence is a worse reading than
+  // either language on its own. Whoever writes `es/clinical.ts` decides this at
+  // the same time as the words, which is the only point it can be decided from.
   const value =
     decimals === undefined ? String(input.value) : input.value.toFixed(Math.max(decimals, 0));
 
   const bounds: string | null =
     range && (range.low !== undefined || range.high !== undefined)
-      ? `${range.low ?? '-'} to ${range.high ?? '-'} ${unit}`
+      ? t('clinical.vital.range', { low: range.low ?? '-', high: range.high ?? '-', unit })
       : null;
 
   return {
     label,
     value,
     unit,
-    state,
-    stateLabel,
-    text: `${value} ${unit}, ${stateLabel.toLowerCase()}`,
+    state: words.state,
+    stateLabel: t(words.labelKey),
+    text: t(words.readingKey, { value, unit }),
     rangeText: bounds,
   };
 }

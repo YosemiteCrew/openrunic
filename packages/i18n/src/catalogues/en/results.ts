@@ -55,6 +55,9 @@ export const results: Messages = {
   /* ---------------------------------------------------------- a queue row */
   /* The reading that earned the flag, or the count that says nothing did.
      `{count}` is analytes, never results. */
+  // The analyte name comes from the laboratory and the reading is built from
+  // the value it sent, so this message carries only the order they go in.
+  'results.row.outOfRange': '{label} {reading}',
   'results.row.allInRangeOne': '{count} analyte, all in range',
   'results.row.allInRangeOther': '{count} analytes, all in range',
   'results.row.reportAttached': 'Report attached',

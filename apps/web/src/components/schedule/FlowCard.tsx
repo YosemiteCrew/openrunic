@@ -86,7 +86,7 @@ export function FlowCard({
         <Badge tone={status.tone}>{t(status.labelKey)}</Badge>
         {tier === 'none' ? null : (
           <Badge tone={tier === 'delayed' ? 'danger' : 'neutral'}>
-            {t(TIER_KEY[tier].labelKey, { elapsed: formatElapsed(statusSince, now) })}
+            {t(TIER_KEY[tier].labelKey, { elapsed: formatElapsed(t, statusSince, now) })}
           </Badge>
         )}
         {currentRoom ? <Tag>{currentRoom}</Tag> : <Tag>{t('schedule.flowCard.noRoom')}</Tag>}
@@ -95,11 +95,11 @@ export function FlowCard({
       <dl className="or-flow-card__timers">
         <div>
           <dt className="or-caption">{t('schedule.flowCard.inThisStatus')}</dt>
-          <dd className="or-mono">{formatElapsed(statusSince, now)}</dd>
+          <dd className="or-mono">{formatElapsed(t, statusSince, now)}</dd>
         </div>
         <div>
           <dt className="or-caption">{t('schedule.flowCard.inTheBuilding')}</dt>
-          <dd className="or-mono">{formatElapsed(appointment.checkedInAt, now)}</dd>
+          <dd className="or-mono">{formatElapsed(t, appointment.checkedInAt, now)}</dd>
         </div>
       </dl>
 

@@ -262,7 +262,7 @@ function OrderingForRail({
         <dt className="or-small">{t('orders.new.rail.age')}</dt>
         <dd className="or-small">
           {t('orders.new.rail.ageValue', {
-            age: formatAge(patient.birthDate, now),
+            age: formatAge(t, patient.birthDate, now),
             birthDate: formatDate(patient.birthDate),
           })}
         </dd>

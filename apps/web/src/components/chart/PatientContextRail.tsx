@@ -243,7 +243,7 @@ function IdentityBlock({
             away from them. */}
         <p className="or-caption or-rail__meta">
           {t('chart.rail.identity.demographics', {
-            age: formatAge(patient.birthDate, now),
+            age: formatAge(t, patient.birthDate, now),
             birthDate: formatDate(patient.birthDate),
             sex: t(SEX_AT_BIRTH_INLINE[patient.sexAtBirth].labelKey),
           })}

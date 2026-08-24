@@ -17,6 +17,23 @@ export const common: Messages = {
   'common.requestId': 'Identificador de la solicitud',
   'common.loading': 'Cargando {subject}',
 
+  'common.notRecorded': 'No registrado',
+
+  // The unit abbreviations are CLDR's own short forms for Spanish, taken from
+  // `Intl.NumberFormat(locale, { style: 'unit', unitDisplay: 'short' })` rather
+  // than picked by whoever wrote this file. A developer with a dictionary
+  // guessing at a clinical abbreviation is the failure this catalogue is
+  // organised to avoid, and CLDR is the one source here that is not a guess.
+  'common.age.days': '{count} d',
+  'common.age.months': '{count} m.',
+  'common.age.years': '{count} a',
+
+  'common.elapsed.justNow': 'ahora mismo',
+  'common.elapsed.minutes': '{count} min',
+  'common.elapsed.hours': '{count} h',
+  'common.elapsed.hoursMinutes': '{count} h {minutes} min',
+  'common.elapsed.days': '{count} d',
+
   'common.error.network.title': 'Sin conexión con el servidor',
   'common.error.network.message':
     'openrunic no pudo comunicarse con el servidor, así que {subject} no se cargó. Revise la conexión y vuelva a intentarlo.',

@@ -133,7 +133,7 @@ export function ResultsPanel({
   const rows = [...results]
     .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt))
     .map((observation) => {
-      const vital = formatVital({
+      const vital = formatVital(t, {
         label: observation.analyte,
         value: observation.value,
         unit: observation.unit,

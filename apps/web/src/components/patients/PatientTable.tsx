@@ -93,7 +93,7 @@ export function PatientTable({
     ),
     mrn: formatMrn(patient.mrn),
     birthDate: formatDate(patient.birthDate),
-    age: formatAge(patient.birthDate, asOf),
+    age: formatAge(t, patient.birthDate, asOf),
     sex: t(SEX_AT_BIRTH_LABELS[patient.sexAtBirth].labelKey),
     contact: patient.telecom.phoneMobile ?? NOT_RECORDED,
     status: statusBadge(patient, t),

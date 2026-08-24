@@ -18,8 +18,15 @@ if (!Element.prototype.scrollIntoView) {
  * letting a test render a component the way the application does.
  *
  * The source locale, so assertions read in the language the tests are written
- * in. A test that cares about translation asks for a locale explicitly by
- * rendering its own provider, which nests and wins.
+ * in.
+ *
+ * A test that cares about another language cannot get one by rendering its own
+ * `MessagesProvider`. This replaces the hook rather than the context, so a
+ * nested provider sets a value nothing reads and the component renders English
+ * while the test looks like it asked for Spanish - which is the worst shape a
+ * test double can take, because it fails open and silently. Reach the other
+ * language the way `lib/__tests__/format.test.ts` does: build a translator with
+ * `createTranslator(appCatalogue, 'es')` and pass it to the thing under test.
  *
  * ## One translator, not one per call
  *

@@ -6,6 +6,7 @@ import { assistant } from './assistant.js';
 import { auth } from './auth.js';
 import { billing } from './billing.js';
 import { chart } from './chart.js';
+import { clinical } from './clinical.js';
 import { common } from './common.js';
 import { downtime } from './downtime.js';
 import { encounter } from './encounter.js';
@@ -89,6 +90,7 @@ export const enAreas: Readonly<Record<string, Messages>> = {
   schedule,
   patients,
   chart,
+  clinical,
   encounter,
   orders,
   results,

@@ -8,7 +8,7 @@ import type { KeyboardEvent, ReactElement } from 'react';
 
 import { mockPatientById } from '@/lib/api';
 import type { ResultAnalyte, ResultReport } from '@/lib/api';
-import { formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
+import { formatDateTime, formatMrn, formatName, formatVital, vitalState } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { ResultFlagBadge } from './ResultFlagBadge';
@@ -36,14 +36,18 @@ import { ResultFlagBadge } from './ResultFlagBadge';
 function headline(t: Translator, report: ResultReport): string {
   const outOfRange = report.analytes.find((analyte) => stateOf(analyte) === 'danger');
   if (outOfRange) {
-    const reading = formatVital({
+    const reading = formatVital(t, {
       label: outOfRange.label,
       value: outOfRange.value,
       unit: outOfRange.unit,
       range: { low: outOfRange.low, high: outOfRange.high },
       decimals: outOfRange.decimals,
     });
-    return `${outOfRange.label} ${reading.text}`;
+    // One message rather than a template literal, because the analyte name and
+    // the reading are two translated-or-supplied pieces and which comes first is
+    // a language decision. Concatenating them here fixes English word order into
+    // code, where no translator can reach it.
+    return t('results.row.outOfRange', { label: outOfRange.label, reading: reading.text });
   }
   if (report.analytes.length > 0) {
     const count = report.analytes.length;
@@ -61,13 +65,7 @@ function headline(t: Translator, report: ResultReport): string {
 }
 
 function stateOf(analyte: ResultAnalyte): string {
-  return formatVital({
-    label: analyte.label,
-    value: analyte.value,
-    unit: analyte.unit,
-    range: { low: analyte.low, high: analyte.high },
-    decimals: analyte.decimals,
-  }).state;
+  return vitalState(analyte.value, { low: analyte.low, high: analyte.high });
 }
 
 export interface ResultListProps {

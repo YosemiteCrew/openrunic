@@ -63,7 +63,7 @@ export interface OrderAgeProps {
  */
 export function OrderAge({ order, now }: Readonly<OrderAgeProps>): ReactElement {
   const t = useTranslator();
-  const elapsed = formatElapsed(order.lastEventAt, now);
+  const elapsed = formatElapsed(t, order.lastEventAt, now);
   if (isStuck(order, now)) {
     return (
       <Badge tone="danger" icon="triangle-alert">

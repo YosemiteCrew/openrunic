@@ -61,7 +61,7 @@ export function DuplicatePanel({
                 {' · '}
                 {formatDate(match.patient.birthDate)}
                 {' · '}
-                {formatAge(match.patient.birthDate, asOf)}
+                {formatAge(t, match.patient.birthDate, asOf)}
               </p>
               <div className="or-duplicates__reasons">
                 {match.reasonKeys.map((reasonKey) => (

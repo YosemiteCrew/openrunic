@@ -1,0 +1,83 @@
+# Secret-scan configuration for the Detect secrets (Gitleaks) gate.
+# .github/workflows/secret-scan.yml runs `gitleaks git` over the commits a pull
+# request adds; gitleaks auto-discovers this file at the repository root, so a
+# local run of the same command applies the same policy.
+#
+# This file corrects a rule rather than accepting a finding, and the difference
+# decides what belongs in it. An accepted finding is a real credential-shaped
+# value somebody has judged safe, and it goes with a reason, an owner and a
+# re-review date, the way `.grype.yaml` and `.grant.yaml` entries do -
+# `scripts/ci/exception-expiry.mjs` enforces those dates. Nothing here is that.
+# Below is one string shape that cannot be a credential, allowlisted so the gate
+# stops reporting it, with no date because "are message catalogue keys still not
+# secrets" is not a question that has a different answer in six months.
+#
+# If this file ever grows an entry that IS a judgement about a real value, that
+# entry needs the reason, the owner and the date, and this header needs
+# rewriting to say the file now holds both kinds.
+
+[extend]
+useDefault = true
+
+# Global rather than attached to `generic-api-key`, which is the rule that
+# fires. gitleaks cannot add an allowlist to a rule it inherits from the default
+# set: redefining `[[rules]] id = "generic-api-key"` REPLACES that rule rather
+# than extending it, and a replacement carrying only an allowlist has no regex
+# and therefore detects nothing - which would silently disable the most useful
+# rule in the set rather than narrow it. Verified by trying it: the six findings
+# came back unchanged.
+#
+# Global is acceptable here only because the pattern is narrow enough to be safe
+# against every rule, not because it was convenient. See below.
+[allowlist]
+  # A message catalogue key: `labelKey: 'marketing.pillar.hospitals.point1'`.
+  #
+  # Two gates want opposite things from that one line. `catalogue-drift.test.ts`
+  # scans the source for `somethingKey: 'a.b.c'` and can see a key written no
+  # other way, so the shape is required rather than incidental: a key anywhere
+  # else is invisible to it and its typo reaches a screen. The generic-api-key
+  # rule hunts for exactly `<word>Key: "<high-entropy string>"`, and a dotted key
+  # long enough to name a screen and a field clears its entropy threshold. Six
+  # of them did, on the marketing pillars.
+  #
+  # The pattern is narrow enough that it cannot hide a credential. The value has
+  # to be lowercase-initial dotted segments of letters and digits and nothing
+  # else: no underscore, hyphen, slash, plus, equals, colon or uppercase run. No
+  # API key, JWT, private key or connection string is spelled that way, and a
+  # real secret sitting next to a `labelKey:` would not match it.
+  #
+  # The quotes are optional in the pattern rather than matched as a pair,
+  # because gitleaks compiles with Go's RE2 and RE2 has no backreferences, so a
+  # pattern cannot require the closing quote to match the opening one. Nothing
+  # is lost: what makes this safe to allowlist is the shape of the value, not
+  # the punctuation around it.
+  #
+  # Proved rather than argued, with a probe file of five lines committed and
+  # scanned twice, once with this config moved aside:
+  #
+  #   labelKey: 'marketing.pillar.hospitals.point1'  baseline 1, allowlisted 0
+  #   labelKey: 'sk-proj-abc123DEF456ghi789JKL012'   baseline 1, allowlisted 1
+  #
+  # The second line is the case that matters: a credential wearing a `labelKey:`
+  # name, which is the only way this allowlist could hide something. It is still
+  # caught, because the value has a hyphen and an uppercase run and so is not
+  # the dotted-lowercase shape.
+  #
+  # One honest caveat. That was run with gitleaks 8.30.1; CI pins 8.24.2. The
+  # `[allowlist] regexTarget` semantics have not changed across 8.x, but the two
+  # numbers are not the same number, so the CI run is the one that decides.
+  #
+  # Owner: ankit-yc. No re-review date, per the header. Revisit condition: if
+  # this ever has to be widened - a different key shape, a value with a
+  # character this does not allow - that is a signal the two gates have stopped
+  # agreeing about what a catalogue key looks like, and the answer is to look at
+  # both rather than to relax this one.
+# Matched against the whole LINE rather than against the captured value, which
+# gitleaks does by default. That is deliberate and is what keeps this narrow:
+# the value on its own, `marketing.pillar.hospitals.point1`, is a shape a
+# careless credential could imitate, while the value preceded by
+# `somethingKey:` on the same line is the catalogue shape and nothing else.
+regexTarget = "line"
+regexes = [
+  '''[A-Za-z]*Key\s*:\s*["']?[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9]+)+["']?''',
+]

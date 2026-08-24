@@ -19,17 +19,38 @@ describe('ReportsScreen dashboard', () => {
     expect(screen.getAllByText('Within target').length).toBeGreaterThan(0);
   });
 
+  /**
+   * The names carry the tile's own capital: "Open Unsigned notes", not "Open
+   * unsigned notes". The link used to lowercase `tile.label` to make an English
+   * sentence of it, which re-cased a string the server owns and would have gone
+   * on doing it inside every language the frame is translated into.
+   */
   it('makes every number reachable in one click from its own tile', async () => {
     render(<ReportsScreen />);
 
-    expect(await screen.findByRole('link', { name: 'Open unsigned notes' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Open Unsigned notes' })).toHaveAttribute(
       'href',
       '/inbox'
     );
-    expect(screen.getByRole('link', { name: 'Open claims needing attention' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open Claims needing attention' })).toHaveAttribute(
       'href',
       '/billing'
     );
+  });
+
+  /**
+   * The trend sentence is one message with the window and the direction as
+   * placeholders, so this asserts the rendered whole rather than either half:
+   * a test that checked only for "rising" would pass against the fixed English
+   * prefix this replaced.
+   */
+  it('says how long the sparkline covers and which way it went', async () => {
+    render(<ReportsScreen />);
+
+    // Four of the five fixture tiles rise and one falls, so both words are on
+    // screen and neither query can pass on a single lucky tile.
+    expect((await screen.findAllByText('Last 7 days, rising')).length).toBeGreaterThan(1);
+    expect(screen.getByText('Last 7 days, falling')).toBeInTheDocument();
   });
 
   it('renders the claim funnel and the aging split as words and numbers', async () => {

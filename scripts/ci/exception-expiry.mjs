@@ -47,6 +47,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+import { resolveWithin } from './safe-path.mjs';
+
 /**
  * The files that carry exceptions, and how an entry is recognised in each.
  *
@@ -133,21 +135,50 @@ export function todayUtc(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
 
+/**
+ * One exception file's text, or null when it genuinely is not there.
+ *
+ * The two cases are kept apart on purpose, and that distinction is the whole
+ * point of this function.
+ *
+ * `.trivyignore` can legitimately be absent, and a file that is not there has
+ * no exceptions to expire. But a file that EXISTS and cannot be read is a
+ * different thing entirely. Swallowing that would make this script report
+ * "0 accepted findings, all current" and exit zero having checked nothing: a
+ * security gate passing because it could not do its job, which is exactly the
+ * failure this script was written to stop happening to a re-review date. So
+ * anything other than "not found" is raised.
+ *
+ * The path goes through `resolveWithin` for the reason the other CI scripts do.
+ * It is not reachable input today, {@link SOURCES} being a constant in this
+ * file, but a guard that reads paths is a guard somebody will later hand a path
+ * to.
+ */
 function readIfPresent(root, file) {
+  const resolved = resolveWithin(root, file);
+  if (resolved === null) {
+    throw new Error(`exception-expiry: refusing to read ${file}, which escapes ${root}`);
+  }
   try {
-    return readFileSync(path.join(root, file), 'utf8');
-  } catch {
-    return null; // A file that does not exist has no exceptions in it.
+    return readFileSync(resolved, 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    throw error;
   }
 }
 
-export function check(root, today) {
+/** Every exception in a given set of sources, and the ones that fail the build. */
+export function checkWith(root, today, sources) {
   const exceptions = [];
-  for (const source of SOURCES) {
+  for (const source of sources) {
     const text = readIfPresent(root, source.file);
     if (text !== null) exceptions.push(...findExceptions(text, source));
   }
   return { exceptions, problems: expired(exceptions, today) };
+}
+
+export function check(root, today) {
+  return checkWith(root, today, SOURCES);
 }
 
 function main(argv) {

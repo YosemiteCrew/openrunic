@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 
-import { check, expired, findExceptions, SOURCES, todayUtc } from './exception-expiry.mjs';
+import {
+  check,
+  checkWith,
+  expired,
+  findExceptions,
+  SOURCES,
+  todayUtc,
+} from './exception-expiry.mjs';
 
 const GRYPE = SOURCES.find((source) => source.file === '.grype.yaml');
 const TRIVY = SOURCES.find((source) => source.file === '.trivyignore');
@@ -171,4 +181,62 @@ test('finds the exceptions this repository actually carries', () => {
     exceptions.filter((exception) => !exception.isExample).length >= 1,
     'expected at least one live exception in .grype.yaml'
   );
+});
+
+/**
+ * A missing file is fine. `.trivyignore` may legitimately not exist, and a file
+ * that is not there has no exceptions to expire.
+ */
+test('a missing exception file is not an error', () => {
+  const empty = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+  try {
+    const { exceptions, problems } = check(empty, '2026-08-24');
+    assert.deepEqual(exceptions, []);
+    assert.deepEqual(problems, []);
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+/**
+ * A file that EXISTS and cannot be read is not fine, and this is the one that
+ * matters. The first draft caught every error and returned null, so an
+ * unreadable `.grype.yaml` produced "0 accepted findings, all current" and exit
+ * zero - a security gate passing because it could not do its job, which is the
+ * exact failure this script exists to stop happening to a re-review date.
+ *
+ * Raised by review rather than by me, and it was right.
+ */
+test('an unreadable exception file is a hard failure, not an empty scan', (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root can read a mode-000 file, so this cannot be exercised as root');
+    return;
+  }
+
+  const directory = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+  const file = path.join(directory, '.grype.yaml');
+  writeFileSync(file, 'ignore:\n  - vulnerability: CVE-2025-00001\n');
+  chmodSync(file, 0o000);
+
+  try {
+    assert.throws(() => check(directory, '2026-08-24'), /EACCES|permission denied/iu);
+  } finally {
+    chmodSync(file, 0o600);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Not reachable today - `SOURCES` is a constant in this file - but a guard that
+ * reads paths is a guard somebody will later hand a path to.
+ */
+test('refuses a source path that escapes the root', () => {
+  const escaping = { file: '../../etc/passwd', what: 'x', entry: /^x$/u, comment: /^#/u };
+  const directory = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+
+  try {
+    assert.throws(() => checkWith(directory, '2026-08-24', [escaping]), /escapes/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

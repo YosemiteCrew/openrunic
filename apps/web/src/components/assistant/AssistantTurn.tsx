@@ -22,9 +22,9 @@ import type { AssistantDraft, AssistantTurn as Turn, WithheldReason } from './tr
  */
 
 /** Why nothing is shown, when the turn produced prose that is not on screen. */
-const WITHHELD_KEY: Record<Exclude<WithheldReason, 'none'>, string> = {
-  unsourced: 'assistant.withheld.unsourced',
-  incomplete: 'assistant.withheld.incomplete',
+const WITHHELD_KEY: Record<Exclude<WithheldReason, 'none'>, { labelKey: string }> = {
+  unsourced: { labelKey: 'assistant.withheld.unsourced' },
+  incomplete: { labelKey: 'assistant.withheld.incomplete' },
 };
 
 export interface AssistantTurnProps {
@@ -77,7 +77,7 @@ export function AssistantTurnView({ turn, streaming }: Readonly<AssistantTurnPro
       ))}
 
       {turn.withheld === 'none' ? null : (
-        <p className="or-assistant__withheld or-body">{t(WITHHELD_KEY[turn.withheld])}</p>
+        <p className="or-assistant__withheld or-body">{t(WITHHELD_KEY[turn.withheld].labelKey)}</p>
       )}
 
       {turn.drafts.map((draft) => (

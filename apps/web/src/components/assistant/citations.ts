@@ -37,13 +37,15 @@ export function citationHref(source: AgentSource): string | null {
  * recognises - and is left in that spelling rather than gaining a second name
  * invented here.
  */
-const TYPE_LABEL_KEYS: Record<string, string> = {
-  ClinicalNote: 'assistant.citation.note',
-  DiagnosticReport: 'assistant.citation.result',
-  ProblemList: 'assistant.citation.problemList',
+const TYPE_LABEL_KEYS: Record<string, { labelKey: string }> = {
+  ClinicalNote: { labelKey: 'assistant.citation.note' },
+  DiagnosticReport: { labelKey: 'assistant.citation.result' },
+  ProblemList: { labelKey: 'assistant.citation.problemList' },
 };
 
 export function citationTypeLabel(t: Translator, source: AgentSource): string {
-  const key = TYPE_LABEL_KEYS[source.resourceType];
-  return key === undefined ? source.resourceType : t(key);
+  // The map does not cover every resource type the agent can cite, so a type
+  // nobody wrote a label for falls back to the FHIR name rather than to a blank.
+  const entry = TYPE_LABEL_KEYS[source.resourceType];
+  return entry === undefined ? source.resourceType : t(entry.labelKey);
 }

@@ -14,16 +14,16 @@ import { formatDateTime, formatElapsed } from '@/lib/format';
  * code cannot make - German capitalises its nouns wherever they stand, and
  * Turkish has two i rules that turn a correct word into a wrong one.
  */
-const HEADING_KEY: Record<SlaState, string> = {
-  OVERDUE: 'inbox.sla.overdue',
-  DUE_SOON: 'inbox.sla.dueSoon',
-  ON_TIME: 'inbox.sla.onTime',
+const HEADING_KEY: Record<SlaState, { labelKey: string }> = {
+  OVERDUE: { labelKey: 'inbox.sla.overdue' },
+  DUE_SOON: { labelKey: 'inbox.sla.dueSoon' },
+  ON_TIME: { labelKey: 'inbox.sla.onTime' },
 };
 
-const INLINE_KEY: Record<SlaState, string> = {
-  OVERDUE: 'inbox.sla.inline.overdue',
-  DUE_SOON: 'inbox.sla.inline.dueSoon',
-  ON_TIME: 'inbox.sla.inline.onTime',
+const INLINE_KEY: Record<SlaState, { labelKey: string }> = {
+  OVERDUE: { labelKey: 'inbox.sla.inline.overdue' },
+  DUE_SOON: { labelKey: 'inbox.sla.inline.dueSoon' },
+  ON_TIME: { labelKey: 'inbox.sla.inline.onTime' },
 };
 
 /**
@@ -40,7 +40,7 @@ export function slaLabel(
   form: 'heading' | 'inline' = 'heading'
 ): string {
   const state = slaState(dueAt, now);
-  const key = (form === 'inline' ? INLINE_KEY : HEADING_KEY)[state];
+  const key = (form === 'inline' ? INLINE_KEY : HEADING_KEY)[state].labelKey;
   if (state === 'OVERDUE') return t(key, { elapsed: formatElapsed(dueAt, now) });
   if (state === 'DUE_SOON') return t(key, { elapsed: formatElapsed(now, dueAt) });
   return t(key, { when: formatDateTime(dueAt, 'dense') });

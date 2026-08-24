@@ -47,9 +47,9 @@ export interface FlowCardProps {
  * of it, because a language that puts the duration first cannot move a word the
  * code concatenated.
  */
-const TIER_KEY: Record<'caution' | 'delayed', string> = {
-  caution: 'schedule.flowCard.waiting',
-  delayed: 'schedule.flowCard.delayed',
+const TIER_KEY: Record<'caution' | 'delayed', { labelKey: string }> = {
+  caution: { labelKey: 'schedule.flowCard.waiting' },
+  delayed: { labelKey: 'schedule.flowCard.delayed' },
 };
 
 export function FlowCard({
@@ -86,7 +86,7 @@ export function FlowCard({
         <Badge tone={status.tone}>{t(status.labelKey)}</Badge>
         {tier === 'none' ? null : (
           <Badge tone={tier === 'delayed' ? 'danger' : 'neutral'}>
-            {t(TIER_KEY[tier], { elapsed: formatElapsed(statusSince, now) })}
+            {t(TIER_KEY[tier].labelKey, { elapsed: formatElapsed(statusSince, now) })}
           </Badge>
         )}
         {currentRoom ? <Tag>{currentRoom}</Tag> : <Tag>{t('schedule.flowCard.noRoom')}</Tag>}

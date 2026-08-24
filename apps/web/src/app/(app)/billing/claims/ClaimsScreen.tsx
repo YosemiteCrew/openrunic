@@ -13,7 +13,6 @@ import {
   claimCounts,
   CLAIM_STATUS_LABEL_KEYS,
   isBlockedByScrub,
-  keywordsOf,
   ToastDock,
   useToasts,
 } from '@/components/billing';
@@ -25,6 +24,7 @@ import { AsyncBoundary } from '@/components/state';
 import { CLAIM_STATUSES, filterClaims, useClaims } from '@/lib/api';
 import type { BillingClient, Claim, ClaimStatus } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -175,7 +175,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
         // The same key the bulk-action button uses, so the palette and the
         // button can never end up naming one action two ways.
         label: t('billing.bulkAction.scrub'),
-        keywords: keywordsOf(t('billing.claims.command.scrub.keywords')),
+        keywords: searchWords(t('billing.claims.command.scrub.keywords')),
         icon: 'shield-check',
         perform: () => runBulk('SCRUBBED'),
       },
@@ -183,7 +183,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
         id: 'billing.claims.submit',
         group: 'actions',
         label: t('billing.bulkAction.submit'),
-        keywords: keywordsOf(t('billing.claims.command.submit.keywords')),
+        keywords: searchWords(t('billing.claims.command.submit.keywords')),
         icon: 'send',
         perform: () => runBulk('SUBMITTED'),
       },
@@ -191,7 +191,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
         id: 'billing.claims.selectAll',
         group: 'actions',
         label: t('billing.claims.command.selectAll'),
-        keywords: keywordsOf(t('billing.claims.command.selectAll.keywords')),
+        keywords: searchWords(t('billing.claims.command.selectAll.keywords')),
         icon: 'check-check',
         perform: selectAll,
       },
@@ -199,7 +199,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
         id: 'billing.claims.denied',
         group: 'actions',
         label: t('billing.claims.command.denied'),
-        keywords: keywordsOf(t('billing.claims.command.denied.keywords')),
+        keywords: searchWords(t('billing.claims.command.denied.keywords')),
         icon: 'triangle-alert',
         perform: () => {
           setStatus('DENIED');

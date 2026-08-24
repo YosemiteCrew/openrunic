@@ -12,7 +12,6 @@ import {
   AllocationTable,
   allocationState,
   allocationStateName,
-  keywordsOf,
   Money,
   Receipt,
   ToastDock,
@@ -27,6 +26,7 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { usePayments, useStatements } from '@/lib/api';
 import type { BillingClient, Payment, PaymentMethodKind, StatementAccount } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { EMPTY_TENDER, reduceTender } from './tender';
@@ -365,7 +365,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
         id: 'billing.payments.amount',
         group: 'actions',
         label: t('billing.payments.command.amount'),
-        keywords: keywordsOf(t('billing.payments.command.amount.keywords')),
+        keywords: searchWords(t('billing.payments.command.amount.keywords')),
         icon: 'credit-card',
         perform: () => document.getElementById(amountId)?.focus(),
       },
@@ -373,7 +373,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
         id: 'billing.payments.allocate',
         group: 'actions',
         label: t('billing.payments.command.allocate'),
-        keywords: keywordsOf(t('billing.payments.command.allocate.keywords')),
+        keywords: searchWords(t('billing.payments.command.allocate.keywords')),
         icon: 'wand-sparkles',
         perform: allocateOldestFirst,
       },
@@ -381,7 +381,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
         id: 'billing.payments.receipt',
         group: 'actions',
         label: t('billing.payments.command.receipt'),
-        keywords: keywordsOf(t('billing.payments.command.receipt.keywords')),
+        keywords: searchWords(t('billing.payments.command.receipt.keywords')),
         icon: 'receipt',
         perform: () => {
           const last = taken[0] ?? recent[0] ?? null;

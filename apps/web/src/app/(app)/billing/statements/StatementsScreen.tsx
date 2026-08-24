@@ -11,7 +11,6 @@ import {
   BUCKET_STATE_LABEL_KEYS,
   bucketTone,
   DUNNING_LABEL_KEYS,
-  keywordsOf,
   Money,
   StatementDrawer,
   ToastDock,
@@ -26,6 +25,7 @@ import { AsyncBoundary } from '@/components/state';
 import { filterStatements, useStatements } from '@/lib/api';
 import type { AgeingBucket, BillingClient, StatementAccount } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -147,7 +147,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
         id: 'billing.statements.run',
         group: 'actions',
         label: t('billing.statements.command.run'),
-        keywords: keywordsOf(t('billing.statements.command.run.keywords')),
+        keywords: searchWords(t('billing.statements.command.run.keywords')),
         icon: 'mail',
         perform: openRun,
       },
@@ -155,7 +155,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
         id: 'billing.statements.selectAll',
         group: 'actions',
         label: t('billing.statements.command.selectAll'),
-        keywords: keywordsOf(t('billing.statements.command.selectAll.keywords')),
+        keywords: searchWords(t('billing.statements.command.selectAll.keywords')),
         icon: 'check-check',
         perform: selectAll,
       },
@@ -163,7 +163,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
         id: 'billing.statements.over90',
         group: 'actions',
         label: t('billing.statements.command.over90'),
-        keywords: keywordsOf(t('billing.statements.command.over90.keywords')),
+        keywords: searchWords(t('billing.statements.command.over90.keywords')),
         icon: 'triangle-alert',
         perform: () => {
           setBucket('DAYS_91_PLUS');
@@ -174,7 +174,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
         id: 'billing.statements.all',
         group: 'actions',
         label: t('billing.statements.command.all'),
-        keywords: keywordsOf(t('billing.statements.command.all.keywords')),
+        keywords: searchWords(t('billing.statements.command.all.keywords')),
         icon: 'list',
         perform: () => setBucket(null),
       },

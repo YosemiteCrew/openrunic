@@ -59,7 +59,6 @@ export type {
 export { claimLifecycle } from './billing';
 export { translateColumns } from './columns';
 export type { KeyedColumn } from './columns';
-export { keywordsOf } from './keywords';
 export { AllocationTable } from './AllocationTable';
 export type { AllocationTableProps } from './AllocationTable';
 export { ChargeLines } from './ChargeLines';

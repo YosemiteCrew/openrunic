@@ -11,7 +11,6 @@ import {
   ChargePicker,
   DiagnosisPanel,
   feeSheetTotals,
-  keywordsOf,
   Money,
   newChargeLine,
   ScrubPanel,
@@ -27,6 +26,7 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_PROCEDURE_PANELS, useFeeSheets } from '@/lib/api';
 import type { BillingClient, ChargeLine, FeeSheet, ProcedureCode } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName, formatTime } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -321,7 +321,7 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
         id: 'billing.charges.add',
         group: 'actions',
         label: t('billing.charges.command.add'),
-        keywords: keywordsOf(t('billing.charges.command.add.keywords')),
+        keywords: searchWords(t('billing.charges.command.add.keywords')),
         icon: 'plus',
         perform: () => document.getElementById(searchInputId)?.focus(),
       },
@@ -329,7 +329,7 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
         id: 'billing.charges.markReady',
         group: 'actions',
         label: t('billing.charges.command.markReady'),
-        keywords: keywordsOf(t('billing.charges.command.markReady.keywords')),
+        keywords: searchWords(t('billing.charges.command.markReady.keywords')),
         icon: 'check',
         perform: () => setConfirming(true),
       },
@@ -337,7 +337,7 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
         id: 'billing.charges.nextVisit',
         group: 'actions',
         label: t('billing.charges.command.nextVisit'),
-        keywords: keywordsOf(t('billing.charges.command.nextVisit.keywords')),
+        keywords: searchWords(t('billing.charges.command.nextVisit.keywords')),
         icon: 'arrow-right',
         perform: openNextVisit,
       },

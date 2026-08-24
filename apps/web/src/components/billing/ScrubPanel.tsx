@@ -3,6 +3,8 @@
 import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import type { ScrubFinding } from './billing';
@@ -23,6 +25,19 @@ import type { ScrubFinding } from './billing';
  * be quoted back on.
  */
 
+/**
+ * How many blocking findings the sheet still has.
+ *
+ * Through `counted` rather than `blocking.length === 1`, because one is not the
+ * only special case in every language: a fork translating into a language with
+ * four plural forms would get a sentence that reads as broken only to somebody
+ * who speaks it.
+ */
+const BLOCKING: CountedMessage = {
+  oneKey: 'billing.scrub.blocking.one',
+  otherKey: 'billing.scrub.blocking.other',
+};
+
 export interface ScrubPanelProps {
   findings: readonly ScrubFinding[];
 }
@@ -38,12 +53,7 @@ export function ScrubPanel({ findings }: Readonly<ScrubPanelProps>): ReactElemen
       {/* Polite: the biller is editing the sheet, and each keystroke changing
           the count must not interrupt them mid-line. */}
       <output className="or-small or-billing__hint">
-        {blocking.length === 0
-          ? t('billing.scrub.clear')
-          : t(
-              blocking.length === 1 ? 'billing.scrub.blocking.one' : 'billing.scrub.blocking.other',
-              { count: blocking.length }
-            )}
+        {blocking.length === 0 ? t('billing.scrub.clear') : counted(t, BLOCKING, blocking.length)}
         {advisory.length > 0 ? ` ${t('billing.scrub.advisory', { count: advisory.length })}` : ''}
       </output>
 

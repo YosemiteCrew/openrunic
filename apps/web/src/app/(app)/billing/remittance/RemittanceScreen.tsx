@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import {
-  keywordsOf,
   RemittanceLines,
   remittanceSummary,
   RESOLUTION_LABEL_KEYS,
@@ -20,6 +19,7 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { useRemittances } from '@/lib/api';
 import type { BillingClient, Remittance } from '@/lib/api';
 import { formatDate, formatMoney } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -104,7 +104,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
         id: 'billing.remittance.exceptions',
         group: 'actions',
         label: t('billing.remittance.command.exceptions'),
-        keywords: keywordsOf(t('billing.remittance.command.exceptions.keywords')),
+        keywords: searchWords(t('billing.remittance.command.exceptions.keywords')),
         icon: 'triangle-alert',
         perform: openNextWithExceptions,
       },
@@ -112,7 +112,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
         id: 'billing.remittance.filterExceptions',
         group: 'actions',
         label: t('billing.remittance.command.filterExceptions'),
-        keywords: keywordsOf(t('billing.remittance.command.filterExceptions.keywords')),
+        keywords: searchWords(t('billing.remittance.command.filterExceptions.keywords')),
         icon: 'funnel',
         perform: () => setExceptionsOnly(true),
       },
@@ -120,7 +120,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
         id: 'billing.remittance.showAll',
         group: 'actions',
         label: t('billing.remittance.command.showAll'),
-        keywords: keywordsOf(t('billing.remittance.command.showAll.keywords')),
+        keywords: searchWords(t('billing.remittance.command.showAll.keywords')),
         icon: 'list',
         perform: () => setExceptionsOnly(false),
       },

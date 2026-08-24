@@ -16,7 +16,11 @@ export const schedule: Messages = {
   'schedule.status.proposed': 'Propuesto',
   'schedule.status.pending': 'Pendiente',
   'schedule.status.booked': 'Reservado',
-  'schedule.status.arrived': 'Llegó',
+  /* A noun and not the conjugated "Llegó": this word is a flow board column
+     heading standing beside "Admitido" and "En sala", and it is a badge under a
+     patient's name, where a verb in the third person reads as a sentence that
+     was cut off. It also agrees with nobody, which "Llegado" would have to. */
+  'schedule.status.arrived': 'Llegada',
   'schedule.status.checkedIn': 'Admitido',
   'schedule.status.roomed': 'En sala',
   'schedule.status.inProgress': 'En consulta',
@@ -91,7 +95,9 @@ export const schedule: Messages = {
   'schedule.dayRail.counter.booked': 'Reservadas',
   'schedule.dayRail.counter.inTheBuilding': 'En el centro',
   'schedule.dayRail.counter.checkedOut': 'Con salida registrada',
-  'schedule.dayRail.counter.noShow': 'No asistió',
+  /* Counters, so plural nouns beside a number: "No asistió 3" reads as a
+     sentence with a stray digit, "Inasistencias 3" reads as a count. */
+  'schedule.dayRail.counter.noShow': 'Inasistencias',
   'schedule.dayRail.counter.cancelled': 'Canceladas',
   'schedule.dayRail.selectedOverline': 'Visita seleccionada',
   'schedule.dayRail.noVisitSelected': 'Ninguna visita seleccionada',
@@ -157,9 +163,14 @@ export const schedule: Messages = {
     'Los pacientes aparecen aquí en cuanto se registra su llegada. Registre la primera llegada desde la agenda.',
   'schedule.flowBoard.undo': 'Deshacer',
   'schedule.flowBoard.refused': 'Ese movimiento fue rechazado',
-  'schedule.flowBoard.moved': '{name} pasó de {from} a {to}.',
-  'schedule.flowBoard.movedUnassigned': 'Esta visita pasó de {from} a {to}.',
-  'schedule.flowBoard.movedBack': 'Se volvió a {status}.',
+  /* "del estado {from} al estado {to}" and not "de {from} a {to}": two of the
+     states this sentence names are themselves prepositional phrases, "en sala"
+     and "en consulta", so the shorter frame produces "pasó de en sala a en
+     consulta". The noun carries the preposition and every state then reads
+     after it. */
+  'schedule.flowBoard.moved': '{name} pasó del estado {from} al estado {to}.',
+  'schedule.flowBoard.movedUnassigned': 'Esta visita pasó del estado {from} al estado {to}.',
+  'schedule.flowBoard.movedBack': 'Se volvió al estado {status}.',
   'schedule.flowBoard.roomAssigned': 'Sala asignada',
   'schedule.flowBoard.roomMessage': '{name} está en {room}.',
   'schedule.flowBoard.roomMessageUnassigned': 'Esta visita está en {room}.',
@@ -182,7 +193,10 @@ export const schedule: Messages = {
   'schedule.flowCard.inTheBuilding': 'En el centro',
   'schedule.flowCard.roomFor': 'Sala para {name}',
   'schedule.flowCard.assignRoom': 'Asignar una sala',
-  'schedule.flowCard.advance': 'Pasar a {name} a {status}',
-  'schedule.flowCard.advanceUnassigned': 'Pasar esta visita a {status}',
+  /* Same reason as the board's toast, plus one of its own: "Pasar a {name} a
+     {status}" puts two unrelated `a` in one short label even when the state is
+     a single word. */
+  'schedule.flowCard.advance': 'Cambiar a {name} al estado {status}',
+  'schedule.flowCard.advanceUnassigned': 'Cambiar esta visita al estado {status}',
   'schedule.flowCard.complete': 'Visita finalizada',
 };

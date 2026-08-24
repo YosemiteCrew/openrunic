@@ -30,6 +30,7 @@ import type { ApiClient } from '@/lib/api';
 import { clinicNow, useChartSummary } from '@/lib/api/chart';
 import type { ChartClient, ChartSummary } from '@/lib/api/chart';
 import { formatDate, formatName } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -191,13 +192,6 @@ function tabCount(tab: ChartTabId, chart: ChartSummary | null): number | null {
 }
 
 /** A comma-separated catalogue string as the palette's keyword list. */
-function keywordList(t: Translator, key: string): string[] {
-  return t(key)
-    .split(',')
-    .map((word) => word.trim())
-    .filter((word) => word !== '');
-}
-
 export interface PatientChartScreenProps {
   patientId: string;
   /** Injectable for tests. */
@@ -264,7 +258,7 @@ export function PatientChartScreen({
         id: `chart.tab.${tab.id}`,
         group: 'actions',
         label: t('chart.command.showTab', { tab: label }),
-        keywords: [...keywordList(t, 'chart.command.showTab.keywords'), label],
+        keywords: [...searchWords(t('chart.command.showTab.keywords')), label],
         icon: 'panel-top',
         perform: () => selectTab(tab.id),
       };
@@ -276,7 +270,7 @@ export function PatientChartScreen({
             id: 'chart.open-note',
             group: 'navigate',
             label: t('chart.summary.openVisitNote'),
-            keywords: keywordList(t, 'chart.command.openNote.keywords'),
+            keywords: searchWords(t('chart.command.openNote.keywords')),
             icon: 'notebook-pen',
             href: `/encounters/${openNoteId}`,
           },
@@ -290,7 +284,7 @@ export function PatientChartScreen({
         id: 'chart.print',
         group: 'actions',
         label: t('chart.command.print'),
-        keywords: keywordList(t, 'chart.command.print.keywords'),
+        keywords: searchWords(t('chart.command.print.keywords')),
         icon: 'printer',
         perform: () => window.print(),
       },

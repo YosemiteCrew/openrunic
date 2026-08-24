@@ -33,9 +33,30 @@ import { shell } from './shell.js';
  * not a developer with a dictionary, and the coverage report names exactly
  * which ones are waiting.
  *
- * Adding one of those files later is how that gap closes. Nothing here has to
- * change for it to.
+ * ## Adding one of those areas later
+ *
+ * Writing `es/chart.ts` is not enough, and the compiler will not say so: an
+ * area file nothing imports type-checks perfectly and every clinical string
+ * goes on quietly falling back to English, which is the failure this package
+ * exists to make visible rather than one to introduce. Two more lines are
+ * needed here, the import and the spread, and `catalogues.test.ts` refuses an
+ * area file that has not had them - so the mistake is a red build rather than a
+ * language that never arrives.
  */
+export const esAreas: Readonly<Record<string, Messages>> = {
+  shell,
+  nav,
+  downtime,
+  auth,
+  marketing,
+  schedule,
+  billing,
+  admin,
+  inbox,
+  reports,
+  common,
+};
+
 export const es: Messages = {
   ...shell,
   ...nav,

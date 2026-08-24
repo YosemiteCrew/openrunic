@@ -37,3 +37,4 @@ export function isSupportedLocale(locale: string): boolean {
 
 export { en, es };
 export { enAreas } from './en/index.js';
+export { esAreas } from './es/index.js';

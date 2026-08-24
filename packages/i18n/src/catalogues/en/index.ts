@@ -51,6 +51,11 @@ import { shell } from './shell.js';
  * An area file may be empty. That means its slice has not landed yet, not that
  * the screen has no words.
  *
+ * Nothing here discovers anything: a new area is a file, an import and a line
+ * in the spread. An area file that has only the first of those type-checks
+ * perfectly and renders nothing, so `catalogues.test.ts` reads the directory
+ * and refuses one that is not composed.
+ *
  * The composition is a spread, so a key defined in two areas would be taken
  * from the later one silently. `catalogues.test.ts` refuses that rather than
  * relying on nobody doing it: two files claiming one key is two people

@@ -12,7 +12,12 @@ import { esAreas } from './es/index.js';
  * guard it, or the other way round - which is what a hand-written `messages`
  * object beside a hand-written test map allowed.
  *
- * Adding a locale is a directory and one line here.
+ * Adding a locale is a directory of area files with its own barrel, and two
+ * lines here: the import of that barrel's `<locale>Areas`, and its entry below.
+ * Nothing discovers the directory - said plainly because the same sentence has
+ * been undercounted twice already in this file's history, and an instruction
+ * that cannot be followed as written is how a language ends up half-registered
+ * and silently falling back.
  */
 export const catalogueAreas: Readonly<Record<Locale, Readonly<Record<string, Messages>>>> = {
   en: enAreas,

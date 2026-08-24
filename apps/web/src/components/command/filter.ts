@@ -1,5 +1,5 @@
 import type { Command, CommandGroup } from './types';
-import { COMMAND_GROUP_LABELS, COMMAND_GROUP_ORDER } from './types';
+import { COMMAND_GROUP_LABEL_KEYS, COMMAND_GROUP_ORDER } from './types';
 
 /**
  * Ranking for the palette.
@@ -47,7 +47,8 @@ export function scoreCommand(command: Command, query: string): number {
 
 export interface CommandSection {
   group: CommandGroup;
-  label: string;
+  /** Catalogue key for the heading. Looked up by the palette, per render. */
+  labelKey: string;
   commands: Command[];
 }
 
@@ -78,7 +79,11 @@ export function filterCommands(commands: Command[], query: string): CommandSecti
   for (const group of COMMAND_GROUP_ORDER) {
     const groupCommands = buckets.get(group);
     if (groupCommands) {
-      sections.push({ group, label: COMMAND_GROUP_LABELS[group], commands: groupCommands });
+      sections.push({
+        group,
+        labelKey: COMMAND_GROUP_LABEL_KEYS[group].labelKey,
+        commands: groupCommands,
+      });
     }
   }
   return sections;

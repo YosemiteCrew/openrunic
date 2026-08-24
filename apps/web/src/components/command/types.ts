@@ -21,10 +21,20 @@ export type CommandGroup =
 interface CommandBase {
   /** Stable and unique across the app. Prefix it with the screen: `schedule.book`. */
   id: string;
-  /** Sentence case. An action names its verb and its object: "Void claim". */
+  /**
+   * Sentence case. An action names its verb and its object: "Void claim".
+   *
+   * Already translated when it reaches the registry, because it is also what
+   * the palette filters on: a reader typing in Spanish has to match the Spanish
+   * label, and ranking a key would rank a string nobody reads.
+   */
   label: string;
   group: CommandGroup;
-  /** Synonyms a tired person would type. "fee sheet", "charges" both hit billing. */
+  /**
+   * Synonyms a tired person would type. "fee sheet", "charges" both hit
+   * billing. Translated with the label, and per-language rather than
+   * transliterated: a Spanish speaker does not type "fee sheet".
+   */
   keywords?: string[];
   /** Lucide slug. */
   icon?: string;
@@ -53,8 +63,19 @@ export type Command = NavigateCommand | ActionCommand;
 /** Group headings, in the order the palette ranks them. */
 export const COMMAND_GROUP_ORDER: readonly CommandGroup[] = ['patients', 'navigate', 'actions'];
 
-export const COMMAND_GROUP_LABELS: Record<CommandGroup, string> = {
-  patients: 'Patients',
-  navigate: 'Go to',
-  actions: 'Actions',
+/**
+ * What the palette calls each group, as catalogue keys.
+ *
+ * Keys rather than words because `filterCommands` is a pure function with no
+ * reader and no translator: it decides which group a command lands in, and the
+ * palette looks the heading up per render in the language of whoever opened it.
+ *
+ * Carried as `labelKey` data so `catalogue-drift.test.ts` can see them. It
+ * reads `somethingKey:` out of the source, so a heading whose key is defined
+ * nowhere fails the build rather than rendering as itself above three commands.
+ */
+export const COMMAND_GROUP_LABEL_KEYS: Record<CommandGroup, { labelKey: string }> = {
+  patients: { labelKey: 'shell.palette.group.patients' },
+  navigate: { labelKey: 'shell.palette.group.navigate' },
+  actions: { labelKey: 'shell.palette.group.actions' },
 };

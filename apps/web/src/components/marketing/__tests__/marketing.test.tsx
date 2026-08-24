@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { render, screen, within } from '@testing-library/react';
+import { appCatalogue } from '@openrunic/i18n';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -17,8 +18,13 @@ import {
   SiteHeader,
   StatusNote,
 } from '@/components/marketing';
-import type { Pillar } from '@/components/marketing';
 import { otherPillars } from '@/components/marketing/links';
+
+/* The real catalogue in the source language. These components render keys now,
+   so an assertion about the words a visitor reads has to go through it -
+   asserting on a key alone would pass against a key that resolves to nothing,
+   which is exactly what `catalogue-drift.test.ts` exists to catch. */
+const EN = appCatalogue.messages['en'] ?? {};
 
 /* The public pages are server components with no router in a unit test, so
    next/link is stubbed down to the anchor it renders in the browser. */
@@ -44,7 +50,7 @@ describe('OFFSITE', () => {
 
 describe('PILLARS', () => {
   it('names the three audiences the project is organised around', () => {
-    expect(PILLARS.map((pillar) => pillar.title)).toEqual([
+    expect(PILLARS.map((pillar) => EN[pillar.titleKey])).toEqual([
       'Hospitals and clinics',
       'Patients',
       'Developers',
@@ -63,7 +69,7 @@ describe('PILLARS', () => {
   });
 
   it('leaves out the pillar being read and keeps the other two in order', () => {
-    expect(otherPillars('/for/patients').map((pillar) => pillar.title)).toEqual([
+    expect(otherPillars('/for/patients').map((pillar) => EN[pillar.titleKey])).toEqual([
       'Hospitals and clinics',
       'Developers',
     ]);
@@ -104,23 +110,29 @@ describe('SiteHeader', () => {
   });
 
   /**
-   * The masthead on a Spanish page has to point at Spanish pages. These are
-   * prerendered one per language, so `/for/hospitals` does not exist as an
-   * address any more, and a masthead that kept linking there would bounce every
-   * reader through the redirect and back into whichever language their browser
-   * asked for - discarding the one they are visibly reading.
+   * The masthead on a Spanish page has to point at Spanish pages, and read as
+   * Spanish while doing it. These are prerendered one per language, so
+   * `/for/hospitals` does not exist as an address any more, and a masthead that
+   * kept linking there would bounce every reader through the redirect and back
+   * into whichever language their browser asked for - discarding the one they
+   * are visibly reading. Every element is found by its Spanish name, so the
+   * same test now also refuses a masthead whose addresses follow the language
+   * and whose words do not.
    */
   it('keeps every internal link inside the language being read', () => {
     render(<SiteHeader locale="es" />);
-    const nav = screen.getByRole('navigation', { name: 'Site' });
+    const nav = screen.getByRole('navigation', { name: 'Sitio' });
 
-    expect(screen.getByRole('link', { name: 'openrunic home' })).toHaveAttribute('href', '/es');
-    expect(within(nav).getByRole('link', { name: 'Hospitals' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Inicio de openrunic' })).toHaveAttribute(
+      'href',
+      '/es'
+    );
+    expect(within(nav).getByRole('link', { name: 'Hospitales' })).toHaveAttribute(
       'href',
       '/es/for/hospitals'
     );
     // The repository link is off-site and keeps its absolute URL.
-    expect(within(nav).getByRole('link', { name: 'Source' }).getAttribute('href')).toMatch(
+    expect(within(nav).getByRole('link', { name: 'Código fuente' }).getAttribute('href')).toMatch(
       /^https?:\/\//u
     );
   });
@@ -157,7 +169,7 @@ describe('SiteHeader', () => {
 
 describe('SiteFooter', () => {
   it('carries the compliance footnote', () => {
-    render(<SiteFooter />);
+    render(<SiteFooter locale="en" />);
 
     expect(
       screen.getByText('openrunic is open-source software, not a certified medical device.')
@@ -165,7 +177,7 @@ describe('SiteFooter', () => {
   });
 
   it('names the licence rather than leaving it to be inferred', () => {
-    render(<SiteFooter />);
+    render(<SiteFooter locale="en" />);
 
     expect(screen.getByRole('link', { name: 'Licence: AGPL-3.0-only' })).toHaveAttribute(
       'href',
@@ -174,7 +186,7 @@ describe('SiteFooter', () => {
   });
 
   it('groups its links into named navigation landmarks', () => {
-    render(<SiteFooter />);
+    render(<SiteFooter locale="en" />);
 
     expect(screen.getAllByRole('navigation').map((nav) => nav.getAttribute('aria-label'))).toEqual([
       'Project',
@@ -185,23 +197,23 @@ describe('SiteFooter', () => {
 });
 
 describe('PillarCard', () => {
-  /* Its own pillar rather than one from PILLARS: the card is measured on its
-     contract, so the real copy can be rewritten without reds appearing here. */
-  const pillar: Pillar = {
-    title: 'Hospitals and clinics',
-    href: '/for/hospitals',
-    summary: 'What this audience gets, in one line.',
-    points: ['The first thing', 'The second thing'],
-  };
+  /* The real hospitals pillar rather than an invented one. The card renders
+     catalogue keys now, so a fixture carrying made-up keys would assert that
+     the card puts a key where a heading belongs. Every expectation below still
+     goes through the catalogue or through the fixture's own length, so the copy
+     can be rewritten without reds appearing here. */
+  const pillar = PILLARS[0]!;
 
   it('titles the card at level 3, under the band that holds it', () => {
-    render(<PillarCard pillar={pillar} />);
+    render(<PillarCard pillar={pillar} locale="en" />);
 
-    expect(screen.getByRole('heading', { level: 3, name: pillar.title })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: EN[pillar.titleKey] })
+    ).toBeInTheDocument();
   });
 
   it('names its link for the audience rather than "read more"', () => {
-    render(<PillarCard pillar={pillar} />);
+    render(<PillarCard pillar={pillar} locale="en" />);
 
     expect(
       screen.getByRole('link', { name: /openrunic for hospitals and clinics/i })
@@ -209,20 +221,35 @@ describe('PillarCard', () => {
   });
 
   it('lists what that audience gets', () => {
-    render(<PillarCard pillar={pillar} />);
+    render(<PillarCard pillar={pillar} locale="en" />);
 
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(
-      pillar.points.length
+      pillar.pointKeys.length
     );
+  });
+
+  /* The card is prerendered once per language, so the locale it is handed has
+     to reach the words rather than only the addresses around them. */
+  it('renders its copy in the language the page was built for', () => {
+    render(<PillarCard pillar={pillar} locale="es" />);
+
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Hospitales y clínicas' })
+    ).toBeInTheDocument();
   });
 });
 
 describe('PointList', () => {
-  it('makes each point a heading, so a long band can be navigated by one', () => {
-    render(<PointList points={[{ title: 'A decision', body: 'And the reason for it.' }]} />);
+  const point = {
+    titleKey: 'marketing.home.foundations.audit.title',
+    bodyKey: 'marketing.home.foundations.audit.body',
+  };
 
-    expect(screen.getByRole('heading', { level: 3, name: 'A decision' })).toBeInTheDocument();
-    expect(screen.getByText('And the reason for it.')).toBeInTheDocument();
+  it('makes each point a heading, so a long band can be navigated by one', () => {
+    render(<PointList points={[point]} locale="en" />);
+
+    expect(screen.getByRole('heading', { level: 3, name: EN[point.titleKey] })).toBeInTheDocument();
+    expect(screen.getByText(EN[point.bodyKey] ?? '')).toBeInTheDocument();
   });
 });
 
@@ -343,7 +370,7 @@ describe('StatusNote', () => {
 
 describe('OtherAudiences', () => {
   it('offers the two audiences the page is not about', () => {
-    render(<OtherAudiences current="/for/hospitals" />);
+    render(<OtherAudiences current="/for/hospitals" locale="en" />);
     const region = screen.getByRole('region', { name: 'The other audiences' });
 
     expect(within(region).getAllByRole('article')).toHaveLength(2);
@@ -351,7 +378,7 @@ describe('OtherAudiences', () => {
   });
 
   it('takes the band tone from the page, so the alternation survives', () => {
-    render(<OtherAudiences current="/for/developers" tone="bone" />);
+    render(<OtherAudiences current="/for/developers" locale="en" tone="bone" />);
 
     expect(screen.getByRole('region', { name: 'The other audiences' })).toHaveClass(
       'or-mk-section--bone'

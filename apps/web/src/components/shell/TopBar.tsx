@@ -78,7 +78,7 @@ export function TopBar({
             <Tag className="or-topbar__facility">{MOCK_FACILITY.name}</Tag>
             {/* Demo data is never silent: every screen says so, in the same place. */}
             <Badge tone="neutral" icon="flask-conical">
-              Demo data
+              {t('shell.demoData')}
             </Badge>
           </>
         ) : null}
@@ -99,7 +99,7 @@ export function TopBar({
           <>
             <span className="or-topbar__user">{session.identity.displayName}</span>
             <Button variant="ghost" size="sm" onClick={() => void signOut()}>
-              Sign out
+              {t('shell.signOut')}
             </Button>
           </>
         )}

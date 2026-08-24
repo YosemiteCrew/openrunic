@@ -1,5 +1,6 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Input, Select, Table, Toast } from '@openrunic/ui';
 import type { TableColumn } from '@openrunic/ui';
 import Link from 'next/link';
@@ -22,6 +23,9 @@ import type { AdminClient, VisitReportRow } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import type { CsvColumn } from '@/lib/csv';
 import { formatDate, formatDateTime, formatEnumLabel, formatMoney } from '@/lib/format';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * RP-01 practice dashboard, with RP-02's report shell underneath it.
@@ -35,53 +39,112 @@ import { formatDate, formatDateTime, formatEnumLabel, formatMoney } from '@/lib/
  * bar with the date range first, a compact table with a pinned totals row, and
  * a CSV export. Every other report in the product is a new configuration of
  * this shell, not a new page.
+ *
+ * ## What is translated here, and what is not
+ *
+ * Every word this screen writes is a catalogue key. What arrives from the API
+ * is not: a tile's label and its state word, a funnel stage's name, an ageing
+ * bucket's name, a provider's name, a visit's type and its claim state are all
+ * served already named, and giving them a second name in the interface is how
+ * one number ends up with two words for it on the same screen.
+ *
+ * The status filter is the one place that looks like the second and is the
+ * first. Its six options are this application's own wording for the appointment
+ * states this codebase defines, so they are copy in exactly the way an order's
+ * status label is. The status *column* is the other side of that line: it
+ * renders `formatEnumLabel` over whatever the row carried, and is left alone
+ * rather than given a reports-local translation the schedule would not share.
  */
 
 export interface ReportsScreenProps {
   client?: AdminClient;
 }
 
-const REPORT_COLUMNS: TableColumn[] = [
-  { key: 'date', header: 'Date' },
-  { key: 'patient', header: 'Patient' },
-  { key: 'provider', header: 'Provider' },
-  { key: 'visitType', header: 'Visit type' },
-  { key: 'status', header: 'Status' },
-  { key: 'duration', header: 'Minutes', numeric: true },
-  { key: 'charge', header: 'Charges', numeric: true },
-  { key: 'claim', header: 'Claim' },
+/**
+ * The six appointment states this filter offers, as catalogue keys.
+ *
+ * A literal map rather than a key built from the enum member, because
+ * `catalogue-drift.test.ts` reads `somethingKey:` out of the source and a key
+ * assembled at runtime is invisible to it - which means it is also invisible to
+ * whoever has to find it when the option renders as its own key.
+ */
+const STATUS_FILTER_OPTIONS: ReadonlyArray<{ value: string; labelKey: string }> = [
+  { value: 'FULFILLED', labelKey: 'reports.status.fulfilled' },
+  { value: 'CHECKED_OUT', labelKey: 'reports.status.checkedOut' },
+  { value: 'IN_PROGRESS', labelKey: 'reports.status.inProgress' },
+  { value: 'ROOMED', labelKey: 'reports.status.roomed' },
+  { value: 'CHECKED_IN', labelKey: 'reports.status.checkedIn' },
+  { value: 'NOSHOW', labelKey: 'reports.status.noShow' },
 ];
 
-const CSV_COLUMNS: Array<CsvColumn<VisitReportRow>> = [
-  { header: 'Date', value: (row) => row.date },
-  { header: 'Time', value: (row) => row.time },
-  { header: 'Patient', value: (row) => row.patientName },
-  { header: 'MRN', value: (row) => row.patientMrn },
-  { header: 'Provider', value: (row) => row.providerName },
-  { header: 'Facility', value: (row) => row.facilityName },
-  { header: 'Visit type', value: (row) => row.visitType },
-  { header: 'Status', value: (row) => formatEnumLabel(row.status) },
-  { header: 'Minutes', value: (row) => row.durationMinutes },
-  { header: 'Charges', value: (row) => row.chargeAmount.toFixed(2) },
-  { header: 'Claim state', value: (row) => row.claimState },
+/**
+ * The three counted sentences on this screen, as their pairs of forms.
+ *
+ * A pair rather than one message with a number in it, because `count === 1`
+ * is an English rule: `counted` asks the reader's own locale which form to
+ * use, so a fork translating into a language with four of them gets a
+ * sentence that agrees rather than one that reads as broken only to somebody
+ * who speaks it.
+ */
+const EXPORTED: CountedMessage = {
+  oneKey: 'reports.exported.one',
+  otherKey: 'reports.exported.other',
+};
+const FUNNEL_CLAIMS: CountedMessage = {
+  oneKey: 'reports.funnel.claims.one',
+  otherKey: 'reports.funnel.claims.other',
+};
+const OLDEST_DAYS: CountedMessage = {
+  oneKey: 'reports.unsigned.days.one',
+  otherKey: 'reports.unsigned.days.other',
+};
+
+/** The report table's columns. Keys as data; the words come from the reader's catalogue. */
+const REPORT_COLUMN_KEYS: ReadonlyArray<{ key: string; headerKey: string; numeric?: boolean }> = [
+  { key: 'date', headerKey: 'reports.visits.column.date' },
+  { key: 'patient', headerKey: 'reports.visits.column.patient' },
+  { key: 'provider', headerKey: 'reports.visits.column.provider' },
+  { key: 'visitType', headerKey: 'reports.visits.column.visitType' },
+  { key: 'status', headerKey: 'reports.visits.column.status' },
+  { key: 'duration', headerKey: 'reports.visits.column.duration', numeric: true },
+  { key: 'charge', headerKey: 'reports.visits.column.charge', numeric: true },
+  { key: 'claim', headerKey: 'reports.visits.column.claim' },
 ];
 
-const PROVIDER_OPTIONS = [
-  { value: '', label: 'All providers' },
-  ...MOCK_PROVIDERS.map((provider) => ({ value: provider.id, label: provider.name })),
+/**
+ * The exported file's header row, as keys.
+ *
+ * A person opens this in a spreadsheet and reads the top row, so it is copy and
+ * follows the reader's language. The cells under it do not: they are the record
+ * as the API sent it, and a translated value would be a second name for a
+ * visit's type or its claim state.
+ */
+const CSV_COLUMN_KEYS: ReadonlyArray<{
+  headerKey: string;
+  value: CsvColumn<VisitReportRow>['value'];
+}> = [
+  { headerKey: 'reports.csv.date', value: (row) => row.date },
+  { headerKey: 'reports.csv.time', value: (row) => row.time },
+  { headerKey: 'reports.csv.patient', value: (row) => row.patientName },
+  { headerKey: 'reports.csv.mrn', value: (row) => row.patientMrn },
+  { headerKey: 'reports.csv.provider', value: (row) => row.providerName },
+  { headerKey: 'reports.csv.facility', value: (row) => row.facilityName },
+  { headerKey: 'reports.csv.visitType', value: (row) => row.visitType },
+  { headerKey: 'reports.csv.status', value: (row) => formatEnumLabel(row.status) },
+  { headerKey: 'reports.csv.minutes', value: (row) => row.durationMinutes },
+  { headerKey: 'reports.csv.charges', value: (row) => row.chargeAmount.toFixed(2) },
+  { headerKey: 'reports.csv.claimState', value: (row) => row.claimState },
 ];
 
-const STATUS_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'FULFILLED', label: 'Fulfilled' },
-  { value: 'CHECKED_OUT', label: 'Checked out' },
-  { value: 'IN_PROGRESS', label: 'In progress' },
-  { value: 'ROOMED', label: 'Roomed' },
-  { value: 'CHECKED_IN', label: 'Checked in' },
-  { value: 'NOSHOW', label: 'No-show' },
-];
+function csvColumns(t: Translator): Array<CsvColumn<VisitReportRow>> {
+  return CSV_COLUMN_KEYS.map((column) => ({
+    header: t(column.headerKey),
+    value: column.value,
+  }));
+}
 
 export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactElement {
+  const t = useTranslator();
   const options = useAdminClientOption(client);
   const dashboard = usePracticeDashboard(options);
 
@@ -101,17 +164,47 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
     options
   );
 
+  /* A provider's name is theirs; only the "everyone" row is this screen's word. */
+  const providerOptions = useMemo(
+    () => [
+      { value: '', label: t('reports.filter.allProviders') },
+      ...MOCK_PROVIDERS.map((provider) => ({ value: provider.id, label: provider.name })),
+    ],
+    [t]
+  );
+
+  const statusOptions = useMemo(
+    () => [
+      { value: '', label: t('reports.filter.allStatuses') },
+      ...STATUS_FILTER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey),
+      })),
+    ],
+    [t]
+  );
+
+  const reportColumns = useMemo<TableColumn[]>(
+    () =>
+      REPORT_COLUMN_KEYS.map((column) => ({
+        key: column.key,
+        header: t(column.headerKey),
+        numeric: column.numeric,
+      })),
+    [t]
+  );
+
   /* Memoised: the export command closes over it. */
   const rows = useMemo(() => report.data?.rows ?? [], [report.data]);
 
   const exportReport = useCallback(() => {
-    const wrote = downloadCsv(`visits-${from}-to-${to}.csv`, toCsv(CSV_COLUMNS, rows));
+    const wrote = downloadCsv(`visits-${from}-to-${to}.csv`, toCsv(csvColumns(t), rows));
     setToast(
       wrote
-        ? `Exported ${rows.length} visits for ${formatDate(from)} to ${formatDate(to)}.`
-        : 'This browser cannot download files. Copy the table instead.'
+        ? counted(t, EXPORTED, rows.length, { from: formatDate(from), to: formatDate(to) })
+        : t('reports.exportUnsupported')
     );
-  }, [rows, from, to]);
+  }, [rows, from, to, t]);
 
   const thisWeek = useCallback(() => {
     setFrom('2026-08-10');
@@ -125,31 +218,31 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
       {
         id: 'reports.visits.export',
         group: 'actions',
-        label: 'Export the visits report',
-        keywords: ['csv', 'download', 'visits'],
+        label: t('reports.export'),
+        keywords: searchWords(t('reports.export.keywords')),
         icon: 'download',
         perform: exportReport,
       },
       {
         id: 'reports.visits.week',
         group: 'actions',
-        label: 'Report on this week',
-        keywords: ['date range', 'reset filters'],
+        label: t('reports.thisWeek'),
+        keywords: searchWords(t('reports.thisWeek.keywords')),
         icon: 'calendar-range',
         perform: thisWeek,
       },
     ],
-    [exportReport, thisWeek]
+    [exportReport, thisWeek, t]
   );
 
   return (
     <AppShell
-      title="Reports"
-      description="Is the practice healthy today, and the numbers behind the answer."
-      breadcrumb={[{ label: 'Reports' }]}
+      title={t('reports.title')}
+      description={t('reports.description')}
+      breadcrumb={[{ label: t('reports.title') }]}
       actions={
         <Button variant="secondary" iconLeft="download" onClick={exportReport}>
-          Export the visits report
+          {t('reports.export')}
         </Button>
       }
     >
@@ -158,18 +251,17 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
       {/* ---- RP-01 dashboard ------------------------------------------- */}
       <AsyncBoundary
         state={dashboard}
-        subject="the practice dashboard"
+        subject={t('reports.dashboardSubject')}
         isEmpty={(data) => data.tiles.length === 0}
         loadingVariant="cards"
         loadingRows={5}
         empty={{
-          title: 'Nothing to report yet',
-          message:
-            'The dashboard fills in as the practice works: visits booked, notes signed, claims submitted. Book the first appointment and it starts here.',
+          title: t('reports.dashboard.empty.title'),
+          message: t('reports.dashboard.empty.message'),
           icon: 'chart-column',
           action: (
             <Button variant="primary" href="/schedule">
-              Go to the schedule
+              {t('reports.dashboard.empty.action')}
             </Button>
           ),
         }}
@@ -177,8 +269,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
         {(data) => (
           <>
             <p className="or-small or-report__asof">
-              As of {formatDateTime(data.asOf, 'prose')}. Every number opens the workbench that owns
-              it.
+              {t('reports.asOf', { when: formatDateTime(data.asOf, 'prose') })}
             </p>
 
             <ul className="or-tiles">
@@ -190,66 +281,68 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
             </ul>
 
             <div className="or-report__pair">
-              <Card title="Claims, captured to paid">
-                <p className="or-small">
-                  Counts this month. The gap between two stages is where money waits.
-                </p>
+              <Card title={t('reports.claims.title')}>
+                <p className="or-small">{t('reports.claims.lead')}</p>
                 <BarMeter
-                  label="Claim funnel by stage"
+                  label={t('reports.funnel.label')}
                   rows={data.funnel.map((stage) => ({
                     id: stage.id,
                     label: stage.label,
                     value: stage.count,
-                    valueText: `${stage.count} claims`,
+                    valueText: counted(t, FUNNEL_CLAIMS, stage.count),
                     attention: stage.id === 'denied' && stage.count > 0,
-                    detail: stage.id === 'denied' && stage.count > 0 ? 'Needs a biller' : undefined,
+                    detail:
+                      stage.id === 'denied' && stage.count > 0
+                        ? t('reports.funnel.needsBiller')
+                        : undefined,
                   }))}
                 />
                 <Link className="or-link" href="/billing">
-                  Open the claim workbench
+                  {t('reports.claims.link')}
                 </Link>
               </Card>
 
-              <Card title="Accounts receivable by age">
-                <p className="or-small">
-                  Payer and patient responsibility, split. Over 90 days is the number to watch.
-                </p>
+              <Card title={t('reports.aging.title')}>
+                <p className="or-small">{t('reports.aging.lead')}</p>
                 <BarMeter
-                  label="Accounts receivable by age"
+                  label={t('reports.aging.title')}
                   rows={data.aging.map((bucket) => ({
                     id: bucket.id,
                     label: bucket.label,
                     value: bucket.payerAmount + bucket.patientAmount,
                     valueText: formatMoney(bucket.payerAmount + bucket.patientAmount).text,
-                    detail: `Payer ${formatMoney(bucket.payerAmount).text}, patient ${formatMoney(bucket.patientAmount).text}`,
+                    detail: t('reports.aging.split', {
+                      payer: formatMoney(bucket.payerAmount).text,
+                      patient: formatMoney(bucket.patientAmount).text,
+                    }),
                     attention: bucket.id === '90-plus',
                   }))}
                 />
                 <Link className="or-link" href="/billing">
-                  Open collections
+                  {t('reports.aging.link')}
                 </Link>
               </Card>
             </div>
 
-            <Card title="Unsigned notes by provider">
+            <Card title={t('reports.unsigned.title')}>
               <Table
-                caption="Unsigned notes by provider"
+                caption={t('reports.unsigned.title')}
                 columns={[
-                  { key: 'provider', header: 'Provider' },
-                  { key: 'unsigned', header: 'Unsigned', numeric: true },
-                  { key: 'oldest', header: 'Oldest' },
-                  { key: 'state', header: 'State' },
+                  { key: 'provider', header: t('reports.unsigned.column.provider') },
+                  { key: 'unsigned', header: t('reports.unsigned.column.unsigned'), numeric: true },
+                  { key: 'oldest', header: t('reports.unsigned.column.oldest') },
+                  { key: 'state', header: t('reports.unsigned.column.state') },
                 ]}
                 rows={data.unsignedByProvider.map((entry) => ({
                   id: entry.providerId,
                   provider: entry.providerName,
                   unsigned: String(entry.unsigned),
-                  oldest: `${entry.oldestDays} days`,
+                  oldest: counted(t, OLDEST_DAYS, entry.oldestDays),
                   state:
                     entry.oldestDays > 2 ? (
-                      <Badge tone="danger">Past the 48 hour target</Badge>
+                      <Badge tone="danger">{t('reports.unsigned.late')}</Badge>
                     ) : (
-                      <Badge tone="success">Within target</Badge>
+                      <Badge tone="success">{t('reports.unsigned.onTarget')}</Badge>
                     ),
                 }))}
               />
@@ -261,47 +354,48 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
       {/* ---- RP-02 report shell ---------------------------------------- */}
       <section className="or-report" aria-labelledby="visits-report">
         <h2 id="visits-report" className="or-h3">
-          Visits
+          {t('reports.visits.title')}
         </h2>
-        <p className="or-body or-report__description">
-          Every visit in the range with its duration, charges and claim state. The same shell
-          carries every other report in openrunic; only the filters and columns change.
-        </p>
+        <p className="or-body or-report__description">{t('reports.visits.description')}</p>
 
         <FilterBar
-          label="Filter the visits report"
+          label={t('reports.visits.filterLabel')}
           summary={
             report.data
-              ? `${report.data.totals.visits} visits, ${report.data.totals.minutes} minutes, ${formatMoney(report.data.totals.charges).text}`
+              ? t('reports.visits.summary', {
+                  visits: report.data.totals.visits,
+                  minutes: report.data.totals.minutes,
+                  charges: formatMoney(report.data.totals.charges).text,
+                })
               : null
           }
           actions={
             <Button variant="ghost" size="sm" iconLeft="download" onClick={exportReport}>
-              Export CSV
+              {t('reports.exportCsv')}
             </Button>
           }
         >
           <Input
-            label="From"
+            label={t('reports.filter.from')}
             type="date"
             value={from}
             onChange={(event) => setFrom(event.target.value)}
           />
           <Input
-            label="To"
+            label={t('reports.filter.to')}
             type="date"
             value={to}
             onChange={(event) => setTo(event.target.value)}
           />
           <Select
-            label="Provider"
-            options={PROVIDER_OPTIONS}
+            label={t('reports.filter.provider')}
+            options={providerOptions}
             value={providerId}
             onChange={(event) => setProviderId(event.target.value)}
           />
           <Select
-            label="Status"
-            options={STATUS_OPTIONS}
+            label={t('reports.filter.status')}
+            options={statusOptions}
             value={status}
             onChange={(event) => setStatus(event.target.value)}
           />
@@ -309,17 +403,16 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
 
         <AsyncBoundary
           state={report}
-          subject="the visits report"
+          subject={t('reports.visitsSubject')}
           isEmpty={(data) => data.rows.length === 0}
           loadingRows={8}
           empty={{
-            title: 'No visits match these filters',
-            message:
-              'Nothing happened in this range for the chosen provider and status. Widen the dates, or clear the provider to see the whole practice.',
+            title: t('reports.visits.empty.title'),
+            message: t('reports.visits.empty.message'),
             icon: 'calendar-days',
             action: (
               <Button variant="secondary" onClick={thisWeek}>
-                Reset to this week
+                {t('reports.visits.empty.action')}
               </Button>
             ),
           }}
@@ -327,8 +420,11 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
           {(data) => (
             <>
               <Table
-                caption={`Visits from ${formatDate(from)} to ${formatDate(to)}`}
-                columns={REPORT_COLUMNS}
+                caption={t('reports.visits.caption', {
+                  from: formatDate(from),
+                  to: formatDate(to),
+                })}
+                columns={reportColumns}
                 rows={data.rows.map((row) => ({
                   id: row.id,
                   date: (
@@ -356,15 +452,15 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
                   so it stays readable when the table scrolls horizontally. */}
               <dl className="or-report__totals" data-testid="visits-totals">
                 <div>
-                  <dt className="or-small">Visits</dt>
+                  <dt className="or-small">{t('reports.totals.visits')}</dt>
                   <dd className="or-mono">{data.totals.visits}</dd>
                 </div>
                 <div>
-                  <dt className="or-small">Minutes</dt>
+                  <dt className="or-small">{t('reports.totals.minutes')}</dt>
                   <dd className="or-mono">{data.totals.minutes}</dd>
                 </div>
                 <div>
-                  <dt className="or-small">Charges</dt>
+                  <dt className="or-small">{t('reports.totals.charges')}</dt>
                   <dd className="or-mono">{formatMoney(data.totals.charges).text}</dd>
                 </div>
               </dl>

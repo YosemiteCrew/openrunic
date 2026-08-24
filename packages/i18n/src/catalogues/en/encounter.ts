@@ -8,19 +8,33 @@ import type { Messages } from '../../catalogue.js';
  * The screen's own words: the banners that say what state a note is in, the
  * confirmations that state what signing does, the labels on the signature
  * block. Not the note. A block's heading and hint, a slash command's label and
- * the text it inserts, the attestation sentence and every addendum all arrive
- * from the API, and this file interpolates them rather than restating them. A
- * translated block heading would be a second name for a section the record
- * already names, and a translated attestation would be a clinician attesting to
- * a sentence they did not read.
+ * the text it inserts, the attestation sentence and every addendum are the
+ * practice's own note configuration, and this file interpolates them rather
+ * than restating them. A translated block heading would be a second name for a
+ * section the record already names, and a translated attestation would be a
+ * clinician attesting to a sentence they did not read.
+ *
+ * The slash commands are worth naming precisely, because today they do not come
+ * from anywhere: `lib/api/chart/index.ts` re-exports `MOCK_SLASH_COMMANDS`, a
+ * fixture in this repository, so "History of present illness" is English this
+ * codebase wrote and nobody can translate. That is a gap in the seam rather
+ * than a decision about the catalogue: the labels belong to a practice's note
+ * templates, and keying them here would key a fixture and then have to be
+ * undone when the real list arrives. Recorded so the next reader knows which of
+ * the two it is.
  *
  * ## Counts
  *
  * `Messages` is flat strings, so a plural has no single key: the forms English
- * distinguishes get one key each, suffixed with the CLDR category, and the
- * screen selects with `Intl.PluralRules` on the reader's locale. Only `one` and
- * `other` are written, because English has only those two. A locale with more
- * categories needs the extra keys added beside these.
+ * distinguishes get one key each, suffixed with the CLDR category, and
+ * `counted` asks the reader's locale which to use rather than testing the
+ * number against one.
+ *
+ * Two forms is the limit rather than a claim to handle every language.
+ * `CountedMessage` carries `one` and `other`; a locale that selects `few`,
+ * `many`, `zero` or `two` gets `other` for them, which is `plural`'s documented
+ * fallback and a translation gap rather than a crash. Closing it means carrying
+ * all six CLDR keys and writing a message for each.
  */
 export const encounter: Messages = {
   /* ------------------------------------------------------------------ shell */

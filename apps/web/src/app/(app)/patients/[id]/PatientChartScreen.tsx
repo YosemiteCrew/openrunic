@@ -191,7 +191,6 @@ function tabCount(tab: ChartTabId, chart: ChartSummary | null): number | null {
   return null;
 }
 
-/** A comma-separated catalogue string as the palette's keyword list. */
 export interface PatientChartScreenProps {
   patientId: string;
   /** Injectable for tests. */

@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
+import type { Metadata } from 'next';
 import { describe, expect, it, vi } from 'vitest';
 
 import PublicLayout, { generateMetadata, generateStaticParams } from '../layout';
-import HomePage, { metadata as homeMetadata } from '../page';
-import DevelopersPage, { metadata as developersMetadata } from '../for/developers/page';
-import HospitalsPage, { metadata as hospitalsMetadata } from '../for/hospitals/page';
-import PatientsPage, { metadata as patientsMetadata } from '../for/patients/page';
+import HomePage, { generateMetadata as homeMetadata } from '../page';
+import DevelopersPage, { generateMetadata as developersMetadata } from '../for/developers/page';
+import HospitalsPage, { generateMetadata as hospitalsMetadata } from '../for/hospitals/page';
+import PatientsPage, { generateMetadata as patientsMetadata } from '../for/patients/page';
 
 vi.mock('next/navigation', () => ({
   notFound: () => {
@@ -24,6 +25,12 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+/**
+ * Each page's tab and snippet come from `generateMetadata` rather than a
+ * `metadata` constant, because these four are prerendered once per language and
+ * a constant would put the same English title on `/es`. So the table carries
+ * the function, and the test that reads it awaits one.
+ */
 const PAGES = [
   {
     route: '/',
@@ -55,6 +62,14 @@ const PAGES = [
     current: 'Developers',
   },
 ] as const;
+
+/** A page's metadata for one language, the way the framework asks for it. */
+async function metadataFor(
+  build: (props: { params: Promise<{ locale: string }> }) => Promise<Metadata>,
+  locale = 'en'
+): Promise<Metadata> {
+  return build({ params: Promise.resolve({ locale }) });
+}
 
 /** Every heading on the page, in document order, as its level. */
 function headingLevels(): number[] {
@@ -152,9 +167,25 @@ describe.each(PAGES)('$route', ({ Page, metadata, heading, current }) => {
     });
   });
 
-  it('names the browser tab', () => {
-    expect(metadata.title).toBeDefined();
-    expect(metadata.description).toBeTruthy();
+  it('names the browser tab', async () => {
+    const built = await metadataFor(metadata);
+
+    expect(built.title).toBeDefined();
+    expect(built.description).toBeTruthy();
+  });
+
+  /*
+   * The reason these carry `generateMetadata` at all. A page prerendered under
+   * `/es` whose tab and search snippet are still English is the one place a
+   * wrong language is invisible to whoever shipped it and obvious to whoever
+   * searched for it.
+   */
+  it('names the browser tab in the language the page was built for', async () => {
+    const english = await metadataFor(metadata, 'en');
+    const spanish = await metadataFor(metadata, 'es');
+
+    expect(spanish.title).not.toEqual(english.title);
+    expect(spanish.description).not.toEqual(english.description);
   });
 
   it('carries the compliance footnote in the closing band', async () => {
@@ -183,14 +214,18 @@ describe.each(PAGES)('$route', ({ Page, metadata, heading, current }) => {
 });
 
 describe('page titles', () => {
-  it('gives the home page a tab that says what openrunic is', () => {
-    expect(homeMetadata.title).toEqual({
+  it('gives the home page a tab that says what openrunic is', async () => {
+    expect((await metadataFor(homeMetadata)).title).toEqual({
       absolute: 'openrunic - open-source operating system for human health',
     });
   });
 
-  it('titles each audience page after its audience', () => {
-    expect([hospitalsMetadata.title, patientsMetadata.title, developersMetadata.title]).toEqual([
+  it('titles each audience page after its audience', async () => {
+    const built = await Promise.all(
+      [hospitalsMetadata, patientsMetadata, developersMetadata].map((build) => metadataFor(build))
+    );
+
+    expect(built.map((one) => one.title)).toEqual([
       'For hospitals and clinics',
       'For patients',
       'For developers',

@@ -11,70 +11,120 @@ import { ApiError } from '@/lib/api';
  */
 export type ExplainableError = ApiError | Error | null;
 
-interface Explanation {
-  title: string;
-  message: string;
-  retryable: boolean;
+/**
+ * What went wrong, as catalogue keys rather than sentences.
+ *
+ * Keys because this is a plain function with no translator and no reader: the
+ * words are looked up by `ErrorState`, per render, in the language of whoever
+ * is looking at the screen. Returning English here would have made every error
+ * in the product untranslatable however well the surface around it was wired.
+ *
+ * Most of these messages carry a `{subject}` the surface fills in with what
+ * failed to load - one message with a placeholder rather than a fragment joined
+ * to a noun, because word order differs by language and a sentence assembled
+ * from pieces cannot be reordered by a translator. `takesSubject` says which,
+ * and the field's own note says why that is not left to be inferred.
+ */
+export interface Explanation {
+  readonly titleKey: string;
+  readonly messageKey: string;
+  /**
+   * Whether `messageKey` has a `{subject}` to fill.
+   *
+   * Carried rather than inferred because interpolation is strict in both
+   * directions: a placeholder with no value throws, and so does a value the
+   * message does not use. Every explanation here names what failed to load
+   * except the ended session, which is about the reader rather than the region
+   * they were looking at, so passing it a subject would be a runtime error in
+   * the one place a person is already locked out.
+   */
+  readonly takesSubject: boolean;
+  /**
+   * The server's own sentence, when it sent one, and null otherwise.
+   *
+   * Data rather than copy: it arrives in an RFC 9457 problem document written
+   * by the API, and it is shown as received. Translating it here would put a
+   * second wording on a sentence that already has one, and the second would be
+   * this application guessing at what the server meant.
+   */
+  readonly detail: string | null;
+  readonly retryable: boolean;
 }
 
 /**
  * The status-to-sentence table. Each line says what happened and what to do,
  * in the clinician register: precise, short, no filler, never blaming.
  */
-export function explain(subject: string, error: ExplainableError): Explanation {
+export function explain(error: ExplainableError): Explanation {
   if (error instanceof ApiError) {
     if (error.kind === 'network') {
       return {
-        title: 'No connection to the server',
-        message: `openrunic could not reach the server, so ${subject} did not load. Check the connection and try again.`,
+        titleKey: 'common.error.network.title',
+        messageKey: 'common.error.network.message',
+        takesSubject: true,
+        detail: null,
         retryable: true,
       };
     }
     if (error.status === 401) {
       return {
-        title: 'Your session has ended',
-        message: 'Sign in again to continue. Nothing you entered has been lost.',
+        titleKey: 'common.error.session.title',
+        messageKey: 'common.error.session.message',
+        takesSubject: false,
+        detail: null,
         retryable: false,
       };
     }
     if (error.status === 403) {
       return {
-        title: 'Your role cannot open this',
-        message: `Your role does not include access to ${subject}. Ask a practice admin to grant it.`,
+        titleKey: 'common.error.forbidden.title',
+        messageKey: 'common.error.forbidden.message',
+        takesSubject: true,
+        detail: null,
         retryable: false,
       };
     }
     if (error.status === 404) {
       return {
-        title: 'Not found',
-        message: `openrunic could not find ${subject}. It may have been merged or removed. Check the identifier and search again.`,
+        titleKey: 'common.error.notFound.title',
+        messageKey: 'common.error.notFound.message',
+        takesSubject: true,
+        detail: null,
         retryable: false,
       };
     }
     if (error.status === 501) {
       return {
-        title: 'Not built yet',
-        message: `This part of openrunic is not implemented yet, so ${subject} has nothing to show.`,
+        titleKey: 'common.error.notBuilt.title',
+        messageKey: 'common.error.notBuilt.message',
+        takesSubject: true,
+        detail: null,
         retryable: false,
       };
     }
     if (error.status >= 500) {
       return {
-        title: 'The server could not answer',
-        message: `The server failed while loading ${subject}. Try again; if it keeps failing, report the request id below.`,
+        titleKey: 'common.error.server.title',
+        messageKey: 'common.error.server.message',
+        takesSubject: true,
+        detail: null,
         retryable: true,
       };
     }
     return {
-      title: 'That request was refused',
-      message: error.problem?.detail ?? `The server refused the request for ${subject}.`,
+      titleKey: 'common.error.refused.title',
+      messageKey: 'common.error.refused.message',
+      takesSubject: true,
+      detail: error.problem?.detail ?? null,
       retryable: false,
     };
   }
 
   return {
-    title: 'This did not load',
-    message: `openrunic could not load ${subject}. Try again.`,
+    titleKey: 'common.error.unknown.title',
+    messageKey: 'common.error.unknown.message',
+    takesSubject: true,
+    detail: null,
     retryable: true,
   };
 }

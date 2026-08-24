@@ -11,7 +11,7 @@ export { isEmptyList } from './empty';
 export { AsyncBoundary } from './AsyncBoundary';
 export type { AsyncBoundaryEmpty, AsyncBoundaryProps } from './AsyncBoundary';
 export { explain } from './explain';
-export type { ExplainableError } from './explain';
+export type { Explanation, ExplainableError } from './explain';
 export { ErrorState } from './ErrorState';
 export type { ErrorStateProps } from './ErrorState';
 export { LoadingState } from './LoadingState';

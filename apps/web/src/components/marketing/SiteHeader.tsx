@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import Link from 'next/link';
 
 import { Lockup } from './Lockup';
@@ -17,13 +18,15 @@ export interface SiteHeaderProps {
    */
   active?: PublicRoute;
   /**
-   * The language segment these links live under.
+   * The language segment these links live under, and the language their words
+   * are looked up in.
    *
    * The public pages are prerendered once per language, so their addresses
    * carry it: the masthead on `/es` has to point at `/es/for/hospitals` and not
    * at `/for/hospitals`, which no longer exists. Passed rather than read,
    * because reading the URL would make the masthead a client component - the
-   * same reason `active` is a prop.
+   * same reason `active` is a prop, and the same reason the translator is built
+   * here rather than taken from a provider.
    */
   locale: string;
 }
@@ -38,14 +41,20 @@ export interface SiteHeaderProps {
  * disclosure, no focus trap and no JavaScript.
  */
 export function SiteHeader({ active, locale }: Readonly<SiteHeaderProps>) {
+  const t = createTranslator(appCatalogue, locale);
+
   return (
     <header className="or-mk-header">
       <div className="or-mk-header__inner">
-        <Link className="or-mk-header__home" href={`/${locale}`} aria-label="openrunic home">
+        <Link
+          className="or-mk-header__home"
+          href={`/${locale}`}
+          aria-label={t('marketing.header.home')}
+        >
           <Lockup />
         </Link>
 
-        <nav className="or-mk-header__nav" aria-label="Site">
+        <nav className="or-mk-header__nav" aria-label={t('marketing.header.siteNav')}>
           <ul className="or-mk-header__list">
             {SITE_NAV.map((item) => {
               const current = item.href === active;
@@ -60,14 +69,14 @@ export function SiteHeader({ active, locale }: Readonly<SiteHeaderProps>) {
                     href={item.href === '/' ? `/${locale}` : `/${locale}${item.href}`}
                     aria-current={current ? 'page' : undefined}
                   >
-                    {item.label}
+                    {t(item.labelKey)}
                   </Link>
                 </li>
               );
             })}
             <li>
               <a className="or-mk-header__link" href={OFFSITE.repo}>
-                Source
+                {t('marketing.source')}
               </a>
             </li>
           </ul>

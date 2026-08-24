@@ -30,6 +30,33 @@ import type { Messages } from '../../catalogue.js';
  * already has one.
  */
 export const admin: Messages = {
+  /* ------------------------------------------ this codebase's own enums */
+  /* The audit action, the purpose of use and the staff role are declared in
+     `lib/api/admin.ts` and `lib/api/mock/admin.ts`, not by a terminology
+     server. The words were being derived by `formatEnumLabel` or written into
+     a mock module, and a derived label cannot be translated because there is
+     nothing for a translator to open. See `components/admin/labels.ts`. */
+  'admin.auditAction.patientRead': 'Patient read',
+  'admin.auditAction.patientUpdate': 'Patient update',
+  'admin.auditAction.noteSign': 'Note sign',
+  'admin.auditAction.orderSign': 'Order sign',
+  'admin.auditAction.claimSubmit': 'Claim submit',
+  'admin.auditAction.settingUpdate': 'Setting update',
+  'admin.auditAction.exportRun': 'Export run',
+  'admin.auditAction.loginSuccess': 'Login success',
+  'admin.auditAction.loginFailure': 'Login failure',
+  'admin.auditAction.breakglassRead': 'Breakglass read',
+  'admin.purposeOfUse.treatment': 'Treatment',
+  'admin.purposeOfUse.payment': 'Payment',
+  'admin.purposeOfUse.operations': 'Operations',
+  'admin.purposeOfUse.breakglass': 'Breakglass',
+  'admin.purposeOfUse.system': 'System',
+  'admin.staffRole.practiceAdmin': 'Practice admin',
+  'admin.staffRole.provider': 'Provider',
+  'admin.staffRole.medicalAssistant': 'Medical assistant',
+  'admin.staffRole.frontDesk': 'Front desk',
+  'admin.staffRole.biller': 'Biller',
+  'admin.staffRole.readOnly': 'Read only',
   /* ------------------------------------------------------ shared furniture */
   'admin.action.cancel': 'Cancel',
   'admin.action.close': 'Close',

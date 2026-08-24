@@ -4,7 +4,7 @@ import { Badge, Button, Table } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { StatementAccount } from '@/lib/api';
-import { formatDate, formatMoney, formatMrn, formatName, NOT_RECORDED } from '@/lib/format';
+import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import {
@@ -85,7 +85,7 @@ export function StatementDrawer({
     const totals = statementTotals(single.lines);
     const rows = single.lines.map((line): Record<string, ReactNode> => ({
       id: line.id,
-      serviceDate: formatDate(line.serviceDate),
+      serviceDate: formatDate(t, line.serviceDate),
       description: line.description,
       charges: <Money amount={line.charges} currency={single.currency} />,
       insurancePaid: <Money amount={line.insurancePaid} currency={single.currency} />,
@@ -168,7 +168,7 @@ export function StatementDrawer({
             <ul className="or-fact-list">
               <li>
                 <span className="or-fact-list__term">{t('billing.statementDrawer.mobile')}</span>
-                <span>{single.mobile ?? NOT_RECORDED}</span>
+                <span>{single.mobile ?? t('common.notRecorded')}</span>
                 {texted.has(single.id) ? (
                   <Badge tone="success">{t('billing.statementDrawer.linkSent')}</Badge>
                 ) : null}
@@ -205,7 +205,7 @@ export function StatementDrawer({
                 </span>
                 <span>
                   {single.lastStatementAt
-                    ? formatDate(single.lastStatementAt)
+                    ? formatDate(t, single.lastStatementAt)
                     : t('billing.statementDrawer.noneSent')}
                 </span>
               </li>

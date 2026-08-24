@@ -72,7 +72,7 @@ export function EncounterNoteScreen({
   /* Visit type, date and author, all from the note. Nothing in this line is
      this screen's own words, so it is joined here rather than translated. */
   const description = note.data
-    ? `${note.data.visitType}, ${formatDate(note.data.visitDate)}, ${formatCredentialed(note.data.providerName, note.data.providerCredential)}`
+    ? `${note.data.visitType}, ${formatDate(t, note.data.visitDate)}, ${formatCredentialed(note.data.providerName, note.data.providerCredential)}`
     : undefined;
 
   return (

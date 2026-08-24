@@ -236,7 +236,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
     const wrote = downloadCsv(`visits-${from}-to-${to}.csv`, toCsv(csvColumns(t), rows));
     setToast(
       wrote
-        ? counted(t, EXPORTED, rows.length, { from: formatDate(from), to: formatDate(to) })
+        ? counted(t, EXPORTED, rows.length, { from: formatDate(t, from), to: formatDate(t, to) })
         : t('reports.exportUnsupported')
     );
   }, [rows, from, to, t]);
@@ -304,7 +304,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
         {(data) => (
           <>
             <p className="or-small or-report__asof">
-              {t('reports.asOf', { when: formatDateTime(data.asOf, 'prose') })}
+              {t('reports.asOf', { when: formatDateTime(t, data.asOf, 'prose') })}
             </p>
 
             <ul className="or-tiles">
@@ -456,15 +456,15 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
             <>
               <Table
                 caption={t('reports.visits.caption', {
-                  from: formatDate(from),
-                  to: formatDate(to),
+                  from: formatDate(t, from),
+                  to: formatDate(t, to),
                 })}
                 columns={reportColumns}
                 rows={data.rows.map((row) => ({
                   id: row.id,
                   date: (
                     <span className="or-cell-stack">
-                      <span className="or-small">{formatDate(row.date, 'dense')}</span>
+                      <span className="or-small">{formatDate(t, row.date, 'dense')}</span>
                       <span className="or-caption or-mono">{row.time}</span>
                     </span>
                   ),

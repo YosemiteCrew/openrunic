@@ -169,8 +169,8 @@ export function ScheduleGrid({
               const { appointment, lane, lanes, rowStart, rowEnd } = entry;
               const status = presentStatus(appointment.status);
               const name = patientLabel(appointment, patientsById, t);
-              const start = formatTime(appointment.start);
-              const end = formatTime(appointment.end);
+              const start = formatTime(t, appointment.start);
+              const end = formatTime(t, appointment.end);
               const doubleBooked = lanes > 1;
               const statusLabel = t(status.labelKey);
               const doubleBookedLabel = t('schedule.grid.doubleBooked');
@@ -236,7 +236,7 @@ export function ScheduleGrid({
               }
             >
               <span className="or-mono or-sched__now-label">
-                {t('schedule.grid.now', { time: formatTime(now.toISOString()) })}
+                {t('schedule.grid.now', { time: formatTime(t, now.toISOString()) })}
               </span>
             </div>
           ) : null}

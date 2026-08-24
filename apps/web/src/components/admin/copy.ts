@@ -1,3 +1,4 @@
+import type { Translator } from '@openrunic/i18n';
 import type { TableColumn } from '@openrunic/ui';
 
 /**
@@ -20,8 +21,6 @@ import type { TableColumn } from '@openrunic/ui';
  */
 
 /** What a translator does, narrowed to what this file needs. */
-type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
-
 /**
  * A table column as an admin screen declares it: everything `TableColumn` has,
  * except that the header is a catalogue key rather than the words.
@@ -37,7 +36,7 @@ export type AdminColumn = Omit<TableColumn, 'header'> & { readonly headerKey: st
 
 /** The columns as the table wants them, in the reader's language. */
 export function translateColumns(
-  translate: Translate,
+  translate: Translator,
   columns: readonly AdminColumn[]
 ): TableColumn[] {
   return columns.map(({ headerKey, ...rest }) => ({ ...rest, header: translate(headerKey) }));

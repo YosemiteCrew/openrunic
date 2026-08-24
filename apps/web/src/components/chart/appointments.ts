@@ -1,5 +1,5 @@
 import type { Appointment } from '@/lib/api';
-import { formatDate } from '@/lib/format';
+import { calendarDay } from '@/lib/format';
 
 /**
  * Which appointment the rail should name.
@@ -30,6 +30,6 @@ export function appointmentOnDay(
   appointments: readonly Appointment[],
   now: string
 ): Appointment | null {
-  const day = formatDate(now, 'iso');
-  return appointments.find((appointment) => formatDate(appointment.start, 'iso') === day) ?? null;
+  const day = calendarDay(now);
+  return appointments.find((appointment) => calendarDay(appointment.start) === day) ?? null;
 }

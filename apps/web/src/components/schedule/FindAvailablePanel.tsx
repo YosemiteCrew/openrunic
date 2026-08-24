@@ -58,11 +58,11 @@ export function FindAvailablePanel({
                 iconLeft="calendar-plus"
                 onClick={() => onBook(slot)}
                 aria-label={t('schedule.findAvailable.book', {
-                  time: formatTime(slot.start),
+                  time: formatTime(t, slot.start),
                   provider: providerName(slot.providerId),
                 })}
               >
-                <span className="or-mono">{formatTime(slot.start)}</span>
+                <span className="or-mono">{formatTime(t, slot.start)}</span>
               </Button>
               <Tag>{providerName(slot.providerId)}</Tag>
             </li>

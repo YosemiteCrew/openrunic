@@ -18,6 +18,7 @@ import {
   summariseRole,
   translateColumns,
 } from '@/components/admin';
+import type { Translator } from '@openrunic/i18n';
 import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
@@ -31,7 +32,7 @@ import {
   useStaffUsers,
 } from '@/lib/api';
 import type { AdminClient, PermissionRow, StaffRole, StaffStatus, StaffUser } from '@/lib/api';
-import { formatDateTime, NOT_RECORDED } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -90,16 +91,14 @@ const STATUS_KEY: Record<StaffStatus, { labelKey: string }> = {
   DEACTIVATED: { labelKey: 'admin.users.status.deactivated' },
 };
 
-/** What a translator does, for the helpers below that are not components. */
-type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
-
-function facilityNames(ids: readonly string[]): string {
+/** The facilities a user is scoped to, as a list, or the words for none. */
+function facilityNames(t: Translator, ids: readonly string[]): string {
   const wanted = new Set(ids);
   const names: string[] = [];
   for (const facility of MOCK_FACILITIES) {
     if (wanted.has(facility.id)) names.push(facility.name);
   }
-  return names.length > 0 ? names.join(', ') : NOT_RECORDED;
+  return names.length > 0 ? names.join(', ') : t('common.notRecorded');
 }
 
 type DrawerView =
@@ -189,7 +188,7 @@ function InviteFields({
 }
 
 function userRow(
-  t: Translate,
+  t: Translator,
   user: StaffUser,
   onOpen: (id: string) => void
 ): Record<string, ReactNode> {
@@ -209,7 +208,7 @@ function userRow(
         {user.isProvider ? <Tag>{t('admin.users.provider')}</Tag> : null}
       </span>
     ),
-    facilities: <span className="or-small">{facilityNames(user.facilityIds)}</span>,
+    facilities: <span className="or-small">{facilityNames(t, user.facilityIds)}</span>,
     mfa: user.mfaEnrolled ? (
       <Badge tone="success">{t('admin.users.mfa.enrolled')}</Badge>
     ) : (
@@ -218,7 +217,7 @@ function userRow(
     lastActive: (
       <span className="or-small">
         {user.lastActiveAt
-          ? formatDateTime(user.lastActiveAt, 'dense')
+          ? formatDateTime(t, user.lastActiveAt, 'dense')
           : t('admin.users.neverActive')}
       </span>
     ),
@@ -271,13 +270,20 @@ function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElem
             label: t('admin.users.detail.roles'),
             value: user.roles.map((r) => t(STAFF_ROLE_KEYS[r].labelKey)).join(', '),
           },
-          { label: t('admin.users.detail.facilities'), value: facilityNames(user.facilityIds) },
+          { label: t('admin.users.detail.facilities'), value: facilityNames(t, user.facilityIds) },
           {
             label: t('admin.users.detail.provider'),
             value: user.isProvider ? t('admin.users.yes') : t('admin.users.no'),
           },
-          { label: t('admin.users.detail.npi'), value: user.npi ?? NOT_RECORDED, mono: true },
-          { label: t('admin.users.detail.taxonomy'), value: user.taxonomy ?? NOT_RECORDED },
+          {
+            label: t('admin.users.detail.npi'),
+            value: user.npi ?? t('common.notRecorded'),
+            mono: true,
+          },
+          {
+            label: t('admin.users.detail.taxonomy'),
+            value: user.taxonomy ?? t('common.notRecorded'),
+          },
           {
             label: t('admin.users.detail.mfa'),
             value: user.mfaEnrolled
@@ -287,7 +293,7 @@ function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElem
           {
             label: t('admin.users.detail.lastActive'),
             value: user.lastActiveAt
-              ? formatDateTime(user.lastActiveAt, 'prose')
+              ? formatDateTime(t, user.lastActiveAt, 'prose')
               : t('admin.users.neverActive'),
           },
         ]}

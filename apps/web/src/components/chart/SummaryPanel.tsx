@@ -8,7 +8,7 @@ import type { ReactElement } from 'react';
 
 import type { Appointment } from '@/lib/api';
 import type { ChartSummary, ResultObservation } from '@/lib/api/chart';
-import { formatDate, formatDateTime, formatTime, formatVital } from '@/lib/format';
+import { calendarDay, formatDate, formatDateTime, formatTime, formatVital } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { APPOINTMENT_STATUS_LABELS, NOTE_STATE_LABELS, PROBLEM_STATUS_INLINE } from './labels';
@@ -72,7 +72,7 @@ function reading(t: Translator, observation: ResultObservation): ReactElement {
       unit={vital.unit}
       state={vital.state}
       stateLabel={vital.stateLabel}
-      capturedAt={formatDate(observation.collectedAt, 'prose')}
+      capturedAt={formatDate(t, observation.collectedAt, 'prose')}
     />
   );
 }
@@ -87,7 +87,9 @@ function TodayStrip({
 }: Readonly<{
   chart: ChartSummary;
   todayAppointment: Appointment | null;
-  today: string;
+  /** Nullable for the same reason `calendarDay` is: an unreadable instant has
+      no clinic day, and then no visit is today. */
+  today: string | null;
   recentVisits: readonly ChartSummary['visits'][number][];
   t: Translator;
 }>): ReactElement {
@@ -100,7 +102,7 @@ function TodayStrip({
           // "never" is a word rather than a date, so the sentence still reads as
           // a sentence on a chart with nothing in it. Interpolated rather than
           // written as a second message, so a translator sees the whole line.
-          date: recentVisits[0] ? formatDate(recentVisits[0].date) : t('chart.summary.never'),
+          date: recentVisits[0] ? formatDate(t, recentVisits[0].date) : t('chart.summary.never'),
         })}
       </p>
     );
@@ -114,7 +116,7 @@ function TodayStrip({
       {/* Time, visit type and reason, all from the appointment. */}
       <p className="or-body">
         {[
-          formatTime(todayAppointment.start),
+          formatTime(t, todayAppointment.start),
           todayAppointment.type.display.toLowerCase(),
           todayAppointment.reasonText?.toLowerCase(),
         ]
@@ -136,7 +138,7 @@ export function SummaryPanel({
   now,
 }: Readonly<SummaryPanelProps>): ReactElement {
   const t = useTranslator();
-  const today = formatDate(now, 'iso');
+  const today = calendarDay(now);
   const recentVisits = [...chart.visits].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const recentResults = [...chart.results]
     .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt))
@@ -167,7 +169,7 @@ export function SummaryPanel({
                   <li key={visit.id} className="or-chart-item">
                     {/* Date and visit type, both from the record. */}
                     <p className="or-chart-item__title">
-                      {formatDate(visit.date)}, {visit.type.toLowerCase()}
+                      {formatDate(t, visit.date)}, {visit.type.toLowerCase()}
                     </p>
                     <p className="or-caption or-chart-item__meta">
                       {visit.providerName}, {visit.reason.toLowerCase()}
@@ -201,7 +203,7 @@ export function SummaryPanel({
                 {recentResults.map((observation) => reading(t, observation))}
                 <p className="or-caption or-chart-item__meta">
                   {t('chart.summary.collected', {
-                    when: formatDateTime(recentResults[0]?.collectedAt, 'prose'),
+                    when: formatDateTime(t, recentResults[0]?.collectedAt, 'prose'),
                   })}
                 </p>
               </div>
@@ -225,7 +227,7 @@ export function SummaryPanel({
                       <span className="or-mono">{problem.code}</span>{' '}
                       {t('chart.summary.problemMeta', {
                         system: problem.codeSystem,
-                        onset: formatDate(problem.onsetOn),
+                        onset: formatDate(t, problem.onsetOn),
                         status: t(PROBLEM_STATUS_INLINE[problem.status].labelKey),
                       })}
                     </p>
@@ -258,7 +260,7 @@ export function SummaryPanel({
                     <p className="or-chart-item__title">{gap.label}</p>
                     <p className="or-caption or-chart-item__meta">
                       {gap.dueOn
-                        ? t('chart.summary.careGapDue', { date: formatDate(gap.dueOn) })
+                        ? t('chart.summary.careGapDue', { date: formatDate(t, gap.dueOn) })
                         : t('chart.summary.careGapNoDate')}
                     </p>
                   </li>

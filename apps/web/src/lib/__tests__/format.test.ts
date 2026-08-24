@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { PatientName } from '@/lib/api/types';
 import {
-  NOT_RECORDED,
+  calendarDay,
+  clockTime,
   formatAge,
-  formatCount,
   formatDate,
   formatDateTime,
   formatElapsed,
@@ -15,7 +15,6 @@ import {
   formatName,
   formatTime,
   formatVital,
-  pluralise,
   vitalState,
 } from '@/lib/format';
 
@@ -36,6 +35,14 @@ import {
 const english = createTranslator(appCatalogue, 'en');
 const spanish = createTranslator(appCatalogue, 'es');
 const arabic = createTranslator(appCatalogue, 'ar-EG');
+
+/**
+ * The English words for an absent value, read out of the catalogue rather than
+ * typed here. Assertions below still read as "not recorded", and changing the
+ * source string changes them with it instead of leaving a file full of
+ * expectations nobody notices are stale.
+ */
+const NOT_RECORDED = en['common.notRecorded'];
 
 const testina: PatientName = {
   given: 'Testina',
@@ -87,38 +94,107 @@ describe('formatMrn', () => {
 
 describe('formatDate', () => {
   it('renders prose dates unambiguously', () => {
-    expect(formatDate('2026-08-12')).toBe('12 Aug 2026');
+    expect(formatDate(english, '2026-08-12')).toBe('12 Aug 2026');
   });
 
   it('drops the year in dense mode', () => {
-    expect(formatDate('2026-08-12', 'dense')).toBe('12 Aug');
-  });
-
-  it('renders iso for machine-facing surfaces', () => {
-    expect(formatDate('2026-08-12T23:30:00.000Z', 'iso')).toBe('2026-08-12');
+    expect(formatDate(english, '2026-08-12', 'dense')).toBe('12 Aug');
   });
 
   it('reads a bare date as the calendar date, never shifted by a timezone', () => {
-    expect(formatDate('2026-01-01')).toBe('1 Jan 2026');
+    expect(formatDate(english, '2026-01-01')).toBe('1 Jan 2026');
   });
 
   it('says so rather than rendering an empty cell', () => {
-    expect(formatDate(null)).toBe(NOT_RECORDED);
-    expect(formatDate('not a date')).toBe(NOT_RECORDED);
+    expect(formatDate(english, null)).toBe(NOT_RECORDED);
+    expect(formatDate(english, 'not a date')).toBe(NOT_RECORDED);
+  });
+
+  it("names the month in the reader's language", () => {
+    expect(formatDate(spanish, '2026-08-12')).toBe('12 ago 2026');
+    expect(formatDate(spanish, '2026-08-12', 'dense')).toBe('12 ago');
+    expect(formatDate(spanish, null)).toBe('No registrado');
+  });
+
+  it("writes the day and the year in the reader's numerals", () => {
+    // Arabic has no catalogue here, so nothing about this comes from a
+    // translation: the month name, the day and the year are all the runtime's,
+    // and all three change. A date that named the month correctly and printed
+    // Latin digits beside it would be half converted and look finished.
+    expect(formatDate(arabic, '2026-08-12')).toBe('١٢ أغسطس ٢٠٢٦');
+  });
+
+  it('keeps day, month, year in that order whatever the language', () => {
+    // The one language decision this file overrules. "08/12" cannot be read
+    // without knowing whose convention wrote it, and on a chart that is
+    // dangerous; day, named month, year cannot be misread in any of these.
+    // There is no catalogue message for the frame, so this is a property of the
+    // code rather than of a translation somebody could change.
+    for (const reader of [english, spanish, arabic]) {
+      const rendered = formatDate(reader, '2026-08-12');
+      const month = new Intl.DateTimeFormat(reader.locale, {
+        timeZone: 'UTC',
+        month: 'short',
+      }).format(new Date('2026-08-12T00:00:00.000Z'));
+      const digits = new Intl.NumberFormat(reader.locale, { useGrouping: false });
+
+      expect(rendered).toBe(`${digits.format(12)} ${month} ${digits.format(2026)}`);
+    }
   });
 });
 
 describe('formatTime and formatDateTime', () => {
   it('renders 24-hour clinic time', () => {
-    expect(formatTime('2026-08-12T09:20:00.000Z')).toBe('09:20');
+    expect(formatTime(english, '2026-08-12T09:20:00.000Z')).toBe('09:20');
   });
 
   it('joins the date and the time', () => {
-    expect(formatDateTime('2026-08-12T09:20:00.000Z')).toBe('12 Aug 2026, 09:20');
+    expect(formatDateTime(english, '2026-08-12T09:20:00.000Z')).toBe('12 Aug 2026, 09:20');
+    expect(formatDateTime(spanish, '2026-08-12T09:20:00.000Z')).toBe('12 ago 2026, 09:20');
   });
 
   it('honours an explicit clinic timezone', () => {
-    expect(formatTime('2026-08-12T09:20:00.000Z', 'America/New_York')).toBe('05:20');
+    expect(formatTime(english, '2026-08-12T09:20:00.000Z', 'America/New_York')).toBe('05:20');
+  });
+});
+
+describe('calendarDay and clockTime', () => {
+  /*
+   * The two that are values rather than labels. They take no translator, and
+   * they answer null rather than a sentence, because every caller compares them:
+   * a day is matched against `visit.date`, and a clock is split back into
+   * minutes to place a visit on the schedule grid.
+   */
+  it('reads the clinic day as a key, in the clinic timezone', () => {
+    expect(calendarDay('2026-08-12T23:30:00.000Z')).toBe('2026-08-12');
+    // 03:30 UTC on the 13th is still the 12th in New York, and the clinic's
+    // calendar day is the clinic's: a visit does not move to tomorrow because
+    // the server is in another zone.
+    expect(calendarDay('2026-08-13T03:30:00.000Z', 'America/New_York')).toBe('2026-08-12');
+    expect(calendarDay('2026-08-13T03:30:00.000Z', 'UTC')).toBe('2026-08-13');
+  });
+
+  it('reads the clock as a key, in the clinic timezone', () => {
+    expect(clockTime('2026-08-12T09:20:00.000Z')).toBe('09:20');
+    expect(clockTime('2026-08-13T03:30:00.000Z', 'America/New_York')).toBe('23:30');
+  });
+
+  it('answers null rather than words when there is nothing to read', () => {
+    // This is the whole reason they are separate functions. As a date style
+    // these returned the words "Not recorded", so two unreadable instants
+    // compared equal to each other and an unreadable one compared equal to a
+    // cell that genuinely said so. A key has to be a key.
+    for (const nothing of [null, undefined, '', 'not a date'] as const) {
+      expect(calendarDay(nothing)).toBeNull();
+      expect(clockTime(nothing)).toBeNull();
+    }
+  });
+
+  it('is what the display formatters are built on', () => {
+    // Same instant, same timezone, two answers: the key and the label. They
+    // cannot disagree, because one is computed from the other.
+    const instant = '2026-08-12T09:20:00.000Z';
+    expect(formatTime(english, instant)).toBe(clockTime(instant));
   });
 });
 
@@ -392,32 +468,6 @@ describe('vitalState', () => {
   });
 });
 
-describe('pluralise', () => {
-  it('uses the singular for exactly one and the plural for anything else', () => {
-    expect(pluralise(1, 'note')).toBe('note');
-    expect(pluralise(0, 'note')).toBe('notes');
-    expect(pluralise(4, 'note')).toBe('notes');
-  });
-
-  it('takes an explicit plural when the sentence changes shape around it', () => {
-    expect(pluralise(1, 'error blocks', 'errors block')).toBe('error blocks');
-    expect(pluralise(3, 'error blocks', 'errors block')).toBe('errors block');
-  });
-});
-
-describe('formatCount', () => {
-  it('renders the number with the noun that agrees with it', () => {
-    expect(formatCount(1, 'claim')).toBe('1 claim');
-    expect(formatCount(0, 'claim')).toBe('0 claims');
-    expect(formatCount(12, 'claim')).toBe('12 claims');
-  });
-
-  it('carries an explicit plural through', () => {
-    expect(formatCount(2, 'coverage')).toBe('2 coverages');
-    expect(formatCount(2, 'error blocks', 'errors block')).toBe('2 errors block');
-  });
-});
-
 /*
  * Absent, malformed and out-of-order inputs.
  *
@@ -429,18 +479,28 @@ describe('formatCount', () => {
  * has nothing.
  */
 describe('the shared absence', () => {
-  /**
-   * `NOT_RECORDED` is still a module constant because the date formatters still
-   * return it and have not been given a translator yet. While both spellings
-   * exist they have to be the same words, or a screen would say "Not recorded"
-   * in one column and something else in the next for the same missing value.
+  /*
+   * There is no `NOT_RECORDED` constant any more. Every formatter that has
+   * nothing to render asks the catalogue, so the words are written once and a
+   * Spanish reader gets Spanish ones. `NOT_RECORDED` below is a local constant
+   * in this file, read out of the catalogue rather than typed again, so a test
+   * cannot go on asserting English after somebody changes the source string.
    */
-  it('is the same words in the constant and in the catalogue', () => {
-    expect(NOT_RECORDED).toBe(en['common.notRecorded']);
-  });
-
   it('reaches a Spanish reader in Spanish', () => {
     expect(spanish('common.notRecorded')).toBe('No registrado');
+  });
+
+  it('is the same words from every formatter that has nothing', () => {
+    // One absence, said the same way in every column. A patient row used to be
+    // able to show a formatter's own spelling beside the catalogue's.
+    expect(formatDate(spanish, null)).toBe('No registrado');
+    expect(formatTime(spanish, null)).toBe('No registrado');
+    expect(formatDateTime(spanish, null)).toBe('No registrado');
+    expect(formatAge(spanish, null)).toBe('No registrado');
+    expect(formatElapsed(spanish, null)).toBe('No registrado');
+    expect(formatVital(spanish, { label: 'BMI', value: null, unit: 'kg/m2' }).value).toBe(
+      'No registrado'
+    );
   });
 });
 
@@ -448,11 +508,11 @@ describe('the date and time formatters, with nothing to format', () => {
   const nothing = [null, undefined, ''] as const;
 
   it.each(nothing)('formatTime says not recorded for %p', (value) => {
-    expect(formatTime(value)).toBe(NOT_RECORDED);
+    expect(formatTime(english, value)).toBe(NOT_RECORDED);
   });
 
   it.each(nothing)('formatDateTime says not recorded for %p', (value) => {
-    expect(formatDateTime(value)).toBe(NOT_RECORDED);
+    expect(formatDateTime(english, value)).toBe(NOT_RECORDED);
   });
 
   it.each(nothing)('formatAge says not recorded for %p', (value) => {
@@ -464,9 +524,9 @@ describe('the date and time formatters, with nothing to format', () => {
   });
 
   it('refuses an unparseable timestamp rather than rendering Invalid Date', () => {
-    expect(formatDate('not a date')).toBe(NOT_RECORDED);
-    expect(formatTime('not a date')).toBe(NOT_RECORDED);
-    expect(formatDateTime('not a date')).toBe(NOT_RECORDED);
+    expect(formatDate(english, 'not a date')).toBe(NOT_RECORDED);
+    expect(formatTime(english, 'not a date')).toBe(NOT_RECORDED);
+    expect(formatDateTime(english, 'not a date')).toBe(NOT_RECORDED);
     expect(formatAge(english, '1990-13-45')).toBe(NOT_RECORDED);
     expect(formatElapsed(english, 'not a date', '2026-08-12T10:00:00.000Z')).toBe(NOT_RECORDED);
     expect(formatElapsed(english, '2026-08-12T10:00:00.000Z', new Date('not a date'))).toBe(
@@ -491,10 +551,12 @@ describe('the date and time formatters, with nothing to format', () => {
   });
 
   it('names every month rather than leaving a gap for December', () => {
-    // The month lookup is one-based; an off-by-one would silently blank the
-    // last month of the year on every prose date in the product.
+    // This guarded a hand-written twelve-entry table with a one-based lookup,
+    // where an off-by-one would silently blank December on every prose date in
+    // the product. The table is gone and `Intl` owns the names now, so what is
+    // left to guard is that every month still comes back with a word in it.
     const months = Array.from({ length: 12 }, (_, index) =>
-      formatDate(`2026-${String(index + 1).padStart(2, '0')}-15`)
+      formatDate(english, `2026-${String(index + 1).padStart(2, '0')}-15`)
     );
 
     expect(months).toEqual([
@@ -520,8 +582,8 @@ describe('the date and time formatters, with nothing to format', () => {
     // the server happens to be in another zone.
     const lateEvening = '2026-08-13T03:30:00.000Z';
 
-    expect(formatDate(lateEvening, 'iso', 'America/New_York')).toBe('2026-08-12');
-    expect(formatTime(lateEvening, 'America/New_York')).toBe('23:30');
-    expect(formatDate(lateEvening, 'iso', 'UTC')).toBe('2026-08-13');
+    expect(formatDate(english, lateEvening, 'prose', 'America/New_York')).toBe('12 Aug 2026');
+    expect(formatTime(english, lateEvening, 'America/New_York')).toBe('23:30');
+    expect(formatDate(english, lateEvening, 'prose', 'UTC')).toBe('13 Aug 2026');
   });
 });

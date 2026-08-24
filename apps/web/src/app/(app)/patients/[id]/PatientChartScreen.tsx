@@ -29,7 +29,7 @@ import { useAppointments, usePatient } from '@/lib/api';
 import type { ApiClient } from '@/lib/api';
 import { clinicNow, useChartSummary } from '@/lib/api/chart';
 import type { ChartClient, ChartSummary } from '@/lib/api/chart';
-import { formatDate, formatName } from '@/lib/format';
+import { calendarDay, formatName } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -218,7 +218,7 @@ export function PatientChartScreen({
   // The note this chart offers to open: today's, and otherwise the oldest
   // unsigned one, because unsigned documentation is the debt worth surfacing.
   const openNote =
-    summary?.visits.find((visit) => visit.date === formatDate(now, 'iso') && visit.encounterId) ??
+    summary?.visits.find((visit) => visit.date === calendarDay(now) && visit.encounterId) ??
     summary?.visits.find((visit) => visit.noteState === 'UNSIGNED' && visit.encounterId) ??
     null;
   const openNoteId = openNote?.encounterId ?? null;

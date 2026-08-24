@@ -166,7 +166,7 @@ function VisitCharges({
         <Tag>{sheet.visitType}</Tag>
         <Tag>{sheet.providerName}</Tag>
         <span className="or-small">
-          {formatDate(sheet.serviceDate)}, {formatTime(sheet.serviceDate)}
+          {formatDate(t, sheet.serviceDate)}, {formatTime(t, sheet.serviceDate)}
         </span>
         <CopayBadge sheet={sheet} />
         {isReady ? <Badge tone="success">{t('billing.charges.readyBadge')}</Badge> : null}
@@ -348,7 +348,7 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
 
   const visitOptions = sheets.map((candidate) => ({
     value: candidate.id,
-    label: `${formatTime(candidate.serviceDate)} ${formatName(candidate.patient.name, 'listing')}`,
+    label: `${formatTime(t, candidate.serviceDate)} ${formatName(candidate.patient.name, 'listing')}`,
   }));
 
   return (

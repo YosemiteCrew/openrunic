@@ -237,7 +237,7 @@ export function InsuranceScreen({ patientId }: Readonly<InsuranceScreenProps>): 
                 {' · '}
                 {formatAge(t, record.birthDate, asOf)}
                 {' · '}
-                {t('insurance.screen.born', { date: formatDate(record.birthDate) })}
+                {t('insurance.screen.born', { date: formatDate(t, record.birthDate) })}
               </p>
               {/* Pronouns are the patient's own words, stored as typed. */}
               {record.pronouns ? <p className="or-small">{record.pronouns}</p> : null}

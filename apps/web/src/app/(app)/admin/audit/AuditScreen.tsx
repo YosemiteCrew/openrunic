@@ -16,6 +16,7 @@ import {
   pluralKey,
   translateColumns,
 } from '@/components/admin';
+import type { Translator } from '@openrunic/i18n';
 import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
@@ -31,7 +32,7 @@ import {
 import type { AdminClient, AuditAction, AuditEvent, PurposeOfUse } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import type { CsvColumn } from '@/lib/csv';
-import { formatDateTime } from '@/lib/format';
+import { calendarDay, clockTime, formatDateTime } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -54,8 +55,6 @@ export interface AuditScreenProps {
 }
 
 /** What a translator does, for the helpers below that are not components. */
-type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
-
 const COLUMNS: readonly AdminColumn[] = [
   { key: 'when', headerKey: 'admin.audit.column.when' },
   { key: 'actor', headerKey: 'admin.audit.column.actor' },
@@ -74,12 +73,20 @@ const COLUMNS: readonly AdminColumn[] = [
  * row that reads one way on screen has to read the same way in a spreadsheet,
  * including when the screen is not in English.
  */
-function csvColumns(t: Translate): Array<CsvColumn<AuditEvent>> {
+function csvColumns(t: Translator): Array<CsvColumn<AuditEvent>> {
   return [
     { header: t('admin.audit.csv.sequence'), value: (event) => event.sequence },
     {
       header: t('admin.audit.csv.when'),
-      value: (event) => formatDateTime(event.occurredAt, 'iso'),
+      // The audit export is machine-facing: a spreadsheet sorts and filters on
+      // this column, so it carries the calendar day and the clock rather than
+      // the reader's prose date. Neither of those is a language decision, which
+      // is why this one column takes no translator while its header does.
+      value: (event) => {
+        const day = calendarDay(event.occurredAt);
+        const time = clockTime(event.occurredAt);
+        return day && time ? `${day}, ${time}` : '';
+      },
     },
     { header: t('admin.audit.csv.actor'), value: (event) => event.actorName },
     {
@@ -130,18 +137,21 @@ const EVENT_COUNT_BREAKGLASS = {
  * messages rather than one with a clause appended, because the clause is not
  * appendable in every language.
  */
-function filterSummary(t: Translate, locale: string, total: number, breakglassCount: number) {
+function filterSummary(t: Translator, total: number, breakglassCount: number) {
+  // The locale comes off the translator rather than beside it. This took both
+  // because the local `Translate` type it used to be given had dropped the
+  // locale, so the caller passed `t.locale` back in as a second argument.
   if (breakglassCount === 0) {
-    return t(pluralKey(EVENT_COUNT, total, locale), { count: total });
+    return t(pluralKey(EVENT_COUNT, total, t.locale), { count: total });
   }
-  return t(pluralKey(EVENT_COUNT_BREAKGLASS, total, locale), {
+  return t(pluralKey(EVENT_COUNT_BREAKGLASS, total, t.locale), {
     count: total,
     breakglass: breakglassCount,
   });
 }
 
 /** The patient cell: an audit event does not always have a chart context. */
-function patientCell(t: Translate, event: AuditEvent): ReactElement {
+function patientCell(t: Translator, event: AuditEvent): ReactElement {
   if (!event.patientMrn) {
     return <span className="or-caption">{t('admin.audit.noChartContext')}</span>;
   }
@@ -154,7 +164,7 @@ function patientCell(t: Translate, event: AuditEvent): ReactElement {
 }
 
 /** Breakglass outranks the purpose of use: it is the thing an auditor scans for. */
-function purposeCell(t: Translate, event: AuditEvent): ReactElement {
+function purposeCell(t: Translator, event: AuditEvent): ReactElement {
   if (event.breakglass) {
     return <Badge tone="danger">{t('admin.audit.breakglass')}</Badge>;
   }
@@ -162,7 +172,7 @@ function purposeCell(t: Translate, event: AuditEvent): ReactElement {
 }
 
 function auditRow(
-  t: Translate,
+  t: Translator,
   event: AuditEvent,
   onOpen: (id: string) => void
 ): Record<string, ReactNode> {
@@ -170,7 +180,7 @@ function auditRow(
     id: event.id,
     when: (
       <span className="or-cell-stack">
-        <span className="or-small">{formatDateTime(event.occurredAt, 'dense')}</span>
+        <span className="or-small">{formatDateTime(t, event.occurredAt, 'dense')}</span>
         <span className="or-caption or-mono">#{event.sequence}</span>
       </span>
     ),
@@ -388,7 +398,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
 
       <FilterBar
         label={t('admin.audit.filter.label')}
-        summary={events.data ? filterSummary(t, t.locale, rows.length, breakglassCount) : null}
+        summary={events.data ? filterSummary(t, rows.length, breakglassCount) : null}
         actions={
           <Button variant="ghost" size="sm" iconLeft="download" onClick={exportRows}>
             {t('admin.audit.exportCsv')}
@@ -478,7 +488,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
       <Drawer
         open={selected !== null}
         title={selected ? t(AUDIT_ACTION_LABELS[selected.action].labelKey) : ''}
-        description={selected ? formatDateTime(selected.occurredAt, 'prose') : undefined}
+        description={selected ? formatDateTime(t, selected.occurredAt, 'prose') : undefined}
         width={720}
         onClose={() => setOpenId(null)}
         meta={

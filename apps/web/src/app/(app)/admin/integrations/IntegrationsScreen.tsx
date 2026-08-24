@@ -4,6 +4,7 @@ import { Badge, Button, Card, Input, Tag, Toast } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
+import type { Translator } from '@openrunic/i18n';
 import { adminArea, adminBreadcrumb, DetailList, Drawer } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
@@ -34,8 +35,6 @@ export interface IntegrationsScreenProps {
 }
 
 /** What a translator does, for the helpers below that are not components. */
-type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
-
 const STATUS_KEY: Record<IntegrationStatus, { labelKey: string }> = {
   CONNECTED: { labelKey: 'admin.integrations.status.connected' },
   DEMO: { labelKey: 'admin.integrations.status.demo' },
@@ -63,22 +62,22 @@ const TEST_RESULT_KEY: Record<IntegrationStatus, { labelKey: string }> = {
   NOT_CONNECTED: { labelKey: 'admin.integrations.test.notConnected' },
 };
 
-function testResultFor(t: Translate, status: IntegrationStatus): string {
+function testResultFor(t: Translator, status: IntegrationStatus): string {
   return t(TEST_RESULT_KEY[status].labelKey);
 }
 
 /** One sentence under the chip, so the state is never only a colour and a word. */
-function statusSentence(t: Translate, integration: Integration): string {
+function statusSentence(t: Translator, integration: Integration): string {
   switch (integration.status) {
     case 'CONNECTED':
       return t('admin.integrations.sentence.connected', {
-        when: formatDateTime(integration.lastActivityAt, 'dense'),
+        when: formatDateTime(t, integration.lastActivityAt, 'dense'),
       });
     case 'DEMO':
       return t('admin.integrations.sentence.demo');
     case 'ERROR':
       return t('admin.integrations.sentence.error', {
-        when: formatDateTime(integration.lastActivityAt, 'dense'),
+        when: formatDateTime(t, integration.lastActivityAt, 'dense'),
       });
     default:
       return t('admin.integrations.sentence.notConnected');
@@ -131,7 +130,7 @@ function SeamNotice({ integration }: Readonly<{ integration: Integration }>): Re
         <p className="or-body">{integration.failureDetail}</p>
         <p className="or-small">
           {t('admin.integrations.lastWorking', {
-            when: formatDateTime(integration.lastGoodAt, 'prose'),
+            when: formatDateTime(t, integration.lastGoodAt, 'prose'),
           })}
         </p>
       </Card>
@@ -164,7 +163,7 @@ function ActivityLog({ integration }: Readonly<{ integration: Integration }>): R
     <ul className="or-log">
       {integration.activityLog.map((entry) => (
         <li key={entry.at} className="or-log__row">
-          <span className="or-caption or-mono">{formatDateTime(entry.at, 'dense')}</span>
+          <span className="or-caption or-mono">{formatDateTime(t, entry.at, 'dense')}</span>
           <span className="or-small">{entry.summary}</span>
           <Badge tone={entry.ok ? 'success' : 'danger'}>
             {entry.ok
@@ -226,11 +225,11 @@ function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): Rea
           },
           {
             label: t('admin.integrations.detail.lastActivity'),
-            value: formatDateTime(integration.lastActivityAt, 'prose'),
+            value: formatDateTime(t, integration.lastActivityAt, 'prose'),
           },
           {
             label: t('admin.integrations.detail.lastWorking'),
-            value: formatDateTime(integration.lastGoodAt, 'prose'),
+            value: formatDateTime(t, integration.lastGoodAt, 'prose'),
           },
           {
             label: t('admin.integrations.detail.webhook'),

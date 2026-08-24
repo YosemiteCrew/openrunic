@@ -214,7 +214,7 @@ function toRow(t: Translator, order: Order, now: string): Record<string, ReactNo
     ) : (
       t('orders.list.patientNotRecorded')
     ),
-    placed: formatDateTime(order.placedAt, 'dense'),
+    placed: formatDateTime(t, order.placedAt, 'dense'),
     provider: mockProviderName(order.providerId),
     destination: order.destination,
     status: (

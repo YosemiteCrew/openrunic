@@ -1,4 +1,4 @@
-import { formatCount as countInLocale } from '@openrunic/i18n';
+import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 
 import type { PatientName } from '@/lib/api/types';
@@ -9,31 +9,49 @@ import type { PatientName } from '@/lib/api/types';
  * Two screens that render a date differently are a defect, not a style choice:
  * a clinician reading "08/12" cannot tell a US date from a European one, and
  * on a chart that ambiguity is dangerous. So every date on a staff surface is
- * "12 Aug 2026" (prose) or "12 Aug" (dense), and nothing else.
+ * day, named month and year - "12 Aug 2026", or "12 ago 2026" for a Spanish
+ * reader - and nothing else. The words change with the reader; the order does
+ * not, and {@link formatDate} says why.
  *
  * Everything here is pure and deterministic. Times are rendered in the clinic's
  * timezone, passed explicitly and defaulting to {@link CLINIC_TIME_ZONE}, never
  * in the machine's local zone: an appointment must not move by an hour because
  * the front desk's laptop travelled.
  *
- * ## Why some of these take a translator and others do not
+ * ## Why most of these take a translator, and three do not
  *
  * A formatter that produces a word has to produce it in the reader's language,
  * and a shared helper is the one place a `useTranslator` call cannot reach. So
- * `formatAge`, `formatElapsed` and `formatVital` take the translator as their
- * first argument, the way `counted` in `lib/i18n/counted.ts` already does. That
- * is a deliberately dull mechanism: no hook, no context, nothing that stops
- * these being called from a plain module like `components/inbox/sla.ts`.
+ * everything here that produces a word takes the translator as its first
+ * argument, the way `counted` in `lib/i18n/counted.ts` already does: that is
+ * `formatDate`, `formatTime`, `formatDateTime`, `formatAge`, `formatElapsed`,
+ * `formatMoney` and `formatVital`. A deliberately dull mechanism - no hook, no
+ * context - so they can still be called from a plain module like
+ * `components/inbox/sla.ts`.
  *
- * `formatName`, `formatInitials`, `formatMrn` and `formatCredentialed` do not,
- * because they produce no words. They rearrange a name the server supplied and
- * uppercase an identifier, and neither is a language decision.
+ * Three groups do not, and each for its own reason.
+ *
+ * `formatName`, `formatInitials`, `formatMrn` and `formatCredentialed` produce
+ * no words. They rearrange a name the server supplied and uppercase an
+ * identifier, and neither is a language decision.
+ *
+ * `calendarDay` and `clockTime` produce a value rather than a label: the ISO day
+ * a screen compares against `visit.date`, and the `HH:MM` the schedule grid
+ * splits back into minutes. They answer `null` for an input they cannot read,
+ * because a sentence is not a key and two absences must not compare equal by
+ * having been given the same words. `formatTime` is the display wrapper over
+ * `clockTime`; `formatDate` is not a wrapper over `calendarDay`, because a
+ * prose date and a sortable key are built from different parts.
+ *
+ * `vitalState` answers what is out of range, which is a fact about a number and
+ * a threshold. A caller deciding what to flag should not have to hold a
+ * translator to ask.
  *
  * The numbers inside a translated string go through `formatCount` from
- * `@openrunic/i18n` rather than being interpolated raw. The form and the digits
- * are two separate locale decisions - Arabic writes its numerals differently -
- * and a message that got the wording right and the numerals wrong would still
- * be wrong.
+ * `@openrunic/i18n` rather than being interpolated raw. The wording and the
+ * digits are two separate locale decisions - Arabic writes its numerals
+ * differently - and a message that got the wording right and the numerals wrong
+ * would still be wrong.
  */
 
 /**
@@ -69,59 +87,12 @@ function numberFormatter(locale: string, options: Intl.NumberFormatOptions): Int
   return built;
 }
 
-const MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
-
-/**
- * What a formatter renders when a value is genuinely absent. Never an empty cell.
- *
- * Still a constant because the date formatters below still return it, and they
- * have not been given a translator yet. The catalogue holds the same words under
- * `common.notRecorded`, and `format.test.ts` asserts the two are equal, so the
- * two spellings cannot drift while both exist.
- */
-export const NOT_RECORDED = 'Not recorded';
-
 /**
  * Anything a date formatter accepts. Named because five signatures take it, and
  * an alias is the only way to keep them from drifting apart one argument at a
  * time.
  */
 export type DateInput = string | Date | null | undefined;
-
-/* -------------------------------------------------------------------------- */
-/* Counts                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The noun for a count: "note" or "notes".
- *
- * The plural is a parameter rather than a suffix rule because clinical English
- * does not derive: "coverage"/"coverages" is regular, but the summary line
- * "1 error blocks billing" has to become "2 errors block billing", where the
- * verb moves too. Passing both words keeps that decision at the call site,
- * where the sentence is.
- */
-export function pluralise(count: number, singular: string, plural = `${singular}s`): string {
-  return count === 1 ? singular : plural;
-}
-
-/** The count and its noun together: "1 claim", "4 claims". */
-export function formatCount(count: number, singular: string, plural = `${singular}s`): string {
-  return `${count} ${pluralise(count, singular, plural)}`;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Names and identifiers                                                       */
@@ -182,9 +153,7 @@ export type DateStyle =
   /** "12 Aug 2026". The default on any surface with room. */
   | 'prose'
   /** "12 Aug". Dense tables, where the year is implied by the filter. */
-  | 'dense'
-  /** "2026-08-12". Machine-facing surfaces and export filenames only. */
-  | 'iso';
+  | 'dense';
 
 interface CalendarParts {
   year: number;
@@ -204,7 +173,16 @@ function parseValue(value: string): Date {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00.000Z`) : new Date(value);
 }
 
-/** Splits an instant into the clinic's wall-clock fields, via Intl rather than getters. */
+/**
+ * Splits an instant into the clinic's wall-clock fields, via Intl rather than getters.
+ *
+ * `en-US` is hardcoded and is correct here, which is worth saying because every
+ * other fixed locale in this file was a bug. Nothing this returns is displayed:
+ * it produces the numbers the callers do arithmetic on, and it reads them back
+ * out of `formatToParts` with `Number()`. A locale that writes Arabic-Indic
+ * digits would make that `Number()` return `NaN`, so the one requirement is a
+ * locale guaranteed to emit ASCII digits.
+ */
 function calendarParts(date: Date, timeZone: string): CalendarParts {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -232,40 +210,127 @@ function pad(value: number): string {
   return value.toString().padStart(2, '0');
 }
 
-export function formatDate(
-  value: DateInput,
-  style: DateStyle = 'prose',
-  timeZone: string = CLINIC_TIME_ZONE
-): string {
-  if (!value) return NOT_RECORDED;
+/**
+ * The calendar day as `YYYY-MM-DD`, or null when there is nothing to read.
+ *
+ * A key rather than a label. Every caller compares it: `visit.date === today`,
+ * or looks up the appointment whose start falls on the same clinic day. It used
+ * to be `formatDate(value, 'iso')`, which made it look like a third way of
+ * displaying a date and gave it a display's failure mode - an absent value came
+ * back as the words "Not recorded", and two absences compared equal because
+ * they had been given the same sentence. `null` is the honest answer, and it is
+ * the one the type system can make a caller think about.
+ */
+export function calendarDay(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string | null {
+  if (!value) return null;
   const date = toDate(value);
-  if (!date) return NOT_RECORDED;
-
+  if (!date) return null;
   const { year, month, day } = calendarParts(date, timeZone);
-  if (style === 'iso') return `${year}-${pad(month)}-${pad(day)}`;
-  const monthName = MONTHS[month - 1] ?? '';
-  return style === 'dense' ? `${day} ${monthName}` : `${day} ${monthName} ${year}`;
+  return `${year}-${pad(month)}-${pad(day)}`;
 }
 
-/** "09:20". 24-hour, because a clinic day crosses noon and am/pm doubles the reading. */
-export function formatTime(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string {
-  if (!value) return NOT_RECORDED;
+/**
+ * "09:20" in the clinic's timezone, or null. 24-hour, because a clinic day
+ * crosses noon and am/pm doubles the reading.
+ *
+ * ASCII digits and a colon, in every language, because the same string is a
+ * coordinate: `minutesOfDay` in `components/schedule/schedule.ts` splits it back
+ * into numbers to place a visit on the grid. A locale whose numerals differ
+ * would need a display-only variant beside this one rather than a change to it,
+ * and this build ships two languages that both write a clock this way.
+ */
+export function clockTime(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string | null {
+  if (!value) return null;
   const date = toDate(value);
-  if (!date) return NOT_RECORDED;
+  if (!date) return null;
   const { hour, minute } = calendarParts(date, timeZone);
   return `${pad(hour)}:${pad(minute)}`;
 }
 
-/** "12 Aug 2026, 09:20". */
-export function formatDateTime(
+/**
+ * Built date formatters, kept for the life of the page, for the same reason the
+ * number formatters are: constructing one is expensive and a roster builds one
+ * per row. Keyed on locale and timezone, which is the whole of what varies.
+ */
+const MONTH_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+const DIGIT_FORMATTERS = new Map<string, Intl.NumberFormat>();
+
+function monthName(locale: string, timeZone: string, date: Date): string {
+  const key = `${locale}|${timeZone}`;
+  const cached = MONTH_FORMATTERS.get(key);
+  if (cached) return cached.format(date);
+  // Formatted alone rather than pulled out of a full date's parts. Japanese
+  // writes the short month as "8月", where the 月 is a `literal` part next to
+  // the number: reading only the `month` part would leave a bare "8" and
+  // nothing would report it.
+  const built = new Intl.DateTimeFormat(locale, { timeZone, month: 'short' });
+  MONTH_FORMATTERS.set(key, built);
+  return built.format(date);
+}
+
+/** A day or a year as the reader writes digits. Ungrouped: a year is not "2,026". */
+function digits(locale: string, value: number): string {
+  const cached = DIGIT_FORMATTERS.get(locale);
+  if (cached) return cached.format(value);
+  const built = new Intl.NumberFormat(locale, { useGrouping: false });
+  DIGIT_FORMATTERS.set(locale, built);
+  return built.format(value);
+}
+
+/**
+ * "12 Aug 2026", in the reader's language.
+ *
+ * The month name and the digits are the reader's. **The order is not**, and
+ * this is the one place in this file where a language decision is deliberately
+ * overruled. A clinician reading "08/12" cannot tell a US date from a European
+ * one, and on a chart that ambiguity is dangerous; day, named month, year is
+ * unambiguous in every language that reads it, and letting each locale pick its
+ * own order would put some readers back in front of a date they have to guess
+ * at. So there is no catalogue message for the frame: a translator can change
+ * "Aug" to "ago" and cannot move it.
+ */
+export function formatDate(
+  t: Translator,
   value: DateInput,
   style: DateStyle = 'prose',
   timeZone: string = CLINIC_TIME_ZONE
 ): string {
-  if (!value) return NOT_RECORDED;
+  if (!value) return t('common.notRecorded');
   const date = toDate(value);
-  if (!date) return NOT_RECORDED;
-  return `${formatDate(date, style, timeZone)}, ${formatTime(date, timeZone)}`;
+  if (!date) return t('common.notRecorded');
+
+  const { year, day } = calendarParts(date, timeZone);
+  const month = monthName(t.locale, timeZone, date);
+  const dayText = digits(t.locale, day);
+  return style === 'dense'
+    ? `${dayText} ${month}`
+    : `${dayText} ${month} ${digits(t.locale, year)}`;
+}
+
+/** "09:20", or the words for an absent value. */
+export function formatTime(
+  t: Translator,
+  value: DateInput,
+  timeZone: string = CLINIC_TIME_ZONE
+): string {
+  return clockTime(value, timeZone) ?? t('common.notRecorded');
+}
+
+/** "12 Aug 2026, 09:20". */
+export function formatDateTime(
+  t: Translator,
+  value: DateInput,
+  style: DateStyle = 'prose',
+  timeZone: string = CLINIC_TIME_ZONE
+): string {
+  if (!value) return t('common.notRecorded');
+  const date = toDate(value);
+  if (!date) return t('common.notRecorded');
+  // The comma is the separator this product prints between a date and a time,
+  // not a sentence: both halves are already in the reader's language and
+  // neither can move relative to the other without changing what the date
+  // above deliberately fixes.
+  return `${formatDate(t, date, style, timeZone)}, ${formatTime(t, date, timeZone)}`;
 }
 
 /**
@@ -284,14 +349,14 @@ export function formatAge(
   if (!born || !now || born > now) return t('common.notRecorded');
 
   const days = Math.floor((now.getTime() - born.getTime()) / 86_400_000);
-  if (days < 31) return t('common.age.days', { count: countInLocale(days, t.locale) });
+  if (days < 31) return t('common.age.days', { count: formatCount(days, t.locale) });
 
   const months =
     (now.getUTCFullYear() - born.getUTCFullYear()) * 12 +
     (now.getUTCMonth() - born.getUTCMonth()) -
     (now.getUTCDate() < born.getUTCDate() ? 1 : 0);
-  if (months < 24) return t('common.age.months', { count: countInLocale(months, t.locale) });
-  return t('common.age.years', { count: countInLocale(Math.floor(months / 12), t.locale) });
+  if (months < 24) return t('common.age.months', { count: formatCount(months, t.locale) });
+  return t('common.age.years', { count: formatCount(Math.floor(months / 12), t.locale) });
 }
 
 /**
@@ -312,7 +377,7 @@ export function formatElapsed(
   const minutes = Math.floor((end.getTime() - start.getTime()) / 60_000);
   if (minutes < 0) return t('common.notRecorded');
   if (minutes < 1) return t('common.elapsed.justNow');
-  if (minutes < 60) return t('common.elapsed.minutes', { count: countInLocale(minutes, t.locale) });
+  if (minutes < 60) return t('common.elapsed.minutes', { count: formatCount(minutes, t.locale) });
 
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
@@ -322,13 +387,13 @@ export function formatElapsed(
     // "1 h 40 min" and "1 h 5 min" does not. A padded field is a column width
     // rather than a count, which is why it does not go through `countInLocale`.
     return rest === 0
-      ? t('common.elapsed.hours', { count: countInLocale(hours, t.locale) })
+      ? t('common.elapsed.hours', { count: formatCount(hours, t.locale) })
       : t('common.elapsed.hoursMinutes', {
-          count: countInLocale(hours, t.locale),
+          count: formatCount(hours, t.locale),
           minutes: pad(rest),
         });
   }
-  return t('common.elapsed.days', { count: countInLocale(Math.floor(hours / 24), t.locale) });
+  return t('common.elapsed.days', { count: formatCount(Math.floor(hours / 24), t.locale) });
 }
 
 /* -------------------------------------------------------------------------- */

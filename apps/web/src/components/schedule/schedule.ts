@@ -1,7 +1,7 @@
 import type { BadgeTone } from '@openrunic/ui';
 
 import type { Appointment, AppointmentStatus, PatientName, UserDto } from '@/lib/api';
-import { formatTime } from '@/lib/format';
+import { clockTime } from '@/lib/format';
 
 import type { ScheduleProvider } from './ScheduleGrid';
 
@@ -151,12 +151,19 @@ export function categoryViz(code: string): number {
 }
 
 /**
- * Minutes past midnight in the clinic's timezone, read through the shared
- * formatter so the grid can never disagree with the times printed on it.
+ * Minutes past midnight in the clinic's timezone, read through the shared clock
+ * so the grid can never disagree with the times printed on it.
+ *
+ * Reads `clockTime` rather than `formatTime`: this is arithmetic, and what it
+ * wants is the coordinate rather than the label. It used to call the display
+ * formatter and guard the result with `/^\d{2}:\d{2}$/`, which was a regex
+ * asking "did I get a time or did I get the words 'Not recorded'". The two are
+ * separate functions now, so the question does not arise and the null comes
+ * back typed.
  */
 export function minutesOfDay(instant: string | null | undefined): number | null {
-  const time = formatTime(instant);
-  if (!/^\d{2}:\d{2}$/.test(time)) return null;
+  const time = clockTime(instant);
+  if (time === null) return null;
   const [hours, minutes] = time.split(':').map(Number);
   return (hours ?? 0) * 60 + (minutes ?? 0);
 }

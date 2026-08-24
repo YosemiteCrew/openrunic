@@ -27,7 +27,8 @@ import {
   usePatients,
 } from '@/lib/api';
 import type { AdministrativeGender, ApiClient, Patient, SensitivityClass } from '@/lib/api';
-import { formatEnumLabel, formatMrn } from '@/lib/format';
+import { SENSITIVITY_LABELS, SEX_AT_BIRTH_LABELS } from '@/components/patients/labels';
+import { formatMrn } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -185,7 +186,7 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
             { value: '', label: t('patients.field.sexNotRecorded') },
             ...ADMINISTRATIVE_GENDERS.map((option) => ({
               value: option,
-              label: formatEnumLabel(option),
+              label: t(SEX_AT_BIRTH_LABELS[option].labelKey),
             })),
           ]}
         />
@@ -292,7 +293,7 @@ function AccessFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactEle
           onChange={(event) => set('sensitivityClass', event.target.value as SensitivityClass)}
           options={SENSITIVITY_CLASSES.map((option) => ({
             value: option,
-            label: formatEnumLabel(option),
+            label: t(SENSITIVITY_LABELS[option].labelKey),
           }))}
         />
         <Switch

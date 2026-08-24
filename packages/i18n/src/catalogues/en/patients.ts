@@ -8,12 +8,34 @@ import type { Messages } from '../../catalogue.js';
  * the messages say what to do rather than only what is wrong, and none of them
  * carries filler.
  *
- * What is deliberately NOT here: anything the API already names. Sex at birth
- * and record sensitivity arrive as coded values and render through the shared
- * enum formatter, because putting a second, diverging label on a code that
- * already has one is how two screens end up disagreeing about the same record.
+ * What is deliberately NOT here: anything somebody else already named. A payer
+ * name, a plan name, an ICD-10 title and everything the patient record itself
+ * carries - the person's name, their MRN, their telephone number - are rendered
+ * as they arrived. Putting a second, diverging label on a value that already
+ * has one is how two screens come to disagree about the same record.
+ *
+ * "Arrives as a code" is NOT the test, and the two enums at the top of this
+ * file are why. Sex at birth and record sensitivity both arrive coded, and
+ * neither arrives with a display: the API sends `FEMALE` and `RESTRICTED` and
+ * says nothing about what to call them. The English was being derived by
+ * `formatEnumLabel`, which is this codebase inventing a label and then treating
+ * its own invention as somebody else's name. Both enums are declared in
+ * `lib/api/types.ts` and mirrored in `packages/database`, so the words are ours
+ * to write and ours to translate. See `components/patients/labels.ts`.
  */
 export const patients: Messages = {
+  /* --------------------------------------------------- this codebase's enums */
+  /* The API sends the code and no display, and neither enum comes from a
+     terminology server: both are declared in `lib/api/types.ts` and mirrored in
+     `packages/database`. See `components/patients/labels.ts`. */
+  'patients.sexAtBirth.female': 'Female',
+  'patients.sexAtBirth.male': 'Male',
+  'patients.sexAtBirth.other': 'Other',
+  'patients.sexAtBirth.unknown': 'Unknown',
+  'patients.sensitivity.normal': 'Normal',
+  'patients.sensitivity.restricted': 'Restricted',
+  'patients.sensitivity.veryRestricted': 'Very restricted',
+
   /* ----------------------------------------------------------------- roster */
   'patients.roster.title': 'Patients',
   'patients.roster.description':

@@ -11,10 +11,21 @@ import type { Messages } from '../../catalogue.js';
  * which they are reading.
  *
  * What is deliberately NOT here: the payer name, the plan name, the member id,
- * the subscriber relationship and the detail sentence an eligibility answer
- * carries. Those arrive from the payer through the adapter and are already
- * named; translating them here would put a second name on somebody else's
- * record.
+ * the group number and the detail sentence an eligibility answer carries. Those
+ * are the payer's own words about the payer's own record, and translating them
+ * here would put a second name on somebody else's answer. The mock fixtures
+ * stand in for them with English we wrote, which is a fixture standing in for a
+ * 271 response rather than a string this catalogue should own.
+ *
+ * The subscriber relationship is NOT in that list and is not here either, and
+ * the difference is worth stating because it looked like the same case. The
+ * schema stores `subscriberRelationshipCode` as an HL7 v3 RoleCode, so the code
+ * is external and the DISPLAY is ours to supply - exactly like sex at birth in
+ * `patients.ts`. It has no keys yet only because the web client's mock still
+ * carries a display string rather than the code, so there is nothing to key on
+ * until that is wired. Filed rather than guessed at: keying today would mean
+ * mapping the fixture's English back to codes, which is a lookup that breaks
+ * the moment the real shape arrives.
  */
 export const insurance: Messages = {
   /* ------------------------------------------------------------ the outcome */

@@ -6,15 +6,10 @@ import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { Patient } from '@/lib/api';
-import {
-  formatAge,
-  formatDate,
-  formatEnumLabel,
-  formatMrn,
-  formatName,
-  NOT_RECORDED,
-} from '@/lib/format';
+import { formatAge, formatDate, formatMrn, formatName, NOT_RECORDED } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
+
+import { SENSITIVITY_LABELS, SEX_AT_BIRTH_LABELS } from './labels';
 
 /**
  * The roster table.
@@ -72,7 +67,7 @@ function statusBadge(patient: Patient, t: Translator): ReactElement {
   }
   if (!patient.active) return <Badge tone="neutral">{t('patients.status.inactive')}</Badge>;
   if (patient.sensitivityClass !== 'NORMAL') {
-    return <Badge tone="danger">{formatEnumLabel(patient.sensitivityClass)}</Badge>;
+    return <Badge tone="danger">{t(SENSITIVITY_LABELS[patient.sensitivityClass].labelKey)}</Badge>;
   }
   return <Badge tone="success">{t('patients.status.active')}</Badge>;
 }
@@ -99,7 +94,7 @@ export function PatientTable({
     mrn: formatMrn(patient.mrn),
     birthDate: formatDate(patient.birthDate),
     age: formatAge(patient.birthDate, asOf),
-    sex: formatEnumLabel(patient.sexAtBirth),
+    sex: t(SEX_AT_BIRTH_LABELS[patient.sexAtBirth].labelKey),
     contact: patient.telecom.phoneMobile ?? NOT_RECORDED,
     status: statusBadge(patient, t),
     actions: (

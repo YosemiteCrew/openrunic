@@ -1,13 +1,14 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Input, Radio, Select, VitalStat } from '@openrunic/ui';
 import { useCallback, useId, useMemo, useReducer, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import {
   allocatedLines,
-  ALLOCATION_HINTS,
-  ALLOCATION_STATE_LABELS,
+  ALLOCATION_HINT_KEYS,
+  ALLOCATION_STATE_LABEL_KEYS,
   AllocationTable,
   allocationState,
   allocationStateName,
@@ -25,6 +26,8 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { usePayments, useStatements } from '@/lib/api';
 import type { BillingClient, Payment, PaymentMethodKind, StatementAccount } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { EMPTY_TENDER, reduceTender } from './tender';
 
@@ -49,24 +52,33 @@ const TAKEN_BY = 'Ada Nwosu';
 
 interface MethodChoice {
   kind: PaymentMethodKind;
-  label: string;
-  /** Why this choice exists, in one line. Never a tooltip. */
-  hint: string;
+  /** Catalogue key for the choice's name. */
+  labelKey: string;
+  /** Catalogue key for why this choice exists, in one line. Never a tooltip. */
+  hintKey: string;
 }
 
-const METHODS: MethodChoice[] = [
+const METHODS: readonly MethodChoice[] = [
   {
     kind: 'CARD_ON_FILE',
-    label: 'Card on file',
-    hint: 'Charges the card the patient has already consented to.',
+    labelKey: 'billing.payments.method.cardOnFile',
+    hintKey: 'billing.payments.method.cardOnFileHint',
   },
   {
     kind: 'CARD_MANUAL',
-    label: 'Card keyed at the desk',
-    hint: 'One-off card, nothing stored.',
+    labelKey: 'billing.payments.method.cardManual',
+    hintKey: 'billing.payments.method.cardManualHint',
   },
-  { kind: 'CASH', label: 'Cash', hint: 'Counted into the drawer.' },
-  { kind: 'CHECK', label: 'Check', hint: 'Record the check number on the receipt.' },
+  {
+    kind: 'CASH',
+    labelKey: 'billing.payments.method.cash',
+    hintKey: 'billing.payments.method.cashHint',
+  },
+  {
+    kind: 'CHECK',
+    labelKey: 'billing.payments.method.check',
+    hintKey: 'billing.payments.method.checkHint',
+  },
 ];
 
 export interface PaymentsScreenProps {
@@ -80,6 +92,11 @@ export interface PaymentsScreenProps {
  * Its own component because it reads nothing from the tender: it is the record
  * of payments already taken, and mixing it into the desk made both harder to
  * follow.
+ *
+ * `payment.method.label` renders as it was recorded. It is what the payment
+ * says about itself - "Visa ending 4242" from the processor, or the words the
+ * desk chose at the time - and a list that renames a method after the fact no
+ * longer matches the receipt beside it.
  */
 function RecentPayments({
   state,
@@ -90,17 +107,19 @@ function RecentPayments({
   history: readonly Payment[];
   onOpenReceipt: (payment: Payment) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <Card overline="Payments" title="Recent">
+    <Card overline={t('billing.payments.recentOverline')} title={t('billing.payments.recentTitle')}>
       <AsyncBoundary
         state={state}
-        subject="recent payments"
+        subject={t('billing.payments.recentSubject')}
         isEmpty={isEmptyList}
         loadingVariant="text"
         loadingRows={4}
         empty={{
-          title: 'No payments yet',
-          message: 'Payments taken at the desk appear here with their receipts.',
+          title: t('billing.payments.recent.empty.title'),
+          message: t('billing.payments.recent.empty.message'),
           icon: 'receipt',
         }}
       >
@@ -124,7 +143,7 @@ function RecentPayments({
                     <span className="or-caption">{formatDate(payment.takenAt, 'dense')}</span>
                   </span>
                   {payment.status === 'REVERSED' ? (
-                    <Badge tone="danger">Reversed</Badge>
+                    <Badge tone="danger">{t('billing.payments.reversed')}</Badge>
                   ) : (
                     <Badge tone="neutral" icon="minus">
                       {payment.method.label}
@@ -165,16 +184,21 @@ function MethodPanel({
   onMethodChange: (method: PaymentMethodKind) => void;
   onReferenceChange: (reference: string) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <Card overline="Method" title="How it is being paid">
+    <Card
+      overline={t('billing.payments.method.overline')}
+      title={t('billing.payments.method.title')}
+    >
       <fieldset className="or-method-set">
-        <legend className="or-visually-hidden">Payment method</legend>
+        <legend className="or-visually-hidden">{t('billing.payments.method.legend')}</legend>
         {METHODS.map((candidate) => (
           <Radio
             key={candidate.kind}
             name={methodName}
-            label={candidate.label}
-            hint={candidate.hint}
+            label={t(candidate.labelKey)}
+            hint={t(candidate.hintKey)}
             value={candidate.kind}
             checked={method === candidate.kind}
             onChange={() => onMethodChange(candidate.kind)}
@@ -184,7 +208,7 @@ function MethodPanel({
 
       {method === 'CHECK' ? (
         <Input
-          label="Check number"
+          label={t('billing.payments.checkNumber')}
           mono
           value={reference}
           onChange={(event) => onReferenceChange(event.target.value)}
@@ -193,14 +217,34 @@ function MethodPanel({
 
       {cardOnFileUnavailable ? (
         <p className="or-small or-billing__hint" role="alert">
-          {patientName} has no card on file. Key the card at the desk, or take cash or a check.
+          {t('billing.payments.noCardAlert', { name: patientName })}
         </p>
       ) : null}
     </Card>
   );
 }
 
+/**
+ * What the receipt will say the money arrived as.
+ *
+ * Recorded on the payment at the moment it is taken, in the language the desk
+ * was working in, because the receipt has to keep saying what the desk saw when
+ * it took the money rather than re-deciding later.
+ */
+function methodLabel(
+  method: PaymentMethodKind,
+  reference: string,
+  chosen: MethodChoice | undefined,
+  translate: Translator
+): string {
+  if (method === 'CHECK' && reference) {
+    return translate('billing.payments.checkReference', { reference });
+  }
+  return translate(chosen?.labelKey ?? 'billing.payments.method.unknown');
+}
+
 export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): ReactElement {
+  const t = useTranslator();
   const accountsState = useStatements({ pageSize: 100 }, { client });
   const paymentsState = usePayments({ pageSize: 50 }, { client });
 
@@ -268,8 +312,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
       currency: account.currency,
       method: {
         kind: method,
-        label:
-          method === 'CHECK' && reference ? `Check ${reference}` : (chosen?.label ?? 'Payment'),
+        label: methodLabel(method, reference, chosen, t),
         last4: null,
         consentAt: method === 'CARD_ON_FILE' ? now : null,
       },
@@ -282,8 +325,10 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
     dispatch({ type: 'captured' });
     toasts.push({
       tone: 'success',
-      title: `${formatMoney(payment.amount, { currency: payment.currency }).text} taken`,
-      message: `Receipt ${payment.receiptNumber} is ready to print or email.`,
+      title: t('billing.payments.toast.taken', {
+        amount: formatMoney(payment.amount, { currency: payment.currency }).text,
+      }),
+      message: t('billing.payments.toast.takenMessage', { number: payment.receiptNumber }),
     });
   }, [
     account,
@@ -297,17 +342,21 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
     openItems,
     allocations,
     toasts,
+    t,
   ]);
 
   const deliver = useCallback(
     (payment: Payment, channel: 'print' | 'email') => {
       toasts.push({
         tone: 'success',
-        title: channel === 'print' ? 'Receipt sent to the printer' : 'Receipt emailed',
-        message: `Receipt ${payment.receiptNumber}.`,
+        title:
+          channel === 'print'
+            ? t('billing.payments.toast.printed')
+            : t('billing.payments.toast.emailed'),
+        message: t('billing.payments.toast.receiptRef', { number: payment.receiptNumber }),
       });
     },
-    [toasts]
+    [toasts, t]
   );
 
   const commands = useMemo<Command[]>(
@@ -315,24 +364,24 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
       {
         id: 'billing.payments.amount',
         group: 'actions',
-        label: 'Take a payment',
-        keywords: ['collect', 'copay', 'card', 'cash', 'check'],
+        label: t('billing.payments.command.amount'),
+        keywords: searchWords(t('billing.payments.command.amount.keywords')),
         icon: 'credit-card',
         perform: () => document.getElementById(amountId)?.focus(),
       },
       {
         id: 'billing.payments.allocate',
         group: 'actions',
-        label: 'Allocate this payment oldest visit first',
-        keywords: ['allocate', 'apply', 'remainder', 'split'],
+        label: t('billing.payments.command.allocate'),
+        keywords: searchWords(t('billing.payments.command.allocate.keywords')),
         icon: 'wand-sparkles',
         perform: allocateOldestFirst,
       },
       {
         id: 'billing.payments.receipt',
         group: 'actions',
-        label: 'Open the last receipt',
-        keywords: ['receipt', 'reprint', 'print'],
+        label: t('billing.payments.command.receipt'),
+        keywords: searchWords(t('billing.payments.command.receipt.keywords')),
         icon: 'receipt',
         perform: () => {
           const last = taken[0] ?? recent[0] ?? null;
@@ -340,15 +389,15 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
         },
       },
     ],
-    [amountId, allocateOldestFirst, taken, recent]
+    [amountId, allocateOldestFirst, taken, recent, t]
   );
 
   const history = [...taken, ...recent];
 
   return (
     <AppShell
-      title="Payments"
-      description="Take a payment, apply it to the visits it pays for, and issue the receipt."
+      title={t('billing.payments.title')}
+      description={t('billing.payments.description')}
       actions={
         <div className="or-billing__action">
           <Button
@@ -356,12 +405,12 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
             disabled={!state.balanced || cardOnFileUnavailable}
             onClick={takePayment}
           >
-            Take payment
+            {t('billing.payments.take')}
           </Button>
           <p className="or-caption or-billing__action-hint">
             {cardOnFileUnavailable
-              ? 'This patient has no card on file. Choose another method.'
-              : ALLOCATION_HINTS[allocationStateName(state)]}
+              ? t('billing.payments.noCardHint')
+              : t(ALLOCATION_HINT_KEYS[allocationStateName(state)])}
           </p>
         </div>
       }
@@ -373,23 +422,26 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
 
       <AsyncBoundary
         state={accountsState}
-        subject="patient balances"
+        subject={t('billing.payments.subject')}
         isEmpty={isEmptyList}
         loadingRows={5}
         empty={{
-          title: 'No balances to collect',
-          message: 'Nothing is outstanding. A copay taken at check-in appears here on the day.',
+          title: t('billing.payments.empty.title'),
+          message: t('billing.payments.empty.message'),
           icon: 'credit-card',
-          action: <Button href="/schedule">Go to the schedule</Button>,
+          action: <Button href="/schedule">{t('billing.payments.empty.action')}</Button>,
         }}
       >
         {() =>
           account ? (
             <>
-              <Card overline="Payer" title="Who is paying">
+              <Card
+                overline={t('billing.payments.payer')}
+                title={t('billing.payments.whoIsPaying')}
+              >
                 <div className="or-field-row">
                   <Select
-                    label="Patient"
+                    label={t('billing.payments.patient')}
                     options={accounts.map((candidate) => ({
                       value: candidate.id,
                       label: `${formatName(candidate.patient.name, 'listing')} ${
@@ -401,10 +453,13 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                   />
                   <Input
                     id={amountId}
-                    label="Amount"
+                    label={t('billing.payments.amount')}
                     type="number"
                     mono
                     value={amountText}
+                    /* A numeric example rather than words: the amount is
+                       formatted en-US everywhere in this application, so the
+                       shape of the hint does not change with the reader. */
                     placeholder="0.00"
                     onChange={(event) => dispatch({ type: 'setAmount', text: event.target.value })}
                   />
@@ -413,13 +468,15 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                 <div className="or-visit-header">
                   <span className="or-mono">{formatMrn(account.patient.mrn)}</span>
                   <span className="or-small">
-                    Balance {formatMoney(account.balance, { currency: account.currency }).text}
+                    {t('billing.payments.balance', {
+                      amount: formatMoney(account.balance, { currency: account.currency }).text,
+                    })}
                   </span>
                   {account.cardOnFile ? (
-                    <Badge tone="success">Card on file, consent on record</Badge>
+                    <Badge tone="success">{t('billing.payments.cardOnFileBadge')}</Badge>
                   ) : (
                     <Badge tone="neutral" icon="minus">
-                      No card on file
+                      {t('billing.payments.noCardBadge')}
                     </Badge>
                   )}
                 </div>
@@ -436,12 +493,12 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
               />
 
               <Card
-                overline="Allocation"
-                title="Which visits this pays"
+                overline={t('billing.payments.allocationOverline')}
+                title={t('billing.payments.allocationTitle')}
                 footer={
                   <div className="or-remainder">
                     <VitalStat
-                      label="Unallocated"
+                      label={t('billing.payments.unallocated')}
                       value={
                         formatMoney(state.unallocated, {
                           currency: account.currency,
@@ -449,7 +506,7 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                         }).text
                       }
                       state={state.balanced ? 'success' : 'danger'}
-                      stateLabel={ALLOCATION_STATE_LABELS[allocationStateName(state)]}
+                      stateLabel={t(ALLOCATION_STATE_LABEL_KEYS[allocationStateName(state)])}
                     />
                     <Money amount={state.allocated} currency={account.currency} />
                   </div>
@@ -461,20 +518,21 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                     iconLeft="wand-sparkles"
                     onClick={allocateOldestFirst}
                   >
-                    Allocate oldest first
+                    {t('billing.payments.allocateOldest')}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => dispatch({ type: 'allocateOldestFirst', amount: 0, items: [] })}
                   >
-                    Clear allocation
+                    {t('billing.payments.clearAllocation')}
                   </Button>
                 </div>
 
                 {openItems.length === 0 ? (
                   <p className="or-body">
-                    {formatName(account.patient.name)} has no open visits. Take the payment as a
-                    credit from the statements screen.
+                    {t('billing.payments.noOpenVisits', {
+                      name: formatName(account.patient.name),
+                    })}
                   </p>
                 ) : (
                   <AllocationTable

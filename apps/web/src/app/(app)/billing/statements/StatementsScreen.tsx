@@ -1,29 +1,32 @@
 'use client';
 
 import { Badge, Button, Card, Checkbox, Input, Table, VitalStat } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import {
   arSummary,
-  BUCKET_LABELS,
+  BUCKET_LABEL_KEYS,
   BUCKET_ORDER,
-  BUCKET_STATE_LABELS,
+  BUCKET_STATE_LABEL_KEYS,
   bucketTone,
-  DUNNING_LABELS,
+  DUNNING_LABEL_KEYS,
   Money,
   StatementDrawer,
   ToastDock,
+  translateColumns,
   useToasts,
 } from '@/components/billing';
+import type { KeyedColumn } from '@/components/billing';
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { filterStatements, useStatements } from '@/lib/api';
 import type { AgeingBucket, BillingClient, StatementAccount } from '@/lib/api';
-import { formatCount, formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
+import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * BL-07 Statements and patient AR, with BL-08's ageing above it.
@@ -39,15 +42,15 @@ import { formatCount, formatDate, formatMoney, formatMrn, formatName } from '@/l
  * how a practice sends a final notice to someone on a payment plan.
  */
 
-const COLUMNS: TableColumn[] = [
-  { key: 'select', header: 'Select' },
-  { key: 'patient', header: 'Patient' },
-  { key: 'balance', header: 'Balance', numeric: true },
-  { key: 'bucket', header: 'Oldest balance' },
-  { key: 'statements', header: 'Statements', numeric: true },
-  { key: 'lastPayment', header: 'Last payment' },
-  { key: 'dunning', header: 'Dunning stage' },
-  { key: 'actions', header: 'Actions', align: 'right' },
+const COLUMNS: readonly KeyedColumn[] = [
+  { key: 'select', headerKey: 'billing.statements.column.select' },
+  { key: 'patient', headerKey: 'billing.statements.column.patient' },
+  { key: 'balance', headerKey: 'billing.statements.column.balance', numeric: true },
+  { key: 'bucket', headerKey: 'billing.statements.column.bucket' },
+  { key: 'statements', headerKey: 'billing.statements.column.statements', numeric: true },
+  { key: 'lastPayment', headerKey: 'billing.statements.column.lastPayment' },
+  { key: 'dunning', headerKey: 'billing.statements.column.dunning' },
+  { key: 'actions', headerKey: 'billing.statements.column.actions', align: 'right' },
 ];
 
 export interface StatementsScreenProps {
@@ -56,6 +59,7 @@ export interface StatementsScreenProps {
 }
 
 export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): ReactElement {
+  const t = useTranslator();
   const statementsState = useStatements({ pageSize: 100 }, { client });
   const accounts = useMemo(() => statementsState.data?.data ?? [], [statementsState.data]);
 
@@ -92,13 +96,13 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
     if (chosen.length === 0) {
       toasts.push({
         tone: 'info',
-        title: 'Nothing selected',
-        message: 'Select the accounts to include in this run.',
+        title: t('billing.statements.toast.nothingSelected'),
+        message: t('billing.statements.toast.nothingSelectedMessage'),
       });
       return;
     }
     setPreview(chosen);
-  }, [visible, selected, toasts]);
+  }, [visible, selected, toasts, t]);
 
   const send = useCallback(
     (batch: readonly StatementAccount[]) => {
@@ -111,11 +115,16 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       setSelected(new Set());
       toasts.push({
         tone: 'success',
-        title: `${formatCount(batch.length, 'statement')} sent`,
-        message: 'Accounts with a mobile number also received a payment link.',
+        title: t(
+          batch.length === 1
+            ? 'billing.statements.toast.sent.one'
+            : 'billing.statements.toast.sent.other',
+          { count: batch.length }
+        ),
+        message: t('billing.statements.toast.sentMessage'),
       });
     },
-    [toasts]
+    [toasts, t]
   );
 
   const sendTextToPay = useCallback(
@@ -123,11 +132,13 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       setTexted((current) => new Set(current).add(account.id));
       toasts.push({
         tone: 'success',
-        title: 'Payment link sent',
-        message: `${formatName(account.patient.name)} can pay from the link on their phone.`,
+        title: t('billing.statements.toast.linkSent'),
+        message: t('billing.statements.toast.linkSentMessage', {
+          name: formatName(account.patient.name),
+        }),
       });
     },
-    [toasts]
+    [toasts, t]
   );
 
   const commands = useMemo<Command[]>(
@@ -135,24 +146,24 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       {
         id: 'billing.statements.run',
         group: 'actions',
-        label: 'Preview a statement run',
-        keywords: ['statements', 'run', 'send', 'dunning'],
+        label: t('billing.statements.command.run'),
+        keywords: searchWords(t('billing.statements.command.run.keywords')),
         icon: 'mail',
         perform: openRun,
       },
       {
         id: 'billing.statements.selectAll',
         group: 'actions',
-        label: 'Select every account in this view',
-        keywords: ['select all', 'bulk'],
+        label: t('billing.statements.command.selectAll'),
+        keywords: searchWords(t('billing.statements.command.selectAll.keywords')),
         icon: 'check-check',
         perform: selectAll,
       },
       {
         id: 'billing.statements.over90',
         group: 'actions',
-        label: 'Show balances over 90 days',
-        keywords: ['aging', 'ageing', 'collections', '90'],
+        label: t('billing.statements.command.over90'),
+        keywords: searchWords(t('billing.statements.command.over90.keywords')),
         icon: 'triangle-alert',
         perform: () => {
           setBucket('DAYS_91_PLUS');
@@ -162,13 +173,13 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       {
         id: 'billing.statements.all',
         group: 'actions',
-        label: 'Show every balance',
-        keywords: ['clear filter', 'all balances'],
+        label: t('billing.statements.command.all'),
+        keywords: searchWords(t('billing.statements.command.all.keywords')),
         icon: 'list',
         perform: () => setBucket(null),
       },
     ],
-    [openRun, selectAll]
+    [openRun, selectAll, t]
   );
 
   const rows = visible.map((account): Record<string, ReactNode> => {
@@ -178,7 +189,9 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       select: (
         <Checkbox
           checked={selected.has(account.id)}
-          aria-label={`Select ${formatName(account.patient.name, 'listing')}`}
+          aria-label={t('billing.statements.select', {
+            name: formatName(account.patient.name, 'listing'),
+          })}
           onChange={() => toggle(account.id)}
         />
       ),
@@ -191,10 +204,13 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       balance: <Money amount={account.balance} currency={account.currency} />,
       bucket: (
         <span className="or-claim-state">
-          <Badge tone={bucketTone(account.bucket)}>{BUCKET_LABELS[account.bucket]}</Badge>
+          <Badge tone={bucketTone(account.bucket)}>{t(BUCKET_LABEL_KEYS[account.bucket])}</Badge>
           {account.paymentPlan ? (
             <Badge tone="neutral" icon="calendar-clock">
-              Plan {account.paymentPlan.instalmentsPaid} of {account.paymentPlan.instalmentsTotal}
+              {t('billing.statements.plan', {
+                paid: account.paymentPlan.instalmentsPaid,
+                total: account.paymentPlan.instalmentsTotal,
+              })}
             </Badge>
           ) : null}
         </span>
@@ -208,18 +224,20 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
           </span>
         </span>
       ) : (
-        <span className="or-small">None recorded</span>
+        <span className="or-small">{t('billing.statements.noneRecorded')}</span>
       ),
-      dunning: <span className="or-small">{DUNNING_LABELS[account.dunningStage]}</span>,
+      dunning: <span className="or-small">{t(DUNNING_LABEL_KEYS[account.dunningStage])}</span>,
       actions: (
         <Button
           variant="ghost"
           size="sm"
           iconRight="arrow-right"
           onClick={() => setPreview([account])}
-          aria-label={`Preview statement for ${formatName(account.patient.name, 'listing')}`}
+          aria-label={t('billing.statements.previewFor', {
+            name: formatName(account.patient.name, 'listing'),
+          })}
         >
-          Preview
+          {t('billing.statements.preview')}
         </Button>
       ),
     };
@@ -229,13 +247,13 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
 
   return (
     <AppShell
-      title="Statements and AR"
-      description="Patient balances, how old they are, and how to collect them."
+      title={t('billing.statements.title')}
+      description={t('billing.statements.description')}
       topBarActions={
         <Input
           className="or-billing__search"
-          aria-label="Search balances"
-          placeholder="Patient or MRN"
+          aria-label={t('billing.statements.search')}
+          placeholder={t('billing.statements.searchPlaceholder')}
           iconLeft="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -245,32 +263,32 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       actions={
         <div className="or-billing__action">
           <Button iconLeft="mail" disabled={selectedCount === 0} onClick={openRun}>
-            Preview statement run
+            {t('billing.statements.previewRun')}
           </Button>
           <p className="or-caption or-billing__action-hint">
             {selectedCount === 0
-              ? 'Select accounts to run statements for.'
-              : `${selectedCount} selected.`}
+              ? t('billing.statements.selectPrompt')
+              : t('billing.statements.selectedCount', { count: selectedCount })}
           </p>
         </div>
       }
     >
       <ScreenCommands commands={commands} />
 
-      <section className="or-strip" aria-label="Accounts receivable by age">
+      <section className="or-strip" aria-label={t('billing.statements.strip')}>
         {BUCKET_ORDER.map((candidate) => (
           <VitalStat
             key={candidate}
-            label={BUCKET_LABELS[candidate]}
+            label={t(BUCKET_LABEL_KEYS[candidate])}
             value={formatMoney(summary.buckets[candidate], { currency: 'USD' }).text}
             state={bucketTone(candidate)}
-            stateLabel={BUCKET_STATE_LABELS[candidate]}
+            stateLabel={t(BUCKET_STATE_LABEL_KEYS[candidate])}
           />
         ))}
       </section>
 
-      <Card overline="Ageing" title="Filter by bucket">
-        <fieldset className="or-filter-chips" aria-label="Ageing bucket">
+      <Card overline={t('billing.statements.ageing')} title={t('billing.statements.filterTitle')}>
+        <fieldset className="or-filter-chips" aria-label={t('billing.statements.bucketLegend')}>
           <button
             type="button"
             className="or-filter-chip"
@@ -280,7 +298,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
               setSelected(new Set());
             }}
           >
-            All <span className="or-mono">{accounts.length}</span>
+            {t('billing.statements.all')} <span className="or-mono">{accounts.length}</span>
           </button>
           {BUCKET_ORDER.map((candidate) => (
             <button
@@ -293,7 +311,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
                 setSelected(new Set());
               }}
             >
-              {BUCKET_LABELS[candidate]}{' '}
+              {t(BUCKET_LABEL_KEYS[candidate])}{' '}
               <span className="or-mono">
                 {formatMoney(summary.buckets[candidate], { currency: 'USD' }).text}
               </span>
@@ -304,18 +322,29 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
 
       <AsyncBoundary
         state={statementsState}
-        subject="patient balances"
+        subject={t('billing.statements.subject')}
         isEmpty={() => visible.length === 0}
         loadingRows={8}
         empty={{
-          title: bucket ? `No balances in ${BUCKET_LABELS[bucket].toLowerCase()}` : 'No balances',
-          message:
-            'Patient responsibility arrives here from remittance advice. Nothing is outstanding in this view.',
+          title: bucket
+            ? t('billing.statements.empty.filtered', {
+                bucket: t(BUCKET_LABEL_KEYS[bucket]).toLowerCase(),
+              })
+            : t('billing.statements.empty.title'),
+          message: t('billing.statements.empty.message'),
           icon: 'mail',
-          action: <Button href="/billing/remittance">Go to remittance</Button>,
+          action: (
+            <Button href="/billing/remittance">{t('billing.statements.empty.action')}</Button>
+          ),
         }}
       >
-        {() => <Table caption="Patient balances" columns={COLUMNS} rows={rows} />}
+        {() => (
+          <Table
+            caption={t('billing.statements.caption')}
+            columns={translateColumns(COLUMNS, t)}
+            rows={rows}
+          />
+        )}
       </AsyncBoundary>
 
       <StatementDrawer

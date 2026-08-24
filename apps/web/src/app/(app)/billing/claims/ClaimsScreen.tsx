@@ -11,7 +11,7 @@ import {
   ClaimTable,
   claimAgeingBands,
   claimCounts,
-  CLAIM_STATUS_LABELS,
+  CLAIM_STATUS_LABEL_KEYS,
   isBlockedByScrub,
   ToastDock,
   useToasts,
@@ -23,7 +23,9 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { CLAIM_STATUSES, filterClaims, useClaims } from '@/lib/api';
 import type { BillingClient, Claim, ClaimStatus } from '@/lib/api';
-import { formatCount, formatMoney } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * BL-03 Claim workbench. The biller's home.
@@ -52,11 +54,14 @@ const PAGE_SIZE = 100;
  * What to do about the money sitting in an ageing band, in the band's own
  * words. The tone already carries the urgency; this says the action, because a
  * colour is never the only signal.
+ *
+ * A literal map from the tone to a catalogue key. Both halves stay visible to
+ * the drift test, which a key assembled from `band.tone` would not be.
  */
-const BAND_ADVICE: Record<StatusTone, string> = {
-  danger: 'chase these',
-  neutral: 'ageing',
-  success: 'on track',
+const BAND_ADVICE_KEYS: Record<StatusTone, string> = {
+  danger: 'billing.claims.advice.chase',
+  neutral: 'billing.claims.advice.ageing',
+  success: 'billing.claims.advice.onTrack',
 };
 
 export interface ClaimsScreenProps {
@@ -65,6 +70,7 @@ export interface ClaimsScreenProps {
 }
 
 export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElement {
+  const t = useTranslator();
   const claimsState = useClaims({ pageSize: PAGE_SIZE }, { client });
   const now = useMemo(() => clinicNow().toISOString(), []);
 
@@ -107,8 +113,14 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
     setSelected(new Set(selectable.map((claim) => claim.id)));
   }, [selectable]);
 
+  /**
+   * The state the claims land in is what the toast reports, so the confirmation
+   * is derived from the transition rather than passed alongside it. It used to
+   * be a second argument carrying the past participle ("Scrubbed"), which was a
+   * second English string saying what `next` already said.
+   */
   const runBulk = useCallback(
-    (next: ClaimStatus, done: string) => {
+    (next: ClaimStatus) => {
       const ids: string[] = [];
       for (const claim of selectable) {
         if (selected.has(claim.id)) ids.push(claim.id);
@@ -116,8 +128,8 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
       if (ids.length === 0) {
         toasts.push({
           tone: 'info',
-          title: 'Nothing selected',
-          message: 'Select the claims to act on first.',
+          title: t('billing.claims.toast.nothingSelected'),
+          message: t('billing.claims.toast.nothingSelectedMessage'),
         });
         return;
       }
@@ -127,13 +139,19 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
         return update;
       });
       setSelected(new Set());
+      const state = t(CLAIM_STATUS_LABEL_KEYS[next]).toLowerCase();
       toasts.push({
         tone: 'success',
-        title: `${formatCount(ids.length, 'claim')} ${done.toLowerCase()}`,
-        message: `Moved to ${CLAIM_STATUS_LABELS[next].toLowerCase()}.`,
+        title: t(
+          ids.length === 1
+            ? 'billing.claims.toast.bulkDone.one'
+            : 'billing.claims.toast.bulkDone.other',
+          { count: ids.length, state }
+        ),
+        message: t('billing.claims.toast.movedTo', { state }),
       });
     },
-    [selectable, selected, toasts]
+    [selectable, selected, toasts, t]
   );
 
   const rebill = useCallback(
@@ -142,11 +160,11 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
       setOpenClaim(null);
       toasts.push({
         tone: 'success',
-        title: `${claim.claimNumber} rebilled`,
-        message: `A replacement claim went to ${claim.payer.name}.`,
+        title: t('billing.claims.toast.rebilled', { number: claim.claimNumber }),
+        message: t('billing.claims.toast.rebilledMessage', { payer: claim.payer.name }),
       });
     },
-    [toasts]
+    [toasts, t]
   );
 
   const commands = useMemo<Command[]>(
@@ -154,32 +172,34 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
       {
         id: 'billing.claims.scrub',
         group: 'actions',
-        label: 'Scrub selected claims',
-        keywords: ['scrub', 'edits', 'check claims'],
+        // The same key the bulk-action button uses, so the palette and the
+        // button can never end up naming one action two ways.
+        label: t('billing.bulkAction.scrub'),
+        keywords: searchWords(t('billing.claims.command.scrub.keywords')),
         icon: 'shield-check',
-        perform: () => runBulk('SCRUBBED', 'Scrubbed'),
+        perform: () => runBulk('SCRUBBED'),
       },
       {
         id: 'billing.claims.submit',
         group: 'actions',
-        label: 'Submit selected claims',
-        keywords: ['submit', 'transmit', 'send claims', '837'],
+        label: t('billing.bulkAction.submit'),
+        keywords: searchWords(t('billing.claims.command.submit.keywords')),
         icon: 'send',
-        perform: () => runBulk('SUBMITTED', 'Submitted'),
+        perform: () => runBulk('SUBMITTED'),
       },
       {
         id: 'billing.claims.selectAll',
         group: 'actions',
-        label: 'Select every claim in this view',
-        keywords: ['select all', 'bulk'],
+        label: t('billing.claims.command.selectAll'),
+        keywords: searchWords(t('billing.claims.command.selectAll.keywords')),
         icon: 'check-check',
         perform: selectAll,
       },
       {
         id: 'billing.claims.denied',
         group: 'actions',
-        label: 'Show denied claims',
-        keywords: ['denials', 'denied', 'rejections'],
+        label: t('billing.claims.command.denied'),
+        keywords: searchWords(t('billing.claims.command.denied.keywords')),
         icon: 'triangle-alert',
         perform: () => {
           setStatus('DENIED');
@@ -187,7 +207,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
         },
       },
     ],
-    [runBulk, selectAll]
+    [runBulk, selectAll, t]
   );
 
   const actions = status ? bulkActionsFor(status) : [];
@@ -195,13 +215,13 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
 
   return (
     <AppShell
-      title="Claim workbench"
-      description="Every claim as a state ledger row, from captured to paid."
+      title={t('billing.claims.title')}
+      description={t('billing.claims.description')}
       topBarActions={
         <Input
           className="or-billing__search"
-          aria-label="Search claims"
-          placeholder="Claim number, patient or MRN"
+          aria-label={t('billing.claims.search')}
+          placeholder={t('billing.claims.searchPlaceholder')}
           iconLeft="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -216,13 +236,15 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
                 key={action.id}
                 iconLeft="check"
                 disabled={selectedCount === 0}
-                onClick={() => runBulk(action.next, action.done)}
+                onClick={() => runBulk(action.next)}
               >
-                {action.label}
+                {t(action.labelKey)}
               </Button>
             ))}
             <p className="or-caption or-billing__action-hint">
-              {selectedCount === 0 ? 'Select claims to act on them.' : `${selectedCount} selected.`}
+              {selectedCount === 0
+                ? t('billing.claims.selectPrompt')
+                : t('billing.claims.selectedCount', { count: selectedCount })}
             </p>
           </div>
         ) : null
@@ -230,20 +252,23 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
     >
       <ScreenCommands commands={commands} />
 
-      <section className="or-strip" aria-label="Claims by age in state">
+      <section className="or-strip" aria-label={t('billing.claims.strip')}>
         {bands.map((band) => (
           <VitalStat
             key={band.key}
-            label={band.label}
+            label={t(band.labelKey)}
             value={formatMoney(band.amount, { currency: 'USD' }).text}
             state={band.tone}
-            stateLabel={`${formatCount(band.count, 'claim')}, ${BAND_ADVICE[band.tone]}`}
+            stateLabel={t(
+              band.count === 1 ? 'billing.claims.bandState.one' : 'billing.claims.bandState.other',
+              { count: band.count, advice: t(BAND_ADVICE_KEYS[band.tone]) }
+            )}
           />
         ))}
       </section>
 
-      <Card overline="States" title="Filter the queue">
-        <fieldset className="or-filter-chips" aria-label="Claim state">
+      <Card overline={t('billing.claims.states')} title={t('billing.claims.filterTitle')}>
+        <fieldset className="or-filter-chips" aria-label={t('billing.claims.stateLegend')}>
           <button
             type="button"
             className="or-filter-chip"
@@ -253,7 +278,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
               setSelected(new Set());
             }}
           >
-            All <span className="or-mono">{claims.length}</span>
+            {t('billing.claims.all')} <span className="or-mono">{claims.length}</span>
           </button>
           {CLAIM_STATUSES.map((candidate) => (
             <button
@@ -266,7 +291,8 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
                 setSelected(new Set());
               }}
             >
-              {CLAIM_STATUS_LABELS[candidate]} <span className="or-mono">{counts[candidate]}</span>
+              {t(CLAIM_STATUS_LABEL_KEYS[candidate])}{' '}
+              <span className="or-mono">{counts[candidate]}</span>
             </button>
           ))}
         </fieldset>
@@ -274,16 +300,20 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
 
       <AsyncBoundary
         state={claimsState}
-        subject="the claim queue"
+        subject={t('billing.claims.subject')}
         isEmpty={() => visible.length === 0}
         loadingRows={8}
         empty={{
-          title: status ? `No ${CLAIM_STATUS_LABELS[status].toLowerCase()} claims` : 'No claims',
+          title: status
+            ? t('billing.claims.empty.filtered', {
+                state: t(CLAIM_STATUS_LABEL_KEYS[status]).toLowerCase(),
+              })
+            : t('billing.claims.empty.title'),
           message: query
-            ? `Nothing in this queue matches "${query}". Clear the search to see the whole queue.`
-            : 'Claims appear here once a visit is marked ready on the fee sheet.',
+            ? t('billing.claims.empty.search', { query })
+            : t('billing.claims.empty.message'),
           icon: 'file-check',
-          action: <Button href="/billing/charges">Go to the fee sheet</Button>,
+          action: <Button href="/billing/charges">{t('billing.claims.empty.action')}</Button>,
         }}
       >
         {() => (

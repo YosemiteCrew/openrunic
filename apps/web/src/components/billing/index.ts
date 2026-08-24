@@ -10,25 +10,25 @@ export {
   ageingState,
   allocatedTotal,
   allocatedLines,
-  ALLOCATION_HINTS,
-  ALLOCATION_STATE_LABELS,
+  ALLOCATION_HINT_KEYS,
+  ALLOCATION_STATE_LABEL_KEYS,
   allocationState,
   allocationStateName,
   arSummary,
   autoAllocate,
   blockingFindings,
-  BUCKET_LABELS,
+  BUCKET_LABEL_KEYS,
   BUCKET_ORDER,
-  BUCKET_STATE_LABELS,
+  BUCKET_STATE_LABEL_KEYS,
   bucketTone,
   bulkActionsFor,
   claimAgeDays,
   claimAgeingBands,
   claimCounts,
-  CLAIM_STATUS_LABELS,
+  CLAIM_STATUS_LABEL_KEYS,
   CLAIM_STATUS_TONE,
   diagnosisPointer,
-  DUNNING_LABELS,
+  DUNNING_LABEL_KEYS,
   feeSheetTotals,
   isBlockedByScrub,
   lineCharge,
@@ -37,7 +37,7 @@ export {
   nextDunningStage,
   receiptRows,
   remittanceSummary,
-  RESOLUTION_LABELS,
+  RESOLUTION_LABEL_KEYS,
   scrubFeeSheet,
   statementTotals,
   unallocated,
@@ -57,6 +57,8 @@ export type {
   Variance,
 } from './billing';
 export { claimLifecycle } from './billing';
+export { translateColumns } from './columns';
+export type { KeyedColumn } from './columns';
 export { AllocationTable } from './AllocationTable';
 export type { AllocationTableProps } from './AllocationTable';
 export { ChargeLines } from './ChargeLines';

@@ -15,12 +15,11 @@ import type { Messages } from '../../catalogue.js';
  * messages rather than replaced by them.
  *
  * The appointment-status words are the case worth stating, because they look
- * convertible. Seven of the nine statuses render straight from the enum through
- * `formatEnumLabel`; two are spelled out by hand because the enum writes them
- * as one word. Translating the two by hand and leaving the seven mechanical
- * would produce a status vocabulary that is half in the reader's language, so
- * all nine stay with the enum until the enum itself is rendered through a
- * catalogue.
+ * convertible. Eleven of the twelve statuses render straight from the enum
+ * through `formatEnumLabel`; one, `NOSHOW`, is spelled out by hand because the
+ * enum writes it as one word and the glossary writes it as two. Translating
+ * that one and leaving eleven mechanical would produce a status vocabulary
+ * one-twelfth in the reader's language, so all twelve move together or none do.
  *
  * ## Counts
  *

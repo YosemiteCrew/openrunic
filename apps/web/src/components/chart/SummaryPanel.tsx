@@ -41,21 +41,20 @@ function appointmentTone(status: Appointment['status']): StatusTone {
 
 /**
  * `formatEnumLabel` turns `NOSHOW` into "Noshow", because the enum spells it as
- * one word. The glossary spells it as two, so the two statuses whose enum name
- * is not their English name get read out here.
+ * one word and the glossary spells it as two. It is the only one of the twelve
+ * appointment statuses whose enum name is not its English name: the other
+ * eleven, `ENTERED_IN_ERROR` included, come out correctly from splitting on the
+ * underscore.
  *
- * Not in the catalogue, and the reason is worth stating because these look like
- * copy. Seven of the nine appointment statuses render straight from the enum
- * through `formatEnumLabel`; only these two need a hand-written word. Moving
- * the two into the catalogue and leaving the seven mechanical would give a
- * reader a status vocabulary that is two-ninths in their language and
- * seven-ninths not, which is worse than one that is honestly all English.
- * Revisit when the statuses themselves are rendered through a catalogue, at
- * which point all nine move together.
+ * Not in the catalogue, and the reason is worth stating because it looks like
+ * copy. Moving this one word in and leaving eleven mechanical would give a
+ * reader a status vocabulary one-twelfth in their language and eleven-twelfths
+ * not, which is worse than one that is honestly all English. It goes when the
+ * statuses themselves are rendered through the catalogue, at which point all
+ * twelve move together and this map and `formatEnumLabel` both disappear.
  */
 const STATUS_LABEL: Partial<Record<Appointment['status'], string>> = {
   NOSHOW: 'No show',
-  ENTERED_IN_ERROR: 'Entered in error',
 };
 
 function statusLabel(status: Appointment['status']): string {

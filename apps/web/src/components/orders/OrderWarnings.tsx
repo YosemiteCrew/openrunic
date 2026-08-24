@@ -5,6 +5,7 @@ import { useId, useState } from 'react';
 import type { ChangeEvent, ReactElement, ReactNode } from 'react';
 
 import type { OrderWarning, WarningTier } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The tiered alert (guidelines C10), as the order composer needs it.
@@ -26,10 +27,12 @@ import type { OrderWarning, WarningTier } from '@/lib/api';
  * `--status-caution-wash`). Composed here rather than forking Badge.
  */
 
-const TIER_LABEL: Record<WarningTier, string> = {
-  INFO: 'Information',
-  CAUTION: 'Caution',
-  CRITICAL: 'Critical',
+/* The tier's name, as a catalogue key rather than a word: the tier is a word
+   before it is a colour, so it has to be a word the reader has. */
+const TIER_LABELS: Record<WarningTier, { labelKey: string }> = {
+  INFO: { labelKey: 'orders.warning.tier.info' },
+  CAUTION: { labelKey: 'orders.warning.tier.caution' },
+  CRITICAL: { labelKey: 'orders.warning.tier.critical' },
 };
 
 const TIER_CLASS: Record<WarningTier, string> = {
@@ -51,15 +54,20 @@ export function TieredAlert({
   detail,
   children,
 }: Readonly<TieredAlertProps>): ReactElement {
+  const t = useTranslator();
+  /* `title` and `detail` are the warning as the rule engine wrote it, so only
+     the tier word around them is translated. */
+  const tierLabel = t(TIER_LABELS[tier].labelKey);
+
   return (
     <section
       className={`or-alert ${TIER_CLASS[tier]}`}
       // A critical alert interrupts, because it is the one that stops a signature.
       // The lower tiers are read in flow and would only add noise if announced.
       role={tier === 'CRITICAL' ? 'alert' : 'note'}
-      aria-label={`${TIER_LABEL[tier]}: ${title}`}
+      aria-label={t('orders.warning.label', { tier: tierLabel, title })}
     >
-      <p className="or-overline or-alert__tier">{TIER_LABEL[tier]}</p>
+      <p className="or-overline or-alert__tier">{tierLabel}</p>
       <h4 className="or-small or-alert__title">{title}</h4>
       <p className="or-small or-alert__detail">{detail}</p>
       {children ? <div className="or-alert__actions">{children}</div> : null}
@@ -112,8 +120,12 @@ function WarningRow({
   onClear,
   onRestore,
 }: Readonly<WarningRowProps>): ReactElement {
+  const t = useTranslator();
+  /* The reasons themselves come from the rule that raised the warning and are
+     recorded verbatim; only the fallback, used by the tiers that offer no list
+     to choose from, is this application's own word. */
   const reasons = warning.overrideReasons ?? [];
-  const [reason, setReason] = useState(reasons[0] ?? 'Acknowledged');
+  const [reason, setReason] = useState(reasons[0] ?? t('orders.warning.defaultReason'));
   const selectId = useId();
 
   if (warning.tier === 'INFO') {
@@ -124,14 +136,18 @@ function WarningRow({
     return (
       <TieredAlert tier={warning.tier} title={warning.title} detail={warning.detail}>
         <Badge tone="neutral" icon="check">
-          {warning.tier === 'CRITICAL' ? 'Overridden' : 'Acknowledged'}
+          {warning.tier === 'CRITICAL'
+            ? t('orders.warning.overridden')
+            : t('orders.warning.acknowledged')}
         </Badge>
         <span className="or-small or-alert__reason">{clearedWith}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onRestore(warning.id)}
-        >{`Undo, keep the ${warning.tier === 'CRITICAL' ? 'override' : 'warning'} open`}</Button>
+        {/* Two whole sentences rather than one with the noun swapped in: which
+            word a language puts where is not this component's decision. */}
+        <Button variant="ghost" size="sm" onClick={() => onRestore(warning.id)}>
+          {warning.tier === 'CRITICAL'
+            ? t('orders.warning.undoOverride')
+            : t('orders.warning.undoWarning')}
+        </Button>
       </TieredAlert>
     );
   }
@@ -141,7 +157,7 @@ function WarningRow({
       {warning.tier === 'CRITICAL' ? (
         <Select
           id={selectId}
-          label="Reason for overriding"
+          label={t('orders.warning.reasonLabel')}
           options={reasons}
           value={reason}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => setReason(event.target.value)}
@@ -153,7 +169,9 @@ function WarningRow({
         iconLeft={warning.tier === 'CRITICAL' ? 'shield-alert' : 'check'}
         onClick={() => onClear(warning.id, reason)}
       >
-        {warning.tier === 'CRITICAL' ? 'Override and keep this order' : 'Acknowledge'}
+        {warning.tier === 'CRITICAL'
+          ? t('orders.warning.override')
+          : t('orders.warning.acknowledge')}
       </Button>
     </TieredAlert>
   );

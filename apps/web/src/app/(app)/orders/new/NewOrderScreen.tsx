@@ -7,7 +7,12 @@ import type { ChangeEvent, ReactElement, ReactNode, RefObject } from 'react';
 
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
-import { DraftOrders, OrderPicker, OrderWarnings } from '@/components/orders';
+import {
+  DraftOrders,
+  OrderPicker,
+  ORDER_PRIORITY_LABELS,
+  OrderWarnings,
+} from '@/components/orders';
 import type { DraftOrder } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
@@ -20,7 +25,12 @@ import type {
   Patient,
   PatientProblem,
 } from '@/lib/api';
-import { formatAge, formatCount, formatDate, formatMrn, formatName } from '@/lib/format';
+import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import type { Translator } from '@openrunic/i18n';
+
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { EMPTY_COMPOSITION, reduceComposition } from './composition';
 
@@ -42,6 +52,11 @@ import { EMPTY_COMPOSITION, reduceComposition } from './composition';
  * favourites and no ranking, so ordering began with remembering what the test
  * was called. Here the catalogue is ranked against the patient's problem list
  * before a single character is typed.
+ *
+ * Every sentence a person reads is a catalogue key. Everything an order brings
+ * with it - its name, its code, its specimen, its destination, its turnaround,
+ * the problems it is justified by - stays as it arrived, because those are
+ * coded values that already have a name.
  */
 
 /** Signed orders leave the composer. This is what the toast says they became. */
@@ -50,6 +65,31 @@ interface Completion {
   message: string;
 }
 
+const REVIEW_HEADING: CountedMessage = {
+  oneKey: 'orders.new.review.headingOne',
+  otherKey: 'orders.new.review.headingOther',
+};
+
+const SIGN_ACTION: CountedMessage = {
+  oneKey: 'orders.new.signOne',
+  otherKey: 'orders.new.signOther',
+};
+
+const PENDED_TITLE: CountedMessage = {
+  oneKey: 'orders.new.pended.titleOne',
+  otherKey: 'orders.new.pended.titleOther',
+};
+
+const SIGNED_TITLE: CountedMessage = {
+  oneKey: 'orders.new.signed.titleOne',
+  otherKey: 'orders.new.signed.titleOther',
+};
+
+const CONFIRM_BODY: CountedMessage = {
+  oneKey: 'orders.new.confirm.bodyOne',
+  otherKey: 'orders.new.confirm.bodyOther',
+};
+
 export interface NewOrderScreenProps {
   /** Injectable for tests. Defaults to the app's client. */
   client?: ApiClient;
@@ -57,14 +97,11 @@ export interface NewOrderScreenProps {
   now?: string;
 }
 
-/** One line, used by both shells below, so the two can never drift apart. */
-const COMPOSER_DESCRIPTION =
-  'Labs, imaging and procedures. Build the list, then review and sign it.';
-
 export function NewOrderScreen({
   client,
   now = MOCK_NOW,
 }: Readonly<NewOrderScreenProps>): ReactElement {
+  const t = useTranslator();
   const patients = usePatients({ active: true, pageSize: 50 }, { client });
   const page = patients.status === 'success' ? patients.data : null;
 
@@ -81,20 +118,20 @@ export function NewOrderScreen({
   }
 
   return (
-    <AppShell title="New order" description={COMPOSER_DESCRIPTION}>
+    <AppShell title={t('orders.new.title')} description={t('orders.new.description')}>
       <AsyncBoundary
         state={patients}
-        subject="the patient list"
+        subject={t('orders.new.patients.subject')}
         isEmpty={isEmptyList}
         loadingVariant="cards"
         loadingRows={3}
         empty={{
-          title: 'No patients to order for',
-          message: 'Register a patient first; orders always belong to one chart.',
+          title: t('orders.new.patients.emptyTitle'),
+          message: t('orders.new.patients.emptyMessage'),
           icon: 'users',
           action: (
             <Button href="/patients" iconLeft="user-plus">
-              Go to patients
+              {t('orders.new.patients.emptyAction')}
             </Button>
           ),
         }}
@@ -110,13 +147,14 @@ interface ComposerProps {
   now: string;
 }
 
-const REVIEW_COLUMNS: TableColumn[] = [
-  { key: 'order', header: 'Order' },
-  { key: 'code', header: 'Code', mono: true },
-  { key: 'priority', header: 'Priority' },
-  { key: 'specimen', header: 'Specimen' },
-  { key: 'diagnosis', header: 'Diagnosis' },
-  { key: 'destination', header: 'Destination' },
+/** The review table's columns, as catalogue keys. See `OrdersScreen` for why. */
+const REVIEW_COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
+  { key: 'order', headerKey: 'orders.new.review.column.order' },
+  { key: 'code', headerKey: 'orders.new.review.column.code', mono: true },
+  { key: 'priority', headerKey: 'orders.new.review.column.priority' },
+  { key: 'specimen', headerKey: 'orders.new.review.column.specimen' },
+  { key: 'diagnosis', headerKey: 'orders.new.review.column.diagnosis' },
+  { key: 'destination', headerKey: 'orders.new.review.column.destination' },
 ];
 
 /**
@@ -151,9 +189,11 @@ function BuildStep({
   onRestoreWarning: (warningId: string) => void;
   onReview: () => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <>
-      <Card tone="cream" title="Add an order">
+      <Card tone="cream" title={t('orders.new.build.addCard')}>
         <OrderPicker
           problems={[...problems]}
           draftedCodes={drafts.map((draft) => draft.entry.code)}
@@ -163,11 +203,8 @@ function BuildStep({
       </Card>
 
       {drafts.length === 0 ? (
-        <Card tone="cream" title="Nothing drafted yet">
-          <p className="or-body">
-            Pick a favourite or search the catalogue. Specimen, destination and priority are filled
-            in for you, and a diagnosis is suggested from the problem list.
-          </p>
+        <Card tone="cream" title={t('orders.new.build.emptyCard')}>
+          <p className="or-body">{t('orders.new.build.emptyBody')}</p>
         </Card>
       ) : (
         <>
@@ -185,7 +222,7 @@ function BuildStep({
           />
           <div className="or-cluster">
             <Button variant="secondary" iconRight="arrow-right" onClick={onReview}>
-              Review and sign
+              {t('orders.new.build.review')}
             </Button>
           </div>
         </>
@@ -198,7 +235,9 @@ function BuildStep({
  * Who the order is for, and what is already known about them.
  *
  * The rail is what makes a wrong-patient order visible before it is signed, so
- * it names the chart, the age and the problem list rather than an id.
+ * it names the chart, the age and the problem list rather than an id. The
+ * problems themselves keep the display and the ICD-10 code the problem list
+ * holds: a translated diagnosis label would be a second name for a code.
  */
 function OrderingForRail({
   patient,
@@ -209,19 +248,28 @@ function OrderingForRail({
   problems: readonly PatientProblem[];
   now: string;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <Card tone="cream" overline="Ordering for" title={formatName(patient.name, 'full')}>
+    <Card
+      tone="cream"
+      overline={t('orders.new.rail.overline')}
+      title={formatName(patient.name, 'full')}
+    >
       <dl className="or-keyvalues">
-        <dt className="or-small">MRN</dt>
+        <dt className="or-small">{t('orders.new.rail.mrn')}</dt>
         <dd className="or-mono">{formatMrn(patient.mrn)}</dd>
-        <dt className="or-small">Age</dt>
+        <dt className="or-small">{t('orders.new.rail.age')}</dt>
         <dd className="or-small">
-          {formatAge(patient.birthDate, now)}, born {formatDate(patient.birthDate)}
+          {t('orders.new.rail.ageValue', {
+            age: formatAge(patient.birthDate, now),
+            birthDate: formatDate(patient.birthDate),
+          })}
         </dd>
-        <dt className="or-small">Problems</dt>
+        <dt className="or-small">{t('orders.new.rail.problems')}</dt>
         <dd className="or-small">
           {problems.length === 0 ? (
-            'No problems recorded'
+            t('orders.new.rail.noProblems')
           ) : (
             <ul className="or-plainlist">
               {problems.map((problem) => (
@@ -233,9 +281,7 @@ function OrderingForRail({
           )}
         </dd>
       </dl>
-      <p className="or-small or-muted">
-        Signing transmits immediately. Pending keeps the orders in the visit tray, unsigned.
-      </p>
+      <p className="or-small or-muted">{t('orders.new.rail.note')}</p>
     </Card>
   );
 }
@@ -244,10 +290,16 @@ function OrderingForRail({
  * What stands between this draft and a signature, in the order a person would
  * fix it: the criticals they must answer, then the diagnoses they must link.
  *
- * Pure, and separate from the component, because it is the rule that decides
- * whether an order can be signed. Never a disabled button with no explanation.
+ * Separate from the component, because it is the rule that decides whether an
+ * order can be signed. Never a disabled button with no explanation.
+ *
+ * It takes the translator rather than returning keys, because each blocker is
+ * one sentence built around a name the API or the catalogue supplied - the
+ * warning's title, the order's name - and splitting that into a key and a
+ * fragment would be splitting the sentence a translator has to see whole.
  */
 function signBlockers(
+  t: Translator,
   drafts: readonly DraftOrder[],
   warnings: readonly OrderWarning[],
   cleared: Readonly<Record<string, string>>
@@ -256,12 +308,12 @@ function signBlockers(
      empty array is the "not a blocker" case rather than a second traversal. */
   const openCriticals = warnings.flatMap((warning) =>
     warning.tier === 'CRITICAL' && !cleared[warning.id]
-      ? [`${warning.title}. Choose an override reason or remove the order.`]
+      ? [t('orders.new.blocker.critical', { warning: warning.title })]
       : []
   );
 
   const missingDiagnosis = drafts.flatMap((draft) =>
-    draft.diagnosisCode ? [] : [`${draft.entry.name} has no diagnosis linked.`]
+    draft.diagnosisCode ? [] : [t('orders.new.blocker.noDiagnosis', { order: draft.entry.name })]
   );
 
   return [...openCriticals, ...missingDiagnosis];
@@ -304,18 +356,23 @@ function ReviewStep({
   onPend: () => void;
   onSign: () => void;
 }>): ReactElement {
+  const t = useTranslator();
+  const columns = useMemo<TableColumn[]>(
+    () => REVIEW_COLUMNS.map(({ headerKey, ...column }) => ({ ...column, header: t(headerKey) })),
+    [t]
+  );
+  const heading = t('orders.new.blockers.heading');
+
   return (
     <>
-      <Card tone="cream" title={`Review ${countLabel(reviewRows.length)}`}>
+      <Card tone="cream" title={counted(t, REVIEW_HEADING, reviewRows.length)}>
         {reviewRows.length === 0 ? (
-          <p className="or-body">
-            The draft is empty. Go back and add an order from the favourites or the catalogue.
-          </p>
+          <p className="or-body">{t('orders.new.review.empty')}</p>
         ) : (
           <Table
-            columns={REVIEW_COLUMNS}
+            columns={columns}
             rows={reviewRows}
-            caption={`Orders drafted for ${patientName}`}
+            caption={t('orders.new.review.caption', { patient: patientName })}
           />
         )}
       </Card>
@@ -333,9 +390,9 @@ function ReviewStep({
           tabIndex={-1}
           role="alert"
           className="or-blockers"
-          aria-label="Before signing"
+          aria-label={heading}
         >
-          <h3 className="or-h3">Before signing</h3>
+          <h3 className="or-h3">{heading}</h3>
           <ul className="or-blockers__list">
             {blockers.map((blocker) => (
               <li key={blocker} className="or-small">
@@ -348,10 +405,10 @@ function ReviewStep({
 
       <div className="or-cluster">
         <Button variant="ghost" iconLeft="arrow-left" onClick={onBack}>
-          Back to building
+          {t('orders.new.review.back')}
         </Button>
         <Button variant="secondary" iconLeft="inbox" onClick={onPend}>
-          Pend orders
+          {t('orders.new.pend')}
         </Button>
         <Button iconLeft="pen-line" onClick={onSign}>
           {signLabel}
@@ -362,6 +419,7 @@ function ReviewStep({
 }
 
 function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
+  const t = useTranslator();
   const rows = patients.data;
   const [patientId, setPatientId] = useState(rows[0]?.id ?? '');
   /* One composition rather than four settings: see `composition.ts` for why
@@ -377,6 +435,7 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
 
   const patient = rows.find((row) => row.id === patientId) ?? rows[0];
   const problems = useMemo(() => patientProblems(patient?.id ?? null), [patient?.id]);
+  const patientName = patient ? formatName(patient.name, 'full') : t('orders.new.thisPatient');
 
   const warnings = useMemo(
     () =>
@@ -388,8 +447,8 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
   );
 
   const blockers = useMemo(
-    () => signBlockers(drafts, warnings, cleared),
-    [drafts, warnings, cleared]
+    () => signBlockers(t, drafts, warnings, cleared),
+    [t, drafts, warnings, cleared]
   );
 
   const addOrder = useCallback(
@@ -439,11 +498,8 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
 
   const pend = useCallback(() => {
     if (drafts.length === 0) return;
-    finish(
-      `${countLabel(drafts.length)} pended`,
-      'They stay unsigned in the visit tray until someone signs them.'
-    );
-  }, [drafts.length, finish]);
+    finish(counted(t, PENDED_TITLE, drafts.length), t('orders.new.pended.message'));
+  }, [t, drafts.length, finish]);
 
   const requestSign = useCallback(() => {
     if (drafts.length === 0) return;
@@ -460,8 +516,19 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
   const sign = useCallback(() => {
     const count = drafts.length;
     const destinations = [...new Set(drafts.map((draft) => draft.entry.destination))];
-    finish(`${countLabel(count)} signed`, `Transmitted to ${destinations.join(' and ')}.`);
-  }, [drafts, finish]);
+    finish(
+      counted(t, SIGNED_TITLE, count),
+      t('orders.new.signed.message', {
+        /* The destinations are catalogue names and stay as they are; only the
+           way a language joins a list of them is a locale decision, and
+           `Intl.ListFormat` is the one that knows it. */
+        destinations: new Intl.ListFormat(t.locale, {
+          style: 'long',
+          type: 'conjunction',
+        }).format(destinations),
+      })
+    );
+  }, [t, drafts, finish]);
 
   const changePatient = useCallback(
     (nextId: string) => {
@@ -469,12 +536,12 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
       if (drafts.length > 0) {
         dispatch({ type: 'reset' });
         setCompletion({
-          title: 'Draft cleared',
-          message: 'Orders belong to one chart, so switching patients starts a new draft.',
+          title: t('orders.new.cleared.title'),
+          message: t('orders.new.cleared.message'),
         });
       }
     },
-    [drafts.length]
+    [t, drafts.length]
   );
 
   const commands = useMemo<Command[]>(() => {
@@ -485,15 +552,16 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
       {
         id: 'orders.new.search',
         group: 'actions',
-        label: 'Search the order catalogue',
-        keywords: ['find order', 'lab', 'imaging', 'procedure'],
+        label: t('orders.new.command.search'),
+        keywords: searchWords(t('orders.new.command.searchKeywords')),
         icon: 'search',
         perform: () => document.getElementById(searchInputId)?.focus(),
       },
       ...catalogueFavourites.map((entry) => ({
         id: `orders.new.add.${entry.code}`,
         group: 'actions' as const,
-        label: `Order ${entry.name}`,
+        label: t('orders.new.command.add', { order: entry.name }),
+        // The catalogue's own synonyms for this test, not this screen's words.
         keywords: entry.keywords,
         icon: 'circle-plus',
         perform: () => addOrder(entry),
@@ -501,29 +569,29 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
       {
         id: 'orders.new.review',
         group: 'actions',
-        label: 'Review the draft orders',
-        keywords: ['check orders', 'before signing'],
+        label: t('orders.new.command.review'),
+        keywords: searchWords(t('orders.new.command.reviewKeywords')),
         icon: 'list-checks',
         perform: () => dispatch({ type: 'goTo', step: 'review' }),
       },
       {
         id: 'orders.new.pend',
         group: 'actions',
-        label: 'Pend the draft orders',
-        keywords: ['tray', 'unsigned', 'save for later'],
+        label: t('orders.new.command.pend'),
+        keywords: searchWords(t('orders.new.command.pendKeywords')),
         icon: 'inbox',
         perform: pend,
       },
       {
         id: 'orders.new.sign',
         group: 'actions',
-        label: 'Sign the draft orders',
-        keywords: ['transmit', 'send to lab', 'submit'],
+        label: t('orders.new.command.sign'),
+        keywords: searchWords(t('orders.new.command.signKeywords')),
         icon: 'pen-line',
         perform: requestSign,
       },
     ];
-  }, [problems, searchInputId, addOrder, pend, requestSign]);
+  }, [t, problems, searchInputId, addOrder, pend, requestSign]);
 
   const patientOptions: SelectOption[] = rows.map((row) => ({
     value: row.id,
@@ -534,29 +602,31 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
     id: draft.key,
     order: draft.entry.name,
     code: draft.entry.code,
-    priority: priorityLabel(draft),
-    specimen: draft.specimen ?? 'Not applicable',
+    priority: t(ORDER_PRIORITY_LABELS[draft.priority].labelKey),
+    specimen: draft.specimen ?? t('orders.new.review.noSpecimen'),
     diagnosis: draft.diagnosisCode ? (
       <Tag mono>{draft.diagnosisCode}</Tag>
     ) : (
       <Badge tone="neutral" icon="circle-alert">
-        Needs a diagnosis
+        {t('orders.draft.needsDiagnosis')}
       </Badge>
     ),
     destination: draft.entry.destination,
   }));
 
+  const signLabel = counted(t, SIGN_ACTION, drafts.length);
+
   return (
     <AppShell
-      title="New order"
-      description={COMPOSER_DESCRIPTION}
+      title={t('orders.new.title')}
+      description={t('orders.new.description')}
       actions={
         <>
           <Button variant="ghost" iconLeft="inbox" onClick={pend}>
-            Pend orders
+            {t('orders.new.pend')}
           </Button>
           <Button iconLeft="pen-line" onClick={requestSign}>
-            {drafts.length > 0 ? `Sign ${countLabel(drafts.length)}` : 'Sign orders'}
+            {drafts.length > 0 ? signLabel : t('orders.new.signEmpty')}
           </Button>
         </>
       }
@@ -565,19 +635,19 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
       }
     >
       <ScreenCommands commands={commands} />
-      <ol className="or-steps" aria-label="Composer steps">
+      <ol className="or-steps" aria-label={t('orders.new.steps.label')}>
         <li className="or-steps__step" aria-current={step === 'build' ? 'step' : undefined}>
-          1. Build the order
+          {t('orders.new.steps.build')}
         </li>
         <li className="or-steps__step" aria-current={step === 'review' ? 'step' : undefined}>
-          2. Review and sign
+          {t('orders.new.steps.review')}
         </li>
       </ol>
 
-      <Card tone="cream" title="Patient">
+      <Card tone="cream" title={t('orders.new.patient.card')}>
         <Select
-          label="Ordering for"
-          hint="Orders belong to one chart. Switching patients starts a new draft."
+          label={t('orders.new.patient.label')}
+          hint={t('orders.new.patient.hint')}
           options={patientOptions}
           value={patient?.id ?? ''}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => changePatient(event.target.value)}
@@ -601,13 +671,13 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
       ) : (
         <ReviewStep
           reviewRows={reviewRows}
-          patientName={patient ? formatName(patient.name, 'full') : 'this patient'}
+          patientName={patientName}
           warnings={warnings}
           cleared={cleared}
           blockers={blockers}
           showBlockers={showBlockers}
           blockerRef={blockerRef}
-          signLabel={`Sign ${countLabel(drafts.length)}`}
+          signLabel={signLabel}
           onClearWarning={clearWarning}
           onRestoreWarning={restoreWarning}
           onBack={() => dispatch({ type: 'goTo', step: 'build' })}
@@ -618,18 +688,16 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
 
       <Modal
         open={confirming}
-        title="Sign these orders"
-        description={`Signing transmits ${countLabel(drafts.length)} for ${
-          patient ? formatName(patient.name, 'full') : 'this patient'
-        } immediately. Cancelling one afterwards is possible and audited.`}
+        title={t('orders.new.confirm.title')}
+        description={counted(t, CONFIRM_BODY, drafts.length, { patient: patientName })}
         onClose={() => setConfirming(false)}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirming(false)}>
-              Keep editing
+              {t('orders.new.confirm.keepEditing')}
             </Button>
             <Button iconLeft="pen-line" onClick={sign}>
-              Sign and transmit
+              {t('orders.new.confirm.sign')}
             </Button>
           </>
         }
@@ -637,7 +705,15 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
         <ul className="or-plainlist or-small">
           {drafts.map((draft) => (
             <li key={draft.key}>
-              {draft.entry.name}, {priorityLabel(draft).toLowerCase()}, to {draft.entry.destination}
+              {t('orders.new.confirm.line', {
+                order: draft.entry.name,
+                /* Lower-cased with the reader's own rules, because the priority
+                   word is a translated one. */
+                priority: t(ORDER_PRIORITY_LABELS[draft.priority].labelKey).toLocaleLowerCase(
+                  t.locale
+                ),
+                destination: draft.entry.destination,
+              })}
             </li>
           ))}
         </ul>
@@ -657,15 +733,5 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
   );
 }
 
-/** "1 order", "3 orders". One plural rule for the whole screen. */
-function countLabel(count: number): string {
-  return formatCount(count, 'order');
-}
-
 /** Favourites promoted into the palette. Four keeps the group readable. */
 const FAVOURITE_COMMAND_LIMIT = 4;
-
-function priorityLabel(draft: DraftOrder): string {
-  if (draft.priority === 'ROUTINE') return 'Routine';
-  return draft.priority === 'URGENT' ? 'Urgent' : 'Stat';
-}

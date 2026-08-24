@@ -14,6 +14,11 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { isBulkSignable, MOCK_NOW, mockPatientById, useResults } from '@/lib/api';
 import type { Assignment, ResultFlag, ResultReport, WorklistClient } from '@/lib/api';
 import { formatName } from '@/lib/format';
+import { formatCount } from '@openrunic/i18n';
+
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * OR-04 Results inbox: the sign-off queue, abnormal first.
@@ -26,16 +31,45 @@ import { formatName } from '@/lib/format';
  * Legacy "pending review" screens flagged abnormal results and then offered nothing to
  * do about them, which is why results piled up there. Here signing, signing
  * with a note, and ordering a follow-up all happen without leaving the screen.
+ *
+ * A panel name, a performer and an analyte are the laboratory's words and are
+ * rendered as they arrived. Every sentence built around them is a catalogue
+ * key, including the ones that name a count, which carry a form per count
+ * rather than an English `s`.
  */
 
 /** Abnormal first: this is a triage queue, not a chronological log. */
 const FLAG_ORDER: Record<ResultFlag, number> = { CRITICAL: 0, ABNORMAL: 1, NORMAL: 2 };
 
-const ASSIGNMENT_FILTERS: SelectOption[] = [
-  { value: 'ME', label: 'Mine' },
-  { value: 'TEAM', label: 'Team pool' },
-  { value: '', label: 'Everyone' },
+/**
+ * Who owns the queue being read, as catalogue keys. `''` is the absence of a
+ * filter rather than a third assignment, which is why it is not in `ASSIGNMENTS`.
+ */
+const ASSIGNMENT_FILTERS: readonly { value: Assignment | ''; labelKey: string }[] = [
+  { value: 'ME', labelKey: 'results.list.assignment.mine' },
+  { value: 'TEAM', labelKey: 'results.list.assignment.team' },
+  { value: '', labelKey: 'results.list.assignment.everyone' },
 ];
+
+const BATCH_ACTION: CountedMessage = {
+  oneKey: 'results.bulk.actionOne',
+  otherKey: 'results.bulk.actionOther',
+};
+
+const BATCH_BODY: CountedMessage = {
+  oneKey: 'results.bulk.descriptionOne',
+  otherKey: 'results.bulk.descriptionOther',
+};
+
+const BATCH_CONFIRM: CountedMessage = {
+  oneKey: 'results.bulk.confirmOne',
+  otherKey: 'results.bulk.confirmOther',
+};
+
+const BATCH_SIGNED: CountedMessage = {
+  oneKey: 'results.bulk.signedOne',
+  otherKey: 'results.bulk.signedOther',
+};
 
 interface Signing {
   report: ResultReport;
@@ -53,6 +87,7 @@ export function ResultsScreen({
   client,
   now = MOCK_NOW,
 }: Readonly<ResultsScreenProps>): ReactElement {
+  const t = useTranslator();
   const [assignment, setAssignment] = useState<Assignment | ''>('ME');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [signed, setSigned] = useState<Record<string, SignedNote>>({});
@@ -61,6 +96,11 @@ export function ResultsScreen({
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
 
   const results = useResults(assignment ? { assignedTo: assignment } : {}, { client });
+
+  const assignmentFilters = useMemo<SelectOption[]>(
+    () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
+    [t]
+  );
 
   const reports = useMemo(() => {
     const rows = results.data?.data ?? [];
@@ -81,13 +121,11 @@ export function ResultsScreen({
       setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
       setSigning(null);
       setToast({
-        title: `${report.panel} signed`,
-        message: note
-          ? 'The note is attached and the result is released to the patient.'
-          : 'The result is released to the patient and has left the queue.',
+        title: t('results.signed.title', { panel: report.panel }),
+        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
       });
     },
-    [now]
+    [t, now]
   );
 
   const signBulk = useCallback(() => {
@@ -96,10 +134,10 @@ export function ResultsScreen({
     setSigned((previous) => ({ ...previous, ...stamped }));
     setBulkOpen(false);
     setToast({
-      title: `${bulkCandidates.length} in-range results signed`,
-      message: 'Critical and out-of-range results stay in the queue for a person to read.',
+      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
+      message: t('results.bulk.message'),
     });
-  }, [bulkCandidates, now]);
+  }, [t, bulkCandidates, now]);
 
   const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
     if (!report) return;
@@ -112,56 +150,56 @@ export function ResultsScreen({
       {
         id: 'results.sign',
         group: 'actions',
-        label: 'Sign the open result',
-        keywords: ['sign off', 'review result'],
+        label: t('results.command.sign'),
+        keywords: searchWords(t('results.command.signKeywords')),
         icon: 'pen-line',
         perform: () => requestSign(selected, false),
       },
       {
         id: 'results.sign-note',
         group: 'actions',
-        label: 'Sign the open result with a note',
-        keywords: ['addendum', 'tell the patient'],
+        label: t('results.command.signNote'),
+        keywords: searchWords(t('results.command.signNoteKeywords')),
         icon: 'message-square',
         perform: () => requestSign(selected, true),
       },
       {
         id: 'results.bulk-sign',
         group: 'actions',
-        label: 'Sign every in-range result',
-        keywords: ['bulk sign', 'normal results', 'clear the queue'],
+        label: t('results.command.bulkSign'),
+        keywords: searchWords(t('results.command.bulkSignKeywords')),
         icon: 'check-check',
         perform: () => setBulkOpen(bulkCandidates.length > 0),
       },
       {
         id: 'results.mine',
         group: 'actions',
-        label: 'Show my results',
-        keywords: ['assigned to me'],
+        label: t('results.command.mine'),
+        keywords: searchWords(t('results.command.mineKeywords')),
         icon: 'user-round',
         perform: () => setAssignment('ME'),
       },
       {
         id: 'results.team',
         group: 'actions',
-        label: 'Show the team pool',
-        keywords: ['unassigned', 'shared queue'],
+        label: t('results.command.team'),
+        keywords: searchWords(t('results.command.teamKeywords')),
         icon: 'users',
         perform: () => setAssignment('TEAM'),
       },
     ],
-    [selected, bulkCandidates.length, requestSign]
+    [t, selected, bulkCandidates.length, requestSign]
   );
 
   const selectedPatient = selected ? mockPatientById(selected.patientId) : undefined;
   const selectedPatientName = selectedPatient
     ? formatName(selectedPatient.name, 'full')
-    : 'this patient';
+    : t('results.thisPatient');
 
   return (
     <AppShell
-      title="Results"
-      description="The sign-off queue, abnormal first."
+      title={t('results.list.title')}
+      description={t('results.list.description')}
       actions={
         <Button
           variant="secondary"
@@ -169,14 +207,14 @@ export function ResultsScreen({
           onClick={() => setBulkOpen(bulkCandidates.length > 0)}
         >
           {bulkCandidates.length > 0
-            ? `Sign ${bulkCandidates.length} in-range results`
-            : 'No in-range results to batch'}
+            ? counted(t, BATCH_ACTION, bulkCandidates.length)
+            : t('results.bulk.actionNone')}
         </Button>
       }
       topBarActions={
         <Select
-          label="Assignment"
-          options={ASSIGNMENT_FILTERS}
+          label={t('results.list.assignment')}
+          options={assignmentFilters}
           value={assignment}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
             setAssignment(event.target.value as Assignment | '')
@@ -184,32 +222,29 @@ export function ResultsScreen({
         />
       }
       rightRail={
-        <Card tone="cream" overline="Queue" title={`${openCount} waiting`}>
-          <p className="or-small">
-            Critical values cannot be signed in a batch. Everything else in range can, and the rest
-            is read one at a time.
-          </p>
-          <p className="or-small or-muted">
-            Signing releases the result to the patient portal and closes the loop the practice
-            promised.
-          </p>
+        <Card
+          tone="cream"
+          overline={t('results.queue.overline')}
+          title={t('results.queue.waiting', { count: formatCount(openCount, t.locale) })}
+        >
+          <p className="or-small">{t('results.queue.note')}</p>
+          <p className="or-small or-muted">{t('results.queue.release')}</p>
         </Card>
       }
     >
       <ScreenCommands commands={commands} />
       <AsyncBoundary
         state={results}
-        subject="the results queue"
+        subject={t('results.list.subject')}
         isEmpty={isEmptyList}
         loadingRows={5}
         empty={{
-          title: 'All results reviewed',
-          message:
-            'Nothing is waiting in this queue. New reports arrive here as the labs send them back.',
+          title: t('results.list.empty.title'),
+          message: t('results.list.empty.message'),
           icon: 'flask-conical',
           action: (
             <Button href="/inbox" iconLeft="inbox">
-              Go to the inbox
+              {t('results.list.empty.action')}
             </Button>
           ),
         }}
@@ -218,8 +253,8 @@ export function ResultsScreen({
           <div className="or-results">
             <Card
               tone="cream"
-              overline="Queue"
-              title="Results to review"
+              overline={t('results.queue.overline')}
+              title={t('results.queue.title')}
               className="or-results__queue"
             >
               <ResultList
@@ -249,23 +284,26 @@ export function ResultsScreen({
 
       <Modal
         open={signing !== null && !signing.withNote}
-        title="Sign this result"
+        title={t('results.sign.title')}
         description={
           signing
-            ? `Signing ${signing.report.panel} for ${selectedPatientName} moves it out of the queue and releases it to the portal. An addendum stays possible.`
+            ? t('results.sign.description', {
+                panel: signing.report.panel,
+                patient: selectedPatientName,
+              })
             : ''
         }
         onClose={() => setSigning(null)}
         footer={
           <>
             <Button variant="ghost" onClick={() => setSigning(null)}>
-              Cancel
+              {t('results.sign.cancel')}
             </Button>
             <Button
               iconLeft="pen-line"
               onClick={() => (signing ? signOne(signing.report, null) : undefined)}
             >
-              Sign result
+              {t('results.sign.confirm')}
             </Button>
           </>
         }
@@ -281,16 +319,16 @@ export function ResultsScreen({
 
       <Modal
         open={bulkOpen}
-        title="Sign every in-range result"
-        description={`This signs ${bulkCandidates.length} results whose values are all in range, and releases them to their patients. Critical and out-of-range results are not included.`}
+        title={t('results.bulk.title')}
+        description={counted(t, BATCH_BODY, bulkCandidates.length)}
         onClose={() => setBulkOpen(false)}
         footer={
           <>
             <Button variant="ghost" onClick={() => setBulkOpen(false)}>
-              Cancel
+              {t('results.sign.cancel')}
             </Button>
             <Button iconLeft="check-check" onClick={signBulk}>
-              {`Sign ${bulkCandidates.length} results`}
+              {counted(t, BATCH_CONFIRM, bulkCandidates.length)}
             </Button>
           </>
         }

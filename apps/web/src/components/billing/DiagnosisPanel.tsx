@@ -4,6 +4,8 @@ import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { ChargeDiagnosis, ChargeLine } from '@/lib/api';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { diagnosisPointer } from './billing';
@@ -20,6 +22,18 @@ import { diagnosisPointer } from './billing';
  * The code and its display are the terminology's own words and render as they
  * arrived. Only the panel's own copy is translated.
  */
+
+/**
+ * How many charge lines point at one diagnosis.
+ *
+ * Through `counted` rather than `uses === 1`, because one is not the only
+ * special case in every language, and because the digits and the plural form
+ * are two separate locale decisions.
+ */
+const CHARGE_COUNT: CountedMessage = {
+  oneKey: 'billing.diagnoses.chargeCount.one',
+  otherKey: 'billing.diagnoses.chargeCount.other',
+};
 
 export interface DiagnosisPanelProps {
   diagnoses: readonly ChargeDiagnosis[];
@@ -51,14 +65,7 @@ export function DiagnosisPanel({ diagnoses, lines }: Readonly<DiagnosisPanelProp
                   {t('billing.diagnoses.notLinked')}
                 </Badge>
               ) : (
-                <Badge tone="success">
-                  {t(
-                    uses === 1
-                      ? 'billing.diagnoses.chargeCount.one'
-                      : 'billing.diagnoses.chargeCount.other',
-                    { count: uses }
-                  )}
-                </Badge>
+                <Badge tone="success">{counted(t, CHARGE_COUNT, uses)}</Badge>
               )}
             </li>
           );

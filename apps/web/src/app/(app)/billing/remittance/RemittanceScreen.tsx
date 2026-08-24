@@ -19,7 +19,8 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { useRemittances } from '@/lib/api';
 import type { BillingClient, Remittance } from '@/lib/api';
 import { formatDate, formatMoney } from '@/lib/format';
-import { searchWords } from '@/lib/i18n/counted';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -39,6 +40,12 @@ import { useTranslator } from '@/lib/i18n/messages';
  * payer's own and render as they arrived. The method is a coded value, so the
  * two words this screen puts on it are the screen's own and are translated.
  */
+
+/** How many lines on a remittance did not pay what the claim expected. */
+const EXCEPTION_COUNT: CountedMessage = {
+  oneKey: 'billing.remittance.exceptionCount.one',
+  otherKey: 'billing.remittance.exceptionCount.other',
+};
 
 export interface RemittanceScreenProps {
   /** Injectable data client. Tests drive the empty and error states with it. */
@@ -171,12 +178,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                     </span>
                     {candidateSummary.exceptions > 0 ? (
                       <Badge tone="danger">
-                        {t(
-                          candidateSummary.exceptions === 1
-                            ? 'billing.remittance.exceptionCount.one'
-                            : 'billing.remittance.exceptionCount.other',
-                          { count: candidateSummary.exceptions }
-                        )}
+                        {counted(t, EXCEPTION_COUNT, candidateSummary.exceptions)}
                       </Badge>
                     ) : (
                       <Badge tone="success">{t('billing.remittance.postedInFull')}</Badge>

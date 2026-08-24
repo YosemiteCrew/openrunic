@@ -1,3 +1,4 @@
+import { appCatalogue } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,13 +10,17 @@ import {
   arSummary,
   autoAllocate,
   blockingFindings,
+  BUCKET_LABEL_KEYS,
+  BUCKET_STATE_LABEL_KEYS,
   bucketTone,
   bulkActionsFor,
   claimAgeDays,
   claimAgeingBands,
   claimCounts,
   claimLifecycle,
+  CLAIM_STATUS_LABEL_KEYS,
   diagnosisPointer,
+  DUNNING_LABEL_KEYS,
   feeSheetTotals,
   isBlockedByScrub,
   lineCharge,
@@ -24,6 +29,7 @@ import {
   nextDunningStage,
   receiptRows,
   remittanceSummary,
+  RESOLUTION_LABEL_KEYS,
   scrubFeeSheet,
   statementTotals,
   unallocated,
@@ -362,5 +368,41 @@ describe('payment allocation', () => {
       },
     ]);
     expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
+  });
+});
+
+/**
+ * THE KEY MAPS ARE NOT COVERED BY THE CATALOGUE DRIFT TEST, SO THEY ARE COVERED
+ * HERE.
+ *
+ * `catalogue-drift.test.ts` scans the source for two shapes: a literal
+ * translator call, and a property whose name ends in `Key`. A key held as the
+ * value of a state in a `Record<Enum, string>` map is neither - the property is
+ * the state's name - so a renamed or mistyped key in any of the maps below
+ * reaches the screen as its own key with nothing failing on the way.
+ *
+ * A render test catches the states a fixture happens to exercise. These are all
+ * of them, checked against the source catalogue where they are declared.
+ */
+describe('the billing key maps name a message that exists', () => {
+  const messages = appCatalogue.messages[appCatalogue.sourceLocale] ?? {};
+
+  const maps: Record<string, Readonly<Record<string, string>>> = {
+    CLAIM_STATUS_LABEL_KEYS,
+    RESOLUTION_LABEL_KEYS,
+    BUCKET_LABEL_KEYS,
+    BUCKET_STATE_LABEL_KEYS,
+    DUNNING_LABEL_KEYS,
+    ALLOCATION_STATE_LABEL_KEYS,
+    ALLOCATION_HINT_KEYS,
+  };
+
+  it.each(Object.entries(maps))('%s', (_name, map) => {
+    const missing = Object.entries(map)
+      .filter(([, key]) => messages[key] === undefined)
+      .map(([state, key]) => `${state} -> ${key}`);
+
+    expect(missing).toStrictEqual([]);
+    expect(Object.keys(map).length).toBeGreaterThan(0);
   });
 });

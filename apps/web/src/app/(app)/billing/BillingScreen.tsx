@@ -8,6 +8,8 @@ import { arSummary, claimCounts, Money, remittanceSummary } from '@/components/b
 import { AppShell } from '@/components/shell';
 import { useClaims, useRemittances, useStatements } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -19,6 +21,17 @@ import { useTranslator } from '@/lib/i18n/messages';
  * it leads into the workbench that owns it. It holds no state and offers no
  * verbs of its own: the work happens on the five screens below.
  */
+
+/**
+ * How many claims the denied figure is made of.
+ *
+ * Through `counted` rather than a `=== 1` ternary, so the form comes from the
+ * reader's plural rules rather than from English's two.
+ */
+const DENIED_CLAIMS: CountedMessage = {
+  oneKey: 'billing.home.deniedClaims.one',
+  otherKey: 'billing.home.deniedClaims.other',
+};
 
 interface AreaLink {
   href: string;
@@ -102,12 +115,7 @@ export function BillingScreen(): ReactElement {
           label={t('billing.home.denied')}
           value={formatMoney(denied, { currency: 'USD' }).text}
           state={counts.DENIED > 0 ? 'danger' : 'success'}
-          stateLabel={t(
-            counts.DENIED === 1
-              ? 'billing.home.deniedClaims.one'
-              : 'billing.home.deniedClaims.other',
-            { count: counts.DENIED }
-          )}
+          stateLabel={counted(t, DENIED_CLAIMS, counts.DENIED)}
         />
         <VitalStat
           label={t('billing.home.exceptions')}

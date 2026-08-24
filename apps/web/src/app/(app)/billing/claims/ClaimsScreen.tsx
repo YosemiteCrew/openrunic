@@ -24,7 +24,8 @@ import { AsyncBoundary } from '@/components/state';
 import { CLAIM_STATUSES, filterClaims, useClaims } from '@/lib/api';
 import type { BillingClient, Claim, ClaimStatus } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
-import { searchWords } from '@/lib/i18n/counted';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -55,9 +56,23 @@ const PAGE_SIZE = 100;
  * words. The tone already carries the urgency; this says the action, because a
  * colour is never the only signal.
  *
- * A literal map from the tone to a catalogue key. Both halves stay visible to
- * the drift test, which a key assembled from `band.tone` would not be.
+ * A literal map from the tone to a catalogue key, rather than a key assembled
+ * from `band.tone`, so a rename can be found by searching for the key. The
+ * drift test's scanner does not read a key held as a map's value, so the
+ * strip's own test asserts the three words on the rendered screen.
  */
+/** How many claims sit in one ageing band, beside what to do about them. */
+const BAND_CLAIMS: CountedMessage = {
+  oneKey: 'billing.claims.bandState.one',
+  otherKey: 'billing.claims.bandState.other',
+};
+
+/** How many claims a bulk action just moved, and the state they landed in. */
+const BULK_DONE: CountedMessage = {
+  oneKey: 'billing.claims.toast.bulkDone.one',
+  otherKey: 'billing.claims.toast.bulkDone.other',
+};
+
 const BAND_ADVICE_KEYS: Record<StatusTone, string> = {
   danger: 'billing.claims.advice.chase',
   neutral: 'billing.claims.advice.ageing',
@@ -142,12 +157,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
       const state = t(CLAIM_STATUS_LABEL_KEYS[next]).toLowerCase();
       toasts.push({
         tone: 'success',
-        title: t(
-          ids.length === 1
-            ? 'billing.claims.toast.bulkDone.one'
-            : 'billing.claims.toast.bulkDone.other',
-          { count: ids.length, state }
-        ),
+        title: counted(t, BULK_DONE, ids.length, { state }),
         message: t('billing.claims.toast.movedTo', { state }),
       });
     },
@@ -259,10 +269,9 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
             label={t(band.labelKey)}
             value={formatMoney(band.amount, { currency: 'USD' }).text}
             state={band.tone}
-            stateLabel={t(
-              band.count === 1 ? 'billing.claims.bandState.one' : 'billing.claims.bandState.other',
-              { count: band.count, advice: t(BAND_ADVICE_KEYS[band.tone]) }
-            )}
+            stateLabel={counted(t, BAND_CLAIMS, band.count, {
+              advice: t(BAND_ADVICE_KEYS[band.tone]),
+            })}
           />
         ))}
       </section>

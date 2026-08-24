@@ -5,6 +5,8 @@ import type { ReactElement, ReactNode } from 'react';
 
 import type { Claim } from '@/lib/api';
 import { formatDate, formatMrn, formatName } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { ageingState, claimAgeDays, CLAIM_STATUS_LABEL_KEYS, CLAIM_STATUS_TONE } from './billing';
@@ -37,6 +39,17 @@ const COLUMNS: readonly KeyedColumn[] = [
   { key: 'age', headerKey: 'billing.claimTable.column.age' },
   { key: 'actions', headerKey: 'billing.claimTable.column.actions', align: 'right' },
 ];
+
+/**
+ * How many scrub errors are holding a row out of a bulk action.
+ *
+ * Through `counted` rather than a `length === 1` ternary, so the form comes
+ * from the reader's own plural rules and the digits from their own numerals.
+ */
+const SCRUB_ERRORS: CountedMessage = {
+  oneKey: 'billing.claimTable.scrubErrors.one',
+  otherKey: 'billing.claimTable.scrubErrors.other',
+};
 
 export interface ClaimTableProps {
   claims: readonly Claim[];
@@ -87,14 +100,7 @@ export function ClaimTable({
             {t(CLAIM_STATUS_LABEL_KEYS[claim.status])}
           </Badge>
           {blocked ? (
-            <Badge tone="danger">
-              {t(
-                claim.scrubErrors.length === 1
-                  ? 'billing.claimTable.scrubErrors.one'
-                  : 'billing.claimTable.scrubErrors.other',
-                { count: claim.scrubErrors.length }
-              )}
-            </Badge>
+            <Badge tone="danger">{counted(t, SCRUB_ERRORS, claim.scrubErrors.length)}</Badge>
           ) : null}
         </span>
       ),

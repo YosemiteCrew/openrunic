@@ -34,8 +34,14 @@ import { formatMoney } from '@/lib/format';
  * key and the screen looks it up. That is what keeps this module pure: a
  * sentence written here would be written in one language, and this module has
  * no way of knowing which language the reader is in. The keys are literal maps
- * rather than templates built from the value, so the drift test can see every
- * one of them and so can the next person to rename a state.
+ * rather than templates built from the value, so the next person to rename a
+ * state can find every place it is named by searching for it.
+ *
+ * The catalogue drift test does not see them: its scanner reads a literal
+ * translator call and a property whose name ends in `Key`, and a key held as
+ * the value of a state in a `Record` is neither. So every map below is checked
+ * against the catalogue in `__tests__/billing.test.ts` instead, which is the
+ * one place that can enumerate them.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -241,9 +247,9 @@ export const CLAIM_STATUS_TONE: Record<ClaimStatus, StatusTone> = {
  * The catalogue key for each state's name.
  *
  * A literal map rather than a key built from the status at the call site. A
- * template such as `billing.claimStatus.${status}` is invisible to the drift
- * test, which means it is also invisible to whoever has to find it the day a
- * state is renamed and one screen starts rendering its key.
+ * template such as `billing.claimStatus.${status}` is invisible to a search,
+ * which means it is invisible to whoever has to find it the day a state is
+ * renamed and one screen starts rendering its key.
  */
 export const CLAIM_STATUS_LABEL_KEYS: Record<ClaimStatus, string> = {
   CAPTURED: 'billing.claimStatus.captured',

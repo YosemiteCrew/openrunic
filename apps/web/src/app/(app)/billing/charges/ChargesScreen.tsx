@@ -26,7 +26,8 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_PROCEDURE_PANELS, useFeeSheets } from '@/lib/api';
 import type { BillingClient, ChargeLine, FeeSheet, ProcedureCode } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName, formatTime } from '@/lib/format';
-import { searchWords } from '@/lib/i18n/counted';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -57,6 +58,18 @@ export interface ChargesScreenProps {
 }
 
 /**
+ * How many blocking findings stand between this sheet and a claim.
+ *
+ * Through `counted` rather than a `=== 1` ternary, because the sentence moves
+ * its verb as well as its noun and one is not the only special case in every
+ * language.
+ */
+const BLOCKING_HINT: CountedMessage = {
+  oneKey: 'billing.charges.hint.blocking.one',
+  otherKey: 'billing.charges.hint.blocking.other',
+};
+
+/**
  * The line under the "Mark ready" button: why the button is disabled, or that
  * the work is done. It always says something, because a disabled control with
  * no reason beside it is the thing this screen exists to stop.
@@ -64,12 +77,7 @@ export interface ChargesScreenProps {
 function readyHint(isReady: boolean, blockingCount: number, translate: Translator): string {
   if (isReady) return translate('billing.charges.hint.ready');
   if (blockingCount === 0) return translate('billing.charges.hint.clean');
-  return translate(
-    blockingCount === 1
-      ? 'billing.charges.hint.blocking.one'
-      : 'billing.charges.hint.blocking.other',
-    { count: blockingCount }
-  );
+  return counted(translate, BLOCKING_HINT, blockingCount);
 }
 
 /**

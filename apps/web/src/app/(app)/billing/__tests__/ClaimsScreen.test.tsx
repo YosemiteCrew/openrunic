@@ -39,6 +39,23 @@ describe('ClaimsScreen', () => {
     expect(header).toContain('Age in state');
   });
 
+  it('says what to do about each ageing band in words, not by tint alone', async () => {
+    render(<ClaimsScreen />);
+
+    // The four bands are always rendered, so every advice word is on the screen
+    // whatever the fixtures hold. The assertion is here rather than in the
+    // drift test because the advice keys are chosen by a ternary and held in a
+    // map keyed by tone, and its scanner reads neither shape.
+    const strip = await screen.findByRole('region', { name: 'Claims by age in state' });
+    expect(within(strip).getByText('0 to 13 days')).toBeInTheDocument();
+    expect(within(strip).getByText('60 days and over')).toBeInTheDocument();
+    for (const advice of ['on track', 'ageing', 'chase these']) {
+      expect(within(strip).getAllByText(new RegExp(`claims?, ${advice}$`)).length).toBeGreaterThan(
+        0
+      );
+    }
+  });
+
   it('filters the queue by state from the chips, which are the primary navigation', async () => {
     render(<ClaimsScreen />);
 

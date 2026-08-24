@@ -23,8 +23,14 @@ import type { Messages } from '../../catalogue.js';
  * A count that reads inside a sentence carries its own singular and plural key
  * rather than being assembled from a number and a noun. English gets away with
  * "1 claim"/"2 claims"; the sentence "1 error blocks billing" needs the verb to
- * move as well, and other languages need more than the two forms. Both keys are
- * literals so the drift test can see them.
+ * move as well, and other languages need more than the two forms.
+ *
+ * The pair is declared as a `CountedMessage` and rendered through `counted`,
+ * which asks the reader's own plural rules which form to use rather than
+ * testing `count === 1`. English has two forms; a fork translating into a
+ * language with four would otherwise get a sentence that reads as broken only
+ * to somebody who speaks it. Both keys sit on `oneKey` and `otherKey`
+ * properties, which is the shape the catalogue drift test can see.
  */
 export const billing: Messages = {
   /* --------------------------------------------------------- shared surface */

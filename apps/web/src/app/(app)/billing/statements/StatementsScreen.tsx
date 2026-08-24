@@ -25,7 +25,8 @@ import { AsyncBoundary } from '@/components/state';
 import { filterStatements, useStatements } from '@/lib/api';
 import type { AgeingBucket, BillingClient, StatementAccount } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName } from '@/lib/format';
-import { searchWords } from '@/lib/i18n/counted';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -52,6 +53,12 @@ const COLUMNS: readonly KeyedColumn[] = [
   { key: 'dunning', headerKey: 'billing.statements.column.dunning' },
   { key: 'actions', headerKey: 'billing.statements.column.actions', align: 'right' },
 ];
+
+/** How many statements a run just sent. */
+const STATEMENTS_SENT: CountedMessage = {
+  oneKey: 'billing.statements.toast.sent.one',
+  otherKey: 'billing.statements.toast.sent.other',
+};
 
 export interface StatementsScreenProps {
   /** Injectable data client. Tests drive the empty and error states with it. */
@@ -115,12 +122,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       setSelected(new Set());
       toasts.push({
         tone: 'success',
-        title: t(
-          batch.length === 1
-            ? 'billing.statements.toast.sent.one'
-            : 'billing.statements.toast.sent.other',
-          { count: batch.length }
-        ),
+        title: counted(t, STATEMENTS_SENT, batch.length),
         message: t('billing.statements.toast.sentMessage'),
       });
     },

@@ -1,3 +1,5 @@
+import type { Translator } from '@openrunic/i18n';
+
 import { AGENT_TRANSPORT_FAILED } from '@/lib/agent';
 
 import type { AssistantFailure } from './transcript';
@@ -18,41 +20,35 @@ export interface FailureExplanation {
   message: string;
 }
 
-const TABLE: Record<string, FailureExplanation> = {
+/** Catalogue keys per code. The words themselves live in `en/assistant.ts`. */
+const TABLE: Record<string, { titleKey: string; messageKey: string }> = {
   [AGENT_TRANSPORT_FAILED]: {
-    title: 'The assistant could not be reached',
-    message:
-      'openrunic could not open a connection to the assistant. Check the connection and ask again. Charts, the schedule and orders are unaffected.',
+    titleKey: 'assistant.failure.transport.title',
+    messageKey: 'assistant.failure.transport.message',
   },
   AGENT_UPSTREAM_UNREACHABLE: {
-    title: 'The model endpoint did not answer',
-    message:
-      'The endpoint this clinic configured did not respond, so there is no answer. Nothing else in openrunic depends on it: charts, the schedule and orders all work as normal.',
+    titleKey: 'assistant.failure.upstream.title',
+    messageKey: 'assistant.failure.upstream.message',
   },
   AGENT_QUOTA_EXCEEDED: {
-    title: 'The assistant has spent its allowance',
-    message:
-      'This clinic set a ceiling on assistant use and it has been reached for now. Ask a practice admin to raise it. Nothing else is affected.',
+    titleKey: 'assistant.failure.quota.title',
+    messageKey: 'assistant.failure.quota.message',
   },
   AGENT_TURN_LIMIT: {
-    title: 'The assistant ran out of time',
-    message:
-      'It took longer than one turn is allowed and was stopped before it finished. Ask again with a narrower question.',
+    titleKey: 'assistant.failure.turnLimit.title',
+    messageKey: 'assistant.failure.turnLimit.message',
   },
   AGENT_SCOPE_DENIED: {
-    title: 'The assistant asked for something it does not have',
-    message:
-      'It requested a capability your role does not grant it. The request was refused and nothing was read.',
+    titleKey: 'assistant.failure.scope.title',
+    messageKey: 'assistant.failure.scope.message',
   },
   AGENT_COMPARTMENT_VIOLATION: {
-    title: 'The assistant reached outside the open chart',
-    message:
-      'It tried to read a record outside the chart you have open, so the turn was stopped and nothing is shown. Report this if it happens again.',
+    titleKey: 'assistant.failure.compartment.title',
+    messageKey: 'assistant.failure.compartment.message',
   },
   AGENT_RESPONSE_INVALID: {
-    title: 'The endpoint answered in a shape openrunic could not read',
-    message:
-      'Nothing was shown, because openrunic will not guess at a malformed answer. Ask again; if it keeps happening, report it to whoever configured the endpoint.',
+    titleKey: 'assistant.failure.invalid.title',
+    messageKey: 'assistant.failure.invalid.message',
   },
 };
 
@@ -60,7 +56,14 @@ const TABLE: Record<string, FailureExplanation> = {
  * The fallback uses the server's own `detail`, which is always a written
  * sentence rather than a code. That is why an unmapped code still reads as
  * product copy: the API never sends a stack trace or a provider message here.
+ * It is also why the fallback message is not translated - it is the
+ * deployment's own words, and a second version of them written here would say
+ * something the audit trail does not record.
  */
-export function describeFailure(failure: AssistantFailure): FailureExplanation {
-  return TABLE[failure.code] ?? { title: 'That did not complete', message: failure.detail };
+export function describeFailure(t: Translator, failure: AssistantFailure): FailureExplanation {
+  const known = TABLE[failure.code];
+  if (known === undefined) {
+    return { title: t('assistant.failure.unknown.title'), message: failure.detail };
+  }
+  return { title: t(known.titleKey), message: t(known.messageKey) };
 }

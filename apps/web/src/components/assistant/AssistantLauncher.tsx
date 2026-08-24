@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import { useRegisterCommands } from '@/components/command';
 import type { Command } from '@/components/command';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { useAssistant } from './AssistantProvider';
 import { ASSISTANT_PANEL_ID } from './AssistantPanel';
@@ -22,6 +23,7 @@ import { ASSISTANT_PANEL_ID } from './AssistantPanel';
  * in this app holds.
  */
 export function AssistantLauncher(): ReactElement | null {
+  const t = useTranslator();
   const { availability, isOpen, open, close } = useAssistant();
   const enabled = availability.status === 'enabled';
 
@@ -32,14 +34,19 @@ export function AssistantLauncher(): ReactElement | null {
             {
               id: 'assistant.open',
               group: 'actions',
-              label: 'Ask the assistant',
+              label: t('assistant.command.open'),
               icon: 'message-circle',
-              keywords: ['assistant', 'ask', 'question', 'search the chart'],
+              /* Per-language search words, comma separated in the catalogue:
+                 somebody searching in another language does not type "ask". */
+              keywords: t('assistant.command.open.keywords')
+                .split(',')
+                .map((word) => word.trim())
+                .filter((word) => word !== ''),
               perform: open,
             },
           ]
         : [],
-    [enabled, open]
+    [enabled, open, t]
   );
 
   useRegisterCommands(commands);
@@ -56,7 +63,7 @@ export function AssistantLauncher(): ReactElement | null {
       {...(isOpen ? { 'aria-controls': ASSISTANT_PANEL_ID } : {})}
       onClick={isOpen ? close : open}
     >
-      Assistant
+      {t('assistant.name')}
     </button>
   );
 }

@@ -6,8 +6,9 @@ import type { ReactElement } from 'react';
 import { mockPatientById } from '@/lib/api';
 import type { InboxItem } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
-import { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './streams';
+import { INBOX_STREAM_ICON, INBOX_STREAM_LABEL_KEYS } from './streams';
 import { SlaBadge } from './SlaBadge';
 
 /**
@@ -37,10 +38,11 @@ export function InboxList({
   onClaim,
   claimedIds,
 }: Readonly<InboxListProps>): ReactElement {
+  const t = useTranslator();
   const claimed = new Set(claimedIds);
 
   return (
-    <ul className="or-inbox__list" aria-label="Inbox items">
+    <ul className="or-inbox__list" aria-label={t('inbox.list.label')}>
       {items.map((item) => {
         const patient = mockPatientById(item.patientId);
         const mine = item.assignedTo === 'ME' || claimed.has(item.id);
@@ -52,7 +54,7 @@ export function InboxList({
           >
             <span className="or-inbox__stream">
               <Icon name={INBOX_STREAM_ICON[item.stream]} size={18} />
-              <span className="or-caption">{INBOX_STREAM_LABELS[item.stream]}</span>
+              <span className="or-caption">{t(INBOX_STREAM_LABEL_KEYS[item.stream])}</span>
             </span>
 
             <span className="or-inbox__body">
@@ -63,20 +65,20 @@ export function InboxList({
                     <span className="or-mono or-muted">{formatMrn(patient.mrn)}</span>
                   </>
                 ) : (
-                  <strong>Practice-wide</strong>
+                  <strong>{t('inbox.list.practiceWide')}</strong>
                 )}
               </span>
               <span className="or-inbox__summary">{item.summary}</span>
               <span className="or-small or-muted">{item.detail}</span>
               <span className="or-caption or-muted">
-                Received {formatDateTime(item.receivedAt, 'dense')}
+                {t('inbox.list.received', { when: formatDateTime(item.receivedAt, 'dense') })}
               </span>
             </span>
 
             <span className="or-inbox__state">
               <SlaBadge dueAt={item.dueAt} now={now} />
-              {item.unread ? <Badge tone="neutral">Unread</Badge> : null}
-              <Tag>{mine ? 'Mine' : 'Team pool'}</Tag>
+              {item.unread ? <Badge tone="neutral">{t('inbox.list.unread')}</Badge> : null}
+              <Tag>{mine ? t('inbox.filter.mine') : t('inbox.filter.teamPool')}</Tag>
             </span>
 
             <span className="or-inbox__actions">
@@ -90,12 +92,12 @@ export function InboxList({
                   iconLeft="user-round"
                   onClick={() => onClaim(item)}
                 >
-                  Assign to me
+                  {t('inbox.list.assignToMe')}
                 </Button>
               )}
               {item.href ? (
                 <Button variant="ghost" size="sm" href={item.href} iconRight="arrow-right">
-                  Open
+                  {t('inbox.list.open')}
                 </Button>
               ) : null}
             </span>

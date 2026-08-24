@@ -229,7 +229,11 @@ describe('with an assistant configured', () => {
     const panel = screen.getByRole('complementary', { name: 'Assistant' });
     expect(within(panel).getByText(/Documentation support/)).toBeInTheDocument();
     expect(within(panel).getByText(/does not advise/)).toBeInTheDocument();
-    expect(within(panel).getByText('local/qwen-2.5-32b')).toBeInTheDocument();
+    // The model and its host are named in one sentence rather than in two spans
+    // of their own, so the words around them stay one translatable message.
+    expect(
+      within(panel).getByText(/Answers come from local\/qwen-2\.5-32b at inference\.internal:8000/)
+    ).toBeInTheDocument();
     expect(
       within(panel).getByText(/Nothing you type here leaves this deployment/)
     ).toBeInTheDocument();

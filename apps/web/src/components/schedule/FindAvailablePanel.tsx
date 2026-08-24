@@ -4,6 +4,7 @@ import { Button, Card, Tag } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import { formatTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import type { OpenSlot } from './schedule';
 import type { ScheduleProvider } from './ScheduleGrid';
@@ -32,24 +33,22 @@ export function FindAvailablePanel({
   onBook,
   onClose,
 }: Readonly<FindAvailablePanelProps>): ReactElement {
+  const t = useTranslator();
   const providerName = (id: string): string =>
-    providers.find((provider) => provider.id === id)?.name ?? 'Unassigned';
+    providers.find((provider) => provider.id === id)?.name ?? t('schedule.provider.unassigned');
 
   return (
     <Card
-      overline="Find available"
-      title={`Next open ${durationMinutes}-minute slots`}
+      overline={t('schedule.findAvailable.overline')}
+      title={t('schedule.findAvailable.title', { minutes: durationMinutes })}
       footer={
         <Button variant="ghost" iconLeft="x" onClick={onClose}>
-          Hide open slots
+          {t('schedule.findAvailable.hide')}
         </Button>
       }
     >
       {slots.length === 0 ? (
-        <p className="or-body">
-          No slot fits {durationMinutes} minutes on this day. Add the patient to the waitlist, or
-          look at tomorrow with the day pager.
-        </p>
+        <p className="or-body">{t('schedule.findAvailable.none', { minutes: durationMinutes })}</p>
       ) : (
         <ul className="or-slots">
           {slots.map((slot) => (
@@ -58,7 +57,10 @@ export function FindAvailablePanel({
                 variant="secondary"
                 iconLeft="calendar-plus"
                 onClick={() => onBook(slot)}
-                aria-label={`Book ${formatTime(slot.start)} with ${providerName(slot.providerId)}`}
+                aria-label={t('schedule.findAvailable.book', {
+                  time: formatTime(slot.start),
+                  provider: providerName(slot.providerId),
+                })}
               >
                 <span className="or-mono">{formatTime(slot.start)}</span>
               </Button>

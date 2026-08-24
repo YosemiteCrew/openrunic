@@ -1,10 +1,12 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge } from '@openrunic/ui';
 import type { CSSProperties, ReactElement } from 'react';
 
 import type { Appointment, Patient } from '@/lib/api';
 import { formatName, formatTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import {
   assignLanes,
@@ -65,10 +67,11 @@ const HEADER_ROWS = 1;
 
 function patientLabel(
   appointment: Appointment,
-  patientsById: ReadonlyMap<string, Patient>
+  patientsById: ReadonlyMap<string, Patient>,
+  t: Translator
 ): string {
   const patient = appointment.patientId ? patientsById.get(appointment.patientId) : undefined;
-  return patient ? formatName(patient.name) : 'Unassigned slot';
+  return patient ? formatName(patient.name) : t('schedule.visit.unassignedSlot');
 }
 
 export function ScheduleGrid({
@@ -79,6 +82,8 @@ export function ScheduleGrid({
   selectedId,
   onSelect,
 }: Readonly<ScheduleGridProps>): ReactElement {
+  const t = useTranslator();
+
   /* A cancelled visit frees its slot, so it belongs in the day's counts rather
      than on the grid; a no-show consumed the slot and stays visible. */
   const onGrid = appointments.filter((appointment) => appointment.status !== 'CANCELLED');
@@ -110,10 +115,10 @@ export function ScheduleGrid({
           must be able to focus it to scroll a day that overflows. The day can be
           empty of appointment buttons and still need scrolling, so the inner
           controls are not a substitute. `:focus-visible` is styled for it. */}
-      <section className="or-sched__scroll" tabIndex={0} aria-label="Day view grid">
+      <section className="or-sched__scroll" tabIndex={0} aria-label={t('schedule.grid.label')}>
         <div className="or-sched__grid">
           <div className="or-sched__corner">
-            <span className="or-overline">Time</span>
+            <span className="or-overline">{t('schedule.grid.timeColumn')}</span>
           </div>
 
           {providers.map((provider, index) => (
@@ -163,10 +168,12 @@ export function ScheduleGrid({
             return placed.map((entry) => {
               const { appointment, lane, lanes, rowStart, rowEnd } = entry;
               const status = presentStatus(appointment.status);
-              const name = patientLabel(appointment, patientsById);
+              const name = patientLabel(appointment, patientsById, t);
               const start = formatTime(appointment.start);
               const end = formatTime(appointment.end);
               const doubleBooked = lanes > 1;
+              const statusLabel = t(status.labelKey);
+              const doubleBookedLabel = t('schedule.grid.doubleBooked');
 
               const blockStyle: BlockStyle = {
                 '--or-block-edge': `var(--viz-${categoryViz(appointment.type.code)})`,
@@ -187,12 +194,12 @@ export function ScheduleGrid({
                   data-double-booked={doubleBooked || undefined}
                   aria-pressed={appointment.id === selectedId}
                   aria-label={[
-                    `${start} to ${end}`,
+                    t('schedule.grid.timeRange', { start, end }),
                     name,
                     appointment.type.display,
                     provider.name,
-                    status.label,
-                    doubleBooked ? 'Double-booked' : null,
+                    statusLabel,
+                    doubleBooked ? doubleBookedLabel : null,
                   ]
                     .filter(Boolean)
                     .join(', ')}
@@ -206,8 +213,8 @@ export function ScheduleGrid({
                       {appointment.type.display}
                     </span>
                     <span className="or-sched__block-status">
-                      <Badge tone={status.tone}>{status.label}</Badge>
-                      {doubleBooked ? <Badge tone="danger">Double-booked</Badge> : null}
+                      <Badge tone={status.tone}>{statusLabel}</Badge>
+                      {doubleBooked ? <Badge tone="danger">{doubleBookedLabel}</Badge> : null}
                     </span>
                   </span>
                 </button>
@@ -229,7 +236,7 @@ export function ScheduleGrid({
               }
             >
               <span className="or-mono or-sched__now-label">
-                Now {formatTime(now.toISOString())}
+                {t('schedule.grid.now', { time: formatTime(now.toISOString()) })}
               </span>
             </div>
           ) : null}

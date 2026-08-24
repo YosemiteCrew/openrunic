@@ -1,3 +1,4 @@
+import { en as EN_MESSAGES } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -176,11 +177,13 @@ describe('nextDunningStage', () => {
 describe('presentStatus', () => {
   it('gives cancelled and entered-in-error their own words', () => {
     expect(presentStatus('CANCELLED')).toMatchObject({ tone: 'neutral', done: true });
-    expect(presentStatus('ENTERED_IN_ERROR')).toMatchObject({
-      label: 'Entered in error',
-      tone: 'danger',
-      done: true,
-    });
+    // The word is a catalogue key now, and the source catalogue still spells it
+    // out rather than leaving it to be derived from the enum member - which is
+    // what used to render `ENTERED_IN_ERROR` as "Entered in error" only because
+    // two statuses carried a hand-written exception.
+    const presented = presentStatus('ENTERED_IN_ERROR');
+    expect(presented).toMatchObject({ tone: 'danger', done: true });
+    expect(EN_MESSAGES[presented.labelKey]).toBe('Entered in error');
   });
 });
 

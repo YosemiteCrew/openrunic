@@ -34,6 +34,8 @@ export {
   presentStatus,
   rowForInstant,
   SLOT_MINUTES,
+  STATUS_INLINE_KEY,
+  STATUS_LABEL_KEY,
   toScheduleProvider,
 } from './schedule';
 export type {

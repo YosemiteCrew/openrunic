@@ -7,12 +7,18 @@ import type { ChangeEvent, ReactElement } from 'react';
 
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
-import { InboxList, InboxStreamFilter, slaLabel } from '@/components/inbox';
+import {
+  INBOX_STREAM_INLINE_KEYS,
+  INBOX_STREAM_LABEL_KEYS,
+  InboxList,
+  InboxStreamFilter,
+  slaLabel,
+} from '@/components/inbox';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
-import { formatEnumLabel } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The typed inbox (guidelines C13 plus section 3.3).
@@ -25,11 +31,26 @@ import { formatEnumLabel } from '@/lib/format';
  * The badge counts in the rail belong to this screen and nothing else nags.
  */
 
-const ASSIGNMENT_FILTERS: SelectOption[] = [
-  { value: '', label: 'Everything' },
-  { value: 'ME', label: 'Mine' },
-  { value: 'TEAM', label: 'Team pool' },
+/**
+ * The assignment filter, as data with keys rather than words.
+ *
+ * The options are built at render from this, because a module constant is
+ * evaluated once for the whole process and the reader's language is not known
+ * then. `value` is what the API filters on and stays a code.
+ */
+const ASSIGNMENT_FILTERS: readonly { value: Assignment | ''; labelKey: string }[] = [
+  { value: '', labelKey: 'inbox.filter.everything' },
+  { value: 'ME', labelKey: 'inbox.filter.mine' },
+  { value: 'TEAM', labelKey: 'inbox.filter.teamPool' },
 ];
+
+/** Palette synonyms from one comma-separated message, in the reader's language. */
+function synonyms(list: string): string[] {
+  return list
+    .split(',')
+    .map((word) => word.trim())
+    .filter((word) => word !== '');
+}
 
 interface Completion {
   item: InboxItem;
@@ -44,6 +65,7 @@ export interface InboxScreenProps {
 }
 
 export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProps>): ReactElement {
+  const t = useTranslator();
   const [stream, setStream] = useState<InboxStream | null>(null);
   const [assignment, setAssignment] = useState<Assignment | ''>('');
   const [doneIds, setDoneIds] = useState<string[]>([]);
@@ -89,47 +111,55 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
     setCompletion(null);
   }, [completion]);
 
-  const claim = useCallback((item: InboxItem) => {
-    setClaimedIds((previous) => [...previous, item.id]);
-    setCompletion({ item, label: 'Assigned to you' });
-  }, []);
+  const claim = useCallback(
+    (item: InboxItem) => {
+      setClaimedIds((previous) => [...previous, item.id]);
+      setCompletion({ item, label: t('inbox.list.assigned') });
+    },
+    [t]
+  );
 
   const commands = useMemo<Command[]>(
     () => [
       ...INBOX_STREAMS.map((candidate) => ({
         id: `inbox.stream.${candidate.toLowerCase()}`,
         group: 'actions' as const,
-        label: `Show ${formatEnumLabel(candidate).toLowerCase()} in the inbox`,
-        keywords: ['filter inbox', candidate.toLowerCase()],
+        label: t('inbox.command.showStream', {
+          stream: t(INBOX_STREAM_INLINE_KEYS[candidate]),
+        }),
+        /* The enum member itself joins the reader's own search words: somebody
+           who knows the stream by its API name should still find the command,
+           and that name is a code rather than a word to translate. */
+        keywords: [...synonyms(t('inbox.command.showStream.keywords')), candidate.toLowerCase()],
         icon: 'filter',
         perform: () => setStream(candidate),
       })),
       {
         id: 'inbox.stream.all',
         group: 'actions',
-        label: 'Show every inbox stream',
-        keywords: ['clear filter'],
+        label: t('inbox.command.showAll'),
+        keywords: synonyms(t('inbox.command.showAll.keywords')),
         icon: 'inbox',
         perform: () => setStream(null),
       },
       {
         id: 'inbox.mine',
         group: 'actions',
-        label: 'Show only my inbox items',
-        keywords: ['assigned to me'],
+        label: t('inbox.command.mine'),
+        keywords: synonyms(t('inbox.command.mine.keywords')),
         icon: 'user-round',
         perform: () => setAssignment('ME'),
       },
       {
         id: 'inbox.team',
         group: 'actions',
-        label: 'Show the team pool',
-        keywords: ['shared queue', 'unassigned'],
+        label: t('inbox.command.team'),
+        keywords: synonyms(t('inbox.command.team.keywords')),
         icon: 'users',
         perform: () => setAssignment('TEAM'),
       },
     ],
-    []
+    [t]
   );
 
   const overdue = visible.filter((item) => slaState(item.dueAt, now) === 'OVERDUE');
@@ -137,12 +167,15 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
 
   return (
     <AppShell
-      title="Inbox"
-      description="Results, messages, refills and cosigns, in one typed queue."
+      title={t('inbox.title')}
+      description={t('inbox.description')}
       topBarActions={
         <Select
-          label="Assignment"
-          options={ASSIGNMENT_FILTERS}
+          label={t('inbox.filter.assignment')}
+          options={ASSIGNMENT_FILTERS.map((filter): SelectOption => ({
+            value: filter.value,
+            label: t(filter.labelKey),
+          }))}
           value={assignment}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
             setAssignment(event.target.value as Assignment | '')
@@ -150,16 +183,20 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
         />
       }
       rightRail={
-        <Card tone="cream" overline="Today" title={`${visible.length} open items`}>
+        <Card
+          tone="cream"
+          overline={t('inbox.rail.overline')}
+          title={t('inbox.rail.openItems', { count: visible.length })}
+        >
           <p className="or-small">
             {oldestOverdue
-              ? `${overdue.length} past their due time. The oldest is ${slaLabel(oldestOverdue.dueAt, now).toLowerCase()}.`
-              : 'Nothing is overdue. The oldest item is still inside its promise.'}
+              ? t('inbox.rail.overdueSummary', {
+                  count: overdue.length,
+                  oldest: slaLabel(t, oldestOverdue.dueAt, now, 'inline'),
+                })
+              : t('inbox.rail.nothingOverdue')}
           </p>
-          <p className="or-small or-muted">
-            Every disposition here is audited, and an approval can be undone from the toast while it
-            is still on screen.
-          </p>
+          <p className="or-small or-muted">{t('inbox.rail.auditNote')}</p>
         </Card>
       }
     >
@@ -170,23 +207,28 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
         onChange={setStream}
       />
 
-      <Card tone="cream" title={stream ? `${formatEnumLabel(stream)} stream` : 'Everything'}>
+      <Card
+        tone="cream"
+        title={
+          stream
+            ? t('inbox.streamTitle', { stream: t(INBOX_STREAM_LABEL_KEYS[stream]) })
+            : t('inbox.filter.everything')
+        }
+      >
         <AsyncBoundary
           state={inbox}
-          subject="the inbox"
+          subject={t('inbox.subject')}
           isEmpty={() => visible.length === 0}
           loadingRows={6}
           empty={{
             title: stream
-              ? `No ${formatEnumLabel(stream).toLowerCase()} waiting`
-              : 'Inbox zero, for now',
-            message: stream
-              ? 'Nothing in this stream needs you. Clear the filter to see the rest of the queue.'
-              : 'New results, messages, refills and cosigns land here as they arrive.',
+              ? t('inbox.empty.streamTitle', { stream: t(INBOX_STREAM_INLINE_KEYS[stream]) })
+              : t('inbox.empty.allTitle'),
+            message: stream ? t('inbox.empty.streamMessage') : t('inbox.empty.allMessage'),
             icon: 'inbox',
             action: (
               <Button href="/schedule" iconLeft="calendar-days">
-                Go to the schedule
+                {t('inbox.empty.goToSchedule')}
               </Button>
             ),
           }}
@@ -211,7 +253,7 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
             message={completion.item.summary}
             action={
               <Button variant="ghost" size="sm" onClick={undo}>
-                Undo
+                {t('inbox.list.undo')}
               </Button>
             }
             onClose={() => setCompletion(null)}

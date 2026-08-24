@@ -7,6 +7,7 @@ import type { ReactElement } from 'react';
 
 import { chartPatientIdFromPath } from '@/lib/agent';
 import type { AgentModelIdentity } from '@/lib/agent';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { useAssistant } from './AssistantProvider';
 import { AssistantComposer } from './AssistantComposer';
@@ -34,6 +35,7 @@ import { useConversation } from './useConversation';
 export const ASSISTANT_PANEL_ID = 'or-assistant-panel';
 
 export function AssistantPanel(): ReactElement | null {
+  const t = useTranslator();
   const { availability, capabilities, isOpen, close, runTurn } = useAssistant();
   const pathname = usePathname();
   const chartPatientId = chartPatientIdFromPath(pathname);
@@ -87,29 +89,29 @@ export function AssistantPanel(): ReactElement | null {
   if (!onScreen) return null;
 
   return (
-    <aside ref={panelRef} id={ASSISTANT_PANEL_ID} className="or-assistant" aria-label="Assistant">
+    <aside
+      ref={panelRef}
+      id={ASSISTANT_PANEL_ID}
+      className="or-assistant"
+      aria-label={t('assistant.name')}
+    >
       <header className="or-assistant__head">
-        <h2 className="or-h3">Assistant</h2>
-        <IconButton icon="x" label="Close the assistant" onClick={close} />
+        <h2 className="or-h3">{t('assistant.name')}</h2>
+        <IconButton icon="x" label={t('assistant.close')} onClick={close} />
       </header>
 
       {/* The standing disclosure, above the composer rather than behind a
           link. It is what the surface asserts about itself, and the turn
           request records that it was on screen. */}
-      <p className="or-caption or-assistant__purpose">
-        Documentation support. It finds what is already in the record and shows what each answer was
-        drawn from. It does not advise, does not rank, and does not say what is urgent.
-      </p>
+      <p className="or-caption or-assistant__purpose">{t('assistant.panel.purpose')}</p>
       <ModelLine model={capabilities.model} />
       {chartPatientId === undefined ? null : (
-        <p className="or-caption or-assistant__scope">
-          Answers are limited to the chart you have open.
-        </p>
+        <p className="or-caption or-assistant__scope">{t('assistant.panel.scope')}</p>
       )}
 
       <details className="or-assistant__capabilities">
         <summary className="or-caption">
-          What it can reach here ({capabilities.tools.length})
+          {t('assistant.panel.capabilities', { count: capabilities.tools.length })}
         </summary>
         <ul>
           {capabilities.tools.map((tool) => (
@@ -124,15 +126,12 @@ export function AssistantPanel(): ReactElement | null {
           screen reader restart the answer on every token; this one short
           sentence changes once when a turn starts and once when it settles. */}
       <output aria-live="polite" className="or-visually-hidden">
-        {announcementFor(state)}
+        {announcementFor(t, state)}
       </output>
 
       <div className="or-assistant__transcript">
         {state.turns.length === 0 ? (
-          <p className="or-body or-assistant__intro">
-            Ask about the record in front of you. Every answer shows the rows it was drawn from, and
-            you can open each one.
-          </p>
+          <p className="or-body or-assistant__intro">{t('assistant.panel.intro')}</p>
         ) : (
           <ol className="or-assistant__turns">
             {state.turns.map((turn, index) => (
@@ -166,13 +165,19 @@ export function AssistantPanel(): ReactElement | null {
  * is being sent is the one reading this panel.
  */
 function ModelLine({ model }: Readonly<{ model: AgentModelIdentity }>): ReactElement {
+  const t = useTranslator();
+
+  /* Two whole sentences rather than a frame with the identifiers spliced into
+     it. The model id and the host used to sit in their own monospace spans,
+     which meant the words around them were three translatable fragments - and
+     a sentence assembled from fragments cannot be translated, because the
+     pieces do not stay in that order in another language. The identifiers are
+     values inside the message instead, and this line loses its monospace face
+     to keep its meaning. */
   return (
     <p className="or-caption or-assistant__model">
-      Answers come from <span className="or-mono">{model.modelId}</span> at{' '}
-      <span className="or-mono">{model.endpointHost}</span>.{' '}
-      {model.dataLeavesDeployment
-        ? 'What you type here leaves this deployment and is sent to that endpoint.'
-        : 'Nothing you type here leaves this deployment.'}
+      {t('assistant.model.source', { model: model.modelId, host: model.endpointHost })}{' '}
+      {model.dataLeavesDeployment ? t('assistant.model.leaves') : t('assistant.model.stays')}
     </p>
   );
 }

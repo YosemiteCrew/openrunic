@@ -1,5 +1,6 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Alert, Button, IconButton, Select } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -25,6 +26,7 @@ import { AsyncBoundary } from '@/components/state';
 import { api, useMutation } from '@/lib/api';
 import type { ApiClient, ApiError, Appointment, FacilityDto, Patient } from '@/lib/api';
 import { formatDate, formatName, formatTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * FD-01 Schedule day view: the front door.
@@ -86,17 +88,34 @@ function refusalOf(error: ApiError | null): string | null {
  * no booking verb, rather than opening a dialog whose Book button would post
  * something from nowhere and then report a success the server never granted.
  */
-function bookingBlockedReason(facility: FacilityDto | null, providerCount: number): string | null {
-  if (facility === null) {
-    return 'No active facility came back for this organisation, and a booking has to name the facility it happens at. Add one under Admin, Facilities before booking.';
-  }
+function bookingBlockedReason(
+  t: Translator,
+  facility: FacilityDto | null,
+  providerCount: number
+): string | null {
+  if (facility === null) return t('schedule.day.blocked.noFacility');
   if (providerCount === 0) {
-    return `No active clinician came back for ${facility.name}, and a booking has to name the clinician it is with. Add one under Admin, Users and roles before booking.`;
+    return t('schedule.day.blocked.noProvider', { facility: facility.name });
   }
   return null;
 }
 
+/**
+ * Palette synonyms from one comma-separated message.
+ *
+ * They are per-language and not transliterations: somebody searching in Spanish
+ * does not type "walk in", so the Spanish catalogue carries the words they do
+ * type and this splits whichever list the reader's language supplied.
+ */
+function synonyms(list: string): string[] {
+  return list
+    .split(',')
+    .map((word) => word.trim())
+    .filter((word) => word !== '');
+}
+
 export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): ReactElement {
+  const t = useTranslator();
   const [day, setDay] = useState<string>(() => clinicToday());
   const [facilityId, setFacilityId] = useState<string>('');
   const [providerId, setProviderId] = useState<string>('');
@@ -151,7 +170,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     [providerId, providers]
   );
 
-  const blockedReason = bookingBlockedReason(facility, providers.length);
+  const blockedReason = bookingBlockedReason(t, facility, providers.length);
 
   const slots = useMemo(
     () =>
@@ -182,12 +201,12 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     setConfirming(null);
     refetch();
     setToast({
-      title: 'Checked in',
+      title: t('schedule.checkIn.toast.title'),
       message: patient
-        ? `${formatName(patient.name)} is on the Flow Board.`
-        : 'The visit is on the Flow Board.',
+        ? t('schedule.checkIn.toast.message', { name: formatName(patient.name) })
+        : t('schedule.checkIn.toast.messageUnassigned'),
       href: '/schedule/flow-board',
-      hrefLabel: 'Open the Flow Board',
+      hrefLabel: t('schedule.checkIn.toast.openFlowBoard'),
     });
   };
 
@@ -198,11 +217,18 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     const patient = patientsById.get(details.patientId);
     setBookingSlot(null);
     refetch();
+    /* The visit type is the practice's own catalogue entry, carried on the
+       appointment the server just wrote, so it is interpolated as it stands
+       rather than translated. See `BookingModal`. */
+    const values = {
+      time: formatTime(saved.start),
+      visitType: saved.type.display.toLowerCase(),
+    };
     setToast({
-      title: 'Appointment booked',
-      message: `${patient ? formatName(patient.name) : 'The patient'} is booked at ${formatTime(
-        saved.start
-      )} for a ${saved.type.display.toLowerCase()}.`,
+      title: t('schedule.booking.toast.title'),
+      message: patient
+        ? t('schedule.booking.toast.message', { ...values, name: formatName(patient.name) })
+        : t('schedule.booking.toast.messageUnassigned', values),
     });
   };
 
@@ -211,22 +237,22 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       {
         id: 'schedule.today',
         group: 'actions',
-        label: 'Go to today',
-        keywords: ['now', 'current day', 'reset date'],
+        label: t('schedule.day.command.today'),
+        keywords: synonyms(t('schedule.day.command.today.keywords')),
         icon: 'calendar-check',
         perform: () => setDay(clinicToday()),
       },
       {
         id: 'schedule.previous-day',
         group: 'actions',
-        label: 'Go to the previous day',
+        label: t('schedule.day.command.previousDay'),
         icon: 'chevron-left',
         perform: () => setDay((value) => shiftDay(value, -1)),
       },
       {
         id: 'schedule.next-day',
         group: 'actions',
-        label: 'Go to the next day',
+        label: t('schedule.day.command.nextDay'),
         icon: 'chevron-right',
         perform: () => setDay((value) => shiftDay(value, 1)),
       },
@@ -241,16 +267,16 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
         {
           id: 'schedule.find-available',
           group: 'actions',
-          label: 'Find available slots',
-          keywords: ['book', 'open slot', 'next available', 'appointment'],
+          label: t('schedule.day.command.findAvailable'),
+          keywords: synonyms(t('schedule.day.command.findAvailable.keywords')),
           icon: 'calendar-search',
           perform: () => setFindingSlots(true),
         },
         {
           id: 'schedule.walk-in',
           group: 'actions',
-          label: 'Add walk-in',
-          keywords: ['walk in', 'unscheduled', 'squeeze in'],
+          label: t('schedule.action.addWalkIn'),
+          keywords: synonyms(t('schedule.day.command.walkIn.keywords')),
           icon: 'user-plus',
           perform: openWalkIn,
         }
@@ -262,46 +288,53 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       registered.push({
         id: 'schedule.check-in',
         group: 'actions',
-        label: patient ? `Check in ${givenName(patient.name)}` : 'Check in the selected visit',
-        keywords: ['arrive', 'arrival', 'front desk'],
+        label: patient
+          ? t('schedule.checkIn.named', { name: givenName(patient.name) })
+          : t('schedule.day.command.checkInSelected'),
+        keywords: synonyms(t('schedule.day.command.checkIn.keywords')),
         icon: 'log-in',
         perform: () => setConfirming(selected),
       });
     }
 
     return registered;
-  }, [blockedReason, openWalkIn, patientsById, selected]);
+  }, [blockedReason, openWalkIn, patientsById, selected, t]);
 
   const confirmingPatient = confirming?.patientId
     ? patientsById.get(confirming.patientId)
     : undefined;
 
-  /* Where the day is happening, as the clause that follows the date. It is
-     empty until the facility comes back, because the first render of this
-     screen has no `state.data` yet and a heading reading "at undefined" is
-     worse than a heading that is briefly only a date. */
-  const atFacility = facility ? ` at ${facility.name}` : '';
+  /* Where the day is happening, named in the heading rather than only in the
+     top bar, because it is the facility a booking made from this screen is
+     written against. Two whole sentences rather than one with a clause the code
+     glues in: the first render of this screen has no `state.data` yet, and a
+     language that puts the place somewhere else in the sentence cannot move a
+     fragment that arrived already assembled. */
+  const description = facility
+    ? t('schedule.day.descriptionAtFacility', {
+        date: formatDate(day),
+        facility: facility.name,
+      })
+    : t('schedule.day.description', { date: formatDate(day) });
 
   return (
     <AppShell
-      title="Schedule"
-      /* The facility is named here rather than only in the top bar, because it
-         is the one a booking made from this screen is written against. */
-      description={`${formatDate(day)}${atFacility}. The clinic day, per provider, with status inline.`}
+      title={t('schedule.day.title')}
+      description={description}
       topBarActions={
         <div className="or-day-pager">
           <IconButton
             icon="chevron-left"
-            label="Previous day"
+            label={t('schedule.day.previousDay')}
             variant="ghost"
             onClick={() => setDay(shiftDay(day, -1))}
           />
           <Button variant="ghost" size="sm" onClick={() => setDay(clinicToday())}>
-            Today
+            {t('schedule.day.today')}
           </Button>
           <IconButton
             icon="chevron-right"
-            label="Next day"
+            label={t('schedule.day.nextDay')}
             variant="ghost"
             onClick={() => setDay(shiftDay(day, 1))}
           />
@@ -310,18 +343,18 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
               nothing. */}
           {facilities.length > 1 ? (
             <Select
-              aria-label="Facility"
+              aria-label={t('schedule.filter.facility')}
               value={facility?.id ?? ''}
               onChange={(event) => setFacilityId(event.target.value)}
               options={facilities.map((row) => ({ value: row.id, label: row.name }))}
             />
           ) : null}
           <Select
-            aria-label="Provider"
+            aria-label={t('schedule.filter.provider')}
             value={providerId}
             onChange={(event) => setProviderId(event.target.value)}
             options={[
-              { value: '', label: 'All providers' },
+              { value: '', label: t('schedule.filter.allProviders') },
               ...providers.map((provider) => ({ value: provider.id, label: provider.name })),
             ]}
           />
@@ -335,14 +368,14 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
             disabled={blockedReason !== null}
             onClick={openWalkIn}
           >
-            Add walk-in
+            {t('schedule.action.addWalkIn')}
           </Button>
           <Button
             iconLeft="calendar-search"
             disabled={blockedReason !== null}
             onClick={() => setFindingSlots(true)}
           >
-            Find available
+            {t('schedule.action.findAvailable')}
           </Button>
         </>
       }
@@ -363,7 +396,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
           no facility yet, and a notice saying so would be reporting the loading
           state as a configuration fault. */}
       {state.status === 'success' && blockedReason !== null ? (
-        <Alert tone="caution" title="This day cannot be booked into" message={blockedReason} />
+        <Alert tone="caution" title={t('schedule.day.blocked.title')} message={blockedReason} />
       ) : null}
 
       {findingSlots && facility !== null ? (
@@ -378,19 +411,19 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
 
       <AsyncBoundary
         state={state}
-        subject="today's schedule"
+        subject={t('schedule.day.subject')}
         loadingRows={10}
         isEmpty={(data) => data.appointments.length === 0}
         empty={{
-          title: 'No appointments on this day',
-          message: 'Nothing is booked for this date. Find an open slot to book the first visit.',
+          title: t('schedule.day.empty.title'),
+          message: t('schedule.day.empty.message'),
           icon: 'calendar-days',
           // No verb when the verb cannot be performed: the alert above already
           // says what is missing, and a button that opens nothing is worse.
           action:
             blockedReason === null ? (
               <Button iconLeft="calendar-search" onClick={() => setFindingSlots(true)}>
-                Find available
+                {t('schedule.action.findAvailable')}
               </Button>
             ) : undefined,
         }}

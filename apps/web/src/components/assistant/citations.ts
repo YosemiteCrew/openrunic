@@ -1,3 +1,5 @@
+import type { Translator } from '@openrunic/i18n';
+
 import type { AgentSource } from '@/lib/agent';
 
 /**
@@ -27,16 +29,21 @@ export function citationHref(source: AgentSource): string | null {
 }
 
 /**
- * How the resource type reads to a person. Unmapped types fall through to the
- * server's own word for the type, which is the API's spelling of the aggregate
- * and is already a noun a clinician recognises.
+ * How the resource type reads to a person, as catalogue keys.
+ *
+ * Only the three whose API name is not already the word a clinician uses.
+ * Unmapped types fall through to the server's own word for the type, which is
+ * the API's spelling of the aggregate and is already a noun a clinician
+ * recognises - and is left in that spelling rather than gaining a second name
+ * invented here.
  */
-const TYPE_LABELS: Record<string, string> = {
-  ClinicalNote: 'Note',
-  DiagnosticReport: 'Result',
-  ProblemList: 'Problem list',
+const TYPE_LABEL_KEYS: Record<string, string> = {
+  ClinicalNote: 'assistant.citation.note',
+  DiagnosticReport: 'assistant.citation.result',
+  ProblemList: 'assistant.citation.problemList',
 };
 
-export function citationTypeLabel(source: AgentSource): string {
-  return TYPE_LABELS[source.resourceType] ?? source.resourceType;
+export function citationTypeLabel(t: Translator, source: AgentSource): string {
+  const key = TYPE_LABEL_KEYS[source.resourceType];
+  return key === undefined ? source.resourceType : t(key);
 }

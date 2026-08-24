@@ -85,7 +85,7 @@ export function ChargePicker({
                       <span className="or-mono">{code.code}</span>
                       <span className="or-code-picker__display">{code.display}</span>
                       <span className="or-mono or-code-picker__fee">
-                        {formatMoney(code.fee, { currency }).text}
+                        {formatMoney(t, code.fee, { currency }).text}
                       </span>
                     </Button>
                   </li>

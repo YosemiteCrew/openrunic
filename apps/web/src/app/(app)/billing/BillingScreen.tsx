@@ -100,7 +100,7 @@ export function BillingScreen(): ReactElement {
         />
         <VitalStat
           label={t('billing.home.denied')}
-          value={formatMoney(denied, { currency: 'USD' }).text}
+          value={formatMoney(t, denied, { currency: 'USD' }).text}
           state={counts.DENIED > 0 ? 'danger' : 'success'}
           stateLabel={t(
             counts.DENIED === 1
@@ -119,7 +119,7 @@ export function BillingScreen(): ReactElement {
         />
         <VitalStat
           label={t('billing.home.patientAr')}
-          value={formatMoney(ar.total, { currency: 'USD' }).text}
+          value={formatMoney(t, ar.total, { currency: 'USD' }).text}
           state={ar.buckets.DAYS_91_PLUS > 0 ? 'danger' : 'neutral'}
           stateLabel={
             ar.buckets.DAYS_91_PLUS > 0

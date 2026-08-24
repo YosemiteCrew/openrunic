@@ -257,7 +257,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
           <VitalStat
             key={band.key}
             label={t(band.labelKey)}
-            value={formatMoney(band.amount, { currency: 'USD' }).text}
+            value={formatMoney(t, band.amount, { currency: 'USD' }).text}
             state={band.tone}
             stateLabel={t(
               band.count === 1 ? 'billing.claims.bandState.one' : 'billing.claims.bandState.other',

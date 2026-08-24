@@ -200,22 +200,68 @@ describe('formatElapsed', () => {
 
 describe('formatMoney', () => {
   it('renders an explicit currency', () => {
-    expect(formatMoney(38).text).toBe('$38.00');
+    expect(formatMoney(english, 38).text).toBe('$38.00');
   });
 
   it('labels a negative as a credit by default', () => {
-    const money = formatMoney(-38);
+    const money = formatMoney(english, -38);
     expect(money.text).toBe('($38.00)');
     expect(money.label).toBe('Credit');
     expect(money.negative).toBe(true);
   });
 
   it('lets the screen say what a negative means', () => {
-    expect(formatMoney(-12.5, { negativeLabel: 'Refund' }).label).toBe('Refund');
+    expect(formatMoney(english, -12.5, { negativeLabel: 'refund' }).label).toBe('Refund');
   });
 
   it('spells the amount out for assistive technology', () => {
-    expect(formatMoney(-38).srText).toContain('credit');
+    expect(formatMoney(english, -38).srText).toContain('credit');
+  });
+
+  it('writes the amount the way the reader writes amounts', () => {
+    // Separators, decimal mark and symbol position are all the reader's, and all
+    // three differ here. This is what a fixed `en-US` was costing every Spanish
+    // reader on every billing screen.
+    //
+    // The gap before the symbol is a non-breaking space, written as an escape
+    // rather than pasted in: a literal U+00A0 in a source file looks exactly
+    // like a space, so the next person to touch this test would "fix" it into
+    // one and spend an afternoon on why.
+    expect(formatMoney(spanish, 1234.5).text).toBe('1234,50\u{a0}$');
+    expect(formatMoney(english, 1234.5).text).toBe('$1,234.50');
+  });
+
+  it("says what a negative means in the reader's language", () => {
+    const credit = formatMoney(spanish, -38);
+    expect(credit.label).toBe('Saldo a favor');
+    expect(formatMoney(spanish, -38, { negativeLabel: 'refund' }).label).toBe('Reembolso');
+  });
+
+  it('keeps the parentheses whatever the language', () => {
+    // `Intl` would write a Spanish negative as "-38,00 $" if this used
+    // `currencySign: 'accounting'`, and a leading minus at the end of a ledger
+    // column is exactly the signal the parentheses exist to replace. The
+    // brackets are this product's rule, not the reader's.
+    expect(formatMoney(spanish, -38).text).toBe('(38,00\u{a0}$)');
+    expect(formatMoney(english, -38).text).toBe('($38.00)');
+  });
+
+  it('speaks the whole amount as one sentence, not a lowercased label', () => {
+    // `srText` used to be the spoken amount with `label.toLowerCase()` glued on.
+    // The label and the spoken word are now separate messages, so a language
+    // that capitalises the noun in both places can have it.
+    const money = formatMoney(spanish, -38);
+    expect(money.srText).toBe('38,00 dólares estadounidenses de saldo a favor');
+    expect(money.srText).not.toContain(money.label ?? '');
+  });
+
+  it('does not hand one reader the formatter it built for another', () => {
+    // The formatter cache used to be keyed on the options alone, so the first
+    // reader to open a ledger decided how every later one saw it. Interleaved
+    // deliberately: the same options, three times, in two languages.
+    expect(formatMoney(english, 1234.5).text).toBe('$1,234.50');
+    expect(formatMoney(spanish, 1234.5).text).toBe('1234,50\u{a0}$');
+    expect(formatMoney(english, 1234.5).text).toBe('$1,234.50');
   });
 });
 

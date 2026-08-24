@@ -129,8 +129,8 @@ export function StatementDrawer({
         <div className="or-statement">
           <p className="or-body-lg or-statement__sentence">
             {t('billing.statementDrawer.sentence', {
-              insurance: formatMoney(totals.insurancePaid, { currency: single.currency }).text,
-              share: formatMoney(totals.outstanding, { currency: single.currency }).text,
+              insurance: formatMoney(t, totals.insurancePaid, { currency: single.currency }).text,
+              share: formatMoney(t, totals.outstanding, { currency: single.currency }).text,
             })}
           </p>
 
@@ -190,7 +190,7 @@ export function StatementDrawer({
                 <span>
                   {single.paymentPlan
                     ? t('billing.statementDrawer.plan', {
-                        amount: formatMoney(single.paymentPlan.instalmentAmount, {
+                        amount: formatMoney(t, single.paymentPlan.instalmentAmount, {
                           currency: single.currency,
                         }).text,
                         paid: single.paymentPlan.instalmentsPaid,
@@ -242,7 +242,7 @@ export function StatementDrawer({
       title={t('billing.statementDrawer.runTitle')}
       subtitle={t('billing.statementDrawer.runSubtitle', {
         count: accounts.length,
-        total: formatMoney(total, { currency: 'USD' }).text,
+        total: formatMoney(t, total, { currency: 'USD' }).text,
       })}
       onClose={onClose}
       footer={

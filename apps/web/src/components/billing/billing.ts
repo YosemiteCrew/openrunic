@@ -1,3 +1,4 @@
+import type { Translator } from '@openrunic/i18n';
 import type { StatusTone } from '@openrunic/ui';
 
 import type {
@@ -144,7 +145,16 @@ export interface ScrubFinding {
  * defect in the claim, and the biller may still decide to bill it; it is
  * surfaced where the money is captured so the decision is deliberate.
  */
-export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): ScrubFinding[] {
+export function scrubFeeSheet(
+  // The findings this returns are decided by billing rules, not by language.
+  // The translator is here because one of them quotes an amount, and an amount
+  // is written differently in different languages: the outstanding copay reads
+  // "$38.00" or "38,00 $" depending on who is looking at the fee sheet. The
+  // rules above it do not consult it and must not start to.
+  t: Translator,
+  sheet: FeeSheet,
+  lines: readonly ChargeLine[]
+): ScrubFinding[] {
   const findings: ScrubFinding[] = [];
   const active = lines.filter((line) => !line.deleted);
 
@@ -187,7 +197,7 @@ export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): Sc
   }
 
   if (sheet.copayDue > sheet.copayCollected) {
-    const outstanding = formatMoney(sheet.copayDue - sheet.copayCollected, {
+    const outstanding = formatMoney(t, sheet.copayDue - sheet.copayCollected, {
       currency: sheet.currency,
     });
     findings.push({

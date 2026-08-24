@@ -40,9 +40,9 @@ export interface CoverageCardProps {
 }
 
 /** A money field that has no value says so, rather than showing a zero. */
-function moneyText(amount: number | null | undefined): string {
+function moneyText(t: Translator, amount: number | null | undefined): string {
   if (amount === null || amount === undefined) return NOT_RECORDED;
-  return formatMoney(amount).text;
+  return formatMoney(t, amount).text;
 }
 
 /**
@@ -85,7 +85,7 @@ function CoverageFacts({
       </div>
       <div>
         <dt className="or-caption">{t('insurance.coverage.copay')}</dt>
-        <dd className="or-mono">{moneyText(coverage.copayAmount)}</dd>
+        <dd className="or-mono">{moneyText(t, coverage.copayAmount)}</dd>
       </div>
       <div>
         <dt className="or-caption">{t('insurance.coverage.assignment')}</dt>
@@ -108,11 +108,11 @@ function ActiveBenefits({
     <dl className="or-coverage__benefits">
       <div>
         <dt className="or-caption">{t('insurance.coverage.copayToday')}</dt>
-        <dd className="or-mono">{moneyText(result.copayAmount)}</dd>
+        <dd className="or-mono">{moneyText(t, result.copayAmount)}</dd>
       </div>
       <div>
         <dt className="or-caption">{t('insurance.coverage.deductibleRemaining')}</dt>
-        <dd className="or-mono">{moneyText(result.deductibleRemaining)}</dd>
+        <dd className="or-mono">{moneyText(t, result.deductibleRemaining)}</dd>
       </div>
     </dl>
   );

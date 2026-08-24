@@ -220,7 +220,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
         <span className="or-claim-age">
           <span>{formatDate(account.lastPaymentAt, 'dense')}</span>
           <span className="or-mono or-caption">
-            {formatMoney(account.lastPaymentAmount ?? 0, { currency: account.currency }).text}
+            {formatMoney(t, account.lastPaymentAmount ?? 0, { currency: account.currency }).text}
           </span>
         </span>
       ) : (
@@ -280,7 +280,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
           <VitalStat
             key={candidate}
             label={t(BUCKET_LABEL_KEYS[candidate])}
-            value={formatMoney(summary.buckets[candidate], { currency: 'USD' }).text}
+            value={formatMoney(t, summary.buckets[candidate], { currency: 'USD' }).text}
             state={bucketTone(candidate)}
             stateLabel={t(BUCKET_STATE_LABEL_KEYS[candidate])}
           />
@@ -313,7 +313,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
             >
               {t(BUCKET_LABEL_KEYS[candidate])}{' '}
               <span className="or-mono">
-                {formatMoney(summary.buckets[candidate], { currency: 'USD' }).text}
+                {formatMoney(t, summary.buckets[candidate], { currency: 'USD' }).text}
               </span>
             </button>
           ))}

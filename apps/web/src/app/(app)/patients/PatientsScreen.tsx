@@ -1,5 +1,6 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Button, Card, Input } from '@openrunic/ui';
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -12,7 +13,9 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { usePatients } from '@/lib/api';
 import type { ApiClient } from '@/lib/api';
-import { formatCount } from '@/lib/format';
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * FD-06 Patient search: find the person, or find out they are not here yet.
@@ -32,13 +35,20 @@ export interface PatientsScreenProps {
  * The table's caption names the view, and the search term when there is one, so
  * a screen reader hears what the rows below were narrowed by.
  */
-function tableCaption(viewLabel: string, search: string): string {
+function tableCaption(viewLabel: string, search: string, t: Translator): string {
   const term = search.trim();
   if (!term) return viewLabel;
-  return `${viewLabel} matching "${term}"`;
+  return t('patients.roster.captionFiltered', { view: viewLabel, term });
 }
 
+/** "1 patient in this view", in the reader's language and its own plural rule. */
+const ROSTER_COUNT: CountedMessage = {
+  oneKey: 'patients.roster.countOne',
+  otherKey: 'patients.roster.countOther',
+};
+
 export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): ReactElement {
+  const t = useTranslator();
   const [search, setSearch] = useState('');
   const [viewId, setViewId] = useState<string>(DEFAULT_VIEW_ID);
   const [asOf] = useState<Date>(() => clinicNow());
@@ -50,52 +60,56 @@ export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): React
   );
   const state = usePatients(query, { client });
 
+  /* The command id is built from the view's own id and never from its label: an
+     id derived from translated words changes when the reader's language does,
+     and anything keyed on it stops matching. The keywords are per-language,
+     with the view id appended because a stable token is worth typing too. */
   const commands = useMemo<Command[]>(
     () => [
       ...SAVED_VIEWS.map((saved): Command => ({
         id: `patients.view.${saved.id}`,
         group: 'actions',
-        label: `Show ${saved.label.toLowerCase()}`,
-        keywords: ['roster', 'view', 'filter', saved.id],
+        label: t(saved.commandKey),
+        keywords: [...searchWords(t('patients.command.viewKeywords')), saved.id],
         icon: 'list-filter',
         perform: () => setViewId(saved.id),
       })),
       {
         id: 'patients.clear-search',
         group: 'actions',
-        label: 'Clear the patient search',
-        keywords: ['reset', 'empty search'],
+        label: t('patients.command.clearSearch'),
+        keywords: searchWords(t('patients.command.clearSearch.keywords')),
         icon: 'x',
         perform: () => setSearch(''),
       },
     ],
-    []
+    [t]
   );
 
   return (
     <AppShell
-      title="Patients"
-      description="Find a patient, or register a new one without creating a duplicate."
+      title={t('patients.roster.title')}
+      description={t('patients.roster.description')}
       actions={
         <Button iconLeft="user-plus" href="/patients/new">
-          Register new patient
+          {t('patients.roster.register')}
         </Button>
       }
     >
       <ScreenCommands commands={commands} />
 
-      <Card overline="Search" title="Find a patient">
+      <Card overline={t('patients.roster.searchOverline')} title={t('patients.roster.searchTitle')}>
         <Input
-          label="Name, preferred name or MRN"
-          hint="Searches as you type. Try a family name or an OR- number."
+          label={t('patients.roster.searchLabel')}
+          hint={t('patients.roster.searchHint')}
           iconLeft="search"
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Patientsson, Tess, OR-100482"
+          placeholder={t('patients.roster.searchPlaceholder')}
         />
 
-        <fieldset className="or-roster__views" aria-label="Saved views">
+        <fieldset className="or-roster__views" aria-label={t('patients.roster.savedViews')}>
           {SAVED_VIEWS.map((saved) => (
             <Button
               key={saved.id}
@@ -104,27 +118,29 @@ export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): React
               aria-pressed={saved.id === viewId}
               onClick={() => setViewId(saved.id)}
             >
-              {saved.label}
+              {t(saved.labelKey)}
             </Button>
           ))}
         </fieldset>
-        <p className="or-caption or-roster__view-note">{view.description}</p>
+        <p className="or-caption or-roster__view-note">{t(view.descriptionKey)}</p>
       </Card>
 
       <AsyncBoundary
         state={state}
-        subject="the patient list"
+        subject={t('patients.roster.subject')}
         loadingRows={8}
         isEmpty={isEmptyList}
         empty={{
-          title: search.trim() ? 'No patient matches that search' : 'No patients in this view',
+          title: search.trim()
+            ? t('patients.roster.emptySearchTitle')
+            : t('patients.roster.emptyViewTitle'),
           message: search.trim()
-            ? 'Check the spelling, or search by MRN. If this person is new to the practice, register them.'
-            : 'Nothing matches this saved view yet. Register a patient, or switch to all patients.',
+            ? t('patients.roster.emptySearchMessage')
+            : t('patients.roster.emptyViewMessage'),
           icon: 'user-search',
           action: (
             <Button iconLeft="user-plus" href="/patients/new">
-              Register new patient
+              {t('patients.roster.register')}
             </Button>
           ),
         }}
@@ -134,10 +150,10 @@ export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): React
             <PatientTable
               patients={page.data}
               asOf={asOf}
-              caption={tableCaption(view.label, search)}
+              caption={tableCaption(t(view.labelKey), search, t)}
             />
             <p className="or-caption or-roster__count">
-              {formatCount(page.page.total, 'patient')} in this view
+              {counted(t, ROSTER_COUNT, page.page.total)}
             </p>
           </>
         )}

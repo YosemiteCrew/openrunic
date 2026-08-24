@@ -1,5 +1,6 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Button, Card, Input, Modal, Select, Switch, Toast } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -27,6 +28,8 @@ import {
 } from '@/lib/api';
 import type { AdministrativeGender, ApiClient, Patient, SensitivityClass } from '@/lib/api';
 import { formatEnumLabel, formatMrn } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * FD-06 Register a patient: four required fields, and no duplicate.
@@ -60,19 +63,51 @@ function fieldId(field: RegistrationField): string {
   return `register-${field}`;
 }
 
-const FIELD_LABEL: Record<string, string> = {
-  mrn: 'Medical record number',
-  given: 'Given name',
-  family: 'Family name',
-  birthDate: 'Date of birth',
-  phoneMobile: 'Mobile number',
-  email: 'Email',
+/**
+ * The label each field is named by in the error summary, as a catalogue key.
+ *
+ * Only the fields that can carry an error appear here, and each key is the same
+ * one the field's own label uses: an error summary that named a field
+ * differently from the field it links to would send somebody looking for a
+ * control that is not there.
+ */
+const FIELD_LABEL_KEY: Record<string, string> = {
+  mrn: 'patients.field.mrn',
+  given: 'patients.field.given',
+  family: 'patients.field.family',
+  birthDate: 'patients.field.birthDate',
+  phoneMobile: 'patients.field.phoneMobile',
+  email: 'patients.field.email',
 };
+
+/**
+ * What the error summary calls a field.
+ *
+ * Falls back to the field's own name, which is what the summary did before any
+ * of this was translated: an unnamed link would be worse than a technical one.
+ */
+function fieldLabel(field: RegistrationField, t: Translator): string {
+  const key = FIELD_LABEL_KEY[field];
+  return key === undefined ? field : t(key);
+}
+
+/**
+ * The languages a record can carry, as data.
+ *
+ * The tag is the stored value and is not copy; the label is. Kept as a table so
+ * the four options are reviewable together rather than spelled out in JSX.
+ */
+const LANGUAGE_OPTIONS: readonly { value: string; labelKey: string }[] = [
+  { value: 'en-US', labelKey: 'patients.language.enUS' },
+  { value: 'es-US', labelKey: 'patients.language.esUS' },
+  { value: 'de-DE', labelKey: 'patients.language.deDE' },
+  { value: 'sv-SE', labelKey: 'patients.language.svSE' },
+];
 
 /**
  * Everything a fieldset needs to render and report one field.
  *
- * Passed as one object rather than four props because the four always travel
+ * Passed as one object rather than five props because they always travel
  * together: a fieldset that can write a value but not mark it touched would
  * show its error at the wrong moment.
  */
@@ -80,19 +115,21 @@ interface FieldBindings {
   draft: RegistrationDraft;
   set: <K extends RegistrationField>(field: K, value: RegistrationDraft[K]) => void;
   markTouched: (field: RegistrationField) => void;
+  /** The message for a field whose error should be showing, already rendered. */
   showError: (field: RegistrationField) => string | undefined;
+  t: Translator;
 }
 
 function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactElement {
-  const { draft, set, markTouched, showError } = fields;
+  const { draft, set, markTouched, showError, t } = fields;
   return (
-    <Card overline="Required" title="Identity">
+    <Card overline={t('patients.section.required')} title={t('patients.section.identity')}>
       <div className="or-fd-form-grid">
         <Input
           id={fieldId('mrn')}
-          label="Medical record number"
+          label={t('patients.field.mrn')}
           mono
-          hint="Proposed by the practice. Overwrite it if this patient already has a number."
+          hint={t('patients.field.mrnHint')}
           value={draft.mrn}
           error={showError('mrn')}
           onChange={(event) => set('mrn', event.target.value)}
@@ -100,7 +137,7 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
         />
         <Input
           id={fieldId('given')}
-          label="Given name"
+          label={t('patients.field.given')}
           required
           value={draft.given}
           error={showError('given')}
@@ -110,7 +147,7 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
         />
         <Input
           id={fieldId('family')}
-          label="Family name"
+          label={t('patients.field.family')}
           required
           value={draft.family}
           error={showError('family')}
@@ -120,30 +157,32 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
         />
         <Input
           id={fieldId('preferred')}
-          label="Preferred name"
-          hint="What the patient is called. Shown everywhere instead of the given name."
+          label={t('patients.field.preferred')}
+          hint={t('patients.field.preferredHint')}
           value={draft.preferred}
           onChange={(event) => set('preferred', event.target.value)}
         />
         <Input
           id={fieldId('birthDate')}
-          label="Date of birth"
+          label={t('patients.field.birthDate')}
           required
           mono
-          placeholder="YYYY-MM-DD"
+          placeholder={t('patients.field.birthDatePlaceholder')}
           value={draft.birthDate}
           error={showError('birthDate')}
           onChange={(event) => set('birthDate', event.target.value)}
           onBlur={() => markTouched('birthDate')}
         />
+        {/* The gender options themselves are coded values from the API and are
+            rendered through the shared enum formatter, not translated here. */}
         <Select
           id={fieldId('sexAtBirth')}
-          label="Sex at birth"
-          hint="Recorded for clinical decision support. Gender identity is captured on the profile."
+          label={t('patients.field.sexAtBirth')}
+          hint={t('patients.field.sexAtBirthHint')}
           value={draft.sexAtBirth}
           onChange={(event) => set('sexAtBirth', event.target.value as AdministrativeGender | '')}
           options={[
-            { value: '', label: 'Not recorded' },
+            { value: '', label: t('patients.field.sexNotRecorded') },
             ...ADMINISTRATIVE_GENDERS.map((option) => ({
               value: option,
               label: formatEnumLabel(option),
@@ -152,8 +191,8 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
         />
         <Input
           id={fieldId('pronouns')}
-          label="Pronouns"
-          placeholder="she/her"
+          label={t('patients.field.pronouns')}
+          placeholder={t('patients.field.pronounsPlaceholder')}
           value={draft.pronouns}
           onChange={(event) => set('pronouns', event.target.value)}
         />
@@ -163,16 +202,16 @@ function IdentityFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactE
 }
 
 function ContactFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactElement {
-  const { draft, set, markTouched, showError } = fields;
+  const { draft, set, markTouched, showError, t } = fields;
   return (
-    <Card overline="Required" title="Contact">
+    <Card overline={t('patients.section.required')} title={t('patients.section.contact')}>
       <div className="or-fd-form-grid">
         <Input
           id={fieldId('phoneMobile')}
-          label="Mobile number"
+          label={t('patients.field.phoneMobile')}
           required
           mono
-          placeholder="+1 555 0142 118"
+          placeholder={t('patients.field.phonePlaceholder')}
           value={draft.phoneMobile}
           error={showError('phoneMobile')}
           onChange={(event) => set('phoneMobile', event.target.value)}
@@ -180,9 +219,9 @@ function ContactFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactEl
         />
         <Input
           id={fieldId('email')}
-          label="Email"
+          label={t('patients.field.email')}
           type="email"
-          hint="Needed only for portal access and email reminders."
+          hint={t('patients.field.emailHint')}
           value={draft.email}
           error={showError('email')}
           onChange={(event) => set('email', event.target.value)}
@@ -194,31 +233,31 @@ function ContactFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactEl
 }
 
 function AddressFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactElement {
-  const { draft, set } = fields;
+  const { draft, set, t } = fields;
   return (
-    <Card overline="Optional" title="Address">
+    <Card overline={t('patients.section.optional')} title={t('patients.section.address')}>
       <div className="or-fd-form-grid">
         <Input
           id={fieldId('line1')}
-          label="Street address"
+          label={t('patients.field.line1')}
           value={draft.line1}
           onChange={(event) => set('line1', event.target.value)}
         />
         <Input
           id={fieldId('city')}
-          label="City"
+          label={t('patients.field.city')}
           value={draft.city}
           onChange={(event) => set('city', event.target.value)}
         />
         <Input
           id={fieldId('state')}
-          label="State"
+          label={t('patients.field.state')}
           value={draft.state}
           onChange={(event) => set('state', event.target.value)}
         />
         <Input
           id={fieldId('postalCode')}
-          label="Postal code"
+          label={t('patients.field.postalCode')}
           mono
           value={draft.postalCode}
           onChange={(event) => set('postalCode', event.target.value)}
@@ -229,26 +268,26 @@ function AddressFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactEl
 }
 
 function AccessFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactElement {
-  const { draft, set } = fields;
+  const { draft, set, t } = fields;
   return (
-    <Card overline="Optional" title="Access and privacy">
+    <Card overline={t('patients.section.optional')} title={t('patients.section.access')}>
       <div className="or-fd-form-grid">
         <Select
           id={fieldId('languageCode')}
-          label="Preferred language"
+          label={t('patients.field.language')}
           value={draft.languageCode}
           onChange={(event) => set('languageCode', event.target.value)}
-          options={[
-            { value: 'en-US', label: 'English (US)' },
-            { value: 'es-US', label: 'Spanish (US)' },
-            { value: 'de-DE', label: 'German' },
-            { value: 'sv-SE', label: 'Swedish' },
-          ]}
+          options={LANGUAGE_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.labelKey),
+          }))}
         />
+        {/* Sensitivity classes are coded values the API defines, so they keep
+            the one name the enum formatter gives them everywhere. */}
         <Select
           id={fieldId('sensitivityClass')}
-          label="Record sensitivity"
-          hint="Restricted records are visible only to the care team."
+          label={t('patients.field.sensitivity')}
+          hint={t('patients.field.sensitivityHint')}
           value={draft.sensitivityClass}
           onChange={(event) => set('sensitivityClass', event.target.value as SensitivityClass)}
           options={SENSITIVITY_CLASSES.map((option) => ({
@@ -257,8 +296,8 @@ function AccessFields({ fields }: Readonly<{ fields: FieldBindings }>): ReactEle
           }))}
         />
         <Switch
-          label="Invite to the patient portal"
-          hint="Sends an invitation to the email address above."
+          label={t('patients.field.portal')}
+          hint={t('patients.field.portalHint')}
           checked={draft.portalEnabled}
           onChange={() => set('portalEnabled', !draft.portalEnabled)}
         />
@@ -277,6 +316,7 @@ interface Registered {
 export function RegisterPatientScreen({
   client,
 }: Readonly<RegisterPatientScreenProps>): ReactElement {
+  const t = useTranslator();
   const [asOf] = useState<Date>(() => clinicNow());
   const [draft, setDraft] = useState<RegistrationDraft>(() => ({
     ...EMPTY_DRAFT,
@@ -298,9 +338,15 @@ export function RegisterPatientScreen({
     setTouched((previous) => new Set(previous).add(field));
   };
 
+  /* The rules name their messages; the screen renders them. `errors` therefore
+     holds catalogue keys, and nothing below is allowed to put one on screen
+     without going through the translator. */
   const errors: FieldErrors = validateRegistration(draft, asOf);
-  const showError = (field: RegistrationField): string | undefined =>
-    submitted || touched.has(field) ? errors[field] : undefined;
+  const showError = (field: RegistrationField): string | undefined => {
+    const key = errors[field];
+    if (key === undefined || !(submitted || touched.has(field))) return undefined;
+    return t(key);
+  };
 
   /* The duplicate probe searches the practice by family name, which is what the
      API's free-text search indexes; the scoring then weighs date of birth and
@@ -318,7 +364,7 @@ export function RegisterPatientScreen({
   const blocking = isBlocking(matches);
   const blocked = blocking && !overridden;
 
-  const fields: FieldBindings = { draft, set, markTouched, showError };
+  const fields: FieldBindings = { draft, set, markTouched, showError, t };
 
   const errorList = Object.entries(errors) as Array<[RegistrationField, string]>;
   const hasErrors = errorList.length > 0;
@@ -363,34 +409,34 @@ export function RegisterPatientScreen({
       {
         id: 'patients.new.register',
         group: 'actions',
-        label: 'Register this patient',
-        keywords: ['save', 'create patient', 'submit registration'],
+        label: t('patients.command.register'),
+        keywords: searchWords(t('patients.command.register.keywords')),
         icon: 'user-plus',
         perform: submit,
       },
       {
         id: 'patients.new.clear',
         group: 'actions',
-        label: 'Clear the registration form',
-        keywords: ['reset', 'start again', 'empty form'],
+        label: t('patients.command.clearForm'),
+        keywords: searchWords(t('patients.command.clearForm.keywords')),
         icon: 'eraser',
         perform: reset,
       },
     ],
-    [reset, submit]
+    [reset, submit, t]
   );
 
   return (
     <AppShell
-      title="Register patient"
-      description="Four fields make a record bookable. Everything else can wait."
+      title={t('patients.register.title')}
+      description={t('patients.register.description')}
       actions={
         <>
           <Button variant="ghost" iconLeft="arrow-left" href="/patients">
-            Back to patients
+            {t('patients.register.back')}
           </Button>
           <Button iconLeft="user-plus" onClick={submit}>
-            Register patient
+            {t('patients.register.submit')}
           </Button>
         </>
       }
@@ -398,12 +444,12 @@ export function RegisterPatientScreen({
       <ScreenCommands commands={commands} />
 
       {submitted && errorList.length > 0 ? (
-        <Card className="or-register__errors" title="Fix these before registering">
+        <Card className="or-register__errors" title={t('patients.register.errorSummaryTitle')}>
           <div role="alert">
             <ul className="or-register__error-list">
-              {errorList.map(([field, message]) => (
+              {errorList.map(([field, messageKey]) => (
                 <li key={field}>
-                  <a href={`#${fieldId(field)}`}>{FIELD_LABEL[field] ?? field}</a>: {message}
+                  <a href={`#${fieldId(field)}`}>{fieldLabel(field, t)}</a>: {t(messageKey)}
                 </li>
               ))}
             </ul>
@@ -427,9 +473,7 @@ export function RegisterPatientScreen({
       <AccessFields fields={fields} />
 
       {blocked ? (
-        <output className="or-body or-register__blocked">
-          Registration is held until the possible duplicate above is resolved.
-        </output>
+        <output className="or-body or-register__blocked">{t('patients.register.blocked')}</output>
       ) : null}
 
       {confirming ? (
@@ -437,8 +481,12 @@ export function RegisterPatientScreen({
           open
           role="alertdialog"
           width={520}
-          title="Register this patient"
-          description={`Create a record for ${draft.preferred || draft.given} ${draft.family}, born ${draft.birthDate}, under ${formatMrn(draft.mrn)}. The record becomes bookable immediately.`}
+          title={t('patients.register.confirmTitle')}
+          description={t('patients.register.confirmBody', {
+            name: `${draft.preferred || draft.given} ${draft.family}`,
+            birthDate: draft.birthDate,
+            mrn: formatMrn(draft.mrn),
+          })}
           onClose={() => setConfirming(false)}
           footer={
             <>
@@ -447,10 +495,12 @@ export function RegisterPatientScreen({
                 disabled={registration.pending}
                 onClick={() => setConfirming(false)}
               >
-                Cancel
+                {t('patients.register.cancel')}
               </Button>
               <Button disabled={registration.pending} onClick={confirmRegistration}>
-                {registration.pending ? 'Registering...' : 'Register patient'}
+                {registration.pending
+                  ? t('patients.register.registering')
+                  : t('patients.register.submit')}
               </Button>
             </>
           }
@@ -467,11 +517,14 @@ export function RegisterPatientScreen({
         <div className="or-fd-toast-host">
           <Toast
             tone="success"
-            title="Patient registered"
-            message={`${registered.name} is in the practice under ${formatMrn(registered.mrn)} and can be booked.`}
+            title={t('patients.register.toastTitle')}
+            message={t('patients.register.toastMessage', {
+              name: registered.name,
+              mrn: formatMrn(registered.mrn),
+            })}
             action={
               <Button variant="ghost" size="sm" href={`/patients/${registered.id}`}>
-                Open the chart
+                {t('patients.register.openChart')}
               </Button>
             }
             onClose={() => setRegistered(null)}

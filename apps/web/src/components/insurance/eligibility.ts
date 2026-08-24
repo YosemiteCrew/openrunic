@@ -13,11 +13,18 @@ import type { CoveragePriority, EligibilityOutcome } from '@/lib/api';
  */
 
 export interface EligibilityPresentation {
-  /** Always rendered. Status is never colour alone. */
-  label: string;
+  /** Catalogue key for the word. Always rendered: status is never colour alone. */
+  labelKey: string;
   tone: BadgeTone;
-  /** What to do next, in one sentence. Empty when there is nothing to do. */
-  guidance: string;
+  /**
+   * Catalogue key for what to do next, in one sentence, or null when there is
+   * nothing to do.
+   *
+   * `null` rather than an empty string. An empty message renders as a blank
+   * paragraph and looks like a sentence that failed to load, which is the same
+   * failure the catalogue itself is written to avoid.
+   */
+  guidanceKey: string | null;
   /** True when the failure is a partner outage rather than a coverage problem. */
   degraded: boolean;
 }
@@ -26,40 +33,37 @@ export function presentEligibility(outcome: EligibilityOutcome | null): Eligibil
   switch (outcome) {
     case 'ACTIVE':
       return {
-        label: 'Coverage active',
+        labelKey: 'insurance.eligibility.active',
         tone: 'success',
-        guidance: '',
+        guidanceKey: null,
         degraded: false,
       };
     case 'INACTIVE':
       return {
-        label: 'Coverage terminated',
+        labelKey: 'insurance.eligibility.terminated',
         tone: 'danger',
-        guidance:
-          'Ask the patient for a current insurance card, or record this visit as self-pay before check-in.',
+        guidanceKey: 'insurance.eligibility.terminatedGuidance',
         degraded: false,
       };
     case 'NOT_FOUND':
       return {
-        label: 'Member not found',
+        labelKey: 'insurance.eligibility.notFound',
         tone: 'danger',
-        guidance:
-          'Check the member id and date of birth against the card, correct them here, and verify again.',
+        guidanceKey: 'insurance.eligibility.notFoundGuidance',
         degraded: false,
       };
     case 'UNAVAILABLE':
       return {
-        label: 'Payer did not answer',
+        labelKey: 'insurance.eligibility.unavailable',
         tone: 'neutral',
-        guidance:
-          'The eligibility service is unavailable. The check is queued; check-in can continue and this will answer when the service returns.',
+        guidanceKey: 'insurance.eligibility.unavailableGuidance',
         degraded: true,
       };
     default:
       return {
-        label: 'Not verified',
+        labelKey: 'insurance.eligibility.notVerified',
         tone: 'neutral',
-        guidance: 'Verify now to get today’s answer before the patient is roomed.',
+        guidanceKey: 'insurance.eligibility.notVerifiedGuidance',
         degraded: false,
       };
   }
@@ -68,10 +72,32 @@ export function presentEligibility(outcome: EligibilityOutcome | null): Eligibil
 /** Coverage slots, in the order claims are billed. */
 export const PRIORITY_SEQUENCE: readonly CoveragePriority[] = ['PRIMARY', 'SECONDARY', 'TERTIARY'];
 
-export const PRIORITY_LABEL: Record<CoveragePriority, string> = {
-  PRIMARY: 'Primary',
-  SECONDARY: 'Secondary',
-  TERTIARY: 'Tertiary',
+/** What a slot is called on screen, and what it says when a card moves into it. */
+export interface PriorityCopy {
+  /** Catalogue key for the card's overline: "Primary coverage". */
+  readonly overlineKey: string;
+  /** Catalogue key for the toast a reorder raises, taking the payer's name. */
+  readonly movedKey: string;
+}
+
+/**
+ * Both messages are whole phrases per slot rather than an ordinal dropped into
+ * a frame. "Primary" is an adjective that agrees with its noun in most of the
+ * languages this will be translated into, and a frame cannot know that.
+ */
+export const PRIORITY_COPY: Readonly<Record<CoveragePriority, PriorityCopy>> = {
+  PRIMARY: {
+    overlineKey: 'insurance.coverage.overlinePrimary',
+    movedKey: 'insurance.priority.movedPrimary',
+  },
+  SECONDARY: {
+    overlineKey: 'insurance.coverage.overlineSecondary',
+    movedKey: 'insurance.priority.movedSecondary',
+  },
+  TERTIARY: {
+    overlineKey: 'insurance.coverage.overlineTertiary',
+    movedKey: 'insurance.priority.movedTertiary',
+  },
 };
 
 /**

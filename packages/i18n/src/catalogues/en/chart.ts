@@ -14,12 +14,12 @@ import type { Messages } from '../../catalogue.js';
  * code that has one. So they stay as data and are interpolated into these
  * messages rather than replaced by them.
  *
- * The appointment-status words are the case worth stating, because they look
- * convertible. Eleven of the twelve statuses render straight from the enum
- * through `formatEnumLabel`; one, `NOSHOW`, is spelled out by hand because the
- * enum writes it as one word and the glossary writes it as two. Translating
- * that one and leaving eleven mechanical would produce a status vocabulary
- * one-twelfth in the reader's language, so all twelve move together or none do.
+ * The appointment statuses moved together, which is what that argument was
+ * waiting for. All twelve are keys here. Eleven of them used to be produced by
+ * splitting the enum name on its underscore and `NOSHOW` was spelled out by
+ * hand, so a vocabulary that was one-twelfth translatable was the reason not to
+ * start; there was no way to convert one without leaving the other eleven
+ * derived. `formatEnumLabel` is gone and the question with it.
  *
  * ## Counts
  *
@@ -31,6 +31,56 @@ import type { Messages } from '../../catalogue.js';
  * which is a translation job rather than a code change.
  */
 export const chart: Messages = {
+  /* ------------------------------------------ this codebase's own enums */
+  /* Every enum below is declared in `lib/api/chart/types.ts` or
+     `lib/api/types.ts` and mirrors one in `@openrunic/database`. None comes
+     from a terminology server, so the words are ours to write and ours to
+     translate. The `inline` variants are written for the middle of a sentence
+     rather than produced by lowercasing the label: not every language
+     lowercases a noun mid-sentence, and `.toLowerCase()` on a translated word
+     is a rule this codebase would be applying to somebody else's grammar. */
+  'chart.allergySeverity.severe': 'Severe',
+  'chart.allergySeverity.moderate': 'Moderate',
+  'chart.allergySeverity.mild': 'Mild',
+  'chart.allergyCategory.drug': 'Drug',
+  'chart.allergyCategory.food': 'Food',
+  'chart.allergyCategory.environment': 'Environment',
+  'chart.medicationSource.prescribedHere': 'Prescribed here',
+  'chart.medicationSource.patientReported': 'Patient reported',
+  'chart.medicationSource.reconciled': 'Reconciled',
+  'chart.careTeam.primary': 'Primary',
+  'chart.careTeam.careTeam': 'Care team',
+  'chart.careTeam.external': 'External',
+  'chart.noteState.none': 'No note',
+  'chart.noteState.draft': 'Draft',
+  'chart.noteState.unsigned': 'Unsigned',
+  'chart.noteState.cosignPending': 'Cosign pending',
+  'chart.noteState.signed': 'Signed',
+  'chart.appointmentStatus.proposed': 'Proposed',
+  'chart.appointmentStatus.pending': 'Pending',
+  'chart.appointmentStatus.booked': 'Booked',
+  'chart.appointmentStatus.arrived': 'Arrived',
+  'chart.appointmentStatus.checkedIn': 'Checked in',
+  'chart.appointmentStatus.roomed': 'Roomed',
+  'chart.appointmentStatus.inProgress': 'In progress',
+  'chart.appointmentStatus.checkedOut': 'Checked out',
+  'chart.appointmentStatus.fulfilled': 'Fulfilled',
+  'chart.appointmentStatus.cancelled': 'Cancelled',
+  'chart.appointmentStatus.noshow': 'No show',
+  'chart.appointmentStatus.enteredInError': 'Entered in error',
+  'chart.sexAtBirth.inline.female': 'female',
+  'chart.sexAtBirth.inline.male': 'male',
+  'chart.sexAtBirth.inline.other': 'other',
+  'chart.sexAtBirth.inline.unknown': 'unknown',
+  'chart.sensitivity.inline.normal': 'normal',
+  'chart.sensitivity.inline.restricted': 'restricted',
+  'chart.sensitivity.inline.veryRestricted': 'very restricted',
+  'chart.problemStatus.inline.active': 'active',
+  'chart.problemStatus.inline.chronic': 'chronic',
+  'chart.problemStatus.inline.resolved': 'resolved',
+  'chart.problemStatus.active': 'Active',
+  'chart.problemStatus.chronic': 'Chronic',
+  'chart.problemStatus.resolved': 'Resolved',
   /* ------------------------------------------------------------------ shell */
   'chart.title': 'Chart',
   'chart.tabs.label': 'Chart sections',

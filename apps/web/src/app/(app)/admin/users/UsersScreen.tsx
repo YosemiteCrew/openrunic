@@ -14,6 +14,7 @@ import {
   PermissionMatrix,
   permissionKey,
   pluralKey,
+  STAFF_ROLE_KEYS,
   summariseRole,
   translateColumns,
 } from '@/components/admin';
@@ -24,7 +25,6 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import {
   MOCK_FACILITIES,
-  STAFF_ROLE_LABELS,
   STAFF_ROLES,
   useAdminClientOption,
   usePermissionMatrix,
@@ -156,7 +156,7 @@ function InviteFields({
         label={t('admin.users.invite.role')}
         options={STAFF_ROLES.map((entry) => ({
           value: entry,
-          label: STAFF_ROLE_LABELS[entry],
+          label: t(STAFF_ROLE_KEYS[entry].labelKey),
         }))}
         value={invite.role}
         onChange={(event) => onChange({ ...invite, role: event.target.value as StaffRole })}
@@ -204,7 +204,7 @@ function userRow(
     roles: (
       <span className="or-cell-chips">
         {user.roles.map((entry) => (
-          <Tag key={entry}>{STAFF_ROLE_LABELS[entry]}</Tag>
+          <Tag key={entry}>{t(STAFF_ROLE_KEYS[entry].labelKey)}</Tag>
         ))}
         {user.isProvider ? <Tag>{t('admin.users.provider')}</Tag> : null}
       </span>
@@ -269,7 +269,7 @@ function UserDetail({ user, roleSummary }: Readonly<UserDetailProps>): ReactElem
         items={[
           {
             label: t('admin.users.detail.roles'),
-            value: user.roles.map((r) => STAFF_ROLE_LABELS[r]).join(', '),
+            value: user.roles.map((r) => t(STAFF_ROLE_KEYS[r].labelKey)).join(', '),
           },
           { label: t('admin.users.detail.facilities'), value: facilityNames(user.facilityIds) },
           {
@@ -342,7 +342,7 @@ function RoleEditor({
             hint={t('admin.users.roles.summariseHint')}
             options={STAFF_ROLES.map((entry) => ({
               value: entry,
-              label: STAFF_ROLE_LABELS[entry],
+              label: t(STAFF_ROLE_KEYS[entry].labelKey),
             }))}
             value={roleFocus}
             onChange={(event) => onRoleFocusChange(event.target.value as StaffRole)}
@@ -402,7 +402,7 @@ function StaffAccounts({
 
   const roleOptions = [
     { value: '', label: t('admin.users.filter.allRoles') },
-    ...STAFF_ROLES.map((entry) => ({ value: entry, label: STAFF_ROLE_LABELS[entry] })),
+    ...STAFF_ROLES.map((entry) => ({ value: entry, label: t(STAFF_ROLE_KEYS[entry].labelKey) })),
   ];
   const statusOptions = [
     { value: '', label: t('admin.users.filter.allStatuses') },

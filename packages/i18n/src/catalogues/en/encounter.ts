@@ -37,6 +37,11 @@ import type { Messages } from '../../catalogue.js';
  * all six CLDR keys and writing a message for each.
  */
 export const encounter: Messages = {
+  /* `EmittedItemKind`, declared in `lib/api/chart/types.ts`. Ours to name. */
+  'encounter.emittedKind.order': 'Order',
+  'encounter.emittedKind.prescription': 'Prescription',
+  'encounter.emittedKind.problem': 'Problem',
+  'encounter.emittedKind.followUp': 'Follow up',
   /* ------------------------------------------------------------------ shell */
   /* The heading on the screen itself. The browser tab title is NOT here: it
      comes from `generateMetadata`, which runs before there is a translator and

@@ -13,9 +13,19 @@
  * stops needing to differ from the wire and moves to `../types.ts` beside
  * `Patient` and `Appointment`, and nothing in the screens changes.
  *
- * Every enum here mirrors an enum that already exists in `@openrunic/database`,
- * uppercase and underscored, so `formatEnumLabel` renders it and no screen ever
- * hard-codes a display string for a state.
+ * The enums here are uppercase and underscored, and only some of them are
+ * Prisma enums: `AllergyCategory`, `MedicationSource` and `NoteState` are,
+ * while `AllergySeverity`, `CareTeamRelationship`, `ProblemStatus` and
+ * `EmittedItemKind` exist only in this contract. This file used to say all of
+ * them mirrored the database, which was wrong and was quoted elsewhere as
+ * evidence before anyone checked.
+ *
+ * It decides nothing either way. The API sends the member and no display for it
+ * whichever it is, so
+ * the words a screen shows are this codebase's to write: they live in the
+ * message catalogue and reach a screen through `components/chart/labels.ts`.
+ * They were derived from the member by a formatter until #132, which is the
+ * same thing as hard-coding a display string, only harder to find.
  */
 
 /* -------------------------------------------------------------------------- */

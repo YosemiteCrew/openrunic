@@ -12,6 +12,7 @@ export type { AdminArea, AdminAreaId } from './areas';
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 export { pluralKey, translateColumns } from './copy';
+export { AUDIT_ACTION_LABELS, PURPOSE_OF_USE_LABELS, STAFF_ROLE_KEYS } from './labels';
 export type { AdminColumn, PluralKeys } from './copy';
 export { DetailList } from './DetailList';
 export type { DetailItem, DetailListProps } from './DetailList';

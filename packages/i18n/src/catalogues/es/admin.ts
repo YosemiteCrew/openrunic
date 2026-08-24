@@ -16,6 +16,28 @@ import type { Messages } from '../../catalogue.js';
  * be translated, so they render in the language the server wrote them in.
  */
 export const admin: Messages = {
+  /* Los enums propios de este código, no de un servidor de terminología. */
+  'admin.auditAction.patientRead': 'Lectura de paciente',
+  'admin.auditAction.patientUpdate': 'Actualización de paciente',
+  'admin.auditAction.noteSign': 'Firma de nota',
+  'admin.auditAction.orderSign': 'Firma de orden',
+  'admin.auditAction.claimSubmit': 'Envío de reclamación',
+  'admin.auditAction.settingUpdate': 'Cambio de configuración',
+  'admin.auditAction.exportRun': 'Exportación ejecutada',
+  'admin.auditAction.loginSuccess': 'Inicio de sesión correcto',
+  'admin.auditAction.loginFailure': 'Inicio de sesión fallido',
+  'admin.auditAction.breakglassRead': 'Lectura de emergencia',
+  'admin.purposeOfUse.treatment': 'Tratamiento',
+  'admin.purposeOfUse.payment': 'Pago',
+  'admin.purposeOfUse.operations': 'Operaciones',
+  'admin.purposeOfUse.breakglass': 'Acceso de emergencia',
+  'admin.purposeOfUse.system': 'Sistema',
+  'admin.staffRole.practiceAdmin': 'Administración de la clínica',
+  'admin.staffRole.provider': 'Profesional clínico',
+  'admin.staffRole.medicalAssistant': 'Asistente médico',
+  'admin.staffRole.frontDesk': 'Recepción',
+  'admin.staffRole.biller': 'Facturación',
+  'admin.staffRole.readOnly': 'Solo lectura',
   /* ------------------------------------------------------ shared furniture */
   'admin.action.cancel': 'Cancelar',
   'admin.action.close': 'Cerrar',

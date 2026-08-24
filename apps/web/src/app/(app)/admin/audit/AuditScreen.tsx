@@ -7,6 +7,9 @@ import type { ReactElement, ReactNode } from 'react';
 import {
   adminArea,
   adminBreadcrumb,
+  AUDIT_ACTION_LABELS,
+  PURPOSE_OF_USE_LABELS,
+  STAFF_ROLE_KEYS,
   DetailList,
   Drawer,
   FilterBar,
@@ -28,7 +31,7 @@ import {
 import type { AdminClient, AuditAction, AuditEvent, PurposeOfUse } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import type { CsvColumn } from '@/lib/csv';
-import { formatDateTime, formatEnumLabel } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -79,8 +82,14 @@ function csvColumns(t: Translate): Array<CsvColumn<AuditEvent>> {
       value: (event) => formatDateTime(event.occurredAt, 'iso'),
     },
     { header: t('admin.audit.csv.actor'), value: (event) => event.actorName },
-    { header: t('admin.audit.csv.role'), value: (event) => formatEnumLabel(event.actorRole) },
-    { header: t('admin.audit.csv.action'), value: (event) => formatEnumLabel(event.action) },
+    {
+      header: t('admin.audit.csv.role'),
+      value: (event) => t(STAFF_ROLE_KEYS[event.actorRole].labelKey),
+    },
+    {
+      header: t('admin.audit.csv.action'),
+      value: (event) => t(AUDIT_ACTION_LABELS[event.action].labelKey),
+    },
     {
       header: t('admin.audit.csv.target'),
       value: (event) => `${event.targetType}: ${event.targetLabel}`,
@@ -88,7 +97,7 @@ function csvColumns(t: Translate): Array<CsvColumn<AuditEvent>> {
     { header: t('admin.audit.csv.patientMrn'), value: (event) => event.patientMrn ?? '' },
     {
       header: t('admin.audit.csv.purpose'),
-      value: (event) => formatEnumLabel(event.purposeOfUse),
+      value: (event) => t(PURPOSE_OF_USE_LABELS[event.purposeOfUse].labelKey),
     },
     {
       header: t('admin.audit.csv.breakglass'),
@@ -149,7 +158,7 @@ function purposeCell(t: Translate, event: AuditEvent): ReactElement {
   if (event.breakglass) {
     return <Badge tone="danger">{t('admin.audit.breakglass')}</Badge>;
   }
-  return <Tag>{formatEnumLabel(event.purposeOfUse)}</Tag>;
+  return <Tag>{t(PURPOSE_OF_USE_LABELS[event.purposeOfUse].labelKey)}</Tag>;
 }
 
 function auditRow(
@@ -168,10 +177,10 @@ function auditRow(
     actor: (
       <span className="or-cell-stack">
         <span className="or-body">{event.actorName}</span>
-        <span className="or-caption">{formatEnumLabel(event.actorRole)}</span>
+        <span className="or-caption">{t(STAFF_ROLE_KEYS[event.actorRole].labelKey)}</span>
       </span>
     ),
-    action: <span className="or-small">{formatEnumLabel(event.action)}</span>,
+    action: <span className="or-small">{t(AUDIT_ACTION_LABELS[event.action].labelKey)}</span>,
     target: (
       <span className="or-cell-stack">
         <span className="or-small">{event.targetLabel}</span>
@@ -213,14 +222,17 @@ function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElem
         columns={2}
         items={[
           { label: t('admin.audit.detail.actor'), value: event.actorName },
-          { label: t('admin.audit.detail.role'), value: formatEnumLabel(event.actorRole) },
+          {
+            label: t('admin.audit.detail.role'),
+            value: t(STAFF_ROLE_KEYS[event.actorRole].labelKey),
+          },
           {
             label: t('admin.audit.detail.target'),
             value: `${event.targetType}: ${event.targetLabel}`,
           },
           {
             label: t('admin.audit.detail.purpose'),
-            value: formatEnumLabel(event.purposeOfUse),
+            value: t(PURPOSE_OF_USE_LABELS[event.purposeOfUse].labelKey),
           },
           {
             label: t('admin.audit.detail.patient'),
@@ -334,11 +346,17 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
   ];
   const actionOptions = [
     { value: '', label: t('admin.audit.filter.anyAction') },
-    ...AUDIT_ACTIONS.map((entry) => ({ value: entry, label: formatEnumLabel(entry) })),
+    ...AUDIT_ACTIONS.map((entry) => ({
+      value: entry,
+      label: t(AUDIT_ACTION_LABELS[entry].labelKey),
+    })),
   ];
   const purposeOptions = [
     { value: '', label: t('admin.audit.filter.anyPurpose') },
-    ...PURPOSES_OF_USE.map((purpose) => ({ value: purpose, label: formatEnumLabel(purpose) })),
+    ...PURPOSES_OF_USE.map((purpose) => ({
+      value: purpose,
+      label: t(PURPOSE_OF_USE_LABELS[purpose].labelKey),
+    })),
   ];
 
   const selected = rows.find((event) => event.id === openId) ?? null;
@@ -459,7 +477,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
 
       <Drawer
         open={selected !== null}
-        title={selected ? formatEnumLabel(selected.action) : ''}
+        title={selected ? t(AUDIT_ACTION_LABELS[selected.action].labelKey) : ''}
         description={selected ? formatDateTime(selected.occurredAt, 'prose') : undefined}
         width={720}
         onClose={() => setOpenId(null)}

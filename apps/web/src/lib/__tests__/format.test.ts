@@ -8,7 +8,6 @@ import {
   formatDate,
   formatDateTime,
   formatElapsed,
-  formatEnumLabel,
   formatInitials,
   formatMoney,
   formatMrn,
@@ -213,14 +212,6 @@ describe('formatVital', () => {
 
   it('honours a requested precision', () => {
     expect(formatVital({ label: 'Temp', value: 37, unit: 'C', decimals: 1 }).value).toBe('37.0');
-  });
-});
-
-describe('formatEnumLabel', () => {
-  it('turns a schema enum into sentence case', () => {
-    expect(formatEnumLabel('CHECKED_IN')).toBe('Checked in');
-    expect(formatEnumLabel('NOSHOW')).toBe('Noshow');
-    expect(formatEnumLabel('')).toBe('');
   });
 });
 

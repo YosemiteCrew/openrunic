@@ -22,7 +22,7 @@ import {
 import type { AdminClient, VisitReportRow } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import type { CsvColumn } from '@/lib/csv';
-import { formatDate, formatDateTime, formatEnumLabel, formatMoney } from '@/lib/format';
+import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
 import { counted, searchWords } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
@@ -51,9 +51,15 @@ import { useTranslator } from '@/lib/i18n/messages';
  * The status filter is the one place that looks like the second and is the
  * first. Its six options are this application's own wording for the appointment
  * states this codebase defines, so they are copy in exactly the way an order's
- * status label is. The status *column* is the other side of that line: it
- * renders `formatEnumLabel` over whatever the row carried, and is left alone
- * rather than given a reports-local translation the schedule would not share.
+ * status label is.
+ *
+ * The status column and the exported status cell are the same words, and used
+ * to disagree with the filter directly above them: the options were catalogue
+ * keys and the column ran the same enum through `formatEnumLabel`, so a reader
+ * picked "Completada" and read "Fulfilled" in the row it selected. All three
+ * now come from one list. A state the list does not know falls back to the raw
+ * code, because a bare `TRIAGED` is an obvious gap where a derived "Triaged"
+ * would look finished.
  */
 
 export interface ReportsScreenProps {
@@ -78,13 +84,36 @@ const STATUS_FILTER_OPTIONS: ReadonlyArray<{ value: string; labelKey: string }> 
 ];
 
 /**
+ * The same six states, by code, for the rows and the export.
+ *
+ * Derived from the filter's own list rather than written twice: the screen let
+ * a reader pick "Completada" from the filter and then showed "Fulfilled" in the
+ * table beside it, because the options were catalogue keys and the column ran
+ * the same enum through `formatEnumLabel`. One list is what stops the two
+ * disagreeing again.
+ *
+ * A state this map does not know falls back to the raw code rather than to a
+ * derived English word. `VisitReportRow.status` is typed as a string, so a
+ * seventh state can arrive without this file changing, and a raw `TRIAGED` on
+ * screen is an obvious gap where "Triaged" would look finished.
+ */
+const STATUS_KEY: ReadonlyMap<string, string> = new Map(
+  STATUS_FILTER_OPTIONS.map((option) => [option.value, option.labelKey])
+);
+
+/** The words for one visit's state, in the reader's language. */
+function statusLabel(t: Translator, status: string): string {
+  const key = STATUS_KEY.get(status);
+  return key === undefined ? status : t(key);
+}
+
+/**
  * The three counted sentences on this screen, as their pairs of forms.
  *
- * A pair rather than one message with a number in it, because `count === 1`
- * is an English rule: `counted` asks the reader's own locale which form to
- * use, so a fork translating into a language with four of them gets a
- * sentence that agrees rather than one that reads as broken only to somebody
- * who speaks it.
+ * A pair rather than one message with a number in it, because `count === 1` is
+ * an English rule and `counted` asks the reader's own locale instead. A pair is
+ * also the limit: a locale needing `few` or `many` gets `other` for them until
+ * `CountedMessage` carries all six CLDR categories. See `lib/i18n/counted.ts`.
  */
 const EXPORTED: CountedMessage = {
   oneKey: 'reports.exported.one',
@@ -115,13 +144,19 @@ const REPORT_COLUMN_KEYS: ReadonlyArray<{ key: string; headerKey: string; numeri
  * The exported file's header row, as keys.
  *
  * A person opens this in a spreadsheet and reads the top row, so it is copy and
- * follows the reader's language. The cells under it do not: they are the record
- * as the API sent it, and a translated value would be a second name for a
- * visit's type or its claim state.
+ * follows the reader's language. Almost none of the cells under it do: they are
+ * the record as the API sent it, and a translated value would be a second name
+ * for a visit's type or its claim state.
+ *
+ * The status cell is the exception, and it is the same exception the filter is.
+ * A visit's state is an enum this codebase defines and words itself, so leaving
+ * it in English would export "Fulfilled" under a Spanish header, from a screen
+ * where the filter above already said "Completada". That is why `value` takes
+ * the translator: so a cell can be copy in the one place a cell is copy.
  */
 const CSV_COLUMN_KEYS: ReadonlyArray<{
   headerKey: string;
-  value: CsvColumn<VisitReportRow>['value'];
+  value: (row: VisitReportRow, t: Translator) => string | number;
 }> = [
   { headerKey: 'reports.csv.date', value: (row) => row.date },
   { headerKey: 'reports.csv.time', value: (row) => row.time },
@@ -130,7 +165,7 @@ const CSV_COLUMN_KEYS: ReadonlyArray<{
   { headerKey: 'reports.csv.provider', value: (row) => row.providerName },
   { headerKey: 'reports.csv.facility', value: (row) => row.facilityName },
   { headerKey: 'reports.csv.visitType', value: (row) => row.visitType },
-  { headerKey: 'reports.csv.status', value: (row) => formatEnumLabel(row.status) },
+  { headerKey: 'reports.csv.status', value: (row, t) => statusLabel(t, row.status) },
   { headerKey: 'reports.csv.minutes', value: (row) => row.durationMinutes },
   { headerKey: 'reports.csv.charges', value: (row) => row.chargeAmount.toFixed(2) },
   { headerKey: 'reports.csv.claimState', value: (row) => row.claimState },
@@ -139,7 +174,7 @@ const CSV_COLUMN_KEYS: ReadonlyArray<{
 function csvColumns(t: Translator): Array<CsvColumn<VisitReportRow>> {
   return CSV_COLUMN_KEYS.map((column) => ({
     header: t(column.headerKey),
-    value: column.value,
+    value: (row: VisitReportRow) => column.value(row, t),
   }));
 }
 
@@ -441,7 +476,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
                   ),
                   provider: <span className="or-small">{row.providerName}</span>,
                   visitType: <span className="or-small">{row.visitType}</span>,
-                  status: <span className="or-small">{formatEnumLabel(row.status)}</span>,
+                  status: <span className="or-small">{statusLabel(t, row.status)}</span>,
                   duration: String(row.durationMinutes),
                   charge: formatMoney(row.chargeAmount).text,
                   claim: <span className="or-small">{row.claimState}</span>,

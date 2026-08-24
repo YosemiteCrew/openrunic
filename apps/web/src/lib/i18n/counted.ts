@@ -14,9 +14,17 @@ import type { Interpolations, Translator } from '@openrunic/i18n';
  * A message that has a form per count, as the pair of keys that hold them.
  *
  * Both forms are looked up and `plural` picks between them with the reader's
- * own rules rather than with `count === 1`: English has two forms, and a fork
- * translating into a language with four would otherwise get a sentence that
- * reads as broken only to somebody who speaks it.
+ * own rules rather than with `count === 1`. The two are the same answer only in
+ * languages that happen to work like English: Russian selects `one` for 21,
+ * where a test against the number picks the plural.
+ *
+ * Two forms is a real limit and not a claim to handle every language. CLDR has
+ * six categories and this carries `one` and `other`, so a locale that needs
+ * `few`, `many`, `zero` or `two` gets `other` for them - which is `plural`'s
+ * documented fallback and is a translation gap rather than a crash. Closing it
+ * means carrying all six keys here and writing a message for each, which is
+ * deliberately a change somebody makes on purpose rather than one this shape
+ * pretends it has already made.
  */
 export interface CountedMessage {
   readonly oneKey: string;

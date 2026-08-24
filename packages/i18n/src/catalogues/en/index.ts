@@ -1,4 +1,5 @@
 import type { Messages } from '../../catalogue.js';
+import { compose } from '../compose.js';
 
 import { admin } from './admin.js';
 import { assistant } from './assistant.js';
@@ -51,16 +52,17 @@ import { shell } from './shell.js';
  * An area file may be empty. That means its slice has not landed yet, not that
  * the screen has no words.
  *
- * Nothing here discovers anything: a new area is a file, an import and a line
- * in the spread. An area file that has only the first of those type-checks
- * perfectly and renders nothing, so `catalogues.test.ts` reads the directory
- * and refuses one that is not composed.
+ * Nothing here discovers anything: a new area is a file, an import, and a line
+ * in `enAreas` below. The catalogue itself is derived from that registry, so
+ * there is no third place to forget. An area file with only the first of those
+ * type-checks perfectly and renders nothing, so `catalogues.test.ts` reads the
+ * directory and refuses one that is not composed.
  *
- * The composition is a spread, so a key defined in two areas would be taken
- * from the later one silently. `catalogues.test.ts` refuses that rather than
- * relying on nobody doing it: two files claiming one key is two people
- * disagreeing about what a screen says, and the answer is to pick an owner
- * rather than an order.
+ * The composition is a merge, so a key defined in two areas would be taken from
+ * one of them silently. `catalogues.test.ts` refuses that rather than relying
+ * on nobody doing it: two files claiming one key is two people disagreeing
+ * about what a screen says, and the answer is to pick an owner rather than an
+ * order.
  *
  * ## What belongs here and what does not
  *
@@ -69,28 +71,15 @@ import { shell } from './shell.js';
  * in the interface would put a second, diverging name on a code that already
  * has one.
  */
-export const en: Messages = {
-  ...shell,
-  ...nav,
-  ...downtime,
-  ...auth,
-  ...marketing,
-  ...schedule,
-  ...patients,
-  ...chart,
-  ...encounter,
-  ...orders,
-  ...results,
-  ...billing,
-  ...insurance,
-  ...inbox,
-  ...assistant,
-  ...reports,
-  ...admin,
-  ...common,
-};
 
-/** The areas, separately, so a test can ask which file a key came from. */
+/**
+ * The areas, and the only place a new one is registered.
+ *
+ * `en` below is derived from this rather than written beside it. A second
+ * hand-maintained list is a second place to forget, and forgetting it fails a
+ * test that points at the area file - which is the one thing the contributor
+ * got right.
+ */
 export const enAreas: Readonly<Record<string, Messages>> = {
   shell,
   nav,
@@ -111,3 +100,5 @@ export const enAreas: Readonly<Record<string, Messages>> = {
   admin,
   common,
 };
+
+export const en: Messages = compose(enAreas);

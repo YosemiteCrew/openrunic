@@ -1,7 +1,23 @@
-import type { Catalogue } from '../catalogue.js';
+import type { Catalogue, Locale, Messages } from '../catalogue.js';
 
-import { en } from './en/index.js';
-import { es } from './es/index.js';
+import { compose } from './compose.js';
+import { enAreas } from './en/index.js';
+import { esAreas } from './es/index.js';
+
+/**
+ * Every locale this build carries, and the areas each is composed from.
+ *
+ * The one place a language is registered. Everything below is derived from it,
+ * so a locale cannot be present in the catalogue and absent from the tests that
+ * guard it, or the other way round - which is what a hand-written `messages`
+ * object beside a hand-written test map allowed.
+ *
+ * Adding a locale is a directory and one line here.
+ */
+export const catalogueAreas: Readonly<Record<Locale, Readonly<Record<string, Messages>>>> = {
+  en: enAreas,
+  es: esAreas,
+};
 
 /**
  * The catalogue the applications render from.
@@ -9,13 +25,12 @@ import { es } from './es/index.js';
  * `sourceLocale` is named rather than assumed to be `en`: a fork whose source
  * strings are Spanish is a fork where falling back to English would be falling
  * back to a language nobody involved wrote.
- *
- * Adding a locale is adding a directory and one line here. No code changes,
- * which is the property that makes translation something a contributor can do.
  */
 export const appCatalogue: Catalogue = {
   sourceLocale: 'en',
-  messages: { en, es },
+  messages: Object.fromEntries(
+    Object.entries(catalogueAreas).map(([locale, areas]) => [locale, compose(areas)])
+  ),
 };
 
 /** The locales this build actually carries, for content negotiation. */
@@ -35,6 +50,5 @@ export function isSupportedLocale(locale: string): boolean {
   return SUPPORTED.has(locale);
 }
 
-export { en, es };
-export { enAreas } from './en/index.js';
-export { esAreas } from './es/index.js';
+export { en } from './en/index.js';
+export { es } from './es/index.js';

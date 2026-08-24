@@ -38,6 +38,12 @@ packages/database/src/generated
 .vscode
 .idea
 
+# Agent scratch: session state, plugin caches, and the git worktrees the
+# multi-agent tooling checks out under here. Each worktree is a second copy of
+# this repository, so without this line the build context grows by the whole
+# tree per concurrent agent. Nothing in it is an input to any image.
+.claude
+
 # Operational data written next to the repository by the backup scripts.
 backups
 .tmp

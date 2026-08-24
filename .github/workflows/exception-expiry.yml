@@ -1,0 +1,67 @@
+name: Security Exception Expiry
+
+# Three files in this repository accept a security finding rather than fixing
+# it: .grype.yaml, .trivyignore, and the secretlint ignore. Each of their
+# headers demands a reason, an owner, and a date the entry must be looked at
+# again, and the Trivy file puts the reasoning plainly: an exception without all
+# three "is not an exception, it is a hole".
+#
+# The date was the part nothing checked. An accepted finding therefore stayed
+# accepted forever - the comment said November, nobody was told when November
+# arrived, and the exception outlived the reasoning that justified it. That is
+# the ordinary way a temporary suppression becomes permanent, and it is worse
+# than having no expiry field at all, because the field makes the process look
+# rigorous while changing nothing.
+#
+# This runs on a schedule as well as on pull requests, and the schedule is the
+# half that matters. An expiry only reached between merges would otherwise be
+# noticed by whoever happened to open the next unrelated pull request, which is
+# both late and somebody else's problem.
+#
+# scripts/ci/exception-expiry.mjs is the implementation; its tests run first,
+# because a guard whose own tests are broken has no business reporting on a pull
+# request. The job uses the runner's system Node: the guard is dependency-free
+# by design, so there is nothing to install.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+  schedule:
+    # 07:00 UTC on Mondays. A weekly nudge is the right cadence for a field
+    # measured in months, and Monday morning is when somebody can act on it.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: exception-expiry-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  exception-expiry:
+    name: Accepted findings are still current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the tree; this job writes nothing back
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job only reads the tree, so the default GITHUB_TOKEN must not
+          # be left behind in .git/config where a later step could read it.
+          persist-credentials: false
+
+      - name: Test the guard itself
+        run: node --test scripts/ci/exception-expiry.test.mjs
+
+      - name: Check every accepted finding is still in date
+        run: node scripts/ci/exception-expiry.mjs

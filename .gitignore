@@ -62,3 +62,10 @@ react-doctor.json
 # against a mock-mode server - but it is a credential shaped thing with a clock
 # in it, and a stale one committed here would fail as a confusing redirect.
 apps/e2e/.auth/
+
+# Git worktrees the agent tooling checks out inside the repository. Each one is
+# a second working copy, node_modules and all, so a `git add -A` while several
+# are in flight would try to stage several gigabytes of this repository into
+# itself. Narrower than `.claude/` on purpose: a team that wants to commit
+# `.claude/settings.json` or a shared agent definition still can.
+.claude/worktrees/

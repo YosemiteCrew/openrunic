@@ -34,3 +34,44 @@ ignore:
   # busybox, the fix is to bump the node:22-alpine digest in both Dockerfiles
   # and delete this entry.
   - vulnerability: CVE-2025-60876
+
+  # CVE-2026-14456 in libssl3 and libcrypto3 (openssl 3.5.7-r0): an OpenSSL QUIC
+  # *server* queues a channel for every valid Initial packet carrying an unknown
+  # connection id, with no bound, so a flood arriving faster than the
+  # application accepts connections grows memory until the process dies.
+  # Accepted as unreachable, and the reachability was measured rather than
+  # assumed:
+  #
+  #   - Only four things in either image link the system openssl at all:
+  #     `apk`, `libapk`, `apk-tools` and busybox's `ssl_client`. Every one of
+  #     them is a TLS *client*, and a client is not what this flaw attacks.
+  #     (`ldd` over the image's executables; `apk info -R` for the reverse
+  #     dependencies.)
+  #   - Node does not use these packages. `node:22-alpine` links no system
+  #     libssl or libcrypto - it carries its own openssl 3.5.7 statically - so
+  #     the long-running process in both runtime images is not a consumer of the
+  #     vulnerable package.
+  #   - Node cannot be a QUIC server here even if asked. `node:quic` is not a
+  #     built-in module in this build: `require('node:quic')` fails with "No
+  #     such built-in module", flag or no flag. Nothing in the repository
+  #     mentions QUIC, HTTP/3 or Alt-Svc, and both apps serve HTTP over TCP.
+  #
+  # There is nothing to upgrade to. Upstream fixes it in 3.5.8, and Alpine has
+  # published no patched openssl on v3.24 or on edge - both still carry
+  # 3.5.7-r0 - so re-resolving the pinned node:22-alpine digest cannot clear it
+  # today, which is exactly what the digest already resolving to the current tag
+  # demonstrates. grype agrees: its `FIXED IN` column for both rows is empty.
+  #
+  # Worth recording that the severities disagree. OpenSSL rates this Low in its
+  # own advisory; the feed grype reads escalates it to High. Accepting it on
+  # reachability rather than on severity, because the reachability argument is
+  # the one that would still hold if the rating changed.
+  #
+  # The rule matches on the CVE id alone rather than the documented
+  # name+version shape because it spans both the libssl3 and libcrypto3
+  # subpackages and the two images may pin different -rNN revisions, so a
+  # version pin would silently stop matching. Owner: ankit-yc.
+  # Re-review by: 2026-11-24. Revisit condition: once Alpine publishes openssl
+  # 3.5.8-r0 or later, the fix is to bump the node:22-alpine digest in both
+  # Dockerfiles and delete this entry.
+  - vulnerability: CVE-2026-14456

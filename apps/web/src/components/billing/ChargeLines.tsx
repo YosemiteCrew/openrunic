@@ -1,13 +1,15 @@
 'use client';
 
 import { Badge, Button, IconButton, Select, Table } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { ChargeDiagnosis, ChargeLine } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 import { numericFieldValue } from '@/lib/numeric-field';
 
 import { diagnosisPointer, lineCharge } from './billing';
+import { translateColumns } from './columns';
+import type { KeyedColumn } from './columns';
 import { Money } from './Money';
 
 /**
@@ -26,23 +28,29 @@ import { Money } from './Money';
  * forked out of Button.
  */
 
-/** Modifiers a family practice reaches for. One per line keeps the row readable. */
-const MODIFIERS = [
-  { value: '', label: 'None' },
+/**
+ * Modifiers a family practice reaches for. One per line keeps the row readable.
+ *
+ * The descriptions are the CPT modifiers' own, shortened. They are deliberately
+ * not in the catalogue: a modifier is a coded value, and a translated label
+ * would give it a second name that the payer would not recognise on the claim.
+ * "None" is this screen's word for the absence of one, so it is translated.
+ */
+const MODIFIERS: readonly { readonly value: string; readonly label: string }[] = [
   { value: '25', label: '25 significant, separate service' },
   { value: '59', label: '59 distinct procedure' },
   { value: '76', label: '76 repeat by same provider' },
   { value: '95', label: '95 telehealth' },
 ];
 
-const COLUMNS: TableColumn[] = [
-  { key: 'code', header: 'Code', mono: true },
-  { key: 'description', header: 'Description' },
-  { key: 'modifier', header: 'Modifier' },
-  { key: 'units', header: 'Units', numeric: true },
-  { key: 'fee', header: 'Fee', numeric: true },
-  { key: 'justify', header: 'Justified by' },
-  { key: 'actions', header: 'Actions', align: 'right' },
+const COLUMNS: readonly KeyedColumn[] = [
+  { key: 'code', headerKey: 'billing.chargeLines.column.code', mono: true },
+  { key: 'description', headerKey: 'billing.chargeLines.column.description' },
+  { key: 'modifier', headerKey: 'billing.chargeLines.column.modifier' },
+  { key: 'units', headerKey: 'billing.chargeLines.column.units', numeric: true },
+  { key: 'fee', headerKey: 'billing.chargeLines.column.fee', numeric: true },
+  { key: 'justify', headerKey: 'billing.chargeLines.column.justify' },
+  { key: 'actions', headerKey: 'billing.chargeLines.column.actions', align: 'right' },
 ];
 
 export interface ChargeLinesProps {
@@ -69,11 +77,15 @@ export function ChargeLines({
   onDelete,
   onRestore,
 }: Readonly<ChargeLinesProps>): ReactElement {
+  const t = useTranslator();
+  const noModifier = t('billing.chargeLines.noModifier');
+  const modifierOptions = [{ value: '', label: noModifier }, ...MODIFIERS];
+
   const rows = lines.map((line): Record<string, ReactNode> => {
     const modifier = line.modifiers[0] ?? '';
 
     const justify: ReactNode = line.deleted ? (
-      <span className="or-small">Removed</span>
+      <span className="or-small">{t('billing.chargeLines.removed')}</span>
     ) : (
       <div className="or-justify">
         <div className="or-justify__chips">
@@ -86,9 +98,11 @@ export function ChargeLines({
                 className="or-justify-chip"
                 aria-pressed={linked}
                 disabled={readOnly}
-                aria-label={`${linked ? 'Unlink' : 'Link'} ${diagnosis.code} ${diagnosis.display} ${
-                  linked ? 'from' : 'to'
-                } ${line.code}`}
+                aria-label={t(linked ? 'billing.chargeLines.unlink' : 'billing.chargeLines.link', {
+                  code: diagnosis.code,
+                  display: diagnosis.display,
+                  line: line.code,
+                })}
                 onClick={() => onToggleJustify(line.id, diagnosis.code)}
               >
                 <span className="or-mono">{diagnosisPointer(index)}</span>
@@ -97,7 +111,7 @@ export function ChargeLines({
           })}
         </div>
         {line.justifiedBy.length === 0 ? (
-          <Badge tone="danger">Not justified</Badge>
+          <Badge tone="danger">{t('billing.chargeLines.notJustified')}</Badge>
         ) : (
           <span className="or-small or-justify__summary">{line.justifiedBy.join(', ')}</span>
         )}
@@ -113,14 +127,14 @@ export function ChargeLines({
         <span className={line.deleted ? 'or-charge-line--deleted' : undefined}>{line.display}</span>
       ),
       modifier: line.deleted ? (
-        <span className="or-small">{modifier || 'None'}</span>
+        <span className="or-small">{modifier || noModifier}</span>
       ) : (
         <Select
           className="or-charge-line__field"
-          options={MODIFIERS}
+          options={modifierOptions}
           value={modifier}
           disabled={readOnly}
-          aria-label={`Modifier for ${line.code}`}
+          aria-label={t('billing.chargeLines.modifierFor', { code: line.code })}
           onChange={(event) => onModifierChange(line.id, event.target.value)}
         />
       ),
@@ -132,7 +146,7 @@ export function ChargeLines({
           className="or-units-field or-mono"
           value={line.units}
           disabled={readOnly}
-          aria-label={`Units for ${line.code}`}
+          aria-label={t('billing.chargeLines.unitsFor', { code: line.code })}
           onChange={(event) => {
             const next = numericFieldValue(event.target.value);
             if (next !== null) onUnitsChange(line.id, next);
@@ -148,14 +162,14 @@ export function ChargeLines({
           iconLeft="rotate-ccw"
           disabled={readOnly}
           onClick={() => onRestore(line.id)}
-          aria-label={`Restore ${line.code}`}
+          aria-label={t('billing.chargeLines.restoreCode', { code: line.code })}
         >
-          Restore
+          {t('billing.chargeLines.restore')}
         </Button>
       ) : (
         <IconButton
           icon="trash-2"
-          label={`Remove ${line.code}`}
+          label={t('billing.chargeLines.removeCode', { code: line.code })}
           size="sm"
           disabled={readOnly}
           onClick={() => onDelete(line.id)}
@@ -164,5 +178,11 @@ export function ChargeLines({
     };
   });
 
-  return <Table caption="Charge lines" columns={COLUMNS} rows={rows} />;
+  return (
+    <Table
+      caption={t('billing.chargeLines.caption')}
+      columns={translateColumns(COLUMNS, t)}
+      rows={rows}
+    />
+  );
 }

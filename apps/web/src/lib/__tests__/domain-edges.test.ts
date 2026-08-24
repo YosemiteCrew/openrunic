@@ -88,11 +88,11 @@ describe('claimAgeingBands', () => {
     );
 
     expect(bands.map((band) => band.count)).toEqual([2, 2, 2, 1]);
-    expect(bands.map((band) => band.label)).toEqual([
-      '0 to 13 days',
-      '14 to 29 days',
-      '30 to 59 days',
-      '60 days and over',
+    expect(bands.map((band) => band.labelKey)).toEqual([
+      'billing.ageingBand.fresh',
+      'billing.ageingBand.ageing',
+      'billing.ageingBand.late',
+      'billing.ageingBand.stale',
     ]);
   });
 
@@ -128,16 +128,22 @@ describe('lineVariance', () => {
     expect(lineVariance(line(120, 100))).toEqual({
       amount: 20,
       tone: 'neutral',
-      label: 'Overpaid',
+      labelKey: 'billing.variance.overpaid',
     });
   });
 
   it('names an underpayment with the shortfall as a negative', () => {
-    expect(lineVariance(line(80, 100))).toMatchObject({ amount: -20, label: 'Underpaid' });
+    expect(lineVariance(line(80, 100))).toMatchObject({
+      amount: -20,
+      labelKey: 'billing.variance.underpaid',
+    });
   });
 
   it('calls an exact payment matched', () => {
-    expect(lineVariance(line(100, 100))).toMatchObject({ amount: 0, label: 'Matched' });
+    expect(lineVariance(line(100, 100))).toMatchObject({
+      amount: 0,
+      labelKey: 'billing.variance.matched',
+    });
   });
 });
 

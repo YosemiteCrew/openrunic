@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ageingState,
-  ALLOCATION_HINTS,
-  ALLOCATION_STATE_LABELS,
+  ALLOCATION_HINT_KEYS,
+  ALLOCATION_STATE_LABEL_KEYS,
   allocationState,
   allocationStateName,
   arSummary,
@@ -81,7 +81,10 @@ describe('scrubFeeSheet', () => {
     const first = sheet(0);
     const blocking = blockingFindings(scrubFeeSheet(first, first.lines));
     expect(blocking).toHaveLength(1);
-    expect(blocking[0]?.message).toContain('93000');
+    // The sentence is a catalogue key now, so the code it names is a value on
+    // the finding rather than a substring of it. Same assertion, one layer down.
+    expect(blocking[0]?.messageKey).toBe('billing.scrub.finding.unjustified');
+    expect(blocking[0]?.messageValues?.['code']).toBe('93000');
     expect(blocking[0]?.lineId).toBe('c001-l3');
   });
 
@@ -153,10 +156,10 @@ describe('claim ageing', () => {
   });
 
   it('labels every age band in words, not by colour alone', () => {
-    expect(ageingState(2).label).toBe('On track');
-    expect(ageingState(20).label).toBe('Ageing');
-    expect(ageingState(45).label).toBe('Over 30 days');
-    expect(ageingState(90).label).toBe('Over 60 days');
+    expect(ageingState(2).labelKey).toBe('billing.claimAge.onTrack');
+    expect(ageingState(20).labelKey).toBe('billing.claimAge.ageing');
+    expect(ageingState(45).labelKey).toBe('billing.claimAge.over30');
+    expect(ageingState(90).labelKey).toBe('billing.claimAge.over60');
   });
 
   it('splits the queue into four bands whose counts add up', () => {
@@ -216,7 +219,7 @@ describe('remittance', () => {
     const short = era.lines.find((line) => line.claimNumber === 'CLM-24045');
     if (!short) throw new Error('Fixture missing');
     const variance = lineVariance(short);
-    expect(variance.label).toBe('Underpaid');
+    expect(variance.labelKey).toBe('billing.variance.underpaid');
     expect(variance.amount).toBe(-18);
     expect(variance.tone).toBe('danger');
   });
@@ -224,7 +227,9 @@ describe('remittance', () => {
   it('calls a line that paid what was expected matched', () => {
     const era = MOCK_REMITTANCES[1];
     if (!era) throw new Error('Fixture missing');
-    expect(era.lines.every((line) => lineVariance(line).label === 'Matched')).toBe(true);
+    expect(
+      era.lines.every((line) => lineVariance(line).labelKey === 'billing.variance.matched')
+    ).toBe(true);
   });
 
   it('summarises how much posted without a human', () => {
@@ -329,12 +334,12 @@ describe('payment allocation', () => {
 
   it('gives the chip and the button hint the same reading of one payment', () => {
     const over = allocationStateName(allocationState(20, { v1: 25 }));
-    expect(ALLOCATION_STATE_LABELS[over]).toBe('Over-allocated');
-    expect(ALLOCATION_HINTS[over]).toBe('More is allocated than is being taken.');
+    expect(ALLOCATION_STATE_LABEL_KEYS[over]).toBe('billing.allocationState.over');
+    expect(ALLOCATION_HINT_KEYS[over]).toBe('billing.allocationHint.over');
 
     const balanced = allocationStateName(allocationState(20, { v1: 20 }));
-    expect(ALLOCATION_STATE_LABELS[balanced]).toBe('Fully allocated');
-    expect(ALLOCATION_HINTS[balanced]).toBe('Every amount is applied to a visit.');
+    expect(ALLOCATION_STATE_LABEL_KEYS[balanced]).toBe('billing.allocationState.balanced');
+    expect(ALLOCATION_HINT_KEYS[balanced]).toBe('billing.allocationHint.balanced');
   });
 
   it('reads a receipt oldest visit first', () => {

@@ -1,5 +1,6 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Modal, Select, Tag } from '@openrunic/ui';
 import { useCallback, useId, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -10,6 +11,7 @@ import {
   ChargePicker,
   DiagnosisPanel,
   feeSheetTotals,
+  keywordsOf,
   Money,
   newChargeLine,
   ScrubPanel,
@@ -24,14 +26,8 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_PROCEDURE_PANELS, useFeeSheets } from '@/lib/api';
 import type { BillingClient, ChargeLine, FeeSheet, ProcedureCode } from '@/lib/api';
-import {
-  formatCount,
-  formatDate,
-  formatMoney,
-  formatMrn,
-  formatName,
-  formatTime,
-} from '@/lib/format';
+import { formatDate, formatMoney, formatMrn, formatName, formatTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * BL-01 Fee sheet. The most-complained-about screen in legacy EMRs, rebuilt.
@@ -50,6 +46,9 @@ import {
  * Edits live in this screen rather than on the server: the mock client does not
  * accept writes on purpose, so a screen can never be taught to trust state the
  * server never saw. When the billing API lands, `edits` becomes a mutation.
+ *
+ * The visit type, the provider's name and every code on the sheet arrive as
+ * data and render as data. Only what this screen says about them is translated.
  */
 
 export interface ChargesScreenProps {
@@ -62,10 +61,15 @@ export interface ChargesScreenProps {
  * the work is done. It always says something, because a disabled control with
  * no reason beside it is the thing this screen exists to stop.
  */
-function readyHint(isReady: boolean, blockingCount: number): string {
-  if (isReady) return 'This visit is in the claim pipeline.';
-  if (blockingCount === 0) return 'Charges are clean.';
-  return `${formatCount(blockingCount, 'error blocks', 'errors block')} billing. See the scrub panel.`;
+function readyHint(isReady: boolean, blockingCount: number, translate: Translator): string {
+  if (isReady) return translate('billing.charges.hint.ready');
+  if (blockingCount === 0) return translate('billing.charges.hint.clean');
+  return translate(
+    blockingCount === 1
+      ? 'billing.charges.hint.blocking.one'
+      : 'billing.charges.hint.blocking.other',
+    { count: blockingCount }
+  );
 }
 
 /**
@@ -73,20 +77,29 @@ function readyHint(isReady: boolean, blockingCount: number): string {
  * owed. Money is always named as money, never implied by a tone.
  */
 function CopayBadge({ sheet }: Readonly<{ sheet: FeeSheet }>): ReactElement {
+  const t = useTranslator();
   const money = (amount: number): string => formatMoney(amount, { currency: sheet.currency }).text;
 
   if (sheet.copayDue === 0) {
     return (
       <Badge tone="neutral" icon="minus">
-        No copay due
+        {t('billing.charges.copay.none')}
       </Badge>
     );
   }
   if (sheet.copayCollected >= sheet.copayDue) {
-    return <Badge tone="success">Copay collected {money(sheet.copayCollected)}</Badge>;
+    return (
+      <Badge tone="success">
+        {t('billing.charges.copay.collected', { amount: money(sheet.copayCollected) })}
+      </Badge>
+    );
   }
   return (
-    <Badge tone="danger">Copay outstanding {money(sheet.copayDue - sheet.copayCollected)}</Badge>
+    <Badge tone="danger">
+      {t('billing.charges.copay.outstanding', {
+        amount: money(sheet.copayDue - sheet.copayCollected),
+      })}
+    </Badge>
   );
 }
 
@@ -116,27 +129,29 @@ function VisitCharges({
   onUnitsChange: (lineId: string, units: number) => void;
   onSetDeleted: (lineId: string, deleted: boolean) => void;
 }>): ReactElement {
+  const t = useTranslator();
+
   return (
     <Card
-      overline="Visit"
+      overline={t('billing.charges.visit')}
       title={formatName(sheet.patient.name)}
       footer={
         totals ? (
           <dl className="or-totals">
             <div className="or-totals__row">
-              <dt>Charges</dt>
+              <dt>{t('billing.charges.totals.charges')}</dt>
               <dd>
                 <Money amount={totals.charges} currency={sheet.currency} emphasis />
               </dd>
             </div>
             <div className="or-totals__row">
-              <dt>Copay collected</dt>
+              <dt>{t('billing.charges.totals.copayCollected')}</dt>
               <dd>
                 <Money amount={totals.copayCollected} currency={sheet.currency} />
               </dd>
             </div>
             <div className="or-totals__row">
-              <dt>Expected from payer</dt>
+              <dt>{t('billing.charges.totals.expectedFromPayer')}</dt>
               <dd>
                 <Money amount={totals.expectedFromPayer} currency={sheet.currency} />
               </dd>
@@ -153,7 +168,7 @@ function VisitCharges({
           {formatDate(sheet.serviceDate)}, {formatTime(sheet.serviceDate)}
         </span>
         <CopayBadge sheet={sheet} />
-        {isReady ? <Badge tone="success">Ready for billing</Badge> : null}
+        {isReady ? <Badge tone="success">{t('billing.charges.readyBadge')}</Badge> : null}
       </div>
 
       <ChargeLines
@@ -172,6 +187,7 @@ function VisitCharges({
 }
 
 export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactElement {
+  const t = useTranslator();
   const sheetsState = useFeeSheets({}, { client });
   const sheets = useMemo(() => sheetsState.data?.data ?? [], [sheetsState.data]);
 
@@ -215,11 +231,11 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
       setQuery('');
       toasts.push({
         tone: 'info',
-        title: `${code.code} added`,
-        message: 'Link a diagnosis to it.',
+        title: t('billing.charges.toast.added', { code: code.code }),
+        message: t('billing.charges.toast.addedMessage'),
       });
     },
-    [sheet, updateLines, toasts]
+    [sheet, updateLines, toasts, t]
   );
 
   const toggleJustify = useCallback(
@@ -272,13 +288,11 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
       );
       toasts.push({
         tone: 'info',
-        title: deleted ? 'Charge removed' : 'Charge restored',
-        message: deleted
-          ? 'It stays on the sheet, struck through, and can be restored.'
-          : undefined,
+        title: deleted ? t('billing.charges.toast.removed') : t('billing.charges.toast.restored'),
+        message: deleted ? t('billing.charges.toast.removedMessage') : undefined,
       });
     },
-    [sheet, updateLines, toasts]
+    [sheet, updateLines, toasts, t]
   );
 
   const markReady = useCallback(() => {
@@ -287,10 +301,12 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
     setConfirming(false);
     toasts.push({
       tone: 'success',
-      title: 'Visit marked ready',
-      message: `A claim was created from ${lines.filter((line) => !line.deleted).length} charges.`,
+      title: t('billing.charges.toast.markedReady'),
+      message: t('billing.charges.toast.markedReadyMessage', {
+        count: lines.filter((line) => !line.deleted).length,
+      }),
     });
-  }, [sheet, lines, toasts]);
+  }, [sheet, lines, toasts, t]);
 
   const openNextVisit = useCallback(() => {
     if (sheets.length === 0) return;
@@ -304,29 +320,29 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
       {
         id: 'billing.charges.add',
         group: 'actions',
-        label: 'Add charge',
-        keywords: ['cpt', 'code', 'procedure', 'fee sheet'],
+        label: t('billing.charges.command.add'),
+        keywords: keywordsOf(t('billing.charges.command.add.keywords')),
         icon: 'plus',
         perform: () => document.getElementById(searchInputId)?.focus(),
       },
       {
         id: 'billing.charges.markReady',
         group: 'actions',
-        label: 'Mark visit ready for billing',
-        keywords: ['ready', 'bill', 'close charges', 'submit charges'],
+        label: t('billing.charges.command.markReady'),
+        keywords: keywordsOf(t('billing.charges.command.markReady.keywords')),
         icon: 'check',
         perform: () => setConfirming(true),
       },
       {
         id: 'billing.charges.nextVisit',
         group: 'actions',
-        label: "Open the next visit's fee sheet",
-        keywords: ['next visit', 'switch visit'],
+        label: t('billing.charges.command.nextVisit'),
+        keywords: keywordsOf(t('billing.charges.command.nextVisit.keywords')),
         icon: 'arrow-right',
         perform: openNextVisit,
       },
     ],
-    [searchInputId, openNextVisit]
+    [searchInputId, openNextVisit, t]
   );
 
   const visitOptions = sheets.map((candidate) => ({
@@ -336,13 +352,13 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
 
   return (
     <AppShell
-      title="Fee sheet"
-      description="Capture this visit's charges and link each one to the diagnosis paying for it."
+      title={t('billing.charges.title')}
+      description={t('billing.charges.description')}
       topBarActions={
         sheets.length > 0 ? (
           <Select
             className="or-billing__visit-select"
-            aria-label="Visit"
+            aria-label={t('billing.charges.visitSelect')}
             options={visitOptions}
             value={sheet?.id ?? ''}
             onChange={(event) => setSelectedId(event.target.value)}
@@ -357,10 +373,10 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
               disabled={isReady || blocking.length > 0}
               onClick={() => setConfirming(true)}
             >
-              Mark ready for billing
+              {t('billing.charges.markReady')}
             </Button>
             <p className="or-caption or-billing__action-hint">
-              {readyHint(isReady, blocking.length)}
+              {readyHint(isReady, blocking.length, t)}
             </p>
           </div>
         ) : null
@@ -378,15 +394,14 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
 
       <AsyncBoundary
         state={sheetsState}
-        subject="today's fee sheets"
+        subject={t('billing.charges.subject')}
         isEmpty={isEmptyList}
         loadingRows={5}
         empty={{
-          title: 'No visits to charge',
-          message:
-            'Charges appear here once a visit is checked in. Open the schedule to see today.',
+          title: t('billing.charges.empty.title'),
+          message: t('billing.charges.empty.message'),
           icon: 'receipt-text',
-          action: <Button href="/schedule">Go to the schedule</Button>,
+          action: <Button href="/schedule">{t('billing.charges.empty.action')}</Button>,
         }}
       >
         {() =>
@@ -422,19 +437,22 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
       <Modal
         open={confirming}
         role="alertdialog"
-        title="Mark ready for billing"
+        title={t('billing.charges.markReady')}
         description={
           sheet
-            ? `${lines.filter((line) => !line.deleted).length} charges lock and a claim is created for ${formatName(sheet.patient.name)}. Charges can still be corrected from the claim.`
+            ? t('billing.charges.confirm.description', {
+                count: lines.filter((line) => !line.deleted).length,
+                name: formatName(sheet.patient.name),
+              })
             : undefined
         }
         onClose={() => setConfirming(false)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirming(false)}>
-              Cancel
+              {t('billing.charges.confirm.cancel')}
             </Button>
-            <Button onClick={markReady}>Mark ready</Button>
+            <Button onClick={markReady}>{t('billing.charges.confirm.submit')}</Button>
           </>
         }
       />

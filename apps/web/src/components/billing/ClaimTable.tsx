@@ -1,13 +1,15 @@
 'use client';
 
 import { Badge, Button, Checkbox, Table } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { Claim } from '@/lib/api';
 import { formatDate, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
-import { ageingState, claimAgeDays, CLAIM_STATUS_LABELS, CLAIM_STATUS_TONE } from './billing';
+import { ageingState, claimAgeDays, CLAIM_STATUS_LABEL_KEYS, CLAIM_STATUS_TONE } from './billing';
+import { translateColumns } from './columns';
+import type { KeyedColumn } from './columns';
 import { Money } from './Money';
 
 /**
@@ -18,18 +20,22 @@ import { Money } from './Money';
  * nothing until you know whether it was submitted yesterday or in June. Rows
  * carrying scrub errors say so and cannot be selected for a bulk action that
  * would fail, which is how the workbench keeps a bulk submit honest.
+ *
+ * The claim number and the payer's name are the payer's, and render as they
+ * arrived. Everything the practice says about a claim - its state, its age
+ * band - is this application's own vocabulary and comes from the catalogue.
  */
 
-const COLUMNS: TableColumn[] = [
-  { key: 'select', header: 'Select' },
-  { key: 'claim', header: 'Claim', mono: true },
-  { key: 'patient', header: 'Patient' },
-  { key: 'serviceDate', header: 'Date of service' },
-  { key: 'payer', header: 'Payer' },
-  { key: 'billed', header: 'Billed', numeric: true },
-  { key: 'status', header: 'State' },
-  { key: 'age', header: 'Age in state' },
-  { key: 'actions', header: 'Actions', align: 'right' },
+const COLUMNS: readonly KeyedColumn[] = [
+  { key: 'select', headerKey: 'billing.claimTable.column.select' },
+  { key: 'claim', headerKey: 'billing.claimTable.column.claim', mono: true },
+  { key: 'patient', headerKey: 'billing.claimTable.column.patient' },
+  { key: 'serviceDate', headerKey: 'billing.claimTable.column.serviceDate' },
+  { key: 'payer', headerKey: 'billing.claimTable.column.payer' },
+  { key: 'billed', headerKey: 'billing.claimTable.column.billed', numeric: true },
+  { key: 'status', headerKey: 'billing.claimTable.column.status' },
+  { key: 'age', headerKey: 'billing.claimTable.column.age' },
+  { key: 'actions', headerKey: 'billing.claimTable.column.actions', align: 'right' },
 ];
 
 export interface ClaimTableProps {
@@ -48,6 +54,8 @@ export function ClaimTable({
   onToggle,
   onOpen,
 }: Readonly<ClaimTableProps>): ReactElement {
+  const t = useTranslator();
+
   const rows = claims.map((claim): Record<string, ReactNode> => {
     const days = claimAgeDays(claim, now);
     const ageing = ageingState(days);
@@ -59,7 +67,7 @@ export function ClaimTable({
         <Checkbox
           checked={selected.has(claim.id)}
           disabled={blocked}
-          aria-label={`Select claim ${claim.claimNumber}`}
+          aria-label={t('billing.claimTable.select', { number: claim.claimNumber })}
           onChange={() => onToggle(claim.id)}
         />
       ),
@@ -75,18 +83,25 @@ export function ClaimTable({
       billed: <Money amount={claim.billed} currency={claim.currency} />,
       status: (
         <span className="or-claim-state">
-          <Badge tone={CLAIM_STATUS_TONE[claim.status]}>{CLAIM_STATUS_LABELS[claim.status]}</Badge>
+          <Badge tone={CLAIM_STATUS_TONE[claim.status]}>
+            {t(CLAIM_STATUS_LABEL_KEYS[claim.status])}
+          </Badge>
           {blocked ? (
             <Badge tone="danger">
-              {claim.scrubErrors.length} scrub {claim.scrubErrors.length === 1 ? 'error' : 'errors'}
+              {t(
+                claim.scrubErrors.length === 1
+                  ? 'billing.claimTable.scrubErrors.one'
+                  : 'billing.claimTable.scrubErrors.other',
+                { count: claim.scrubErrors.length }
+              )}
             </Badge>
           ) : null}
         </span>
       ),
       age: (
         <span className="or-claim-age">
-          <span className="or-mono">{days} d</span>
-          <span className="or-small">{ageing.label}</span>
+          <span className="or-mono">{t('billing.claimTable.ageDays', { days })}</span>
+          <span className="or-small">{t(ageing.labelKey)}</span>
         </span>
       ),
       actions: (
@@ -95,13 +110,19 @@ export function ClaimTable({
           size="sm"
           iconRight="arrow-right"
           onClick={() => onOpen(claim)}
-          aria-label={`Open claim ${claim.claimNumber}`}
+          aria-label={t('billing.claimTable.openClaim', { number: claim.claimNumber })}
         >
-          Open
+          {t('billing.claimTable.open')}
         </Button>
       ),
     };
   });
 
-  return <Table caption="Claims" columns={COLUMNS} rows={rows} />;
+  return (
+    <Table
+      caption={t('billing.claimTable.caption')}
+      columns={translateColumns(COLUMNS, t)}
+      rows={rows}
+    />
+  );
 }

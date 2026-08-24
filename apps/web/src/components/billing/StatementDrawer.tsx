@@ -1,13 +1,20 @@
 'use client';
 
 import { Badge, Button, Table } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { StatementAccount } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName, NOT_RECORDED } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
-import { BUCKET_LABELS, DUNNING_LABELS, nextDunningStage, statementTotals } from './billing';
+import {
+  BUCKET_LABEL_KEYS,
+  DUNNING_LABEL_KEYS,
+  nextDunningStage,
+  statementTotals,
+} from './billing';
+import { translateColumns } from './columns';
+import type { KeyedColumn } from './columns';
 import { Drawer } from './Drawer';
 import { Money } from './Money';
 
@@ -21,24 +28,32 @@ import { Money } from './Money';
  * wrong person is not undoable.
  *
  * The patient-facing sentence is written in the portal register even though a
- * biller reads it here: it is the sentence the patient will receive.
+ * biller reads it here: it is the sentence the patient will receive. It is one
+ * message with both amounts as placeholders rather than three fragments joined
+ * at render, because "your insurance paid X, your share is Y" does not keep its
+ * order across languages and a sentence assembled from pieces cannot be
+ * translated at all.
  */
 
-const LEDGER_COLUMNS: TableColumn[] = [
-  { key: 'serviceDate', header: 'Visit' },
-  { key: 'description', header: 'Description' },
-  { key: 'charges', header: 'Charges', numeric: true },
-  { key: 'insurancePaid', header: 'Insurance paid', numeric: true },
-  { key: 'adjustments', header: 'Adjustments', numeric: true },
-  { key: 'outstanding', header: 'Your share', numeric: true },
+const LEDGER_COLUMNS: readonly KeyedColumn[] = [
+  { key: 'serviceDate', headerKey: 'billing.statementDrawer.ledger.visit' },
+  { key: 'description', headerKey: 'billing.statementDrawer.ledger.description' },
+  { key: 'charges', headerKey: 'billing.statementDrawer.ledger.charges', numeric: true },
+  {
+    key: 'insurancePaid',
+    headerKey: 'billing.statementDrawer.ledger.insurancePaid',
+    numeric: true,
+  },
+  { key: 'adjustments', headerKey: 'billing.statementDrawer.ledger.adjustments', numeric: true },
+  { key: 'outstanding', headerKey: 'billing.statementDrawer.ledger.outstanding', numeric: true },
 ];
 
-const RUN_COLUMNS: TableColumn[] = [
-  { key: 'patient', header: 'Patient' },
-  { key: 'balance', header: 'Balance', numeric: true },
-  { key: 'bucket', header: 'Oldest balance' },
-  { key: 'escalation', header: 'Dunning stage' },
-  { key: 'delivery', header: 'Delivery' },
+const RUN_COLUMNS: readonly KeyedColumn[] = [
+  { key: 'patient', headerKey: 'billing.statementDrawer.run.patient' },
+  { key: 'balance', headerKey: 'billing.statementDrawer.run.balance', numeric: true },
+  { key: 'bucket', headerKey: 'billing.statementDrawer.run.bucket' },
+  { key: 'escalation', headerKey: 'billing.statementDrawer.run.escalation' },
+  { key: 'delivery', headerKey: 'billing.statementDrawer.run.delivery' },
 ];
 
 export interface StatementDrawerProps {
@@ -60,6 +75,8 @@ export function StatementDrawer({
   onTextToPay,
   texted,
 }: Readonly<StatementDrawerProps>): ReactElement | null {
+  const t = useTranslator();
+
   if (!open || accounts.length === 0) return null;
 
   const single = accounts.length === 1 ? accounts[0] : null;
@@ -79,12 +96,15 @@ export function StatementDrawer({
     return (
       <Drawer
         open
-        title={`Statement for ${formatName(single.patient.name)}`}
+        title={t('billing.statementDrawer.title', { name: formatName(single.patient.name) })}
         subtitle={
           <>
             <span className="or-mono">{formatMrn(single.patient.mrn)}</span>
             {', '}
-            {DUNNING_LABELS[single.dunningStage].toLowerCase()}, {single.statementsSent} sent
+            {t('billing.statementDrawer.subtitle', {
+              stage: t(DUNNING_LABEL_KEYS[single.dunningStage]).toLowerCase(),
+              sent: single.statementsSent,
+            })}
           </>
         }
         onClose={onClose}
@@ -96,38 +116,45 @@ export function StatementDrawer({
               disabled={single.mobile === null || texted.has(single.id)}
               onClick={() => onTextToPay(single)}
             >
-              {texted.has(single.id) ? 'Link sent' : 'Send text-to-pay link'}
+              {texted.has(single.id)
+                ? t('billing.statementDrawer.linkSent')
+                : t('billing.statementDrawer.sendLink')}
             </Button>
             <Button iconLeft="mail" onClick={() => onSend([single])}>
-              Send statement
+              {t('billing.statementDrawer.send')}
             </Button>
           </>
         }
       >
         <div className="or-statement">
           <p className="or-body-lg or-statement__sentence">
-            Your insurance paid{' '}
-            {formatMoney(totals.insurancePaid, { currency: single.currency }).text}. Your share is{' '}
-            {formatMoney(totals.outstanding, { currency: single.currency }).text}.
+            {t('billing.statementDrawer.sentence', {
+              insurance: formatMoney(totals.insurancePaid, { currency: single.currency }).text,
+              share: formatMoney(totals.outstanding, { currency: single.currency }).text,
+            })}
           </p>
 
-          <Table caption="Statement lines" columns={LEDGER_COLUMNS} rows={rows} />
+          <Table
+            caption={t('billing.statementDrawer.linesCaption')}
+            columns={translateColumns(LEDGER_COLUMNS, t)}
+            rows={rows}
+          />
 
           <dl className="or-totals">
             <div className="or-totals__row">
-              <dt>Charges</dt>
+              <dt>{t('billing.statementDrawer.totals.charges')}</dt>
               <dd>
                 <Money amount={totals.charges} currency={single.currency} />
               </dd>
             </div>
             <div className="or-totals__row">
-              <dt>Insurance paid</dt>
+              <dt>{t('billing.statementDrawer.totals.insurancePaid')}</dt>
               <dd>
                 <Money amount={totals.insurancePaid} currency={single.currency} />
               </dd>
             </div>
             <div className="or-totals__row">
-              <dt>Balance due</dt>
+              <dt>{t('billing.statementDrawer.totals.balanceDue')}</dt>
               <dd>
                 <Money amount={totals.outstanding} currency={single.currency} emphasis />
               </dd>
@@ -136,32 +163,50 @@ export function StatementDrawer({
 
           <section aria-labelledby="statement-collection">
             <h3 id="statement-collection" className="or-h3">
-              How this can be paid
+              {t('billing.statementDrawer.collection')}
             </h3>
             <ul className="or-fact-list">
               <li>
-                <span className="or-fact-list__term">Mobile</span>
+                <span className="or-fact-list__term">{t('billing.statementDrawer.mobile')}</span>
                 <span>{single.mobile ?? NOT_RECORDED}</span>
-                {texted.has(single.id) ? <Badge tone="success">Link sent</Badge> : null}
+                {texted.has(single.id) ? (
+                  <Badge tone="success">{t('billing.statementDrawer.linkSent')}</Badge>
+                ) : null}
               </li>
               <li>
-                <span className="or-fact-list__term">Card on file</span>
+                <span className="or-fact-list__term">
+                  {t('billing.statementDrawer.cardOnFile')}
+                </span>
                 <span>
-                  {single.cardOnFile ? 'Consent on record, card may be charged' : 'No card on file'}
+                  {single.cardOnFile
+                    ? t('billing.statementDrawer.cardConsent')
+                    : t('billing.statementDrawer.noCard')}
                 </span>
               </li>
               <li>
-                <span className="or-fact-list__term">Payment plan</span>
+                <span className="or-fact-list__term">
+                  {t('billing.statementDrawer.paymentPlan')}
+                </span>
                 <span>
                   {single.paymentPlan
-                    ? `${formatMoney(single.paymentPlan.instalmentAmount, { currency: single.currency }).text} a month, ${single.paymentPlan.instalmentsPaid} of ${single.paymentPlan.instalmentsTotal} paid`
-                    : 'No plan'}
+                    ? t('billing.statementDrawer.plan', {
+                        amount: formatMoney(single.paymentPlan.instalmentAmount, {
+                          currency: single.currency,
+                        }).text,
+                        paid: single.paymentPlan.instalmentsPaid,
+                        total: single.paymentPlan.instalmentsTotal,
+                      })
+                    : t('billing.statementDrawer.noPlan')}
                 </span>
               </li>
               <li>
-                <span className="or-fact-list__term">Last statement</span>
+                <span className="or-fact-list__term">
+                  {t('billing.statementDrawer.lastStatement')}
+                </span>
                 <span>
-                  {single.lastStatementAt ? formatDate(single.lastStatementAt) : 'None sent'}
+                  {single.lastStatementAt
+                    ? formatDate(single.lastStatementAt)
+                    : t('billing.statementDrawer.noneSent')}
                 </span>
               </li>
             </ul>
@@ -176,39 +221,47 @@ export function StatementDrawer({
     id: account.id,
     patient: formatName(account.patient.name, 'listing'),
     balance: <Money amount={account.balance} currency={account.currency} />,
-    bucket: BUCKET_LABELS[account.bucket],
+    bucket: t(BUCKET_LABEL_KEYS[account.bucket]),
     escalation: (
       <span className="or-escalation">
-        <span className="or-small">{DUNNING_LABELS[account.dunningStage]}</span>
-        <span aria-hidden="true">to</span>
-        <Badge tone="neutral">{DUNNING_LABELS[nextDunningStage(account.dunningStage)]}</Badge>
+        <span className="or-small">{t(DUNNING_LABEL_KEYS[account.dunningStage])}</span>
+        <span aria-hidden="true">{t('billing.statementDrawer.escalatesTo')}</span>
+        <Badge tone="neutral">
+          {t(DUNNING_LABEL_KEYS[nextDunningStage(account.dunningStage)])}
+        </Badge>
       </span>
     ),
-    delivery: account.mobile ? 'Portal and text' : 'Print',
+    delivery: account.mobile
+      ? t('billing.statementDrawer.delivery.portalAndText')
+      : t('billing.statementDrawer.delivery.print'),
   }));
 
   return (
     <Drawer
       open
-      title="Statement run"
-      subtitle={`${accounts.length} accounts, ${formatMoney(total, { currency: 'USD' }).text} in total`}
+      title={t('billing.statementDrawer.runTitle')}
+      subtitle={t('billing.statementDrawer.runSubtitle', {
+        count: accounts.length,
+        total: formatMoney(total, { currency: 'USD' }).text,
+      })}
       onClose={onClose}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t('billing.statementDrawer.cancel')}
           </Button>
           <Button iconLeft="mail" onClick={() => onSend(accounts)}>
-            Send {accounts.length} statements
+            {t('billing.statementDrawer.sendCount', { count: accounts.length })}
           </Button>
         </>
       }
     >
-      <p className="or-body">
-        Each account moves to the dunning stage shown. Accounts with a mobile number receive a
-        text-to-pay link alongside the statement; the rest are printed.
-      </p>
-      <Table caption="Accounts in this run" columns={RUN_COLUMNS} rows={rows} />
+      <p className="or-body">{t('billing.statementDrawer.runBody')}</p>
+      <Table
+        caption={t('billing.statementDrawer.runCaption')}
+        columns={translateColumns(RUN_COLUMNS, t)}
+        rows={rows}
+      />
     </Drawer>
   );
 }

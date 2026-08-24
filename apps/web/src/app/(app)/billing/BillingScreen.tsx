@@ -7,7 +7,8 @@ import type { ReactElement } from 'react';
 import { arSummary, claimCounts, Money, remittanceSummary } from '@/components/billing';
 import { AppShell } from '@/components/shell';
 import { useClaims, useRemittances, useStatements } from '@/lib/api';
-import { formatCount, formatMoney } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The billing area's front door.
@@ -21,39 +22,51 @@ import { formatCount, formatMoney } from '@/lib/format';
 
 interface AreaLink {
   href: string;
-  title: string;
-  description: string;
+  /** Catalogue key for the workbench's name. */
+  titleKey: string;
+  /** Catalogue key for the one line saying what is done there. */
+  descriptionKey: string;
 }
 
-const AREAS: AreaLink[] = [
+/**
+ * The five workbenches, as data.
+ *
+ * Keys rather than words, because this list is built once when the module loads
+ * and the reader arrives afterwards. Keeping it as a constant is still worth
+ * doing - the whole of the area's navigation is reviewable in one place, in the
+ * order it renders - and the two things that depend on who is reading become
+ * lookups at render.
+ */
+const AREAS: readonly AreaLink[] = [
   {
     href: '/billing/charges',
-    title: 'Fee sheet',
-    description: "Capture a visit's charges and link each one to its diagnosis.",
+    titleKey: 'billing.home.area.charges.title',
+    descriptionKey: 'billing.home.area.charges.description',
   },
   {
     href: '/billing/claims',
-    title: 'Claim workbench',
-    description: 'Scrub, submit and work denials across every claim state.',
+    titleKey: 'billing.home.area.claims.title',
+    descriptionKey: 'billing.home.area.claims.description',
   },
   {
     href: '/billing/remittance',
-    title: 'Remittance',
-    description: 'Post the 835s and clear what did not match.',
+    titleKey: 'billing.home.area.remittance.title',
+    descriptionKey: 'billing.home.area.remittance.description',
   },
   {
     href: '/billing/statements',
-    title: 'Statements and AR',
-    description: 'Patient balances, ageing and statement runs.',
+    titleKey: 'billing.home.area.statements.title',
+    descriptionKey: 'billing.home.area.statements.description',
   },
   {
     href: '/billing/payments',
-    title: 'Payments',
-    description: 'Take a payment, allocate it, issue the receipt.',
+    titleKey: 'billing.home.area.payments.title',
+    descriptionKey: 'billing.home.area.payments.description',
   },
 ];
 
 export function BillingScreen(): ReactElement {
+  const t = useTranslator();
   const claimsState = useClaims({ pageSize: 100 });
   const remittancesState = useRemittances();
   const statementsState = useStatements({ pageSize: 100 });
@@ -73,67 +86,81 @@ export function BillingScreen(): ReactElement {
     .reduce((total, claim) => total + claim.billed, 0);
 
   return (
-    <AppShell
-      title="Billing"
-      description="Where the money is today, and the workbench that moves it."
-    >
-      <section className="or-strip" aria-label="Today's revenue cycle">
+    <AppShell title={t('billing.home.title')} description={t('billing.home.description')}>
+      <section className="or-strip" aria-label={t('billing.home.strip')}>
         <VitalStat
-          label="Ready to submit"
+          label={t('billing.home.readyToSubmit')}
           value={`${counts.SCRUBBED}`}
           state={counts.SCRUBBED > 0 ? 'neutral' : 'success'}
-          stateLabel={counts.SCRUBBED > 0 ? 'Waiting on a submit' : 'Nothing waiting'}
+          stateLabel={
+            counts.SCRUBBED > 0
+              ? t('billing.home.waitingOnSubmit')
+              : t('billing.home.nothingWaiting')
+          }
         />
         <VitalStat
-          label="Denied"
+          label={t('billing.home.denied')}
           value={formatMoney(denied, { currency: 'USD' }).text}
           state={counts.DENIED > 0 ? 'danger' : 'success'}
-          stateLabel={formatCount(counts.DENIED, 'claim')}
+          stateLabel={t(
+            counts.DENIED === 1
+              ? 'billing.home.deniedClaims.one'
+              : 'billing.home.deniedClaims.other',
+            { count: counts.DENIED }
+          )}
         />
         <VitalStat
-          label="Remittance exceptions"
+          label={t('billing.home.exceptions')}
           value={`${exceptions}`}
           state={exceptions > 0 ? 'danger' : 'success'}
-          stateLabel={exceptions > 0 ? 'Needs a decision' : 'All posted'}
+          stateLabel={
+            exceptions > 0 ? t('billing.home.needsDecision') : t('billing.home.allPosted')
+          }
         />
         <VitalStat
-          label="Patient AR"
+          label={t('billing.home.patientAr')}
           value={formatMoney(ar.total, { currency: 'USD' }).text}
           state={ar.buckets.DAYS_91_PLUS > 0 ? 'danger' : 'neutral'}
           stateLabel={
-            ar.buckets.DAYS_91_PLUS > 0 ? 'Some of it is over 90 days' : `${ar.accounts} accounts`
+            ar.buckets.DAYS_91_PLUS > 0
+              ? t('billing.home.someOver90')
+              : t('billing.home.accountCount', { count: ar.accounts })
           }
         />
       </section>
 
-      <Card overline="Workbenches" title="Where to go">
+      <Card overline={t('billing.home.workbenches')} title={t('billing.home.whereToGo')}>
         <ul className="or-area-list">
           {AREAS.map((area) => (
             <li key={area.href} className="or-area-list__item">
               <div className="or-area-list__body">
-                <p className="or-area-list__title">{area.title}</p>
-                <p className="or-small">{area.description}</p>
+                <p className="or-area-list__title">{t(area.titleKey)}</p>
+                <p className="or-small">{t(area.descriptionKey)}</p>
               </div>
               <Button variant="ghost" size="sm" iconRight="arrow-right" href={area.href}>
-                Open
+                {t('billing.home.open')}
               </Button>
             </li>
           ))}
         </ul>
       </Card>
 
-      <Card overline="Oldest money" title="Aged balances">
+      <Card overline={t('billing.home.oldestMoney')} title={t('billing.home.agedBalances')}>
+        {/* The amount leads, because `Money` speaks it properly for a screen
+            reader and the sentence is about that number. The catalogue message
+            is the rest of the sentence, so every language it is written in has
+            to read with the money first. */}
         <p className="or-body">
-          <Money amount={ar.buckets.DAYS_91_PLUS} currency="USD" emphasis /> is over 90 days old
-          across {ar.accounts} accounts.{' '}
+          <Money amount={ar.buckets.DAYS_91_PLUS} currency="USD" emphasis />{' '}
+          {t('billing.home.agedSentence', { count: ar.accounts })}{' '}
           {ar.buckets.DAYS_91_PLUS > 0 ? (
-            <Badge tone="danger">Work these first</Badge>
+            <Badge tone="danger">{t('billing.home.workTheseFirst')}</Badge>
           ) : (
-            <Badge tone="success">Nothing aged</Badge>
+            <Badge tone="success">{t('billing.home.nothingAged')}</Badge>
           )}
         </p>
         <Button variant="secondary" href="/billing/statements">
-          Open statements and AR
+          {t('billing.home.openStatements')}
         </Button>
       </Card>
     </AppShell>

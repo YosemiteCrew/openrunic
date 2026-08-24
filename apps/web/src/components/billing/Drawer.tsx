@@ -4,6 +4,8 @@ import { IconButton } from '@openrunic/ui';
 import { useEffect, useId, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { useTranslator } from '@/lib/i18n/messages';
+
 /**
  * The side modal the component canon calls C17, composed in the app.
  *
@@ -50,6 +52,7 @@ export function Drawer({
   onClose,
   children,
 }: Readonly<DrawerProps>): ReactElement | null {
+  const t = useTranslator();
   const panelRef = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
   const baseId = useId();
@@ -122,7 +125,7 @@ export function Drawer({
             </h2>
             {subtitle ? <p className="or-small or-drawer__subtitle">{subtitle}</p> : null}
           </div>
-          <IconButton icon="x" label="Close" size="sm" onClick={onClose} />
+          <IconButton icon="x" label={t('billing.drawer.close')} size="sm" onClick={onClose} />
         </div>
 
         <div className="or-drawer__body">{children}</div>

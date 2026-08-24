@@ -11,7 +11,7 @@ export { ADMIN_AREAS, adminArea, adminBreadcrumb } from './areas';
 export type { AdminArea, AdminAreaId } from './areas';
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
-export { keywordsFrom, pluralKey, translateColumns } from './copy';
+export { pluralKey, translateColumns } from './copy';
 export type { AdminColumn, PluralKeys } from './copy';
 export { DetailList } from './DetailList';
 export type { DetailItem, DetailListProps } from './DetailList';

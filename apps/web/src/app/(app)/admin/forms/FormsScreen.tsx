@@ -15,7 +15,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import { adminArea, adminBreadcrumb, ConfirmDialog, keywordsFrom } from '@/components/admin';
+import { adminArea, adminBreadcrumb, ConfirmDialog } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -23,6 +23,7 @@ import { AsyncBoundary } from '@/components/state';
 import { useAdminClientOption, useFormDefinitions, useFormFieldTypes } from '@/lib/api';
 import type { AdminClient, FormDefinition, FormField, FormFieldType, FormSection } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -234,7 +235,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
         id: 'admin.forms.preview',
         group: 'actions',
         label: t('admin.forms.command.preview'),
-        keywords: keywordsFrom(t, 'admin.forms.command.preview.keywords'),
+        keywords: searchWords(t('admin.forms.command.preview.keywords')),
         icon: 'eye',
         perform: startPreview,
       },
@@ -242,7 +243,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
         id: 'admin.forms.publish',
         group: 'actions',
         label: t('admin.forms.command.publish'),
-        keywords: keywordsFrom(t, 'admin.forms.command.publish.keywords'),
+        keywords: searchWords(t('admin.forms.command.publish.keywords')),
         icon: 'upload',
         perform: startPublish,
       },

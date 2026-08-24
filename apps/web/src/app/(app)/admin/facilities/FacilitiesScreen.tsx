@@ -9,7 +9,6 @@ import {
   adminBreadcrumb,
   DetailList,
   Drawer,
-  keywordsFrom,
   pluralKey,
   translateColumns,
 } from '@/components/admin';
@@ -20,6 +19,7 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { useAdminClientOption, useFacilities } from '@/lib/api';
 import type { AdminClient, Facility } from '@/lib/api';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -90,7 +90,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
         id: 'admin.facilities.open',
         group: 'actions',
         label: t('admin.facilities.command.open'),
-        keywords: keywordsFrom(t, 'admin.facilities.command.open.keywords'),
+        keywords: searchWords(t('admin.facilities.command.open.keywords')),
         icon: 'building-2',
         perform: openFirst,
       },
@@ -98,7 +98,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
         id: 'admin.facilities.inactive',
         group: 'actions',
         label: t('admin.facilities.command.inactive'),
-        keywords: keywordsFrom(t, 'admin.facilities.command.inactive.keywords'),
+        keywords: searchWords(t('admin.facilities.command.inactive.keywords')),
         icon: 'eye',
         perform: () => setShowInactive(true),
       },

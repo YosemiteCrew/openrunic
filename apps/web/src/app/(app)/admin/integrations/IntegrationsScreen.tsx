@@ -4,7 +4,7 @@ import { Badge, Button, Card, Input, Tag, Toast } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import { adminArea, adminBreadcrumb, DetailList, Drawer, keywordsFrom } from '@/components/admin';
+import { adminArea, adminBreadcrumb, DetailList, Drawer } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -12,6 +12,7 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { useAdminClientOption, useIntegrations } from '@/lib/api';
 import type { AdminClient, Integration, IntegrationStatus } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -270,7 +271,7 @@ export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>
         id: 'admin.integrations.problem',
         group: 'actions',
         label: t('admin.integrations.openFailing'),
-        keywords: keywordsFrom(t, 'admin.integrations.command.problem.keywords'),
+        keywords: searchWords(t('admin.integrations.command.problem.keywords')),
         icon: 'triangle-alert',
         perform: openFirstProblem,
       },

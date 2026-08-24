@@ -8,7 +8,7 @@ import { DetailList } from '@/components/admin/DetailList';
 import { Drawer } from '@/components/admin/Drawer';
 import { FilterBar } from '@/components/admin/FilterBar';
 import { PermissionMatrix } from '@/components/admin/PermissionMatrix';
-import { keywordsFrom, pluralKey, translateColumns } from '@/components/admin/copy';
+import { pluralKey, translateColumns } from '@/components/admin/copy';
 import { isAllowed, permissionKey, summariseRole } from '@/components/admin/permissions';
 import { TabPanel, Tabs } from '@/components/admin/Tabs';
 import { MOCK_PERMISSIONS } from '@/lib/api';
@@ -402,12 +402,5 @@ describe('the admin copy helpers', () => {
     // Zero is `other` in both languages this build carries, and the count that
     // most often gets hard-coded to the singular by mistake.
     expect(es(pluralKey(keys, 0, 'es'), { count: 0 })).toBe('0 cuentas');
-  });
-
-  it('splits a keyword message into words and drops the empty ones', () => {
-    expect(keywordsFrom(() => 'filter, active users, ,', 'ignored')).toStrictEqual([
-      'filter',
-      'active users',
-    ]);
   });
 });

@@ -11,7 +11,6 @@ import {
   ConfirmDialog,
   DetailList,
   Drawer,
-  keywordsFrom,
   TabPanel,
   Tabs,
   translateColumns,
@@ -31,6 +30,7 @@ import {
 } from '@/lib/api';
 import type { AdminClient, ApiKey, SmartApp, Webhook, WebhookDelivery } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -624,7 +624,7 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
         id: 'admin.developer.key',
         group: 'actions',
         label: t('admin.developer.keys.create'),
-        keywords: keywordsFrom(t, 'admin.developer.command.key.keywords'),
+        keywords: searchWords(t('admin.developer.command.key.keywords')),
         icon: 'key',
         perform: startKey,
       },
@@ -632,7 +632,7 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
         id: 'admin.developer.apps',
         group: 'actions',
         label: t('admin.developer.command.apps'),
-        keywords: keywordsFrom(t, 'admin.developer.command.apps.keywords'),
+        keywords: searchWords(t('admin.developer.command.apps.keywords')),
         icon: 'app-window',
         perform: showApps,
       },
@@ -640,7 +640,7 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
         id: 'admin.developer.webhooks',
         group: 'actions',
         label: t('admin.developer.command.webhooks'),
-        keywords: keywordsFrom(t, 'admin.developer.command.webhooks.keywords'),
+        keywords: searchWords(t('admin.developer.command.webhooks.keywords')),
         icon: 'webhook',
         perform: showWebhooks,
       },

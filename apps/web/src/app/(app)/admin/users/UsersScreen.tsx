@@ -11,7 +11,6 @@ import {
   DetailList,
   Drawer,
   FilterBar,
-  keywordsFrom,
   PermissionMatrix,
   permissionKey,
   pluralKey,
@@ -33,6 +32,7 @@ import {
 } from '@/lib/api';
 import type { AdminClient, PermissionRow, StaffRole, StaffStatus, StaffUser } from '@/lib/api';
 import { formatDateTime, NOT_RECORDED } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -528,7 +528,7 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
         id: 'admin.users.invite',
         group: 'actions',
         label: t('admin.users.invite.title'),
-        keywords: keywordsFrom(t, 'admin.users.command.invite.keywords'),
+        keywords: searchWords(t('admin.users.command.invite.keywords')),
         icon: 'user-plus',
         perform: openInvite,
       },
@@ -536,7 +536,7 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
         id: 'admin.users.roles',
         group: 'actions',
         label: t('admin.users.roles.edit'),
-        keywords: keywordsFrom(t, 'admin.users.command.roles.keywords'),
+        keywords: searchWords(t('admin.users.command.roles.keywords')),
         icon: 'shield-check',
         perform: openRoles,
       },
@@ -544,7 +544,7 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
         id: 'admin.users.active',
         group: 'actions',
         label: t('admin.users.command.active'),
-        keywords: keywordsFrom(t, 'admin.users.command.active.keywords'),
+        keywords: searchWords(t('admin.users.command.active.keywords')),
         icon: 'filter',
         perform: showUnenrolled,
       },

@@ -5,6 +5,14 @@ import type { TableColumn } from '@openrunic/ui';
  * own: a table header built from a catalogue key, and a plural form chosen by
  * the reader's language.
  *
+ * The palette's search words are NOT here. They were, taking the translator and
+ * the key and doing the lookup inside - which reads well and hides the key from
+ * `catalogue-drift.test.ts`, whose scanner looks for `t('key')` and
+ * `somethingKey: 'key'` and nothing else. A key it cannot see is a key whose
+ * typo renders as itself in a search box and fails no test. They go through
+ * `searchWords` from `lib/i18n/counted.ts` instead, with the lookup at the call
+ * site where the scanner can read it.
+ *
  * Both exist because the alternative is per-screen. Six screens each writing
  * their own three-line column mapper is six places for the shape to drift, and
  * six screens each writing `count === 1` is English grammar hard-coded into a
@@ -33,21 +41,6 @@ export function translateColumns(
   columns: readonly AdminColumn[]
 ): TableColumn[] {
   return columns.map(({ headerKey, ...rest }) => ({ ...rest, header: translate(headerKey) }));
-}
-
-/**
- * The palette's search words for one command, from a comma-separated message.
- *
- * One message rather than one key per word, because the words are a list a
- * translator writes as a list. Trimmed and emptied-out because that list is
- * hand-written in every language, and a stray ", ," would otherwise register a
- * command that matches the empty string.
- */
-export function keywordsFrom(translate: Translate, key: string): string[] {
-  return translate(key)
-    .split(',')
-    .map((word) => word.trim())
-    .filter((word) => word !== '');
 }
 
 /**

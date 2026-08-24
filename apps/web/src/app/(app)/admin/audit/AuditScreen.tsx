@@ -10,7 +10,6 @@ import {
   DetailList,
   Drawer,
   FilterBar,
-  keywordsFrom,
   pluralKey,
   translateColumns,
 } from '@/components/admin';
@@ -30,6 +29,7 @@ import type { AdminClient, AuditAction, AuditEvent, PurposeOfUse } from '@/lib/a
 import { downloadCsv, toCsv } from '@/lib/csv';
 import type { CsvColumn } from '@/lib/csv';
 import { formatDateTime, formatEnumLabel } from '@/lib/format';
+import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -312,7 +312,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
         id: 'admin.audit.export',
         group: 'actions',
         label: t('admin.audit.command.export'),
-        keywords: keywordsFrom(t, 'admin.audit.command.export.keywords'),
+        keywords: searchWords(t('admin.audit.command.export.keywords')),
         icon: 'download',
         perform: exportRows,
       },
@@ -320,7 +320,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
         id: 'admin.audit.breakglass',
         group: 'actions',
         label: t('admin.audit.command.breakglass'),
-        keywords: keywordsFrom(t, 'admin.audit.command.breakglass.keywords'),
+        keywords: searchWords(t('admin.audit.command.breakglass.keywords')),
         icon: 'shield-alert',
         perform: showBreakglass,
       },

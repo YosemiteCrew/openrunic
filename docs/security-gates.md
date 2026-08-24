@@ -146,7 +146,7 @@ it is worse than having no expiry field at all, because the field makes the proc
 while changing nothing.
 
 `exception-expiry.yml` runs `scripts/ci/exception-expiry.mjs` over all three and fails once a date
-has passed. Four things about it are deliberate:
+has passed. Five things about it are deliberate:
 
 - **A missing date fails too.** Requiring the field only where somebody remembered it would let the
   next entry skip it, which is the one outcome that makes the gate decorative.
@@ -158,6 +158,10 @@ has passed. Four things about it are deliberate:
   fine, since a file that is not there has no exceptions to expire. A file that exists and cannot be
   read - permissions, a dangling symlink - would otherwise produce "0 accepted findings, all
   current" and exit zero, which is a gate passing because it could not do its job.
+- **An entry the script cannot parse is an error, not a skip.** Three separate fail-open bugs
+  turned up in review of this guard, and all three had one shape: something it could not read
+  became something it did not check. A suppression the scanner honours and this does not is an
+  exception with no expiry, which is the state the gate exists to make impossible.
 - **`.grant.yaml` is read only under `ignore-packages:`.** Its `allow:` list is a list of the same
   shape, and every SPDX identifier on it would otherwise read as an undated exception. Adjacent list
   items share the comment above them, because a run written with nothing between them is one

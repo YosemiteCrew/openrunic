@@ -377,14 +377,49 @@ test('an intervening comment ends the run too', () => {
   );
 });
 
-test('handles a quoted scoped package name', () => {
-  const grant = `ignore-packages:
+/** YAML lets a scalar be bare, single-quoted or double-quoted, and grant honours all three. */
+for (const [name, written] of [
+  ['bare', '@scope/name'],
+  ['single-quoted', "'@scope/name'"],
+  ['double-quoted', '"@scope/name"'],
+]) {
+  test(`handles a ${name} scoped package name`, () => {
+    const grant = `ignore-packages:
   # reason. Owner: someone. Re-review by: 2027-01-01.
-  - '@scope/name'
+  - ${written}
 `;
 
-  assert.deepEqual(
-    findExceptions(grant, GRANT).map((exception) => exception.id),
-    ['@scope/name']
-  );
+    assert.deepEqual(
+      findExceptions(grant, GRANT).map((exception) => exception.id),
+      ['@scope/name']
+    );
+  });
+}
+
+/**
+ * The rule that closes the class rather than the instance.
+ *
+ * Three separate fail-open bugs were found in review of this script - an
+ * unreadable file, a dangling symlink, and a double-quoted package name - and
+ * all three had one shape: something the guard could not read became something
+ * the guard did not check. A suppression the scanner honours and this does not
+ * is an exception with no expiry, which is the state the script exists to make
+ * impossible. So an unparseable list item is an error.
+ */
+test('refuses a list item it cannot parse rather than skipping it', () => {
+  const grant = `ignore-packages:
+  # reason. Owner: someone. Re-review by: 2027-01-01.
+  - { name: some-package, version: 1.2.3 }
+`;
+
+  assert.throws(() => findExceptions(grant, GRANT), /cannot parse .grant.yaml:3/u);
+});
+
+test('a mismatched quote does not sneak through as a bare name', () => {
+  const grant = `ignore-packages:
+  # reason. Owner: someone. Re-review by: 2027-01-01.
+  - 'some-package"
+`;
+
+  assert.throws(() => findExceptions(grant, GRANT), /cannot parse/u);
 });

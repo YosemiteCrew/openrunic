@@ -74,8 +74,14 @@ export const SOURCES = [
   {
     file: '.grant.yaml',
     what: 'licence exception',
-    // `  - some-package` under `ignore-packages:`, quoted or not.
-    entry: /^\s+-\s*'?(?<id>[@a-z0-9][^'\s]*)'?\s*$/u,
+    // `  - some-package` under `ignore-packages:`, bare or quoted either way.
+    // The quotes are a backreference so they have to match each other, which is
+    // what YAML requires anyway.
+    entry: /^\s+-\s*(?<quote>['"]?)(?<id>[@A-Za-z0-9][^'"\s]*)\k<quote>\s*$/u,
+    // Anything in the section that looks like a list item and is not an entry.
+    // See {@link findExceptions}: a line this file cannot parse must fail,
+    // never be skipped.
+    item: /^\s+-\s*\S/u,
     comment: /^\s*#/u,
     // Scoped, and this is the whole reason the field exists. `allow:` in the
     // same file is a list of the same shape, and every SPDX identifier on it
@@ -114,7 +120,21 @@ export function findExceptions(text, source) {
     if (!inSection) continue;
 
     const match = source.entry.exec(line);
-    if (match === null) continue;
+    if (match === null) {
+      // An entry this file cannot parse is refused rather than skipped. Three
+      // separate fail-open bugs in this script were found in review - an
+      // unreadable file, a dangling symlink, and a double-quoted package name
+      // - and every one of them had the same shape: something the guard could
+      // not read became something the guard did not check. A suppression the
+      // scanner honours and this does not is an exception with no expiry, which
+      // is the state this whole script exists to make impossible.
+      if (source.item?.test(line) === true) {
+        throw new Error(
+          `exception-expiry: cannot parse ${source.file}:${String(index + 1)} - ${line.trim()}`
+        );
+      }
+      continue;
+    }
 
     // Walk up to the comment block that documents this entry.
     //

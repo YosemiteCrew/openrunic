@@ -4,6 +4,8 @@ import { Button, Modal } from '@openrunic/ui';
 import { useId, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 
+import { useTranslator } from '@/lib/i18n/messages';
+
 /**
  * Sign with note: the same signature, plus the sentence the patient or the
  * next clinician needs.
@@ -33,20 +35,23 @@ export function SignNoteModal({
   onCancel,
   onConfirm,
 }: Readonly<SignNoteModalProps>): ReactElement {
+  const t = useTranslator();
   const [note, setNote] = useState('');
   const fieldId = useId();
 
   return (
     <Modal
       open={open}
-      title="Sign with a note"
-      description={`Signing ${subject} for ${patientName} moves it out of the queue and releases it to the portal with your note attached.`}
+      title={t('results.note.title')}
+      /* The panel and the patient are named as they are recorded; only the
+         sentence around them is translated. */
+      description={t('results.note.description', { panel: subject, patient: patientName })}
       onClose={onCancel}
       width={560}
       footer={
         <>
           <Button variant="ghost" onClick={onCancel}>
-            Cancel
+            {t('results.note.cancel')}
           </Button>
           <Button
             iconLeft="pen-line"
@@ -55,26 +60,24 @@ export function SignNoteModal({
               setNote('');
             }}
           >
-            Sign with note
+            {t('results.note.confirm')}
           </Button>
         </>
       }
     >
       <div className="or-textarea">
         <label className="or-textarea__label" htmlFor={fieldId}>
-          Note for the record
+          {t('results.note.label')}
         </label>
         <textarea
           id={fieldId}
           className="or-textarea__control"
           rows={4}
           value={note}
-          placeholder="What the patient should do next"
+          placeholder={t('results.note.placeholder')}
           onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setNote(event.target.value)}
         />
-        <p className="or-caption or-textarea__hint">
-          The note is part of the signed record and is visible to the patient.
-        </p>
+        <p className="or-caption or-textarea__hint">{t('results.note.hint')}</p>
       </div>
     </Modal>
   );

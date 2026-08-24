@@ -1,12 +1,15 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Table } from '@openrunic/ui';
 import type { BadgeTone, TableColumn } from '@openrunic/ui';
+import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { mockPatientById, mockProviderName } from '@/lib/api';
 import type { ResultAnalyte, ResultReport } from '@/lib/api';
 import { formatDate, formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { ResultFlagBadge } from './ResultFlagBadge';
 
@@ -17,6 +20,11 @@ import { ResultFlagBadge } from './ResultFlagBadge';
  * state, so "6.2 mmol/L" is never shown without "Above range" beside it. The
  * previous column is the cumulative context a decision needs: one value is a
  * number, three are a direction.
+ *
+ * The analyte labels, their codes, the ranges, the readings and the narrative
+ * are the laboratory's own and are rendered as they arrived. The range-state
+ * word comes from `formatVital`, which serves every clinical surface rather
+ * than this one.
  */
 
 const STATE_TONE: Record<string, BadgeTone> = {
@@ -41,12 +49,13 @@ export interface ResultReadingProps {
   now: string;
 }
 
-const COLUMNS: TableColumn[] = [
-  { key: 'analyte', header: 'Analyte' },
-  { key: 'value', header: 'Result', numeric: true },
-  { key: 'range', header: 'Reference range' },
-  { key: 'state', header: 'Range state' },
-  { key: 'previous', header: 'Previous' },
+/** The table's columns, as catalogue keys. See `OrdersScreen` for why. */
+const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
+  { key: 'analyte', headerKey: 'results.reading.column.analyte' },
+  { key: 'value', headerKey: 'results.reading.column.value', numeric: true },
+  { key: 'range', headerKey: 'results.reading.column.range' },
+  { key: 'state', headerKey: 'results.reading.column.state' },
+  { key: 'previous', headerKey: 'results.reading.column.previous' },
 ];
 
 export function ResultReading({
@@ -56,13 +65,18 @@ export function ResultReading({
   onSignWithNote,
   now,
 }: Readonly<ResultReadingProps>): ReactElement {
+  const t = useTranslator();
   const patient = mockPatientById(report.patientId);
   const isSigned = report.status === 'SIGNED' || signed !== null;
+  const columns = useMemo<TableColumn[]>(
+    () => COLUMNS.map(({ headerKey, ...column }) => ({ ...column, header: t(headerKey) })),
+    [t]
+  );
 
   return (
     <Card
       tone="cream"
-      overline="Reading"
+      overline={t('results.reading.overline')}
       title={report.panel}
       className="or-reading"
       footer={
@@ -70,24 +84,29 @@ export function ResultReading({
           {isSigned ? (
             <>
               <Badge tone="neutral" icon="check">
-                Signed
+                {t('results.signedBadge')}
               </Badge>
               <span className="or-small">
                 {signed
-                  ? `Signed ${formatDateTime(signed.at, 'dense')} by ${mockProviderName(report.orderedBy)}`
-                  : `Signed by ${mockProviderName(report.orderedBy)}`}
+                  ? t('results.reading.signedAtBy', {
+                      at: formatDateTime(signed.at, 'dense'),
+                      clinician: mockProviderName(report.orderedBy),
+                    })
+                  : t('results.reading.signedBy', {
+                      clinician: mockProviderName(report.orderedBy),
+                    })}
               </span>
             </>
           ) : (
             <>
               <Button iconLeft="pen-line" onClick={onSign}>
-                Sign
+                {t('results.reading.sign')}
               </Button>
               <Button variant="secondary" iconLeft="message-square" onClick={onSignWithNote}>
-                Sign with note
+                {t('results.reading.signWithNote')}
               </Button>
               <Button variant="ghost" href="/orders/new" iconLeft="circle-plus">
-                Order follow-up
+                {t('results.reading.followUp')}
               </Button>
             </>
           )}
@@ -96,30 +115,39 @@ export function ResultReading({
     >
       <div className="or-reading__head">
         <p className="or-body">
-          {patient ? formatName(patient.name, 'full') : 'Not recorded'}
+          {patient ? formatName(patient.name, 'full') : t('results.notRecorded')}
           {patient ? (
             <>
               {' '}
-              <span className="or-mono">{formatMrn(patient.mrn)}</span>, born{' '}
-              {formatDate(patient.birthDate)}
+              {/* The record number keeps its own monospace element, so the
+                  identity line is translated on either side of it rather than
+                  as one message. */}
+              <span className="or-mono">{formatMrn(patient.mrn)}</span>
+              {t('results.reading.born', { birthDate: formatDate(patient.birthDate) })}
             </>
           ) : null}
         </p>
         <div className="or-cluster">
           <ResultFlagBadge flag={report.flag} />
           <span className="or-small">
-            Collected {formatDateTime(report.collectedAt, 'dense')}, reported{' '}
-            {formatDateTime(report.reportedAt, 'dense')} by {report.performer}
+            {t('results.reading.collected', {
+              collected: formatDateTime(report.collectedAt, 'dense'),
+              reported: formatDateTime(report.reportedAt, 'dense'),
+              performer: report.performer,
+            })}
           </span>
         </div>
         <p className="or-small or-muted">
-          Ordered by {mockProviderName(report.orderedBy)}. Today is {formatDate(now)}.
+          {t('results.reading.orderedBy', {
+            clinician: mockProviderName(report.orderedBy),
+            today: formatDate(now),
+          })}
         </p>
       </div>
 
       {signed?.note ? (
         <div className="or-reading__note">
-          <p className="or-overline">Note on signing</p>
+          <p className="or-overline">{t('results.reading.noteHeading')}</p>
           <p className="or-body">{signed.note}</p>
         </div>
       ) : null}
@@ -130,16 +158,16 @@ export function ResultReading({
 
       {report.analytes.length > 0 ? (
         <Table
-          columns={COLUMNS}
-          rows={report.analytes.map((analyte) => toRow(analyte))}
-          caption={`${report.panel}, values against their reference ranges`}
+          columns={columns}
+          rows={report.analytes.map((analyte) => toRow(t, analyte))}
+          caption={t('results.reading.caption', { panel: report.panel })}
         />
       ) : null}
     </Card>
   );
 }
 
-function toRow(analyte: ResultAnalyte): Record<string, ReactNode> {
+function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {
   const reading = formatVital({
     label: analyte.label,
     value: analyte.value,
@@ -158,7 +186,7 @@ function toRow(analyte: ResultAnalyte): Record<string, ReactNode> {
     ),
     // The unit rides with the value: a bare number is never a reading.
     value: `${reading.value} ${reading.unit}`.trim(),
-    range: reading.rangeText ?? 'No range recorded',
+    range: reading.rangeText ?? t('results.reading.noRange'),
     state: (
       <Badge tone={STATE_TONE[reading.state] ?? 'neutral'} icon={null}>
         {reading.stateLabel}
@@ -167,8 +195,13 @@ function toRow(analyte: ResultAnalyte): Record<string, ReactNode> {
     previous:
       analyte.previous && analyte.previous.length > 0
         ? analyte.previous
-            .map((prior) => `${prior.value} on ${formatDate(prior.at, 'dense')}`)
+            .map((prior) =>
+              t('results.reading.prior', {
+                value: prior.value,
+                at: formatDate(prior.at, 'dense'),
+              })
+            )
             .join(', ')
-        : 'No prior value',
+        : t('results.reading.noPrior'),
   };
 }

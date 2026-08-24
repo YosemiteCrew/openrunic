@@ -5,6 +5,7 @@ import type { BadgeTone } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { ResultFlag } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { RESULT_FLAG_LABELS } from './flag-labels';
 
@@ -33,9 +34,10 @@ export interface ResultFlagBadgeProps {
 }
 
 export function ResultFlagBadge({ flag }: Readonly<ResultFlagBadgeProps>): ReactElement {
+  const t = useTranslator();
   return (
     <Badge tone={FLAG_TONE[flag]} icon={FLAG_ICON[flag]}>
-      {RESULT_FLAG_LABELS[flag]}
+      {t(RESULT_FLAG_LABELS[flag].labelKey)}
     </Badge>
   );
 }

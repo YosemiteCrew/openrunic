@@ -1,7 +1,5 @@
 'use client';
 
-import { formatCount, plural } from '@openrunic/i18n';
-import type { Interpolations, Translator } from '@openrunic/i18n';
 import { Button, Card, Modal, Select, Toast } from '@openrunic/ui';
 import type { SelectOption } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
@@ -16,6 +14,10 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { isBulkSignable, MOCK_NOW, mockPatientById, useResults } from '@/lib/api';
 import type { Assignment, ResultFlag, ResultReport, WorklistClient } from '@/lib/api';
 import { formatName } from '@/lib/format';
+import { formatCount } from '@openrunic/i18n';
+
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -49,19 +51,6 @@ const ASSIGNMENT_FILTERS: readonly { value: Assignment | ''; labelKey: string }[
   { value: '', labelKey: 'results.list.assignment.everyone' },
 ];
 
-/**
- * A message that has a form per count, as the pair of keys that hold them.
- *
- * Both forms are looked up and `plural` picks between them with the reader's
- * own rules rather than `count === 1`: English has two forms, and a fork
- * translating into a language with four would otherwise get a sentence that
- * reads as broken only to somebody who speaks it.
- */
-interface CountedMessage {
-  readonly oneKey: string;
-  readonly otherKey: string;
-}
-
 const BATCH_ACTION: CountedMessage = {
   oneKey: 'results.bulk.actionOne',
   otherKey: 'results.bulk.actionOther',
@@ -81,33 +70,6 @@ const BATCH_SIGNED: CountedMessage = {
   oneKey: 'results.bulk.signedOne',
   otherKey: 'results.bulk.signedOther',
 };
-
-/** The form the reader's language picks for this count. */
-function counted(
-  t: Translator,
-  message: CountedMessage,
-  count: number,
-  values: Interpolations = {}
-): string {
-  const filled = { ...values, count: formatCount(count, t.locale) };
-  return plural(
-    { one: t(message.oneKey, filled), other: t(message.otherKey, filled) },
-    count,
-    t.locale
-  );
-}
-
-/**
- * The synonyms a tired person types instead of the label: one comma-separated
- * message per command, the way the navigation table carries its own. The lookup
- * stays at the call site so the key is a literal the drift test can find.
- */
-function searchWords(words: string): string[] {
-  return words
-    .split(',')
-    .map((word) => word.trim())
-    .filter((word) => word !== '');
-}
 
 interface Signing {
   report: ResultReport;

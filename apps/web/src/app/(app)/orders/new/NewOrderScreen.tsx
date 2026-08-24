@@ -1,7 +1,5 @@
 'use client';
 
-import { formatCount, plural } from '@openrunic/i18n';
-import type { Interpolations, Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Modal, Select, Table, Tag, Toast } from '@openrunic/ui';
 import type { SelectOption, TableColumn } from '@openrunic/ui';
 import { useCallback, useId, useMemo, useReducer, useRef, useState } from 'react';
@@ -28,6 +26,10 @@ import type {
   PatientProblem,
 } from '@/lib/api';
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import type { Translator } from '@openrunic/i18n';
+
+import { counted, searchWords } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { EMPTY_COMPOSITION, reduceComposition } from './composition';
@@ -63,20 +65,6 @@ interface Completion {
   message: string;
 }
 
-/**
- * A message that has a form per count, as the pair of keys that hold them.
- *
- * Both forms are looked up and `plural` picks between them with the reader's
- * own rules, rather than `count === 1`. English has two forms and is the reason
- * everybody writes the comparison; a fork translating into Polish needs four,
- * and the failure of guessing is a sentence that reads as broken only to
- * somebody who speaks the language.
- */
-interface CountedMessage {
-  readonly oneKey: string;
-  readonly otherKey: string;
-}
-
 const REVIEW_HEADING: CountedMessage = {
   oneKey: 'orders.new.review.headingOne',
   otherKey: 'orders.new.review.headingOther',
@@ -101,40 +89,6 @@ const CONFIRM_BODY: CountedMessage = {
   oneKey: 'orders.new.confirm.bodyOne',
   otherKey: 'orders.new.confirm.bodyOther',
 };
-
-/**
- * The form the reader's language picks for this count.
- *
- * `formatCount` rather than the raw number, because the form and the digits are
- * two separate locale decisions and a message that got the grammar right and
- * the numerals wrong would still be wrong.
- */
-function counted(
-  t: Translator,
-  message: CountedMessage,
-  count: number,
-  values: Interpolations = {}
-): string {
-  const filled = { ...values, count: formatCount(count, t.locale) };
-  return plural(
-    { one: t(message.oneKey, filled), other: t(message.otherKey, filled) },
-    count,
-    t.locale
-  );
-}
-
-/**
- * The synonyms a tired person types instead of the label, as the navigation
- * table already carries its own: one comma-separated message per command, so a
- * translator replaces the whole set rather than a word of it. The lookup stays
- * at the call site so the key is a literal `catalogue-drift.test.ts` can find.
- */
-function searchWords(words: string): string[] {
-  return words
-    .split(',')
-    .map((word) => word.trim())
-    .filter((word) => word !== '');
-}
 
 export interface NewOrderScreenProps {
   /** Injectable for tests. Defaults to the app's client. */

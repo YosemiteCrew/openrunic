@@ -14,6 +14,15 @@ import type { Messages } from '../../catalogue.js';
  * See `./index.ts` for what is deliberately absent from this language and why.
  */
 export const reports: Messages = {
+  /* Los propios textos del panel. La etiqueta, el detalle y el estado llegan de
+     la API ya nombrados y no se traducen aquí. */
+  'reports.tile.open': 'Abrir {label}',
+  'reports.tile.trend': 'Últimos {days} días, {trend}',
+
+  'reports.trend.rising': 'en aumento',
+  'reports.trend.falling': 'a la baja',
+  'reports.trend.steady': 'sin cambios',
+
   'reports.title': 'Informes',
   'reports.description': '¿Está sana la consulta hoy? Y los números detrás de la respuesta.',
 

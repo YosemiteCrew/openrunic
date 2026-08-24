@@ -14,6 +14,24 @@ import type { Messages } from '../../catalogue.js';
  * up on the same screen. See `./index.ts`.
  */
 export const reports: Messages = {
+  /* ------------------------------------------------------------ a stat tile */
+  /* The tile's own words. Its label, its detail and its state word are not
+     here: those arrive from the API already named, and `{label}` below is
+     interpolated exactly as it came rather than re-cased to fit an English
+     sentence. */
+  'reports.tile.open': 'Open {label}',
+  /* One message rather than a prefix joined to a word: the window and the
+     direction sit where the language puts them, not where English does.
+     `{days}` comes from the series rather than being written in, so it cannot
+     go stale against a contract that says seven. */
+  'reports.tile.trend': 'Last {days} days, {trend}',
+
+  /* Which way the sparkline points. Words this codebase wrote about its own
+     drawing, which is what makes them copy. */
+  'reports.trend.rising': 'rising',
+  'reports.trend.falling': 'falling',
+  'reports.trend.steady': 'steady',
+
   'reports.title': 'Reports',
   'reports.description': 'Is the practice healthy today, and the numbers behind the answer.',
 

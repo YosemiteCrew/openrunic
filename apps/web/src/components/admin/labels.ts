@@ -3,9 +3,23 @@ import type { AuditAction, PurposeOfUse, StaffRole } from '@/lib/api';
 /**
  * What this application calls three of its own admin enums, as catalogue keys.
  *
- * All three are declared in `lib/api/admin.ts` and mirror enums in
- * `@openrunic/database`. None comes from a terminology server, so the words are
- * this codebase's to write and its to translate.
+ * All three are declared in `lib/api/admin.ts` and nowhere else: none of them
+ * is a Prisma enum, and `StaffRole` and `AuditAction` do not exist outside the
+ * web contract at all. That makes them this application's own vocabulary as
+ * plainly as anything in this repository is.
+ *
+ * `PurposeOfUse` needs the distinction drawn precisely, because a code IS
+ * involved. `schema.prisma` stores the column as a string and documents it as
+ * an "HL7 PurposeOfUse code, e.g. TREAT, HPAYMT, HOPERAT" - and that code is
+ * not what these keys name. The union here is the five-way simplification the
+ * web contract works in, mapped from the HL7 value by the API layer, and the
+ * word for `TREATMENT` is ours in the way "Fee sheet" is. The HL7 code keeps
+ * its own name and never reaches a screen.
+ *
+ * The test that decides membership is not "is it a Prisma enum". It is: does
+ * anything outside this codebase supply a display for this value? For all three
+ * the answer is no - the API sends the member and nothing else - which is what
+ * makes the words ours to write and ours to translate.
  *
  * They were reaching a screen two different ways, and both produced English no
  * translator could open. The audit action and the purpose of use went through

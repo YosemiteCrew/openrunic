@@ -14,12 +14,12 @@ import type { Messages } from '../../catalogue.js';
  * code that has one. So they stay as data and are interpolated into these
  * messages rather than replaced by them.
  *
- * The appointment-status words are the case worth stating, because they look
- * convertible. Eleven of the twelve statuses render straight from the enum
- * through `formatEnumLabel`; one, `NOSHOW`, is spelled out by hand because the
- * enum writes it as one word and the glossary writes it as two. Translating
- * that one and leaving eleven mechanical would produce a status vocabulary
- * one-twelfth in the reader's language, so all twelve move together or none do.
+ * The appointment statuses moved together, which is what that argument was
+ * waiting for. All twelve are keys here. Eleven of them used to be produced by
+ * splitting the enum name on its underscore and `NOSHOW` was spelled out by
+ * hand, so a vocabulary that was one-twelfth translatable was the reason not to
+ * start; there was no way to convert one without leaving the other eleven
+ * derived. `formatEnumLabel` is gone and the question with it.
  *
  * ## Counts
  *

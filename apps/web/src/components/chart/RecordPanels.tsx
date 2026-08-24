@@ -321,8 +321,10 @@ export function CareTeamPanel({ chart }: Readonly<{ chart: ChartSummary }>): Rea
     <Card title={t('chart.careTeam.title')}>
       <ul className="or-chart-list">
         {ordered.map((member) => (
-          /* Name, role, contact and relationship all come from the directory.
-             Nothing on this row is this screen's own words. */
+          /* Name, role and contact come from the directory and are printed as
+             they arrived. The relationship does not: the API sends `CARE_TEAM`
+             and no display for it, so that one word is this codebase's and is
+             looked up like any other. */
           <li key={member.id} className="or-chart-item">
             <p className="or-chart-item__title">{member.name}</p>
             <p className="or-caption or-chart-item__meta">

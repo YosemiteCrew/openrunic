@@ -101,9 +101,16 @@ const UNSIGNED_NOTE_KEYS: CountedMessage = {
  * The chip for one allergy.
  *
  * The allergen and the reaction come from the record and are rendered as they
- * arrived. The severity and the category do not: the API sends `SEVERE` and
- * `DRUG` and no display for either, so the words are this codebase's and it
- * takes a translator to write them.
+ * arrived. The reaction used to be lowercased on the way out, to read as a
+ * clause after the category; that re-cased a clinician's own words - "Hives and
+ * facial swelling" became "hives and facial swelling" - and would have gone on
+ * doing it in every language this frame is translated into. It is printed as
+ * written now, which is the same rule the dashboard tiles follow for a label
+ * the server owns.
+ *
+ * The severity and the category are the other side of that line. The API sends
+ * `SEVERE` and `DRUG` and no display for either, so those words are this
+ * codebase's and it takes a translator to write them.
  */
 function allergyChip(t: Translator, allergy: Allergy): ReactElement {
   return (
@@ -112,7 +119,7 @@ function allergyChip(t: Translator, allergy: Allergy): ReactElement {
         {allergy.allergen} - {t(ALLERGY_SEVERITY_LABELS[allergy.severity].labelKey)}
       </Badge>
       <p className="or-caption or-rail__reaction">
-        {t(ALLERGY_CATEGORY_LABELS[allergy.category].labelKey)}, {allergy.reaction.toLowerCase()}
+        {t(ALLERGY_CATEGORY_LABELS[allergy.category].labelKey)}, {allergy.reaction}
       </p>
     </li>
   );

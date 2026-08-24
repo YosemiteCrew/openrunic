@@ -11,16 +11,23 @@ import type {
 /**
  * What this application calls its own chart enums, as catalogue keys.
  *
- * `lib/api/chart/types.ts` says it plainly: "Every enum here mirrors an enum
- * that already exists in `@openrunic/database`." None of them arrives from a
- * terminology server, so none of them arrives named - the API sends `SEVERE`
- * and says nothing about what to call it. `formatEnumLabel` was inventing the
- * English and the codebase was then treating its own invention as somebody
- * else's name for the value.
+ * `lib/api/chart/types.ts` claims every enum in it mirrors one in
+ * `@openrunic/database`, and that claim is not true: `AllergyCategory`,
+ * `MedicationSource` and `NoteState` are Prisma enums, while `AllergySeverity`,
+ * `CareTeamRelationship` and `ProblemStatus` exist only in the web contract.
+ * That file has been corrected; this note records it because the difference
+ * looks like it should decide something and does not.
  *
- * An allergen, a reaction, a medication's name and a problem's code are the
- * other side of that line and stay exactly as they arrived.
+ * What decides it is whether anything outside this codebase supplies a display,
+ * and for every one of these the answer is no. A Prisma enum stores the member,
+ * not a word for it; a view-model union does not even do that. Either way the
+ * API sends `SEVERE` and says nothing about what to call it, so
+ * `formatEnumLabel` was inventing the English and the codebase was then reading
+ * its own invention back as somebody else's name for the value.
  *
+ * An allergen, a reaction, a medication's name and a problem's code ARE named
+ * elsewhere, and they stay exactly as they arrived.
+ * *
  * ## The `INLINE` maps are not the labels lowercased
  *
  * Three sentences drop one of these words into their middle, and did it with

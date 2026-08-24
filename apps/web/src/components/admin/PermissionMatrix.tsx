@@ -4,8 +4,9 @@ import { Checkbox } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { PermissionRow, StaffRole } from '@/lib/api';
-import { STAFF_ROLE_LABELS } from '@/lib/api';
 import { useTranslator } from '@/lib/i18n/messages';
+
+import { STAFF_ROLE_KEYS } from './labels';
 
 import { isAllowed } from './permissions';
 
@@ -50,7 +51,7 @@ export function PermissionMatrix({
             </th>
             {roles.map((role) => (
               <th key={role} scope="col" className="or-matrix__role">
-                {STAFF_ROLE_LABELS[role]}
+                {t(STAFF_ROLE_KEYS[role].labelKey)}
               </th>
             ))}
           </tr>
@@ -78,7 +79,7 @@ export function PermissionMatrix({
                         <span className="or-visually-hidden">
                           {t('admin.permissions.cellLabel', {
                             capability: row.capability,
-                            role: STAFF_ROLE_LABELS[role],
+                            role: t(STAFF_ROLE_KEYS[role].labelKey),
                           })}
                         </span>
                       }

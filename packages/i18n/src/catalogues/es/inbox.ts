@@ -43,8 +43,11 @@ export const inbox: Messages = {
   'inbox.sla.inline.onTime': 'vence {when}',
 
   'inbox.rail.overline': 'Hoy',
-  'inbox.rail.openItems': '{count} elementos abiertos',
-  'inbox.rail.overdueSummary':
+  'inbox.rail.openItemsOne': '{count} elemento abierto',
+  'inbox.rail.openItemsOther': '{count} elementos abiertos',
+  'inbox.rail.overdueSummaryOne':
+    '{count} pasó su hora de vencimiento. El más antiguo está {oldest}.',
+  'inbox.rail.overdueSummaryOther':
     '{count} pasaron su hora de vencimiento. El más antiguo está {oldest}.',
   'inbox.rail.nothingOverdue':
     'No hay nada vencido. El elemento más antiguo sigue dentro de su plazo.',

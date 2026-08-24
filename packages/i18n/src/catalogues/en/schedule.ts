@@ -176,7 +176,8 @@ export const schedule: Messages = {
   'schedule.flowBoard.filtersTitle': 'Narrow the board',
   'schedule.flowBoard.delayedOnly': 'Delayed patients only',
   'schedule.flowBoard.delayedOnlyHint': 'Waiting 15 minutes or more in a pre-visit status.',
-  'schedule.flowBoard.columnLabel': '{column}, {count} patients',
+  'schedule.flowBoard.columnLabelOne': '{column}, {count} patient',
+  'schedule.flowBoard.columnLabelOther': '{column}, {count} patients',
   'schedule.flowBoard.columnEmpty': 'Nobody here right now.',
   'schedule.flowBoard.empty.title': 'No patients on the board yet',
   'schedule.flowBoard.empty.message':

@@ -156,7 +156,8 @@ export const schedule: Messages = {
   'schedule.flowBoard.delayedOnly': 'Solo pacientes demorados',
   'schedule.flowBoard.delayedOnlyHint':
     'Esperando 15 minutos o más en un estado previo a la consulta.',
-  'schedule.flowBoard.columnLabel': '{column}, {count} pacientes',
+  'schedule.flowBoard.columnLabelOne': '{column}, {count} paciente',
+  'schedule.flowBoard.columnLabelOther': '{column}, {count} pacientes',
   'schedule.flowBoard.columnEmpty': 'Nadie aquí en este momento.',
   'schedule.flowBoard.empty.title': 'Todavía no hay pacientes en el panel',
   'schedule.flowBoard.empty.message':

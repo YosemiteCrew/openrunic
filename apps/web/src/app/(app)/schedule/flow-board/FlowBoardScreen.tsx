@@ -26,6 +26,8 @@ import { AsyncBoundary } from '@/components/state';
 import { api, MOCK_ROOMS, mockStatusSince, useMutation } from '@/lib/api';
 import type { ApiClient, ApiError, Appointment, AppointmentStatus, Patient } from '@/lib/api';
 import { formatName, formatTime } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -86,6 +88,17 @@ function synonyms(list: string): string[] {
     .map((word) => word.trim())
     .filter((word) => word !== '');
 }
+
+/**
+ * A column's label for a screen reader, which names the count aloud.
+ *
+ * A pair rather than one message: "Waiting, 1 patients" is the shape a
+ * catalogue is meant to remove.
+ */
+const COLUMN_LABEL: CountedMessage = {
+  oneKey: 'schedule.flowBoard.columnLabelOne',
+  otherKey: 'schedule.flowBoard.columnLabelOther',
+};
 
 export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): ReactElement {
   const t = useTranslator();
@@ -350,10 +363,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
                   key={column.id}
                   className="or-flow-column"
                   data-done={column.done || undefined}
-                  aria-label={t('schedule.flowBoard.columnLabel', {
-                    column: heading,
-                    count: cards.length,
-                  })}
+                  aria-label={counted(t, COLUMN_LABEL, cards.length, { column: heading })}
                 >
                   <header className="or-flow-column__head">
                     <h3 className="or-flow-column__title">{heading}</h3>

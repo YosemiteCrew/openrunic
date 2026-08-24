@@ -22,14 +22,16 @@ function failing(error: ApiError): ApiClient {
 }
 
 function column(label: string): HTMLElement {
-  return screen.getByRole('region', { name: new RegExp(`^${label}, \\d+ patients$`) });
+  return screen.getByRole('region', { name: new RegExp(`^${label}, (1 patient|\\d+ patients)$`) });
 }
 
 describe('FlowBoardScreen', () => {
   it('renders one column per status with its count in the header', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    expect(await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ })).toBeVisible();
+    expect(
+      await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ })
+    ).toBeVisible();
     for (const label of ['Checked in', 'Roomed', 'In progress', 'Checked out']) {
       expect(column(label)).toBeInTheDocument();
     }
@@ -38,7 +40,9 @@ describe('FlowBoardScreen', () => {
   it('shows both clocks on a card: time in status and time in the building', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    const arrived = await screen.findByRole('region', {
+      name: /^Arrived, (1 patient|\d+ patients)$/,
+    });
     expect(within(arrived).getByText('In this status')).toBeInTheDocument();
     expect(within(arrived).getByText('In the building')).toBeInTheDocument();
   });
@@ -46,7 +50,9 @@ describe('FlowBoardScreen', () => {
   it('words the delay rather than only tinting it, and never blinks', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const checkedIn = await screen.findByRole('region', { name: /^Checked in, \d+ patients$/ });
+    const checkedIn = await screen.findByRole('region', {
+      name: /^Checked in, (1 patient|\d+ patients)$/,
+    });
     // Sampleton Mockford has been waiting since 09:26 against a 10:20 now.
     expect(within(checkedIn).getByText(/^Delayed \d+/)).toBeInTheDocument();
   });
@@ -54,14 +60,16 @@ describe('FlowBoardScreen', () => {
   it('raises the caution band with its own counted word', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    const arrived = await screen.findByRole('region', {
+      name: /^Arrived, (1 patient|\d+ patients)$/,
+    });
     expect(within(arrived).getByText(/^Waiting \d+/)).toBeInTheDocument();
   });
 
   it('advances a patient in one click and offers an undo', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
+    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patient$/ });
     fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
 
     // The card moves once the server has agreed, not on the click.
@@ -77,7 +85,7 @@ describe('FlowBoardScreen', () => {
     const client = createMockClient();
     render(<FlowBoardScreen client={client} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
+    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patient$/ });
     fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
     await screen.findByRole('region', { name: /^Arrived, 0 patients$/ });
 
@@ -88,21 +96,21 @@ describe('FlowBoardScreen', () => {
   it('puts the patient back where they were when the undo is taken', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
+    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patient$/ });
     fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
     fireEvent.click(
       within(await screen.findByRole('status')).getByRole('button', { name: 'Undo' })
     );
 
-    expect(
-      await screen.findByRole('region', { name: /^Arrived, 1 patients$/ })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: /^Arrived, 1 patient$/ })).toBeInTheDocument();
   });
 
   it('assigns a room from the board and says where the patient went', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    const arrived = await screen.findByRole('region', {
+      name: /^Arrived, (1 patient|\d+ patients)$/,
+    });
     const roomSelect = within(arrived).getByRole('combobox', { name: /^Room for / });
     fireEvent.change(roomSelect, { target: { value: 'Room 4' } });
 
@@ -114,7 +122,7 @@ describe('FlowBoardScreen', () => {
   it('filters the board to delayed patients only', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ });
     fireEvent.click(screen.getByRole('switch', { name: /Delayed patients only/ }));
 
     expect(screen.getByRole('region', { name: /^In progress, 0 patients$/ })).toBeInTheDocument();
@@ -124,13 +132,13 @@ describe('FlowBoardScreen', () => {
   it('filters by room without hiding the columns themselves', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ });
     fireEvent.change(screen.getByRole('combobox', { name: 'Room' }), {
       target: { value: 'Room 1' },
     });
 
     expect(screen.getByRole('region', { name: /^Arrived, 0 patients$/ })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /^In progress, 1 patients$/ })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^In progress, 1 patient$/ })).toBeInTheDocument();
   });
 
   it('says when it last read the server rather than implying it is live', async () => {
@@ -157,7 +165,9 @@ describe('FlowBoardScreen', () => {
   it('is operable from the keyboard: every advance is a focusable button', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    const arrived = await screen.findByRole('region', {
+      name: /^Arrived, (1 patient|\d+ patients)$/,
+    });
     const advance = within(arrived).getByRole('button', { name: /^Move .* to checked in$/ });
     advance.focus();
     expect(advance).toHaveFocus();
@@ -182,7 +192,7 @@ async function runCommand(label: string | RegExp): Promise<void> {
 describe('FlowBoardScreen, driven from the command palette', () => {
   it('toggles the delayed filter, and the verb renames itself to what it now does', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ });
 
     await runCommand('Show delayed patients only');
     expect(screen.getByRole('switch', { name: /Delayed patients only/ })).toBeChecked();
@@ -195,7 +205,7 @@ describe('FlowBoardScreen, driven from the command palette', () => {
 
   it('clears provider, room and delay filters in one verb', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ });
 
     const cards = () => screen.queryAllByRole('button', { name: /^Move / }).length;
     const everyone = cards();
@@ -216,20 +226,18 @@ describe('FlowBoardScreen, driven from the command palette', () => {
 
   it('reads the board again, which is the only way it ever refreshes', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ });
 
     await runCommand('Read the board again');
 
     // The board never polls on its own, so a re-read has to leave it whole
     // rather than emptying it while it waits.
-    expect(
-      await screen.findByRole('region', { name: /^Arrived, 1 patients$/ })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: /^Arrived, 1 patient$/ })).toBeInTheDocument();
   });
 
   it('narrows to one provider without hiding the columns', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^Arrived, (1 patient|\d+ patients)$/ });
 
     const provider = screen.getByRole('combobox', { name: 'Provider' }) as HTMLSelectElement;
     const option = Array.from(provider.options).find((entry) => entry.text.includes('Lindqvist'));
@@ -238,7 +246,7 @@ describe('FlowBoardScreen, driven from the command palette', () => {
     // Every column still renders, so the board's shape does not change under a
     // filter; only the counts do.
     expect(
-      (await screen.findAllByRole('region', { name: /, \d+ patients$/ })).length
+      (await screen.findAllByRole('region', { name: /, (1 patient|\d+ patients)$/ })).length
     ).toBeGreaterThan(3);
   });
 });
@@ -246,7 +254,9 @@ describe('FlowBoardScreen, driven from the command palette', () => {
 describe('FlowBoardScreen, rooms and undo', () => {
   it('does not claim to have cleared a room the API will not clear', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    const inProgress = await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
+    const inProgress = await screen.findByRole('region', {
+      name: /^In progress, (1 patient|\d+ patients)$/,
+    });
 
     const roomSelect = within(inProgress).getByRole('combobox', { name: /^Room for / });
     const before = (roomSelect as HTMLSelectElement).value;
@@ -261,16 +271,15 @@ describe('FlowBoardScreen, rooms and undo', () => {
 
   it('puts a patient back in the room the undo came from', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    await screen.findByRole('region', { name: /^In progress, \d+ patients$/ });
+    await screen.findByRole('region', { name: /^In progress, (1 patient|\d+ patients)$/ });
 
     /* Re-queried on each assertion rather than held: a re-read of the day
        replaces the card, so a reference captured before the write is a node
        that is no longer on the board. */
     const roomSelect = (): HTMLElement =>
-      within(screen.getByRole('region', { name: /^In progress, \d+ patients$/ })).getByRole(
-        'combobox',
-        { name: /^Room for / }
-      );
+      within(
+        screen.getByRole('region', { name: /^In progress, (1 patient|\d+ patients)$/ })
+      ).getByRole('combobox', { name: /^Room for / });
     const before = (roomSelect() as HTMLSelectElement).value;
 
     fireEvent.change(roomSelect(), { target: { value: 'Room 4' } });
@@ -287,7 +296,9 @@ describe('FlowBoardScreen, rooms and undo', () => {
 
   it('dismisses the confirmation without undoing the move it confirmed', async () => {
     render(<FlowBoardScreen client={createMockClient()} />);
-    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    const arrived = await screen.findByRole('region', {
+      name: /^Arrived, (1 patient|\d+ patients)$/,
+    });
 
     fireEvent.click(within(arrived).getAllByRole('button', { name: /^Move / })[0]!);
     const toast = await screen.findByRole('status');
@@ -330,7 +341,7 @@ describe('FlowBoardScreen, when the server refuses a move', () => {
   it('leaves the card where it is and repeats the reason it was given', async () => {
     render(<FlowBoardScreen client={refusesWrites()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patients$/ });
+    const arrived = await screen.findByRole('region', { name: /^Arrived, 1 patient$/ });
     fireEvent.click(within(arrived).getByRole('button', { name: /^Move .* to checked in$/ }));
 
     // A refusal interrupts rather than waiting for a pause, which is what the
@@ -341,13 +352,15 @@ describe('FlowBoardScreen, when the server refuses a move', () => {
     expect(toast).toHaveTextContent('This facility is not granted to your role.');
     // Nothing to undo: the board never claimed the card had moved.
     expect(within(toast).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /^Arrived, 1 patients$/ })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Arrived, 1 patient$/ })).toBeInTheDocument();
   });
 
   it('says so for a refused room assignment too, not only for an advance', async () => {
     render(<FlowBoardScreen client={refusesWrites()} />);
 
-    const arrived = await screen.findByRole('region', { name: /^Arrived, \d+ patients$/ });
+    const arrived = await screen.findByRole('region', {
+      name: /^Arrived, (1 patient|\d+ patients)$/,
+    });
     fireEvent.change(within(arrived).getByRole('combobox', { name: /^Room for / }), {
       target: { value: 'Room 4' },
     });

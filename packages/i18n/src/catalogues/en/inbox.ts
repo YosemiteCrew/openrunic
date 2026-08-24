@@ -60,8 +60,10 @@ export const inbox: Messages = {
 
   /* ------------------------------------------------------------- the rail */
   'inbox.rail.overline': 'Today',
-  'inbox.rail.openItems': '{count} open items',
-  'inbox.rail.overdueSummary': '{count} past their due time. The oldest is {oldest}.',
+  'inbox.rail.openItemsOne': '{count} open item',
+  'inbox.rail.openItemsOther': '{count} open items',
+  'inbox.rail.overdueSummaryOne': '{count} past its due time. The oldest is {oldest}.',
+  'inbox.rail.overdueSummaryOther': '{count} past their due time. The oldest is {oldest}.',
   'inbox.rail.nothingOverdue': 'Nothing is overdue. The oldest item is still inside its promise.',
   'inbox.rail.auditNote':
     'Every disposition here is audited, and an approval can be undone from the toast while it is still on screen.',

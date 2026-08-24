@@ -18,6 +18,8 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary } from '@/components/state';
 import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -63,6 +65,24 @@ export interface InboxScreenProps {
   /** Fixed "now", so SLA labels are deterministic. */
   now?: string;
 }
+
+/**
+ * The two counted sentences on the rail.
+ *
+ * A pair per sentence rather than one message with the number dropped into it.
+ * The plural message alone rendered "1 open items" in English and
+ * "1 elementos abiertos" in Spanish, which is the failure a catalogue is
+ * supposed to remove rather than one it should introduce.
+ */
+const OPEN_ITEMS: CountedMessage = {
+  oneKey: 'inbox.rail.openItemsOne',
+  otherKey: 'inbox.rail.openItemsOther',
+};
+
+const OVERDUE_SUMMARY: CountedMessage = {
+  oneKey: 'inbox.rail.overdueSummaryOne',
+  otherKey: 'inbox.rail.overdueSummaryOther',
+};
 
 export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProps>): ReactElement {
   const t = useTranslator();
@@ -186,12 +206,11 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
         <Card
           tone="cream"
           overline={t('inbox.rail.overline')}
-          title={t('inbox.rail.openItems', { count: visible.length })}
+          title={counted(t, OPEN_ITEMS, visible.length)}
         >
           <p className="or-small">
             {oldestOverdue
-              ? t('inbox.rail.overdueSummary', {
-                  count: overdue.length,
+              ? counted(t, OVERDUE_SUMMARY, overdue.length, {
                   oldest: slaLabel(t, oldestOverdue.dueAt, now, 'inline'),
                 })
               : t('inbox.rail.nothingOverdue')}

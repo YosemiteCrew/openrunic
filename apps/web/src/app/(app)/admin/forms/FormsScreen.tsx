@@ -24,6 +24,8 @@ import { useAdminClientOption, useFormDefinitions, useFormFieldTypes } from '@/l
 import type { AdminClient, FormDefinition, FormField, FormFieldType, FormSection } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
+import { formatCount } from '@openrunic/i18n';
+
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -355,7 +357,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                   </Badge>
                   <Tag>
                     {t('admin.forms.responses', {
-                      count: current.responseCount.toLocaleString('en-US'),
+                      count: formatCount(current.responseCount, t.locale),
                     })}
                   </Tag>
                   <Tag>

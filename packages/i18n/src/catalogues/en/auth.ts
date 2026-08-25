@@ -38,4 +38,26 @@ export const auth: Messages = {
    * strip is often all a tired person has to tell nine open screens apart.
    */
   'auth.page.title': 'Sign in',
+
+  /*
+   * The two paragraphs on the sign-in screen that were written into the JSX.
+   *
+   * They were missed by #132: both are multi-line text nodes, and one carries an
+   * `&apos;`, so neither matched the scan that inventoried that work. They are
+   * here now, and the drift test's catalogue-to-code direction is what will
+   * notice if either key stops being asked for.
+   *
+   * `developmentLede` is also rewritten. It used to say the principals "exist in
+   * this build only, and the API refuses to accept any of them in production",
+   * which stops being true the moment a demonstration build shows them. What is
+   * true is narrower and is what it says now: the API refuses to start with
+   * them, so nothing they open reaches a real deployment.
+   */
+  'auth.signIn.providerLede':
+    'You will be sent to your identity provider and returned here once it has confirmed who you are.',
+  'auth.signIn.developmentLede':
+    "These are the API's public development principals: fixtures rather than credentials. The API refuses to start with them in production, so nothing they open reaches a real deployment.",
+  'auth.signIn.demoHeading': 'Demonstration',
+  'auth.signIn.demoLede':
+    'This is a demonstration of openrunic. Every record in it is invented, nothing is saved, and each sign-in below is a public fixture. Sign in as anyone and look around.',
 };

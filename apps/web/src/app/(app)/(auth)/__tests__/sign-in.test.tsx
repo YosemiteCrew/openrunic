@@ -226,6 +226,39 @@ describe('the development sign-in', () => {
 });
 
 describe('the route', () => {
+  it('tells a visitor what a demonstration is before asking them to pick a name', () => {
+    /*
+     * A developer's checkout and a public demonstration offer the same four
+     * buttons and mean different things by them. The developer knows what a
+     * development principal is; the visitor has arrived from a link and needs to
+     * be told the records are invented before being asked to sign in as a
+     * doctor.
+     */
+    render(
+      <SignInScreen
+        navigate={navigate}
+        demoBuild
+        credentials={developmentCredentials('production', true)}
+      />
+    );
+
+    expect(screen.getByRole('group', { name: 'Demonstration' })).toBeInTheDocument();
+    expect(screen.getByText(/Every record in it is invented/)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Development sign-in' })).not.toBeInTheDocument();
+  });
+
+  it('says something different, and true, to a developer', () => {
+    render(
+      <SignInScreen navigate={navigate} credentials={developmentCredentials('development')} />
+    );
+
+    expect(screen.getByRole('group', { name: 'Development sign-in' })).toBeInTheDocument();
+    // It used to say the principals "exist in this build only", which a
+    // demonstration build makes false. What is true is that the API refuses to
+    // start with them.
+    expect(screen.getByText(/refuses to start with them in production/)).toBeInTheDocument();
+  });
+
   it('names the tab, and stays out of search indexes', async () => {
     const metadata = await generateMetadata();
 

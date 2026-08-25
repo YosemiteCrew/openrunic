@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { IS_DEMO_BUILD } from '@/lib/auth/build';
 import { applySessionCookie, clearSessionCookie } from '@/lib/auth/cookie';
 import { identityForAccessToken } from '@/lib/auth/credentials';
 import { SESSION_FETCH_HEADER } from '@/lib/auth/routes';
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const token = readSubmittedToken(body);
   if (token === null) return refuse();
 
-  const identity = identityForAccessToken(token, process.env.NODE_ENV);
+  const identity = identityForAccessToken(token, process.env.NODE_ENV, IS_DEMO_BUILD);
   if (identity === null) return refuse();
 
   const record = startSessionRecord(token, identity, Date.now());

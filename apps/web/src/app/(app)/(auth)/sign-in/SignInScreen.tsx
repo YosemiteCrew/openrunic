@@ -6,6 +6,7 @@ import type { FormEvent, ReactElement } from 'react';
 
 import { Alert } from '@/components/state';
 import { signIn } from '@/lib/auth/client';
+import { IS_DEMO_BUILD } from '@/lib/auth/build';
 import { developmentCredentials } from '@/lib/auth/directory';
 import type { StaffCredential } from '@/lib/auth/directory';
 import { landingPath } from '@/lib/auth/routes';
@@ -102,6 +103,17 @@ export interface SignInScreenProps {
    * run time, which is how one image cannot serve two deployments.
    */
   oidcEnabled?: boolean;
+  /**
+   * Whether this build is a demonstration. It changes what the credential list
+   * is called and what the paragraph above it says, because a developer's
+   * checkout and a public demonstration offer the same buttons and mean
+   * different things by them.
+   *
+   * Injectable for tests, and defaulted from `lib/auth/build.ts` rather than
+   * read here, so the two conditions that open the door are decided in one
+   * place.
+   */
+  demoBuild?: boolean;
 }
 
 function documentNavigate(url: string): void {
@@ -112,7 +124,8 @@ export function SignInScreen({
   reason,
   next,
   navigate = documentNavigate,
-  credentials = developmentCredentials(process.env.NODE_ENV),
+  demoBuild = IS_DEMO_BUILD,
+  credentials = developmentCredentials(process.env.NODE_ENV, demoBuild),
   oidcEnabled = false,
 }: Readonly<SignInScreenProps>): ReactElement {
   const t = useTranslator();
@@ -188,19 +201,21 @@ export function SignInScreen({
             >
               {t('auth.signIn.provider')}
             </a>
-            <p className="or-auth__lede">
-              You will be sent to your identity provider and returned here once it has confirmed who
-              you are.
-            </p>
+            <p className="or-auth__lede">{t('auth.signIn.providerLede')}</p>
           </div>
         ) : null}
 
         {credentials.length > 0 ? (
           <fieldset className="or-auth__demo">
-            <legend className="or-auth__demo-legend">{t('auth.signIn.developmentHeading')}</legend>
+            {/* A demonstration build and a developer's checkout offer the same
+                buttons and mean different things by them. The developer knows
+                what a development principal is; the visitor needs to be told
+                what they are looking at before they are asked to pick a name. */}
+            <legend className="or-auth__demo-legend">
+              {demoBuild ? t('auth.signIn.demoHeading') : t('auth.signIn.developmentHeading')}
+            </legend>
             <p className="or-auth__lede">
-              These are the API&apos;s public development principals. They exist in this build only,
-              and the API refuses to accept any of them in production.
+              {demoBuild ? t('auth.signIn.demoLede') : t('auth.signIn.developmentLede')}
             </p>
             <div className="or-auth__demo-list">
               {credentials.map((credential) => (

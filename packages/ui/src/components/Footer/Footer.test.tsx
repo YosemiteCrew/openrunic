@@ -17,7 +17,7 @@ describe('Footer', () => {
 
     const band = screen.getByRole('contentinfo');
     expect(band).toHaveClass('or-footer');
-    expect(screen.getByRole('img', { name: 'OpenRunic' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'openrunic' })).toBeInTheDocument();
     expect(screen.getByText(NOTE)).toHaveClass('or-footer__note');
 
     const product = screen.getByRole('navigation', { name: 'Product' });

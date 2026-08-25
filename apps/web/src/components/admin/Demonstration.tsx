@@ -1,8 +1,8 @@
 'use client';
 
-import { Alert } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
+import { Alert } from '@/components/state';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**

@@ -72,7 +72,7 @@ export const Inverse: Story = {
         borderRadius: 'var(--radius-card)',
       }}
     >
-      <Button variant="inverse">Self-host OpenRunic</Button>
+      <Button variant="inverse">Self-host openrunic</Button>
       <Button
         variant="secondary"
         style={{ color: 'var(--bone)', borderColor: 'var(--border-inverse)' }}

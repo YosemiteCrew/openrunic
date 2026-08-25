@@ -1,10 +1,11 @@
 'use client';
 
 import type { Translator } from '@openrunic/i18n';
-import { Alert, Icon, Tag } from '@openrunic/ui';
+import { Icon, Tag } from '@openrunic/ui';
 import Link from 'next/link';
 import type { ReactElement } from 'react';
 
+import { Alert } from '@/components/state';
 import type { AgentSource } from '@/lib/agent';
 import { useTranslator } from '@/lib/i18n/messages';
 

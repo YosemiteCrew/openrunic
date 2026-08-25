@@ -51,7 +51,7 @@ export const DisabledOn: Story = {
   parameters: disabledRowContrast,
   args: {
     label: 'Keep an audit log',
-    hint: 'Always on. OpenRunic records every access to your data.',
+    hint: 'Always on. openrunic records every access to your data.',
     checked: true,
     disabled: true,
   },
@@ -80,7 +80,7 @@ export const Interactive: Story = {
         />
         <Switch
           label="Keep an audit log"
-          hint="Always on. OpenRunic records every access to your data."
+          hint="Always on. openrunic records every access to your data."
           checked
           disabled
         />

@@ -15,7 +15,7 @@ export interface IconProps extends HTMLAttributes<HTMLElement> {
 }
 
 /**
- * Any UI icon. OpenRunic ships no icon set of its own, so the library draws from Lucide,
+ * Any UI icon. openrunic ships no icon set of its own, so the library draws from Lucide,
  * the closest geometric, butt-cap stroke set, at the brand's 1.75px weight.
  *
  * The icon inherits `currentColor`, so it takes espresso, bone or terracotta ink from its

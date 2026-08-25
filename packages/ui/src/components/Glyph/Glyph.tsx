@@ -13,6 +13,12 @@ const STROKES = [1, 2, 3, 4, 5, 6];
 type GlyphStyle = CSSProperties & Record<`--or-glyph-${string}`, string>;
 
 export interface GlyphProps extends HTMLAttributes<HTMLElement> {
+  /**
+   * What a screen reader calls the animated mark. A prop rather than a literal
+   * because it is the one word this component says; the static mark announces
+   * the product's name, which is not translated. See #196.
+   */
+  loadingLabel?: string;
   /** Rendered box in px. Never below 16px; use the favicon builds instead. */
   size?: number;
   /** Sweep the six strokes as a loading state. Use sparingly. */
@@ -42,6 +48,7 @@ export function Glyph({
   animate = false,
   color = 'currentColor',
   basePath,
+  loadingLabel = 'Loading',
   className,
   style,
   ...rest
@@ -58,7 +65,9 @@ export function Glyph({
     <span
       className={cx('or-glyph', animate && 'or-glyph--animate', className)}
       role="img"
-      aria-label={animate ? 'Loading' : 'OpenRunic'}
+      /* The product's name when it is a mark, a word when it is a spinner. Only
+         the word is a prop: `openrunic` is `openrunic` in every language. */
+      aria-label={animate ? loadingLabel : 'openrunic'}
       style={blockStyle}
       {...rest}
     >

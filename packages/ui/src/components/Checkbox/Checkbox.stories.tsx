@@ -66,7 +66,7 @@ export const DisabledChecked: Story = {
   parameters: disabledRowContrast,
   args: {
     label: 'Keep an audit log',
-    hint: 'Always on. OpenRunic records every access to your data.',
+    hint: 'Always on. openrunic records every access to your data.',
     defaultChecked: true,
     disabled: true,
   },

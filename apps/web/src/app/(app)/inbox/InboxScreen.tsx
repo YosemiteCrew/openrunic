@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Card, Select, Toast } from '@openrunic/ui';
+import { Button, Card, Select } from '@openrunic/ui';
 import type { SelectOption } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
@@ -15,7 +15,7 @@ import {
   slaLabel,
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary } from '@/components/state';
+import { AsyncBoundary, Toast } from '@/components/state';
 import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
 import { counted } from '@/lib/i18n/counted';

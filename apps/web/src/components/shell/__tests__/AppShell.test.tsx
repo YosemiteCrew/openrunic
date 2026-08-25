@@ -68,7 +68,7 @@ describe('AppShell', () => {
     );
 
     expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Schedule' })).toBeInTheDocument();
   });
@@ -80,7 +80,7 @@ describe('AppShell', () => {
 
   it('marks the current area in the rail with aria-current, not colour alone', () => {
     render(<AppShell title="Schedule">content</AppShell>);
-    const rail = screen.getByRole('navigation', { name: 'Primary' });
+    const rail = screen.getByRole('navigation', { name: 'Main navigation' });
     expect(within(rail).getByRole('link', { name: /Schedule/ })).toHaveAttribute(
       'aria-current',
       'page'
@@ -93,17 +93,22 @@ describe('AppShell', () => {
     // The library's SideNav is a drawer below 1024px. jsdom has no viewport, so
     // what is asserted here is the behaviour the breakpoint switches on: a
     // named control that opens a focus-trapped dialog and reports its state.
+    //
+    // The names are the shell's, not the library's. `SideNav` used to write
+    // "Primary", "Menu" and "Close" into itself, so a Spanish screen announced
+    // them in English; it takes them as props now and `AppShell` passes the
+    // catalogue's.
     const menu = screen.getByRole('button', { name: 'Menu' });
     expect(menu).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(menu);
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close menu' })).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('navigates by pushing the area route, never by reloading', () => {
     render(<AppShell title="Schedule">content</AppShell>);
-    const rail = screen.getByRole('navigation', { name: 'Primary' });
+    const rail = screen.getByRole('navigation', { name: 'Main navigation' });
 
     fireEvent.click(within(rail).getByRole('link', { name: /Billing/ }));
     expect(push).toHaveBeenCalledWith('/billing');

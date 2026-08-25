@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react';
 
-import { Button, Toast } from '@openrunic/ui';
+import { Button } from '@openrunic/ui';
 
+import { Toast } from '@/components/state';
 import { BookingModal, CheckInDialog } from '@/components/schedule';
 import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
 import type { Appointment, FacilityDto, Patient } from '@/lib/api';

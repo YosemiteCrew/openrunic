@@ -1,7 +1,7 @@
 'use client';
 
 import type { Translator } from '@openrunic/i18n';
-import { Alert, Button, IconButton, Select } from '@openrunic/ui';
+import { Button, IconButton, Select } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
@@ -22,7 +22,7 @@ import {
 import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
 import { ScheduleOverlays } from './ScheduleOverlays';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary } from '@/components/state';
+import { Alert, AsyncBoundary } from '@/components/state';
 import { api, useMutation } from '@/lib/api';
 import type { ApiClient, ApiError, Appointment, FacilityDto, Patient } from '@/lib/api';
 import { formatDate, formatName, formatTime } from '@/lib/format';

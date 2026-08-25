@@ -1,9 +1,10 @@
 'use client';
 
-import { Alert, Button, Input } from '@openrunic/ui';
+import { Button, Input } from '@openrunic/ui';
 import { useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 
+import { Alert } from '@/components/state';
 import { signIn } from '@/lib/auth/client';
 import { developmentCredentials } from '@/lib/auth/directory';
 import type { StaffCredential } from '@/lib/auth/directory';

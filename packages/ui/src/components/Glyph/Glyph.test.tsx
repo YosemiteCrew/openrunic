@@ -4,7 +4,7 @@ import { brandAssetCssUrl } from '../../assets/brand';
 import { Glyph } from './Glyph';
 
 /** The block is the only element carrying inline style, and it is always the named image. */
-function block(name = 'OpenRunic'): HTMLElement {
+function block(name = 'openrunic'): HTMLElement {
   return screen.getByRole('img', { name });
 }
 
@@ -66,5 +66,13 @@ describe('Glyph', () => {
   it('lets a caller style override the computed box', () => {
     render(<Glyph size={48} style={{ width: 120 }} />);
     expect(block()).toHaveStyle({ width: '120px', height: '48px' });
+  });
+
+  it('takes the word it says from the consumer', () => {
+    // The animated mark is a spinner and says "Loading"; the static one
+    // announces the product's name, which is not translated.
+    render(<Glyph animate loadingLabel="Cargando" />);
+
+    expect(screen.getByRole('img', { name: 'Cargando' })).toBeInTheDocument();
   });
 });

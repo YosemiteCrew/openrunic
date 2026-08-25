@@ -61,4 +61,12 @@ export const common: Messages = {
   'common.error.refused.message': 'The server refused the request for {subject}.',
   'common.error.unknown.title': 'This did not load',
   'common.error.unknown.message': 'openrunic could not load {subject}. Try again.',
+
+  /*
+   * The accessible name of every dismiss control in the product. It lived in
+   * `packages/ui` as an English literal on `Alert` and `Toast`, which meant a
+   * Spanish screen had an English close button on its notices. The design system
+   * takes it as a prop now and `components/state` supplies it once. See #196.
+   */
+  'common.dismiss': 'Dismiss',
 };

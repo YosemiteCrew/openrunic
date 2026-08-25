@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Card, Select, Switch, Toast } from '@openrunic/ui';
+import { Button, Card, Select, Switch } from '@openrunic/ui';
 import type { ToastTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -22,7 +22,7 @@ import {
 } from '@/components/schedule';
 import type { ScheduleProvider } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary } from '@/components/state';
+import { AsyncBoundary, Toast } from '@/components/state';
 import { api, MOCK_ROOMS, mockStatusSince, useMutation } from '@/lib/api';
 import type { ApiClient, ApiError, Appointment, AppointmentStatus, Patient } from '@/lib/api';
 import { formatName, formatTime } from '@/lib/format';

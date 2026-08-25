@@ -56,4 +56,6 @@ export const common: Messages = {
   'common.error.refused.message': 'El servidor rechazó la solicitud de {subject}.',
   'common.error.unknown.title': 'Esto no se cargó',
   'common.error.unknown.message': 'openrunic no pudo cargar {subject}. Vuelva a intentarlo.',
+
+  'common.dismiss': 'Descartar',
 };

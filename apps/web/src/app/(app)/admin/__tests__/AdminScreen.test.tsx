@@ -39,7 +39,7 @@ describe('AdminScreen', () => {
 
   it('lights Admin in the rail', () => {
     render(<AdminScreen />);
-    const rail = screen.getByRole('navigation', { name: 'Primary' });
+    const rail = screen.getByRole('navigation', { name: 'Main navigation' });
     expect(within(rail).getByRole('link', { name: /Admin/ })).toHaveAttribute(
       'aria-current',
       'page'

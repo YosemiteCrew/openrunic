@@ -12,7 +12,7 @@ describe('NavBar', () => {
 
     const bar = screen.getByRole('banner');
     expect(bar).toHaveClass('or-nav-bar', 'or-nav-bar--bone');
-    expect(screen.getByRole('link', { name: 'OpenRunic home' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'openrunic home' })).toBeInTheDocument();
     expect(container.querySelector('.or-nav-bar__logo')).toHaveAttribute('aria-hidden', 'true');
 
     const nav = screen.getByRole('navigation', { name: 'Sections' });
@@ -54,7 +54,7 @@ describe('NavBar', () => {
     const onNavigate = vi.fn();
     render(<NavBar items={ITEMS} onNavigate={onNavigate} />);
 
-    const lockup = screen.getByRole('link', { name: 'OpenRunic home' });
+    const lockup = screen.getByRole('link', { name: 'openrunic home' });
     expect(lockup).toHaveAttribute('href', '#Product');
 
     await userEvent.click(lockup);
@@ -71,7 +71,7 @@ describe('NavBar', () => {
   it('survives a missing onNavigate on both the sections and the lockup', async () => {
     render(<NavBar items={ITEMS} />);
     await userEvent.click(screen.getByRole('link', { name: 'Docs' }));
-    await userEvent.click(screen.getByRole('link', { name: 'OpenRunic home' }));
+    await userEvent.click(screen.getByRole('link', { name: 'openrunic home' }));
     expect(screen.getByRole('banner')).toBeInTheDocument();
   });
 
@@ -121,7 +121,7 @@ describe('NavBar', () => {
   it('closes the phone menu when the lockup is chosen', async () => {
     const { container } = render(<NavBar items={ITEMS} />);
     await userEvent.click(screen.getByRole('button', { name: 'Menu' }));
-    await userEvent.click(screen.getByRole('link', { name: 'OpenRunic home' }));
+    await userEvent.click(screen.getByRole('link', { name: 'openrunic home' }));
     expect(container.querySelector('.or-nav-bar__panel')).not.toHaveClass(
       'or-nav-bar__panel--open'
     );
@@ -159,5 +159,23 @@ describe('NavBar', () => {
     expect(bar).toHaveClass('or-nav-bar', 'or-docs-bar');
     expect(bar).toHaveAttribute('id', 'docs-bar');
     expect(screen.getByTestId('bar')).toBe(bar);
+  });
+
+  it('takes every word it says from the consumer', () => {
+    // Same reason as `SideNav`: a component library does not write the words.
+    render(
+      <NavBar
+        items={ITEMS}
+        homeLabel="inicio de openrunic"
+        navLabel="Secciones"
+        menuLabel="Menú"
+        ctaLabel="Empezar"
+      />
+    );
+
+    expect(screen.getByRole('link', { name: 'inicio de openrunic' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Secciones' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Menú' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Empezar' })).toBeInTheDocument();
   });
 });

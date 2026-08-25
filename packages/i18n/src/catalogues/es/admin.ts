@@ -133,13 +133,6 @@ export const admin: Messages = {
   'admin.users.no': 'No',
   'admin.users.capabilities.title': 'Qué puede hacer esta persona',
   'admin.users.deactivate': 'Desactivar la cuenta',
-  'admin.users.deactivatedToast':
-    '{name} ya no puede iniciar sesión. La cuenta se conserva para la pista de auditoría.',
-  'admin.users.confirmDeactivate.title': 'Desactivar a {name}',
-  'admin.users.confirmDeactivate.consequence':
-    'Ya no podrá iniciar sesión. Nada de lo que escribió se elimina y la cuenta sigue siendo identificable en la pista de auditoría.',
-  'admin.users.confirmDeactivate.detail':
-    'Las sesiones abiertas terminan en menos de un minuto. Si la reactiva más adelante, recupera los mismos roles.',
   'admin.users.mfaNotice.title': '{count} cuentas activas no tienen segundo factor.',
   'admin.users.mfaNotice.body':
     'La autenticación de doble factor es obligatoria para quien abra una historia clínica. Pídales que se inscriban desde la configuración de su propia cuenta.',
@@ -158,8 +151,6 @@ export const admin: Messages = {
     'Los roles son paquetes con nombre. Si cambia uno aquí, cambia para todas las personas que lo tienen.',
   'admin.users.roles.edit': 'Editar los permisos de los roles',
   'admin.users.roles.save': 'Guardar los permisos de los roles',
-  'admin.users.roles.savedToast':
-    'Permisos de los roles guardados. Afecta a todas las personas que tienen estos roles.',
   'admin.users.roles.subject': 'permisos de roles',
   'admin.users.roles.empty.title': 'No hay capacidades definidas',
   'admin.users.roles.empty.message':
@@ -486,11 +477,6 @@ export const admin: Messages = {
   'admin.developer.keys.empty.message':
     'Una clave permite que un servicio de backend lea este consultorio por la API FHIR. Cree una, elija sus ámbitos y copie el secreto una sola vez.',
   'admin.developer.keys.create': 'Crear una clave de API',
-  'admin.developer.keys.revokeConsequence':
-    'Todo lo que use esta clave deja de funcionar de inmediato. La clave se conserva, revocada, para que la pista de auditoría siga pudiendo identificarla.',
-  'admin.developer.keys.revokeConfirm': 'Revocar la clave',
-  'admin.developer.keys.revokedToast':
-    '{label} deja de funcionar de inmediato. El registro se conserva para la pista de auditoría.',
   'admin.developer.apps.neverLaunched': 'Nunca',
   'admin.developer.apps.approved': 'Aprobada',
   'admin.developer.apps.waiting': 'Esperando aprobación',
@@ -576,4 +562,12 @@ export const admin: Messages = {
   'admin.forms.page.title': 'Constructor de formularios',
   'admin.integrations.page.title': 'Integraciones',
   'admin.users.page.title': 'Usuarios y roles',
+
+  'admin.notBuilt.title': 'Este control es una demostración',
+  'admin.developer.keys.revokeNotBuilt':
+    'Revocar una clave aquí no dejaría de funcionar: todavía no hay un extremo detrás de esto, así que el control está desactivado en lugar de informar de una revocación que no ocurrió. Considere que una clave que necesita detener sigue activa hasta que se haya revocado donde realmente se acepta.',
+  'admin.users.deactivateNotBuilt':
+    'Desactivar una cuenta aquí no impediría que la persona inicie sesión: todavía no hay un extremo detrás de esto, así que el control está desactivado en lugar de informar de una desactivación que no ocurrió. Retire el acceso donde el inicio de sesión se aplica de verdad.',
+  'admin.users.rolePermissionsNotBuilt':
+    'Editar lo que un rol puede hacer aquí no cambiaría la autorización: todavía no hay un extremo detrás de esto, así que el control está desactivado en lugar de informar de un cambio que nunca llegó a la política. Todas las personas con este rol conservan exactamente el acceso que tienen.',
 };

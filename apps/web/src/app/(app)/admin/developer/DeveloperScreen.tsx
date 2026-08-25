@@ -6,13 +6,13 @@ import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import {
-  adminArea,
-  adminBreadcrumb,
-  ConfirmDialog,
+  Demonstration,
   DetailList,
   Drawer,
   TabPanel,
   Tabs,
+  adminArea,
+  adminBreadcrumb,
   translateColumns,
 } from '@/components/admin';
 import type { Translator } from '@openrunic/i18n';
@@ -136,11 +136,7 @@ function chipList(values: readonly string[]): ReactElement {
   );
 }
 
-function keyRow(
-  t: Translator,
-  key: ApiKey,
-  onRevoke: (key: ApiKey) => void
-): Record<string, ReactNode> {
+function keyRow(t: Translator, key: ApiKey): Record<string, ReactNode> {
   return {
     id: key.id,
     label: (
@@ -165,12 +161,12 @@ function keyRow(
         <Badge tone="neutral">{t('admin.developer.keys.revoked')}</Badge>
       ),
     actions: (
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={key.status === 'REVOKED'}
-        onClick={() => onRevoke(key)}
-      >
+      /* Disabled unconditionally, not only for an already-revoked key. There is
+         no endpoint behind this: it used to write the key's id into local state
+         and show a "revoked" toast, so an administrator responding to a leak was
+         told the credential was closed by a screen that had not touched it. The
+         note above the table says so. */
+      <Button size="sm" variant="ghost" disabled>
         {t('admin.developer.keys.revoke', { label: key.label })}
       </Button>
     ),
@@ -498,7 +494,6 @@ function DeveloperRegistries({
   appRows,
   hookRows,
   onStartKey,
-  onRevoke,
   onOpenApp,
   onOpenHook,
 }: Readonly<{
@@ -510,7 +505,6 @@ function DeveloperRegistries({
   appRows: readonly SmartApp[];
   hookRows: readonly Webhook[];
   onStartKey: () => void;
-  onRevoke: (key: ApiKey) => void;
   onOpenApp: (id: string) => void;
   onOpenHook: (id: string) => void;
 }>): ReactElement {
@@ -535,11 +529,14 @@ function DeveloperRegistries({
           }}
         >
           {() => (
-            <Table
-              caption={t('admin.developer.keys.caption')}
-              columns={translateColumns(t, KEY_COLUMNS)}
-              rows={keyRows.map((key) => keyRow(t, key, onRevoke))}
-            />
+            <div className="or-stack">
+              <Demonstration message={t('admin.developer.keys.revokeNotBuilt')} />
+              <Table
+                caption={t('admin.developer.keys.caption')}
+                columns={translateColumns(t, KEY_COLUMNS)}
+                rows={keyRows.map((key) => keyRow(t, key))}
+              />
+            </div>
           )}
         </AsyncBoundary>
       </TabPanel>
@@ -606,8 +603,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [keyLabel, setKeyLabel] = useState('');
   const [keyScopes, setKeyScopes] = useState<string[]>([]);
-  const [revoking, setRevoking] = useState<ApiKey | null>(null);
-  const [revoked, setRevoked] = useState<string[]>([]);
   const [openApp, setOpenApp] = useState<string | null>(null);
   const [openHook, setOpenHook] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -650,10 +645,10 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
     [startKey, showApps, showWebhooks, t]
   );
 
-  const revokedIds = new Set(revoked);
-  const keyRows: ApiKey[] = (keys.data?.data ?? []).map((key) =>
-    revokedIds.has(key.id) ? { ...key, status: 'REVOKED' as const, revokedAt: null } : key
-  );
+  /* Read straight through. This used to overlay a local "revoked" set on top of
+     what the API returned, which made the table agree with a revocation that had
+     never happened. */
+  const keyRows: ApiKey[] = keys.data?.data ?? [];
   const appRows: SmartApp[] = apps.data?.data ?? [];
   const hookRows: Webhook[] = webhooks.data?.data ?? [];
 
@@ -668,13 +663,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
     if (!keyLabel.trim()) return;
     setNewSecret(MOCK_NEW_KEY_DISPLAY);
     setToast(t('admin.developer.newKey.createdToast', { label: keyLabel.trim() }));
-  };
-
-  const confirmRevoke = () => {
-    if (!revoking) return;
-    setRevoked((previous) => [...previous, revoking.id]);
-    setToast(t('admin.developer.keys.revokedToast', { label: revoking.label }));
-    setRevoking(null);
   };
 
   return (
@@ -715,7 +703,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
         appRows={appRows}
         hookRows={hookRows}
         onStartKey={startKey}
-        onRevoke={setRevoking}
         onOpenApp={setOpenApp}
         onOpenHook={setOpenHook}
       />
@@ -821,16 +808,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
       >
         {selectedHook ? <HookDetail hook={selectedHook} /> : null}
       </Drawer>
-
-      <ConfirmDialog
-        open={revoking !== null}
-        title={t('admin.developer.keys.revoke', { label: revoking?.label ?? '' })}
-        consequence={t('admin.developer.keys.revokeConsequence')}
-        confirmLabel={t('admin.developer.keys.revokeConfirm')}
-        typedConfirmation={revoking?.label}
-        onCancel={() => setRevoking(null)}
-        onConfirm={confirmRevoke}
-      />
 
       {toast ? (
         <div className="or-toast-region">

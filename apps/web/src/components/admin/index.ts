@@ -10,6 +10,7 @@
 export { ADMIN_AREAS, adminArea, adminBreadcrumb } from './areas';
 export type { AdminArea, AdminAreaId } from './areas';
 export { ConfirmDialog } from './ConfirmDialog';
+export { Demonstration } from './Demonstration';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 export { pluralKey, translateColumns } from './copy';
 export { AUDIT_ACTION_LABELS, PURPOSE_OF_USE_LABELS, STAFF_ROLE_KEYS } from './labels';

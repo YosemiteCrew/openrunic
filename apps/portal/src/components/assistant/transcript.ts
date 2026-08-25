@@ -1,3 +1,6 @@
+import { counted } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
+
 import type { AssistantEvent, AssistantSource } from '@/lib/assistant';
 
 /**
@@ -217,17 +220,27 @@ export function offersCareTeam(turn: AssistantTurn): boolean {
  * unusable. This is one short sentence per state change instead, so a reader
  * hears that an answer started and hears how it ended.
  */
-export function announcementFor(state: TranscriptState): string {
+export function announcementFor(t: Translator, state: TranscriptState): string {
   const turn = state.turns.at(-1);
   if (turn === undefined) return '';
-  if (state.answering) return 'Looking in your record.';
+  if (state.answering) return t('portal.assistant.announce.looking');
 
-  if (turn.withheld === 'care-team') return 'This one is for your care team.';
-  if (turn.outcome === 'failed') return 'No answer came back.';
-  if (turn.withheld !== 'none') return 'No answer is shown.';
+  if (turn.withheld === 'care-team') return t('portal.assistant.announce.careTeam');
+  if (turn.outcome === 'failed') return t('portal.assistant.announce.failed');
+  if (turn.withheld !== 'none') return t('portal.assistant.announce.withheld');
 
-  const count = turn.sources.length;
-  return count === 1
-    ? 'Answer ready, from 1 record.'
-    : `Answer ready, from ${String(count)} records.`;
+  /*
+   * `counted` rather than a test against 1. The two are the same answer only in
+   * languages that happen to work like English: Russian selects the singular
+   * form for 21, where `count === 1` picks the plural. The digits follow the
+   * reader too, which a template literal round the raw number would not do.
+   */
+  return counted(
+    t,
+    {
+      oneKey: 'portal.assistant.announce.ready.one',
+      otherKey: 'portal.assistant.announce.ready.other',
+    },
+    turn.sources.length
+  );
 }

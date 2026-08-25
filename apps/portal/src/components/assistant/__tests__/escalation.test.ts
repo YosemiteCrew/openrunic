@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 import {
   citationDestination,
@@ -7,6 +8,11 @@ import {
   needsCareTeam,
 } from '@/components/assistant';
 import { ASSISTANT_UNEXPECTED_DRAFT, ASSISTANT_UNREACHABLE } from '@/lib/assistant';
+
+/* These are plain modules, not components, so they take a translator the way
+   every formatter here does rather than reaching for a hook. */
+const t = createTranslator(appCatalogue, 'en');
+const es = createTranslator(appCatalogue, 'es');
 
 /**
  * Which questions this surface declines to carry, where a citation goes, and
@@ -72,7 +78,7 @@ describe('where a citation opens', () => {
 
   it('renders a type this app has no screen for as words rather than a wrong link', () => {
     expect(citationHref({ ...source, resourceType: 'DiagnosticReport' })).toBeNull();
-    expect(citationName({ ...source, resourceType: 'DiagnosticReport' })).toBe('Record');
+    expect(citationName(t, { ...source, resourceType: 'DiagnosticReport' })).toBe('Record');
   });
 
   it('can never build a link that carries a record identifier', () => {
@@ -94,25 +100,42 @@ describe('where a citation opens', () => {
   });
 
   it('says where a link goes rather than making the reader guess', () => {
-    expect(citationDestination('/health-record')).toBe('your health record');
-    expect(citationDestination('/bills')).toBe('your bills');
+    expect(citationDestination(t, '/health-record')).toBe('your health record');
+    expect(citationDestination(t, '/bills')).toBe('your bills');
+  });
+
+  it('names the record type and the destination in the readers language', () => {
+    expect(citationName(es, { ...source, resourceType: 'Medicine' })).toBe('Medicamento');
+    expect(citationDestination(es, '/bills')).toBe('sus facturas');
   });
 });
 
 describe('how a failure reads', () => {
   it('says what still works, so nobody thinks the portal is down', () => {
-    expect(explainFailure(ASSISTANT_UNREACHABLE)).toContain('still work');
-    expect(explainFailure('AGENT_UPSTREAM_UNREACHABLE')).toContain('Nothing else in the portal');
+    expect(explainFailure(t, ASSISTANT_UNREACHABLE)).toContain('still work');
+    expect(explainFailure(t, 'AGENT_UPSTREAM_UNREACHABLE')).toContain('Nothing else in the portal');
   });
 
   it('tells somebody to speak up when a record from outside their own arrived', () => {
-    expect(explainFailure('AGENT_COMPARTMENT_VIOLATION')).toContain('tell your care team');
-    expect(explainFailure(ASSISTANT_UNEXPECTED_DRAFT)).toContain('tell your care team');
+    expect(explainFailure(t, 'AGENT_COMPARTMENT_VIOLATION')).toContain('tell your care team');
+    expect(explainFailure(t, ASSISTANT_UNEXPECTED_DRAFT)).toContain('tell your care team');
   });
 
   it('says only what is certainly true for a code it does not know', () => {
-    const fallback = explainFailure('SOMETHING_NEW');
+    const fallback = explainFailure(t, 'SOMETHING_NEW');
     expect(fallback).toContain('Nothing in your record has changed');
     expect(fallback).not.toContain('SOMETHING_NEW');
+  });
+
+  it('reads in the readers language, including the line for a code it does not know', () => {
+    /*
+     * The fallback is the one sentence here that could quietly stay English:
+     * every named code has a key, and a code nobody has seen yet is exactly
+     * when a reader is least able to work out what happened.
+     */
+    expect(explainFailure(es, ASSISTANT_UNREACHABLE)).toContain('siguen funcionando');
+    expect(explainFailure(es, 'SOMETHING_NEW')).toBe(
+      'Eso no ha funcionado. No ha cambiado nada en su historia clínica y el resto del portal está bien.'
+    );
   });
 });

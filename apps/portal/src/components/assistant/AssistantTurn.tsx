@@ -14,22 +14,29 @@
  * how worried to be, which is not something it knows.
  */
 
+import type { Translator } from '@openrunic/i18n';
 import Link from 'next/link';
 import { Icon } from '@openrunic/ui';
 import type { AssistantSource } from '@/lib/assistant';
+import { useTranslator } from '@/lib/i18n/messages';
 import { citationDestination, citationHref, citationName } from './citations';
 import { explainFailure } from './failure';
 import { offersCareTeam } from './transcript';
 import type { AssistantTurn as Turn, WithheldReason } from './transcript';
 
 /** Why nothing is shown, when a turn produced words that are not on screen. */
-const WITHHELD: Record<Exclude<WithheldReason, 'none'>, string> = {
-  unsourced:
-    'The answer came back without the records it was based on, so it is not shown. An answer you cannot check against your own record is not one to rely on.',
-  incomplete: 'You stopped this before it finished a sentence, so there is nothing to show.',
-  'care-team':
-    'This one is for a person, not for this page. It can look things up in your record; it cannot tell you what something means, whether it matters, or what to do.',
+const WITHHELD_KEYS: Record<Exclude<WithheldReason, 'none'>, string> = {
+  unsourced: 'portal.assistant.withheld.unsourced',
+  incomplete: 'portal.assistant.withheld.incomplete',
+  'care-team': 'portal.assistant.withheld.careTeam',
 };
+
+/** What a step says about itself in words, beside what its icon says. */
+const STEP_STATE_KEYS = {
+  done: 'portal.assistant.step.done',
+  stillGoing: 'portal.assistant.step.stillGoing',
+  notFinished: 'portal.assistant.step.notFinished',
+} as const;
 
 export interface AssistantTurnViewProps {
   turn: Turn;
@@ -38,12 +45,13 @@ export interface AssistantTurnViewProps {
 }
 
 export function AssistantTurnView({ turn, answering }: Readonly<AssistantTurnViewProps>) {
+  const t = useTranslator();
   const paragraphs = turn.answer.split(/\n{2,}/).filter((piece) => piece.trim() !== '');
 
   return (
     <li className="portal-assistant__turn">
       <p className="portal-assistant__question">
-        <span className="portal-visually-hidden">You asked: </span>
+        <span className="portal-visually-hidden">{t('portal.assistant.turn.youAsked')} </span>
         {turn.question}
       </p>
 
@@ -60,7 +68,7 @@ export function AssistantTurnView({ turn, answering }: Readonly<AssistantTurnVie
               />
               <span>
                 {step.label}
-                {stepState(step, turn.outcome)}
+                {t(stepStateKey(step, turn.outcome))}
               </span>
             </li>
           ))}
@@ -74,26 +82,28 @@ export function AssistantTurnView({ turn, answering }: Readonly<AssistantTurnVie
       ))}
 
       {turn.withheld === 'none' ? null : (
-        <p className="portal-assistant__withheld">{WITHHELD[turn.withheld]}</p>
+        <p className="portal-assistant__withheld">{t(WITHHELD_KEYS[turn.withheld])}</p>
       )}
 
       {turn.deferrals.map((reason) => (
         <p className="portal-assistant__withheld" key={reason}>
-          The assistant did not go ahead with part of this: {reason}
+          {t('portal.assistant.deferral', { reason })}
         </p>
       ))}
 
       {turn.failures.map((code) => (
         <p className="portal-assistant__withheld" key={code} role="alert">
-          {explainFailure(code)}
+          {explainFailure(t, code)}
         </p>
       ))}
 
-      {turn.sources.length > 0 ? <SourceList sources={turn.sources} /> : null}
+      {turn.sources.length > 0 ? <SourceList sources={turn.sources} t={t} /> : null}
 
-      {offersCareTeam(turn) ? <CareTeamRoute /> : null}
+      {offersCareTeam(turn) ? <CareTeamRoute t={t} /> : null}
 
-      {answering ? <span className="portal-visually-hidden">Still looking.</span> : null}
+      {answering ? (
+        <span className="portal-visually-hidden">{t('portal.assistant.turn.stillLooking')}</span>
+      ) : null}
     </li>
   );
 }
@@ -105,9 +115,9 @@ export function AssistantTurnView({ turn, answering }: Readonly<AssistantTurnVie
  * aborted or cut short, and leaving it reading "still going" would tell somebody
  * work is happening on a question that has already ended.
  */
-function stepState(step: Turn['steps'][number], outcome: Turn['outcome']): string {
-  if (step.done) return ', done';
-  return outcome === null ? ', still going' : ', not finished';
+function stepStateKey(step: Turn['steps'][number], outcome: Turn['outcome']): string {
+  if (step.done) return STEP_STATE_KEYS.done;
+  return outcome === null ? STEP_STATE_KEYS.stillGoing : STEP_STATE_KEYS.notFinished;
 }
 
 /**
@@ -117,36 +127,41 @@ function stepState(step: Turn['steps'][number], outcome: Turn['outcome']): strin
  * your practice": the whole reason this page can decline to answer without
  * leaving somebody stuck is that the next step is one tap away.
  */
-function CareTeamRoute() {
+function CareTeamRoute({ t }: Readonly<{ t: Translator }>) {
   return (
     <div className="portal-assistant__care-team">
       <Icon className="portal-assistant__care-team-icon" name="message-square" size={20} />
       <p className="portal-assistant__care-team-text">
-        Ask your care team. They can see the same record and they can answer questions this page
-        cannot. <Link href="/messages">Write to your care team</Link>.
+        {t('portal.assistant.careTeam.text')}{' '}
+        <Link href="/messages">{t('portal.assistant.careTeam.link')}</Link>.
       </p>
     </div>
   );
 }
 
-function SourceList({ sources }: Readonly<{ sources: readonly AssistantSource[] }>) {
+function SourceList({
+  sources,
+  t,
+}: Readonly<{ sources: readonly AssistantSource[]; t: Translator }>) {
   return (
     <div className="portal-assistant__sources">
-      <p className="or-overline portal-assistant__sources-head">Where this came from</p>
+      <p className="or-overline portal-assistant__sources-head">
+        {t('portal.assistant.sources.head')}
+      </p>
       <ul className="portal-assistant__source-list">
         {sources.map((source) => (
           <li
             className="portal-assistant__source"
             key={`${source.resourceType}-${source.resourceId}`}
           >
-            <SourceLine source={source} />
+            <SourceLine source={source} t={t} />
             {source.untrusted ? (
               /* Text the reader or somebody outside the practice wrote, marked
                  wherever it is shown. It is the input class ADR-0005 treats as
                  untrusted, and by this point the person reading is the only
                  check left. */
               <span className="portal-assistant__source-note">
-                Written by you or by someone outside the practice
+                {t('portal.assistant.sources.untrusted')}
               </span>
             ) : null}
           </li>
@@ -156,21 +171,27 @@ function SourceList({ sources }: Readonly<{ sources: readonly AssistantSource[] 
   );
 }
 
-function SourceLine({ source }: Readonly<{ source: AssistantSource }>) {
+function SourceLine({ source, t }: Readonly<{ source: AssistantSource; t: Translator }>) {
   const href = citationHref(source);
-  const name = citationName(source);
+  const name = citationName(t, source);
 
   if (href === null) {
-    return (
-      <span>
-        {name}: {source.label}
-      </span>
-    );
+    return <span>{t('portal.assistant.sources.line', { name, label: source.label })}</span>;
   }
 
+  /*
+   * Two whole messages, and the dash between them belongs to the first one
+   * rather than to this file. It is punctuation this language happens to use
+   * where these two clauses meet, and a language that puts the citation after
+   * the link, or uses no dash at all, has nowhere to say so if the mark is
+   * spelled here.
+   */
   return (
     <span>
-      {name}: {source.label} - <Link href={href}>see it in {citationDestination(href)}</Link>
+      {t('portal.assistant.sources.lineBeforeLink', { name, label: source.label })}{' '}
+      <Link href={href}>
+        {t('portal.assistant.sources.seeIn', { destination: citationDestination(t, href) })}
+      </Link>
     </span>
   );
 }

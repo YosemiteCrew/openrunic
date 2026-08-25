@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { pageMetadata } from '@/lib/i18n/metadata';
+
 import { DeveloperScreen } from './DeveloperScreen';
 
 /**
@@ -9,7 +11,9 @@ import { DeveloperScreen } from './DeveloperScreen';
  * client component because @openrunic/ui components use React state, which the
  * react-server condition does not provide. Keep this split on every route.
  */
-export const metadata: Metadata = { title: 'Developer platform' };
+export function generateMetadata(): Promise<Metadata> {
+  return pageMetadata({ titleKey: 'admin.developer.page.title' });
+}
 
 export default function DeveloperPage() {
   return <DeveloperScreen />;

@@ -567,4 +567,13 @@ export const admin: Messages = {
   'admin.developer.command.webhooks': 'Mostrar las entregas de webhooks',
   'admin.developer.command.webhooks.keywords':
     'suscripciones, eventos, reintento, registro de entregas',
+
+  /* ------------------------------------------------------- the browser tab */
+  'admin.page.title': 'Administración',
+  'admin.audit.page.title': 'Registro de auditoría',
+  'admin.developer.page.title': 'Plataforma para desarrolladores',
+  'admin.facilities.page.title': 'Centros',
+  'admin.forms.page.title': 'Constructor de formularios',
+  'admin.integrations.page.title': 'Integraciones',
+  'admin.users.page.title': 'Usuarios y roles',
 };

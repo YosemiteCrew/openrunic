@@ -1,12 +1,16 @@
 import type { Metadata } from 'next';
 
+import { pageMetadata } from '@/lib/i18n/metadata';
+
 import { RemittanceScreen } from './RemittanceScreen';
 
 /** BL-05 ERA posting (remittance workbench). */
-export const metadata: Metadata = {
-  title: 'Remittance',
-  description: 'Post the 835s, then work only what did not match.',
-};
+export function generateMetadata(): Promise<Metadata> {
+  return pageMetadata({
+    titleKey: 'billing.remittance.page.title',
+    descriptionKey: 'billing.remittance.page.description',
+  });
+}
 
 export default function RemittancePage() {
   return <RemittanceScreen />;

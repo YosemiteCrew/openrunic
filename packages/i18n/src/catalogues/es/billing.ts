@@ -535,4 +535,22 @@ export const billing: Messages = {
   'billing.payments.command.allocate.keywords': 'aplicar, remanente, dividir',
   'billing.payments.command.receipt': 'Abrir el último recibo',
   'billing.payments.command.receipt.keywords': 'recibo, reimprimir, imprimir',
+
+  /* ------------------------------------------------------- the browser tab */
+  'billing.page.title': 'Facturación',
+  'billing.page.description': 'Dónde está el dinero hoy, y el panel que lo mueve.',
+  'billing.charges.page.title': 'Hoja de cargos',
+  'billing.charges.page.description':
+    'Capture los cargos de la consulta y enlace cada uno con su diagnóstico.',
+  'billing.claims.page.title': 'Panel de reclamaciones',
+  'billing.claims.page.description':
+    'Cada reclamación como una fila del libro de estados, de capturada a pagada.',
+  'billing.payments.page.title': 'Pagos',
+  'billing.payments.page.description':
+    'Reciba un pago, repártalo entre las consultas y emita el recibo.',
+  'billing.remittance.page.title': 'Remesas',
+  'billing.remittance.page.description': 'Registre los 835 y trabaje solo lo que no cuadró.',
+  'billing.statements.page.title': 'Estados de cuenta y cobros',
+  'billing.statements.page.description':
+    'Saldos de pacientes, tramos de antigüedad, envíos de estados de cuenta y pago por mensaje.',
 };

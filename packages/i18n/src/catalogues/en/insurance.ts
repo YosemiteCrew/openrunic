@@ -121,4 +121,12 @@ export const insurance: Messages = {
   'insurance.command.verifyAll.keywords': 'eligibility, 270, 271, check coverage, benefits',
   'insurance.command.openChart': 'Open this chart',
   'insurance.command.openChart.keywords': 'chart, summary, patient',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'insurance.page.title': 'Insurance',
 };

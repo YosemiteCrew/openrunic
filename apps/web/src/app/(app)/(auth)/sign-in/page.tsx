@@ -2,15 +2,18 @@ import type { Metadata } from 'next';
 import type { ReactElement } from 'react';
 
 import { oidcWebConfig } from '@/lib/auth/oidc';
+import { pageMetadata } from '@/lib/i18n/metadata';
 
 import { SignInScreen } from './SignInScreen';
 
-export const metadata: Metadata = {
-  title: 'Sign in',
-  /* Inherited from the root layout, and restated because this is the one page
-     of the staff application somebody could plausibly link to. */
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    ...(await pageMetadata({ titleKey: 'auth.page.title' })),
+    /* Inherited from the root layout, and restated because this is the one page
+       of the staff application somebody could plausibly link to. */
+    robots: { index: false, follow: false },
+  };
+}
 
 /** A query parameter can arrive repeated. Take the first and ignore the rest. */
 function firstValue(value: string | string[] | undefined): string | null {

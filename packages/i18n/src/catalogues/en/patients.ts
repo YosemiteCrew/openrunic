@@ -206,4 +206,13 @@ export const patients: Messages = {
   'patients.command.register.keywords': 'save, create patient, submit registration',
   'patients.command.clearForm': 'Clear the registration form',
   'patients.command.clearForm.keywords': 'reset, start again, empty form',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'patients.page.title': 'Patients',
+  'patients.new.page.title': 'Register patient',
 };

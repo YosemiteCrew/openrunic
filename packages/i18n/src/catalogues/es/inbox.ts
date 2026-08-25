@@ -79,4 +79,7 @@ export const inbox: Messages = {
   'inbox.command.mine.keywords': 'asignados a mí',
   'inbox.command.team': 'Mostrar el grupo del equipo',
   'inbox.command.team.keywords': 'cola compartida, sin asignar',
+
+  /* ------------------------------------------------------- the browser tab */
+  'inbox.page.title': 'Bandeja de entrada',
 };

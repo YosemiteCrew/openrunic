@@ -24,4 +24,7 @@ export const auth: Messages = {
   'auth.signedOut.expired.title': 'Su sesión ha terminado.',
   'auth.signedOut.expired.body': 'Inicie sesión de nuevo para continuar.',
   'auth.holding': 'Restaurando su sesión',
+
+  /* ------------------------------------------------------- the browser tab */
+  'auth.page.title': 'Iniciar sesión',
 };

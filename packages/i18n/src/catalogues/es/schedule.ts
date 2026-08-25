@@ -200,4 +200,8 @@ export const schedule: Messages = {
   'schedule.flowCard.advance': 'Cambiar a {name} al estado {status}',
   'schedule.flowCard.advanceUnassigned': 'Cambiar esta visita al estado {status}',
   'schedule.flowCard.complete': 'Visita finalizada',
+
+  /* ------------------------------------------------------- the browser tab */
+  'schedule.page.title': 'Agenda',
+  'schedule.flowBoard.page.title': 'Panel de flujo',
 };

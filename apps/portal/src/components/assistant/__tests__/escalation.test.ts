@@ -58,6 +58,7 @@ describe('questions that are for a person', () => {
     '¿Debería dejar de tomar las pastillas?',
     '¿Debería tomar este medicamento?',
     '¿Qué debería hacer?',
+    '¿Qué tengo que hacer?',
     '¿Tengo que venir a la consulta?',
     '¿Es normal este resultado?',
     '¿Son normales mis análisis?',
@@ -84,9 +85,6 @@ describe('questions that are for a person', () => {
     '¿Cuándo es mi próxima cita?',
     '¿Qué medicamentos hay en mi historia clínica?',
     '¿Cuánto debo?',
-    '¿Cuánto debo pagar?',
-    '¿Qué tengo que pagar?',
-    '¿Cuándo tengo que venir a la consulta?',
     '¿Qué tengo pendiente de pago?',
     '¿Qué diagnósticos tengo?',
     'Necesito ver mi factura',
@@ -103,25 +101,39 @@ describe('questions that are for a person', () => {
     expect(needsCareTeam(question)).toBe(false);
   });
 
-  it('reads an obligation verb by whether an interrogative introduces it', () => {
-    /*
-     * `debo` and `tengo que` do two jobs. Asked outright they ask somebody to
-     * decide; introduced by an interrogative they ask for something already
-     * written down, and two of those are the appointment and the balance this
-     * page exists to look up.
-     *
-     * The pair below is the whole distinction, on the same three words.
-     */
-    expect(needsCareTeam('¿Tengo que venir a la consulta?')).toBe(true);
-    expect(needsCareTeam('¿Cuándo tengo que venir a la consulta?')).toBe(false);
+  it.each(['¿Qué tengo que pagar?', '¿Cuándo tengo que venir a la consulta?'])(
+    'accepts redirecting %j rather than risk missing a request for advice',
+    (question) => {
+      /*
+       * These two are balances and appointments, and they are redirected. That
+       * is deliberate and it is the trade the note at the top of the module
+       * describes.
+       *
+       * An earlier version read `tengo que` as a record question whenever an
+       * interrogative introduced it, which answered both of these. It also lost
+       * "¿Qué tengo que hacer?", which is the plainest way there is to ask
+       * somebody to decide and is introduced by the same word. The
+       * interrogative does not carry the distinction; the verb after it does,
+       * and enumerating verbs is how this becomes the list of things to worry
+       * about that the module forbids.
+       *
+       * A false match sends somebody to their care team, which is never the
+       * wrong place. A miss leaves a health question with the inference
+       * endpoint. Narrowing traded the cheap failure for the expensive one.
+       */
+      expect(needsCareTeam(question)).toBe(true);
+    }
+  );
 
+  it('keeps the balance question this screen invites by name', () => {
     /*
-     * The conditional is the exception and takes no guard. `debería` has no
-     * reading about a balance, so an interrogative in front of it does not turn
-     * it into a record question - "¿Qué debería hacer?" is the plainest way
-     * there is to ask somebody to decide.
+     * `debo` still needs an infinitive after it, which is a narrowing the
+     * interrogative argument above does not apply to: "¿Cuánto debo?" with
+     * nothing following is a balance outright, not an obligation phrased as
+     * one, so there is no advice reading to lose.
      */
-    expect(needsCareTeam('¿Qué debería hacer?')).toBe(true);
+    expect(needsCareTeam('¿Cuánto debo?')).toBe(false);
+    expect(needsCareTeam('¿Debo dejar de tomar las pastillas?')).toBe(true);
   });
 
   it('folds accents rather than deleting the letters under them', () => {

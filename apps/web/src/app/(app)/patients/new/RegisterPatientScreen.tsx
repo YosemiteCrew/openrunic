@@ -1,10 +1,11 @@
 'use client';
 
 import type { Translator } from '@openrunic/i18n';
-import { Button, Card, Input, Modal, Select, Switch, Toast } from '@openrunic/ui';
+import { Button, Card, Input, Modal, Select, Switch } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
+import { Toast } from '@/components/state';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import {

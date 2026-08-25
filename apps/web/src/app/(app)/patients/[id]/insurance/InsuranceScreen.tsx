@@ -2,7 +2,7 @@
 
 import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
-import { Badge, Button, Card, Toast } from '@openrunic/ui';
+import { Badge, Button, Card } from '@openrunic/ui';
 import type { ToastTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -19,7 +19,7 @@ import {
 } from '@/components/insurance';
 import { clinicNow } from '@/components/schedule';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary } from '@/components/state';
+import { AsyncBoundary, Toast } from '@/components/state';
 import { IS_MOCK_MODE, mockVerifyEligibility, usePatient } from '@/lib/api';
 import type { MockCoverage, MockEligibilityResult } from '@/lib/api';
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';

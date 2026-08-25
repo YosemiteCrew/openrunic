@@ -36,7 +36,7 @@ export function toLucideName(slug: string): string {
 }
 
 /**
- * Look up a Lucide icon component by kebab-case slug - the shape every OpenRunic
+ * Look up a Lucide icon component by kebab-case slug - the shape every openrunic
  * `icon` / `iconLeft` / `iconRight` prop takes. Returns undefined for an unknown slug, so
  * a typo degrades to a missing icon instead of a crash.
  */

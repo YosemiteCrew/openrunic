@@ -59,7 +59,7 @@ const HAS_INK_BUILD: Record<LogoVariant, boolean> = {
 };
 
 /**
- * The OpenRunic lockups and mark. Use it anywhere the brand appears - nav, footer, docs
+ * The openrunic lockups and mark. Use it anywhere the brand appears - nav, footer, docs
  * header, end cards - and never retype the wordmark in a font.
  *
  * The marks are shipped files, never redrawn. All eight builds are vendored into this
@@ -74,6 +74,16 @@ const HAS_INK_BUILD: Record<LogoVariant, boolean> = {
  * `assets/icons`, not a scaled-down glyph. No gradients, shadows, outlines or rotation,
  * and never a terracotta wordmark.
  */
+/**
+ * The product's name, not a word.
+ *
+ * It is `openrunic` in every language, the same way it is on the README and in
+ * the page titles, so it is a literal here while every word this package used to
+ * write became a prop. See #196, and `components/copy.test.ts`, which allows
+ * this one value and refuses any other accessible name written into a component.
+ */
+const BRAND = 'openrunic';
+
 export function Logo({
   variant = 'horizontal',
   theme = 'ink',
@@ -97,7 +107,7 @@ export function Logo({
       <span
         className={cx('or-logo', 'or-logo--mask', className)}
         role="img"
-        aria-label="OpenRunic"
+        aria-label={BRAND}
         style={maskStyle}
         {...rest}
       />
@@ -108,7 +118,7 @@ export function Logo({
     <img
       className={cx('or-logo', 'or-logo--image', className)}
       src={brandAssetUrl(file, basePath)}
-      alt="OpenRunic"
+      alt="openrunic"
       style={{ height, width: 'auto', ...style }}
       {...rest}
     />

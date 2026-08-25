@@ -33,6 +33,26 @@ export interface SideNavProps extends HTMLAttributes<HTMLElement> {
   /** Pinned to the bottom - account row, help link. */
   footer?: ReactNode;
   /**
+   * THE WORDS THIS COMPONENT SAYS, AND WHY THEY ARE PROPS.
+   *
+   * A design system has no translator and should not grow one. The label on a
+   * navigation landmark is configuration, the same as its items are, and a
+   * consumer that renders in more than one language has to be able to supply it.
+   * These were written into the component, so a Spanish staff screen announced
+   * its primary navigation as "Primary" and its menu button as "Menu".
+   *
+   * Every one defaults to the English it used to hardcode, so a consumer who
+   * passes nothing gets exactly today's behaviour.
+   */
+  /** The accessible name of the navigation landmark. */
+  navLabel?: string;
+  /** The button that opens the panel below lg. */
+  menuLabel?: string;
+  /** The button that closes it. */
+  closeLabel?: string;
+  /** Alt text for the brand lockup. */
+  brandLabel?: string;
+  /**
    * Serve the lockup from your own copy of the design system's assets/logo directory
    * instead of the mark bundled with this package. The mark is a shipped file either way.
    */
@@ -51,6 +71,10 @@ export function SideNav({
   onNavigate,
   footer,
   logoBasePath,
+  navLabel = 'Primary',
+  menuLabel = 'Menu',
+  closeLabel = 'Close',
+  brandLabel = 'openrunic',
   className,
   id,
   ...rest
@@ -124,7 +148,7 @@ export function SideNav({
         aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
       >
-        Menu
+        {menuLabel}
       </Button>
 
       {open ? <div className="or-side-nav__scrim" aria-hidden="true" onClick={close} /> : null}
@@ -133,12 +157,17 @@ export function SideNav({
         ref={panelRef}
         id={panelId}
         className="or-side-nav__panel"
-        aria-label="Primary"
+        aria-label={navLabel}
         role={open ? 'dialog' : undefined}
         aria-modal={open || undefined}
       >
         <div className="or-side-nav__brand">
-          <span className="or-side-nav__logo" style={logoStyle} role="img" aria-label="OpenRunic" />
+          <span
+            className="or-side-nav__logo"
+            style={logoStyle}
+            role="img"
+            aria-label={brandLabel}
+          />
           <Button
             className="or-side-nav__close"
             variant="ghost"
@@ -146,7 +175,7 @@ export function SideNav({
             iconLeft="x"
             onClick={close}
           >
-            Close
+            {closeLabel}
           </Button>
         </div>
 

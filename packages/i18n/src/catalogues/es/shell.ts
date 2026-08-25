@@ -32,4 +32,8 @@ export const shell: Messages = {
   'shell.palette.group.actions': 'Acciones',
 
   'shell.metaDescription': 'Sistema operativo de código abierto para la salud humana',
+
+  'shell.mainNavigation': 'Navegación principal',
+  'shell.menu': 'Menú',
+  'shell.closeMenu': 'Cerrar el menú',
 };

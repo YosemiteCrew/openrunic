@@ -98,7 +98,7 @@ export const OnEspresso: Story = {
       <EmptyState
         icon="server"
         title="No instance connected"
-        message="Point the app at your self-hosted OpenRunic server to start. Nothing leaves it."
+        message="Point the app at your self-hosted openrunic server to start. Nothing leaves it."
         action={
           <Button variant="inverse" iconRight="arrow-right">
             Connect an instance

@@ -31,7 +31,7 @@ export const Default: Story = {
 };
 
 /**
- * The one family context where Yosemite Crew may be named beside OpenRunic - beside it,
+ * The one family context where Yosemite Crew may be named beside openrunic - beside it,
  * never merged into a single lockup and never colour-swapped to match.
  */
 export const WithSiblingNote: Story = {

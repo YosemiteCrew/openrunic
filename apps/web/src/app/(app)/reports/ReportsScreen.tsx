@@ -1,7 +1,7 @@
 'use client';
 
 import type { Translator } from '@openrunic/i18n';
-import { Badge, Button, Card, Input, Select, Table, Toast } from '@openrunic/ui';
+import { Badge, Button, Card, Input, Select, Table } from '@openrunic/ui';
 import type { TableColumn } from '@openrunic/ui';
 import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
@@ -12,7 +12,7 @@ import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { BarMeter, StatTile } from '@/components/reports';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary } from '@/components/state';
+import { AsyncBoundary, Toast } from '@/components/state';
 import {
   MOCK_PROVIDERS,
   useAdminClientOption,

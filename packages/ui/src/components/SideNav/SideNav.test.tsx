@@ -24,7 +24,7 @@ describe('SideNav', () => {
     render(<SideNav items={ITEMS} active="Records" />);
 
     const nav = screen.getByRole('navigation', { name: 'Primary' });
-    expect(screen.getByRole('img', { name: 'OpenRunic' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'openrunic' })).toBeInTheDocument();
 
     const rows = within(nav).getAllByRole('link');
     expect(rows).toHaveLength(ITEMS.length);
@@ -207,5 +207,28 @@ describe('SideNav', () => {
     expect(root).toHaveAttribute('id', 'shell-rail');
     expect(screen.getByTestId('rail')).toBe(root);
     expect(screen.getByRole('navigation')).toHaveAttribute('id', 'shell-rail-drawer');
+  });
+
+  it('takes every word it says from the consumer', () => {
+    /*
+     * The design system has no translator, so these were English literals in the
+     * component: a Spanish staff screen announced its primary navigation as
+     * "Primary" and its buttons as "Menu" and "Close". They are props with those
+     * English defaults now, and this is what says the props are actually read.
+     */
+    render(
+      <SideNav
+        items={ITEMS}
+        navLabel="Navegación principal"
+        menuLabel="Menú"
+        closeLabel="Cerrar el menú"
+        brandLabel="openrunic"
+      />
+    );
+
+    expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Menú' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cerrar el menú' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'openrunic' })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,5 @@
 'use client';
 
-import { Toast } from '@openrunic/ui';
 import type { ToastTone } from '@openrunic/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -83,3 +82,4 @@ export function ToastDock({ toasts, onDismiss }: Readonly<ToastDockProps>): Reac
     </div>
   );
 }
+import { Toast } from '@/components/state';

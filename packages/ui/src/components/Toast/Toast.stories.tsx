@@ -100,7 +100,7 @@ export const Stack: Story = {
       <Toast
         tone="danger"
         title="One record could not be read"
-        message="The source sent an unsupported format. OpenRunic kept the rest."
+        message="The source sent an unsupported format. openrunic kept the rest."
         onClose={() => {}}
       />
     </div>

@@ -1,9 +1,10 @@
 'use client';
 
-import { Badge, Button, Card, Modal, Toast } from '@openrunic/ui';
+import { Badge, Button, Card, Modal } from '@openrunic/ui';
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import type { ReactElement } from 'react';
 
+import { Toast } from '@/components/state';
 import { useRegisterCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import { ATTESTATION, chartApi } from '@/lib/api/chart';

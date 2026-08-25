@@ -5,7 +5,7 @@ import { appCatalogue } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 /**
- * EVERY KEY THIS APPLICATION ASKS FOR EXISTS.
+ * EVERY KEY EITHER APPLICATION ASKS FOR EXISTS, AND EVERY KEY IS ASKED FOR.
  *
  * An unknown key renders as the key itself: `nav.patients` appears where a
  * label should be. That is deliberate, because the alternatives are worse - a
@@ -53,7 +53,23 @@ import { describe, expect, it } from 'vitest';
  * nowhere is a key nothing renders.
  */
 
-const SOURCE_ROOT = join(import.meta.dirname, '../../..');
+/**
+ * The two applications that render from this catalogue.
+ *
+ * One catalogue, so one test. It lives here rather than in `packages/i18n`
+ * because it reads application source, and in this application rather than in
+ * `apps/portal` because this is the larger consumer; a third would be the point
+ * at which it should move somewhere neutral.
+ *
+ * Both roots matter in both directions. A key `apps/portal` asks for has to be
+ * defined, and a key the catalogue defines has to be rendered by one of them -
+ * the `portal.` area is asked for only over there, so scanning one root would
+ * report every one of its keys as an orphan.
+ */
+const SOURCE_ROOTS = [
+  join(import.meta.dirname, '../../..'),
+  join(import.meta.dirname, '../../../../../portal/src'),
+];
 
 const KEY = String.raw`[a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+)+`;
 
@@ -83,15 +99,25 @@ function sourceFiles(directory: string): string[] {
   return found;
 }
 
+function allSourceFiles(): string[] {
+  return SOURCE_ROOTS.flatMap((root) => sourceFiles(root));
+}
+
+/** A path a failure message can be read from, whichever application it is in. */
+function relative(path: string): string {
+  const root = SOURCE_ROOTS.find((candidate) => path.startsWith(candidate));
+  return root === undefined ? path : path.slice(root.length + 1);
+}
+
 function keysUsed(): Map<string, string[]> {
   const used = new Map<string, string[]>();
-  for (const path of sourceFiles(SOURCE_ROOT)) {
+  for (const path of allSourceFiles()) {
     const text = readFileSync(path, 'utf8');
     for (const pattern of [KEY_CALL, KEY_PROPERTY]) {
       for (const match of text.matchAll(pattern)) {
         const key = match.groups?.['key'];
         if (key === undefined) continue;
-        used.set(key, [...(used.get(key) ?? []), path.slice(SOURCE_ROOT.length + 1)]);
+        used.set(key, [...(used.get(key) ?? []), relative(path)]);
       }
     }
   }
@@ -133,7 +159,7 @@ describe('the catalogue and the code agree', () => {
      * not needed for - does this exact string appear anywhere in the source at
      * all - and gets a true answer for every shape.
      */
-    const sources = sourceFiles(SOURCE_ROOT).map((path) => readFileSync(path, 'utf8'));
+    const sources = allSourceFiles().map((path) => readFileSync(path, 'utf8'));
     const orphaned = Object.keys(SOURCE_MESSAGES).filter(
       (key) => !sources.some((text) => text.includes(`'${key}'`))
     );

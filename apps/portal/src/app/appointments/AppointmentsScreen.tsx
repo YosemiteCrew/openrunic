@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { AppointmentFacts } from '@/components/appointments/AppointmentFacts';
 import { getPortalApi } from '@/lib/api';
 import type { Appointment, PortalApi } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDateTime } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
@@ -26,6 +27,7 @@ export interface AppointmentsScreenProps {
 }
 
 export function AppointmentsScreen({ api = getPortalApi() }: Readonly<AppointmentsScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getAppointments(), [api]);
   const { state, reload } = useAsync(load);
 
@@ -126,7 +128,7 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                     overline={appointment.mode === 'video' ? 'Video call' : 'In person'}
                     title={appointment.reason}
                   >
-                    <AppointmentFacts appointment={appointment} />
+                    <AppointmentFacts t={t} appointment={appointment} />
                     <div className="portal-actions">
                       {appointment.joinUrl ? (
                         <Button href={appointment.joinUrl} iconLeft="video">
@@ -170,7 +172,7 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                     overline="Past"
                     title={appointment.reason}
                   >
-                    <AppointmentFacts appointment={appointment} />
+                    <AppointmentFacts t={t} appointment={appointment} />
                     {appointment.cancelledReason ? (
                       <p className="portal-record__meta">
                         <Badge tone="neutral">Cancelled</Badge> {appointment.cancelledReason}
@@ -189,7 +191,7 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
         <Modal
           open
           title="Cancel this appointment?"
-          description={`This would cancel ${pendingCancel.reason} with ${pendingCancel.clinician} on ${formatDateTime(pendingCancel.startsAt)}. The slot goes to someone else, and to be seen you would have to request a new appointment. The next opening may be weeks later.`}
+          description={`This would cancel ${pendingCancel.reason} with ${pendingCancel.clinician} on ${formatDateTime(t, pendingCancel.startsAt)}. The slot goes to someone else, and to be seen you would have to request a new appointment. The next opening may be weeks later.`}
           onClose={() => setPendingCancel(null)}
           footer={
             <>

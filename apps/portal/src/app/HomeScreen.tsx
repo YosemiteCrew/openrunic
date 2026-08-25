@@ -11,14 +11,24 @@
 
 import { useCallback } from 'react';
 import { Badge, Button, Card, EmptyState } from '@openrunic/ui';
+import { counted } from '@openrunic/i18n';
+import type { CountedMessage, Translator } from '@openrunic/i18n';
+
 import { AppointmentFacts } from '@/components/appointments/AppointmentFacts';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
 import { Money } from '@/components/Money';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
 import type { Appointment, HomeSummary, PortalApi } from '@/lib/api/types';
-import { formatDate, pluralise } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
+import { formatDate } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
+
+/** Both forms, so the reader's own rules pick between them rather than `n === 1`. */
+const UNREAD: CountedMessage = {
+  oneKey: 'portal.home.unread.one',
+  otherKey: 'portal.home.unread.other',
+};
 
 export interface HomeScreenProps {
   /** Injected in tests; defaults to the app's own data source. */
@@ -26,9 +36,9 @@ export interface HomeScreenProps {
 }
 
 /** The balance sentence. A missing due date is a fact to state, not a blank to paper over. */
-function dueSentence(dueOn: string | null): string {
+function dueSentence(t: Translator, dueOn: string | null): string {
   const when =
-    dueOn === null ? 'Ask the practice when this is due.' : `Due by ${formatDate(dueOn)}.`;
+    dueOn === null ? 'Ask the practice when this is due.' : `Due by ${formatDate(t, dueOn)}.`;
   return `${when} You can pay online, or ask the practice about paying in instalments.`;
 }
 
@@ -43,6 +53,7 @@ function hasNothingToShow(home: HomeSummary): boolean {
 }
 
 function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointment | null }>) {
+  const t = useTranslator();
   if (!appointment) {
     return (
       <Card overline="Next appointment" title="You have no appointments booked">
@@ -59,6 +70,7 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
   return (
     <Card overline="Next appointment" title={appointment.reason}>
       <AppointmentFacts
+        t={t}
         appointment={appointment}
         videoLocation="A video call. The link opens in this browser."
       />
@@ -82,6 +94,7 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
 }
 
 export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getHome(), [api]);
   const { state, reload } = useAsync(load);
 
@@ -118,7 +131,7 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
                 <p className="or-body">
                   {home.balance.outstanding.amountMinor === 0
                     ? 'There is nothing to pay.'
-                    : dueSentence(home.balance.dueOn)}
+                    : dueSentence(t, home.balance.dueOn)}
                 </p>
                 <div className="portal-actions">
                   <Button
@@ -133,14 +146,7 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
 
               <Card overline="Messages" title="From your care team">
                 <p className="portal-figure">{home.unreadMessages}</p>
-                <p className="or-body">
-                  {pluralise(
-                    home.unreadMessages,
-                    'message you have not read',
-                    'messages you have not read'
-                  )}
-                  .
-                </p>
+                <p className="or-body">{counted(t, UNREAD, home.unreadMessages)}</p>
                 <div className="portal-actions">
                   <Button href="/messages" variant="secondary" iconLeft="message-square">
                     Open messages

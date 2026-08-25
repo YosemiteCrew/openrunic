@@ -18,6 +18,7 @@ import { PlainTerm } from '@/components/PlainTerm';
 import { RangeBadge } from '@/components/RangeBadge';
 import { getPortalApi } from '@/lib/api';
 import type { HealthRecord, PortalApi, Result } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDate, formatMeasurement } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
@@ -44,6 +45,7 @@ function isRecordEmpty(record: HealthRecord): boolean {
  * and the panel says that in plain words before offering the message box.
  */
 function ResultRow({ result }: Readonly<{ result: Result }>) {
+  const t = useTranslator();
   const [askOpen, setAskOpen] = useState(false);
   const panelId = `result-${result.id}-ask`;
 
@@ -55,7 +57,9 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
       </div>
 
       <p className="portal-record__reading">
-        <span className="portal-record__value">{formatMeasurement(result.value, result.unit)}</span>
+        <span className="portal-record__value">
+          {formatMeasurement(t, result.value, result.unit)}
+        </span>
         <span className="portal-record__meta">
           {result.referenceRange === ''
             ? 'No usual range was recorded for this test.'
@@ -63,7 +67,7 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
         </span>
       </p>
 
-      <p className="portal-record__meta">Taken on {formatDate(result.takenOn)}</p>
+      <p className="portal-record__meta">Taken on {formatDate(t, result.takenOn)}</p>
 
       <div className="portal-actions">
         <Button
@@ -97,6 +101,7 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
 }
 
 export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthRecordScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getHealthRecord(), [api]);
   const { state, reload } = useAsync(load);
 
@@ -147,7 +152,7 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                         <Badge tone="neutral">{problem.status}</Badge>
                       </div>
                       <p className="portal-record__meta">
-                        Recorded on {formatDate(problem.recordedOn)}
+                        Recorded on {formatDate(t, problem.recordedOn)}
                       </p>
                     </li>
                   ))}
@@ -165,13 +170,13 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       <div className="portal-record__head">
                         <PlainTerm term={medication.name} plain={medication.plain} />
                         <span className="portal-record__value">
-                          {formatMeasurement(medication.strength, medication.unit)}
+                          {formatMeasurement(t, medication.strength, medication.unit)}
                         </span>
                       </div>
                       <p className="or-body">{medication.instruction}</p>
                       <p className="portal-record__meta">
                         Prescribed by {medication.prescribedBy}, started{' '}
-                        {formatDate(medication.startedOn)}
+                        {formatDate(t, medication.startedOn)}
                       </p>
                     </li>
                   ))}
@@ -194,7 +199,7 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       </div>
                       <p className="or-body">What happened: {allergy.reaction}</p>
                       <p className="portal-record__meta">
-                        Recorded on {formatDate(allergy.recordedOn)}
+                        Recorded on {formatDate(t, allergy.recordedOn)}
                       </p>
                     </li>
                   ))}
@@ -214,7 +219,7 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                         <Badge tone="success">{immunisation.doseLabel}</Badge>
                       </div>
                       <p className="portal-record__meta">
-                        Given on {formatDate(immunisation.givenOn)}
+                        Given on {formatDate(t, immunisation.givenOn)}
                       </p>
                     </li>
                   ))}
@@ -235,7 +240,9 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                           {document.format}
                         </Badge>
                       </div>
-                      <p className="portal-record__meta">Added on {formatDate(document.addedOn)}</p>
+                      <p className="portal-record__meta">
+                        Added on {formatDate(t, document.addedOn)}
+                      </p>
                     </li>
                   ))}
                 </ul>

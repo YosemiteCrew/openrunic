@@ -20,6 +20,7 @@ import { Money } from '@/components/Money';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
 import type { PortalApi, Receipt, Statement, StatementStatus } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
@@ -54,6 +55,7 @@ interface StatementDetailProps {
 }
 
 function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailProps>) {
+  const t = useTranslator();
   const [confirming, setConfirming] = useState(false);
   const pay = useAction((id: string) => api.payStatement(id));
   const receipt: Receipt | undefined = pay.value;
@@ -77,7 +79,7 @@ function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailPr
   return (
     <Card
       overline={`Statement ${statement.reference}`}
-      title={`Issued ${formatDate(statement.issuedOn)}`}
+      title={`Issued ${formatDate(t, statement.issuedOn)}`}
     >
       <Table
         caption={`Charges on statement ${statement.reference}`}
@@ -103,9 +105,9 @@ function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailPr
         <output className="portal-confirmation">
           <p className="portal-confirmation__title">Payment received</p>
           <p className="or-small">
-            You paid <Money value={receipt.amount} /> on {formatDateTime(receipt.paidOn)} with the
-            card ending {receipt.cardLast4}. Your receipt reference is {receipt.id}. Keep it if you
-            need to query the payment.
+            You paid <Money value={receipt.amount} /> on {formatDateTime(t, receipt.paidOn)} with
+            the card ending {receipt.cardLast4}. Your receipt reference is {receipt.id}. Keep it if
+            you need to query the payment.
           </p>
         </output>
       ) : null}
@@ -149,6 +151,7 @@ function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailPr
 }
 
 export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getStatements(), [api]);
   const { state, reload } = useAsync(load);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -197,7 +200,7 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
                 <Card
                   key={statement.id}
                   overline={`Statement ${statement.reference}`}
-                  title={`Issued ${formatDate(statement.issuedOn)}`}
+                  title={`Issued ${formatDate(t, statement.issuedOn)}`}
                 >
                   <dl className="portal-data-list">
                     <div className="portal-data-list__row">
@@ -210,7 +213,7 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
                     </div>
                     <div className="portal-data-list__row">
                       <dt className="portal-data-list__term">Due by</dt>
-                      <dd className="portal-data-list__value">{formatDate(statement.dueOn)}</dd>
+                      <dd className="portal-data-list__value">{formatDate(t, statement.dueOn)}</dd>
                     </div>
                     <div className="portal-data-list__row">
                       <dt className="portal-data-list__term">Still to pay</dt>

@@ -8,6 +8,7 @@
  * hear, which is the same failure as signalling status with colour.
  */
 
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatMoney, formatMoneyWithCode } from '@/lib/format';
 import type { Money as MoneyValue } from '@/lib/api/types';
 
@@ -18,12 +19,13 @@ export interface MoneyProps {
 }
 
 export function Money({ value, showCode = false }: Readonly<MoneyProps>) {
+  const t = useTranslator();
   const isCredit = value.amountMinor < 0;
 
   return (
     <span className="portal-money">
       <span className="portal-money__figure">
-        {showCode ? formatMoneyWithCode(value) : formatMoney(value)}
+        {showCode ? formatMoneyWithCode(t, value) : formatMoney(t, value)}
       </span>
       {isCredit ? <span className="portal-money__credit">credit</span> : null}
     </span>

@@ -1,8 +1,8 @@
-import { createTranslator } from '@openrunic/i18n';
+import { createTranslator } from './negotiate.js';
 import { describe, expect, it } from 'vitest';
 
-import { counted, searchWords } from '../counted';
-import type { CountedMessage } from '../counted';
+import { counted, searchWords } from './counted.js';
+import type { CountedMessage } from './counted.js';
 
 /**
  * The two helpers every screen with a count or a palette command reaches for.

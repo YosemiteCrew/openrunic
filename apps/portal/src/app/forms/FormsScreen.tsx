@@ -26,11 +26,34 @@ export interface FormsScreenProps {
   api?: PortalApi;
 }
 
-const STATUS_LABEL: Record<FormStatus, string> = {
-  'not-started': 'Not started',
-  'in-progress': 'Saved, not sent',
-  submitted: 'Sent',
+/*
+ * Keys as the map's values, which is the shape the drift test reaches by
+ * checking the catalogue against the source rather than the source against the
+ * catalogue: the property name is the status, not `somethingKey`.
+ */
+const STATUS_LABEL_KEYS: Record<FormStatus, string> = {
+  'not-started': 'portal.forms.status.notStarted',
+  'in-progress': 'portal.forms.status.inProgress',
+  submitted: 'portal.forms.status.submitted',
 };
+
+/**
+ * The two choices on a yes/no question, as a stored value and the words shown
+ * for it.
+ *
+ * The value is what goes back to the practice as the answer, so it is fixed.
+ * Translating it would translate the answer: a patient reading Spanish would
+ * save `Sí`, and the same question would come back holding two different values
+ * depending on which language it happened to be answered in. Only the label
+ * follows the reader.
+ *
+ * Every other question's options arrive from the questionnaire, already worded
+ * by whoever wrote it, and are shown as they arrived.
+ */
+const YES_NO = [
+  { value: 'Yes', labelKey: 'portal.forms.yes' },
+  { value: 'No', labelKey: 'portal.forms.no' },
+] as const;
 
 interface QuestionFieldProps {
   question: FormQuestion;
@@ -39,6 +62,8 @@ interface QuestionFieldProps {
 }
 
 function QuestionField({ question, value, onChange }: Readonly<QuestionFieldProps>) {
+  const t = useTranslator();
+
   if (question.kind === 'text') {
     return (
       <>
@@ -57,7 +82,10 @@ function QuestionField({ question, value, onChange }: Readonly<QuestionFieldProp
     );
   }
 
-  const options = question.kind === 'yes-no' ? ['Yes', 'No'] : (question.options ?? []);
+  const options =
+    question.kind === 'yes-no'
+      ? YES_NO.map((choice) => ({ value: choice.value, label: t(choice.labelKey) }))
+      : (question.options ?? []).map((option) => ({ value: option, label: option }));
 
   return (
     <fieldset className="portal-question__fieldset">
@@ -65,12 +93,12 @@ function QuestionField({ question, value, onChange }: Readonly<QuestionFieldProp
       {question.help ? <p className="portal-question__help">{question.help}</p> : null}
       {options.map((option) => (
         <Radio
-          key={option}
-          checked={value === option}
-          label={option}
+          key={option.value}
+          checked={value === option.value}
+          label={option.label}
           name={question.id}
-          value={option}
-          onChange={() => onChange(option)}
+          value={option.value}
+          onChange={() => onChange(option.value)}
         />
       ))}
     </fieldset>
@@ -96,14 +124,11 @@ function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
 
   if (submit.status === 'done') {
     return (
-      <Card overline="Sent" title="Your form has gone to the practice">
-        <p className="or-body">
-          Your answers are with your care team and will be read before your appointment. You do not
-          need to do anything else.
-        </p>
+      <Card overline={t('portal.forms.sent.overline')} title={t('portal.forms.sent.title')}>
+        <p className="or-body">{t('portal.forms.sent.body')}</p>
         <div className="portal-actions">
           <Button variant="secondary" iconLeft="arrow-left" onClick={onClose}>
-            Back to your forms
+            {t('portal.forms.back')}
           </Button>
         </div>
       </Card>
@@ -111,7 +136,7 @@ function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
   }
 
   return (
-    <Card overline="In progress" title={task.title}>
+    <Card overline={t('portal.forms.inProgress.overline')} title={task.title}>
       <p className="or-body">{task.purpose}</p>
 
       <ProgressMeter
@@ -132,33 +157,29 @@ function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
 
       <div className="portal-actions">
         <Button variant="secondary" iconLeft="clock" onClick={() => save.run(answers)}>
-          Save and finish later
+          {t('portal.forms.save')}
         </Button>
         <Button iconLeft="send" onClick={() => submit.run(answers)}>
-          Send to the practice
+          {t('portal.forms.submit')}
         </Button>
         <Button variant="ghost" onClick={onClose}>
-          Back to your forms
+          {t('portal.forms.back')}
         </Button>
       </div>
 
       {save.status === 'done' ? (
-        <output className="portal-record__meta">
-          Your answers are saved. You can close this and come back to it later.
-        </output>
+        <output className="portal-record__meta">{t('portal.forms.saved')}</output>
       ) : null}
 
       {save.status === 'failed' ? (
         <p className="portal-record__meta" role="alert">
-          Your answers were not saved, and they are still on this page. Check your connection, then
-          save again.
+          {t('portal.forms.saveFailed')}
         </p>
       ) : null}
 
       {submit.status === 'failed' ? (
         <p className="portal-record__meta" role="alert">
-          Your form did not send, and your answers are still on this page. Check your connection,
-          then send it again.
+          {t('portal.forms.submitFailed')}
         </p>
       ) : null}
     </Card>
@@ -174,9 +195,9 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
   return (
     <>
       <PageHeader
-        overline="Before your visit"
-        title="Forms"
-        lede="Questionnaires your care team has asked you to fill in. Save as you go and finish whenever you like."
+        overline={t('portal.forms.overline')}
+        title={t('portal.forms.title')}
+        lede={t('portal.forms.lede')}
       />
 
       <AsyncBoundary
@@ -188,8 +209,8 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
         empty={
           <EmptyState
             icon="clipboard-list"
-            title="You have no forms to fill in."
-            message="When your care team sends you one, it appears here with the date it is needed by."
+            title={t('portal.forms.empty.title')}
+            message={t('portal.forms.empty.message')}
           />
         }
       >
@@ -207,13 +228,13 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
               {forms.map((form) => (
                 <Card
                   key={form.id}
-                  overline={`Needed by ${formatDate(t, form.dueOn)}`}
+                  overline={t('portal.forms.neededBy', { date: formatDate(t, form.dueOn) })}
                   title={form.title}
                 >
                   <p className="or-body">{form.purpose}</p>
                   <p className="portal-record__meta">
                     <Badge tone={form.status === 'submitted' ? 'success' : 'neutral'}>
-                      {STATUS_LABEL[form.status]}
+                      {t(STATUS_LABEL_KEYS[form.status])}
                     </Badge>
                   </p>
                   <div className="portal-actions">
@@ -222,7 +243,11 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
                       variant={form.status === 'submitted' ? 'secondary' : 'primary'}
                       onClick={() => setOpenId(form.id)}
                     >
-                      {form.status === 'in-progress' ? 'Continue the form' : 'Open the form'}
+                      {t(
+                        form.status === 'in-progress'
+                          ? 'portal.forms.continue'
+                          : 'portal.forms.open'
+                      )}
                     </Button>
                   </div>
                 </Card>

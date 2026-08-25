@@ -231,4 +231,55 @@ export const portal: Messages = {
     'Esto carga {amount} en la tarjeta que la consulta tiene registrada. Los pagos no se pueden revertir desde este portal. Para recuperar el dinero tendría que pedir una devolución a la consulta.',
   'portal.bills.payDialog.notNow': 'Ahora no',
   'portal.bills.payDialog.confirm': 'Pagar ahora',
+  'portal.messages.overline': 'Su equipo asistencial',
+  'portal.messages.title': 'Mensajes',
+  'portal.messages.lede':
+    'Lea lo que ha escrito su equipo asistencial y respóndales. Esta no es la vía para conseguir ayuda rápida.',
+  'portal.messages.empty.title': 'No tiene ningún mensaje.',
+  'portal.messages.empty.message':
+    'Cuando su equipo asistencial le escriba, la conversación aparecerá aquí.',
+  'portal.messages.threads.label': 'Conversaciones',
+  'portal.messages.threads.heading': 'Conversaciones',
+  'portal.messages.threads.unread': 'Sin leer',
+  'portal.messages.threads.meta': '{correspondent}, {when}',
+  'portal.messages.conversation.overline': 'Conversación',
+  'portal.messages.conversation.who': '{author}, {when}',
+  'portal.messages.notice.title': 'No es para urgencias',
+  'portal.messages.notice.body':
+    'Las respuestas pueden tardar unos días laborables. Si necesita ayuda ahora, llame a la consulta. Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
+  'portal.messages.compose.label': 'Su mensaje',
+  'portal.messages.compose.placeholder': 'Escriba aquí su respuesta.',
+  'portal.messages.compose.send': 'Enviar el mensaje',
+  'portal.messages.compose.sending': 'Enviando',
+  'portal.messages.compose.sent': 'Mensaje enviado. Está al final de la conversación de arriba.',
+  'portal.messages.compose.failed':
+    'Su mensaje no se ha enviado y su borrador sigue en la caja. Compruebe su conexión y vuelva a enviarlo.',
+  'portal.forms.overline': 'Antes de su visita',
+  'portal.forms.title': 'Formularios',
+  'portal.forms.lede':
+    'Cuestionarios que su equipo asistencial le ha pedido que rellene. Guarde a medida que avanza y termine cuando quiera.',
+  'portal.forms.empty.title': 'No tiene ningún formulario que rellenar.',
+  'portal.forms.empty.message':
+    'Cuando su equipo asistencial le envíe uno, aparecerá aquí con la fecha para la que se necesita.',
+  'portal.forms.status.notStarted': 'Sin empezar',
+  'portal.forms.status.inProgress': 'Guardado, sin enviar',
+  'portal.forms.status.submitted': 'Enviado',
+  'portal.forms.neededBy': 'Se necesita para el {date}',
+  'portal.forms.open': 'Abrir el formulario',
+  'portal.forms.continue': 'Continuar el formulario',
+  'portal.forms.yes': 'Sí',
+  'portal.forms.no': 'No',
+  'portal.forms.inProgress.overline': 'En curso',
+  'portal.forms.save': 'Guardar y terminar más tarde',
+  'portal.forms.submit': 'Enviar a la consulta',
+  'portal.forms.back': 'Volver a sus formularios',
+  'portal.forms.saved': 'Sus respuestas están guardadas. Puede cerrar esto y volver más tarde.',
+  'portal.forms.saveFailed':
+    'Sus respuestas no se han guardado y siguen en esta página. Compruebe su conexión y vuelva a guardarlas.',
+  'portal.forms.submitFailed':
+    'Su formulario no se ha enviado y sus respuestas siguen en esta página. Compruebe su conexión y vuelva a enviarlo.',
+  'portal.forms.sent.overline': 'Enviado',
+  'portal.forms.sent.title': 'Su formulario ha llegado a la consulta',
+  'portal.forms.sent.body':
+    'Sus respuestas están con su equipo asistencial y se leerán antes de su cita. No tiene que hacer nada más.',
 };

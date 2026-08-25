@@ -34,7 +34,13 @@ describe('UsersScreen', () => {
     expect(await screen.findByText(/active accounts have no second factor/)).toBeInTheDocument();
   });
 
-  it('invites a colleague from a drawer and confirms what happened', async () => {
+  it('refuses to claim an invitation it cannot send, and says why', async () => {
+    /*
+     * This used to build a row in the component's own state and report "Invite
+     * sent to ...". Nothing was sent: the colleague appeared on the staff list
+     * as invited and never received an email, which is a harder thing to notice
+     * than an obviously broken form.
+     */
     render(<UsersScreen />);
     await screen.findByText('Ada Okafor');
 
@@ -47,10 +53,13 @@ describe('UsersScreen', () => {
     fireEvent.change(within(drawer).getByLabelText('Work email'), {
       target: { value: 'y.nkemdirim@cedar.clinic.invalid' },
     });
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Send invite' }));
 
-    expect(screen.getByText(/Invite sent to y.nkemdirim@cedar.clinic.invalid/)).toBeInTheDocument();
-    expect(screen.getByText('Yara Nkemdirim')).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Send invite' })).toBeDisabled();
+    expect(screen.queryByText(/Invite sent to/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Yara Nkemdirim')).not.toBeInTheDocument();
+    expect(
+      within(drawer).getByText(/Invite a colleague wherever accounts are actually created/)
+    ).toBeInTheDocument();
   });
 
   it('closes the invite drawer on Escape without inviting anyone', async () => {

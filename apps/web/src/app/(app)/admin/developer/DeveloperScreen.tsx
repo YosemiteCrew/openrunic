@@ -22,7 +22,6 @@ import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
 import {
-  MOCK_NEW_KEY_DISPLAY,
   useAdminClientOption,
   useApiKeys,
   useApiScopes,
@@ -420,19 +419,18 @@ function ScopePicker({ scopes, selected, onToggle }: Readonly<ScopePickerProps>)
 /**
  * The two faces of key creation: describe the key, then copy the secret once.
  *
- * They are one component because they are one moment. The secret replaces the
- * form rather than appearing beside it, so there is no state in which a person
- * is still editing a key that has already been issued.
+ * This used to be two moments in one component: the form, and then the secret
+ * replacing it. There is no secret. The one it displayed was a fixed constant
+ * from the source rather than anything minted, so the whole "copy this now"
+ * panel is gone with the control that produced it.
  */
 function KeyCreationBody({
-  newSecret,
   keyLabel,
   scopes,
   keyScopes,
   onLabelChange,
   onToggleScope,
 }: Readonly<{
-  newSecret: string | null;
   keyLabel: string;
   scopes: ReturnType<typeof useApiScopes>;
   keyScopes: string[];
@@ -440,20 +438,6 @@ function KeyCreationBody({
   onToggleScope: (id: string) => void;
 }>): ReactElement {
   const t = useTranslator();
-
-  if (newSecret) {
-    return (
-      <div className="or-stack">
-        <Card className="or-notice" data-tone="serious">
-          <p className="or-body">
-            <strong>{t('admin.developer.newKey.copyTitle')}</strong>{' '}
-            {t('admin.developer.newKey.copyBody')}
-          </p>
-        </Card>
-        <Input label={t('admin.developer.newKey.secret')} mono readOnly value={newSecret} />
-      </div>
-    );
-  }
 
   return (
     <div className="or-stack">
@@ -600,7 +584,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
 
   const [section, setSection] = useState<SectionId>('keys');
   const [creatingKey, setCreatingKey] = useState(false);
-  const [newSecret, setNewSecret] = useState<string | null>(null);
   const [keyLabel, setKeyLabel] = useState('');
   const [keyScopes, setKeyScopes] = useState<string[]>([]);
   const [openApp, setOpenApp] = useState<string | null>(null);
@@ -610,7 +593,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
   const startKey = useCallback(() => {
     setSection('keys');
     setCreatingKey(true);
-    setNewSecret(null);
   }, []);
   const showWebhooks = useCallback(() => setSection('webhooks'), []);
   const showApps = useCallback(() => setSection('apps'), []);
@@ -658,12 +640,6 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
   const toggleKeyScope = useCallback((id: string) => {
     setKeyScopes((previous) => toggleScope(previous, id));
   }, []);
-
-  const createKey = () => {
-    if (!keyLabel.trim()) return;
-    setNewSecret(MOCK_NEW_KEY_DISPLAY);
-    setToast(t('admin.developer.newKey.createdToast', { label: keyLabel.trim() }));
-  };
 
   return (
     <AppShell
@@ -715,24 +691,22 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
         width={640}
         onClose={() => setCreatingKey(false)}
         footer={
-          newSecret ? (
-            <Button variant="primary" onClick={() => setCreatingKey(false)}>
-              {t('admin.developer.newKey.copied')}
+          <>
+            <Button variant="ghost" onClick={() => setCreatingKey(false)}>
+              {t('admin.action.cancel')}
             </Button>
-          ) : (
-            <>
-              <Button variant="ghost" onClick={() => setCreatingKey(false)}>
-                {t('admin.action.cancel')}
-              </Button>
-              <Button variant="primary" onClick={createKey}>
-                {t('admin.developer.newKey.create')}
-              </Button>
-            </>
-          )
+            {/* Disabled: this minted nothing. It displayed a fixed constant from
+                the source as "the secret, shown once", identical on every visit,
+                so a key pasted out of this drawer would never have
+                authenticated anything. */}
+            <Button variant="primary" disabled>
+              {t('admin.developer.newKey.create')}
+            </Button>
+          </>
         }
       >
+        <Demonstration message={t('admin.developer.keys.createNotBuilt')} />
         <KeyCreationBody
-          newSecret={newSecret}
           keyLabel={keyLabel}
           scopes={scopes}
           keyScopes={keyScopes}
@@ -763,19 +737,22 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
               <Button variant="ghost" onClick={() => setOpenApp(null)}>
                 {t('admin.action.close')}
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  setToast(t('admin.developer.apps.testLaunchToast', { name: selectedApp.name }))
-                }
-              >
+              {/* Disabled: this reported a successful launch without asking the
+                  app anything, so one that could not be launched looked
+                  launchable. */}
+              <Button variant="secondary" disabled>
                 {t('admin.developer.apps.testLaunch')}
               </Button>
             </>
           ) : null
         }
       >
-        {selectedApp ? <AppDetail app={selectedApp} /> : null}
+        {selectedApp ? (
+          <div className="or-stack">
+            <Demonstration message={t('admin.developer.apps.launchNotBuilt')} />
+            <AppDetail app={selectedApp} />
+          </div>
+        ) : null}
       </Drawer>
 
       {/* ---- Webhook detail -------------------------------------------- */}

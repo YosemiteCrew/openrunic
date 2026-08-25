@@ -505,7 +505,6 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
   /* Local write overlay. See the file comment: the demo client does not accept
      writes, and a fixture that pretended to would teach the screen to trust
      state the server never saw. */
-  const [invited, setInvited] = useState<StaffUser[]>([]);
 
   const [roleFocus, setRoleFocus] = useState<StaffRole>('MEDICAL_ASSISTANT');
   const [grants, setGrants] = useState<Record<string, boolean>>({});
@@ -561,41 +560,12 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
     [openInvite, openRoles, showUnenrolled, t]
   );
 
-  /* Only the invite is layered on. A deactivation used to be layered on here
-     too, which made the list agree with a withdrawal of access that had never
-     been asked for. */
-  const applyOverlay = (rows: StaffUser[]): StaffUser[] => [...invited, ...rows];
-
   const [invite, setInvite] = useState<InviteDraft>(EMPTY_INVITE);
-  const sendInvite = () => {
-    const trimmed = invite.name.trim();
-    if (!trimmed || !invite.email.trim()) return;
-    setInvited((previous) => [
-      {
-        id: `invited-${previous.length + 1}`,
-        name: trimmed,
-        displayName: trimmed,
-        email: invite.email.trim(),
-        roles: [invite.role],
-        facilityIds: invite.facilityIds,
-        isProvider: invite.role === 'PROVIDER',
-        npi: null,
-        taxonomy: null,
-        mfaEnrolled: false,
-        status: 'INVITED',
-        lastActiveAt: null,
-        invitedAt: null,
-        deactivatedAt: null,
-        exceptions: [],
-      },
-      ...previous,
-    ]);
-    setToast(t('admin.users.invite.sentToast', { email: invite.email.trim() }));
-    setInvite(EMPTY_INVITE);
-    setDrawer({ kind: 'none' });
-  };
 
-  const allUsers = users.data ? applyOverlay(users.data.data) : [];
+  /* Straight through. This used to have a locally-invited row and a locally-
+     deactivated set layered on top, which is how the list came to agree with
+     writes nobody had made. */
+  const allUsers = users.data?.data ?? [];
   const selected =
     drawer.kind === 'user' ? (allUsers.find((user) => user.id === drawer.id) ?? null) : null;
   const unenrolled = allUsers.filter(
@@ -701,13 +671,24 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
             <Button variant="ghost" onClick={closeDrawer}>
               {t('admin.action.cancel')}
             </Button>
-            <Button variant="primary" onClick={sendInvite}>
+            {/* Disabled: nothing is sent. This built a row in this component's
+                own state and reported the invitation as delivered, so a
+                colleague who never got an email appeared on the list as
+                invited. */}
+            <Button variant="primary" disabled>
               {t('admin.users.invite.send')}
             </Button>
           </>
         }
       >
-        <InviteFields invite={invite} permissions={permissions.data ?? null} onChange={setInvite} />
+        <div className="or-stack">
+          <Demonstration message={t('admin.users.inviteNotBuilt')} />
+          <InviteFields
+            invite={invite}
+            permissions={permissions.data ?? null}
+            onChange={setInvite}
+          />
+        </div>
       </Drawer>
 
       {/* ---- Role editor ----------------------------------------------- */}

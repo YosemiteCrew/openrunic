@@ -1,21 +1,10 @@
 'use client';
 
-import {
-  Badge,
-  Button,
-  Card,
-  Checkbox,
-  Icon,
-  Input,
-  Select,
-  Switch,
-  Tag,
-  Toast,
-} from '@openrunic/ui';
+import { Badge, Button, Card, Checkbox, Icon, Input, Select, Switch, Tag } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import { adminArea, adminBreadcrumb, ConfirmDialog } from '@/components/admin';
+import { Demonstration, adminArea, adminBreadcrumb } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -225,11 +214,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [previewSurface, setPreviewSurface] = useState<'staff' | 'portal'>('portal');
-  const [publishing, setPublishing] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-
   const startPreview = useCallback(() => setPreview(true), []);
-  const startPublish = useCallback(() => setPublishing(true), []);
 
   const commands = useMemo<Command[]>(
     () => [
@@ -241,16 +226,10 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
         icon: 'eye',
         perform: startPreview,
       },
-      {
-        id: 'admin.forms.publish',
-        group: 'actions',
-        label: t('admin.forms.command.publish'),
-        keywords: searchWords(t('admin.forms.command.publish.keywords')),
-        icon: 'upload',
-        perform: startPublish,
-      },
     ],
-    [startPreview, startPublish, t]
+    /* No publish command. A palette entry that opens a dialog whose confirm
+       button releases nothing is worse than no entry: it is faster to reach. */
+    [startPreview, t]
   );
 
   const definitions = forms.data?.data ?? [];
@@ -306,7 +285,11 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
             checked={preview}
             onChange={() => setPreview((value) => !value)}
           />
-          <Button variant="primary" iconLeft="upload" disabled={!definition} onClick={startPublish}>
+          {/* Disabled: publishing needs the compiled artefacts
+              `publishDefinition` in `@openrunic/forms-engine` produces, and this
+              screen cannot build them. It used to close a confirmation and
+              report the version released, with the definition unchanged. */}
+          <Button variant="primary" iconLeft="upload" disabled>
             {t('admin.forms.publishVersion', { version: nextVersion })}
           </Button>
         </>
@@ -331,6 +314,12 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
 
           return (
             <>
+              {/* Inside the boundary, not above it: the note is about the
+                  Publish control, which only exists once a definition has
+                  loaded. Rendered outside, its polite `role="status"` sat
+                  beside the loading skeleton's. */}
+              <Demonstration message={t('admin.forms.publishNotBuilt')} />
+
               <div className="or-builder__bar">
                 <Select
                   label={t('admin.forms.formSelect')}
@@ -488,49 +477,10 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                   <FieldProperties selectedField={selectedField} onEdit={editField} />
                 </div>
               )}
-
-              <ConfirmDialog
-                open={publishing}
-                title={t('admin.forms.publish.title', {
-                  name: current.name,
-                  version: nextVersion,
-                })}
-                consequence={t('admin.forms.publish.consequence', { version: nextVersion })}
-                confirmLabel={t('admin.forms.publishVersion', { version: nextVersion })}
-                onCancel={() => setPublishing(false)}
-                onConfirm={() => {
-                  setPublishing(false);
-                  setToast(
-                    t('admin.forms.publishedToast', {
-                      name: current.name,
-                      version: nextVersion,
-                    })
-                  );
-                }}
-              >
-                <p className="or-body">
-                  {t('admin.forms.publish.summary', {
-                    fields: fields.length,
-                    sections: current.sections.length,
-                  })}{' '}
-                  {added.length > 0
-                    ? t('admin.forms.publish.added', {
-                        count: added.length,
-                        version: current.version,
-                      })
-                    : t('admin.forms.publish.noneAdded')}
-                </p>
-              </ConfirmDialog>
             </>
           );
         }}
       </AsyncBoundary>
-
-      {toast ? (
-        <div className="or-toast-region">
-          <Toast tone="success" message={toast} onClose={() => setToast(null)} />
-        </div>
-      ) : null}
     </AppShell>
   );
 }

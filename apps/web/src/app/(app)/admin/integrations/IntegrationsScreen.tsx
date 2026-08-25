@@ -1,11 +1,11 @@
 'use client';
 
-import { Badge, Button, Card, Input, Tag, Toast } from '@openrunic/ui';
+import { Badge, Button, Card, Input, Tag } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { Translator } from '@openrunic/i18n';
-import { adminArea, adminBreadcrumb, DetailList, Drawer } from '@/components/admin';
+import { Demonstration, DetailList, Drawer, adminArea, adminBreadcrumb } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -48,23 +48,6 @@ const STATUS_TONE: Record<IntegrationStatus, 'success' | 'neutral' | 'danger'> =
   ERROR: 'danger',
   NOT_CONNECTED: 'neutral',
 };
-
-/**
- * What a test connection reports back, per state. A seam that is already
- * failing says what to replace, one with no adapter says what is missing, and
- * a working seam reports the round trip. Listed per status rather than
- * branched, so adding a state forces a sentence to be written for it.
- */
-const TEST_RESULT_KEY: Record<IntegrationStatus, { labelKey: string }> = {
-  CONNECTED: { labelKey: 'admin.integrations.test.connected' },
-  DEMO: { labelKey: 'admin.integrations.test.demo' },
-  ERROR: { labelKey: 'admin.integrations.test.error' },
-  NOT_CONNECTED: { labelKey: 'admin.integrations.test.notConnected' },
-};
-
-function testResultFor(t: Translator, status: IntegrationStatus): string {
-  return t(TEST_RESULT_KEY[status].labelKey);
-}
 
 /** One sentence under the chip, so the state is never only a colour and a word. */
 function statusSentence(t: Translator, integration: Integration): string {
@@ -178,7 +161,6 @@ function ActivityLog({ integration }: Readonly<{ integration: Integration }>): R
 
 interface SeamDetailProps {
   integration: Integration;
-  testResult: string | undefined;
 }
 
 /**
@@ -188,7 +170,7 @@ interface SeamDetailProps {
  * so a card inside it is a level below; leaving the Card default would put an h2
  * inside an h2 and flatten the outline a screen reader moves through.
  */
-function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): ReactElement {
+function SeamDetail({ integration }: Readonly<SeamDetailProps>): ReactElement {
   const t = useTranslator();
 
   return (
@@ -204,12 +186,6 @@ function SeamDetail({ integration, testResult }: Readonly<SeamDetailProps>): Rea
           value={integration.secretRef ?? t('admin.integrations.credentials.none')}
         />
       </Card>
-
-      {testResult ? (
-        <Card tone="bone" headingLevel={3} title={t('admin.integrations.testResult.title')}>
-          <output className="or-body">{testResult}</output>
-        </Card>
-      ) : null}
 
       <DetailList
         columns={2}
@@ -253,8 +229,6 @@ export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>
   const integrations = useIntegrations(options);
 
   const [openId, setOpenId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const [tested, setTested] = useState<Record<string, string>>({});
 
   /* Memoised: the "open the failing connection" command closes over it. */
   const rows = useMemo(() => integrations.data?.data ?? [], [integrations.data]);
@@ -279,12 +253,6 @@ export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>
     ],
     [openFirstProblem, t]
   );
-
-  const testConnection = (integration: Integration) => {
-    const result = testResultFor(t, integration.status);
-    setTested((previous) => ({ ...previous, [integration.id]: result }));
-    setToast(t('admin.integrations.testToast', { name: integration.name, result }));
-  };
 
   return (
     <AppShell
@@ -352,24 +320,27 @@ export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>
               <Button variant="ghost" onClick={() => setOpenId(null)}>
                 {t('admin.action.close')}
               </Button>
-              <Button variant="secondary" onClick={() => testConnection(selected)}>
+              {/* Both disabled. The test used to read a canned sentence off the
+                  status this page had already loaded and report it as a round
+                  trip, so a broken adapter looked verified; saving closed the
+                  drawer and wrote nothing. */}
+              <Button variant="secondary" disabled>
                 {t('admin.integrations.testConnection')}
               </Button>
-              <Button variant="primary" onClick={() => setOpenId(null)}>
+              <Button variant="primary" disabled>
                 {t('admin.integrations.saveConnection')}
               </Button>
             </>
           ) : null
         }
       >
-        {selected ? <SeamDetail integration={selected} testResult={tested[selected.id]} /> : null}
+        {selected ? (
+          <div className="or-stack">
+            <Demonstration message={t('admin.integrations.connectionNotBuilt')} />
+            <SeamDetail integration={selected} />
+          </div>
+        ) : null}
       </Drawer>
-
-      {toast ? (
-        <div className="or-toast-region">
-          <Toast tone="info" message={toast} onClose={() => setToast(null)} />
-        </div>
-      ) : null}
     </AppShell>
   );
 }

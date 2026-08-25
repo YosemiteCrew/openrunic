@@ -59,14 +59,23 @@ describe('IntegrationsScreen', () => {
     expect(field).toHaveAttribute('readonly');
   });
 
-  it('tests a connection and reports the result in a sentence', async () => {
+  it('refuses to report a round trip it never made, and says why', async () => {
+    /*
+     * "Answered in 142 ms" was a sentence chosen from the status this page had
+     * already loaded. Nothing was sent, so a seam that had stopped answering
+     * still reported a healthy round trip and the failure surfaced later,
+     * somewhere else, as a result that never arrived.
+     */
     render(<IntegrationsScreen />);
     await screen.findByText('Claims clearinghouse');
 
     fireEvent.click(screen.getByRole('button', { name: 'Configure Claims clearinghouse' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    const drawer = screen.getByRole('dialog', { name: 'Claims clearinghouse' });
 
-    expect(screen.getAllByText(/answered in 142 ms/).length).toBeGreaterThan(0);
+    expect(within(drawer).getByRole('button', { name: 'Test connection' })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: 'Save connection' })).toBeDisabled();
+    expect(screen.queryByText(/answered in 142 ms/)).not.toBeInTheDocument();
+    expect(within(drawer).getByText(/Neither testing nor saving a connection/)).toBeInTheDocument();
   });
 
   it('descends the outline one level at a time inside the drawer', async () => {
@@ -74,19 +83,20 @@ describe('IntegrationsScreen', () => {
     await screen.findByText('Claims clearinghouse');
 
     fireEvent.click(screen.getByRole('button', { name: 'Configure Claims clearinghouse' }));
-    // Adds the third card, so the assertion covers the conditional one too.
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
 
     const drawer = screen.getByRole('dialog', { name: 'Claims clearinghouse' });
 
     // The drawer owns the h2, so the cards inside it are a level below. The
     // shared Card defaults to level 2, which would nest an h2 in an h2 and let
     // a reader moving by heading leave the drawer without noticing.
+    //
+    // "Test result" used to be a third card here, appearing once the test had
+    // been run. It is gone with the test that produced it.
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(within(drawer).getByRole('heading', { level: 2 })).toHaveTextContent(
       'Claims clearinghouse'
     );
-    for (const name of ['Credentials', 'Test result', 'Recent activity']) {
+    for (const name of ['Credentials', 'Recent activity']) {
       expect(within(drawer).getByRole('heading', { level: 3, name })).toBeInTheDocument();
     }
   });
@@ -184,7 +194,7 @@ describe('IntegrationsScreen, working a broken seam', () => {
     expect(screen.getByText(/queued rather than lost/)).toBeInTheDocument();
   });
 
-  it('closes the drawer from its footer, and saving closes it too', async () => {
+  it('closes the drawer from its footer, and Save cannot close it at all', async () => {
     render(<IntegrationsScreen />);
     await screen.findByText('Card payments');
 
@@ -196,29 +206,14 @@ describe('IntegrationsScreen, working a broken seam', () => {
     );
     expect(screen.queryByRole('dialog', { name: 'Card payments' })).not.toBeInTheDocument();
 
+    // Save used to close the drawer, which is the whole of what it did. Closing
+    // on Save is what made it read as a save, so the control is disabled and the
+    // drawer stays where it is.
     fireEvent.click(screen.getByRole('button', { name: 'Configure Card payments' }));
-    fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'Card payments' })).getByRole('button', {
-        name: 'Save connection',
-      })
-    );
-    expect(screen.queryByRole('dialog', { name: 'Card payments' })).not.toBeInTheDocument();
-  });
+    const drawer = screen.getByRole('dialog', { name: 'Card payments' });
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Save connection' }));
 
-  it('dismisses the test-result toast, leaving the result on the card', async () => {
-    render(<IntegrationsScreen />);
-    await screen.findByText('Claims clearinghouse');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Configure Claims clearinghouse' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-
-    // The toast is transient; the result belongs to the seam and stays with it.
-    expect(
-      within(screen.getByRole('dialog', { name: 'Claims clearinghouse' })).getByText(
-        /answered in 142 ms/
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Card payments' })).toBeInTheDocument();
   });
 
   it('says nothing has gone through a seam rather than showing an empty log', async () => {

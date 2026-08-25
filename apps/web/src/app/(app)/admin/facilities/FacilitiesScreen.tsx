@@ -6,10 +6,11 @@ import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import {
-  adminArea,
-  adminBreadcrumb,
+  Demonstration,
   DetailList,
   Drawer,
+  adminArea,
+  adminBreadcrumb,
   pluralKey,
   translateColumns,
 } from '@/components/admin';
@@ -210,7 +211,9 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
             <Button variant="ghost" onClick={() => setOpenId(null)}>
               {t('admin.action.cancel')}
             </Button>
-            <Button variant="primary" onClick={() => setOpenId(null)}>
+            {/* Disabled: the inputs below are uncontrolled and were never read.
+                This closed the drawer and nothing else. */}
+            <Button variant="primary" disabled>
               {t('admin.facilities.save')}
             </Button>
           </>
@@ -221,6 +224,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
              h2 above them, so the Card default of 2 would nest an h2 in an h2
              and drop a level out of the outline. */
           <div className="or-stack">
+            <Demonstration message={t('admin.facilities.saveNotBuilt')} />
             <Card tone="bone" headingLevel={3} title={t('admin.facilities.identity.title')}>
               <div className="or-formgrid">
                 <Input label={t('admin.facilities.field.name')} defaultValue={selected.name} />

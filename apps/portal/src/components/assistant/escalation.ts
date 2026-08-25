@@ -93,8 +93,8 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    *
    * - `debo` is both "I should" and "I owe", so it counts only in front of an
    *   infinitive. "¿Cuánto debo?" with nothing after it is a balance, and this
-   *   screen invites that question by name. `deberia` needs no such narrowing:
-   *   the conditional has no reading about a balance.
+   *   screen invites that question by name. `deberia` is left broad instead,
+   *   for the reason given below.
    * - `diagnostic-` is the noun the health record uses for a condition, so only
    *   the verb forms count. "¿Qué diagnósticos tengo?" asks for a list of rows.
    * - `necesito` in front of a bare verb is usually "I need to see my bill", so
@@ -110,6 +110,15 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    * introduced by the same word. The interrogative does not carry the
    * distinction; the verb after it does, and enumerating verbs is how this
    * becomes the list of things to worry about that the note at the top forbids.
+   *
+   * `deberia` is left broad for the same reason, and the counterexample is
+   * worth naming because it is real: "¿Cuánto debería pagar según mi factura?"
+   * is a question about a balance and it is redirected. The conditional is not
+   * purely the advice mood, so narrowing it would mean deciding which verbs and
+   * objects make an amount question - the enumeration the paragraph above rules
+   * out, on the mood where the advice reading is strongest. The natural ways to
+   * ask that question are "¿Cuánto debo?" and "¿Cuánto tengo que pagar?", and
+   * the first is answered from the record.
    *
    * So it stays broad and "¿Qué tengo que pagar?" is redirected, which is the
    * trade the note at the top already describes. A false match sends somebody

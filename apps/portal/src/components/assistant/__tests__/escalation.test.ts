@@ -53,6 +53,79 @@ describe('questions that are for a person', () => {
     expect(needsCareTeam('should    i')).toBe(true);
   });
 
+  it.each([
+    '¿Debo dejar de tomar las pastillas?',
+    '¿Tengo que venir a la consulta?',
+    '¿Es normal este resultado?',
+    '¿Son normales mis análisis?',
+    '¿Qué significa esto?',
+    '¿Qué quiere decir este número?',
+    '¿Puedo dejar la amlodipina?',
+    '¿Estoy bien?',
+    '¿Necesito que me vean?',
+    '¿Qué me pasa?',
+    '¿Qué hago ahora?',
+    '¿Puedes diagnosticar lo que tengo?',
+  ])('sends the Spanish %j to the care team', (question) => {
+    /*
+     * The gap this closes. Every one of these is the Spanish form of a question
+     * two blocks up, and every one of them was answered rather than handed over
+     * while the patterns were English only. Nothing about the portal looked
+     * wrong: the words on the screen were Spanish, and the redirect simply did
+     * not fire.
+     */
+    expect(needsCareTeam(question)).toBe(true);
+  });
+
+  it.each([
+    '¿Cuándo es mi próxima cita?',
+    '¿Qué medicamentos hay en mi historia clínica?',
+    '¿Cuánto debo?',
+    '¿Qué tengo pendiente de pago?',
+    '¿Qué diagnósticos tengo?',
+    'Necesito ver mi factura',
+    '¿Qué vacunas me han puesto?',
+  ])('answers the Spanish %j from the record', (question) => {
+    /*
+     * The other half, and the reason four of the Spanish patterns are narrower
+     * than their English counterparts. `debo` is also "I owe", `diagnóstico` is
+     * what the health record calls a condition, and `qué tengo` is a balance
+     * unless nothing follows it. A matcher that read those as requests for a
+     * judgement would refuse all three of the things the intro copy tells a
+     * patient this page is for.
+     */
+    expect(needsCareTeam(question)).toBe(false);
+  });
+
+  it('folds accents rather than deleting the letters under them', () => {
+    /*
+     * The normaliser stripped everything outside `[a-z0-9\s]`, which removed an
+     * accented letter along with its mark: "años" became "a os" and "qué"
+     * became "qu". No Spanish pattern could have matched even once one existed,
+     * so this is the half of the fix that is easy to leave out and impossible
+     * to notice.
+     */
+    expect(needsCareTeam('¿Qué significa?')).toBe(true);
+    expect(needsCareTeam('Que significa')).toBe(true);
+    expect(needsCareTeam('¿Está grave?')).toBe(true);
+  });
+
+  it('runs every language against every question, whatever the reader chose', () => {
+    /*
+     * There is no per-locale selection here, and that is the point. Selecting
+     * the reader's patterns would put a fail-open case in a safety path: a
+     * language that shipped words but no speech acts would match nothing at
+     * all. A locale can only add matches.
+     *
+     * So an English question is caught while the reader is on a Spanish portal,
+     * and a Spanish one is caught on an English portal. `needsCareTeam` takes
+     * no locale at all, which is what makes that true by construction.
+     */
+    expect(needsCareTeam('Should I stop taking the tablets?')).toBe(true);
+    expect(needsCareTeam('¿Debo dejar de tomar las pastillas?')).toBe(true);
+    expect(needsCareTeam.length).toBe(1);
+  });
+
   it('never decides by what the question is about, only by what it asks for', () => {
     /* Two questions naming the same thing. One asks for a record and is
        answered; one asks for a judgement and is not. Nothing here knows or

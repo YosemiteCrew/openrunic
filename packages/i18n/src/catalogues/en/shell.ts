@@ -37,4 +37,11 @@ export const shell: Messages = {
   'shell.palette.group.patients': 'Patients',
   'shell.palette.group.navigate': 'Go to',
   'shell.palette.group.actions': 'Actions',
+
+  /*
+   * The application's own one-line description, used by any route that does
+   * not write its own. It sits in `shell` rather than `marketing` because both
+   * root layouts read it, and the staff one is not marketing.
+   */
+  'shell.metaDescription': 'Open-source operating system for human health',
 };

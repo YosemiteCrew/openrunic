@@ -208,7 +208,16 @@ export interface ChartSummary {
 /* The note                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** The four SOAP blocks, in the order they are documented. */
+/**
+ * The four SOAP blocks, in the order they are documented.
+ *
+ * The key is all a section carries about what it is called. It used to carry a
+ * `label` and a `hint` beside it, written out in English in both the live client
+ * and the fixtures - two copies of the same four headings, and neither of them
+ * anything the API sends. `components/encounter/labels.ts` maps the key to the
+ * catalogue instead, so the words exist once and in every language the build
+ * ships.
+ */
 export const NOTE_SECTION_KEYS = ['subjective', 'objective', 'assessment', 'plan'] as const;
 
 export type NoteSectionKey = (typeof NOTE_SECTION_KEYS)[number];
@@ -225,10 +234,6 @@ export interface EmittedItem {
 
 export interface NoteSection {
   key: NoteSectionKey;
-  /** "Subjective". Sentence case, the block's own heading. */
-  label: string;
-  /** One line of what belongs in the block. Shown under the label, never as a placeholder. */
-  hint: string;
   text: string;
   /** Structured data this block wrote. Rendered as chips under the text. */
   emitted: EmittedItem[];

@@ -1,6 +1,9 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { AppShell } from '@/app/_shell/AppShell';
+import { baseMetadata } from '@/app/_shell/metadata';
 import { resolveLocale } from '@/lib/i18n/locale';
 
 /**
@@ -27,7 +30,20 @@ import { resolveLocale } from '@/lib/i18n/locale';
  * every one of them to buy a prerender these routes cannot use would be a cost
  * with nothing on the other side of it.
  */
-export { baseMetadata as metadata, baseViewport as viewport } from '@/app/_shell/metadata';
+export { baseViewport as viewport } from '@/app/_shell/metadata';
+
+/**
+ * The application's description, in the reader's language.
+ *
+ * A route that writes its own overrides this; most do not, so this is what a
+ * bookmark of the schedule or the inbox carries. It is a function rather than a
+ * constant for the same reason the layout below is: the language comes from the
+ * request.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const t = createTranslator(appCatalogue, await resolveLocale());
+  return { ...baseMetadata, description: t('shell.metaDescription') };
+}
 
 export default async function AppLayout({ children }: Readonly<{ children: ReactNode }>) {
   // Resolved here, before the first byte. A page that renders in English and

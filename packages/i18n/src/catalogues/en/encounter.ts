@@ -153,4 +153,28 @@ export const encounter: Messages = {
    */
   'encounter.page.title': 'Visit note',
   'encounter.page.titleForPatient': '{name} - Visit note',
+
+  /* ------------------------------------------------------- the SOAP blocks */
+  /*
+   * Each block carries three words rather than one. `label` is the heading over
+   * the block; `name` is the same block named inside a sentence, which in
+   * English is the label in lower case and in German would not be; `hint` is the
+   * line under the heading saying what belongs there.
+   *
+   * They are three keys because the alternative was `label.toLowerCase()`, which
+   * is a rule about English capitalisation applied to every language. The same
+   * decision the range states in `en/clinical.ts` make, for the same reason.
+   */
+  'encounter.section.subjective.label': 'Subjective',
+  'encounter.section.subjective.name': 'subjective',
+  'encounter.section.subjective.hint': 'What the patient reports, in their words where it matters.',
+  'encounter.section.objective.label': 'Objective',
+  'encounter.section.objective.name': 'objective',
+  'encounter.section.objective.hint': 'Measurements and examination. Vitals flow in from rooming.',
+  'encounter.section.assessment.label': 'Assessment',
+  'encounter.section.assessment.name': 'assessment',
+  'encounter.section.assessment.hint': 'The clinical picture, and the coded problems it maps to.',
+  'encounter.section.plan.label': 'Plan',
+  'encounter.section.plan.name': 'plan',
+  'encounter.section.plan.hint': 'What happens next, and what it writes to the chart.',
 };

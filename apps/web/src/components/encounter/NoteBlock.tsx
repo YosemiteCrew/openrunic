@@ -8,7 +8,7 @@ import { useActiveOptionInView } from '@/lib/active-option';
 import type { EmittedItem, NoteSection, SlashCommand } from '@/lib/api/chart';
 import { counted } from '@/lib/i18n/counted';
 
-import { EMITTED_KIND_LABELS } from './labels';
+import { EMITTED_KIND_LABELS, NOTE_SECTION_COPY } from './labels';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { optionId } from './ids';
@@ -170,12 +170,12 @@ export function NoteBlock({
     setActiveIndex(0);
   };
 
-  const sectionName = section.label.toLowerCase();
+  const copy = NOTE_SECTION_COPY[section.key];
 
   return (
-    <Card id={blockId} title={section.label} className="or-note-block">
+    <Card id={blockId} title={t(copy.labelKey)} className="or-note-block">
       <p className="or-caption or-note-block__hint" id={`${blockId}-hint`}>
-        {section.hint}
+        {t(copy.hintKey)}
       </p>
 
       {locked ? (
@@ -194,7 +194,7 @@ export function NoteBlock({
           <div className="or-note-block__margin">
             <IconButton
               icon="slash"
-              label={t('encounter.block.insertCommand', { section: sectionName })}
+              label={t('encounter.block.insertCommand', { section: t(copy.nameKey) })}
               variant="ghost"
               size="sm"
               onClick={openFromButton}
@@ -233,7 +233,7 @@ export function NoteBlock({
       {section.emitted.length > 0 ? (
         <ul
           className="or-note-block__emitted"
-          aria-label={t('encounter.block.writtenToChart', { section: sectionName })}
+          aria-label={t('encounter.block.writtenToChart', { section: t(copy.nameKey) })}
         >
           {section.emitted.map((item) => (
             <li key={item.id}>

@@ -1,4 +1,4 @@
-import { appCatalogue, negotiateLocale, SUPPORTED_LOCALES } from '@openrunic/i18n';
+import { localeFrom } from '@openrunic/i18n';
 import { headers } from 'next/headers';
 
 /**
@@ -40,44 +40,22 @@ import { headers } from 'next/headers';
  * a signed-in user changing their preference writes the cookie.
  */
 
-/** The reader's explicit choice, when they have made one. */
-export const LOCALE_COOKIE = 'or_locale';
-
+/**
+ * The reader's language, for a server component.
+ *
+ * The rule itself is `localeFrom` in `@openrunic/i18n`, which takes two strings
+ * and touches no framework. This is the half that cannot be shared: reading the
+ * request. The proxy asks the same question from middleware, which cannot call
+ * `headers()`, and `apps/portal` asks it for the same reader - a patient who
+ * chose Spanish on the public pages has chosen once, not once per application.
+ *
+ * Two implementations of "what language is this person reading in" would drift,
+ * and the first symptom would be a reader redirected to `/es` and then served
+ * English.
+ */
 export async function resolveLocale(): Promise<string> {
   const requestHeaders = await headers();
   return localeFrom(requestHeaders.get('cookie'), requestHeaders.get('accept-language'));
 }
 
-/**
- * The same rule, from two header values rather than from `headers()`.
- *
- * Split out because the middleware answers the same question and cannot call
- * `headers()`. Two implementations of "what language is this person reading in"
- * would drift, and the first symptom would be a reader redirected to `/es` and
- * then served English.
- */
-export function localeFrom(cookie: string | null, acceptLanguage: string | null): string {
-  const chosen = readLocaleCookie(cookie);
-  if (chosen !== null) return chosen;
-
-  return negotiateLocale(acceptLanguage, SUPPORTED_LOCALES, appCatalogue.sourceLocale);
-}
-
-/**
- * Reads the choice cookie, and refuses anything that is not a locale this build
- * carries.
- *
- * The value reaches `<html lang>` and the catalogue lookup, so it is checked
- * against the supported list rather than trusted: a cookie is attacker-writable,
- * and an unchecked one would put arbitrary text into an attribute.
- */
-export function readLocaleCookie(header: string | null): string | null {
-  if (header === null) return null;
-  for (const pair of header.split(';')) {
-    const [name, ...rest] = pair.trim().split('=');
-    if (name !== LOCALE_COOKIE) continue;
-    const value = decodeURIComponent(rest.join('='));
-    return SUPPORTED_LOCALES.includes(value) ? value : null;
-  }
-  return null;
-}
+export { LOCALE_COOKIE, localeFrom, readLocaleCookie } from '@openrunic/i18n';

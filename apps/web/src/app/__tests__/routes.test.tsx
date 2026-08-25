@@ -1,63 +1,75 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MOCK_ENCOUNTER_IDS } from '@/lib/api/mock/chart';
 
 import { AdminScreen } from '../(app)/admin/AdminScreen';
-import AdminPage, { metadata as adminMetadata } from '../(app)/admin/page';
+import AdminPage, { generateMetadata as adminMetadata } from '../(app)/admin/page';
 import { AuditScreen } from '../(app)/admin/audit/AuditScreen';
-import AuditPage, { metadata as auditMetadata } from '../(app)/admin/audit/page';
+import AuditPage, { generateMetadata as auditMetadata } from '../(app)/admin/audit/page';
 import { DeveloperScreen } from '../(app)/admin/developer/DeveloperScreen';
-import DeveloperPage, { metadata as developerMetadata } from '../(app)/admin/developer/page';
+import DeveloperPage, {
+  generateMetadata as developerMetadata,
+} from '../(app)/admin/developer/page';
 import { FacilitiesScreen } from '../(app)/admin/facilities/FacilitiesScreen';
-import FacilitiesPage, { metadata as facilitiesMetadata } from '../(app)/admin/facilities/page';
+import FacilitiesPage, {
+  generateMetadata as facilitiesMetadata,
+} from '../(app)/admin/facilities/page';
 import { FormsScreen } from '../(app)/admin/forms/FormsScreen';
-import FormsPage, { metadata as formsMetadata } from '../(app)/admin/forms/page';
+import FormsPage, { generateMetadata as formsMetadata } from '../(app)/admin/forms/page';
 import { IntegrationsScreen } from '../(app)/admin/integrations/IntegrationsScreen';
 import IntegrationsPage, {
-  metadata as integrationsMetadata,
+  generateMetadata as integrationsMetadata,
 } from '../(app)/admin/integrations/page';
 import { UsersScreen } from '../(app)/admin/users/UsersScreen';
-import UsersPage, { metadata as usersMetadata } from '../(app)/admin/users/page';
+import UsersPage, { generateMetadata as usersMetadata } from '../(app)/admin/users/page';
 import { BillingScreen } from '../(app)/billing/BillingScreen';
-import BillingPage, { metadata as billingMetadata } from '../(app)/billing/page';
+import BillingPage, { generateMetadata as billingMetadata } from '../(app)/billing/page';
 import { ChargesScreen } from '../(app)/billing/charges/ChargesScreen';
-import ChargesPage, { metadata as chargesMetadata } from '../(app)/billing/charges/page';
+import ChargesPage, { generateMetadata as chargesMetadata } from '../(app)/billing/charges/page';
 import { ClaimsScreen } from '../(app)/billing/claims/ClaimsScreen';
-import ClaimsPage, { metadata as claimsMetadata } from '../(app)/billing/claims/page';
+import ClaimsPage, { generateMetadata as claimsMetadata } from '../(app)/billing/claims/page';
 import { PaymentsScreen } from '../(app)/billing/payments/PaymentsScreen';
-import PaymentsPage, { metadata as paymentsMetadata } from '../(app)/billing/payments/page';
+import PaymentsPage, { generateMetadata as paymentsMetadata } from '../(app)/billing/payments/page';
 import { RemittanceScreen } from '../(app)/billing/remittance/RemittanceScreen';
-import RemittancePage, { metadata as remittanceMetadata } from '../(app)/billing/remittance/page';
+import RemittancePage, {
+  generateMetadata as remittanceMetadata,
+} from '../(app)/billing/remittance/page';
 import { StatementsScreen } from '../(app)/billing/statements/StatementsScreen';
-import StatementsPage, { metadata as statementsMetadata } from '../(app)/billing/statements/page';
+import StatementsPage, {
+  generateMetadata as statementsMetadata,
+} from '../(app)/billing/statements/page';
 import { EncounterNoteScreen } from '../(app)/encounters/[id]/EncounterNoteScreen';
 import EncounterPage, {
   generateMetadata as encounterMetadata,
 } from '../(app)/encounters/[id]/page';
 import { InboxScreen } from '../(app)/inbox/InboxScreen';
-import InboxPage, { metadata as inboxMetadata } from '../(app)/inbox/page';
+import InboxPage, { generateMetadata as inboxMetadata } from '../(app)/inbox/page';
 import { OrdersScreen } from '../(app)/orders/OrdersScreen';
-import OrdersPage, { metadata as ordersMetadata } from '../(app)/orders/page';
+import OrdersPage, { generateMetadata as ordersMetadata } from '../(app)/orders/page';
 import { NewOrderScreen } from '../(app)/orders/new/NewOrderScreen';
-import NewOrderPage, { metadata as newOrderMetadata } from '../(app)/orders/new/page';
+import NewOrderPage, { generateMetadata as newOrderMetadata } from '../(app)/orders/new/page';
 import { PatientsScreen } from '../(app)/patients/PatientsScreen';
-import PatientsPage, { metadata as patientsMetadata } from '../(app)/patients/page';
+import PatientsPage, { generateMetadata as patientsMetadata } from '../(app)/patients/page';
 import { PatientChartScreen } from '../(app)/patients/[id]/PatientChartScreen';
 import PatientChartPage, { generateMetadata as chartMetadata } from '../(app)/patients/[id]/page';
 import { InsuranceScreen } from '../(app)/patients/[id]/insurance/InsuranceScreen';
 import InsurancePage, {
-  metadata as insuranceMetadata,
+  generateMetadata as insuranceMetadata,
 } from '../(app)/patients/[id]/insurance/page';
 import { RegisterPatientScreen } from '../(app)/patients/new/RegisterPatientScreen';
-import RegisterPatientPage, { metadata as registerMetadata } from '../(app)/patients/new/page';
+import RegisterPatientPage, {
+  generateMetadata as registerMetadata,
+} from '../(app)/patients/new/page';
 import { ReportsScreen } from '../(app)/reports/ReportsScreen';
-import ReportsPage, { metadata as reportsMetadata } from '../(app)/reports/page';
+import ReportsPage, { generateMetadata as reportsMetadata } from '../(app)/reports/page';
 import { ResultsScreen } from '../(app)/results/ResultsScreen';
-import ResultsPage, { metadata as resultsMetadata } from '../(app)/results/page';
+import ResultsPage, { generateMetadata as resultsMetadata } from '../(app)/results/page';
 import { ScheduleScreen } from '../(app)/schedule/ScheduleScreen';
-import SchedulePage, { metadata as scheduleMetadata } from '../(app)/schedule/page';
+import SchedulePage, { generateMetadata as scheduleMetadata } from '../(app)/schedule/page';
 import { FlowBoardScreen } from '../(app)/schedule/flow-board/FlowBoardScreen';
-import FlowBoardPage, { metadata as flowBoardMetadata } from '../(app)/schedule/flow-board/page';
+import FlowBoardPage, {
+  generateMetadata as flowBoardMetadata,
+} from '../(app)/schedule/flow-board/page';
 
 /**
  * The route layer: what each URL is called in the browser tab, and which screen
@@ -72,7 +84,27 @@ import FlowBoardPage, { metadata as flowBoardMetadata } from '../(app)/schedule/
  * The route files are server components, so they are called rather than
  * rendered: what is asserted is the element each returns, which is exactly the
  * wiring the file exists to declare.
+ *
+ * The titles are `generateMetadata` rather than a `metadata` constant now,
+ * because a tab title is a string a reader reads and every one of them was
+ * English. That means these have to be awaited, and it means the route reads
+ * the request to find out what language to answer in - so `next/headers` is
+ * stubbed the way `(app)/__tests__/layout.test.tsx` stubs it, with a mutable
+ * `Headers` a test can set a language on.
  */
+
+let requestHeaders = new Headers();
+
+vi.mock('next/headers', () => ({ headers: () => Promise.resolve(requestHeaders) }));
+
+beforeEach(() => {
+  requestHeaders = new Headers();
+});
+
+/** The header a reader who has chosen Spanish arrives with. */
+function readingSpanish(): void {
+  requestHeaders = new Headers({ cookie: 'or_locale=es' });
+}
 
 const CHART_PATIENT_ID = '0192f1a0-0000-7000-8000-00000000p001';
 const ENCOUNTER_ID = MOCK_ENCOUNTER_IDS.testinaUnsigned;
@@ -142,8 +174,41 @@ describe('route wiring', () => {
     expect(Page().type).toBe(Screen);
   });
 
-  it.each(STATIC_ROUTES)('$title names the browser tab', ({ title, metadata }) => {
-    expect(metadata.title).toBe(title);
+  it.each(STATIC_ROUTES)('$title names the browser tab', async ({ title, metadata }) => {
+    expect((await metadata()).title).toBe(title);
+  });
+
+  it('names the tab in the language the reader chose', async () => {
+    /*
+     * The assertion the English ones cannot make. Every title above was an
+     * English constant in the route file, so a reader who had chosen Spanish got
+     * a Spanish schedule in a tab that said "Schedule" - and nothing in this
+     * suite could tell, because every expectation was the English string the
+     * route already held.
+     *
+     * `schedule` and `billing` are the two checked here because their Spanish
+     * differs from their English by more than an accent; `Inbox` and `Reports`
+     * would look like near-misses rather than translations.
+     */
+    readingSpanish();
+
+    await expect(scheduleMetadata()).resolves.toEqual({ title: 'Agenda' });
+    await expect(billingMetadata()).resolves.toEqual({
+      title: 'Facturación',
+      description: 'Dónde está el dinero hoy, y el panel que lo mueve.',
+    });
+  });
+
+  it('leaves a clinical tab in English rather than guessing at it', async () => {
+    /*
+     * `results` has no Spanish file, for the reason `es/index.ts` gives: a wrong
+     * clinical word is more dangerous than an English one. The tab falls back
+     * and the translator records that it fell back, so the gap is reported
+     * rather than hidden - which is what makes it a decision.
+     */
+    readingSpanish();
+
+    await expect(resultsMetadata()).resolves.toEqual({ title: 'Results' });
   });
 
   it('gives every route a tab title no other route shares', () => {
@@ -164,7 +229,7 @@ describe('route wiring', () => {
 
     expect(element.type).toBe(InsuranceScreen);
     expect(element.props.patientId).toBe(CHART_PATIENT_ID);
-    expect(insuranceMetadata.title).toBe('Insurance');
+    expect((await insuranceMetadata()).title).toBe('Insurance');
   });
 
   it('passes the encounter id from the URL through to the note screen', async () => {

@@ -222,4 +222,13 @@ export const orders: Messages = {
   /* The reason recorded when a tier below CRITICAL is cleared, which is the
      only tier with no list of reasons to choose from. */
   'orders.warning.defaultReason': 'Acknowledged',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'orders.page.title': 'Orders',
+  'orders.new.page.title': 'New order',
 };

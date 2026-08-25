@@ -144,4 +144,13 @@ export const encounter: Messages = {
   'encounter.toast.addendumSigned': 'Addendum signed',
   'encounter.toast.message':
     'Recorded against this visit. The text is locked; corrections are added as an addendum.',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'encounter.page.title': 'Visit note',
+  'encounter.page.titleForPatient': '{name} - Visit note',
 };

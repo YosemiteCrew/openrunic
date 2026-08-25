@@ -6,7 +6,7 @@ import { ABSOLUTE_LIFETIME_MS } from '@/lib/auth/session';
 import type { Session } from '@/lib/auth/session';
 import { heldSession, holdSession } from '@/lib/auth/store';
 
-import SignInPage, { metadata } from '../sign-in/page';
+import SignInPage, { generateMetadata } from '../sign-in/page';
 import { SignInScreen } from '../sign-in/SignInScreen';
 
 /**
@@ -16,6 +16,14 @@ import { SignInScreen } from '../sign-in/SignInScreen';
  * they type, the name of the button they press, the sentence that explains why
  * they are looking at this form again, and where they end up afterwards.
  */
+
+/*
+ * The tab title is looked up in the reader's language now, and `resolveLocale`
+ * reads the request to find out which. Stubbed the way
+ * `(app)/__tests__/layout.test.tsx` stubs it; an empty `Headers` is a reader
+ * who has expressed no preference, which is the source language.
+ */
+vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 
 const NOON = Date.parse('2026-08-13T12:00:00Z');
 
@@ -218,7 +226,9 @@ describe('the development sign-in', () => {
 });
 
 describe('the route', () => {
-  it('names the tab, and stays out of search indexes', () => {
+  it('names the tab, and stays out of search indexes', async () => {
+    const metadata = await generateMetadata();
+
     expect(metadata.title).toBe('Sign in');
     expect(metadata.robots).toEqual({ index: false, follow: false });
   });

@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { IS_MOCK_MODE } from '@/lib/api/config';
 import { mockEncounterNote } from '@/lib/api/mock/chart';
 import { MOCK_PATIENTS } from '@/lib/api/mock/fixtures';
+import { pageMetadata, tabName } from '@/lib/i18n/metadata';
 
 import { EncounterNoteScreen } from './EncounterNoteScreen';
 
@@ -19,16 +20,18 @@ interface EncounterPageProps {
 }
 
 export async function generateMetadata({ params }: EncounterPageProps): Promise<Metadata> {
-  if (!IS_MOCK_MODE) return { title: 'Visit note' };
+  if (!IS_MOCK_MODE) return pageMetadata({ titleKey: 'encounter.page.title' });
 
   const { id } = await params;
 
   const note = mockEncounterNote(id);
   const patient = note ? MOCK_PATIENTS.find((record) => record.id === note.patientId) : undefined;
-  if (!patient) return { title: 'Visit note' };
+  if (!patient) return pageMetadata({ titleKey: 'encounter.page.title' });
 
-  const given = patient.name.preferred ?? patient.name.given;
-  return { title: `${patient.name.family.toUpperCase()}, ${given} - Visit note` };
+  return pageMetadata({
+    titleKey: 'encounter.page.titleForPatient',
+    values: { name: tabName(patient.name) },
+  });
 }
 
 export default async function EncounterPage({ params }: Readonly<EncounterPageProps>) {

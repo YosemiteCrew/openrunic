@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { pageMetadata } from '@/lib/i18n/metadata';
+
 import { InsuranceScreen } from './InsuranceScreen';
 
 /**
@@ -10,7 +12,9 @@ import { InsuranceScreen } from './InsuranceScreen';
  * the browser tab reads "PATIENTSSON, Testina - Insurance": two tabs on two
  * patients must be impossible to confuse.
  */
-export const metadata: Metadata = { title: 'Insurance' };
+export function generateMetadata(): Promise<Metadata> {
+  return pageMetadata({ titleKey: 'insurance.page.title' });
+}
 
 interface InsurancePageProps {
   params: Promise<{ id: string }>;

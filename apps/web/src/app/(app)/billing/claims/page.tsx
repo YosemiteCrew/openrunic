@@ -1,12 +1,16 @@
 import type { Metadata } from 'next';
 
+import { pageMetadata } from '@/lib/i18n/metadata';
+
 import { ClaimsScreen } from './ClaimsScreen';
 
 /** BL-03 Claim workbench, with BL-04 claim detail in its drawer. */
-export const metadata: Metadata = {
-  title: 'Claim workbench',
-  description: 'Every claim as a state ledger row, from captured to paid.',
-};
+export function generateMetadata(): Promise<Metadata> {
+  return pageMetadata({
+    titleKey: 'billing.claims.page.title',
+    descriptionKey: 'billing.claims.page.description',
+  });
+}
 
 export default function ClaimsPage() {
   return <ClaimsScreen />;

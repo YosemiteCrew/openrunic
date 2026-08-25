@@ -278,4 +278,13 @@ export const chart: Messages = {
   'chart.empty.careTeam.title': 'No care team recorded',
   'chart.empty.careTeam.message':
     'The primary provider and anyone else responsible for this patient appear here.',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'chart.page.title': 'Chart',
+  'chart.page.titleForPatient': '{name} - Chart',
 };

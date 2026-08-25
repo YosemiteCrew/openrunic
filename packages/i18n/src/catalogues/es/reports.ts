@@ -119,4 +119,7 @@ export const reports: Messages = {
   'reports.csv.minutes': 'Minutos',
   'reports.csv.charges': 'Cargos',
   'reports.csv.claimState': 'Estado de la reclamación',
+
+  /* ------------------------------------------------------- the browser tab */
+  'reports.page.title': 'Informes',
 };

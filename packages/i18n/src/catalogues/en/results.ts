@@ -143,4 +143,12 @@ export const results: Messages = {
   'results.command.mineKeywords': 'assigned to me',
   'results.command.team': 'Show the team pool',
   'results.command.teamKeywords': 'unassigned, shared queue',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'results.page.title': 'Results',
 };

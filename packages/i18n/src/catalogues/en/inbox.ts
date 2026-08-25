@@ -95,4 +95,12 @@ export const inbox: Messages = {
   'inbox.command.mine.keywords': 'assigned to me',
   'inbox.command.team': 'Show the team pool',
   'inbox.command.team.keywords': 'shared queue, unassigned',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'inbox.page.title': 'Inbox',
 };

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { IS_MOCK_MODE } from '@/lib/api/config';
 import { MOCK_PATIENTS } from '@/lib/api/mock/fixtures';
+import { pageMetadata, tabName } from '@/lib/i18n/metadata';
 
 import { PatientChartScreen } from './PatientChartScreen';
 
@@ -23,15 +24,17 @@ interface PatientChartPageProps {
 }
 
 export async function generateMetadata({ params }: PatientChartPageProps): Promise<Metadata> {
-  if (!IS_MOCK_MODE) return { title: 'Chart' };
+  if (!IS_MOCK_MODE) return pageMetadata({ titleKey: 'chart.page.title' });
 
   const { id } = await params;
 
   const patient = MOCK_PATIENTS.find((record) => record.id === id);
-  if (!patient) return { title: 'Chart' };
+  if (!patient) return pageMetadata({ titleKey: 'chart.page.title' });
 
-  const given = patient.name.preferred ?? patient.name.given;
-  return { title: `${patient.name.family.toUpperCase()}, ${given} - Chart` };
+  return pageMetadata({
+    titleKey: 'chart.page.titleForPatient',
+    values: { name: tabName(patient.name) },
+  });
 }
 
 export default async function PatientChartPage({ params }: Readonly<PatientChartPageProps>) {

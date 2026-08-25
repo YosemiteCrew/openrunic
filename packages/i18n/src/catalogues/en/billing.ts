@@ -579,4 +579,25 @@ export const billing: Messages = {
   'billing.payments.command.allocate.keywords': 'allocate, apply, remainder, split',
   'billing.payments.command.receipt': 'Open the last receipt',
   'billing.payments.command.receipt.keywords': 'receipt, reprint, print',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'billing.page.title': 'Billing',
+  'billing.page.description': 'Where the money is today, and the workbench that moves it.',
+  'billing.charges.page.title': 'Fee sheet',
+  'billing.charges.page.description': 'Capture visit charges and link each one to its diagnosis.',
+  'billing.claims.page.title': 'Claim workbench',
+  'billing.claims.page.description': 'Every claim as a state ledger row, from captured to paid.',
+  'billing.payments.page.title': 'Payments',
+  'billing.payments.page.description':
+    'Take a payment, allocate it across visits, and issue the receipt.',
+  'billing.remittance.page.title': 'Remittance',
+  'billing.remittance.page.description': 'Post the 835s, then work only what did not match.',
+  'billing.statements.page.title': 'Statements and AR',
+  'billing.statements.page.description':
+    'Patient balances, ageing buckets, statement runs and text-to-pay.',
 };

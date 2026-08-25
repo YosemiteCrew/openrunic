@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { pageMetadata } from '@/lib/i18n/metadata';
+
 import { ChargesScreen } from './ChargesScreen';
 
 /**
@@ -9,10 +11,12 @@ import { ChargesScreen } from './ChargesScreen';
  * @openrunic/ui uses React state, which the react-server condition does not
  * provide.
  */
-export const metadata: Metadata = {
-  title: 'Fee sheet',
-  description: 'Capture visit charges and link each one to its diagnosis.',
-};
+export function generateMetadata(): Promise<Metadata> {
+  return pageMetadata({
+    titleKey: 'billing.charges.page.title',
+    descriptionKey: 'billing.charges.page.description',
+  });
+}
 
 export default function ChargesPage() {
   return <ChargesScreen />;

@@ -592,4 +592,18 @@ export const admin: Messages = {
   'admin.developer.command.apps.keywords': 'smart, launch, oauth, app registration',
   'admin.developer.command.webhooks': 'Show webhook deliveries',
   'admin.developer.command.webhooks.keywords': 'subscriptions, events, retry, delivery log',
+
+  /* ------------------------------------------------------- the browser tab */
+  /*
+   * A route file is a server component, so it cannot reach `useTranslator`.
+   * `lib/i18n/metadata.ts` builds its own translator and looks these up. The tab
+   * strip is often all a tired person has to tell nine open screens apart.
+   */
+  'admin.page.title': 'Admin',
+  'admin.audit.page.title': 'Audit trail',
+  'admin.developer.page.title': 'Developer platform',
+  'admin.facilities.page.title': 'Facilities',
+  'admin.forms.page.title': 'Form builder',
+  'admin.integrations.page.title': 'Integrations',
+  'admin.users.page.title': 'Users and roles',
 };

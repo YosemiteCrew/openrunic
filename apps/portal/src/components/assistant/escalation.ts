@@ -86,15 +86,18 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    * request. None of the three is exceptional; they are three moods of one
    * thing, and a maintainer adding a fourth should treat them as a set.
    *
-   * Three of these are narrower than their English counterparts, and each time
+   * Several of these are narrower than their English counterparts, and each time
    * for the same reason: the Spanish word does two jobs and only one of them is
    * a request for a judgement. Each would otherwise fire on one of the three
    * things the intro copy tells a patient this page is for.
    *
    * - `debo` is both "I should" and "I owe", so it counts only in front of an
-   *   infinitive. "¿Cuánto debo?" with nothing after it is a balance, and this
-   *   screen invites that question by name. `deberia` is left broad instead,
-   *   for the reason given below.
+   *   infinitive. That keeps "¿Cuánto debo?" answerable, and this screen
+   *   invites that question by name. It does **not** disambiguate the verb:
+   *   "¿Cuánto debo pagar?" is a balance and is redirected, because "pagar" is
+   *   an infinitive like any other. That is an accepted false match on the
+   *   terms below, not an invariant to build on. `deberia` is left broad
+   *   instead, for the same reason.
    * - `diagnostic-` is the noun the health record uses for a condition, so only
    *   the verb forms count. "¿Qué diagnósticos tengo?" asks for a list of rows.
    * - `necesito` in front of a bare verb is usually "I need to see my bill", so
@@ -127,7 +130,10 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    * for the expensive one.
    */
   es: [
-    /\bdebo [a-z]+r(me|te|lo|la|se|los|las|nos)?\b/,
+    /* Two clitic slots, because Spanish stacks them: "tomármelo" is
+       tomar + me + lo and folds to "tomarmelo". One slot caught
+       "tomarme" and "tomarlo" and missed the compound. */
+    /\bdebo [a-z]+r(me|te|se|nos|os)?(lo|la|los|las|le|les)?\b/,
     /\bdeberia\b/,
     /\btengo que\b/,
     /\bnecesito (que me|ir)\b/,

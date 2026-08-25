@@ -57,6 +57,8 @@ describe('questions that are for a person', () => {
     '¿Debo dejar de tomar las pastillas?',
     '¿Debería dejar de tomar las pastillas?',
     '¿Debería tomar este medicamento?',
+    '¿Debo tomármelo?',
+    '¿Debo tomarlo con comida?',
     '¿Qué debería hacer?',
     '¿Qué tengo que hacer?',
     '¿Tengo que venir a la consulta?',
@@ -105,6 +107,7 @@ describe('questions that are for a person', () => {
     '¿Qué tengo que pagar?',
     '¿Cuándo tengo que venir a la consulta?',
     '¿Cuánto debería pagar según mi factura?',
+    '¿Cuánto debo pagar?',
   ])('accepts redirecting %j rather than risk missing a request for advice', (question) => {
     /*
      * These two are balances and appointments, and they are redirected. That
@@ -142,6 +145,14 @@ describe('questions that are for a person', () => {
      */
     expect(needsCareTeam('¿Cuánto debo?')).toBe(false);
     expect(needsCareTeam('¿Debo dejar de tomar las pastillas?')).toBe(true);
+
+    /*
+     * The infinitive keeps the bare balance question answerable. It does not
+     * disambiguate the verb: "pagar" is an infinitive like any other, so
+     * "¿Cuánto debo pagar?" is a balance that gets redirected. Asserted here so
+     * the narrowing is not mistaken for an invariant.
+     */
+    expect(needsCareTeam('¿Cuánto debo pagar?')).toBe(true);
   });
 
   it('folds accents rather than deleting the letters under them', () => {

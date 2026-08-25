@@ -332,4 +332,71 @@ export const portal: Messages = {
     'This takes {amount} from the card the practice holds for you. Payments cannot be reversed from this portal. To get the money back you would have to ask the practice for a refund.',
   'portal.bills.payDialog.notNow': 'Not now',
   'portal.bills.payDialog.confirm': 'Pay now',
+  /*
+   * MESSAGES.
+   *
+   * The "not for emergencies" notice sits above the compose box, in the
+   * catalogue as one message, because it is a safety notice and a half of it
+   * would still look like a safety notice.
+   */
+  'portal.messages.overline': 'Your care team',
+  'portal.messages.title': 'Messages',
+  'portal.messages.lede':
+    'Read what your care team has written and reply. This is not the way to get help quickly.',
+  'portal.messages.empty.title': 'You have no messages.',
+  'portal.messages.empty.message':
+    'When your care team writes to you, the conversation appears here.',
+  'portal.messages.threads.label': 'Conversations',
+  'portal.messages.threads.heading': 'Conversations',
+  'portal.messages.threads.unread': 'Unread',
+  'portal.messages.threads.meta': '{correspondent}, {when}',
+  'portal.messages.conversation.overline': 'Conversation',
+  'portal.messages.conversation.who': '{author}, {when}',
+  'portal.messages.notice.title': 'Not for emergencies',
+  'portal.messages.notice.body':
+    'Replies can take a few working days. If you need help now, call the practice. For a medical emergency, call the emergency services on your local number.',
+  'portal.messages.compose.label': 'Your message',
+  'portal.messages.compose.placeholder': 'Write your reply here.',
+  'portal.messages.compose.send': 'Send message',
+  'portal.messages.compose.sending': 'Sending',
+  'portal.messages.compose.sent': 'Message sent. It is at the bottom of the conversation above.',
+  'portal.messages.compose.failed':
+    'Your message did not send, and your draft is still in the box. Check your connection, then send it again.',
+
+  /*
+   * FORMS.
+   *
+   * `yes` and `no` are the words shown for a yes/no question. They are not what
+   * is stored: the answer that goes back to the practice is fixed, so the same
+   * question cannot come back holding two different values depending on which
+   * language it was answered in.
+   */
+  'portal.forms.overline': 'Before your visit',
+  'portal.forms.title': 'Forms',
+  'portal.forms.lede':
+    'Questionnaires your care team has asked you to fill in. Save as you go and finish whenever you like.',
+  'portal.forms.empty.title': 'You have no forms to fill in.',
+  'portal.forms.empty.message':
+    'When your care team sends you one, it appears here with the date it is needed by.',
+  'portal.forms.status.notStarted': 'Not started',
+  'portal.forms.status.inProgress': 'Saved, not sent',
+  'portal.forms.status.submitted': 'Sent',
+  'portal.forms.neededBy': 'Needed by {date}',
+  'portal.forms.open': 'Open the form',
+  'portal.forms.continue': 'Continue the form',
+  'portal.forms.yes': 'Yes',
+  'portal.forms.no': 'No',
+  'portal.forms.inProgress.overline': 'In progress',
+  'portal.forms.save': 'Save and finish later',
+  'portal.forms.submit': 'Send to the practice',
+  'portal.forms.back': 'Back to your forms',
+  'portal.forms.saved': 'Your answers are saved. You can close this and come back to it later.',
+  'portal.forms.saveFailed':
+    'Your answers were not saved, and they are still on this page. Check your connection, then save again.',
+  'portal.forms.submitFailed':
+    'Your form did not send, and your answers are still on this page. Check your connection, then send it again.',
+  'portal.forms.sent.overline': 'Sent',
+  'portal.forms.sent.title': 'Your form has gone to the practice',
+  'portal.forms.sent.body':
+    'Your answers are with your care team and will be read before your appointment. You do not need to do anything else.',
 };

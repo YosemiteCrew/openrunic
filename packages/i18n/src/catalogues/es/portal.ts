@@ -282,4 +282,87 @@ export const portal: Messages = {
   'portal.forms.sent.title': 'Su formulario ha llegado a la consulta',
   'portal.forms.sent.body':
     'Sus respuestas están con su equipo asistencial y se leerán antes de su cita. No tiene que hacer nada más.',
+  'portal.assistant.overline': 'Su historia',
+  'portal.assistant.title': 'Asistente',
+  'portal.assistant.lede':
+    'Pregunte por lo que ha anotado su equipo asistencial y vea los registros de los que sale cada respuesta.',
+  'portal.assistant.notice.title': 'Lo que puede y lo que no puede hacer',
+  'portal.assistant.notice.body':
+    'Consulta cosas en su propia historia clínica y le enseña de dónde sale cada respuesta. No puede decirle qué significa algo, si es importante ni qué hacer a continuación. Para eso, escriba a su equipo asistencial. Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
+  'portal.assistant.service.line':
+    'Su consulta usa un servicio informático para escribir estas respuestas. Se llama {model} y funciona en {host}.',
+  'portal.assistant.service.leaves':
+    'Lo que escriba aquí sale de su consulta hacia ese servicio. Su consulta lo eligió y tiene el acuerdo con él.',
+  'portal.assistant.service.stays':
+    'Lo que escriba aquí se queda en los ordenadores de la propia consulta y no se envía a ningún otro sitio.',
+  'portal.assistant.section.label': 'Asistente',
+  'portal.assistant.reach.summary': 'Lo que puede consultar',
+  'portal.assistant.intro':
+    'Pregunte por algo que ya esté anotado, como cuándo es su próxima cita, qué medicamentos constan en su historia clínica o qué queda por pagar. Cada respuesta enseña los registros de los que sale y puede abrir cada uno.',
+  'portal.assistant.intro.careTeam': 'Escriba a su equipo asistencial',
+  'portal.assistant.intro.forAnythingElse': 'para cualquier otra cosa.',
+  'portal.assistant.compose.label': 'Su pregunta',
+  'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
+  'portal.assistant.compose.ask': 'Preguntar',
+  'portal.assistant.compose.stop': 'Parar',
+  'portal.assistant.turn.youAsked': 'Usted preguntó:',
+  'portal.assistant.turn.stillLooking': 'Sigue buscando.',
+  'portal.assistant.step.done': ', hecho',
+  'portal.assistant.step.stillGoing': ', en curso',
+  'portal.assistant.step.notFinished': ', sin terminar',
+  'portal.assistant.withheld.unsourced':
+    'La respuesta llegó sin los registros en los que se basaba, así que no se muestra. Una respuesta que no puede contrastar con su propia historia clínica no es de fiar.',
+  'portal.assistant.withheld.incomplete':
+    'Usted lo paró antes de que terminara una frase, así que no hay nada que mostrar.',
+  'portal.assistant.withheld.careTeam':
+    'Esto es para una persona, no para esta página. Puede consultar cosas en su historia clínica; no puede decirle qué significa algo, si es importante ni qué hacer.',
+  'portal.assistant.deferral': 'El asistente no siguió adelante con parte de esto: {reason}',
+  'portal.assistant.careTeam.text':
+    'Pregunte a su equipo asistencial. Ven la misma historia clínica y pueden responder a preguntas que esta página no puede.',
+  'portal.assistant.careTeam.link': 'Escriba a su equipo asistencial',
+  'portal.assistant.sources.head': 'De dónde sale esto',
+  'portal.assistant.sources.untrusted': 'Escrito por usted o por alguien de fuera de la consulta',
+  'portal.assistant.sources.line': '{name}: {label}',
+  'portal.assistant.sources.lineBeforeLink': '{name}: {label} -',
+  'portal.assistant.sources.seeIn': 'verlo en {destination}',
+  'portal.assistant.record.condition': 'Diagnóstico',
+  'portal.assistant.record.medicine': 'Medicamento',
+  'portal.assistant.record.allergy': 'Alergia',
+  'portal.assistant.record.vaccination': 'Vacuna',
+  'portal.assistant.record.appointment': 'Cita',
+  'portal.assistant.record.bill': 'Factura',
+  'portal.assistant.record.other': 'Registro',
+  'portal.assistant.destination.home': 'Inicio',
+  'portal.assistant.destination.healthRecord': 'su historia clínica',
+  'portal.assistant.destination.messages': 'sus mensajes',
+  'portal.assistant.destination.appointments': 'sus citas',
+  'portal.assistant.destination.forms': 'sus formularios',
+  'portal.assistant.destination.bills': 'sus facturas',
+  'portal.assistant.destination.assistant': 'el asistente',
+  'portal.assistant.announce.looking': 'Buscando en su historia clínica.',
+  'portal.assistant.announce.careTeam': 'Esto es para su equipo asistencial.',
+  'portal.assistant.announce.failed': 'No llegó ninguna respuesta.',
+  'portal.assistant.announce.withheld': 'No se muestra ninguna respuesta.',
+  'portal.assistant.announce.ready.one': 'Respuesta lista, de {count} registro.',
+  'portal.assistant.announce.ready.other': 'Respuesta lista, de {count} registros.',
+  'portal.assistant.failure.unreachable':
+    'No se ha podido contactar con el asistente. Sus citas, sus mensajes, sus formularios y sus facturas siguen funcionando. Vuelva a intentarlo en un momento.',
+  'portal.assistant.failure.unexpectedDraft':
+    'Ha llegado algo que esta página no le va a mostrar. No ha cambiado nada en su historia clínica. Dígale a su equipo asistencial que ha visto esto.',
+  'portal.assistant.failure.upstreamUnreachable':
+    'El servicio que escribe estas respuestas no ha contestado, así que no hay respuesta. Nada más del portal depende de él.',
+  'portal.assistant.failure.quotaExceeded':
+    'El asistente se ha usado todo lo que permite su consulta por ahora. Todo lo demás del portal sigue funcionando.',
+  'portal.assistant.failure.turnLimit':
+    'Eso ha tardado más de lo que se permite a una sola pregunta. Pruebe a preguntar una cosa cada vez.',
+  'portal.assistant.failure.scopeDenied':
+    'El asistente ha pedido algo que no tiene permitido consultar. Se le ha denegado y no se ha leído nada.',
+  'portal.assistant.failure.compartmentViolation':
+    'Ha llegado algo que no era de su historia clínica, así que la respuesta se ha descartado y no se muestra nada. Dígale a su equipo asistencial que ha visto esto.',
+  'portal.assistant.failure.responseInvalid':
+    'La respuesta ha llegado con una forma que esta página no ha podido leer, así que no se muestra nada en lugar de adivinarla.',
+  'portal.assistant.failure.toolFailed':
+    'Su historia clínica no se ha podido leer ahora mismo. Vuelva a intentarlo en un momento.',
+  'portal.assistant.failure.unknown':
+    'Eso no ha funcionado. No ha cambiado nada en su historia clínica y el resto del portal está bien.',
 };

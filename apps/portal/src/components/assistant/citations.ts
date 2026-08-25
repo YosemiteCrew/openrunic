@@ -1,3 +1,5 @@
+import type { Translator } from '@openrunic/i18n';
+
 import type { AssistantSource } from '@/lib/assistant';
 import type { PortalRoute } from '@/lib/nav';
 
@@ -41,30 +43,30 @@ export function citationHref(source: AssistantSource): PortalRoute | null {
  * knows; here it would be shorthand a reader has to look up, and the label
  * beside it already says what the row is.
  */
-const NAMES: Readonly<Record<string, string>> = {
-  Condition: 'Condition',
-  Medicine: 'Medicine',
-  Allergy: 'Allergy',
-  Vaccination: 'Vaccination',
-  Appointment: 'Appointment',
-  Bill: 'Bill',
+const NAME_KEYS: Readonly<Record<string, string>> = {
+  Condition: 'portal.assistant.record.condition',
+  Medicine: 'portal.assistant.record.medicine',
+  Allergy: 'portal.assistant.record.allergy',
+  Vaccination: 'portal.assistant.record.vaccination',
+  Appointment: 'portal.assistant.record.appointment',
+  Bill: 'portal.assistant.record.bill',
 };
 
-export function citationName(source: AssistantSource): string {
-  return NAMES[source.resourceType] ?? 'Record';
+export function citationName(t: Translator, source: AssistantSource): string {
+  return t(NAME_KEYS[source.resourceType] ?? 'portal.assistant.record.other');
 }
 
 /** Where the link goes, said in words, so the link text is not "here". */
-const DESTINATIONS: Readonly<Record<PortalRoute, string>> = {
-  '/': 'Home',
-  '/health-record': 'your health record',
-  '/messages': 'your messages',
-  '/appointments': 'your appointments',
-  '/forms': 'your forms',
-  '/bills': 'your bills',
-  '/assistant': 'the assistant',
+const DESTINATION_KEYS: Readonly<Record<PortalRoute, string>> = {
+  '/': 'portal.assistant.destination.home',
+  '/health-record': 'portal.assistant.destination.healthRecord',
+  '/messages': 'portal.assistant.destination.messages',
+  '/appointments': 'portal.assistant.destination.appointments',
+  '/forms': 'portal.assistant.destination.forms',
+  '/bills': 'portal.assistant.destination.bills',
+  '/assistant': 'portal.assistant.destination.assistant',
 };
 
-export function citationDestination(href: PortalRoute): string {
-  return DESTINATIONS[href];
+export function citationDestination(t: Translator, href: PortalRoute): string {
+  return t(DESTINATION_KEYS[href]);
 }

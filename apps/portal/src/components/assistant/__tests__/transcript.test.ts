@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_TRANSCRIPT,
@@ -8,6 +9,9 @@ import {
 } from '@/components/assistant';
 import type { AssistantTurn, TranscriptState } from '@/components/assistant';
 import type { AssistantEvent } from '@/lib/assistant';
+
+/* A plain module, so it takes a translator the way every formatter here does. */
+const t = createTranslator(appCatalogue, 'en');
 
 /**
  * What a patient ends up seeing, decided without a DOM.
@@ -192,11 +196,11 @@ describe('steps', () => {
 
 describe('what a screen reader hears', () => {
   it('says nothing before the first question', () => {
-    expect(announcementFor(EMPTY_TRANSCRIPT)).toBe('');
+    expect(announcementFor(t, EMPTY_TRANSCRIPT)).toBe('');
   });
 
   it('says one sentence while an answer is arriving', () => {
-    expect(announcementFor(play([{ type: 'text', text: 'Reading.' }]))).toBe(
+    expect(announcementFor(t, play([{ type: 'text', text: 'Reading.' }]))).toBe(
       'Looking in your record.'
     );
   });
@@ -207,14 +211,14 @@ describe('what a screen reader hears', () => {
       { type: 'sources', entries: [SOURCE] },
       { type: 'finished', outcome: 'completed' },
     ]);
-    expect(announcementFor(one)).toBe('Answer ready, from 1 record.');
+    expect(announcementFor(t, one)).toBe('Answer ready, from 1 record.');
 
     const two = play([
       { type: 'text', text: 'Two things.' },
       { type: 'sources', entries: [SOURCE, { ...SOURCE, resourceId: 'record-2' }] },
       { type: 'finished', outcome: 'completed' },
     ]);
-    expect(announcementFor(two)).toBe('Answer ready, from 2 records.');
+    expect(announcementFor(t, two)).toBe('Answer ready, from 2 records.');
   });
 
   it('says which kind of nothing it is', () => {
@@ -223,16 +227,39 @@ describe('what a screen reader hears', () => {
       id: 'turn-1',
       question: 'Should I worry?',
     });
-    expect(announcementFor(redirected)).toBe('This one is for your care team.');
+    expect(announcementFor(t, redirected)).toBe('This one is for your care team.');
 
     const failed = play([{ type: 'finished', outcome: 'failed' }]);
-    expect(announcementFor(failed)).toBe('No answer came back.');
+    expect(announcementFor(t, failed)).toBe('No answer came back.');
 
     const unsourced = play([
       { type: 'text', text: 'Unsourced.' },
       { type: 'finished', outcome: 'completed' },
     ]);
-    expect(announcementFor(unsourced)).toBe('No answer is shown.');
+    expect(announcementFor(t, unsourced)).toBe('No answer is shown.');
+  });
+
+  it('counts in the readers own rules, not against the number one', () => {
+    /*
+     * `count === 1` and the reader's plural rules are the same answer only in
+     * languages that happen to work like English. This asserts the mechanism is
+     * the reader's, in a language that agrees with English on these two counts,
+     * so the assertion stays about which rule ran rather than about Spanish.
+     */
+    const es = createTranslator(appCatalogue, 'es');
+    const one = play([
+      { type: 'text', text: 'One thing.' },
+      { type: 'sources', entries: [SOURCE] },
+      { type: 'finished', outcome: 'completed' },
+    ]);
+    const two = play([
+      { type: 'text', text: 'Two things.' },
+      { type: 'sources', entries: [SOURCE, { ...SOURCE, resourceId: 'record-2' }] },
+      { type: 'finished', outcome: 'completed' },
+    ]);
+
+    expect(announcementFor(es, one)).toBe('Respuesta lista, de 1 registro.');
+    expect(announcementFor(es, two)).toBe('Respuesta lista, de 2 registros.');
   });
 });
 

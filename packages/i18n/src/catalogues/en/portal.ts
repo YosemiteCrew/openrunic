@@ -399,4 +399,98 @@ export const portal: Messages = {
   'portal.forms.sent.title': 'Your form has gone to the practice',
   'portal.forms.sent.body':
     'Your answers are with your care team and will be read before your appointment. You do not need to do anything else.',
+  /*
+   * THE ASSISTANT.
+   *
+   * Two things here are not ordinary interface copy. The service line is
+   * ADR-0005's no-telemetry promise said in the product, and the failure
+   * sentences each say what is unaffected as well as what went wrong. Both are
+   * whole messages: a translator working on half of either would be working on
+   * a claim about where a patient's words go.
+   */
+  'portal.assistant.overline': 'Your record',
+  'portal.assistant.title': 'Assistant',
+  'portal.assistant.lede':
+    'Ask a question about what your care team has written down, and see the records each answer came from.',
+  'portal.assistant.notice.title': 'What this can and cannot do',
+  'portal.assistant.notice.body':
+    'It looks things up in your own record and shows you where each answer came from. It cannot tell you what something means, whether it matters, or what to do next. For those, message your care team. For a medical emergency, call the emergency services on your local number.',
+  'portal.assistant.service.line':
+    'Your practice uses a computer service to write these answers. It is called {model} and it runs at {host}.',
+  'portal.assistant.service.leaves':
+    'What you type here is sent out of your practice to that service. Your practice chose it and holds the agreement with it.',
+  'portal.assistant.service.stays':
+    "What you type here stays on the practice's own computers and is not sent anywhere else.",
+  'portal.assistant.section.label': 'Assistant',
+  'portal.assistant.reach.summary': 'What it is allowed to look at',
+  'portal.assistant.intro':
+    'Ask about something already written down, such as when your next appointment is, what medicines are on your record, or what is left to pay. Every answer shows the records behind it, and you can open each one.',
+  'portal.assistant.intro.careTeam': 'Write to your care team',
+  'portal.assistant.intro.forAnythingElse': 'for anything else.',
+  'portal.assistant.compose.label': 'Your question',
+  'portal.assistant.compose.placeholder': 'What did the practice write down about my last visit?',
+  'portal.assistant.compose.ask': 'Ask',
+  'portal.assistant.compose.stop': 'Stop',
+  'portal.assistant.turn.youAsked': 'You asked:',
+  'portal.assistant.turn.stillLooking': 'Still looking.',
+  'portal.assistant.step.done': ', done',
+  'portal.assistant.step.stillGoing': ', still going',
+  'portal.assistant.step.notFinished': ', not finished',
+  'portal.assistant.withheld.unsourced':
+    'The answer came back without the records it was based on, so it is not shown. An answer you cannot check against your own record is not one to rely on.',
+  'portal.assistant.withheld.incomplete':
+    'You stopped this before it finished a sentence, so there is nothing to show.',
+  'portal.assistant.withheld.careTeam':
+    'This one is for a person, not for this page. It can look things up in your record; it cannot tell you what something means, whether it matters, or what to do.',
+  'portal.assistant.deferral': 'The assistant did not go ahead with part of this: {reason}',
+  'portal.assistant.careTeam.text':
+    'Ask your care team. They can see the same record and they can answer questions this page cannot.',
+  'portal.assistant.careTeam.link': 'Write to your care team',
+  'portal.assistant.sources.head': 'Where this came from',
+  'portal.assistant.sources.untrusted': 'Written by you or by someone outside the practice',
+  /* The dash belongs to the sentence rather than to the code that joins the two
+     halves, because it is punctuation this language happens to use there. */
+  'portal.assistant.sources.line': '{name}: {label}',
+  'portal.assistant.sources.lineBeforeLink': '{name}: {label} -',
+  'portal.assistant.sources.seeIn': 'see it in {destination}',
+  'portal.assistant.record.condition': 'Condition',
+  'portal.assistant.record.medicine': 'Medicine',
+  'portal.assistant.record.allergy': 'Allergy',
+  'portal.assistant.record.vaccination': 'Vaccination',
+  'portal.assistant.record.appointment': 'Appointment',
+  'portal.assistant.record.bill': 'Bill',
+  'portal.assistant.record.other': 'Record',
+  'portal.assistant.destination.home': 'Home',
+  'portal.assistant.destination.healthRecord': 'your health record',
+  'portal.assistant.destination.messages': 'your messages',
+  'portal.assistant.destination.appointments': 'your appointments',
+  'portal.assistant.destination.forms': 'your forms',
+  'portal.assistant.destination.bills': 'your bills',
+  'portal.assistant.destination.assistant': 'the assistant',
+  'portal.assistant.announce.looking': 'Looking in your record.',
+  'portal.assistant.announce.careTeam': 'This one is for your care team.',
+  'portal.assistant.announce.failed': 'No answer came back.',
+  'portal.assistant.announce.withheld': 'No answer is shown.',
+  'portal.assistant.announce.ready.one': 'Answer ready, from {count} record.',
+  'portal.assistant.announce.ready.other': 'Answer ready, from {count} records.',
+  'portal.assistant.failure.unreachable':
+    'The assistant could not be reached. Your appointments, messages, forms and bills all still work. Try again in a moment.',
+  'portal.assistant.failure.unexpectedDraft':
+    'Something came back that this page will not show you. Nothing in your record has changed. Please tell your care team you saw this.',
+  'portal.assistant.failure.upstreamUnreachable':
+    'The service that writes these answers did not reply, so there is no answer. Nothing else in the portal depends on it.',
+  'portal.assistant.failure.quotaExceeded':
+    'The assistant has been used as much as your practice allows for now. Everything else in the portal still works.',
+  'portal.assistant.failure.turnLimit':
+    'That took longer than one question is allowed. Try asking for one thing at a time.',
+  'portal.assistant.failure.scopeDenied':
+    'The assistant asked for something it is not allowed to look at. It was refused and nothing was read.',
+  'portal.assistant.failure.compartmentViolation':
+    'Something came back that was not from your record, so the answer was thrown away and nothing is shown. Please tell your care team you saw this.',
+  'portal.assistant.failure.responseInvalid':
+    'The answer came back in a shape this page could not read, so nothing is shown rather than a guess at it.',
+  'portal.assistant.failure.toolFailed':
+    'Your record could not be read just now. Try again in a moment.',
+  'portal.assistant.failure.unknown':
+    'That did not work. Nothing in your record has changed, and the rest of the portal is fine.',
 };

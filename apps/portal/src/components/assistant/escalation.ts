@@ -46,6 +46,32 @@
  */
 
 /**
+ * The Spanish obligation verbs, and the one thing that tells their two jobs
+ * apart.
+ *
+ * "¿Tengo que venir a la consulta?" asks somebody to decide. "¿Cuándo tengo que
+ * venir?" and "¿Cuánto debo pagar?" ask for something already written down: an
+ * appointment and a balance, two of the three things the intro copy tells a
+ * patient this page is for. The same words do both, and what separates them is
+ * whether an interrogative introduces them.
+ *
+ * The guard is a lookbehind rather than a list of record phrases checked first.
+ * A suppression list that wins over a match would be a fail-open case of its
+ * own: one over-broad entry would silently swallow real judgement requests,
+ * which is the shape this file exists to avoid. Narrowing the pattern itself
+ * can only ever lose the matches it names.
+ *
+ * `debo` additionally needs an infinitive after it, because "¿Cuánto debo?"
+ * with nothing following is a balance outright.
+ */
+const NOT_AFTER_AN_INTERROGATIVE = String.raw`(?<!\b(?:que|cuando|cuanto|cuantos|cuanta|cuantas|donde|como|cual|cuales)\s)`;
+
+const OBLIGATION: readonly RegExp[] = [
+  new RegExp(`${NOT_AFTER_AN_INTERROGATIVE}\\bdebo [a-z]+r(me|te|lo|la|se|los|las|nos)?\\b`),
+  new RegExp(`${NOT_AFTER_AN_INTERROGATIVE}\\btengo que\\b`),
+];
+
+/**
  * Speech acts that ask for a judgement rather than for a record.
  *
  * Written as whole phrases, checked against the words of the question rather
@@ -93,9 +119,11 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    * time for the same reason: the Spanish word does two jobs and only one of
    * them is a request for a judgement.
    *
-   * - `debo` is both "I should" and "I owe", so it counts only in front of an
-   *   infinitive. "¿Cuánto debo?" is a question about a balance and this screen
-   *   invites it by name.
+   * - `debo` and `tengo que` are obligation verbs that do both jobs, so they
+   *   are built in {@link OBLIGATION} with the guard that separates them.
+   *   `deberia` needs no guard: the conditional is the advice mood and has no
+   *   reading about a balance, so "¿Qué debería hacer?" is a judgement request
+   *   even though an interrogative introduces it.
    * - `diagnóstico` is the noun the health record uses for a condition, so only
    *   the verb forms count. "¿Qué diagnósticos tengo?" is asking for a list of
    *   rows.
@@ -109,8 +137,8 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    * intro copy tells a patient to ask about.
    */
   es: [
-    /\bdebo [a-z]+r(me|te|lo|la|se|los|las|nos)?\b/,
-    /\btengo que\b/,
+    ...OBLIGATION,
+    /\bdeberia\b/,
     /\bnecesito (que me|ir)\b/,
     /\bpuedo (dejar|empezar|tomar|saltarme|doblar|cambiar|parar)\b/,
     /\b(es|son|era|eran|esta|estan)\b[a-z0-9 ]{0,40}\b(normal|normales|grave|graves|seguro|segura|peligroso|peligrosa|malo|mala|bien)\b/,

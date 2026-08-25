@@ -55,6 +55,9 @@ describe('questions that are for a person', () => {
 
   it.each([
     '¿Debo dejar de tomar las pastillas?',
+    '¿Debería dejar de tomar las pastillas?',
+    '¿Debería tomar este medicamento?',
+    '¿Qué debería hacer?',
     '¿Tengo que venir a la consulta?',
     '¿Es normal este resultado?',
     '¿Son normales mis análisis?',
@@ -81,6 +84,9 @@ describe('questions that are for a person', () => {
     '¿Cuándo es mi próxima cita?',
     '¿Qué medicamentos hay en mi historia clínica?',
     '¿Cuánto debo?',
+    '¿Cuánto debo pagar?',
+    '¿Qué tengo que pagar?',
+    '¿Cuándo tengo que venir a la consulta?',
     '¿Qué tengo pendiente de pago?',
     '¿Qué diagnósticos tengo?',
     'Necesito ver mi factura',
@@ -95,6 +101,27 @@ describe('questions that are for a person', () => {
      * patient this page is for.
      */
     expect(needsCareTeam(question)).toBe(false);
+  });
+
+  it('reads an obligation verb by whether an interrogative introduces it', () => {
+    /*
+     * `debo` and `tengo que` do two jobs. Asked outright they ask somebody to
+     * decide; introduced by an interrogative they ask for something already
+     * written down, and two of those are the appointment and the balance this
+     * page exists to look up.
+     *
+     * The pair below is the whole distinction, on the same three words.
+     */
+    expect(needsCareTeam('¿Tengo que venir a la consulta?')).toBe(true);
+    expect(needsCareTeam('¿Cuándo tengo que venir a la consulta?')).toBe(false);
+
+    /*
+     * The conditional is the exception and takes no guard. `debería` has no
+     * reading about a balance, so an interrogative in front of it does not turn
+     * it into a record question - "¿Qué debería hacer?" is the plainest way
+     * there is to ask somebody to decide.
+     */
+    expect(needsCareTeam('¿Qué debería hacer?')).toBe(true);
   });
 
   it('folds accents rather than deleting the letters under them', () => {

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, VitalStat } from '@openrunic/ui';
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';
@@ -106,7 +107,7 @@ export function BillingScreen(): ReactElement {
             counts.DENIED === 1
               ? 'billing.home.deniedClaims.one'
               : 'billing.home.deniedClaims.other',
-            { count: counts.DENIED }
+            { count: formatCount(counts.DENIED, t.locale) }
           )}
         />
         <VitalStat
@@ -124,7 +125,7 @@ export function BillingScreen(): ReactElement {
           stateLabel={
             ar.buckets.DAYS_91_PLUS > 0
               ? t('billing.home.someOver90')
-              : t('billing.home.accountCount', { count: ar.accounts })
+              : t('billing.home.accountCount', { count: formatCount(ar.accounts, t.locale) })
           }
         />
       </section>
@@ -152,7 +153,7 @@ export function BillingScreen(): ReactElement {
             to read with the money first. */}
         <p className="or-body">
           <Money amount={ar.buckets.DAYS_91_PLUS} currency="USD" emphasis />{' '}
-          {t('billing.home.agedSentence', { count: ar.accounts })}{' '}
+          {t('billing.home.agedSentence', { count: formatCount(ar.accounts, t.locale) })}{' '}
           {ar.buckets.DAYS_91_PLUS > 0 ? (
             <Badge tone="danger">{t('billing.home.workTheseFirst')}</Badge>
           ) : (

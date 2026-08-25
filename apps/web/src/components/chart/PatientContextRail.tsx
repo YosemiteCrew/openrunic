@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import { Badge, Card, Tag } from '@openrunic/ui';
 import Link from 'next/link';
@@ -316,7 +317,7 @@ function ProblemList({
       ))}
       {overflow > 0 ? (
         <li className="or-caption or-rail__meta">
-          {t('chart.rail.problems.more', { count: overflow })}
+          {t('chart.rail.problems.more', { count: formatCount(overflow, t.locale) })}
         </li>
       ) : null}
     </ul>

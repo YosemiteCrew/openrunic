@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -142,11 +143,11 @@ function filterSummary(t: Translator, total: number, breakglassCount: number) {
   // because the local `Translate` type it used to be given had dropped the
   // locale, so the caller passed `t.locale` back in as a second argument.
   if (breakglassCount === 0) {
-    return t(pluralKey(EVENT_COUNT, total, t.locale), { count: total });
+    return t(pluralKey(EVENT_COUNT, total, t.locale), { count: formatCount(total, t.locale) });
   }
   return t(pluralKey(EVENT_COUNT_BREAKGLASS, total, t.locale), {
-    count: total,
-    breakglass: breakglassCount,
+    count: formatCount(total, t.locale),
+    breakglass: formatCount(breakglassCount, t.locale),
   });
 }
 
@@ -316,7 +317,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
     const wrote = downloadCsv(`audit-${from}-to-${to}.csv`, csv);
     setToast(
       wrote
-        ? t('admin.audit.exportedToast', { count: rows.length })
+        ? t('admin.audit.exportedToast', { count: formatCount(rows.length, t.locale) })
         : t('admin.audit.exportUnavailableToast')
     );
   }, [rows, from, to, t]);

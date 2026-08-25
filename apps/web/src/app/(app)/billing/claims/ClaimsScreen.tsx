@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Button, Card, Input, VitalStat } from '@openrunic/ui';
 import type { StatusTone } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
@@ -146,7 +147,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
           ids.length === 1
             ? 'billing.claims.toast.bulkDone.one'
             : 'billing.claims.toast.bulkDone.other',
-          { count: ids.length, state }
+          { count: formatCount(ids.length, t.locale), state }
         ),
         message: t('billing.claims.toast.movedTo', { state }),
       });
@@ -244,7 +245,9 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
             <p className="or-caption or-billing__action-hint">
               {selectedCount === 0
                 ? t('billing.claims.selectPrompt')
-                : t('billing.claims.selectedCount', { count: selectedCount })}
+                : t('billing.claims.selectedCount', {
+                    count: formatCount(selectedCount, t.locale),
+                  })}
             </p>
           </div>
         ) : null
@@ -261,7 +264,7 @@ export function ClaimsScreen({ client }: Readonly<ClaimsScreenProps>): ReactElem
             state={band.tone}
             stateLabel={t(
               band.count === 1 ? 'billing.claims.bandState.one' : 'billing.claims.bandState.other',
-              { count: band.count, advice: t(BAND_ADVICE_KEYS[band.tone]) }
+              { count: formatCount(band.count, t.locale), advice: t(BAND_ADVICE_KEYS[band.tone]) }
             )}
           />
         ))}

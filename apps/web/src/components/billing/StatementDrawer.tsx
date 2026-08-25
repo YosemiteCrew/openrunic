@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Table } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
@@ -241,7 +242,7 @@ export function StatementDrawer({
       open
       title={t('billing.statementDrawer.runTitle')}
       subtitle={t('billing.statementDrawer.runSubtitle', {
-        count: accounts.length,
+        count: formatCount(accounts.length, t.locale),
         total: formatMoney(t, total, { currency: 'USD' }).text,
       })}
       onClose={onClose}
@@ -251,7 +252,9 @@ export function StatementDrawer({
             {t('billing.statementDrawer.cancel')}
           </Button>
           <Button iconLeft="mail" onClick={() => onSend(accounts)}>
-            {t('billing.statementDrawer.sendCount', { count: accounts.length })}
+            {t('billing.statementDrawer.sendCount', {
+              count: formatCount(accounts.length, t.locale),
+            })}
           </Button>
         </>
       }

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Checkbox, Table } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
@@ -92,7 +93,7 @@ export function ClaimTable({
                 claim.scrubErrors.length === 1
                   ? 'billing.claimTable.scrubErrors.one'
                   : 'billing.claimTable.scrubErrors.other',
-                { count: claim.scrubErrors.length }
+                { count: formatCount(claim.scrubErrors.length, t.locale) }
               )}
             </Badge>
           ) : null}

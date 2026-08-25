@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag, Toast } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -432,7 +433,9 @@ function StaffAccounts({
         label={t('admin.users.filter.label')}
         summary={
           users.data
-            ? t(pluralKey(ACCOUNT_COUNT, allUsers.length, t.locale), { count: allUsers.length })
+            ? t(pluralKey(ACCOUNT_COUNT, allUsers.length, t.locale), {
+                count: formatCount(allUsers.length, t.locale),
+              })
             : null
         }
       >
@@ -593,7 +596,9 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       {unenrolled > 0 ? (
         <Card className="or-notice" data-tone="serious">
           <p className="or-body">
-            <strong>{t('admin.users.mfaNotice.title', { count: unenrolled })}</strong>{' '}
+            <strong>
+              {t('admin.users.mfaNotice.title', { count: formatCount(unenrolled, t.locale) })}
+            </strong>{' '}
             {t('admin.users.mfaNotice.body')}
           </p>
         </Card>

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, Checkbox, Input, Table, VitalStat } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -119,7 +120,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
           batch.length === 1
             ? 'billing.statements.toast.sent.one'
             : 'billing.statements.toast.sent.other',
-          { count: batch.length }
+          { count: formatCount(batch.length, t.locale) }
         ),
         message: t('billing.statements.toast.sentMessage'),
       });
@@ -268,7 +269,9 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
           <p className="or-caption or-billing__action-hint">
             {selectedCount === 0
               ? t('billing.statements.selectPrompt')
-              : t('billing.statements.selectedCount', { count: selectedCount })}
+              : t('billing.statements.selectedCount', {
+                  count: formatCount(selectedCount, t.locale),
+                })}
           </p>
         </div>
       }

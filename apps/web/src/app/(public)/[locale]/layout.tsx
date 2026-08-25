@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 
 import { AppShell } from '@/app/_shell/AppShell';
 import { baseMetadata } from '@/app/_shell/metadata';
+import { IS_DEMO_BUILD } from '@/lib/auth/build';
 
 /**
  * THE PUBLIC PAGES, AND WHY THEY HAVE A LOCALE IN THEIR URL.
@@ -61,7 +62,12 @@ export async function generateMetadata({
   return {
     ...baseMetadata,
     description: t('shell.metaDescription'),
-    robots: { index: true, follow: true },
+    /* A demonstration build is a second copy of these four pages on a second
+       host. Indexed, it competes with the real site for the same words and
+       teaches a crawler that the canonical answer is a sandbox full of invented
+       patients. The root layout is already fail-closed; this is the one place
+       that opts back in, so this is the one place that has to ask. */
+    robots: IS_DEMO_BUILD ? { index: false, follow: false } : { index: true, follow: true },
     alternates: {
       canonical: `/${locale}`,
       languages: Object.fromEntries(SUPPORTED_LOCALES.map((code) => [code, `/${code}`])),

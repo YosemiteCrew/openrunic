@@ -27,4 +27,12 @@ export const auth: Messages = {
 
   /* ------------------------------------------------------- the browser tab */
   'auth.page.title': 'Iniciar sesión',
+
+  'auth.signIn.providerLede':
+    'Se le enviará a su proveedor de identidad y volverá aquí en cuanto haya confirmado quién es.',
+  'auth.signIn.developmentLede':
+    'Estos son los perfiles públicos de desarrollo de la API: datos de prueba, no credenciales. La API se niega a arrancar con ellos en producción, así que nada de lo que abren llega a una instalación real.',
+  'auth.signIn.demoHeading': 'Demostración',
+  'auth.signIn.demoLede':
+    'Esto es una demostración de openrunic. Todos los registros son inventados, no se guarda nada, y cada inicio de sesión de abajo es un dato de prueba público. Entre como quien quiera y eche un vistazo.',
 };

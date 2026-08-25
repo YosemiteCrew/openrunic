@@ -82,8 +82,8 @@ const DEVELOPMENT_STAFF: readonly StaffCredential[] = [
 ];
 
 /**
- * The credentials this build accepts, which outside development is none of
- * them.
+ * The credentials this build accepts, which outside development is almost never
+ * any of them.
  *
  * This is the same stance `assertProductionWiring` takes in the API: a
  * convenience default that survives into production is how a demo token becomes
@@ -93,14 +93,25 @@ const DEVELOPMENT_STAFF: readonly StaffCredential[] = [
  * already decided to reject - past the route guard, into the shell, and straight
  * into a screenful of 401s. Better to have no door than a false one.
  *
- * The consequence, stated plainly: there is no way to sign in to a production
- * build yet. That is the true state of the project, and it stops being true
- * when the OIDC path lands.
+ * That objection is to a **default**, and it stands. What it also produced was a
+ * product nobody outside a checkout could look at: a production build had no way
+ * to sign in at all, so a hosted demonstration (#154) could show four marketing
+ * pages and a sign-in form that refuses everything.
  *
- * `nodeEnv` is a parameter rather than a read of `process.env` inside these
- * functions because the production branch is the one that matters and the one a
- * test process can never be in.
+ * `demoBuild` is the door, and it defaults to closed. `lib/auth/build.ts` is the
+ * only thing that answers true for it, and it takes two conditions to do so: the
+ * build was told to be a demonstration, and its data layer is reading fixtures.
+ * A build pointed at a real API is exactly the case this comment started by
+ * refusing, and it can never reach the second condition.
+ *
+ * Neither is read from `process.env` inside these functions. The branches that
+ * matter are production and demonstration, and those are the two a test process
+ * can never be in.
  */
-export function developmentCredentials(nodeEnv: string | undefined): readonly StaffCredential[] {
-  return nodeEnv === 'production' ? [] : DEVELOPMENT_STAFF;
+export function developmentCredentials(
+  nodeEnv: string | undefined,
+  demoBuild = false
+): readonly StaffCredential[] {
+  if (nodeEnv !== 'production') return DEVELOPMENT_STAFF;
+  return demoBuild ? DEVELOPMENT_STAFF : [];
 }

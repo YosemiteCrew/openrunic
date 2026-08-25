@@ -157,6 +157,10 @@ feature list:
 [`docs/self-hosting.md`](docs/self-hosting.md) covers what openrunic is ready for today: an
 evaluation on a machine you control, on a network nobody else is on.
 
+[`docs/demo.md`](docs/demo.md) covers the other way to look at it: a public demonstration, built
+from the same source with the data layer left on its fixtures. Nothing is saved, every record in it
+is invented, and the build that opens its sign-in door cannot be pointed at a real API.
+
 ## Tech stack
 
 | Layer           | Choice                                               |
@@ -181,7 +185,7 @@ openrunic/
 │   ├── api/       # Hono: the FHIR R4 API boundary, and the BFF both apps call
 │   └── e2e/       # The full-day clinical drill: the acceptance test for the whole product
 ├── packages/      # The shared libraries, grouped below
-└── docs/          # ADRs, the capability map, self-hosting, and the gate documentation
+└── docs/          # ADRs, the capability map, self-hosting, the demo, and the gate documentation
 ```
 
 **Foundations** - `types` (branded identifiers and `Result`), `database` (Prisma 7, Postgres,

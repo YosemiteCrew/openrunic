@@ -40,8 +40,16 @@ FROM fetch AS build
 
 ARG NEXT_PUBLIC_API_MODE=live
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+# Off, and given a value rather than left unset on purpose. Next inlines a
+# NEXT_PUBLIC_* that has a build-time value and leaves the expression to read
+# process.env when it does not, so an image built with no value at all could be
+# turned into a demonstration by an environment variable at run time. Baking
+# `false` in is what makes the header comment above true of this one too: it
+# takes a rebuild to move it. See docs/demo.md.
+ARG NEXT_PUBLIC_DEMO_MODE=false
 ENV NEXT_PUBLIC_API_MODE=$NEXT_PUBLIC_API_MODE \
     NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_DEMO_MODE=$NEXT_PUBLIC_DEMO_MODE \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production
 

@@ -60,4 +60,30 @@ describe('checking an access token', () => {
       expect(identityForAccessToken(credential.token, 'development')).toEqual(credential.identity);
     }
   });
+
+  it('recognises them in a demonstration build, which is the door #154 needed', () => {
+    // The session route is where this is called from, so this is the assertion
+    // that says a visitor to a hosted demonstration can actually get past the
+    // sign-in form. Without it the demonstration is four marketing pages and a
+    // form that refuses everything.
+    expect(identityForAccessToken('dev-clinician-a', 'production', true)?.displayName).toBe(
+      'Dr. Adaeze Okafor'
+    );
+  });
+
+  it('recognises nothing when the demonstration flag is left off the call', () => {
+    // The default carries the old behaviour, so a caller that has not been told
+    // about demonstration builds keeps the answer it always had.
+    expect(identityForAccessToken('dev-clinician-a', 'production', false)).toBeNull();
+    expect(identityForAccessToken('dev-clinician-a', 'production', undefined)).toBeNull();
+  });
+
+  it('still refuses a token that is not one of them, demonstration or not', () => {
+    // The door opens to a fixed list, not to anything typed at it. A
+    // demonstration that accepted an arbitrary string would be a sign-in form
+    // that is decoration.
+    expect(identityForAccessToken('dev-portal-a', 'production', true)).toBeNull();
+    expect(identityForAccessToken('let-me-in', 'production', true)).toBeNull();
+    expect(identityForAccessToken('', 'production', true)).toBeNull();
+  });
 });

@@ -97,7 +97,15 @@ export function TopBar({
         </button>
         {session === null ? null : (
           <>
-            <span className="or-topbar__user">{session.identity.displayName}</span>
+            {/* The name on its own is a name floating in a header: a screen
+                reader announces it with nothing saying what it is. The visible
+                text is unchanged, and the sentence is what is read. */}
+            <span className="or-topbar__user">
+              <span className="or-visually-hidden">
+                {t('shell.signedInAs', { name: session.identity.displayName })}
+              </span>
+              <span aria-hidden="true">{session.identity.displayName}</span>
+            </span>
             <Button variant="ghost" size="sm" onClick={() => void signOut()}>
               {t('shell.signOut')}
             </Button>

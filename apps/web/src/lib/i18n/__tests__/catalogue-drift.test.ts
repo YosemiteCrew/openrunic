@@ -25,6 +25,32 @@ import { describe, expect, it } from 'vitest';
  * A key assembled at runtime is invisible to both. That is a reason not to
  * assemble keys at runtime rather than a reason for a cleverer regex: a key a
  * test cannot see is a key nobody can find when it breaks.
+ *
+ * ## The scan is checked in both directions, and the second one is why
+ *
+ * The codebase uses a third shape the scan does not see: a key as a bare string
+ * value in a lookup map, where the property name is an enum member rather than
+ * `somethingKey`.
+ *
+ *     const CLAIM_STATUS_LABEL_KEYS: Record<ClaimStatus, string> = {
+ *       CAPTURED: 'billing.claimStatus.captured',
+ *
+ * About ninety keys are referenced only that way: claim statuses, appointment
+ * statuses, ageing buckets, dunning stages, inbox streams. Those are the labels
+ * that tell a clinician or a biller what state something is in, and a typo in
+ * one renders a raw dotted key in a status column with nothing going red.
+ *
+ * Widening the pattern to "any string that looks like a key" is the obvious
+ * move and it is wrong: a permission is spelled `patient.read` and a scope
+ * `role.write`, so the scan would start demanding catalogue entries for things
+ * that are not copy. #132 recorded the same hazard about sweeping source with a
+ * loose pattern.
+ *
+ * Checking the other direction closes it without widening anything. Every key
+ * the catalogue defines has to appear somewhere in the source, as a literal.
+ * A typo in one of those maps orphans the key it meant to name, and the orphan
+ * is what this reports. It has no false positives, because a key that appears
+ * nowhere is a key nothing renders.
  */
 
 const SOURCE_ROOT = join(import.meta.dirname, '../../..');
@@ -98,6 +124,21 @@ describe('the catalogue and the code agree', () => {
       .map(([key]) => key);
 
     expect(blank).toStrictEqual([]);
+  });
+
+  it('renders every key the catalogue defines', () => {
+    /*
+     * The other direction. This does not use `keysUsed`: the point is to catch
+     * the keys that scan cannot see, so it asks the weaker question the scan is
+     * not needed for - does this exact string appear anywhere in the source at
+     * all - and gets a true answer for every shape.
+     */
+    const sources = sourceFiles(SOURCE_ROOT).map((path) => readFileSync(path, 'utf8'));
+    const orphaned = Object.keys(SOURCE_MESSAGES).filter(
+      (key) => !sources.some((text) => text.includes(`'${key}'`))
+    );
+
+    expect(orphaned).toStrictEqual([]);
   });
 
   it('gives every translation the same placeholders as its source', () => {

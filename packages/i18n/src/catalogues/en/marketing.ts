@@ -18,8 +18,6 @@ import type { Messages } from '../../catalogue.js';
  */
 export const marketing: Messages = {
   'marketing.tagline': 'Open-source operating system for human health',
-  'marketing.readTheCode': 'Read the code',
-  'marketing.licence': 'AGPL-3.0. Yours to run, read and change.',
 
   /* The masthead and the closing band. */
   'marketing.header.home': 'openrunic home',

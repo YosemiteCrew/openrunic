@@ -15,8 +15,6 @@ import type { Messages } from '../../catalogue.js';
  */
 export const marketing: Messages = {
   'marketing.tagline': 'Sistema operativo de código abierto para la salud humana',
-  'marketing.readTheCode': 'Lea el código',
-  'marketing.licence': 'AGPL-3.0. Suyo para ejecutar, leer y modificar.',
 
   'marketing.header.home': 'Inicio de openrunic',
   'marketing.header.siteNav': 'Sitio',

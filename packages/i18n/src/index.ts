@@ -24,6 +24,8 @@ export {
 
 export { appCatalogue, en, es, isSupportedLocale, SUPPORTED_LOCALES } from './catalogues/index.js';
 
+export { LOCALE_COOKIE, localeFrom, readLocaleCookie } from './choice.js';
+
 export {
   createTranslator,
   negotiateLocale,

@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from '@openrunic/ui';
+import { useTranslator } from '@/lib/i18n/messages';
 import { isActiveRoute, navItemsFor } from '@/lib/nav';
 import type { Patient } from '@/lib/api/types';
 
@@ -33,26 +34,31 @@ export interface AppShellProps {
 }
 
 export function AppShell({ patient, assistantEnabled = false, children }: Readonly<AppShellProps>) {
+  const t = useTranslator();
   const pathname = usePathname();
   const items = navItemsFor(assistantEnabled);
 
   return (
     <div className="portal">
       <a className="portal__skip" href="#portal-main">
-        Skip to content
+        {t('portal.skipToContent')}
       </a>
 
       <header className="portal__masthead">
-        <p className="or-overline portal__eyebrow">Patient portal</p>
+        <p className="or-overline portal__eyebrow">{t('portal.eyebrow')}</p>
         {patient ? (
           <p className="portal__identity">
             <span className="portal__identity-name">{patient.name}</span>
-            <span className="portal__identity-mrn">Record number {patient.mrn}</span>
+            {/* One message rather than a label and a number joined here: where
+                the number sits in the phrase is a language decision. */}
+            <span className="portal__identity-mrn">
+              {t('portal.recordNumber', { mrn: patient.mrn })}
+            </span>
           </p>
         ) : null}
       </header>
 
-      <nav className="portal__nav" aria-label="Portal sections">
+      <nav className="portal__nav" aria-label={t('portal.navLabel')}>
         <ul className="portal__nav-list">
           {items.map((item) => {
             const current = isActiveRoute(item.href, pathname);
@@ -64,7 +70,7 @@ export function AppShell({ patient, assistantEnabled = false, children }: Readon
                   aria-current={current ? 'page' : undefined}
                 >
                   <Icon className="portal__nav-icon" name={item.icon} size={22} />
-                  <span className="portal__nav-label">{item.label}</span>
+                  <span className="portal__nav-label">{t(item.labelKey)}</span>
                 </Link>
               </li>
             );
@@ -77,13 +83,8 @@ export function AppShell({ patient, assistantEnabled = false, children }: Readon
       </main>
 
       <footer className="portal__footer">
-        <p className="or-small portal__footer-text">
-          This portal shows the record your care team keeps. If something looks wrong, message your
-          care team and ask for it to be checked.
-        </p>
-        <p className="or-small portal__footer-text">
-          For a medical emergency, call the emergency services on your local number.
-        </p>
+        <p className="or-small portal__footer-text">{t('portal.footer.whatThisIs')}</p>
+        <p className="or-small portal__footer-text">{t('portal.footer.emergency')}</p>
       </footer>
     </div>
   );

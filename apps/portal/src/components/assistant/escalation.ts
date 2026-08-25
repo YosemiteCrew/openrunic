@@ -75,27 +75,32 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bam i (ok|okay|alright|dying|ill)\b/,
   ],
   /*
-   * Spanish. Written against the folded form, so no accents appear here: the
-   * normaliser below turns "qué" into "que" and "años" into "anos" before any
-   * of these are tried.
+   * Spanish.
    *
-   * "debo" and "tengo que" are the two ways this speech act is ordinarily put,
-   * and "puedo dejar" covers the one that matters most - somebody asking
-   * whether to stop a medicine. The verb-and-adjective pattern mirrors the
-   * English one and reads nothing in between for the same reason.
-   */
-  /*
-   * Spanish. Written against the folded form, so no accents appear here: the
-   * normaliser below turns "qué" into "que" and "años" into "anos" before any
-   * of these are tried.
+   * Written against the folded form, so no accents appear here: the normaliser
+   * below turns "qué" into "que" and "años" into "anos" before any of these are
+   * tried.
    *
-   * Several of these are narrower than their English counterparts, and each
-   * time for the same reason: the Spanish word does two jobs and only one of
-   * them is a request for a judgement.
+   * `deberia` is the ordinary way to put this speech act, the way "should I" is
+   * in English. `debo` and `tengo que` are the obligation forms of the same
+   * request. None of the three is exceptional; they are three moods of one
+   * thing, and a maintainer adding a fourth should treat them as a set.
+   *
+   * Three of these are narrower than their English counterparts, and each time
+   * for the same reason: the Spanish word does two jobs and only one of them is
+   * a request for a judgement. Each would otherwise fire on one of the three
+   * things the intro copy tells a patient this page is for.
    *
    * - `debo` is both "I should" and "I owe", so it counts only in front of an
    *   infinitive. "¿Cuánto debo?" with nothing after it is a balance, and this
-   *   screen invites that question by name.
+   *   screen invites that question by name. `deberia` needs no such narrowing:
+   *   the conditional has no reading about a balance.
+   * - `diagnostic-` is the noun the health record uses for a condition, so only
+   *   the verb forms count. "¿Qué diagnósticos tengo?" asks for a list of rows.
+   * - `necesito` in front of a bare verb is usually "I need to see my bill", so
+   *   only the forms that ask somebody to act count.
+   * - `que tengo` is "what is wrong with me" only when nothing follows it.
+   *   "¿Qué tengo pendiente de pago?" is a balance again.
    *
    * `tengo que` is deliberately **not** narrowed, and the reasoning is worth
    * keeping because the obvious narrowing is wrong. An earlier version read it
@@ -106,22 +111,11 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
    * distinction; the verb after it does, and enumerating verbs is how this
    * becomes the list of things to worry about that the note at the top forbids.
    *
-   * So it stays broad, and "¿Qué tengo que pagar?" is redirected. That is the
-   * trade this file already tells you to make: a false match sends somebody to
-   * their care team, which is never the wrong place, and a miss on "¿Qué tengo
-   * que hacer?" is the expensive failure. Narrowing traded the cheap one for
-   * the expensive one.
-   * - `diagnóstico` is the noun the health record uses for a condition, so only
-   *   the verb forms count. "¿Qué diagnósticos tengo?" is asking for a list of
-   *   rows.
-   * - `necesito` in front of a bare verb is usually "I need to see my bill", so
-   *   only the forms that ask somebody to act count.
-   * - `qué tengo` is "what is wrong with me" only when nothing follows it.
-   *   "¿Qué tengo pendiente de pago?" is a balance again.
-   *
-   * A false match is cheap, per the note at the top of this file. These four
-   * are narrowed anyway because each would fire on one of the three things the
-   * intro copy tells a patient to ask about.
+   * So it stays broad and "¿Qué tengo que pagar?" is redirected, which is the
+   * trade the note at the top already describes. A false match sends somebody
+   * to their care team and is never the wrong place; a miss leaves a health
+   * question with the inference endpoint. Narrowing traded the cheap failure
+   * for the expensive one.
    */
   es: [
     /\bdebo [a-z]+r(me|te|lo|la|se|los|las|nos)?\b/,

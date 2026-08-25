@@ -288,4 +288,48 @@ export const portal: Messages = {
   'portal.healthRecord.documents.title': 'Letters and reports',
   'portal.healthRecord.documents.none': 'No documents have been added.',
   'portal.healthRecord.documents.addedOn': 'Added on {date}',
+  /*
+   * BILLS.
+   *
+   * The currency is never written into a word. It arrives on the money itself,
+   * so the column header and the note under the table both take it as a value:
+   * the practice that bills in euros used to get a column headed "Amount (GBP)"
+   * above euro figures.
+   */
+  'portal.bills.overline': 'Your account',
+  'portal.bills.title': 'Bills',
+  'portal.bills.lede':
+    'Every statement the practice has issued, what each charge was for, and how to pay.',
+  'portal.bills.empty.title': 'You have no statements.',
+  'portal.bills.empty.message':
+    'When the practice bills you for a visit, the statement appears here.',
+  'portal.bills.statement.overline': 'Statement {reference}',
+  'portal.bills.statement.title': 'Issued {date}',
+  'portal.bills.statement.status': 'Status',
+  'portal.bills.statement.dueBy': 'Due by',
+  'portal.bills.statement.stillToPay': 'Still to pay',
+  'portal.bills.statement.total': 'Total',
+  'portal.bills.statement.open': 'See what this was for',
+  'portal.bills.status.due': 'Due',
+  'portal.bills.status.paid': 'Paid',
+  'portal.bills.status.credit': 'In credit',
+  'portal.bills.lines.caption': 'Charges on statement {reference}',
+  'portal.bills.lines.description': 'What it was for',
+  'portal.bills.lines.code': 'Code',
+  'portal.bills.lines.quantity': 'Quantity',
+  'portal.bills.lines.amount': 'Amount ({currency})',
+  'portal.bills.lines.note':
+    'Amounts are in {currency}. A figure marked credit is money owed back to you.',
+  'portal.bills.receipt.title': 'Payment received',
+  'portal.bills.receipt.body':
+    'You paid {amount} on {paidOn} with the card ending {cardLast4}. Your receipt reference is {reference}. Keep it if you need to query the payment.',
+  'portal.bills.pay.failed':
+    'The payment did not go through and you have not been charged. Check your connection, then try again.',
+  'portal.bills.pay.action': 'Pay this statement',
+  'portal.bills.back': 'Back to your statements',
+  'portal.bills.payDialog.title': 'Pay this statement?',
+  'portal.bills.payDialog.description':
+    'This takes {amount} from the card the practice holds for you. Payments cannot be reversed from this portal. To get the money back you would have to ask the practice for a refund.',
+  'portal.bills.payDialog.notNow': 'Not now',
+  'portal.bills.payDialog.confirm': 'Pay now',
 };

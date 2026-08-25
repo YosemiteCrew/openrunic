@@ -195,4 +195,40 @@ export const portal: Messages = {
   'portal.healthRecord.documents.title': 'Informes y cartas',
   'portal.healthRecord.documents.none': 'No se ha añadido ningún documento.',
   'portal.healthRecord.documents.addedOn': 'Añadido el {date}',
+  'portal.bills.overline': 'Su cuenta',
+  'portal.bills.title': 'Facturas',
+  'portal.bills.lede':
+    'Todas las facturas que ha emitido la consulta, el motivo de cada cargo y cómo pagarlas.',
+  'portal.bills.empty.title': 'No tiene ninguna factura.',
+  'portal.bills.empty.message':
+    'Cuando la consulta le facture una visita, la factura aparecerá aquí.',
+  'portal.bills.statement.overline': 'Factura {reference}',
+  'portal.bills.statement.title': 'Emitida el {date}',
+  'portal.bills.statement.status': 'Estado',
+  'portal.bills.statement.dueBy': 'Vence el',
+  'portal.bills.statement.stillToPay': 'Pendiente de pago',
+  'portal.bills.statement.total': 'Total',
+  'portal.bills.statement.open': 'Ver el motivo',
+  'portal.bills.status.due': 'Pendiente',
+  'portal.bills.status.paid': 'Pagada',
+  'portal.bills.status.credit': 'A su favor',
+  'portal.bills.lines.caption': 'Cargos de la factura {reference}',
+  'portal.bills.lines.description': 'Motivo',
+  'portal.bills.lines.code': 'Código',
+  'portal.bills.lines.quantity': 'Cantidad',
+  'portal.bills.lines.amount': 'Importe ({currency})',
+  'portal.bills.lines.note':
+    'Los importes están en {currency}. Una cifra marcada como a su favor es dinero que se le debe.',
+  'portal.bills.receipt.title': 'Pago recibido',
+  'portal.bills.receipt.body':
+    'Pagó {amount} el {paidOn} con la tarjeta terminada en {cardLast4}. Su referencia de recibo es {reference}. Guárdela por si necesita consultar el pago.',
+  'portal.bills.pay.failed':
+    'El pago no se ha realizado y no se le ha cobrado nada. Compruebe su conexión y vuelva a intentarlo.',
+  'portal.bills.pay.action': 'Pagar esta factura',
+  'portal.bills.back': 'Volver a sus facturas',
+  'portal.bills.payDialog.title': '¿Pagar esta factura?',
+  'portal.bills.payDialog.description':
+    'Esto carga {amount} en la tarjeta que la consulta tiene registrada. Los pagos no se pueden revertir desde este portal. Para recuperar el dinero tendría que pedir una devolución a la consulta.',
+  'portal.bills.payDialog.notNow': 'Ahora no',
+  'portal.bills.payDialog.confirm': 'Pagar ahora',
 };

@@ -1,7 +1,12 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
-import { isSupportedLocale, SUPPORTED_LOCALES } from '@openrunic/i18n';
+import {
+  appCatalogue,
+  createTranslator,
+  isSupportedLocale,
+  SUPPORTED_LOCALES,
+} from '@openrunic/i18n';
 import { notFound } from 'next/navigation';
 
 import { AppShell } from '@/app/_shell/AppShell';
@@ -52,8 +57,10 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale } = await params;
+  const t = createTranslator(appCatalogue, locale);
   return {
     ...baseMetadata,
+    description: t('shell.metaDescription'),
     robots: { index: true, follow: true },
     alternates: {
       canonical: `/${locale}`,

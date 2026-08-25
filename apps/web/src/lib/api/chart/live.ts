@@ -34,29 +34,6 @@ const VISIT_PAGE_SIZE = 50;
 /** One page of the staff directory. The API caps a page at 100. */
 const DIRECTORY_PAGE_SIZE = 100;
 
-/**
- * The four SOAP blocks, with the heading and the one-line hint each carries.
- *
- * The API stores note blocks as opaque JSON whose shape the editor owns, so it
- * has no opinion about what a block is called or what belongs in it. That
- * opinion lives here, next to the editor that renders it.
- */
-const SECTION_COPY: Readonly<Record<NoteSectionKey, { label: string; hint: string }>> = {
-  subjective: {
-    label: 'Subjective',
-    hint: 'What the patient reports, in their words where it matters.',
-  },
-  objective: {
-    label: 'Objective',
-    hint: 'Measurements and examination. Vitals flow in from rooming.',
-  },
-  assessment: {
-    label: 'Assessment',
-    hint: 'The clinical picture, and the coded problems it maps to.',
-  },
-  plan: { label: 'Plan', hint: 'What happens next, and what it writes to the chart.' },
-};
-
 const SECTION_ORDER: readonly NoteSectionKey[] = ['subjective', 'objective', 'assessment', 'plan'];
 
 /**
@@ -116,14 +93,22 @@ function blockKey(block: Record<string, unknown>): string | null {
   return typeof block.key === 'string' ? block.key : null;
 }
 
+/**
+ * The four blocks a note is made of, whatever the API sent.
+ *
+ * The API stores note blocks as opaque JSON whose shape the editor owns, so it
+ * has no opinion about what a block is called or what belongs in it. That
+ * opinion is the editor's, and it now lives in the catalogue that
+ * `components/encounter/labels.ts` points at rather than in a table here: this
+ * file carried one copy of the four headings and `lib/api/mock/chart.ts`
+ * carried another, both in English, and a reader who had chosen Spanish got
+ * both of them.
+ */
 function sectionsFrom(note: ClinicalNoteDto): NoteSection[] {
   return SECTION_ORDER.map((key) => {
     const block = note.blocks.find((candidate) => blockKey(candidate) === key);
-    const { label, hint } = SECTION_COPY[key];
     return {
       key,
-      label,
-      hint,
       text: block ? blockText(block) : '',
       // The API has no structured record of what a command block emitted, so
       // the chips are absent rather than invented. They come back when the

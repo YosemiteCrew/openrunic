@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import AppLayout, { metadata, viewport } from '../layout';
+import AppLayout, { generateMetadata, viewport } from '../layout';
 
 /**
  * The root layout for every route that is not one of the four public pages.
@@ -27,12 +27,31 @@ async function renderLayout(children: React.ReactNode): Promise<void> {
 }
 
 describe('the app root layout', () => {
-  it('declares the app title, and a template screens fill in', () => {
-    expect(metadata.title).toEqual({ default: 'openrunic', template: '%s - openrunic' });
+  it('declares the app title, and a template screens fill in', async () => {
+    expect((await generateMetadata()).title).toEqual({
+      default: 'openrunic',
+      template: '%s - openrunic',
+    });
   });
 
-  it('keeps the staff EMR out of search indexes', () => {
-    expect(metadata.robots).toEqual({ index: false, follow: false });
+  it('keeps the staff EMR out of search indexes', async () => {
+    expect((await generateMetadata()).robots).toEqual({ index: false, follow: false });
+  });
+
+  it('describes the application in the language the reader chose', async () => {
+    // The description a bookmark and a share preview carry. It was an English
+    // constant in `_shell/metadata.ts`, shared by both root layouts, so it was
+    // the one sentence about this product that no reader could get in their own
+    // language.
+    expect((await generateMetadata()).description).toBe(
+      'Open-source operating system for human health'
+    );
+
+    requestHeaders = new Headers({ cookie: 'or_locale=es' });
+
+    expect((await generateMetadata()).description).toBe(
+      'Sistema operativo de código abierto para la salud humana'
+    );
   });
 
   it('paints the browser chrome bone rather than white', () => {

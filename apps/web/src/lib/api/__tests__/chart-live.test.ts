@@ -94,7 +94,11 @@ describe('the live encounter note', () => {
       'assessment',
       'plan',
     ]);
-    expect(note.sections[0]?.label).toBe('Subjective');
+    // The heading is not asserted here any more, because a section no longer
+    // carries one: the key is what it carries, and `components/encounter/labels.ts`
+    // turns that into words in the reader's language. What this file owns is
+    // that the blocks come back in the documented order with the right text in
+    // them, whatever order the API stored them in.
     expect(note.sections[3]?.text).toContain('lisinopril');
   });
 

@@ -47,24 +47,25 @@ describe('DeveloperScreen', () => {
     expect(screen.getByRole('button', { name: 'I have copied the secret' })).toBeInTheDocument();
   });
 
-  it('revokes a key only after its name is typed, and keeps the record', async () => {
+  it('refuses to claim a revocation it cannot perform, and says why', async () => {
+    /*
+     * This used to open a typed-confirmation dialog, write the key's id into
+     * local state, and show "stops working immediately". Nothing reached the
+     * API: there is no revocation endpoint. An administrator responding to a
+     * leaked credential was told it was closed by a screen that had not touched
+     * it, which is the worst thing on this page and the reason #178 exists.
+     *
+     * Asserted as three facts rather than one: the control cannot be operated,
+     * the sentence that claimed the revocation is nowhere on the screen, and
+     * the reader is told what to do instead. A disabled button on its own would
+     * read as a bug.
+     */
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke Nightly reporting export' }));
-
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent('The key is kept, revoked');
-
-    const confirm = within(dialog).getByRole('button', { name: 'Revoke key' });
-    expect(confirm).toBeDisabled();
-
-    fireEvent.change(within(dialog).getByLabelText('Type Nightly reporting export to confirm'), {
-      target: { value: 'Nightly reporting export' },
-    });
-    fireEvent.click(confirm);
-
-    expect(screen.getByText(/stops working immediately/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revoke Nightly reporting export' })).toBeDisabled();
+    expect(screen.queryByText(/stops working immediately/)).not.toBeInTheDocument();
+    expect(screen.getByText(/still live until it has been revoked/)).toBeInTheDocument();
   });
 
   it('translates a failed SMART launch into a sentence a developer can act on', async () => {
@@ -247,39 +248,22 @@ describe('DeveloperScreen, creating and revoking a key', () => {
     expect(screen.queryByRole('dialog', { name: 'Create an API key' })).not.toBeInTheDocument();
   });
 
-  it('leaves the key working when the revoke confirmation is cancelled', async () => {
+  it('shows every key as the API reports it, with no local revocation on top', async () => {
+    /*
+     * The table used to overlay a locally-held set of "revoked" ids on what the
+     * API returned, so a key the server still considers active could render as
+     * revoked. Reading straight through is what makes the disabled control
+     * above honest: the screen and the server now agree, and disagreeing was the
+     * only way the old flow could look like it had worked.
+     */
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke Nightly reporting export' }));
-    fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
-    );
-
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Revoke Nightly reporting export' })
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/stops working immediately/)).not.toBeInTheDocument();
-  });
-
-  it('dismisses the confirmation without bringing the revoked key back', async () => {
-    render(<DeveloperScreen />);
-    await screen.findByRole('table', { name: 'API keys' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke Nightly reporting export' }));
-    const dialog = screen.getByRole('alertdialog');
-    fireEvent.change(within(dialog).getByLabelText('Type Nightly reporting export to confirm'), {
-      target: { value: 'Nightly reporting export' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Revoke key' }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-
-    expect(screen.queryByText(/stops working immediately/)).not.toBeInTheDocument();
-    // The key stays on the list, revoked, so the audit trail still resolves it,
-    // and it cannot be revoked a second time.
-    expect(screen.getByRole('button', { name: 'Revoke Nightly reporting export' })).toBeDisabled();
+    const row = screen
+      .getByRole('button', { name: 'Revoke Nightly reporting export' })
+      .closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText('Active')).toBeInTheDocument();
   });
 });
 

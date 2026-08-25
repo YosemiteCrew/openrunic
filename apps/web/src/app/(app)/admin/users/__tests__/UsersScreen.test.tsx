@@ -64,25 +64,28 @@ describe('UsersScreen', () => {
     expect(screen.queryByRole('dialog', { name: 'Invite a colleague' })).not.toBeInTheDocument();
   });
 
-  it('deactivates an account only after the name is typed, and never deletes it', async () => {
+  it('refuses to claim a deactivation it cannot perform, and says why', async () => {
+    /*
+     * This used to open a typed-confirmation dialog and report "Rosa Mbeki can
+     * no longer sign in". She could. Nothing reached the API, because there is
+     * no endpoint for it: the id went into a local set and the row was recoloured
+     * on top of what the server had said.
+     *
+     * Three facts rather than one: the control cannot be operated, the sentence
+     * that claimed the deactivation is nowhere on the screen, and the reader is
+     * told what to do instead.
+     */
     render(<UsersScreen />);
     await screen.findByText('Ada Okafor');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Rosa Mbeki' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Deactivate account' }));
+    const drawer = await screen.findByRole('dialog', { name: 'Rosa Mbeki' });
 
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent('stays resolvable in the audit trail');
-
-    const confirm = within(dialog).getByRole('button', { name: 'Deactivate account' });
-    expect(confirm).toBeDisabled();
-
-    fireEvent.change(within(dialog).getByLabelText('Type Rosa Mbeki to confirm'), {
-      target: { value: 'Rosa Mbeki' },
-    });
-    fireEvent.click(confirm);
-
-    expect(screen.getByText(/Rosa Mbeki can no longer sign in/)).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Deactivate account' })).toBeDisabled();
+    expect(screen.queryByText(/can no longer sign in/)).not.toBeInTheDocument();
+    expect(
+      within(drawer).getByText(/Withdraw access wherever sign-in is actually enforced/)
+    ).toBeInTheDocument();
   });
 
   it('summarises a role in a plain sentence in the role editor', async () => {
@@ -298,7 +301,14 @@ describe('UsersScreen, one account and the role editor', () => {
     ).toBeInTheDocument();
   });
 
-  it('cannot deactivate an account that is already deactivated', async () => {
+  it('shows every account as the API reports it, with no local deactivation on top', async () => {
+    /*
+     * Wren Castellanos is deactivated in the fixtures, which is the only way an
+     * account reads as deactivated now. The list used to layer a locally-held
+     * set on top, so a row could say "Deactivated" about somebody the server
+     * still considered active. The screen and the server agree again, and
+     * disagreeing was the only way the old control could look like it worked.
+     */
     render(<UsersScreen />);
     await screen.findByText('Ada Okafor');
 
@@ -308,34 +318,23 @@ describe('UsersScreen, one account and the role editor', () => {
     expect(within(drawer).getByRole('button', { name: 'Deactivate account' })).toBeDisabled();
   });
 
-  it('keeps the account signing in when the confirmation is cancelled', async () => {
-    render(<UsersScreen />);
-    await screen.findByText('Ada Okafor');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open Rosa Mbeki' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Deactivate account' }));
-    fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
-    );
-
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.queryByText(/can no longer sign in/)).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Rosa Mbeki' })).toBeInTheDocument();
-  });
-
-  it('saves role permissions and says who the change reaches', async () => {
+  it('refuses to claim a permission change that never reaches policy', async () => {
+    /*
+     * The editor still toggles: reading what a role means is worth keeping, and
+     * the toggles are how you read it. What it no longer does is close the
+     * drawer and announce that everyone holding the role is affected, which was
+     * a sentence about authorisation written by a screen that never asked the
+     * server anything.
+     */
     render(<UsersScreen />);
     await screen.findByText('Ada Okafor');
 
     fireEvent.click(screen.getAllByRole('button', { name: /Edit role permissions/ })[0]!);
     const drawer = await screen.findByRole('dialog', { name: 'Role permissions' });
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Save role permissions' }));
 
-    expect(screen.getByText(/Everyone holding these roles is affected/)).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Role permissions' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(within(drawer).getByRole('button', { name: 'Save role permissions' })).toBeDisabled();
     expect(screen.queryByText(/Everyone holding these roles is affected/)).not.toBeInTheDocument();
+    expect(within(drawer).getByText(/keeps exactly the access they have/)).toBeInTheDocument();
   });
 
   it('summarises a different role when the summarise control changes', async () => {

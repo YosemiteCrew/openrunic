@@ -155,13 +155,6 @@ export const admin: Messages = {
   'admin.users.no': 'No',
   'admin.users.capabilities.title': 'What this person can do',
   'admin.users.deactivate': 'Deactivate account',
-  'admin.users.deactivatedToast':
-    '{name} can no longer sign in. The account is kept for the audit trail.',
-  'admin.users.confirmDeactivate.title': 'Deactivate {name}',
-  'admin.users.confirmDeactivate.consequence':
-    'They can no longer sign in. Nothing they wrote is removed, and the account stays resolvable in the audit trail.',
-  'admin.users.confirmDeactivate.detail':
-    'Open sessions end within a minute. Re-activating later restores the same roles.',
   'admin.users.mfaNotice.title': '{count} active accounts have no second factor.',
   'admin.users.mfaNotice.body':
     'Two-factor authentication is required for anyone who opens a chart. Ask them to enrol from their own account settings.',
@@ -180,8 +173,6 @@ export const admin: Messages = {
     'Roles are named bundles. Change one here and it changes for everyone who holds it.',
   'admin.users.roles.edit': 'Edit role permissions',
   'admin.users.roles.save': 'Save role permissions',
-  'admin.users.roles.savedToast':
-    'Role permissions saved. Everyone holding these roles is affected.',
   'admin.users.roles.subject': 'role permissions',
   'admin.users.roles.empty.title': 'No capabilities are defined',
   'admin.users.roles.empty.message':
@@ -512,11 +503,6 @@ export const admin: Messages = {
   'admin.developer.keys.empty.message':
     'A key lets a backend service read this practice through the FHIR API. Create one, choose its scopes, and copy the secret once.',
   'admin.developer.keys.create': 'Create an API key',
-  'admin.developer.keys.revokeConsequence':
-    'Anything using this key stops working immediately. The key is kept, revoked, so the audit trail still resolves it.',
-  'admin.developer.keys.revokeConfirm': 'Revoke key',
-  'admin.developer.keys.revokedToast':
-    '{label} stops working immediately. The record is kept for the audit trail.',
   'admin.developer.apps.neverLaunched': 'Never',
   'admin.developer.apps.approved': 'Approved',
   'admin.developer.apps.waiting': 'Waiting for approval',
@@ -606,4 +592,22 @@ export const admin: Messages = {
   'admin.forms.page.title': 'Form builder',
   'admin.integrations.page.title': 'Integrations',
   'admin.users.page.title': 'Users and roles',
+
+  /* ---------------------------------------------- controls with nothing behind them */
+  /*
+   * Three admin controls reported a completed action and performed none. They
+   * are disabled now and say so, because a disabled control reads as unfinished
+   * - which is true - and one that says "Revoked" reads as finished, which puts
+   * somebody in front of a leaked credential believing it is closed. See #178.
+   *
+   * Each message says two things: that the control changes nothing, and what
+   * the reader should do instead. The second half is the part that matters.
+   */
+  'admin.notBuilt.title': 'This control is a demonstration',
+  'admin.developer.keys.revokeNotBuilt':
+    'Revoking a key here would not stop it working: there is no endpoint behind this yet, so the control is disabled rather than reporting a revocation that did not happen. Treat a key you need to stop as still live until it has been revoked wherever it is honoured.',
+  'admin.users.deactivateNotBuilt':
+    'Deactivating an account here would not stop the person signing in: there is no endpoint behind this yet, so the control is disabled rather than reporting a deactivation that did not happen. Withdraw access wherever sign-in is actually enforced.',
+  'admin.users.rolePermissionsNotBuilt':
+    'Editing what a role may do here would not change authorisation: there is no endpoint behind this yet, so the control is disabled rather than reporting a change that never reached policy. Everyone holding this role keeps exactly the access they have.',
 };

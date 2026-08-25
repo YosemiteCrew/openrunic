@@ -5,16 +5,16 @@ import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import {
-  adminArea,
-  adminBreadcrumb,
-  ConfirmDialog,
+  Demonstration,
   DetailList,
   Drawer,
   FilterBar,
   PermissionMatrix,
+  STAFF_ROLE_KEYS,
+  adminArea,
+  adminBreadcrumb,
   permissionKey,
   pluralKey,
-  STAFF_ROLE_KEYS,
   summariseRole,
   translateColumns,
 } from '@/components/admin';
@@ -46,11 +46,16 @@ import { useTranslator } from '@/lib/i18n/messages';
  * are labelled as exceptions rather than folded in silently, and nobody is ever
  * deleted: deactivation keeps the account resolvable from the audit trail.
  *
- * Writes: the demo client is read-only on purpose, so an invite or a
- * deactivation is held in this screen's own state and layered over the fetched
- * list. Against the live API these become mutations followed by a refetch; the
- * interaction, the confirmation and the toast are what this screen owns either
- * way.
+ * Writes: there are none. The admin client is read-only, and so is the API
+ * behind it - there is no endpoint for deactivating an account or for changing
+ * what a role may do. Both controls used to hold the change in this screen's
+ * own state and report it as done, which meant an administrator withdrawing
+ * somebody's access was told it had been withdrawn by a screen that had not
+ * asked anyone. They are disabled now and say so; see #178.
+ *
+ * An invite is still held locally and layered over the fetched list. That one
+ * wastes somebody's time rather than creating risk, and it is on the same list
+ * to be dealt with.
  */
 
 export interface UsersScreenProps {
@@ -495,13 +500,11 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
   const [facilityId, setFacilityId] = useState('');
 
   const [drawer, setDrawer] = useState<DrawerView>({ kind: 'none' });
-  const [confirmUser, setConfirmUser] = useState<StaffUser | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   /* Local write overlay. See the file comment: the demo client does not accept
      writes, and a fixture that pretended to would teach the screen to trust
      state the server never saw. */
-  const [deactivated, setDeactivated] = useState<string[]>([]);
   const [invited, setInvited] = useState<StaffUser[]>([]);
 
   const [roleFocus, setRoleFocus] = useState<StaffRole>('MEDICAL_ASSISTANT');
@@ -558,22 +561,10 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
     [openInvite, openRoles, showUnenrolled, t]
   );
 
-  const applyOverlay = (rows: StaffUser[]): StaffUser[] => {
-    const deactivatedIds = new Set(deactivated);
-    return [...invited, ...rows].map((user) =>
-      deactivatedIds.has(user.id)
-        ? { ...user, status: 'DEACTIVATED' as StaffStatus, deactivatedAt: null }
-        : user
-    );
-  };
-
-  const confirmDeactivation = () => {
-    if (!confirmUser) return;
-    setDeactivated((previous) => [...previous, confirmUser.id]);
-    setToast(t('admin.users.deactivatedToast', { name: confirmUser.name }));
-    setConfirmUser(null);
-    setDrawer({ kind: 'none' });
-  };
+  /* Only the invite is layered on. A deactivation used to be layered on here
+     too, which made the list agree with a withdrawal of access that had never
+     been asked for. */
+  const applyOverlay = (rows: StaffUser[]): StaffUser[] => [...invited, ...rows];
 
   const [invite, setInvite] = useState<InviteDraft>(EMPTY_INVITE);
   const sendInvite = () => {
@@ -672,11 +663,12 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
               <Button variant="ghost" onClick={closeDrawer}>
                 {t('admin.action.close')}
               </Button>
-              <Button
-                variant="danger"
-                disabled={selected.status === 'DEACTIVATED'}
-                onClick={() => setConfirmUser(selected)}
-              >
+              {/* Disabled unconditionally, not only for an account already
+                  marked deactivated. There is no endpoint behind this: it used
+                  to write the id into local state and report the account
+                  closed, so somebody withdrawing a colleague's access was told
+                  it had been withdrawn by a screen that had asked nobody. */}
+              <Button variant="danger" disabled>
                 {t('admin.users.deactivate')}
               </Button>
             </>
@@ -684,14 +676,17 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
         }
       >
         {selected ? (
-          <UserDetail
-            user={selected}
-            roleSummary={
-              permissions.data
-                ? summariseRole(t, permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
-                : t('admin.users.roles.summaryLoading')
-            }
-          />
+          <div className="or-stack">
+            <Demonstration message={t('admin.users.deactivateNotBuilt')} />
+            <UserDetail
+              user={selected}
+              roleSummary={
+                permissions.data
+                  ? summariseRole(t, permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
+                  : t('admin.users.roles.summaryLoading')
+              }
+            />
+          </div>
         ) : null}
       </Drawer>
 
@@ -727,18 +722,17 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
             <Button variant="ghost" onClick={closeDrawer}>
               {t('admin.action.cancel')}
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                setToast(t('admin.users.roles.savedToast'));
-                setDrawer({ kind: 'none' });
-              }}
-            >
+            {/* Disabled: editing what a role may do reaches no policy. It used
+                to close the drawer and report that everyone holding the role was
+                affected, while `grants` stayed in this component and authorisation
+                stayed exactly as it was. */}
+            <Button variant="primary" disabled>
               {t('admin.users.roles.save')}
             </Button>
           </>
         }
       >
+        <Demonstration message={t('admin.users.rolePermissionsNotBuilt')} />
         <RoleEditor
           permissions={permissions}
           roleFocus={roleFocus}
@@ -752,18 +746,6 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
           }
         />
       </Drawer>
-
-      <ConfirmDialog
-        open={confirmUser !== null}
-        title={t('admin.users.confirmDeactivate.title', { name: confirmUser?.name ?? '' })}
-        consequence={t('admin.users.confirmDeactivate.consequence')}
-        confirmLabel={t('admin.users.deactivate')}
-        typedConfirmation={confirmUser?.name}
-        onCancel={() => setConfirmUser(null)}
-        onConfirm={confirmDeactivation}
-      >
-        <p className="or-body">{t('admin.users.confirmDeactivate.detail')}</p>
-      </ConfirmDialog>
 
       {toast ? (
         <div className="or-toast-region">

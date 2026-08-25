@@ -35,9 +35,15 @@ understand not just what was decided, but why, and what alternatives were reject
 | [0004](0004-no-ml-runtime-in-core.md)             | No ML runtime in the core deployment                                         | Accepted |
 | [0005](0005-agentic-layer.md)                     | An optional agentic layer over a deployer-configured inference endpoint      | Accepted |
 | [0006](0006-patient-agent-surface.md)             | A patient-facing assistant surface, bound to one chart and to retrieval only | Accepted |
+| [0007](0007-care-relationship-authorisation.md)   | A patient read is authorised by a care relationship, not by knowing the id   | Proposed |
 
 ADR-0005 supplements ADR-0004 and amends one clause of it. An amendment is not a supersession: both
 are Accepted, and ADR-0004 carries a note at the top naming the clause that moved.
 
 ADR-0006 discharges ADR-0005 rule 7, which reserved the patient surface for its own record. It
 amends nothing: ADR-0005 stands in full.
+
+ADR-0007 is Proposed rather than Accepted: it decides a shape, and the shape has a schema change and
+a migration behind it. It does not amend ADR-0002; it decides one question ADR-0002's boundary makes
+harder, which is that the same rule has to hold at the FHIR surface and the BFF. #139 is the recorded
+instance of those two drifting apart on exactly this question.

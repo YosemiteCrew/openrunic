@@ -6,7 +6,7 @@ import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { Claim } from '@/lib/api';
-import { formatDate, formatDateTime, formatMrn, formatName, NOT_RECORDED } from '@/lib/format';
+import { formatDate, formatDateTime, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { CLAIM_STATUS_LABEL_KEYS, CLAIM_STATUS_TONE, claimLifecycle } from './billing';
@@ -54,8 +54,8 @@ export interface ClaimDrawerProps {
  * A money cell that has not been adjudicated yet says so, rather than showing a
  * zero a biller would read as "the payer allowed nothing".
  */
-function amountCell(amount: number | null, currency: string): ReactNode {
-  if (amount === null) return <span className="or-small">{NOT_RECORDED}</span>;
+function amountCell(t: Translator, amount: number | null, currency: string): ReactNode {
+  if (amount === null) return <span className="or-small">{t('common.notRecorded')}</span>;
   return <Money amount={amount} currency={currency} />;
 }
 
@@ -135,9 +135,9 @@ export function ClaimDrawer({
     ),
     units: <span className="or-mono">{line.units}</span>,
     billed: <Money amount={line.billed} currency={claim.currency} />,
-    allowed: amountCell(line.allowed, claim.currency),
-    paid: amountCell(line.paid, claim.currency),
-    responsibility: amountCell(line.patientResponsibility, claim.currency),
+    allowed: amountCell(t, line.allowed, claim.currency),
+    paid: amountCell(t, line.paid, claim.currency),
+    responsibility: amountCell(t, line.patientResponsibility, claim.currency),
   }));
 
   return (
@@ -151,7 +151,7 @@ export function ClaimDrawer({
           {', '}
           {t('billing.claimDrawer.payerSeen', {
             payer: claim.payer.name,
-            date: formatDate(claim.serviceDate),
+            date: formatDate(t, claim.serviceDate),
           })}
         </>
       }
@@ -262,7 +262,7 @@ export function ClaimDrawer({
               <li key={event.id} className="or-timeline__item">
                 <p className="or-timeline__head">
                   <span className="or-timeline__label">{event.label}</span>
-                  <span className="or-caption">{formatDateTime(event.at)}</span>
+                  <span className="or-caption">{formatDateTime(t, event.at)}</span>
                 </p>
                 {event.detail ? <p className="or-small">{event.detail}</p> : null}
                 <p className="or-caption or-timeline__actor">{event.actor}</p>

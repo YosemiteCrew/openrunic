@@ -52,7 +52,7 @@ export function AllocationTable({
 
   const rows = items.map((item): Record<string, ReactNode> => ({
     id: item.visitId,
-    serviceDate: formatDate(item.serviceDate),
+    serviceDate: formatDate(t, item.serviceDate),
     description: item.description,
     outstanding: <Money amount={item.outstanding} currency={currency} />,
     allocated: (
@@ -60,7 +60,7 @@ export function AllocationTable({
         type="number"
         className="or-units-field or-mono"
         value={allocations[item.visitId] ?? 0}
-        aria-label={t('billing.allocation.amountFor', { date: formatDate(item.serviceDate) })}
+        aria-label={t('billing.allocation.amountFor', { date: formatDate(t, item.serviceDate) })}
         onChange={(event) => {
           const next = numericFieldValue(event.target.value);
           if (next !== null) onChange(item.visitId, next);

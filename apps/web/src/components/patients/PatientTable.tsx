@@ -6,7 +6,7 @@ import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { Patient } from '@/lib/api';
-import { formatAge, formatDate, formatMrn, formatName, NOT_RECORDED } from '@/lib/format';
+import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { SENSITIVITY_LABELS, SEX_AT_BIRTH_LABELS } from './labels';
@@ -61,7 +61,7 @@ function statusBadge(patient: Patient, t: Translator): ReactElement {
   if (patient.deceasedAt) {
     return (
       <Badge tone="neutral">
-        {t('patients.status.deceased', { date: formatDate(patient.deceasedAt, 'dense') })}
+        {t('patients.status.deceased', { date: formatDate(t, patient.deceasedAt, 'dense') })}
       </Badge>
     );
   }
@@ -92,10 +92,10 @@ export function PatientTable({
       </a>
     ),
     mrn: formatMrn(patient.mrn),
-    birthDate: formatDate(patient.birthDate),
+    birthDate: formatDate(t, patient.birthDate),
     age: formatAge(t, patient.birthDate, asOf),
     sex: t(SEX_AT_BIRTH_LABELS[patient.sexAtBirth].labelKey),
-    contact: patient.telecom.phoneMobile ?? NOT_RECORDED,
+    contact: patient.telecom.phoneMobile ?? t('common.notRecorded'),
     status: statusBadge(patient, t),
     actions: (
       <Button

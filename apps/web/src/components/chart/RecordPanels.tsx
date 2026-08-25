@@ -13,7 +13,7 @@ import type {
   ResultObservation,
   Visit,
 } from '@/lib/api/chart';
-import { formatDate, formatVital, NOT_RECORDED } from '@/lib/format';
+import { calendarDay, formatDate, formatVital } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { CARE_TEAM_LABELS, MEDICATION_SOURCE_LABELS, NOTE_STATE_LABELS } from './labels';
@@ -77,7 +77,7 @@ export function VisitsPanel({ visits }: Readonly<{ visits: readonly Visit[] }>):
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((visit) => ({
       id: visit.id,
-      date: formatDate(visit.date),
+      date: formatDate(t, visit.date),
       type: visit.type,
       provider: visit.providerName,
       reason: visit.reason,
@@ -96,7 +96,7 @@ export function VisitsPanel({ visits }: Readonly<{ visits: readonly Visit[] }>):
            agreeing in an order English happens to have. */
         <Link
           href={`/encounters/${visit.encounterId}`}
-          aria-label={t('chart.visits.openNoteFrom', { date: formatDate(visit.date) })}
+          aria-label={t('chart.visits.openNoteFrom', { date: formatDate(t, visit.date) })}
         >
           {t('chart.visits.openNote')}
         </Link>
@@ -153,9 +153,9 @@ export function ResultsPanel({
         ),
         code: observation.code,
         value: `${vital.value} ${vital.unit}`,
-        range: vital.rangeText ?? NOT_RECORDED,
+        range: vital.rangeText ?? t('common.notRecorded'),
         state: <Badge tone={vital.state}>{vital.stateLabel}</Badge>,
-        collected: formatDate(observation.collectedAt),
+        collected: formatDate(t, observation.collectedAt),
         review: observation.reviewed
           ? t('chart.results.signedOff')
           : t('chart.results.awaitingReview'),
@@ -197,9 +197,9 @@ function medicationRow(t: Translator, med: Medication): Record<string, ReactNode
     drug: med.drug,
     sig: med.sig,
     prescriber: med.prescriber,
-    started: formatDate(med.startedOn),
+    started: formatDate(t, med.startedOn),
     source: t(MEDICATION_SOURCE_LABELS[med.source].labelKey),
-    refills: med.refillsRemaining === null ? NOT_RECORDED : String(med.refillsRemaining),
+    refills: med.refillsRemaining === null ? t('common.notRecorded') : String(med.refillsRemaining),
   };
 }
 
@@ -228,7 +228,7 @@ export function MedicationsPanel({
             columns={columns([...MEDICATION_COLUMNS, STOPPED_COLUMN], t)}
             rows={discontinued.map((med) => ({
               ...medicationRow(t, med),
-              stopped: formatDate(med.stoppedOn),
+              stopped: formatDate(t, med.stoppedOn),
             }))}
           />
         </Card>
@@ -252,9 +252,14 @@ const DOCUMENT_COLUMNS: readonly ColumnSpec[] = [
 /** 60 days: long enough for the front desk to chase a replacement before it lapses. */
 const EXPIRY_WARNING_DAYS = 60;
 
-function expiryCell(document: ChartDocument, today: string, t: Translator): ReactNode {
+function expiryCell(document: ChartDocument, today: string | null, t: Translator): ReactNode {
   if (!document.expiresOn)
     return <span className="or-caption">{t('chart.documents.noExpiry')}</span>;
+
+  // No clinic day means nothing to measure the expiry against, so the date is
+  // rendered plainly rather than badged as though it had been checked and found
+  // safe. An unchecked date that looks checked is the failure worth avoiding.
+  if (today === null) return formatDate(t, document.expiresOn);
 
   const days = Math.floor(
     (new Date(`${document.expiresOn}T00:00:00.000Z`).getTime() -
@@ -262,7 +267,7 @@ function expiryCell(document: ChartDocument, today: string, t: Translator): Reac
       86_400_000
   );
 
-  const date = formatDate(document.expiresOn);
+  const date = formatDate(t, document.expiresOn);
   if (days < 0) return <Badge tone="danger">{t('chart.documents.expired', { date })}</Badge>;
   if (days <= EXPIRY_WARNING_DAYS) {
     return <Badge tone="neutral">{t('chart.documents.expires', { date })}</Badge>;
@@ -278,14 +283,14 @@ export function DocumentsPanel({
   now: string;
 }>): ReactElement {
   const t = useTranslator();
-  const today = formatDate(now, 'iso');
+  const today = calendarDay(now);
   const rows = [...documents]
     .sort((a, b) => b.receivedOn.localeCompare(a.receivedOn))
     .map((document) => ({
       id: document.id,
       name: document.name,
       category: document.category,
-      received: formatDate(document.receivedOn),
+      received: formatDate(t, document.receivedOn),
       source: document.source,
       expiry: expiryCell(document, today, t),
     }));

@@ -8,6 +8,7 @@ import type { ReactElement, ReactNode } from 'react';
 import type { Appointment, Patient } from '@/lib/api';
 import type { AllergyRecord, Allergy, ChartSummary, Visit } from '@/lib/api/chart';
 import {
+  calendarDay,
   formatAge,
   formatDate,
   formatDateTime,
@@ -15,7 +16,6 @@ import {
   formatMoney,
   formatMrn,
   formatName,
-  NOT_RECORDED,
 } from '@/lib/format';
 import {
   ALLERGY_CATEGORY_LABELS,
@@ -143,7 +143,7 @@ function AllergyBlock({
       <div className="or-rail__affirmed">
         <Badge tone="success">{t('chart.rail.allergies.none')}</Badge>
         <p className="or-caption or-rail__reaction">
-          {t('chart.rail.allergies.affirmed', { date: formatDate(record.affirmedOn) })}
+          {t('chart.rail.allergies.affirmed', { date: formatDate(t, record.affirmedOn) })}
         </p>
       </div>
     );
@@ -185,7 +185,14 @@ function SectionHeading({
   return <p className="or-overline or-rail__heading-static">{label}</p>;
 }
 
-function lastVisit(visits: readonly Visit[], today: string): Visit | null {
+/**
+ * `today` is nullable because `calendarDay` is: an instant it cannot read has no
+ * clinic day, and there is nothing for a visit to be before. Answering "no
+ * previous visit" is the same answer this gave when the day was unreadable
+ * before, and it is now the answer the type says it gives.
+ */
+function lastVisit(visits: readonly Visit[], today: string | null): Visit | null {
+  if (today === null) return null;
   const past = visits
     .filter((visit) => visit.date < today)
     .toSorted((a, b) => b.date.localeCompare(a.date));
@@ -244,7 +251,7 @@ function IdentityBlock({
         <p className="or-caption or-rail__meta">
           {t('chart.rail.identity.demographics', {
             age: formatAge(t, patient.birthDate, now),
-            birthDate: formatDate(patient.birthDate),
+            birthDate: formatDate(t, patient.birthDate),
             sex: t(SEX_AT_BIRTH_INLINE[patient.sexAtBirth].labelKey),
           })}
         </p>
@@ -253,7 +260,7 @@ function IdentityBlock({
         </p>
         {deceased ? (
           <p className="or-small or-rail__deceased">
-            {t('chart.rail.identity.deceased', { date: formatDate(patient.deceasedAt) })}
+            {t('chart.rail.identity.deceased', { date: formatDate(t, patient.deceasedAt) })}
           </p>
         ) : null}
       </div>
@@ -358,14 +365,14 @@ function AppointmentLines({
       <p className="or-small or-rail__line">
         {nextAppointment
           ? t('chart.rail.appointments.next', {
-              when: formatDateTime(nextAppointment.start, 'dense'),
+              when: formatDateTime(t, nextAppointment.start, 'dense'),
               type: nextAppointment.type.display.toLowerCase(),
             })
           : t('chart.rail.appointments.none')}
       </p>
       <p className="or-caption or-rail__meta">
         {t('chart.rail.appointments.lastVisit', {
-          date: previous ? formatDate(previous.date) : NOT_RECORDED,
+          date: previous ? formatDate(t, previous.date) : t('common.notRecorded'),
         })}
       </p>
     </>
@@ -404,7 +411,7 @@ export function PatientContextRail({
   const activeProblems = chart.problems.filter((problem) => problem.status !== 'RESOLVED');
   const activeMeds = chart.medications.filter((med) => med.status === 'ACTIVE');
   const unsigned = chart.visits.filter((visit) => visit.noteState === 'UNSIGNED');
-  const previous = lastVisit(chart.visits, formatDate(now, 'iso'));
+  const previous = lastVisit(chart.visits, calendarDay(now));
 
   const heading = (label: string, tab: string) => (
     <SectionHeading
@@ -463,7 +470,7 @@ export function PatientContextRail({
                 {gap.dueOn
                   ? t('chart.rail.careGaps.due', {
                       gap: gap.label,
-                      date: formatDate(gap.dueOn, 'dense'),
+                      date: formatDate(t, gap.dueOn, 'dense'),
                     })
                   : gap.label}
               </li>
@@ -481,7 +488,7 @@ export function PatientContextRail({
           {unsigned[0]?.encounterId ? (
             <Link className="or-rail__link" href={`/encounters/${unsigned[0].encounterId}`}>
               {t('chart.rail.documentation.openNote', {
-                date: formatDate(unsigned[0].date, 'dense'),
+                date: formatDate(t, unsigned[0].date, 'dense'),
               })}
             </Link>
           ) : null}

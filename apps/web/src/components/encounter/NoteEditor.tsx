@@ -167,7 +167,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
             <p className="or-body">
               {t('encounter.banner.signedDetail', {
                 signer: signature?.signerName ?? note.providerName,
-                when: formatDateTime(signature?.signedAt),
+                when: formatDateTime(t, signature?.signedAt),
               })}
             </p>
             <Button
@@ -215,7 +215,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
       ) : (
         <p className="or-caption or-note__footnote">
           {t('encounter.footnote.unsigned', {
-            date: formatDate(note.visitDate),
+            date: formatDate(t, note.visitDate),
             author: formatCredentialed(note.providerName, note.providerCredential),
           })}
         </p>

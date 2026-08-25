@@ -53,7 +53,7 @@ function describe(t: Translator, appointment: Appointment, patient: Patient | un
   if (!patient) return t('schedule.checkIn.describeUnassigned');
   return t('schedule.checkIn.describe', {
     name: formatName(patient.name),
-    time: formatTime(appointment.start),
+    time: formatTime(t, appointment.start),
     visitType: appointment.type.display.toLowerCase(),
   });
 }

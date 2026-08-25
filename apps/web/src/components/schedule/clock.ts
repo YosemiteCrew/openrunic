@@ -1,5 +1,5 @@
 import { IS_MOCK_MODE, MOCK_CLINIC_DAY, MOCK_NOW } from '@/lib/api';
-import { CLINIC_TIME_ZONE, formatDate } from '@/lib/format';
+import { CLINIC_TIME_ZONE, calendarDay } from '@/lib/format';
 
 /**
  * The clinic's clock.
@@ -15,9 +15,20 @@ export function clinicNow(): Date {
   return IS_MOCK_MODE ? new Date(MOCK_NOW) : new Date();
 }
 
-/** Today, as `YYYY-MM-DD` in the clinic's timezone. */
+/**
+ * Today, as `YYYY-MM-DD` in the clinic's timezone.
+ *
+ * `calendarDay` is nullable because it is given instants that may not parse.
+ * The one here is `new Date()`, which is the machine's own clock and always
+ * reads, so the null branch cannot be taken. It throws rather than substituting
+ * a day: every schedule surface pages from this value, and a wrong today puts
+ * the whole front desk in front of somebody else's list.
+ */
 export function clinicToday(): string {
-  return IS_MOCK_MODE ? MOCK_CLINIC_DAY : formatDate(new Date(), 'iso', CLINIC_TIME_ZONE);
+  if (IS_MOCK_MODE) return MOCK_CLINIC_DAY;
+  const today = calendarDay(new Date(), CLINIC_TIME_ZONE);
+  if (today === null) throw new Error('The clinic clock could not be read.');
+  return today;
 }
 
 /** `YYYY-MM-DD` shifted by whole days, for the day pager. */

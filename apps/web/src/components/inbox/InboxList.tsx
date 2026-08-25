@@ -71,7 +71,7 @@ export function InboxList({
               <span className="or-inbox__summary">{item.summary}</span>
               <span className="or-small or-muted">{item.detail}</span>
               <span className="or-caption or-muted">
-                {t('inbox.list.received', { when: formatDateTime(item.receivedAt, 'dense') })}
+                {t('inbox.list.received', { when: formatDateTime(t, item.receivedAt, 'dense') })}
               </span>
             </span>
 

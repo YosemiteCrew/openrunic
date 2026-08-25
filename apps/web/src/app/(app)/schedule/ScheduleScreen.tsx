@@ -221,7 +221,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
        appointment the server just wrote, so it is interpolated as it stands
        rather than translated. See `BookingModal`. */
     const values = {
-      time: formatTime(saved.start),
+      time: formatTime(t, saved.start),
       visitType: saved.type.display.toLowerCase(),
     };
     setToast({
@@ -312,10 +312,10 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
      fragment that arrived already assembled. */
   const description = facility
     ? t('schedule.day.descriptionAtFacility', {
-        date: formatDate(day),
+        date: formatDate(t, day),
         facility: facility.name,
       })
-    : t('schedule.day.description', { date: formatDate(day) });
+    : t('schedule.day.description', { date: formatDate(t, day) });
 
   return (
     <AppShell

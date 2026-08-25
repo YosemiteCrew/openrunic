@@ -140,7 +140,7 @@ function RecentPayments({
                     <span className="or-mono">
                       {formatMoney(t, payment.amount, { currency: payment.currency }).text}
                     </span>
-                    <span className="or-caption">{formatDate(payment.takenAt, 'dense')}</span>
+                    <span className="or-caption">{formatDate(t, payment.takenAt, 'dense')}</span>
                   </span>
                   {payment.status === 'REVERSED' ? (
                     <Badge tone="danger">{t('billing.payments.reversed')}</Badge>
@@ -457,9 +457,12 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                     type="number"
                     mono
                     value={amountText}
-                    /* A numeric example rather than words: the amount is
-                       formatted en-US everywhere in this application, so the
-                       shape of the hint does not change with the reader. */
+                    /* A numeric example rather than words. The field is
+                       `type="number"`, whose value is plain digits and a dot
+                       whatever the reader's language, so the shape of the hint
+                       does not change with them either. What they type here is
+                       a value; what they read back on the ledger is formatted,
+                       and the two are allowed to look different. */
                     placeholder="0.00"
                     onChange={(event) => dispatch({ type: 'setAmount', text: event.target.value })}
                   />

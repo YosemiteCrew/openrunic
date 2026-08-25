@@ -15,6 +15,7 @@ import {
   Tabs,
   translateColumns,
 } from '@/components/admin';
+import type { Translator } from '@openrunic/i18n';
 import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
 import { ScreenCommands } from '@/components/command';
@@ -51,8 +52,6 @@ export interface DeveloperScreenProps {
 type SectionId = 'keys' | 'apps' | 'webhooks';
 
 /** What a translator does, for the helpers below that are not components. */
-type Translate = (key: string, values?: Readonly<Record<string, string | number>>) => string;
-
 const KEY_COLUMNS: readonly AdminColumn[] = [
   { key: 'label', headerKey: 'admin.developer.keys.column.key' },
   { key: 'scopes', headerKey: 'admin.developer.keys.column.scopes' },
@@ -138,7 +137,7 @@ function chipList(values: readonly string[]): ReactElement {
 }
 
 function keyRow(
-  t: Translate,
+  t: Translator,
   key: ApiKey,
   onRevoke: (key: ApiKey) => void
 ): Record<string, ReactNode> {
@@ -151,11 +150,11 @@ function keyRow(
       </span>
     ),
     scopes: chipList(key.scopes),
-    created: <span className="or-small">{formatDateTime(key.createdAt, 'dense')}</span>,
+    created: <span className="or-small">{formatDateTime(t, key.createdAt, 'dense')}</span>,
     lastUsed: (
       <span className="or-small">
         {key.lastUsedAt
-          ? formatDateTime(key.lastUsedAt, 'dense')
+          ? formatDateTime(t, key.lastUsedAt, 'dense')
           : t('admin.developer.keys.neverUsed')}
       </span>
     ),
@@ -179,7 +178,7 @@ function keyRow(
 }
 
 function appRow(
-  t: Translate,
+  t: Translator,
   app: SmartApp,
   onOpen: (id: string) => void
 ): Record<string, ReactNode> {
@@ -196,7 +195,7 @@ function appRow(
     lastLaunch: (
       <span className="or-small">
         {app.lastLaunchAt
-          ? formatDateTime(app.lastLaunchAt, 'dense')
+          ? formatDateTime(t, app.lastLaunchAt, 'dense')
           : t('admin.developer.apps.neverLaunched')}
       </span>
     ),
@@ -215,7 +214,7 @@ function appRow(
 }
 
 function hookRow(
-  t: Translate,
+  t: Translator,
   hook: Webhook,
   onOpen: (id: string) => void
 ): Record<string, ReactNode> {
@@ -242,11 +241,11 @@ function hookRow(
   };
 }
 
-function deliveryRow(t: Translate, delivery: WebhookDelivery): Record<string, ReactNode> {
+function deliveryRow(t: Translator, delivery: WebhookDelivery): Record<string, ReactNode> {
   const { tone, labelKey } = DELIVERY_OUTCOME[delivery.outcome];
   return {
     id: delivery.id,
-    at: formatDateTime(delivery.at, 'dense'),
+    at: formatDateTime(t, delivery.at, 'dense'),
     event: delivery.event,
     code:
       delivery.responseCode === null
@@ -272,7 +271,7 @@ function LaunchHistory({ app }: Readonly<{ app: SmartApp }>): ReactElement {
     <ul className="or-log">
       {app.launches.map((launch) => (
         <li key={launch.id} className="or-log__row">
-          <span className="or-caption or-mono">{formatDateTime(launch.at, 'dense')}</span>
+          <span className="or-caption or-mono">{formatDateTime(t, launch.at, 'dense')}</span>
           <span className="or-small">
             {/* The detail line comes from the launch record; only the sentence
                 naming the patient context is this screen's to write. */}
@@ -360,7 +359,7 @@ function HookDetail({ hook }: Readonly<{ hook: Webhook }>): ReactElement {
           },
           {
             label: t('admin.developer.hooks.detail.created'),
-            value: formatDateTime(hook.createdAt, 'prose'),
+            value: formatDateTime(t, hook.createdAt, 'prose'),
           },
         ]}
       />

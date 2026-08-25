@@ -59,7 +59,7 @@ export function DuplicatePanel({
               <p className="or-small">
                 <span className="or-mono">{formatMrn(match.patient.mrn)}</span>
                 {' · '}
-                {formatDate(match.patient.birthDate)}
+                {formatDate(t, match.patient.birthDate)}
                 {' · '}
                 {formatAge(t, match.patient.birthDate, asOf)}
               </p>

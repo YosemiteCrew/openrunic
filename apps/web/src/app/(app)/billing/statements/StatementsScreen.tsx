@@ -218,7 +218,7 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
       statements: <span className="or-mono">{statementsSent}</span>,
       lastPayment: account.lastPaymentAt ? (
         <span className="or-claim-age">
-          <span>{formatDate(account.lastPaymentAt, 'dense')}</span>
+          <span>{formatDate(t, account.lastPaymentAt, 'dense')}</span>
           <span className="or-mono or-caption">
             {formatMoney(t, account.lastPaymentAmount ?? 0, { currency: account.currency }).text}
           </span>

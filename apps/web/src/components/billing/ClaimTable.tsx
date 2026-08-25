@@ -78,7 +78,7 @@ export function ClaimTable({
           <span className="or-mono or-caption">{formatMrn(claim.patient.mrn)}</span>
         </span>
       ),
-      serviceDate: formatDate(claim.serviceDate, 'prose'),
+      serviceDate: formatDate(t, claim.serviceDate, 'prose'),
       payer: claim.payer.name,
       billed: <Money amount={claim.billed} currency={claim.currency} />,
       status: (

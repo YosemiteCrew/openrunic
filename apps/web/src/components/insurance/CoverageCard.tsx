@@ -6,7 +6,7 @@ import { Badge, Button, Card, IconButton, Tag } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { CoveragePriority, MockCoverage, MockEligibilityResult } from '@/lib/api';
-import { formatDate, formatDateTime, formatMoney, NOT_RECORDED } from '@/lib/format';
+import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { presentEligibility, PRIORITY_COPY } from './eligibility';
@@ -41,7 +41,7 @@ export interface CoverageCardProps {
 
 /** A money field that has no value says so, rather than showing a zero. */
 function moneyText(t: Translator, amount: number | null | undefined): string {
-  if (amount === null || amount === undefined) return NOT_RECORDED;
+  if (amount === null || amount === undefined) return t('common.notRecorded');
   return formatMoney(t, amount).text;
 }
 
@@ -64,7 +64,7 @@ function CoverageFacts({
       </div>
       <div>
         <dt className="or-caption">{t('insurance.coverage.group')}</dt>
-        <dd className="or-mono">{coverage.groupNumber ?? NOT_RECORDED}</dd>
+        <dd className="or-mono">{coverage.groupNumber ?? t('common.notRecorded')}</dd>
       </div>
       <div>
         <dt className="or-caption">{t('insurance.coverage.subscriber')}</dt>
@@ -76,9 +76,9 @@ function CoverageFacts({
         <dt className="or-caption">{t('insurance.coverage.effective')}</dt>
         <dd>
           {t('insurance.coverage.effectiveRange', {
-            from: formatDate(coverage.effectiveFrom),
+            from: formatDate(t, coverage.effectiveFrom),
             to: coverage.effectiveTo
-              ? formatDate(coverage.effectiveTo)
+              ? formatDate(t, coverage.effectiveTo)
               : t('insurance.coverage.noEndDate'),
           })}
         </dd>
@@ -158,7 +158,7 @@ function EligibilityStatus({
         <p className="or-small">
           {coverage.lastVerifiedAt
             ? t('insurance.coverage.lastVerified', {
-                when: formatDateTime(coverage.lastVerifiedAt),
+                when: formatDateTime(t, coverage.lastVerifiedAt),
               })
             : t('insurance.coverage.neverVerified')}
         </p>
@@ -238,7 +238,7 @@ export function CoverageCard({
               /* One coverage cannot be checked twice in the same instant, so the
                  pair identifies the row even when the list is refiltered. */
               <li key={`${entry.coverageId}-${entry.checkedAt}`} className="or-small">
-                <span className="or-mono">{formatDateTime(entry.checkedAt)}</span>
+                <span className="or-mono">{formatDateTime(t, entry.checkedAt)}</span>
                 {' · '}
                 {t(presentEligibility(entry.outcome).labelKey)}
               </li>

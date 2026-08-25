@@ -166,7 +166,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                         }
                       </span>
                       <span className="or-caption">
-                        {formatDate(candidate.receivedAt, 'dense')}
+                        {formatDate(t, candidate.receivedAt, 'dense')}
                       </span>
                     </span>
                     {candidateSummary.exceptions > 0 ? (
@@ -218,7 +218,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                   </Tag>
                   <span className="or-small">
                     {t('billing.remittance.received', {
-                      date: formatDate(remittance.receivedAt),
+                      date: formatDate(t, remittance.receivedAt),
                     })}
                   </span>
                   <Tag mono>{remittance.payer.payerId}</Tag>

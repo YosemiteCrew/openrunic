@@ -51,7 +51,7 @@ export function Receipt({
 
   const rows = receiptRows(payment.allocations).map((allocation): Record<string, ReactNode> => ({
     id: allocation.id,
-    serviceDate: formatDate(allocation.serviceDate),
+    serviceDate: formatDate(t, allocation.serviceDate),
     description: allocation.description,
     allocated: <Money amount={allocation.allocated} currency={payment.currency} />,
   }));
@@ -98,7 +98,7 @@ export function Receipt({
             <dt>{t('billing.receipt.taken')}</dt>
             <dd>
               {t('billing.receipt.takenAtBy', {
-                at: formatDateTime(payment.takenAt),
+                at: formatDateTime(t, payment.takenAt),
                 by: payment.takenBy,
               })}
             </dd>

@@ -362,7 +362,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                   </Tag>
                   <Tag>
                     {t('admin.forms.updated', {
-                      when: formatDateTime(current.updatedAt, 'dense'),
+                      when: formatDateTime(t, current.updatedAt, 'dense'),
                       who: current.updatedBy,
                     })}
                   </Tag>

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, Input, Select, Switch, Table, Tag } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -275,11 +276,14 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
               items={[
                 {
                   label: t('admin.facilities.detail.providers'),
-                  value: String(selected.providerCount),
+                  value: formatCount(selected.providerCount, t.locale),
                 },
                 {
                   label: t('admin.facilities.detail.bookableMinutes'),
-                  value: selected.weeklyBookableMinutes.toLocaleString('en-US'),
+                  // `toLocaleString('en-US')` grouped this "1,200" for a Spanish
+                  // reader whose language writes "1.200", which is a different
+                  // number to them rather than a different style.
+                  value: formatCount(selected.weeklyBookableMinutes, t.locale),
                 },
               ]}
             />

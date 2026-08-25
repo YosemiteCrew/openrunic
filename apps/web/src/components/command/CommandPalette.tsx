@@ -120,7 +120,7 @@ function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) 
         <span className="or-palette__hint">
           <span className="or-mono">{formatMrn(patient.mrn)}</span>
           <span aria-hidden="true"> | </span>
-          <span>{t('shell.palette.born', { date: formatDate(patient.birthDate) })}</span>
+          <span>{t('shell.palette.born', { date: formatDate(t, patient.birthDate) })}</span>
         </span>
       ),
     }));

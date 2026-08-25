@@ -213,7 +213,7 @@ export function DayRail({
 
       <Card
         overline={t('schedule.dayRail.selectedOverline')}
-        title={selected ? formatTime(selected.start) : t('schedule.dayRail.noVisitSelected')}
+        title={selected ? formatTime(t, selected.start) : t('schedule.dayRail.noVisitSelected')}
       >
         {selected ? (
           <SelectedVisit

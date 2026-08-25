@@ -73,7 +73,7 @@ export function FlowCard({
     <article className="or-flow-card" data-tier={tier} data-done={status.done || undefined}>
       <header className="or-flow-card__head">
         <h4 className="or-flow-card__name">{name}</h4>
-        <span className="or-mono or-flow-card__time">{formatTime(appointment.start)}</span>
+        <span className="or-mono or-flow-card__time">{formatTime(t, appointment.start)}</span>
       </header>
 
       <p className="or-caption or-flow-card__meta">

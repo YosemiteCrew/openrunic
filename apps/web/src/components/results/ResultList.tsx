@@ -144,7 +144,7 @@ export function ResultList({
               <span className="or-small or-result-row__headline">{headline(t, report)}</span>
               <span className="or-small or-muted">
                 {t('results.row.reported', {
-                  at: formatDateTime(report.reportedAt, 'dense'),
+                  at: formatDateTime(t, report.reportedAt, 'dense'),
                   performer: report.performer,
                 })}
               </span>

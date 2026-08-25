@@ -96,8 +96,8 @@ export function BookingModal({
       width={560}
       title={t('schedule.booking.title')}
       description={t('schedule.booking.description', {
-        start: formatTime(slot.start),
-        end: formatTime(slot.end),
+        start: formatTime(t, slot.start),
+        end: formatTime(t, slot.end),
         provider: providerName,
       })}
       onClose={onCancel}

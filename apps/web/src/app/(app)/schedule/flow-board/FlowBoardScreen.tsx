@@ -288,7 +288,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
            one, which folding it into the message would take away. */
         <p className="or-small or-flow-sync">
           {t('schedule.flowBoard.lastRead')}{' '}
-          <span className="or-mono">{formatTime(now.toISOString())}</span>
+          <span className="or-mono">{formatTime(t, now.toISOString())}</span>
         </p>
       }
       actions={

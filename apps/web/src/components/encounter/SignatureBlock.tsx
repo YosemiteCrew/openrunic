@@ -49,7 +49,7 @@ export function SignatureBlock({
         </div>
         <div className="or-signature__pair">
           <dt className="or-overline">{t('encounter.signature.signedAt')}</dt>
-          <dd className="or-body">{formatDateTime(signature.signedAt)}</dd>
+          <dd className="or-body">{formatDateTime(t, signature.signedAt)}</dd>
         </div>
         <div className="or-signature__pair">
           <dt className="or-overline">{t('encounter.signature.fingerprint')}</dt>
@@ -67,7 +67,7 @@ export function SignatureBlock({
                 <p className="or-body or-signature__addendum-text">{addendum.text}</p>
                 <p className="or-caption">
                   {formatCredentialed(addendum.authorName, addendum.credential)},{' '}
-                  {formatDateTime(addendum.addedAt)}
+                  {formatDateTime(t, addendum.addedAt)}
                 </p>
               </li>
             ))}

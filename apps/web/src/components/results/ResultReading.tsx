@@ -89,7 +89,7 @@ export function ResultReading({
               <span className="or-small">
                 {signed
                   ? t('results.reading.signedAtBy', {
-                      at: formatDateTime(signed.at, 'dense'),
+                      at: formatDateTime(t, signed.at, 'dense'),
                       clinician: mockProviderName(report.orderedBy),
                     })
                   : t('results.reading.signedBy', {
@@ -123,7 +123,7 @@ export function ResultReading({
                   identity line is translated on either side of it rather than
                   as one message. */}
               <span className="or-mono">{formatMrn(patient.mrn)}</span>
-              {t('results.reading.born', { birthDate: formatDate(patient.birthDate) })}
+              {t('results.reading.born', { birthDate: formatDate(t, patient.birthDate) })}
             </>
           ) : null}
         </p>
@@ -131,8 +131,8 @@ export function ResultReading({
           <ResultFlagBadge flag={report.flag} />
           <span className="or-small">
             {t('results.reading.collected', {
-              collected: formatDateTime(report.collectedAt, 'dense'),
-              reported: formatDateTime(report.reportedAt, 'dense'),
+              collected: formatDateTime(t, report.collectedAt, 'dense'),
+              reported: formatDateTime(t, report.reportedAt, 'dense'),
               performer: report.performer,
             })}
           </span>
@@ -140,7 +140,7 @@ export function ResultReading({
         <p className="or-small or-muted">
           {t('results.reading.orderedBy', {
             clinician: mockProviderName(report.orderedBy),
-            today: formatDate(now),
+            today: formatDate(t, now),
           })}
         </p>
       </div>
@@ -198,7 +198,7 @@ function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode>
             .map((prior) =>
               t('results.reading.prior', {
                 value: prior.value,
-                at: formatDate(prior.at, 'dense'),
+                at: formatDate(t, prior.at, 'dense'),
               })
             )
             .join(', ')

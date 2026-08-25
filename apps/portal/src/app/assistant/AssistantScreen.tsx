@@ -92,7 +92,12 @@ function ConfiguredAssistant({ api, capabilities }: Readonly<ConfiguredAssistant
 
       <ServiceLine capabilities={capabilities} />
 
-      <AsyncBoundary state={state} what="your record" onRetry={reload}>
+      <AsyncBoundary
+        state={state}
+        loadingKey="portal.assistant.async.loading"
+        errorKey="portal.assistant.async.error"
+        onRetry={reload}
+      >
         {(patient) => <Conversation capabilities={capabilities} chartPatientId={patient.id} />}
       </AsyncBoundary>
     </>

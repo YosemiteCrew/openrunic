@@ -166,7 +166,8 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
 
       <AsyncBoundary
         state={state}
-        what="your statements"
+        loadingKey="portal.bills.async.loading"
+        errorKey="portal.bills.async.error"
         onRetry={reload}
         isEmpty={(statements) => statements.length === 0}
         empty={

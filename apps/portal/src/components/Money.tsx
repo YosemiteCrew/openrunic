@@ -27,7 +27,7 @@ export function Money({ value, showCode = false }: Readonly<MoneyProps>) {
       <span className="portal-money__figure">
         {showCode ? formatMoneyWithCode(t, value) : formatMoney(t, value)}
       </span>
-      {isCredit ? <span className="portal-money__credit">credit</span> : null}
+      {isCredit ? <span className="portal-money__credit">{t('portal.money.credit')}</span> : null}
     </span>
   );
 }

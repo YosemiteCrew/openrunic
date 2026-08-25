@@ -109,7 +109,12 @@ export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreen
         lede="Read what your care team has written and reply. This is not the way to get help quickly."
       />
 
-      <AsyncBoundary state={state} what="your messages" onRetry={reload}>
+      <AsyncBoundary
+        state={state}
+        loadingKey="portal.messages.async.loading"
+        errorKey="portal.messages.async.error"
+        onRetry={reload}
+      >
         {(threads) => {
           /* Falling back to the first thread rather than syncing state in an effect: the
              selection is derived from the data, so it never needs a second render to

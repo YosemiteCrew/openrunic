@@ -18,9 +18,12 @@ import { describe, expect, it } from 'vitest';
  * asks for, and every one has to be in the catalogue.
  *
  * The scan is deliberately literal, and it looks for the two shapes this
- * codebase actually uses: a direct `t('some.key')` call, and a `somethingKey:
- * 'some.key'` property, which is how the navigation table and the downtime copy
- * carry keys as data so the words stay reviewable in one place.
+ * codebase actually uses: a direct `t('some.key')` call, and a property whose
+ * name ends in `Key`, which is how the navigation table, the downtime copy and
+ * the portal's async boundary carry keys as data so the words stay reviewable
+ * in one place. That property is written with a colon in an object literal and
+ * with an equals sign as a JSX attribute, and Prettier quotes the second one
+ * with double quotes, so both spellings count.
  *
  * A key assembled at runtime is invisible to both. That is a reason not to
  * assemble keys at runtime rather than a reason for a cleverer regex: a key a
@@ -79,9 +82,9 @@ const KEY_CALL = new RegExp(
   'gu'
 );
 
-/** `labelKey: 'key'`, `titleKey: 'key'`, and the rest of the same shape. */
+/** `labelKey: 'key'` and `loadingKey="key"`, and the rest of the same shape. */
 const KEY_PROPERTY = new RegExp(
-  String.raw`\b[a-zA-Z]*Key\s*:\s*(?<quote>['"])(?<key>${KEY})\k<quote>`,
+  String.raw`\b[a-zA-Z]*Key\s*[:=]\s*(?<quote>['"])(?<key>${KEY})\k<quote>`,
   'gu'
 );
 
@@ -134,6 +137,23 @@ describe('the catalogue and the code agree', () => {
     expect(keysUsed().size).toBeGreaterThan(10);
   });
 
+  it('sees a key property written either way round', () => {
+    /*
+     * The coarse guard above would still pass if the scan had stopped seeing
+     * one of the two spellings, because the other one accounts for hundreds of
+     * keys. A JSX attribute is the spelling that would go quiet: it arrives
+     * with an equals sign and the double quotes Prettier puts there, and it is
+     * the newer of the two, so it is the one a tightened regex would drop.
+     */
+    const matched = (source: string): string | undefined =>
+      [...source.matchAll(KEY_PROPERTY)][0]?.groups?.['key'];
+
+    expect(matched(`labelKey: 'nav.patients'`)).toBe('nav.patients');
+    expect(matched(`<AsyncBoundary loadingKey="portal.bills.async.loading" />`)).toBe(
+      'portal.bills.async.loading'
+    );
+  });
+
   it('defines every key the application asks for', () => {
     const missing = [...keysUsed().entries()]
       .filter(([key]) => SOURCE_MESSAGES[key] === undefined)
@@ -160,8 +180,11 @@ describe('the catalogue and the code agree', () => {
      * all - and gets a true answer for every shape.
      */
     const sources = allSourceFiles().map((path) => readFileSync(path, 'utf8'));
+    // Either quote, because a key passed as a JSX attribute is written with the
+    // double quotes Prettier puts there rather than the single quotes the rest
+    // of the codebase uses.
     const orphaned = Object.keys(SOURCE_MESSAGES).filter(
-      (key) => !sources.some((text) => text.includes(`'${key}'`))
+      (key) => !sources.some((text) => text.includes(`'${key}'`) || text.includes(`"${key}"`))
     );
 
     expect(orphaned).toStrictEqual([]);

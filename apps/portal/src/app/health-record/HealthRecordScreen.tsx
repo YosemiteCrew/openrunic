@@ -115,7 +115,8 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
 
       <AsyncBoundary
         state={state}
-        what="your health record"
+        loadingKey="portal.healthRecord.async.loading"
+        errorKey="portal.healthRecord.async.error"
         onRetry={reload}
         isEmpty={isRecordEmpty}
         empty={

@@ -162,6 +162,9 @@ importers:
 
   apps/portal:
     dependencies:
+      '@openrunic/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@openrunic/ui':
         specifier: workspace:*
         version: link:../../packages/ui

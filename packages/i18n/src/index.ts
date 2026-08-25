@@ -26,6 +26,8 @@ export { appCatalogue, en, es, isSupportedLocale, SUPPORTED_LOCALES } from './ca
 
 export { LOCALE_COOKIE, localeFrom, readLocaleCookie } from './choice.js';
 
+export { counted, searchWords, type CountedMessage } from './counted.js';
+
 export {
   createTranslator,
   negotiateLocale,

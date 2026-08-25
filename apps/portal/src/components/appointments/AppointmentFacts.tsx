@@ -13,17 +13,26 @@
  * copies of the list.
  */
 
+import type { Translator } from '@openrunic/i18n';
+
 import type { Appointment } from '@/lib/api/types';
 import { formatDateTime, formatDuration } from '@/lib/format';
 
 export interface AppointmentFactsProps {
   appointment: Appointment;
+  /**
+   * The reader's translator. A prop rather than a hook because this file is not
+   * a client module of its own: both screens that render it are, and passing it
+   * keeps that true rather than pulling a second directive into the tree.
+   */
+  t: Translator;
   /** What the "Where" line says for a video appointment. */
   videoLocation?: string;
 }
 
 export function AppointmentFacts({
   appointment,
+  t,
   videoLocation = 'A video call',
 }: Readonly<AppointmentFactsProps>) {
   return (
@@ -31,7 +40,8 @@ export function AppointmentFacts({
       <div className="portal-data-list__row">
         <dt className="portal-data-list__term">When</dt>
         <dd className="portal-data-list__value">
-          {formatDateTime(appointment.startsAt)}, {formatDuration(appointment.durationMinutes)}
+          {formatDateTime(t, appointment.startsAt)},{' '}
+          {formatDuration(t, appointment.durationMinutes)}
         </dd>
       </div>
       <div className="portal-data-list__row">

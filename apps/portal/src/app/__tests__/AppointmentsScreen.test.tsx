@@ -12,8 +12,8 @@ describe('AppointmentsScreen', () => {
     const upcoming = await screen.findByRole('region', { name: 'Upcoming appointments' });
     const past = screen.getByRole('region', { name: 'Past appointments' });
 
-    expect(within(upcoming).getByText(/Thursday, 3 September 2026 at 09:30/)).toBeInTheDocument();
-    expect(within(past).getByText(/Thursday, 11 June 2026 at 11:15/)).toBeInTheDocument();
+    expect(within(upcoming).getByText(/Thursday, September 3, 2026 at 09:30/)).toBeInTheDocument();
+    expect(within(past).getByText(/Thursday, June 11, 2026 at 11:15/)).toBeInTheDocument();
   });
 
   it('descends the outline one level at a time from the page heading', async () => {

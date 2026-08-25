@@ -14,6 +14,7 @@ import { inbox } from './inbox.js';
 import { insurance } from './insurance.js';
 import { marketing } from './marketing.js';
 import { nav } from './nav.js';
+import { portal } from './portal.js';
 import { orders } from './orders.js';
 import { patients } from './patients.js';
 import { reports } from './reports.js';
@@ -100,6 +101,7 @@ export const enAreas: Readonly<Record<string, Messages>> = {
   assistant,
   reports,
   admin,
+  portal,
   common,
 };
 

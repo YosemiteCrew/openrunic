@@ -31,7 +31,7 @@ describe('HomeScreen', () => {
       await screen.findByRole('heading', { level: 2, name: 'Thyroid review' })
     ).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByText(/Thursday, 3 September 2026 at 09:30/)).toBeInTheDocument();
+    expect(screen.getByText(/Thursday, September 3, 2026 at 09:30/)).toBeInTheDocument();
     expect(screen.getByText(/Dr. Okafor, Endocrinology/)).toBeInTheDocument();
   });
 
@@ -39,7 +39,7 @@ describe('HomeScreen', () => {
     render(<HomeScreen api={stubApi()} />);
 
     expect(await screen.findByText('£84.50 GBP')).toBeInTheDocument();
-    expect(screen.getByText(/Due by 15 September 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Due by September 15, 2026/)).toBeInTheDocument();
     expect(screen.getByText('1 message you have not read.')).toBeInTheDocument();
     expect(screen.getByText('Before your thyroid review')).toBeInTheDocument();
   });

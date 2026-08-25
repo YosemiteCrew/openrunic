@@ -9,6 +9,7 @@ import { downtime } from './downtime.js';
 import { inbox } from './inbox.js';
 import { marketing } from './marketing.js';
 import { nav } from './nav.js';
+import { portal } from './portal.js';
 import { reports } from './reports.js';
 import { schedule } from './schedule.js';
 import { shell } from './shell.js';
@@ -68,6 +69,7 @@ export const esAreas: Readonly<Record<string, Messages>> = {
   admin,
   inbox,
   reports,
+  portal,
   common,
 };
 

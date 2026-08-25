@@ -16,6 +16,7 @@ import { Notice } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
 import type { MessageThread, PortalApi } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDateTime } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
@@ -29,6 +30,7 @@ interface ConversationProps {
 }
 
 function Conversation({ thread, api }: Readonly<ConversationProps>) {
+  const t = useTranslator();
   const [draft, setDraft] = useState('');
   const send = useAction((body: string) => api.sendMessage(thread.id, body));
 
@@ -44,7 +46,7 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
         {thread.messages.map((message) => (
           <li className={`portal-message portal-message--${message.author}`} key={message.id}>
             <p className="portal-message__who">
-              {message.authorName}, {formatDateTime(message.sentAt)}
+              {message.authorName}, {formatDateTime(t, message.sentAt)}
             </p>
             <p className="portal-message__body">{message.body}</p>
           </li>
@@ -94,6 +96,7 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
 }
 
 export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getThreads(), [api]);
   const { state, reload } = useAsync(load);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -142,7 +145,7 @@ export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreen
                           {thread.unread ? <Badge tone="accent">Unread</Badge> : null}
                         </span>
                         <span className="portal-thread-button__meta">
-                          {thread.correspondent}, {formatDateTime(thread.lastMessageAt)}
+                          {thread.correspondent}, {formatDateTime(t, thread.lastMessageAt)}
                         </span>
                       </button>
                     </li>

@@ -8,7 +8,7 @@
 
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RootLayout, { metadata as layoutMetadata } from '@/app/layout';
 import HomePage, { metadata as homeMetadata } from '@/app/page';
 import AppointmentsPage, { metadata as appointmentsMetadata } from '@/app/appointments/page';
@@ -29,6 +29,19 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+/**
+ * The layout reads the request to decide what language to render in, so a test
+ * has to say what the request said. Mutable, and reset between tests, so one can
+ * arrive as a reader who chose Spanish.
+ */
+let requestHeaders = new Headers();
+
+vi.mock('next/headers', () => ({ headers: () => Promise.resolve(requestHeaders) }));
+
+beforeEach(() => {
+  requestHeaders = new Headers();
+});
+
 describe('RootLayout', () => {
   it('titles the portal and describes it in plain words', () => {
     expect(layoutMetadata.title).toMatchObject({ default: 'Patient portal' });
@@ -37,15 +50,33 @@ describe('RootLayout', () => {
     );
   });
 
-  it('renders its children in a document declared as English', () => {
+  it('renders its children in a document declared as the language it resolved', async () => {
+    /*
+     * `await RootLayout(...)` rather than rendering the component, because it is
+     * a server component now: the reader's language has to be known before the
+     * first byte, so the layout reads the request. That is what the framework
+     * does, and it is the only way to render one from a test.
+     *
+     * `lang` used to be the literal `en`. It follows the resolved locale now,
+     * which is what tells assistive technology the truth about a page that has
+     * become Spanish.
+     */
     render(
-      <RootLayout>
-        <p>Screen content</p>
-      </RootLayout>
+      await RootLayout({
+        children: <p>Screen content</p>,
+      })
     );
 
     expect(screen.getByText('Screen content')).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute('lang', 'en');
+  });
+
+  it('declares the language the reader chose, not the one the source is in', async () => {
+    requestHeaders = new Headers({ cookie: 'or_locale=es' });
+
+    render(await RootLayout({ children: <p>Contenido</p> }));
+
+    expect(document.documentElement).toHaveAttribute('lang', 'es');
   });
 });
 

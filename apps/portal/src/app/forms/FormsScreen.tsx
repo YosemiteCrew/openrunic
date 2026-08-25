@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { ProgressMeter } from '@/components/ProgressMeter';
 import { getPortalApi } from '@/lib/api';
 import type { FormQuestion, FormStatus, FormTask, PortalApi } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDate, formatProgress } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
@@ -83,6 +84,7 @@ interface QuestionnaireProps {
 }
 
 function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
+  const t = useTranslator();
   const [answers, setAnswers] = useState<Record<string, string>>(task.answers);
   const save = useAction((next: Record<string, string>) => api.saveForm(task.id, next));
   const submit = useAction((next: Record<string, string>) => api.submitForm(task.id, next));
@@ -114,7 +116,7 @@ function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
 
       <ProgressMeter
         done={answered}
-        label={formatProgress(answered, task.questions.length)}
+        label={formatProgress(t, answered, task.questions.length)}
         total={task.questions.length}
       />
 
@@ -164,6 +166,7 @@ function Questionnaire({ task, api, onClose }: Readonly<QuestionnaireProps>) {
 }
 
 export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getForms(), [api]);
   const { state, reload } = useAsync(load);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -203,7 +206,7 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
               {forms.map((form) => (
                 <Card
                   key={form.id}
-                  overline={`Needed by ${formatDate(form.dueOn)}`}
+                  overline={`Needed by ${formatDate(t, form.dueOn)}`}
                   title={form.title}
                 >
                   <p className="or-body">{form.purpose}</p>

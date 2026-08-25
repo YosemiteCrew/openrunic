@@ -84,7 +84,6 @@ export const portal: Messages = {
   'portal.home.title': 'Home',
   'portal.home.lede':
     'What needs your attention today. Everything else is in the sections around this page.',
-  'portal.home.subject': 'your home summary',
   'portal.home.empty.title': 'Nothing needs your attention.',
   'portal.home.empty.message':
     'Your appointments, health record, messages and bills are all still here whenever you want them.',
@@ -141,4 +140,101 @@ export const portal: Messages = {
   'portal.assistant.page.title': 'Assistant',
   'portal.assistant.page.description':
     'Ask a question about what your care team has written down, and see the records each answer came from.',
+  /*
+   * THE THREE STATES EVERY READ CAN BE IN.
+   *
+   * Two whole sentences per screen rather than one noun phrase the component
+   * drops into a frame. The frame fixed English word order, and capitalising
+   * the phrase for the error title was an English rule living in shared code.
+   */
+  'portal.async.error.message':
+    'Check your connection, then try again. If it keeps failing, message your care team.',
+  'portal.async.retry': 'Try again',
+  'portal.home.async.loading': 'Loading your home summary.',
+  'portal.home.async.error': 'Your home summary did not load.',
+  'portal.appointments.async.loading': 'Loading your appointments.',
+  'portal.appointments.async.error': 'Your appointments did not load.',
+  'portal.healthRecord.async.loading': 'Loading your health record.',
+  'portal.healthRecord.async.error': 'Your health record did not load.',
+  'portal.messages.async.loading': 'Loading your messages.',
+  'portal.messages.async.error': 'Your messages did not load.',
+  'portal.forms.async.loading': 'Loading your forms.',
+  'portal.forms.async.error': 'Your forms did not load.',
+  'portal.bills.async.loading': 'Loading your statements.',
+  'portal.bills.async.error': 'Your statements did not load.',
+  'portal.assistant.async.loading': 'Loading your record.',
+  'portal.assistant.async.error': 'Your record did not load.',
+
+  /*
+   * MONEY.
+   *
+   * A negative amount is money owed back to the patient, so it renders as a
+   * positive figure with this word beside it.
+   */
+  'portal.money.credit': 'credit',
+
+  /*
+   * ONE APPOINTMENT, AS THE WHEN, THE WHO AND THE WHERE.
+   *
+   * The two-part values are messages rather than pieces joined with a comma in
+   * code, because which part comes first is a decision each language makes.
+   */
+  'portal.appointment.when': 'When',
+  'portal.appointment.whenValue': '{dateTime}, {duration}',
+  'portal.appointment.whoWith': 'Who with',
+  'portal.appointment.whoWithValue': '{clinician}, {department}',
+  'portal.appointment.where': 'Where',
+  'portal.appointment.videoDefault': 'A video call',
+  'portal.appointment.roomUnconfirmed': 'The practice will confirm the room.',
+
+  /*
+   * THE APPOINTMENTS SCREEN.
+   *
+   * Cancelling takes two steps and the second one says what cancelling costs.
+   * The consequence is one message rather than three clauses assembled around
+   * the appointment's own details.
+   */
+  'portal.appointments.overline': 'Your visits',
+  'portal.appointments.title': 'Appointments',
+  'portal.appointments.lede':
+    'What is booked, what has already happened, and how to ask for a change.',
+  'portal.appointments.request': 'Request an appointment',
+  'portal.appointments.requested':
+    'Your request has gone to the practice. They will confirm by message. Nothing is booked until they do.',
+  'portal.appointments.cancelFailed':
+    'The appointment was not cancelled and is still booked. Check your connection, then try again.',
+  'portal.appointments.empty.title': 'You have no appointments.',
+  'portal.appointments.empty.message':
+    'Request one and the practice will confirm a time by message.',
+  'portal.appointments.upcoming.label': 'Upcoming appointments',
+  'portal.appointments.upcoming.heading': 'Upcoming',
+  'portal.appointments.upcoming.none': 'You have nothing booked.',
+  'portal.appointments.past.label': 'Past appointments',
+  'portal.appointments.past.heading': 'Past',
+  'portal.appointments.past.none': 'You have no past appointments on record.',
+  'portal.appointments.mode.video': 'Video call',
+  'portal.appointments.mode.inPerson': 'In person',
+  'portal.appointments.mode.past': 'Past',
+  'portal.appointments.join': 'Join the video call',
+  'portal.appointments.directions': 'Get directions',
+  'portal.appointments.move': 'Ask to move it',
+  'portal.appointments.cancel': 'Cancel',
+  'portal.appointments.cancelledBadge': 'Cancelled',
+  'portal.appointments.cancelDialog.title': 'Cancel this appointment?',
+  'portal.appointments.cancelDialog.description':
+    'This would cancel {reason} with {clinician} on {when}. The slot goes to someone else, and to be seen you would have to request a new appointment. The next opening may be weeks later.',
+  'portal.appointments.cancelDialog.keep': 'Keep the appointment',
+  'portal.appointments.cancelDialog.confirm': 'Cancel the appointment',
+  'portal.appointments.requestDialog.title': 'Request an appointment',
+  'portal.appointments.requestDialog.rescheduleTitle': 'Ask to move this appointment',
+  'portal.appointments.requestDialog.description':
+    'This goes to the practice as a request. They will confirm a time by message. Nothing is booked until they do.',
+  'portal.appointments.requestDialog.close': 'Close without sending',
+  'portal.appointments.requestDialog.send': 'Send the request',
+  'portal.appointments.requestDialog.reason.label': 'What do you need to be seen about?',
+  'portal.appointments.requestDialog.reason.hint': 'A short line is enough.',
+  'portal.appointments.requestDialog.times.label': 'When can you come?',
+  'portal.appointments.requestDialog.times.hint': 'For example, weekday mornings.',
+  'portal.appointments.requestDialog.failed':
+    'Your request did not send, and what you typed is still here. Check your connection, then send it again.',
 };

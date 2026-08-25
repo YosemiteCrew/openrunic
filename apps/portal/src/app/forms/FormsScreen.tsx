@@ -181,7 +181,8 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
 
       <AsyncBoundary
         state={state}
-        what="your forms"
+        loadingKey="portal.forms.async.loading"
+        errorKey="portal.forms.async.error"
         onRetry={reload}
         isEmpty={(forms) => forms.length === 0}
         empty={

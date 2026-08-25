@@ -118,7 +118,8 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
 
       <AsyncBoundary
         state={state}
-        what={t('portal.home.subject')}
+        loadingKey="portal.home.async.loading"
+        errorKey="portal.home.async.error"
         onRetry={reload}
         isEmpty={hasNothingToShow}
         empty={

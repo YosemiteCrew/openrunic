@@ -14,7 +14,15 @@ import type { Messages } from '../../catalogue.js';
  */
 export const shell: Messages = {
   'shell.skipToContent': 'Skip to content',
-  'shell.mainNavigation': 'Main navigation',
+  /*
+   * There is no `shell.mainNavigation`. It was written for the `<nav>` in
+   * `SideNav`, which hardcodes `aria-label="Primary"` - and which also hardcodes
+   * "Menu", "Close" and the brand's alt text. Translating one of four English
+   * strings in a component reads as finished and is not, so the whole of that
+   * component is one job rather than a corner of this catalogue, filed as #196.
+   * `shell.breadcrumb` below is here because that `<nav>` is in `apps/web` and
+   * does take a label.
+   */
   'shell.breadcrumb': 'Breadcrumb',
   'shell.signOut': 'Sign out',
   'shell.signedInAs': 'Signed in as {name}',

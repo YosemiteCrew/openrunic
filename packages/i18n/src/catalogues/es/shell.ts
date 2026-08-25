@@ -11,7 +11,6 @@ import type { Messages } from '../../catalogue.js';
  */
 export const shell: Messages = {
   'shell.skipToContent': 'Saltar al contenido',
-  'shell.mainNavigation': 'Navegación principal',
   'shell.breadcrumb': 'Ruta de navegación',
   'shell.signOut': 'Cerrar sesión',
   'shell.signedInAs': 'Sesión iniciada como {name}',

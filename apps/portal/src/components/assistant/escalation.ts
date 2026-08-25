@@ -75,41 +75,66 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bam i (ok|okay|alright|dying|ill)\b/,
   ],
   /*
-   * Spanish. Written against the folded form, so no accents appear here: the
-   * normaliser below turns "qué" into "que" and "años" into "anos" before any
-   * of these are tried.
+   * Spanish.
    *
-   * "debo" and "tengo que" are the two ways this speech act is ordinarily put,
-   * and "puedo dejar" covers the one that matters most - somebody asking
-   * whether to stop a medicine. The verb-and-adjective pattern mirrors the
-   * English one and reads nothing in between for the same reason.
-   */
-  /*
-   * Spanish. Written against the folded form, so no accents appear here: the
-   * normaliser below turns "qué" into "que" and "años" into "anos" before any
-   * of these are tried.
+   * Written against the folded form, so no accents appear here: the normaliser
+   * below turns "qué" into "que" and "años" into "anos" before any of these are
+   * tried.
    *
-   * Several of these are narrower than their English counterparts, and each
-   * time for the same reason: the Spanish word does two jobs and only one of
-   * them is a request for a judgement.
+   * `deberia` is the ordinary way to put this speech act, the way "should I" is
+   * in English. `debo` and `tengo que` are the obligation forms of the same
+   * request. None of the three is exceptional; they are three moods of one
+   * thing, and a maintainer adding a fourth should treat them as a set.
+   *
+   * Several of these are narrower than their English counterparts, and each time
+   * for the same reason: the Spanish word does two jobs and only one of them is
+   * a request for a judgement. Each would otherwise fire on one of the three
+   * things the intro copy tells a patient this page is for.
    *
    * - `debo` is both "I should" and "I owe", so it counts only in front of an
-   *   infinitive. "¿Cuánto debo?" is a question about a balance and this screen
-   *   invites it by name.
-   * - `diagnóstico` is the noun the health record uses for a condition, so only
-   *   the verb forms count. "¿Qué diagnósticos tengo?" is asking for a list of
-   *   rows.
+   *   infinitive. That keeps "¿Cuánto debo?" answerable, and this screen
+   *   invites that question by name. It does **not** disambiguate the verb:
+   *   "¿Cuánto debo pagar?" is a balance and is redirected, because "pagar" is
+   *   an infinitive like any other. That is an accepted false match on the
+   *   terms below, not an invariant to build on. `deberia` is left broad
+   *   instead, for the same reason.
+   * - `diagnostic-` is the noun the health record uses for a condition, so only
+   *   the verb forms count. "¿Qué diagnósticos tengo?" asks for a list of rows.
    * - `necesito` in front of a bare verb is usually "I need to see my bill", so
    *   only the forms that ask somebody to act count.
-   * - `qué tengo` is "what is wrong with me" only when nothing follows it.
+   * - `que tengo` is "what is wrong with me" only when nothing follows it.
    *   "¿Qué tengo pendiente de pago?" is a balance again.
    *
-   * A false match is cheap, per the note at the top of this file. These four
-   * are narrowed anyway because each would fire on one of the three things the
-   * intro copy tells a patient to ask about.
+   * `tengo que` is deliberately **not** narrowed, and the reasoning is worth
+   * keeping because the obvious narrowing is wrong. An earlier version read it
+   * as a record question whenever an interrogative introduced it, on the
+   * strength of "¿Qué tengo que pagar?" being a balance. But "¿Qué tengo que
+   * hacer?" is the plainest way there is to ask somebody to decide, and it is
+   * introduced by the same word. The interrogative does not carry the
+   * distinction; the verb after it does, and enumerating verbs is how this
+   * becomes the list of things to worry about that the note at the top forbids.
+   *
+   * `deberia` is left broad for the same reason, and the counterexample is
+   * worth naming because it is real: "¿Cuánto debería pagar según mi factura?"
+   * is a question about a balance and it is redirected. The conditional is not
+   * purely the advice mood, so narrowing it would mean deciding which verbs and
+   * objects make an amount question - the enumeration the paragraph above rules
+   * out, on the mood where the advice reading is strongest. The natural ways to
+   * ask that question are "¿Cuánto debo?" and "¿Cuánto tengo que pagar?", and
+   * the first is answered from the record.
+   *
+   * So it stays broad and "¿Qué tengo que pagar?" is redirected, which is the
+   * trade the note at the top already describes. A false match sends somebody
+   * to their care team and is never the wrong place; a miss leaves a health
+   * question with the inference endpoint. Narrowing traded the cheap failure
+   * for the expensive one.
    */
   es: [
-    /\bdebo [a-z]+r(me|te|lo|la|se|los|las|nos)?\b/,
+    /* Two clitic slots, because Spanish stacks them: "tomármelo" is
+       tomar + me + lo and folds to "tomarmelo". One slot caught
+       "tomarme" and "tomarlo" and missed the compound. */
+    /\bdebo [a-z]+r(me|te|se|nos|os)?(lo|la|los|las|le|les)?\b/,
+    /\bdeberia\b/,
     /\btengo que\b/,
     /\bnecesito (que me|ir)\b/,
     /\bpuedo (dejar|empezar|tomar|saltarme|doblar|cambiar|parar)\b/,

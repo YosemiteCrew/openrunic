@@ -55,6 +55,12 @@ describe('questions that are for a person', () => {
 
   it.each([
     '¿Debo dejar de tomar las pastillas?',
+    '¿Debería dejar de tomar las pastillas?',
+    '¿Debería tomar este medicamento?',
+    '¿Debo tomármelo?',
+    '¿Debo tomarlo con comida?',
+    '¿Qué debería hacer?',
+    '¿Qué tengo que hacer?',
     '¿Tengo que venir a la consulta?',
     '¿Es normal este resultado?',
     '¿Son normales mis análisis?',
@@ -95,6 +101,58 @@ describe('questions that are for a person', () => {
      * patient this page is for.
      */
     expect(needsCareTeam(question)).toBe(false);
+  });
+
+  it.each([
+    '¿Qué tengo que pagar?',
+    '¿Cuándo tengo que venir a la consulta?',
+    '¿Cuánto debería pagar según mi factura?',
+    '¿Cuánto debo pagar?',
+  ])('accepts redirecting %j rather than risk missing a request for advice', (question) => {
+    /*
+     * These two are balances and appointments, and they are redirected. That
+     * is deliberate and it is the trade the note at the top of the module
+     * describes.
+     *
+     * An earlier version read `tengo que` as a record question whenever an
+     * interrogative introduced it, which answered both of these. It also lost
+     * "¿Qué tengo que hacer?", which is the plainest way there is to ask
+     * somebody to decide and is introduced by the same word. The
+     * interrogative does not carry the distinction; the verb after it does,
+     * and enumerating verbs is how this becomes the list of things to worry
+     * about that the module forbids.
+     *
+     * The third is the same trade on `deberia`. The conditional is not
+     * purely the advice mood - that one is genuinely about a balance - but
+     * narrowing it would mean deciding which verbs and objects make an
+     * amount question, on the mood where the advice reading is strongest.
+     * The natural phrasings, "¿Cuánto debo?" and "¿Cuánto tengo que
+     * pagar?", are covered by the case below and by the balance test.
+     *
+     * A false match sends somebody to their care team, which is never the
+     * wrong place. A miss leaves a health question with the inference
+     * endpoint. Narrowing traded the cheap failure for the expensive one.
+     */
+    expect(needsCareTeam(question)).toBe(true);
+  });
+
+  it('keeps the balance question this screen invites by name', () => {
+    /*
+     * `debo` still needs an infinitive after it, which is a narrowing the
+     * interrogative argument above does not apply to: "¿Cuánto debo?" with
+     * nothing following is a balance outright, not an obligation phrased as
+     * one, so there is no advice reading to lose.
+     */
+    expect(needsCareTeam('¿Cuánto debo?')).toBe(false);
+    expect(needsCareTeam('¿Debo dejar de tomar las pastillas?')).toBe(true);
+
+    /*
+     * The infinitive keeps the bare balance question answerable. It does not
+     * disambiguate the verb: "pagar" is an infinitive like any other, so
+     * "¿Cuánto debo pagar?" is a balance that gets redirected. Asserted here so
+     * the narrowing is not mistaken for an invariant.
+     */
+    expect(needsCareTeam('¿Cuánto debo pagar?')).toBe(true);
   });
 
   it('folds accents rather than deleting the letters under them', () => {

@@ -1,11 +1,15 @@
 import type { Metadata } from 'next';
+
+import { pageMetadata } from '@/lib/i18n/metadata';
+
 import { HealthRecordScreen } from './HealthRecordScreen';
 
-export const metadata: Metadata = {
-  title: 'Health record',
-  description:
-    'Your results, conditions, medicines, allergies, vaccinations and documents, each with a plain-language explanation.',
-};
+export function generateMetadata(): Promise<Metadata> {
+  return pageMetadata({
+    titleKey: 'portal.healthRecord.page.title',
+    descriptionKey: 'portal.healthRecord.page.description',
+  });
+}
 
 export default function HealthRecordPage() {
   return <HealthRecordScreen />;

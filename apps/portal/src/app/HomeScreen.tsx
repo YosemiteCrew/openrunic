@@ -35,11 +35,18 @@ export interface HomeScreenProps {
   api?: PortalApi;
 }
 
-/** The balance sentence. A missing due date is a fact to state, not a blank to paper over. */
+/**
+ * The balance sentence. A missing due date is a fact to state, not a blank to
+ * paper over.
+ *
+ * Two whole messages rather than a clause joined to a shared tail. The tail was
+ * appended in code, which fixes English word order: a language that puts the
+ * instruction first cannot say so by translating fragments.
+ */
 function dueSentence(t: Translator, dueOn: string | null): string {
-  const when =
-    dueOn === null ? 'Ask the practice when this is due.' : `Due by ${formatDate(t, dueOn)}.`;
-  return `${when} You can pay online, or ask the practice about paying in instalments.`;
+  return dueOn === null
+    ? t('portal.home.balance.dueUnknown')
+    : t('portal.home.balance.dueBy', { date: formatDate(t, dueOn) });
 }
 
 /** Home is empty only when all four of its strands are: otherwise a card has something. */
@@ -56,11 +63,14 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
   const t = useTranslator();
   if (!appointment) {
     return (
-      <Card overline="Next appointment" title="You have no appointments booked">
-        <p className="or-body">Ask the practice for a slot and they will confirm it by message.</p>
+      <Card
+        overline={t('portal.home.appointment.overline')}
+        title={t('portal.home.appointment.none')}
+      >
+        <p className="or-body">{t('portal.home.appointment.noneMessage')}</p>
         <div className="portal-actions">
           <Button href="/appointments" variant="secondary" iconLeft="calendar-plus">
-            Request an appointment
+            {t('portal.home.appointment.request')}
           </Button>
         </div>
       </Card>
@@ -68,11 +78,11 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
   }
 
   return (
-    <Card overline="Next appointment" title={appointment.reason}>
+    <Card overline={t('portal.home.appointment.overline')} title={appointment.reason}>
       <AppointmentFacts
         t={t}
         appointment={appointment}
-        videoLocation="A video call. The link opens in this browser."
+        videoLocation={t('portal.home.appointment.videoLocation')}
       />
       <div className="portal-actions">
         {appointment.joinUrl ? (
@@ -101,21 +111,21 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
   return (
     <>
       <PageHeader
-        overline="Your care"
-        title="Home"
-        lede="What needs your attention today. Everything else is in the sections around this page."
+        overline={t('portal.home.overline')}
+        title={t('portal.home.title')}
+        lede={t('portal.home.lede')}
       />
 
       <AsyncBoundary
         state={state}
-        what="your home summary"
+        what={t('portal.home.subject')}
         onRetry={reload}
         isEmpty={hasNothingToShow}
         empty={
           <EmptyState
             icon="circle-check"
-            title="Nothing needs your attention."
-            message="Your appointments, health record, messages and bills are all still here whenever you want them."
+            title={t('portal.home.empty.title')}
+            message={t('portal.home.empty.message')}
           />
         }
       >
@@ -124,13 +134,16 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
             <NextAppointmentCard appointment={home.nextAppointment} />
 
             <div className="portal-grid">
-              <Card overline="Balance" title="What you owe">
+              <Card
+                overline={t('portal.home.balance.overline')}
+                title={t('portal.home.balance.title')}
+              >
                 <p className="portal-figure">
                   <Money value={home.balance.outstanding} showCode />
                 </p>
                 <p className="or-body">
                   {home.balance.outstanding.amountMinor === 0
-                    ? 'There is nothing to pay.'
+                    ? t('portal.home.balance.nothing')
                     : dueSentence(t, home.balance.dueOn)}
                 </p>
                 <div className="portal-actions">
@@ -139,32 +152,40 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
                     variant={home.balance.outstanding.amountMinor === 0 ? 'secondary' : 'primary'}
                     iconLeft="credit-card"
                   >
-                    {home.balance.outstanding.amountMinor === 0 ? 'See your bills' : 'Pay a bill'}
+                    {home.balance.outstanding.amountMinor === 0
+                      ? t('portal.home.balance.seeBills')
+                      : t('portal.home.balance.pay')}
                   </Button>
                 </div>
               </Card>
 
-              <Card overline="Messages" title="From your care team">
+              <Card
+                overline={t('portal.home.messages.overline')}
+                title={t('portal.home.messages.title')}
+              >
                 <p className="portal-figure">{home.unreadMessages}</p>
                 <p className="or-body">{counted(t, UNREAD, home.unreadMessages)}</p>
                 <div className="portal-actions">
                   <Button href="/messages" variant="secondary" iconLeft="message-square">
-                    Open messages
+                    {t('portal.home.messages.open')}
                   </Button>
                 </div>
               </Card>
             </div>
 
-            <Card overline="Action needed" title="Things only you can do">
+            <Card
+              overline={t('portal.home.actions.overline')}
+              title={t('portal.home.actions.title')}
+            >
               {home.actionItems.length === 0 ? (
-                <p className="or-body">There is nothing waiting on you.</p>
+                <p className="or-body">{t('portal.home.actions.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {home.actionItems.map((item) => (
                     <li key={item.id}>
                       <p className="portal-record__head">
                         <span className="portal-term__clinical">{item.title}</span>
-                        <Badge tone="neutral">To do</Badge>
+                        <Badge tone="neutral">{t('portal.home.actions.badge')}</Badge>
                       </p>
                       <p className="portal-record__meta">{item.detail}</p>
                       <div className="portal-actions">

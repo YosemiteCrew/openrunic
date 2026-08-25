@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { ASSISTANT_NAV_ITEM, NAV_ITEMS, isActiveRoute, navItemsFor } from '@/lib/nav';
 
 describe('NAV_ITEMS', () => {
-  it('lists the portal six, each with a label and an icon', () => {
-    expect(NAV_ITEMS.map((item) => item.label)).toEqual([
-      'Home',
-      'Health record',
-      'Messages',
-      'Appointments',
-      'Forms',
-      'Bills',
+  it('lists the portal six in order, each with a label to look up and an icon', () => {
+    // Keys rather than words. The words are in the catalogue and the shell looks
+    // them up, so what this file owns is the order and the completeness of the
+    // list; `catalogue-drift.test.ts` owns whether each key resolves.
+    expect(NAV_ITEMS.map((item) => item.labelKey)).toEqual([
+      'portal.nav.home',
+      'portal.nav.healthRecord',
+      'portal.nav.messages',
+      'portal.nav.appointments',
+      'portal.nav.forms',
+      'portal.nav.bills',
     ]);
     expect(NAV_ITEMS.every((item) => item.icon.length > 0)).toBe(true);
   });
@@ -30,7 +33,7 @@ describe('navItemsFor', () => {
     const items = navItemsFor(true);
     expect(items).toHaveLength(NAV_ITEMS.length + 1);
     expect(items.at(-1)).toEqual(ASSISTANT_NAV_ITEM);
-    expect(items[0]?.label).toBe('Home');
+    expect(items[0]?.labelKey).toBe('portal.nav.home');
   });
 
   it('never repeats a destination', () => {

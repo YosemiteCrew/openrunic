@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Modal, Select, Tag } from '@openrunic/ui';
 import { useCallback, useId, useMemo, useState } from 'react';
@@ -68,7 +69,7 @@ function readyHint(isReady: boolean, blockingCount: number, translate: Translato
     blockingCount === 1
       ? 'billing.charges.hint.blocking.one'
       : 'billing.charges.hint.blocking.other',
-    { count: blockingCount }
+    { count: formatCount(blockingCount, translate.locale) }
   );
 }
 

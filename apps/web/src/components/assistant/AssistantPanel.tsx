@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { IconButton } from '@openrunic/ui';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
@@ -111,7 +112,9 @@ export function AssistantPanel(): ReactElement | null {
 
       <details className="or-assistant__capabilities">
         <summary className="or-caption">
-          {t('assistant.panel.capabilities', { count: capabilities.tools.length })}
+          {t('assistant.panel.capabilities', {
+            count: formatCount(capabilities.tools.length, t.locale),
+          })}
         </summary>
         <ul>
           {capabilities.tools.map((tool) => (

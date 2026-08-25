@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, Input, Tag } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -268,7 +269,9 @@ export function IntegrationsScreen({ client }: Readonly<IntegrationsScreenProps>
             <strong>
               {broken.length === 1
                 ? t('admin.integrations.broken.one', { name: broken[0]?.name ?? '' })
-                : t('admin.integrations.broken.other', { count: broken.length })}
+                : t('admin.integrations.broken.other', {
+                    count: formatCount(broken.length, t.locale),
+                  })}
             </strong>{' '}
             {t('admin.integrations.broken.body')}
           </p>

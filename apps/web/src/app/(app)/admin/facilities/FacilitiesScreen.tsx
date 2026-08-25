@@ -83,7 +83,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
   const hoursSummary = (facility: Facility): string => {
     const open = facility.hours.filter((entry) => entry.opens !== null);
     if (open.length === 0) return t('admin.facilities.hours.closedAllWeek');
-    return t('admin.facilities.hours.daysAWeek', { count: open.length });
+    return t('admin.facilities.hours.daysAWeek', { count: formatCount(open.length, t.locale) });
   };
 
   const commands = useMemo<Command[]>(
@@ -177,7 +177,7 @@ export function FacilitiesScreen({ client }: Readonly<FacilitiesScreenProps>): R
                     <Tag>{facility.posLabel}</Tag>
                     <Tag>
                       {t(pluralKey(ROOM_COUNT, facility.rooms.length, t.locale), {
-                        count: facility.rooms.length,
+                        count: formatCount(facility.rooms.length, t.locale),
                       })}
                     </Tag>
                     <Tag>{hoursSummary(facility)}</Tag>

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
@@ -56,7 +57,7 @@ export function DiagnosisPanel({ diagnoses, lines }: Readonly<DiagnosisPanelProp
                     uses === 1
                       ? 'billing.diagnoses.chargeCount.one'
                       : 'billing.diagnoses.chargeCount.other',
-                    { count: uses }
+                    { count: formatCount(uses, t.locale) }
                   )}
                 </Badge>
               )}

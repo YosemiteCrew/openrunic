@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Button, Card, Switch, Tag, VitalStat } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -175,7 +176,7 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                           candidateSummary.exceptions === 1
                             ? 'billing.remittance.exceptionCount.one'
                             : 'billing.remittance.exceptionCount.other',
-                          { count: candidateSummary.exceptions }
+                          { count: formatCount(candidateSummary.exceptions, t.locale) }
                         )}
                       </Badge>
                     ) : (
@@ -232,7 +233,9 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                         .text
                     }
                     state="neutral"
-                    stateLabel={t('billing.remittance.serviceLineCount', { count: summary.lines })}
+                    stateLabel={t('billing.remittance.serviceLineCount', {
+                      count: formatCount(summary.lines, t.locale),
+                    })}
                   />
                   <VitalStat
                     label={t('billing.remittance.autoPosted')}

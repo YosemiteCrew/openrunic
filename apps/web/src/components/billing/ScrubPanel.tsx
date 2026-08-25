@@ -1,4 +1,5 @@
 'use client';
+import { formatCount } from '@openrunic/i18n';
 
 import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
@@ -54,7 +55,9 @@ export function ScrubPanel({ findings }: Readonly<ScrubPanelProps>): ReactElemen
           the count must not interrupt them mid-line. */}
       <output className="or-small or-billing__hint">
         {blocking.length === 0 ? t('billing.scrub.clear') : counted(t, BLOCKING, blocking.length)}
-        {advisory.length > 0 ? ` ${t('billing.scrub.advisory', { count: advisory.length })}` : ''}
+        {advisory.length > 0
+          ? ` ${t('billing.scrub.advisory', { count: formatCount(advisory.length, t.locale) })}`
+          : ''}
       </output>
 
       {ordered.length === 0 ? null : (

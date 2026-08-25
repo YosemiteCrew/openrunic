@@ -65,17 +65,24 @@ describe('FormsScreen', () => {
     expect(screen.getByLabelText(/Rooming vitals/)).toBeInTheDocument();
   });
 
-  it('states the consequence before publishing, and confirms deliberately', async () => {
+  it('refuses to claim a release it cannot make, and says what is missing', async () => {
+    /*
+     * This used to open a confirmation, state that the version "can never be
+     * edited again", and then report it live on portal intake. The definition
+     * was unchanged and the form nobody could fill in stayed that way.
+     *
+     * Publishing needs the compiled artefacts `publishDefinition` in
+     * `@openrunic/forms-engine` produces - validator, render tree, print layout,
+     * FHIR mapping - and `apps/web` does not depend on that package. The note
+     * says so rather than leaving a disabled button to read as a bug.
+     */
     render(<FormsScreen />);
     await screen.findByText('Version 3, published');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publish version 4' }));
-
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent('can never be edited again');
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish version 4' }));
-    expect(screen.getByText(/version 4 is live on portal intake/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish version 4' })).toBeDisabled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.queryByText(/is live on portal intake/)).not.toBeInTheDocument();
+    expect(screen.getByText(/needs the compiled artefacts/)).toBeInTheDocument();
   });
 
   it('switches to another definition and forgets the unsaved draft edits', async () => {
@@ -126,18 +133,19 @@ describe('FormsScreen, driven from the command palette', () => {
     expect(screen.getByLabelText('Preview')).toBeChecked();
   });
 
-  it('opens the publish confirmation, which can be cancelled without releasing', async () => {
+  it('offers no publish command in the palette', async () => {
+    // A palette entry that opens a dialog whose confirm button releases nothing
+    // is worse than no entry, because it is faster to reach than the button.
     render(<FormsScreen />);
     await screen.findByText('Version 3, published');
 
-    await runCommand('Publish a new version');
-    fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
-    );
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
 
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.queryByText(/is live on portal intake/)).not.toBeInTheDocument();
-    expect(screen.getByText('Version 3, published')).toBeInTheDocument();
+    expect(
+      within(palette).queryByRole('option', { name: /Publish a new version/ })
+    ).not.toBeInTheDocument();
+    expect(within(palette).getByRole('option', { name: /Preview/ })).toBeInTheDocument();
   });
 });
 
@@ -249,20 +257,6 @@ describe('FormsScreen, the field properties pane', () => {
     // a number, and the "cannot change" notice does not apply.
     expect(screen.getByRole('button', { name: 'Publish version 1' })).toBeInTheDocument();
     expect(screen.queryByText(/is published and cannot change/)).not.toBeInTheDocument();
-  });
-
-  it('dismisses the publish confirmation toast', async () => {
-    render(<FormsScreen />);
-    await screen.findByText('Version 3, published');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Publish version 4' }));
-    fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Publish version 4' })
-    );
-    expect(screen.getByText(/version 4 is live on portal intake/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    expect(screen.queryByText(/version 4 is live on portal intake/)).not.toBeInTheDocument();
   });
 });
 

@@ -30,7 +30,14 @@ describe('DeveloperScreen', () => {
     expect(await screen.findByRole('table', { name: 'SMART on FHIR apps' })).toBeInTheDocument();
   });
 
-  it('shows a new secret once, with a copy-now warning', async () => {
+  it('refuses to mint a key it cannot mint, and shows no secret at all', async () => {
+    /*
+     * This used to display a fixed constant from the source as "the secret,
+     * shown once", with a copy-now warning over it. The same string every time,
+     * on every visit, in every deployment: a key pasted out of this drawer would
+     * never have authenticated anything, and the warning made it look like the
+     * one chance to keep something valuable.
+     */
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });
 
@@ -40,11 +47,11 @@ describe('DeveloperScreen', () => {
     fireEvent.change(within(drawer).getByLabelText('What is this key for?'), {
       target: { value: 'Registry submitter' },
     });
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Create key' }));
 
-    expect(screen.getByText(/Copy this secret now/)).toBeInTheDocument();
-    expect(within(drawer).getByLabelText('Secret')).toHaveAttribute('readonly');
-    expect(screen.getByRole('button', { name: 'I have copied the secret' })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Create key' })).toBeDisabled();
+    expect(screen.queryByText(/Copy this secret now/)).not.toBeInTheDocument();
+    expect(within(drawer).queryByLabelText('Secret')).not.toBeInTheDocument();
+    expect(within(drawer).getByText(/never have authenticated anything/)).toBeInTheDocument();
   });
 
   it('refuses to claim a revocation it cannot perform, and says why', async () => {
@@ -97,15 +104,19 @@ describe('DeveloperScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('test-launches an app against the demo tenant from the drawer', async () => {
+  it('refuses to report a launch it never attempted', async () => {
+    // "Test launch of RiskScope succeeded" was written without asking the app
+    // anything, so an app that could not be launched looked launchable.
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });
 
     fireEvent.click(screen.getByRole('tab', { name: /SMART apps/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Open RiskScope' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Test launch' }));
+    const drawer = screen.getByRole('dialog', { name: 'RiskScope' });
 
-    expect(screen.getByText(/Test launch of RiskScope succeeded/)).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Test launch' })).toBeDisabled();
+    expect(screen.queryByText(/succeeded/)).not.toBeInTheDocument();
+    expect(within(drawer).getByText(/does not reach the app/)).toBeInTheDocument();
   });
 
   it('shows the delivery log of a failing webhook with a retry', async () => {
@@ -219,32 +230,20 @@ describe('DeveloperScreen, creating and revoking a key', () => {
     expect(scope).not.toBeChecked();
   });
 
-  it('closes key creation on Cancel, and reopens with no secret in it', async () => {
+  it('closes key creation on Cancel', async () => {
+    // The reopening half of this test guarded that a secret shown once was not
+    // shown again. No secret is shown at all now, and the assertion above says
+    // so directly rather than by reopening a drawer to look for it.
     render(<DeveloperScreen />);
     await screen.findByRole('table', { name: 'API keys' });
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Create an API key' })[0]!);
-    fireEvent.change(
-      within(screen.getByRole('dialog', { name: 'Create an API key' })).getByLabelText(
-        'What is this key for?'
-      ),
-      { target: { value: 'Registry submitter' } }
-    );
     fireEvent.click(
       within(screen.getByRole('dialog', { name: 'Create an API key' })).getByRole('button', {
-        name: 'Create key',
+        name: 'Cancel',
       })
     );
-    fireEvent.click(screen.getByRole('button', { name: 'I have copied the secret' }));
 
-    expect(screen.queryByRole('dialog', { name: 'Create an API key' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Create an API key' })[0]!);
-    const reopened = screen.getByRole('dialog', { name: 'Create an API key' });
-    // A secret is shown once. Reopening must not show it again.
-    expect(within(reopened).queryByLabelText('Secret')).not.toBeInTheDocument();
-
-    fireEvent.click(within(reopened).getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog', { name: 'Create an API key' })).not.toBeInTheDocument();
   });
 

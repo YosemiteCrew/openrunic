@@ -145,7 +145,13 @@ describe('FacilitiesScreen, driven from the command palette', () => {
     expect(screen.getByLabelText('Show inactive')).toBeChecked();
   });
 
-  it('closes the drawer from Cancel and from Save alike', async () => {
+  it('closes the drawer from Cancel, and Save cannot close it at all', async () => {
+    /*
+     * Save was `onClick={() => setOpenId(null)}`, and closing the drawer is the
+     * whole of what it did: the fields are uncontrolled and were never read.
+     * Closing on Save is what made it read as a save, so the control is disabled
+     * and the drawer stays where it is.
+     */
     render(<FacilitiesScreen />);
     await listLoaded();
 
@@ -158,12 +164,12 @@ describe('FacilitiesScreen, driven from the command palette', () => {
     expect(screen.queryByRole('dialog', { name: 'Cedar Clinic' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Cedar Clinic' }));
-    fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'Cedar Clinic' })).getByRole('button', {
-        name: 'Save facility',
-      })
-    );
-    expect(screen.queryByRole('dialog', { name: 'Cedar Clinic' })).not.toBeInTheDocument();
+    const drawer = screen.getByRole('dialog', { name: 'Cedar Clinic' });
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Save facility' }));
+
+    expect(screen.getByRole('dialog', { name: 'Cedar Clinic' })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Save facility' })).toBeDisabled();
+    expect(within(drawer).getByText(/Change a site wherever its record/)).toBeInTheDocument();
   });
 
   it('opens an inactive site once it is visible, and names it as inactive', async () => {

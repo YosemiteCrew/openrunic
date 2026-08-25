@@ -167,7 +167,6 @@ export const admin: Messages = {
   'admin.users.invite.facilities': 'Facilities',
   'admin.users.invite.summaryPending': 'The role summary appears once permissions load.',
   'admin.users.invite.send': 'Send invite',
-  'admin.users.invite.sentToast': 'Invite sent to {email}. It expires in 7 days.',
   'admin.users.roles.title': 'Role permissions',
   'admin.users.roles.description':
     'Roles are named bundles. Change one here and it changes for everyone who holds it.',
@@ -379,17 +378,8 @@ export const admin: Messages = {
   'admin.forms.properties.showWhen': 'Show when',
   'admin.forms.properties.showWhenHint':
     'Leave empty to always show. Example: Show when Do you smoke? is Yes',
-  'admin.forms.publish.title': 'Publish {name} version {version}',
-  'admin.forms.publish.consequence':
-    'Version {version} becomes the form every new response uses, and it can never be edited again. Responses already collected stay on the version that captured them.',
-  'admin.forms.publish.summary': '{fields} fields, {sections} sections.',
-  'admin.forms.publish.added': '{count} added since version {version}.',
-  'admin.forms.publish.noneAdded': 'No fields added since the last version.',
-  'admin.forms.publishedToast': '{name} version {version} is live on portal intake and encounters.',
   'admin.forms.command.preview': 'Preview this form',
   'admin.forms.command.preview.keywords': 'see it, portal view, staff view',
-  'admin.forms.command.publish': 'Publish a new version',
-  'admin.forms.command.publish.keywords': 'release, version, go live',
 
   /* ---------------------------------------------------------- integrations */
   'admin.integrations.description':
@@ -401,14 +391,6 @@ export const admin: Messages = {
   'admin.integrations.status.notConnected': 'Not connected',
   /* What a test connection reports back, per state. Listed per status rather
      than branched, so adding a state forces a sentence to be written for it. */
-  'admin.integrations.test.connected':
-    'The connection answered in 142 ms and returned the expected response.',
-  'admin.integrations.test.demo':
-    'The connection answered in 142 ms and returned the expected response.',
-  'admin.integrations.test.error':
-    'The lab refused the credentials again. Replace the service account, then test once more.',
-  'admin.integrations.test.notConnected':
-    'There is nothing to test yet. Choose an adapter and save its credentials first.',
   'admin.integrations.sentence.connected': 'Working. Last activity {when}.',
   'admin.integrations.sentence.demo':
     'Working against the built-in demo network. Nothing leaves this practice.',
@@ -430,7 +412,6 @@ export const admin: Messages = {
     'openrunic stores a reference, not the secret. The value is never displayed, logged or exported, including here.',
   'admin.integrations.credentials.label': 'Secret reference',
   'admin.integrations.credentials.none': 'No credential stored',
-  'admin.integrations.testResult.title': 'Test result',
   'admin.integrations.detail.seam': 'Seam',
   'admin.integrations.detail.adapter': 'Adapter',
   'admin.integrations.detail.version': 'Version',
@@ -453,7 +434,6 @@ export const admin: Messages = {
     'Prescribing, claims, labs and payments each run through an adapter. Connect the first one, or keep working in demo mode.',
   'admin.integrations.testConnection': 'Test connection',
   'admin.integrations.saveConnection': 'Save connection',
-  'admin.integrations.testToast': '{name}: {result}',
 
   /* ----------------------------------------------------- developer platform */
   'admin.developer.description':
@@ -516,8 +496,6 @@ export const admin: Messages = {
   'admin.developer.apps.drawerDescription':
     'Launch configuration and every launch this app has attempted.',
   'admin.developer.apps.testLaunch': 'Test launch',
-  'admin.developer.apps.testLaunchToast':
-    'Test launch of {name} succeeded against the demo tenant with patient OR-100482.',
   'admin.developer.apps.detail.clientId': 'Client id',
   'admin.developer.apps.detail.launch': 'Launch',
   'admin.developer.apps.detail.redirectUris': 'Redirect URIs',
@@ -559,20 +537,13 @@ export const admin: Messages = {
     'A key with no scope can read nothing. Reload the screen, and report it if the list stays empty.',
   'admin.developer.newKey.description':
     'Backend services authenticate with this key. It is shown once and cannot be recovered.',
-  'admin.developer.newKey.copyTitle': 'Copy this secret now.',
-  'admin.developer.newKey.copyBody':
-    'openrunic stores a hash of it and cannot show it again. If it is lost, create a new key and revoke this one.',
-  'admin.developer.newKey.secret': 'Secret',
   'admin.developer.newKey.purpose': 'What is this key for?',
   'admin.developer.newKey.purposeHint':
     'A person reading the list in a year should know whether they can revoke it.',
   'admin.developer.newKey.type': 'Type',
   'admin.developer.newKey.typeBackend': 'Backend service',
   'admin.developer.newKey.typePortal': 'Portal integration',
-  'admin.developer.newKey.copied': 'I have copied the secret',
   'admin.developer.newKey.create': 'Create key',
-  'admin.developer.newKey.createdToast':
-    '{label} created. Copy the secret now; it is not shown again.',
   'admin.developer.command.key.keywords': 'token, backend service, credential',
   'admin.developer.command.apps': 'Show SMART on FHIR apps',
   'admin.developer.command.apps.keywords': 'smart, launch, oauth, app registration',
@@ -610,4 +581,23 @@ export const admin: Messages = {
     'Deactivating an account here would not stop the person signing in: there is no endpoint behind this yet, so the control is disabled rather than reporting a deactivation that did not happen. Withdraw access wherever sign-in is actually enforced.',
   'admin.users.rolePermissionsNotBuilt':
     'Editing what a role may do here would not change authorisation: there is no endpoint behind this yet, so the control is disabled rather than reporting a change that never reached policy. Everyone holding this role keeps exactly the access they have.',
+
+  /*
+   * The other seven controls on the same list. These waste somebody's time
+   * rather than creating risk, which is the only reason they were not dealt
+   * with alongside the three security-shaped ones. Same rule: a control that
+   * cannot do the thing does not say it did.
+   */
+  'admin.facilities.saveNotBuilt':
+    'Saving a site here changes nothing: there is no endpoint behind this yet, and the fields above are shown as the API reports them. Change a site wherever its record is actually kept.',
+  'admin.integrations.connectionNotBuilt':
+    'Neither testing nor saving a connection here reaches the seam. The test used to report a round trip read off the status this page had already loaded, so a broken adapter looked verified and the failure surfaced later as a result that never arrived.',
+  'admin.users.inviteNotBuilt':
+    'Sending an invitation here does not send one: there is no endpoint behind this yet, so the form is disabled rather than adding a row nobody was written to. Invite a colleague wherever accounts are actually created.',
+  'admin.developer.keys.createNotBuilt':
+    'Creating a key here does not mint one. The secret this used to display was a fixed value in the source, the same one every time, so a key pasted out of this screen would never have authenticated anything.',
+  'admin.developer.apps.launchNotBuilt':
+    'A test launch here does not reach the app. It reported success without asking, so an app that could not be launched looked launchable.',
+  'admin.forms.publishNotBuilt':
+    'Publishing here does not release the version: the definition is unchanged and the form nobody can fill in stays that way. Publishing needs the compiled artefacts the forms engine produces, which this screen cannot build yet.',
 };

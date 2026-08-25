@@ -145,7 +145,6 @@ export const admin: Messages = {
   'admin.users.invite.facilities': 'Sedes',
   'admin.users.invite.summaryPending': 'El resumen del rol aparece cuando carguen los permisos.',
   'admin.users.invite.send': 'Enviar la invitación',
-  'admin.users.invite.sentToast': 'Invitación enviada a {email}. Vence en 7 días.',
   'admin.users.roles.title': 'Permisos de los roles',
   'admin.users.roles.description':
     'Los roles son paquetes con nombre. Si cambia uno aquí, cambia para todas las personas que lo tienen.',
@@ -353,18 +352,8 @@ export const admin: Messages = {
   'admin.forms.properties.showWhen': 'Mostrar cuando',
   'admin.forms.properties.showWhenHint':
     'Déjelo vacío para mostrarlo siempre. Ejemplo: Mostrar cuando ¿Usted fuma? sea Sí',
-  'admin.forms.publish.title': 'Publicar {name} versión {version}',
-  'admin.forms.publish.consequence':
-    'La versión {version} pasa a ser el formulario que usa cada respuesta nueva, y nunca podrá volver a editarse. Las respuestas ya recibidas se quedan en la versión que las capturó.',
-  'admin.forms.publish.summary': '{fields} campos, {sections} secciones.',
-  'admin.forms.publish.added': '{count} agregados desde la versión {version}.',
-  'admin.forms.publish.noneAdded': 'No se agregaron campos desde la última versión.',
-  'admin.forms.publishedToast':
-    '{name} versión {version} está en vivo en la admisión por el portal y en las consultas.',
   'admin.forms.command.preview': 'Ver este formulario',
   'admin.forms.command.preview.keywords': 'verlo, vista del portal, vista del personal',
-  'admin.forms.command.publish': 'Publicar una versión nueva',
-  'admin.forms.command.publish.keywords': 'lanzar, versión, poner en vivo',
 
   /* ---------------------------------------------------------- integrations */
   'admin.integrations.description':
@@ -374,14 +363,6 @@ export const admin: Messages = {
   'admin.integrations.status.demo': 'Modo demostración',
   'admin.integrations.status.error': 'No funciona',
   'admin.integrations.status.notConnected': 'Sin conectar',
-  'admin.integrations.test.connected':
-    'La conexión respondió en 142 ms y devolvió la respuesta esperada.',
-  'admin.integrations.test.demo':
-    'La conexión respondió en 142 ms y devolvió la respuesta esperada.',
-  'admin.integrations.test.error':
-    'El laboratorio volvió a rechazar las credenciales. Reemplace la cuenta de servicio y pruebe otra vez.',
-  'admin.integrations.test.notConnected':
-    'Todavía no hay nada que probar. Elija un adaptador y guarde sus credenciales primero.',
   'admin.integrations.sentence.connected': 'Funcionando. Última actividad {when}.',
   'admin.integrations.sentence.demo':
     'Funcionando contra la red de demostración incluida. Nada sale de este consultorio.',
@@ -404,7 +385,6 @@ export const admin: Messages = {
     'openrunic guarda una referencia, no el secreto. El valor nunca se muestra, ni se registra, ni se exporta, tampoco aquí.',
   'admin.integrations.credentials.label': 'Referencia del secreto',
   'admin.integrations.credentials.none': 'Ninguna credencial guardada',
-  'admin.integrations.testResult.title': 'Resultado de la prueba',
   'admin.integrations.detail.seam': 'Conexión',
   'admin.integrations.detail.adapter': 'Adaptador',
   'admin.integrations.detail.version': 'Versión',
@@ -427,7 +407,6 @@ export const admin: Messages = {
     'Las recetas, las reclamaciones, los laboratorios y los pagos pasan cada uno por un adaptador. Conecte el primero, o siga trabajando en modo demostración.',
   'admin.integrations.testConnection': 'Probar la conexión',
   'admin.integrations.saveConnection': 'Guardar la conexión',
-  'admin.integrations.testToast': '{name}: {result}',
 
   /* ----------------------------------------------------- developer platform */
   'admin.developer.description':
@@ -490,8 +469,6 @@ export const admin: Messages = {
   'admin.developer.apps.drawerDescription':
     'La configuración de inicio y cada inicio que esta aplicación ha intentado.',
   'admin.developer.apps.testLaunch': 'Probar el inicio',
-  'admin.developer.apps.testLaunchToast':
-    'El inicio de prueba de {name} funcionó contra el entorno de demostración con el paciente OR-100482.',
   'admin.developer.apps.detail.clientId': 'Id del cliente',
   'admin.developer.apps.detail.launch': 'Inicio',
   'admin.developer.apps.detail.redirectUris': 'URI de redirección',
@@ -533,20 +510,13 @@ export const admin: Messages = {
     'Una clave sin ámbito no puede leer nada. Vuelva a cargar la pantalla y repórtelo si la lista sigue vacía.',
   'admin.developer.newKey.description':
     'Los servicios de backend se autentican con esta clave. Se muestra una sola vez y no se puede recuperar.',
-  'admin.developer.newKey.copyTitle': 'Copie este secreto ahora.',
-  'admin.developer.newKey.copyBody':
-    'openrunic guarda un hash del secreto y no puede volver a mostrarlo. Si se pierde, cree una clave nueva y revoque esta.',
-  'admin.developer.newKey.secret': 'Secreto',
   'admin.developer.newKey.purpose': '¿Para qué es esta clave?',
   'admin.developer.newKey.purposeHint':
     'Quien lea la lista dentro de un año debería saber si puede revocarla.',
   'admin.developer.newKey.type': 'Tipo',
   'admin.developer.newKey.typeBackend': 'Servicio de backend',
   'admin.developer.newKey.typePortal': 'Integración del portal',
-  'admin.developer.newKey.copied': 'Ya copié el secreto',
   'admin.developer.newKey.create': 'Crear la clave',
-  'admin.developer.newKey.createdToast':
-    '{label} creada. Copie el secreto ahora; no se vuelve a mostrar.',
   'admin.developer.command.key.keywords': 'token, servicio de backend, credencial',
   'admin.developer.command.apps': 'Mostrar las aplicaciones SMART on FHIR',
   'admin.developer.command.apps.keywords': 'smart, inicio, oauth, registro de aplicaciones',
@@ -570,4 +540,17 @@ export const admin: Messages = {
     'Desactivar una cuenta aquí no impediría que la persona inicie sesión: todavía no hay un extremo detrás de esto, así que el control está desactivado en lugar de informar de una desactivación que no ocurrió. Retire el acceso donde el inicio de sesión se aplica de verdad.',
   'admin.users.rolePermissionsNotBuilt':
     'Editar lo que un rol puede hacer aquí no cambiaría la autorización: todavía no hay un extremo detrás de esto, así que el control está desactivado en lugar de informar de un cambio que nunca llegó a la política. Todas las personas con este rol conservan exactamente el acceso que tienen.',
+
+  'admin.facilities.saveNotBuilt':
+    'Guardar un centro aquí no cambia nada: todavía no hay un extremo detrás de esto, y los campos de arriba se muestran tal como los informa la API. Modifique un centro donde realmente se guarda su registro.',
+  'admin.integrations.connectionNotBuilt':
+    'Ni probar ni guardar una conexión aquí llega a la integración. La prueba informaba de un tiempo de respuesta leído del estado que esta página ya había cargado, así que un adaptador roto parecía verificado y el fallo aparecía más tarde como un resultado que nunca llegó.',
+  'admin.users.inviteNotBuilt':
+    'Enviar una invitación aquí no envía ninguna: todavía no hay un extremo detrás de esto, así que el formulario está desactivado en lugar de añadir una fila a nombre de alguien a quien no se escribió. Invite a un colega donde las cuentas se crean de verdad.',
+  'admin.developer.keys.createNotBuilt':
+    'Crear una clave aquí no genera ninguna. El secreto que se mostraba era un valor fijo del código, el mismo siempre, así que una clave copiada de esta pantalla nunca habría autenticado nada.',
+  'admin.developer.apps.launchNotBuilt':
+    'Una prueba de lanzamiento aquí no llega a la aplicación. Informaba de un éxito sin preguntar, así que una aplicación que no podía lanzarse parecía que sí.',
+  'admin.forms.publishNotBuilt':
+    'Publicar aquí no libera la versión: la definición no cambia y el formulario que nadie puede rellenar sigue igual. Publicar necesita los artefactos compilados que produce el motor de formularios, que esta pantalla todavía no puede construir.',
 };

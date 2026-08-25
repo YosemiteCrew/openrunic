@@ -237,4 +237,55 @@ export const portal: Messages = {
   'portal.appointments.requestDialog.times.hint': 'For example, weekday mornings.',
   'portal.appointments.requestDialog.failed':
     'Your request did not send, and what you typed is still here. Check your connection, then send it again.',
+  /*
+   * THE HEALTH RECORD.
+   *
+   * Every date line is one message with the date in it rather than a word and a
+   * date placed next to each other, because "on" is not a word every language
+   * puts there, or puts first.
+   *
+   * What the practice recorded stays as it arrived: the condition, the dose
+   * label, the severity, the plain-language gloss beside a coded term. Those
+   * are the record, not the interface, and inventing a translation for a
+   * clinical word is the failure this catalogue avoids everywhere else.
+   */
+  'portal.healthRecord.overline': 'Your record',
+  'portal.healthRecord.title': 'Health record',
+  'portal.healthRecord.lede':
+    'Everything your care team has written down, with a plain-language explanation beside each clinical term.',
+  'portal.healthRecord.empty.title': 'Your record has nothing in it yet.',
+  'portal.healthRecord.empty.message':
+    'Results, conditions, medicines and documents appear here after your first appointment.',
+  'portal.healthRecord.results.overline': 'Results',
+  'portal.healthRecord.results.title': 'Recent test results',
+  'portal.healthRecord.results.none': 'No results have been added to your record.',
+  'portal.healthRecord.results.noRange': 'No usual range was recorded for this test.',
+  'portal.healthRecord.results.usualRange': 'Usual range: {range}',
+  'portal.healthRecord.results.takenOn': 'Taken on {date}',
+  'portal.healthRecord.results.ask': 'Ask about this result',
+  'portal.healthRecord.results.explainer.title': 'What to do about this number',
+  'portal.healthRecord.results.explainer.body':
+    'A single result is one moment, not a diagnosis. Your care team reads it alongside everything else they know about you. If you want it explained, send them a message and quote the test name and the date.',
+  'portal.healthRecord.results.explainer.action': 'Message your care team',
+  'portal.healthRecord.problems.overline': 'Conditions',
+  'portal.healthRecord.problems.title': 'Problems on your record',
+  'portal.healthRecord.problems.none': 'No conditions are recorded.',
+  'portal.healthRecord.problems.recordedOn': 'Recorded on {date}',
+  'portal.healthRecord.medications.overline': 'Medicines',
+  'portal.healthRecord.medications.title': 'What you have been prescribed',
+  'portal.healthRecord.medications.none': 'No medicines are recorded.',
+  'portal.healthRecord.medications.prescribedBy': 'Prescribed by {clinician}, started {date}',
+  'portal.healthRecord.allergies.overline': 'Allergies',
+  'portal.healthRecord.allergies.title': 'What to avoid',
+  'portal.healthRecord.allergies.none': 'No allergies are recorded.',
+  'portal.healthRecord.allergies.reaction': 'What happened: {reaction}',
+  'portal.healthRecord.allergies.recordedOn': 'Recorded on {date}',
+  'portal.healthRecord.immunisations.overline': 'Vaccinations',
+  'portal.healthRecord.immunisations.title': 'Immunisations you have had',
+  'portal.healthRecord.immunisations.none': 'No vaccinations are recorded.',
+  'portal.healthRecord.immunisations.givenOn': 'Given on {date}',
+  'portal.healthRecord.documents.overline': 'Documents',
+  'portal.healthRecord.documents.title': 'Letters and reports',
+  'portal.healthRecord.documents.none': 'No documents have been added.',
+  'portal.healthRecord.documents.addedOn': 'Added on {date}',
 };

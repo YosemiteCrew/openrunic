@@ -69,15 +69,17 @@ FROM ${NODE_IMAGE} AS base
 # ${NODE_IMAGE} invalidates the whole chain and fixes that, but the window this
 # patch exists for is exactly when the base digest has NOT moved.
 #
-# `APK_UPGRADE_TOKEN` is the handle for that: it is part of the command string,
-# so changing it forces the upgrade to re-run.
+# `APK_UPGRADE_STAMP` is the handle for that: it is part of the command string,
+# so changing it forces the upgrade to re-run. It is a cache key and never a
+# credential - the name avoids "token", because hadolint DL3064 and Trivy
+# DS-0031 both match on the name alone and would read one as a leaked secret.
 #
-#     docker compose build --build-arg APK_UPGRADE_TOKEN=$(date +%F) api
+#     docker compose build --build-arg APK_UPGRADE_STAMP=$(date +%F) api
 #
 # CI needs no token because its runners are ephemeral and share no layer cache,
 # so the scan always resolves packages fresh.
-ARG APK_UPGRADE_TOKEN=pinned
-RUN echo "apk upgrade token: ${APK_UPGRADE_TOKEN}" >/dev/null \
+ARG APK_UPGRADE_STAMP=pinned
+RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
     && apk --no-cache upgrade
 
 # corepack activates the pnpm version pinned in the root package.json's
@@ -226,8 +228,8 @@ FROM ${NODE_IMAGE} AS runtime
 # Alpine's current packages, for the reason spelled out at the `base` stage.
 # This stage starts from ${NODE_IMAGE} rather than from `base`, so it does not
 # inherit that upgrade and needs its own.
-ARG APK_UPGRADE_TOKEN=pinned
-RUN echo "apk upgrade token: ${APK_UPGRADE_TOKEN}" >/dev/null \
+ARG APK_UPGRADE_STAMP=pinned
+RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
     && apk --no-cache upgrade
 
 ENV NODE_ENV=production \

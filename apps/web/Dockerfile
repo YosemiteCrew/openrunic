@@ -29,12 +29,18 @@ FROM ${NODE_IMAGE} AS base
 # image, which is the one case the digest comment's "bump it deliberately"
 # answer cannot reach.
 #
-# **This has to sit in every stage that starts from ${NODE_IMAGE}.** There are
-# two roots here, `base` and `runtime`, and putting it only in `runtime` leaves
-# every stage descended from `base` on the vulnerable packages - including
-# `migrate`, which docker-compose builds by name as its own image and ships to
-# self-hosting operators. The container scan builds only the default target, so
-# that gap would have stayed green.
+# **This sits in every stage that starts from ${NODE_IMAGE}.** There are two
+# roots here, `base` and `runtime`, and only `runtime` is shipped: nothing
+# descended from `base` leaves this file, because `fetch` and `build` exist to
+# produce the standalone output that `runtime` copies. So the `runtime` copy is
+# what closes the vulnerability here, not this one.
+#
+# It is here anyway, deliberately. `apps/api/Dockerfile` has a third descendant
+# of `base` - `migrate`, which docker-compose builds by name and ships as its
+# own image - so the equivalent line there is load-bearing, and that is the gap
+# the container scan would have stayed green over. Keeping the two files the
+# same shape is what stops somebody adding a shipped stage here later and
+# inheriting a stale package set from a `base` nobody thought to check.
 #
 # Every apk package rather than the two by name. A named list is a second place
 # to maintain and it goes stale silently: the next Alpine advisory lands and the
@@ -61,7 +67,7 @@ FROM ${NODE_IMAGE} AS base
 # credential - the name avoids "token", because hadolint DL3064 and Trivy
 # DS-0031 both match on the name alone and would read one as a leaked secret.
 #
-#     docker compose build --build-arg APK_UPGRADE_STAMP=$(date +%F) api
+#     docker compose build --build-arg APK_UPGRADE_STAMP=$(date +%F) web
 #
 # CI needs no token because its runners are ephemeral and share no layer cache,
 # so the scan always resolves packages fresh.

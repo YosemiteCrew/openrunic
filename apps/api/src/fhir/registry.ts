@@ -52,15 +52,24 @@ export interface ServedResource {
   readonly params: readonly string[];
 }
 
-/** Looks up a parameter's definition, whichever list it lives in. */
+/**
+ * Looks up a parameter's definition, for the names a resource declares.
+ *
+ * Resource-specific first, then the shared list, and deliberately not the
+ * control parameters. `buildCapabilityStatement` appends those itself rather
+ * than looking them up, because they are the same two on every resource; a
+ * third arm here would only ever be reached by a `ServedResource` that named
+ * `_count` in its own params, which would then list it twice. `fhir.test.ts`
+ * asserts no module does that, which is what keeps this two arms rather than
+ * three.
+ */
 export function searchParamDefinition(
   resourceType: SupportedResourceType,
   name: string
 ): SearchParamDefinition | undefined {
   return (
     SEARCH_SUPPORT[resourceType].searchParams.find((param) => param.name === name) ??
-    COMMON_SEARCH_PARAMS.find((param) => param.name === name) ??
-    CONTROL_SEARCH_PARAMS.find((param) => param.name === name)
+    COMMON_SEARCH_PARAMS.find((param) => param.name === name)
   );
 }
 

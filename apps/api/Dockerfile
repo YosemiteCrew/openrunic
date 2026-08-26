@@ -178,6 +178,29 @@ FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=4000
 
+# Take Alpine's current openssl before anything else runs.
+#
+# CVE-2026-14456 is a high-severity flaw in libssl3/libcrypto3. Alpine shipped
+# the fix as 3.5.8-r0; the Node image still carries 3.5.7-r0 because it has not
+# been rebuilt since. Re-resolving the tag above does not help - the digest
+# pinned there already IS the current node:22-alpine, so there is nothing newer
+# to bump to. The patch exists in the package repository and not yet in the
+# image, which is the one case the digest comment's "bump it deliberately"
+# answer cannot reach.
+#
+# This upgrades every apk package rather than naming the two. A named list is a
+# second place to maintain and it goes stale silently: the next Alpine advisory
+# lands and this line still says libssl3. Pinning a version is worse again,
+# because Alpine drops superseded versions from the index and the build starts
+# failing the day 3.5.8-r0 is replaced.
+#
+# The cost is that the OS package set is no longer byte-for-byte reproducible
+# from the digest alone: two builds of this commit a month apart can differ.
+# That is a real trade against what the digest is for, and it is the right way
+# round for an image serving patient data - a reproducible build of a known-
+# vulnerable openssl is not the property worth keeping.
+RUN apk --no-cache upgrade
+
 # Strip the package manager out of the runtime.
 #
 # This stage runs one command - `node` on a built bundle - and never installs

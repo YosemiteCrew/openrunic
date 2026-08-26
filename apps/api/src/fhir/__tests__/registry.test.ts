@@ -83,10 +83,15 @@ describe('searchParamDefinition', () => {
      * The documentation string interpolates `MAX_PAGE_SIZE`. If the two ever
      * came apart, `/metadata` would advertise a ceiling the server rejects,
      * which is the drift ADR-0002 forbids and which no type can catch.
+     *
+     * Matched whole rather than as a substring. `toContain(String(size))` stays
+     * green when the ceiling drops from 100 to 10 and the text still says 100,
+     * and again when the text drifts from 100 to 1000 - the two cases where
+     * this is the only thing that would notice.
      */
     const count = CONTROL_SEARCH_PARAMS.find((param) => param.name === '_count');
 
-    expect(count?.documentation).toContain(String(MAX_PAGE_SIZE));
+    expect(count?.documentation).toBe(`Page size, 1 to ${MAX_PAGE_SIZE}.`);
   });
 });
 

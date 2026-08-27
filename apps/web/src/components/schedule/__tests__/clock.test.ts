@@ -22,6 +22,10 @@ afterEach(() => {
 
 /** Re-imports the clock with `IS_MOCK_MODE` forced off. */
 async function liveClock(): Promise<typeof import('@/components/schedule/clock')> {
+  /* Before the mock, not only in `afterEach`. Running one live case by name, or
+     a shuffled order that puts one first, leaves the top-level import's
+     mock-mode module cached and the dynamic import would return it. */
+  vi.resetModules();
   vi.doMock('@/lib/api', async () => {
     const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
     return { ...actual, IS_MOCK_MODE: false };
@@ -58,7 +62,34 @@ describe('in live mode', () => {
     expect(now).not.toBe(new Date(MOCK_NOW).getTime());
   });
 
-  it('answers a real calendar day in the clinic timezone', async () => {
+  it('asks for the day in the clinic timezone, not the machine one', async () => {
+    /*
+     * Shape alone is not enough: a wrong timezone still yields YYYY-MM-DD, and
+     * agrees with the right one for most of the day. The argument is what
+     * decides whose midnight the front desk pages from, so it is what is
+     * asserted.
+     */
+    vi.resetModules();
+    const calendarDay = vi.fn(() => '2026-09-03');
+    vi.doMock('@/lib/api', async () => {
+      const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+      return { ...actual, IS_MOCK_MODE: false };
+    });
+    vi.doMock('@/lib/format', async () => {
+      const actual = await vi.importActual<typeof import('@/lib/format')>('@/lib/format');
+      return { ...actual, calendarDay };
+    });
+
+    const clock = await import('@/components/schedule/clock');
+    const { CLINIC_TIME_ZONE } =
+      await vi.importActual<typeof import('@/lib/format')>('@/lib/format');
+
+    expect(clock.clinicToday()).toBe('2026-09-03');
+    expect(calendarDay).toHaveBeenCalledWith(expect.any(Date), CLINIC_TIME_ZONE);
+    vi.doUnmock('@/lib/format');
+  });
+
+  it('answers a real calendar day rather than the fixtures one', async () => {
     const clock = await liveClock();
 
     expect(clock.clinicToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/u);

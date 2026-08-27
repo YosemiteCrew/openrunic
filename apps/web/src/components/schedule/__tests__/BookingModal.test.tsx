@@ -26,6 +26,23 @@ const SLOT: OpenSlot = {
   end: '2026-09-03T09:50:00.000Z',
 };
 
+/**
+ * Fixtures named by MRN, not by position.
+ *
+ * `MOCK_PATIENTS` is sorted by family name, so an index silently follows a
+ * rename or an insertion onto a different person - and the given name this
+ * suite asserts on the button would move with it. The MRN is the one handle
+ * that does not.
+ */
+function patientByMrn(mrn: string) {
+  const found = MOCK_PATIENTS.find((candidate) => candidate.mrn === mrn);
+  if (found === undefined) throw new Error(`no fixture patient with MRN ${mrn}`);
+  return found;
+}
+
+const BOOKED = patientByMrn('OR-101088');
+const OTHER = patientByMrn('OR-100702');
+
 const PROVIDERS: readonly ScheduleProvider[] = [
   { id: 'provider-1', name: 'Dr. Okafor', role: 'Endocrinology' },
 ];
@@ -50,13 +67,9 @@ describe('BookingModal', () => {
   it('names the patient on the button, so it says what it is about to do', () => {
     renderModal();
 
-    const first = MOCK_PATIENTS[0];
-    expect(first).toBeDefined();
     /* The whole given name. `PatientName.given` is a string, so indexing it
        takes one character and a button reading "Book Q" would satisfy this. */
-    expect(
-      screen.getByRole('button', { name: `Book ${first?.name.given ?? ''}` })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Book ${BOOKED.name.given}` })).toBeInTheDocument();
   });
 
   it('says it is working while the server has the request, and refuses a second press', () => {
@@ -137,10 +150,7 @@ describe('BookingModal', () => {
      */
     const { onConfirm } = renderModal();
 
-    const second = MOCK_PATIENTS[1];
-    expect(second).toBeDefined();
-
-    fireEvent.change(screen.getByLabelText(/Patient/u), { target: { value: second?.id } });
+    fireEvent.change(screen.getByLabelText(/Patient/u), { target: { value: OTHER.id } });
 
     const visitType = screen.getByLabelText(/Visit type/u) as HTMLSelectElement;
     const otherCode = [...visitType.options]
@@ -151,9 +161,18 @@ describe('BookingModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^Book /u }));
 
-    const details = onConfirm.mock.calls[0]?.[0] as { patientId: string; visitTypeCode: string };
-    expect(details.patientId).toBe(second?.id);
+    const details = onConfirm.mock.calls[0]?.[0] as {
+      patientId: string;
+      visitType: string;
+      visitTypeCode: string;
+    };
+    expect(details.patientId).toBe(OTHER.id);
     expect(details.visitTypeCode).toBe(otherCode);
+    /* The display too. Checking only the code would pass on a dialog that kept
+       emitting the default display, or echoed the code into it, and
+       `ScheduleScreen` forwards that value straight through as `typeDisplay`. */
+    const chosen = [...visitType.options].find((option) => option.value === otherCode);
+    expect(details.visitType).toBe(chosen?.text);
   });
 
   it('still names the slot when the provider is not in the list', () => {

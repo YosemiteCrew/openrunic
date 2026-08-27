@@ -97,6 +97,63 @@ export interface NewOrderScreenProps {
   now?: string;
 }
 
+/**
+ * The last look before an order is signed.
+ *
+ * It lists every draft rather than a count, because signing is the step that
+ * makes an order real and "3 orders" is not something a prescriber can check.
+ */
+function SignConfirmModal({
+  open,
+  drafts,
+  patientName,
+  onClose,
+  onSign,
+}: Readonly<{
+  open: boolean;
+  drafts: readonly DraftOrder[];
+  patientName: string;
+  onClose: () => void;
+  onSign: () => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Modal
+      open={open}
+      title={t('orders.new.confirm.title')}
+      description={counted(t, CONFIRM_BODY, drafts.length, { patient: patientName })}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t('orders.new.confirm.keepEditing')}
+          </Button>
+          <Button iconLeft="pen-line" onClick={onSign}>
+            {t('orders.new.confirm.sign')}
+          </Button>
+        </>
+      }
+    >
+      <ul className="or-plainlist or-small">
+        {drafts.map((draft) => (
+          <li key={draft.key}>
+            {t('orders.new.confirm.line', {
+              order: draft.entry.name,
+              /* Lower-cased with the reader's own rules, because the priority
+                 word is a translated one. */
+              priority: t(ORDER_PRIORITY_LABELS[draft.priority].labelKey).toLocaleLowerCase(
+                t.locale
+              ),
+              destination: draft.entry.destination,
+            })}
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+}
+
 export function NewOrderScreen({
   client,
   now = MOCK_NOW,
@@ -686,38 +743,13 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
         />
       )}
 
-      <Modal
+      <SignConfirmModal
         open={confirming}
-        title={t('orders.new.confirm.title')}
-        description={counted(t, CONFIRM_BODY, drafts.length, { patient: patientName })}
+        drafts={drafts}
+        patientName={patientName}
         onClose={() => setConfirming(false)}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
-              {t('orders.new.confirm.keepEditing')}
-            </Button>
-            <Button iconLeft="pen-line" onClick={sign}>
-              {t('orders.new.confirm.sign')}
-            </Button>
-          </>
-        }
-      >
-        <ul className="or-plainlist or-small">
-          {drafts.map((draft) => (
-            <li key={draft.key}>
-              {t('orders.new.confirm.line', {
-                order: draft.entry.name,
-                /* Lower-cased with the reader's own rules, because the priority
-                   word is a translated one. */
-                priority: t(ORDER_PRIORITY_LABELS[draft.priority].labelKey).toLocaleLowerCase(
-                  t.locale
-                ),
-                destination: draft.entry.destination,
-              })}
-            </li>
-          ))}
-        </ul>
-      </Modal>
+        onSign={sign}
+      />
 
       {completion ? (
         <div className="or-toast-dock">

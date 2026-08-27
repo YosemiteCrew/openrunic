@@ -100,6 +100,108 @@ const COLUMN_LABEL: CountedMessage = {
   otherKey: 'schedule.flowBoard.columnLabelOther',
 };
 
+/**
+ * The three filters that decide which chips are on the board.
+ *
+ * Delayed-only is a switch rather than a fourth column, because a delay is a
+ * property of a visit already on the board and not a place it moves to.
+ */
+function FlowFilters({
+  providers,
+  providerId,
+  room,
+  delayedOnly,
+  onProviderChange,
+  onRoomChange,
+  onDelayedOnlyToggle,
+}: Readonly<{
+  providers: readonly ScheduleProvider[];
+  providerId: string;
+  room: string;
+  delayedOnly: boolean;
+  onProviderChange: (id: string) => void;
+  onRoomChange: (room: string) => void;
+  onDelayedOnlyToggle: () => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Card
+      overline={t('schedule.flowBoard.filtersOverline')}
+      title={t('schedule.flowBoard.filtersTitle')}
+    >
+      <div className="or-flow-filters">
+        <Select
+          label={t('schedule.filter.provider')}
+          value={providerId}
+          onChange={(event) => onProviderChange(event.target.value)}
+          options={[
+            { value: '', label: t('schedule.filter.allProviders') },
+            ...providers.map((provider) => ({
+              value: provider.id,
+              label: provider.name,
+            })),
+          ]}
+        />
+        <Select
+          label={t('schedule.filter.room')}
+          value={room}
+          onChange={(event) => onRoomChange(event.target.value)}
+          options={[
+            { value: '', label: t('schedule.filter.allRooms') },
+            ...MOCK_ROOMS.map((option) => ({ value: option, label: option })),
+          ]}
+        />
+        <Switch
+          label={t('schedule.flowBoard.delayedOnly')}
+          hint={t('schedule.flowBoard.delayedOnlyHint')}
+          checked={delayedOnly}
+          onChange={onDelayedOnlyToggle}
+        />
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The one toast the board shows, and the undo it carries.
+ *
+ * Undo lives on the toast rather than in a menu because moving a patient to the
+ * wrong column is noticed immediately or not at all, and the window for putting
+ * it back is the same window the message is on screen for.
+ */
+function FlowToast({
+  toast,
+  onClose,
+}: Readonly<{ toast: ToastMessage; onClose: () => void }>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <div className="or-fd-toast-host">
+      <Toast
+        tone={toast.tone ?? 'success'}
+        title={toast.title}
+        message={toast.message}
+        action={
+          toast.undo ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                toast.undo?.();
+                onClose();
+              }}
+            >
+              {t('schedule.flowBoard.undo')}
+            </Button>
+          ) : null
+        }
+        onClose={onClose}
+      />
+    </div>
+  );
+}
+
 export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): ReactElement {
   const t = useTranslator();
   const [providerId, setProviderId] = useState('');
@@ -299,40 +401,15 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
     >
       <ScreenCommands commands={commands} />
 
-      <Card
-        overline={t('schedule.flowBoard.filtersOverline')}
-        title={t('schedule.flowBoard.filtersTitle')}
-      >
-        <div className="or-flow-filters">
-          <Select
-            label={t('schedule.filter.provider')}
-            value={providerId}
-            onChange={(event) => setProviderId(event.target.value)}
-            options={[
-              { value: '', label: t('schedule.filter.allProviders') },
-              ...providers.map((provider) => ({
-                value: provider.id,
-                label: provider.name,
-              })),
-            ]}
-          />
-          <Select
-            label={t('schedule.filter.room')}
-            value={room}
-            onChange={(event) => setRoom(event.target.value)}
-            options={[
-              { value: '', label: t('schedule.filter.allRooms') },
-              ...MOCK_ROOMS.map((option) => ({ value: option, label: option })),
-            ]}
-          />
-          <Switch
-            label={t('schedule.flowBoard.delayedOnly')}
-            hint={t('schedule.flowBoard.delayedOnlyHint')}
-            checked={delayedOnly}
-            onChange={() => setDelayedOnly((value) => !value)}
-          />
-        </div>
-      </Card>
+      <FlowFilters
+        providers={providers}
+        providerId={providerId}
+        room={room}
+        delayedOnly={delayedOnly}
+        onProviderChange={setProviderId}
+        onRoomChange={setRoom}
+        onDelayedOnlyToggle={() => setDelayedOnly((value) => !value)}
+      />
 
       <AsyncBoundary
         state={state}
@@ -402,30 +479,7 @@ export function FlowBoardScreen({ client }: Readonly<FlowBoardScreenProps>): Rea
         )}
       </AsyncBoundary>
 
-      {toast ? (
-        <div className="or-fd-toast-host">
-          <Toast
-            tone={toast.tone ?? 'success'}
-            title={toast.title}
-            message={toast.message}
-            action={
-              toast.undo ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    toast.undo?.();
-                    setToast(null);
-                  }}
-                >
-                  {t('schedule.flowBoard.undo')}
-                </Button>
-              ) : null
-            }
-            onClose={() => setToast(null)}
-          />
-        </div>
-      ) : null}
+      {toast ? <FlowToast toast={toast} onClose={() => setToast(null)} /> : null}
     </AppShell>
   );
 }

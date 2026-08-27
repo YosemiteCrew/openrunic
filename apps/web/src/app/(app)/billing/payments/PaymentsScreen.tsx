@@ -225,6 +225,157 @@ function MethodPanel({
 }
 
 /**
+ * Who is paying, and how much.
+ *
+ * The patient and the amount sit together because choosing a different patient
+ * clears the amount and the allocation with it - see `tender.ts` for why that
+ * is one reducer action rather than three settings. Keeping both controls in
+ * one component is what makes that coupling visible.
+ */
+function PayerCard({
+  accounts,
+  account,
+  amountId,
+  amountText,
+  onSelectAccount,
+  onAmountChange,
+}: Readonly<{
+  accounts: readonly StatementAccount[];
+  account: StatementAccount;
+  amountId: string;
+  amountText: string;
+  onSelectAccount: (id: string) => void;
+  onAmountChange: (text: string) => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Card overline={t('billing.payments.payer')} title={t('billing.payments.whoIsPaying')}>
+      <div className="or-field-row">
+        <Select
+          label={t('billing.payments.patient')}
+          options={accounts.map((candidate) => ({
+            value: candidate.id,
+            label: `${formatName(candidate.patient.name, 'listing')} ${
+              formatMoney(t, candidate.balance, { currency: candidate.currency }).text
+            }`,
+          }))}
+          value={account.id}
+          onChange={(event) => onSelectAccount(event.target.value)}
+        />
+        <Input
+          id={amountId}
+          label={t('billing.payments.amount')}
+          type="number"
+          mono
+          value={amountText}
+          /* A numeric example rather than words. The field is
+             `type="number"`, whose value is plain digits and a dot
+             whatever the reader's language, so the shape of the hint
+             does not change with them either. What they type here is
+             a value; what they read back on the ledger is formatted,
+             and the two are allowed to look different. */
+          placeholder="0.00"
+          onChange={(event) => onAmountChange(event.target.value)}
+        />
+      </div>
+
+      <div className="or-visit-header">
+        <span className="or-mono">{formatMrn(account.patient.mrn)}</span>
+        <span className="or-small">
+          {t('billing.payments.balance', {
+            amount: formatMoney(t, account.balance, { currency: account.currency }).text,
+          })}
+        </span>
+        {account.cardOnFile ? (
+          <Badge tone="success">{t('billing.payments.cardOnFileBadge')}</Badge>
+        ) : (
+          <Badge tone="neutral" icon="minus">
+            {t('billing.payments.noCardBadge')}
+          </Badge>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * What the payment is being put against, and what is left over.
+ *
+ * The remainder is the most prominent number here and is never hidden: a
+ * payment cannot be taken while a cent of it has no visit against it, and the
+ * counter says how much is left rather than leaving the desk to subtract. That
+ * rule is the whole difference from the batch-payment screen this replaces, so
+ * the figure and the table that feeds it belong in one component.
+ */
+function AllocationCard({
+  account,
+  state,
+  openItems,
+  allocations,
+  onAllocateOldest,
+  onClearAllocation,
+  onAllocationChange,
+}: Readonly<{
+  account: StatementAccount;
+  state: ReturnType<typeof allocationState>;
+  openItems: readonly OpenItem[];
+  allocations: Readonly<Record<string, number>>;
+  onAllocateOldest: () => void;
+  onClearAllocation: () => void;
+  onAllocationChange: (visitId: string, value: number) => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Card
+      overline={t('billing.payments.allocationOverline')}
+      title={t('billing.payments.allocationTitle')}
+      footer={
+        <div className="or-remainder">
+          <VitalStat
+            label={t('billing.payments.unallocated')}
+            value={
+              formatMoney(t, state.unallocated, {
+                currency: account.currency,
+                negativeLabel: 'credit',
+              }).text
+            }
+            state={state.balanced ? 'success' : 'danger'}
+            stateLabel={t(ALLOCATION_STATE_LABEL_KEYS[allocationStateName(state)])}
+          />
+          <Money amount={state.allocated} currency={account.currency} />
+        </div>
+      }
+    >
+      <div className="or-field-row">
+        <Button variant="secondary" iconLeft="wand-sparkles" onClick={onAllocateOldest}>
+          {t('billing.payments.allocateOldest')}
+        </Button>
+        <Button variant="ghost" onClick={onClearAllocation}>
+          {t('billing.payments.clearAllocation')}
+        </Button>
+      </div>
+
+      {openItems.length === 0 ? (
+        <p className="or-body">
+          {t('billing.payments.noOpenVisits', {
+            name: formatName(account.patient.name),
+          })}
+        </p>
+      ) : (
+        <AllocationTable
+          items={openItems}
+          currency={account.currency}
+          allocations={allocations}
+          onChange={onAllocationChange}
+        />
+      )}
+    </Card>
+  );
+}
+
+/**
  * What the receipt will say the money arrived as.
  *
  * Recorded on the payment at the moment it is taken, in the language the desk
@@ -435,55 +586,14 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
         {() =>
           account ? (
             <>
-              <Card
-                overline={t('billing.payments.payer')}
-                title={t('billing.payments.whoIsPaying')}
-              >
-                <div className="or-field-row">
-                  <Select
-                    label={t('billing.payments.patient')}
-                    options={accounts.map((candidate) => ({
-                      value: candidate.id,
-                      label: `${formatName(candidate.patient.name, 'listing')} ${
-                        formatMoney(t, candidate.balance, { currency: candidate.currency }).text
-                      }`,
-                    }))}
-                    value={account.id}
-                    onChange={(event) => selectAccount(event.target.value)}
-                  />
-                  <Input
-                    id={amountId}
-                    label={t('billing.payments.amount')}
-                    type="number"
-                    mono
-                    value={amountText}
-                    /* A numeric example rather than words. The field is
-                       `type="number"`, whose value is plain digits and a dot
-                       whatever the reader's language, so the shape of the hint
-                       does not change with them either. What they type here is
-                       a value; what they read back on the ledger is formatted,
-                       and the two are allowed to look different. */
-                    placeholder="0.00"
-                    onChange={(event) => dispatch({ type: 'setAmount', text: event.target.value })}
-                  />
-                </div>
-
-                <div className="or-visit-header">
-                  <span className="or-mono">{formatMrn(account.patient.mrn)}</span>
-                  <span className="or-small">
-                    {t('billing.payments.balance', {
-                      amount: formatMoney(t, account.balance, { currency: account.currency }).text,
-                    })}
-                  </span>
-                  {account.cardOnFile ? (
-                    <Badge tone="success">{t('billing.payments.cardOnFileBadge')}</Badge>
-                  ) : (
-                    <Badge tone="neutral" icon="minus">
-                      {t('billing.payments.noCardBadge')}
-                    </Badge>
-                  )}
-                </div>
-              </Card>
+              <PayerCard
+                accounts={accounts}
+                account={account}
+                amountId={amountId}
+                amountText={amountText}
+                onSelectAccount={selectAccount}
+                onAmountChange={(text) => dispatch({ type: 'setAmount', text })}
+              />
 
               <MethodPanel
                 methodName={methodName}
@@ -495,57 +605,17 @@ export function PaymentsScreen({ client }: Readonly<PaymentsScreenProps>): React
                 onReferenceChange={(next) => dispatch({ type: 'setReference', reference: next })}
               />
 
-              <Card
-                overline={t('billing.payments.allocationOverline')}
-                title={t('billing.payments.allocationTitle')}
-                footer={
-                  <div className="or-remainder">
-                    <VitalStat
-                      label={t('billing.payments.unallocated')}
-                      value={
-                        formatMoney(t, state.unallocated, {
-                          currency: account.currency,
-                          negativeLabel: 'credit',
-                        }).text
-                      }
-                      state={state.balanced ? 'success' : 'danger'}
-                      stateLabel={t(ALLOCATION_STATE_LABEL_KEYS[allocationStateName(state)])}
-                    />
-                    <Money amount={state.allocated} currency={account.currency} />
-                  </div>
+              <AllocationCard
+                account={account}
+                state={state}
+                openItems={openItems}
+                allocations={allocations}
+                onAllocateOldest={allocateOldestFirst}
+                onClearAllocation={() =>
+                  dispatch({ type: 'allocateOldestFirst', amount: 0, items: [] })
                 }
-              >
-                <div className="or-field-row">
-                  <Button
-                    variant="secondary"
-                    iconLeft="wand-sparkles"
-                    onClick={allocateOldestFirst}
-                  >
-                    {t('billing.payments.allocateOldest')}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => dispatch({ type: 'allocateOldestFirst', amount: 0, items: [] })}
-                  >
-                    {t('billing.payments.clearAllocation')}
-                  </Button>
-                </div>
-
-                {openItems.length === 0 ? (
-                  <p className="or-body">
-                    {t('billing.payments.noOpenVisits', {
-                      name: formatName(account.patient.name),
-                    })}
-                  </p>
-                ) : (
-                  <AllocationTable
-                    items={openItems}
-                    currency={account.currency}
-                    allocations={allocations}
-                    onChange={setAllocation}
-                  />
-                )}
-              </Card>
+                onAllocationChange={setAllocation}
+              />
             </>
           ) : null
         }

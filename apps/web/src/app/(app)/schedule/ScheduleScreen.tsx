@@ -114,6 +114,165 @@ function synonyms(list: string): string[] {
     .filter((word) => word !== '');
 }
 
+/**
+ * Which day, which facility, which provider.
+ *
+ * The facility select appears only when there is more than one to choose from:
+ * a select with a single option is a control that does nothing, and a clinic
+ * with one site should not be asked to confirm which site it is.
+ */
+function DayPager({
+  day,
+  facilities,
+  facility,
+  providers,
+  providerId,
+  onDayChange,
+  onToday,
+  onFacilityChange,
+  onProviderChange,
+}: Readonly<{
+  day: string;
+  facilities: readonly FacilityDto[];
+  facility: FacilityDto | null;
+  providers: readonly ScheduleProvider[];
+  providerId: string;
+  onDayChange: (day: string) => void;
+  onToday: () => void;
+  onFacilityChange: (id: string) => void;
+  onProviderChange: (id: string) => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <div className="or-day-pager">
+      <IconButton
+        icon="chevron-left"
+        label={t('schedule.day.previousDay')}
+        variant="ghost"
+        onClick={() => onDayChange(shiftDay(day, -1))}
+      />
+      <Button variant="ghost" size="sm" onClick={onToday}>
+        {t('schedule.day.today')}
+      </Button>
+      <IconButton
+        icon="chevron-right"
+        label={t('schedule.day.nextDay')}
+        variant="ghost"
+        onClick={() => onDayChange(shiftDay(day, 1))}
+      />
+      {/* Offered only when there is a choice to make. One facility is not a
+          choice, and a select with a single option is a control that does
+          nothing. */}
+      {facilities.length > 1 ? (
+        <Select
+          aria-label={t('schedule.filter.facility')}
+          value={facility?.id ?? ''}
+          onChange={(event) => onFacilityChange(event.target.value)}
+          options={facilities.map((row) => ({ value: row.id, label: row.name }))}
+        />
+      ) : null}
+      <Select
+        aria-label={t('schedule.filter.provider')}
+        value={providerId}
+        onChange={(event) => onProviderChange(event.target.value)}
+        options={[
+          { value: '', label: t('schedule.filter.allProviders') },
+          ...providers.map((provider) => ({ value: provider.id, label: provider.name })),
+        ]}
+      />
+    </div>
+  );
+}
+
+/**
+ * The two ways a day gains an appointment.
+ *
+ * Both are refused together: whatever blocks booking blocks a walk-in too, so
+ * the reason is decided once by the caller rather than twice here.
+ */
+function DayActions({
+  blocked,
+  onWalkIn,
+  onFindAvailable,
+}: Readonly<{
+  blocked: boolean;
+  onWalkIn: () => void;
+  onFindAvailable: () => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <>
+      <Button variant="secondary" iconLeft="user-plus" disabled={blocked} onClick={onWalkIn}>
+        {t('schedule.action.addWalkIn')}
+      </Button>
+      <Button iconLeft="calendar-search" disabled={blocked} onClick={onFindAvailable}>
+        {t('schedule.action.findAvailable')}
+      </Button>
+    </>
+  );
+}
+
+/**
+ * The day itself: the grid, and the three states the read can be in.
+ *
+ * The empty state offers "find available" only when booking is possible. When
+ * something blocks the day the alert above already says what is missing, and a
+ * button that opens nothing is worse than no button.
+ */
+function DayGrid({
+  state,
+  columns,
+  now,
+  selectedId,
+  blocked,
+  onSelect,
+  onFindAvailable,
+}: Readonly<{
+  state: ReturnType<typeof useClinicDay>;
+  columns: readonly ScheduleProvider[];
+  now: Date;
+  selectedId: string | null;
+  blocked: boolean;
+  onSelect: (id: string) => void;
+  onFindAvailable: () => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <AsyncBoundary
+      state={state}
+      subject={t('schedule.day.subject')}
+      loadingRows={10}
+      isEmpty={(data) => data.appointments.length === 0}
+      empty={{
+        title: t('schedule.day.empty.title'),
+        message: t('schedule.day.empty.message'),
+        icon: 'calendar-days',
+        // No verb when the verb cannot be performed: the alert above already
+        // says what is missing, and a button that opens nothing is worse.
+        action: !blocked ? (
+          <Button iconLeft="calendar-search" onClick={onFindAvailable}>
+            {t('schedule.action.findAvailable')}
+          </Button>
+        ) : undefined,
+      }}
+    >
+      {(data) => (
+        <ScheduleGrid
+          appointments={data.appointments}
+          providers={columns}
+          patientsById={data.patientsById}
+          now={now}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+      )}
+    </AsyncBoundary>
+  );
+}
+
 export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): ReactElement {
   const t = useTranslator();
   const [day, setDay] = useState<string>(() => clinicToday());
@@ -322,62 +481,24 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       title={t('schedule.day.title')}
       description={description}
       topBarActions={
-        <div className="or-day-pager">
-          <IconButton
-            icon="chevron-left"
-            label={t('schedule.day.previousDay')}
-            variant="ghost"
-            onClick={() => setDay(shiftDay(day, -1))}
-          />
-          <Button variant="ghost" size="sm" onClick={() => setDay(clinicToday())}>
-            {t('schedule.day.today')}
-          </Button>
-          <IconButton
-            icon="chevron-right"
-            label={t('schedule.day.nextDay')}
-            variant="ghost"
-            onClick={() => setDay(shiftDay(day, 1))}
-          />
-          {/* Offered only when there is a choice to make. One facility is not a
-              choice, and a select with a single option is a control that does
-              nothing. */}
-          {facilities.length > 1 ? (
-            <Select
-              aria-label={t('schedule.filter.facility')}
-              value={facility?.id ?? ''}
-              onChange={(event) => setFacilityId(event.target.value)}
-              options={facilities.map((row) => ({ value: row.id, label: row.name }))}
-            />
-          ) : null}
-          <Select
-            aria-label={t('schedule.filter.provider')}
-            value={providerId}
-            onChange={(event) => setProviderId(event.target.value)}
-            options={[
-              { value: '', label: t('schedule.filter.allProviders') },
-              ...providers.map((provider) => ({ value: provider.id, label: provider.name })),
-            ]}
-          />
-        </div>
+        <DayPager
+          day={day}
+          facilities={facilities}
+          facility={facility}
+          providers={providers}
+          providerId={providerId}
+          onDayChange={setDay}
+          onToday={() => setDay(clinicToday())}
+          onFacilityChange={setFacilityId}
+          onProviderChange={setProviderId}
+        />
       }
       actions={
-        <>
-          <Button
-            variant="secondary"
-            iconLeft="user-plus"
-            disabled={blockedReason !== null}
-            onClick={openWalkIn}
-          >
-            {t('schedule.action.addWalkIn')}
-          </Button>
-          <Button
-            iconLeft="calendar-search"
-            disabled={blockedReason !== null}
-            onClick={() => setFindingSlots(true)}
-          >
-            {t('schedule.action.findAvailable')}
-          </Button>
-        </>
+        <DayActions
+          blocked={blockedReason !== null}
+          onWalkIn={openWalkIn}
+          onFindAvailable={() => setFindingSlots(true)}
+        />
       }
       rightRail={
         <DayRail
@@ -409,36 +530,15 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
         />
       ) : null}
 
-      <AsyncBoundary
+      <DayGrid
         state={state}
-        subject={t('schedule.day.subject')}
-        loadingRows={10}
-        isEmpty={(data) => data.appointments.length === 0}
-        empty={{
-          title: t('schedule.day.empty.title'),
-          message: t('schedule.day.empty.message'),
-          icon: 'calendar-days',
-          // No verb when the verb cannot be performed: the alert above already
-          // says what is missing, and a button that opens nothing is worse.
-          action:
-            blockedReason === null ? (
-              <Button iconLeft="calendar-search" onClick={() => setFindingSlots(true)}>
-                {t('schedule.action.findAvailable')}
-              </Button>
-            ) : undefined,
-        }}
-      >
-        {(data) => (
-          <ScheduleGrid
-            appointments={data.appointments}
-            providers={columns}
-            patientsById={data.patientsById}
-            now={now}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
-        )}
-      </AsyncBoundary>
+        columns={columns}
+        now={now}
+        selectedId={selectedId}
+        blocked={blockedReason !== null}
+        onSelect={setSelectedId}
+        onFindAvailable={() => setFindingSlots(true)}
+      />
 
       <ScheduleOverlays
         confirming={confirming}

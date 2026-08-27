@@ -18,7 +18,7 @@ import {
   translateColumns,
   useToasts,
 } from '@/components/billing';
-import type { KeyedColumn } from '@/components/billing';
+import type { ArSummary, KeyedColumn } from '@/components/billing';
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import { AppShell } from '@/components/shell';
@@ -57,6 +57,81 @@ const COLUMNS: readonly KeyedColumn[] = [
 export interface StatementsScreenProps {
   /** Injectable data client. Tests drive the empty and error states with it. */
   client?: BillingClient;
+}
+
+/**
+ * The ageing buckets as one row of figures.
+ *
+ * Read before anything is filtered, so the totals a biller is judged on stay on
+ * screen whichever bucket they then drill into.
+ */
+function AgeingStrip({ summary }: Readonly<{ summary: ArSummary }>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <section className="or-strip" aria-label={t('billing.statements.strip')}>
+      {BUCKET_ORDER.map((candidate) => (
+        <VitalStat
+          key={candidate}
+          label={t(BUCKET_LABEL_KEYS[candidate])}
+          value={formatMoney(t, summary.buckets[candidate], { currency: 'USD' }).text}
+          state={bucketTone(candidate)}
+          stateLabel={t(BUCKET_STATE_LABEL_KEYS[candidate])}
+        />
+      ))}
+    </section>
+  );
+}
+
+/**
+ * The bucket chips, and the one that clears the filter.
+ *
+ * Choosing a bucket also clears the selection, which is why this reports the
+ * choice rather than setting the filter itself: the rows underneath change, and
+ * carrying a tick from a row that is no longer visible is how a biller sends a
+ * statement they never looked at.
+ */
+function BucketFilter({
+  summary,
+  bucket,
+  accountCount,
+  onChange,
+}: Readonly<{
+  summary: ArSummary;
+  bucket: AgeingBucket | null;
+  accountCount: number;
+  onChange: (bucket: AgeingBucket | null) => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Card overline={t('billing.statements.ageing')} title={t('billing.statements.filterTitle')}>
+      <fieldset className="or-filter-chips" aria-label={t('billing.statements.bucketLegend')}>
+        <button
+          type="button"
+          className="or-filter-chip"
+          aria-pressed={bucket === null}
+          onClick={() => onChange(null)}
+        >
+          {t('billing.statements.all')} <span className="or-mono">{accountCount}</span>
+        </button>
+        {BUCKET_ORDER.map((candidate) => (
+          <button
+            key={candidate}
+            type="button"
+            className="or-filter-chip"
+            aria-pressed={bucket === candidate}
+            onClick={() => onChange(candidate)}
+          >
+            {t(BUCKET_LABEL_KEYS[candidate])}{' '}
+            <span className="or-mono">
+              {formatMoney(t, summary.buckets[candidate], { currency: 'USD' }).text}
+            </span>
+          </button>
+        ))}
+      </fieldset>
+    </Card>
+  );
 }
 
 export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): ReactElement {
@@ -278,50 +353,17 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
     >
       <ScreenCommands commands={commands} />
 
-      <section className="or-strip" aria-label={t('billing.statements.strip')}>
-        {BUCKET_ORDER.map((candidate) => (
-          <VitalStat
-            key={candidate}
-            label={t(BUCKET_LABEL_KEYS[candidate])}
-            value={formatMoney(t, summary.buckets[candidate], { currency: 'USD' }).text}
-            state={bucketTone(candidate)}
-            stateLabel={t(BUCKET_STATE_LABEL_KEYS[candidate])}
-          />
-        ))}
-      </section>
+      <AgeingStrip summary={summary} />
 
-      <Card overline={t('billing.statements.ageing')} title={t('billing.statements.filterTitle')}>
-        <fieldset className="or-filter-chips" aria-label={t('billing.statements.bucketLegend')}>
-          <button
-            type="button"
-            className="or-filter-chip"
-            aria-pressed={bucket === null}
-            onClick={() => {
-              setBucket(null);
-              setSelected(new Set());
-            }}
-          >
-            {t('billing.statements.all')} <span className="or-mono">{accounts.length}</span>
-          </button>
-          {BUCKET_ORDER.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              className="or-filter-chip"
-              aria-pressed={bucket === candidate}
-              onClick={() => {
-                setBucket(candidate);
-                setSelected(new Set());
-              }}
-            >
-              {t(BUCKET_LABEL_KEYS[candidate])}{' '}
-              <span className="or-mono">
-                {formatMoney(t, summary.buckets[candidate], { currency: 'USD' }).text}
-              </span>
-            </button>
-          ))}
-        </fieldset>
-      </Card>
+      <BucketFilter
+        summary={summary}
+        bucket={bucket}
+        accountCount={accounts.length}
+        onChange={(next) => {
+          setBucket(next);
+          setSelected(new Set());
+        }}
+      />
 
       <AsyncBoundary
         state={statementsState}

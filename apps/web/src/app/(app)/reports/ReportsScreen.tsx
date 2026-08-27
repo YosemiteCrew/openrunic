@@ -178,6 +178,67 @@ function csvColumns(t: Translator): Array<CsvColumn<VisitReportRow>> {
   }));
 }
 
+/**
+ * The claims funnel and the ageing ladder, side by side.
+ *
+ * They are one component because they are read together: a funnel that looks
+ * healthy while the ageing ladder is bottom-heavy is the case a biller is
+ * looking for, and separating them invites reading one without the other.
+ */
+function RevenuePair({
+  data,
+}: Readonly<{
+  data: NonNullable<ReturnType<typeof usePracticeDashboard>['data']>;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <div className="or-report__pair">
+      <Card title={t('reports.claims.title')}>
+        <p className="or-small">{t('reports.claims.lead')}</p>
+        <BarMeter
+          label={t('reports.funnel.label')}
+          rows={data.funnel.map((stage) => ({
+            id: stage.id,
+            label: stage.label,
+            value: stage.count,
+            valueText: counted(t, FUNNEL_CLAIMS, stage.count),
+            attention: stage.id === 'denied' && stage.count > 0,
+            detail:
+              stage.id === 'denied' && stage.count > 0
+                ? t('reports.funnel.needsBiller')
+                : undefined,
+          }))}
+        />
+        <Link className="or-link" href="/billing">
+          {t('reports.claims.link')}
+        </Link>
+      </Card>
+
+      <Card title={t('reports.aging.title')}>
+        <p className="or-small">{t('reports.aging.lead')}</p>
+        <BarMeter
+          label={t('reports.aging.title')}
+          rows={data.aging.map((bucket) => ({
+            id: bucket.id,
+            label: bucket.label,
+            value: bucket.payerAmount + bucket.patientAmount,
+            valueText: formatMoney(t, bucket.payerAmount + bucket.patientAmount).text,
+            detail: t('reports.aging.split', {
+              payer: formatMoney(t, bucket.payerAmount).text,
+              patient: formatMoney(t, bucket.patientAmount).text,
+            }),
+            attention: bucket.id === '90-plus',
+          }))}
+        />
+        <Link className="or-link" href="/billing">
+          {t('reports.aging.link')}
+        </Link>
+      </Card>
+    </div>
+  );
+}
+
 export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactElement {
   const t = useTranslator();
   const options = useAdminClientOption(client);
@@ -315,49 +376,7 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
               ))}
             </ul>
 
-            <div className="or-report__pair">
-              <Card title={t('reports.claims.title')}>
-                <p className="or-small">{t('reports.claims.lead')}</p>
-                <BarMeter
-                  label={t('reports.funnel.label')}
-                  rows={data.funnel.map((stage) => ({
-                    id: stage.id,
-                    label: stage.label,
-                    value: stage.count,
-                    valueText: counted(t, FUNNEL_CLAIMS, stage.count),
-                    attention: stage.id === 'denied' && stage.count > 0,
-                    detail:
-                      stage.id === 'denied' && stage.count > 0
-                        ? t('reports.funnel.needsBiller')
-                        : undefined,
-                  }))}
-                />
-                <Link className="or-link" href="/billing">
-                  {t('reports.claims.link')}
-                </Link>
-              </Card>
-
-              <Card title={t('reports.aging.title')}>
-                <p className="or-small">{t('reports.aging.lead')}</p>
-                <BarMeter
-                  label={t('reports.aging.title')}
-                  rows={data.aging.map((bucket) => ({
-                    id: bucket.id,
-                    label: bucket.label,
-                    value: bucket.payerAmount + bucket.patientAmount,
-                    valueText: formatMoney(t, bucket.payerAmount + bucket.patientAmount).text,
-                    detail: t('reports.aging.split', {
-                      payer: formatMoney(t, bucket.payerAmount).text,
-                      patient: formatMoney(t, bucket.patientAmount).text,
-                    }),
-                    attention: bucket.id === '90-plus',
-                  }))}
-                />
-                <Link className="or-link" href="/billing">
-                  {t('reports.aging.link')}
-                </Link>
-              </Card>
-            </div>
+            <RevenuePair data={data} />
 
             <Card title={t('reports.unsigned.title')}>
               <Table

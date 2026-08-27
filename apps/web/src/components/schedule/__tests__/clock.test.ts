@@ -89,11 +89,30 @@ describe('in live mode', () => {
     vi.doUnmock('@/lib/format');
   });
 
-  it('answers a real calendar day rather than the fixtures one', async () => {
-    const clock = await liveClock();
+  it('answers the wall clock day, on a frozen clock', async () => {
+    /*
+     * Frozen, and asserted against an exact day.
+     *
+     * The first version of this compared the answer to MOCK_CLINIC_DAY and
+     * required them to differ. That is a test that fails once a year: on
+     * 12 August the correct live answer IS `2026-08-12`, and nothing would be
+     * wrong except the calendar. Freezing makes the expected value knowable, so
+     * the assertion can be exact rather than a difference that happens to hold
+     * on most days.
+     */
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2027-03-09T11:00:00.000Z'));
+    try {
+      const clock = await liveClock();
 
-    expect(clock.clinicToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
-    expect(clock.clinicToday()).not.toBe(MOCK_CLINIC_DAY);
+      /* The exact day subsumes "not the fixture day": mock mode would answer
+         MOCK_CLINIC_DAY, which is not this. Keeping the difference check as
+         well would reintroduce the once-a-year break the moment somebody moved
+         the frozen date onto 12 August. */
+      expect(clock.clinicToday()).toBe('2027-03-09');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refuses to answer rather than substituting a day it could not read', async () => {

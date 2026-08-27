@@ -105,6 +105,10 @@ describe('in live mode', () => {
      * front desk in front of somebody else's list without anything looking
      * wrong.
      */
+    /* Before the mocks. Run alone or shuffled first, this would otherwise get
+       the mock-mode module the top-level import already cached, and
+       `clinicToday` would return MOCK_CLINIC_DAY instead of throwing. */
+    vi.resetModules();
     vi.doMock('@/lib/api', async () => {
       const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
       return { ...actual, IS_MOCK_MODE: false };

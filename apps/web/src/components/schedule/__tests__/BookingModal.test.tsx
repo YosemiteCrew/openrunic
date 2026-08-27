@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BookingModal } from '@/components/schedule/BookingModal';
@@ -9,11 +9,15 @@ import { MOCK_PATIENTS } from '@/lib/api';
 /**
  * Booking into a chosen slot.
  *
- * The modal was reached only through `ScheduleScreen`, which books the happy
- * path and never sees the states that matter most here: the button while the
- * server has the request, the refusal rendered in place, and the slot with
- * nobody selectable. Those are the moments a clerk is looking at the dialog
- * hardest, and none of them had a test.
+ * The modal had no test of its own. `ScheduleScreen.test.tsx` already drives it
+ * through the screen and covers the two states that matter most - the button
+ * while the slot is held, and a refusal keeping the dialog open - so those are
+ * re-asserted here at unit level rather than claimed as new.
+ *
+ * What was genuinely unreached is where the 61% branch and 72% function
+ * coverage sat: both selects, which each default to the first option so
+ * pressing the button proves nothing about them; a patient list with nothing in
+ * it; and a slot whose provider has left the list.
  */
 
 const SLOT: OpenSlot = {
@@ -48,8 +52,10 @@ describe('BookingModal', () => {
 
     const first = MOCK_PATIENTS[0];
     expect(first).toBeDefined();
+    /* The whole given name. `PatientName.given` is a string, so indexing it
+       takes one character and a button reading "Book Q" would satisfy this. */
     expect(
-      screen.getByRole('button', { name: new RegExp(first?.name.given[0] ?? '', 'u') })
+      screen.getByRole('button', { name: `Book ${first?.name.given ?? ''}` })
     ).toBeInTheDocument();
   });
 
@@ -83,9 +89,14 @@ describe('BookingModal', () => {
      */
     renderModal({ error: 'That slot was taken while you were booking.' });
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'That slot was taken while you were booking.'
-    );
+    const dialog = screen.getByRole('dialog');
+    const alert = within(dialog).getByRole('alert');
+    expect(alert).toHaveTextContent('That slot was taken while you were booking.');
+
+    /* Inside the dialog and above the fields, not merely somewhere on the page.
+       An unscoped query passes on a toast, which is the thing this rules out. */
+    const patientField = within(dialog).getByLabelText(/Patient/u);
+    expect(alert.compareDocumentPosition(patientField)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('books what was chosen, carrying the visit type code as well as its display', () => {
@@ -110,8 +121,11 @@ describe('BookingModal', () => {
     };
     expect(details.slot).toEqual(SLOT);
     expect(details.reason).toBe('Persistent cough');
-    expect(details.visitTypeCode).not.toBe('');
-    expect(details.visitType).not.toBe('');
+    /* The exact pair. `not.toBe('')` passes on the code echoed into the display
+       or on a stale label, and `ScheduleScreen` forwards this value straight
+       through as `typeDisplay`. */
+    expect(details.visitTypeCode).toBe('FOLLOWUP');
+    expect(details.visitType).toBe('Follow-up');
   });
 
   it('books the patient and visit type the clerk changed to, not the defaults', () => {
@@ -149,9 +163,26 @@ describe('BookingModal', () => {
      * describing the time rather than rendering an empty provider, because the
      * clerk is about to commit a patient to that slot.
      */
+    const named = render(
+      <BookingModal
+        slot={SLOT}
+        providers={PROVIDERS}
+        patients={MOCK_PATIENTS}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    );
+    const times = (screen.getByRole('dialog').textContent ?? '').match(/\d{1,2}:\d{2}/gu) ?? [];
+    expect(times.length).toBeGreaterThanOrEqual(2);
+    named.unmount();
+
     renderModal({ slot: { ...SLOT, providerId: 'provider-gone' } });
 
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unassigned');
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Unassigned');
+    /* The times are the point of this case. Dropping them while still rendering
+       "Unassigned" would satisfy a check for the fallback alone. */
+    for (const time of times) expect(dialog).toHaveTextContent(time);
     expect(screen.getByRole('button', { name: /^Book /u })).toBeEnabled();
   });
 

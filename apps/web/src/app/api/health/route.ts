@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+import { IS_MOCK_MODE } from '@/lib/api';
+
 /**
  * Same-origin health probe for the downtime banner.
  *
@@ -46,6 +48,26 @@ function apiBaseUrl(): string {
 }
 
 export async function GET(): Promise<NextResponse> {
+  // Mock mode has no API to reach, so there is nothing here that can be down.
+  //
+  // The probe exists to answer "can the web tier reach the API". A build
+  // reading fixtures does not have one, and asking anyway means
+  // OPENRUNIC_API_INTERNAL_URL is unset, which throws, which answers 502,
+  // which lights the downtime banner and leaves it lit. That is the
+  // permanently-on banner this whole route was written to remove, reintroduced
+  // through the one configuration where the question is meaningless - and it is
+  // the configuration a hosted demonstration runs in.
+  //
+  // Answering ok is the honest answer rather than a convenient one: the
+  // question behind the banner is whether this page can serve clinical data,
+  // and a fixtures build always can.
+  if (IS_MOCK_MODE) {
+    return NextResponse.json(
+      { status: 'ok', mode: 'mock' },
+      { status: 200, headers: { 'cache-control': 'no-store' } }
+    );
+  }
+
   try {
     // /readyz, not /healthz. Liveness only proves the API process is running,
     // and a process whose database has gone is running perfectly while being

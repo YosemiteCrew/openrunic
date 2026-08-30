@@ -37,9 +37,9 @@ describe('contentHash', () => {
 
   it('changes when the same text moves to a different section', () => {
     /*
-     * The key is hashed with the text. A finding recorded under `objective`
-     * instead of `subjective` is a different note, and a signature taken before
-     * the move must not still match.
+     * The key is hashed with the text, not just the text. A finding recorded
+     * under `objective` instead of `subjective` is a different note, and the
+     * two versions have to be distinguishable within the session that moved it.
      */
     const before = contentHash(sections(['subjective', 'No chest pain.']));
     const after = contentHash(sections(['objective', 'No chest pain.']));

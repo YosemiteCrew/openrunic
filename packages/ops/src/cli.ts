@@ -14,6 +14,7 @@ import { doctor, ensureEnvFile, type Check } from './commands/setup.js';
 import { decideUpgrade, preflight } from './commands/upgrade.js';
 import { copyIntoContainer, restoreInto, rowCounts, type PostgresTarget } from './db/postgres.js';
 import { parseEnvLines } from './env/secrets.js';
+import { isCodeSystemFormat, verifyCodeSystem } from './commands/terminology.js';
 import { lintMigrationDirectory } from './migration-lint/lint.js';
 import { formatAnnotations, formatHuman } from './migration-lint/report.js';
 import { composeStreaming } from './process/compose.js';
@@ -447,6 +448,55 @@ function commandLintMigrations(argv: readonly string[]): number {
   return argv.includes('--strict') && report.findings.length > 0 ? 1 : 0;
 }
 
+/** `--flag value` out of an argv, so the command reads the same as the usage line. */
+function flag(argv: readonly string[], name: string): string | undefined {
+  const at = argv.indexOf(`--${name}`);
+  if (at === -1) return undefined;
+  return argv[at + 1];
+}
+
+/**
+ * Verifying a code system before it is loaded.
+ *
+ * The subcommand exists because `terminology` will grow others - listing what a
+ * deployment has loaded, superseding a release - and a flat `verify-terminology`
+ * would strand them.
+ */
+async function commandTerminology(argv: readonly string[]): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub !== 'verify') {
+    out('openrunic-ops terminology verify --manifest <path> --content <path>');
+    out('                                 [--format ndjson|tsv] [--emit <path>]');
+    return sub === undefined || sub === '--help' ? 0 : 1;
+  }
+
+  const manifestPath = flag(rest, 'manifest');
+  const contentPath = flag(rest, 'content');
+  if (manifestPath === undefined || contentPath === undefined) {
+    out('Both --manifest and --content are required.');
+    return 1;
+  }
+
+  // Defaulted rather than required: ndjson is the format the loader emits and
+  // the one a deployer who has not chosen is best served by.
+  const format = flag(rest, 'format') ?? 'ndjson';
+  if (!isCodeSystemFormat(format)) {
+    out(`Unknown format ${format}. Use ndjson or tsv.`);
+    return 1;
+  }
+
+  const report = await verifyCodeSystem({
+    manifestPath,
+    contentPath,
+    format,
+    emitPath: flag(rest, 'emit'),
+    readFile: (source) => readFile(source, 'utf8'),
+  });
+
+  for (const line of report.lines) out(line);
+  return report.ok ? 0 : 1;
+}
+
 const USAGE = `openrunic-ops <command>
 
   doctor                    check prerequisites
@@ -456,6 +506,8 @@ const USAGE = `openrunic-ops <command>
   restore [manifest]        restore a backup  [--into <db>] [--yes]
   upgrade [--apply]         pre-flight; applies only with --apply  [--force]
   lint-migrations           report destructive migration statements  [--annotate] [--strict] [--dir <path>]
+  terminology verify        check a code system load before any row is written
+                            --manifest <path> --content <path> [--format ndjson|tsv] [--emit <path>]
 `;
 
 async function main(): Promise<number> {
@@ -476,6 +528,8 @@ async function main(): Promise<number> {
       return commandUpgrade(argv);
     case 'lint-migrations':
       return commandLintMigrations(argv);
+    case 'terminology':
+      return commandTerminology(argv);
     default:
       out(USAGE);
       return command === undefined || command === '--help' ? 0 : 1;

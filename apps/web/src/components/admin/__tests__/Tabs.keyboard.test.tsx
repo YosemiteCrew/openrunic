@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Tabs } from '@/components/admin/Tabs';
@@ -6,13 +6,15 @@ import { Tabs } from '@/components/admin/Tabs';
 /**
  * Moving between tabs from the keyboard.
  *
- * The handler sits on the tabs rather than the tablist, because WAI-ARIA's
- * roving tabindex puts the single tab stop on the selected tab and a handler on
- * the list would be a handler on something the keyboard cannot reach.
+ * `admin-components.test.tsx` already presses ArrowRight - twice, so it covers
+ * the right wrap-around - and End. What had never been pressed is **ArrowLeft
+ * and Home**, which means the left wrap-around never ran. That is the half most
+ * likely to be wrong: `(index - 1 + length) % length` is the expression somebody
+ * simplifies to `(index - 1) % length`, which returns -1 at the start of the row.
  *
- * `admin-components.test.tsx` covers the rendering and the click path. None of
- * the four keys had been pressed, so the wrap-around arithmetic - the part most
- * likely to be wrong and least likely to be noticed - was never run.
+ * The rest of this file covers what a key does beyond calling `onChange`:
+ * whether focus follows, and whether keys the handler does not own are left
+ * alone.
  */
 
 const ITEMS = [
@@ -61,16 +63,20 @@ describe('keyboard navigation', () => {
     expect(screen.getByRole('tab', { name: 'Second' })).toHaveFocus();
   });
 
-  it('ignores a key it does not handle, leaving the page to it', () => {
+  it('leaves a key it does not handle uncancelled, not merely unselected', () => {
     /*
-     * Tab, Enter and typing all reach this handler and must pass through
-     * untouched: swallowing Tab would trap the keyboard inside the tab row.
+     * Both halves matter, and only the first is obvious. Not calling `onChange`
+     * is not enough: a handler that also called `preventDefault` on Tab would
+     * pass a check for `onChange` alone while trapping the keyboard inside the
+     * tab row, which is the regression worth catching.
      */
     const { onChange } = renderTabs('first');
     const tab = screen.getByRole('tab', { selected: true });
 
     for (const key of ['Tab', 'a', 'ArrowUp', 'Enter']) {
-      fireEvent.keyDown(tab, { key });
+      const event = createEvent.keyDown(tab, { key });
+      fireEvent(tab, event);
+      expect(event.defaultPrevented, `${key} was cancelled`).toBe(false);
     }
 
     expect(onChange).not.toHaveBeenCalled();

@@ -13,11 +13,16 @@ vi.mock('next/navigation', () => ({
 /**
  * The panel that says this person may already be in the record.
  *
- * Two strengths of the same warning, and only the weaker one had ever been
- * rendered. The stronger one interrupts a save in progress, which is the whole
- * reason it exists: registering a second chart for a patient who already has
- * one is how a clinician later reads half a history and believes it is all of
- * it.
+ * `RegisterPatientScreen.test.tsx` already renders the blocking panel through
+ * the screen and checks that registration is held. What it does not check is
+ * how the warning reaches a reader who is not looking at it, which is this
+ * file's subject: the `role` each strength carries, and which message goes with
+ * which strength.
+ *
+ * The panel appears as soon as matching records exist - `blocking` is derived
+ * from the current matches, not from a save attempt - so a registrar meets it
+ * while still typing. That is why the stronger one announces and the weaker one
+ * does not.
  */
 
 const PATIENT = MOCK_PATIENTS.find((candidate) => candidate.mrn === 'OR-101088');
@@ -40,44 +45,47 @@ function renderPanel(blocking: boolean) {
 }
 
 describe('a match strong enough to block saving', () => {
-  it('announces itself, because it interrupts a save already in progress', () => {
+  it('announces itself rather than only looking different', () => {
     /*
-     * `role="alert"` and not merely bold text. The registrar has pressed save
-     * and is looking at the button, not at the panel; a warning that only looks
-     * different is a warning they have already moved past.
+     * `role="alert"` and not merely emphasis. A registrar mid-form is looking
+     * at the field they are typing in, not at a panel that appeared below it,
+     * and a warning nothing announces is one they type straight past.
      */
     renderPanel(true);
 
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
-  it('says something different from the weaker warning', () => {
+  it('carries the blocking title, not the softer one', () => {
     /*
-     * The two strengths must not read the same. "This might be a duplicate" and
-     * "this is a duplicate and you cannot save" call for different actions, and
-     * a panel that says the softer thing in the harder case teaches a registrar
-     * to click past both.
+     * Named messages rather than an inequality. Checking only that the two
+     * differ passes with the branches swapped, which is the exact regression
+     * worth catching: the hard-stop case would then give the registrar the
+     * softer instruction while still reading as "different".
      */
     renderPanel(true);
-    const blocking = screen.getByRole('alert').textContent;
 
-    screen.getByRole('alert').remove();
-    renderPanel(false);
-    const similar = screen.getByText(/./u, { selector: '.or-body' }).textContent;
-
-    expect(blocking).not.toBe(similar);
+    expect(screen.getByText('This patient may already have a record')).toBeInTheDocument();
+    expect(screen.queryByText('Similar records exist in the practice')).not.toBeInTheDocument();
   });
 });
 
 describe('a weaker match', () => {
-  it('warns without announcing, because nothing was interrupted', () => {
+  it('warns without announcing', () => {
     /*
-     * No alert role. A similar-name hit while the registrar is still typing is
-     * information, not an interruption, and announcing every one of them is how
-     * the announcement stops meaning anything.
+     * No alert role. A similar-name hit is information, and announcing every
+     * one of them is how the announcement stops meaning anything by the time a
+     * blocking match arrives.
      */
     renderPanel(false);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('carries the softer title, not the blocking one', () => {
+    renderPanel(false);
+
+    expect(screen.getByText('Similar records exist in the practice')).toBeInTheDocument();
+    expect(screen.queryByText('This patient may already have a record')).not.toBeInTheDocument();
   });
 });

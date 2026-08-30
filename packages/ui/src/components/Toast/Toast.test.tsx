@@ -112,4 +112,12 @@ describe('Toast without resolvable icons', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Record shared');
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
   });
+
+  it('takes the dismiss label from the consumer', () => {
+    // `aria-label="Dismiss"` was written into this component, so a Spanish
+    // screen had an English close button on every notice it raised.
+    render(<Toast message="x" onClose={() => {}} closeLabel="Descartar" />);
+
+    expect(screen.getByRole('button', { name: 'Descartar' })).toBeInTheDocument();
+  });
 });

@@ -1,8 +1,10 @@
 import {
+  CLAIM_STATUS,
   DOCUMENT_STATUS,
   MEDICATION_REQUEST_STATUS,
   OBSERVATION_STATUS,
   SERVICE_REQUEST_STATUS,
+  SYSTEMS,
   TASK_STATUS,
   type EnumMapping,
 } from '@openrunic/fhir';
@@ -24,6 +26,7 @@ import {
   allergyResource,
   appointmentResource,
   claimResource,
+  type ClaimBiller,
   conditionResource,
   coverageResource,
   diagnosticReportResource,
@@ -31,6 +34,7 @@ import {
   encounterResource,
   immunizationResource,
   locationResource,
+  organizationResource,
   medicationRequestResource,
   medicationStatementResource,
   observationResource,
@@ -42,10 +46,8 @@ import {
   specimenResource,
   taskResource,
 } from './projections.js';
-import { CLAIM_STATUSES } from '@openrunic/database';
 
 import type { ScopedRow } from '../repositories/rows.js';
-import type { ClaimStatus } from '../repositories/specs/financial.js';
 import type { Repositories } from '../repositories/types.js';
 
 import { defineFhirResource, type FhirResourceModule } from './resource-module.js';
@@ -61,14 +63,25 @@ import { defineFhirResource, type FhirResourceModule } from './resource-module.j
  * avoid, because a client that filters on an ignored parameter receives the
  * whole practice and believes it received a slice.
  *
- * A coded parameter is advertised only when the domain enum and the FHIR value
- * set agree one-for-one. Several of the workflow enums are deliberately wider
- * than FHIR's - the schedule needs a state for "roomed" and R4 has no code for
- * it - and `packages/fhir` derives that loss rather than asserting it. Where a
- * mapping loses information, searching by the FHIR code would silently match
- * one of the states it collapses and miss the others, so the parameter is left
- * out and the loss is visible in the CapabilityStatement as an absence rather
- * than hidden behind a filter that half works.
+ * A coded parameter is advertised only when the server can answer the FHIR code
+ * itself, rather than a private vocabulary wearing its name. Several of the
+ * workflow enums are deliberately wider than FHIR's - the schedule needs a
+ * state for "roomed" and R4 has no code for it - and `packages/fhir` derives
+ * that loss rather than asserting it. A lossy mapping therefore takes one of
+ * two routes, and never a third:
+ *
+ * - The parameter is left out, so the loss is visible in the CapabilityStatement
+ *   as an absence rather than hidden behind a filter that half works. This is
+ *   the default, and `losslessStatus` applies it from the mapping itself.
+ * - The parameter is advertised and the FHIR code is answered as the *set* of
+ *   domain states it stands for, via `statusTokens`. This costs a set-valued
+ *   filter in the repository query and is worth it where the parameter earns
+ *   its keep; `Claim` is the one resource that takes this route today.
+ *
+ * The route never taken is advertising the parameter and answering domain
+ * tokens through it. A client reading the CapabilityStatement sends the FHIR
+ * code, and a server that only understands its own names has published a
+ * capability nobody outside this repository can use.
  */
 
 const CHART_SORT = { order: 'desc' } as const;
@@ -131,6 +144,36 @@ function statusToken<D extends string>(
     });
   }
   return domain;
+}
+
+/**
+ * Every domain state a FHIR status code stands for, or a refusal.
+ *
+ * The set-valued counterpart to `statusToken`, for a mapping that collapses
+ * several domain states into one FHIR code. Answering such a code with a single
+ * domain value - the canonical one - would match one state and silently miss
+ * the rest, which is the failure the module header exists to prevent.
+ *
+ * An empty preimage is a code no domain state maps to, and it is refused rather
+ * than answered with an empty bundle. `Observation` already behaves this way:
+ * R4's `ObservationStatus` binding has eight codes and `OBSERVATION_STATUS`
+ * maps seven, so `?status=unknown` is a 400 today even though the code is
+ * inside the required binding. Two status readers in one file should not
+ * disagree about what a legal-but-unmapped code means.
+ */
+function statusTokens<D extends string>(
+  mapping: EnumMapping<D, string>,
+  raw: string,
+  param: string
+): D[] {
+  const code = tokenValue(raw);
+  const domains = mapping.domainValues.filter((value) => mapping.toFhir(value) === code);
+  if (domains.length === 0) {
+    throw ApiError.malformed(`${param} is not a status this server recognises.`, {
+      issues: [{ path: param, message: 'not a value from the resource status value set' }],
+    });
+  }
+  return domains;
 }
 
 /** Spreads a date parameter's window onto a query's `from` and `to`. */
@@ -203,12 +246,16 @@ const practitionerModule = defineFhirResource({
  * costs seven reads rather than a hundred - which is the win in practice, since
  * grants cluster hard on both.
  *
- * It is worth being exact about what this is not: seven reads, not one. The
- * repository layer has no set-based read, so these are still individual
- * `findById` calls, merely deduped and issued concurrently. On a page where
- * every grant belongs to a different practitioner the dedupe buys nothing and
- * the count is back to one per row. Issue #88 tracks the set-based read that
- * would fix that properly, for every module's loader rather than this one.
+ * The roles and the users are now one read each, whatever the page holds, via
+ * the repository's `findByIds`. This used to be a dedupe of individual
+ * `findById` calls, which bought nothing on a page where every grant belonged
+ * to a different practitioner: a five-hundred-row bulk-export page put up to a
+ * thousand concurrent reads through a connection pool sized for far fewer.
+ *
+ * The facility grants are still one list per user, because they are a list
+ * rather than a lookup and each is separately bounded by `MAX_FACILITY_GRANTS`.
+ * A set-based version of that wants a different shape - grouping a single
+ * bounded page by user - and is not this change.
  */
 interface RolePageData {
   roleKeyById: Map<string, string>;
@@ -235,8 +282,8 @@ async function prepareRoles(
   const userIds = [...new Set(rows.map((row) => row.userId))];
 
   const [roles, users, grants] = await Promise.all([
-    Promise.all(roleIds.map(async (id) => repositories.roles.findById(id))),
-    Promise.all(userIds.map(async (id) => repositories.users.findById(id))),
+    repositories.roles.findByIds(roleIds),
+    repositories.users.findByIds(userIds),
     Promise.all(
       userIds.map(async (userId) =>
         repositories.userFacilities.list({
@@ -250,12 +297,10 @@ async function prepareRoles(
     ),
   ]);
 
-  for (const role of roles) {
-    if (role !== null) roleKeyById.set(role.id, role.key);
-  }
-  for (const user of users) {
-    if (user !== null) userById.set(user.id, user);
-  }
+  // No null check: `findByIds` omits ids that name nothing rather than
+  // returning a hole for them, which is what the callers wanted anyway.
+  for (const role of roles) roleKeyById.set(role.id, role.key);
+  for (const user of users) userById.set(user.id, user);
   for (const [index, page] of grants.entries()) {
     const userId = userIds[index];
     if (userId === undefined) continue;
@@ -303,10 +348,82 @@ async function prepareRoles(
  * `projections.ts` carries where `location` comes from, and why it is the
  * facility grants rather than the role assignment's own facility.
  */
+/**
+ * How many practitioners one `specialty` search will resolve.
+ *
+ * The parameter is a code on the practitioner and the rows are the role
+ * assignments hanging off them, so answering it means resolving the code to a
+ * set of user ids and filtering on the set. That set has to be complete: a
+ * truncated one silently drops practitioners, and a client that filtered on
+ * `specialty` and received a slice believing it received the whole is exactly
+ * the failure this boundary exists to prevent.
+ *
+ * So the bound is a refusal, not a truncation. The trade is real and worth
+ * naming: a practice with more than a thousand providers sharing one taxonomy
+ * code gets a 400 on this parameter rather than a wrong answer. That is a
+ * health system rather than a practice, and the honest fix there is a join
+ * rather than a wider bound, which is why this does not simply grow.
+ */
+const MAX_SPECIALTY_PRACTITIONERS = 1000;
+
+/**
+ * The NUCC code a `specialty` token asks for, or nothing.
+ *
+ * FHIR token syntax lets a client qualify a code with its system. A bare code
+ * is the common case and means "this code, any system". `system|code` with the
+ * NUCC system is the same question asked precisely. Anything else - another
+ * system, or the `|code` form that means "code with no system at all" - is a
+ * question about a vocabulary this server does not store, and the answer is
+ * that nothing matches.
+ *
+ * Nothing matching is a 200 with an empty bundle, not a 400. A system this
+ * server has no codes in is not a malformed search; it is a search whose answer
+ * is empty, and the two are different things to a client.
+ */
+function specialtyCode(token: string): string | undefined {
+  const separator = token.indexOf('|');
+  if (separator === -1) return token;
+  const system = token.slice(0, separator);
+  return system === SYSTEMS.nucc ? token.slice(separator + 1) : undefined;
+}
+
+/**
+ * The practitioners carrying a taxonomy code, as the user ids their role
+ * assignments are filtered by.
+ */
+async function practitionersWithSpecialty(
+  token: string,
+  repositories: Repositories
+): Promise<string[]> {
+  const code = specialtyCode(token);
+  if (code === undefined) return [];
+  const page = await repositories.users.list({
+    page: 1,
+    pageSize: MAX_SPECIALTY_PRACTITIONERS,
+    sort: 'familyName',
+    order: 'asc',
+    taxonomyCode: code,
+  });
+  if (page.total > MAX_SPECIALTY_PRACTITIONERS) {
+    throw ApiError.malformed(
+      `specialty matches more practitioners than this server will resolve in one search.`,
+      {
+        issues: [
+          {
+            path: 'specialty',
+            message: `${page.total} practitioners carry this code; the bound is ${MAX_SPECIALTY_PRACTITIONERS}`,
+          },
+        ],
+      }
+    );
+  }
+  return page.rows.map((row) => row.id);
+}
+
 const practitionerRoleModule = defineFhirResource({
   type: 'PractitionerRole',
   interactions: ['read', 'search-type'],
-  params: ['practitioner'],
+  params: ['practitioner', 'specialty'],
   // `role.read`, not `user.read`. This resource is a list of who holds which
   // access-control role, and `/users/:id/roles` - the same rows through the BFF
   // - is behind `role.read` already. Serving them under the weaker permission
@@ -316,7 +433,7 @@ const practitionerRoleModule = defineFhirResource({
   // one door will not is not a second door, it is the way round.
   permission: 'role.read',
   collection: (repositories) => repositories.roleAssignments,
-  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+  toQuery: async (query: SearchParams, paging: FhirPaging, repositories: Repositories) => ({
     ...pageOf(paging),
     // Through `referenceId` rather than straight through: a directory client
     // searches with the reference it was given, `Practitioner/{id}`, and a bare
@@ -325,6 +442,12 @@ const practitionerRoleModule = defineFhirResource({
     ...(query.practitioner === undefined
       ? {}
       : { userId: referenceId(query.practitioner, 'Practitioner', 'practitioner') }),
+    // `userIds` rather than a second `userId`: the spec meets the two rather
+    // than letting one overwrite the other, so `practitioner` and `specialty`
+    // together mean both, which is what a client sending both asked for.
+    ...(query.specialty === undefined
+      ? {}
+      : { userIds: await practitionersWithSpecialty(query.specialty, repositories) }),
     sort: 'createdAt' as const,
     order: 'asc' as const,
   }),
@@ -343,6 +466,47 @@ const practitionerRoleModule = defineFhirResource({
       worksAt: context.prepared.facilityIdsByUser.get(row.userId) ?? [],
     });
   },
+});
+
+/**
+ * The practice itself.
+ *
+ * One row, always the caller's own, because `Organisation` *is* the tenant: its
+ * id is what every other row's `tenantId` points at. A search returns a page of
+ * one and a read of any other id is a 404, which is the truthful answer rather
+ * than a permission error - another practice's record does not exist as far as
+ * this caller is concerned. `organisation-query.ts` carries why that narrowing
+ * is hand-written rather than a spec.
+ *
+ * It is served because four resources already emit references to it -
+ * `Location.managingOrganization`, `PractitionerRole.organization`,
+ * `Coverage.payor` and `Claim.provider` - and a reference that 404s is worse
+ * than no reference: a client cannot tell "this pointer is broken" from "you
+ * are not allowed to follow it".
+ *
+ * `address` and `identifier` are must-support and absent, because the columns
+ * are: the practice's postal address and NPI live on `Facility`, which is what
+ * `Location` serves. Inventing one from the first facility would be a fact the
+ * record never stated, and a practice may have several sites. The gap is
+ * written down in `fhir.must-support.test.ts` the way `Location`'s is.
+ */
+const organizationModule = defineFhirResource({
+  type: 'Organization',
+  interactions: ['read', 'search-type'],
+  params: ['name'],
+  // `facility.read`, the same permission `Location` needs. Reading which
+  // practice this is, is the same question as reading its sites.
+  permission: 'facility.read',
+  collection: (repositories) => repositories.organisations,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    // Paging is accepted and ignored: the result is one row or none, so there
+    // is no second page to ask for and no ordering to choose between.
+    ...pageOf(paging),
+    ...(query.name === undefined ? {} : { name: query.name }),
+    sort: 'name' as const,
+    order: 'asc' as const,
+  }),
+  toResource: organizationResource,
 });
 
 const locationModule = defineFhirResource({
@@ -647,17 +811,6 @@ const taskModule = defineFhirResource({
 });
 
 /**
- * The mounted resources, in the order the CapabilityStatement lists them.
- *
- * Claim and Organization are deliberately absent. A Claim resource without its
- * lines misrepresents what was billed, and resolving lines per row across a
- * search is a query shape this boundary does not yet support; an Organization
- * would have to be either the tenant itself, which is not addressable through a
- * tenant-scoped client, or a payer, whose directory is not part of this
- * workstream. Serving either half-formed would be worse than not serving it,
- * and the CapabilityStatement says so by not listing them.
- */
-/**
  * `target` accepts any resource type, unlike every other reference parameter
  * here.
  *
@@ -697,24 +850,6 @@ const provenanceModule = defineFhirResource({
   }),
   toResource: provenanceResource,
 });
-
-/**
- * A FHIR `status` token as the collection's enum, or a refusal.
- *
- * The search parameter is a free string and the column is an enum, so an
- * unmapped value has to fail loudly. Passing it through would filter on
- * something the database cannot hold and return an empty bundle, which reads to
- * a client as "no claims" rather than "that is not a status".
- */
-function claimStatusToken(value: string): ClaimStatus {
-  const upper = value.toUpperCase();
-  if (!(CLAIM_STATUSES as readonly string[]).includes(upper)) {
-    throw ApiError.malformed(`status must be one of ${CLAIM_STATUSES.join(', ')}.`, {
-      issues: [{ path: 'status', message: `unknown claim status ${value}` }],
-    });
-  }
-  return upper as ClaimStatus;
-}
 
 /** What a page of Claims needs loading before any of it can be mapped. */
 interface ClaimPageData {
@@ -769,6 +904,23 @@ async function prepareClaims(
   return { linesByClaim, providerByEncounter };
 }
 
+/**
+ * The biller a claim names, and which kind of thing it is.
+ *
+ * Separated from the mapper so the fallback is a decision with a name rather
+ * than a `??` at the end of an argument list, and so the two branches state
+ * their own type instead of one being inferred from the other's absence.
+ */
+function billerFor(
+  row: ScopedRow<'Claim'>,
+  providerByEncounter: ReadonlyMap<string, string>
+): ClaimBiller {
+  const practitioner = providerByEncounter.get(row.encounterId);
+  return practitioner === undefined
+    ? { id: row.tenantId, type: 'Organization' }
+    : { id: practitioner, type: 'Practitioner' };
+}
+
 const claimModule = defineFhirResource({
   type: 'Claim',
   interactions: ['read', 'search-type'],
@@ -778,7 +930,11 @@ const claimModule = defineFhirResource({
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...patientFilter(query.patient),
-    ...(query.status === undefined ? {} : { status: claimStatusToken(tokenValue(query.status)) }),
+    // The FHIR code, as the set of domain states it stands for. `active` alone
+    // covers seven of the ten, so a scalar here would answer with one of them.
+    ...(query.status === undefined
+      ? {}
+      : { statuses: statusTokens(CLAIM_STATUS, query.status, 'status') }),
     ...(query.created === undefined ? {} : dateWindow(query.created, 'created')),
     // A claim has two instants that matter and the collection makes the caller
     // say which. `created` is the one FHIR names, so it is the one this maps.
@@ -791,11 +947,16 @@ const claimModule = defineFhirResource({
     claimResource(
       row,
       context.prepared.linesByClaim.get(row.id) ?? [],
-      // Falls back to the tenant when the encounter is unreadable in this
-      // scope. A claim naming no biller at all would fail validation at the
-      // clearinghouse, and the organisation is the truthful answer: the
+      // Falls back to the practice when the encounter is unreadable in this
+      // scope, because a claim naming no biller at all would fail validation at
+      // the clearinghouse. The organisation is the truthful answer: the
       // practice billed it.
-      context.prepared.providerByEncounter.get(row.encounterId) ?? row.tenantId
+      //
+      // The type travels with the id. Emitting the fallback as
+      // `Practitioner/{id}` used to ship a reference to a practitioner that
+      // does not exist, and once Organization was served it resolved at the
+      // wrong type, which is harder to notice than the 404 it had been.
+      billerFor(row, context.prepared.providerByEncounter)
     ),
 });
 
@@ -803,6 +964,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   patientModule,
   practitionerModule,
   practitionerRoleModule,
+  organizationModule,
   locationModule,
   coverageModule,
   appointmentModule,

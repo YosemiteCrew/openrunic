@@ -1,5 +1,7 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Card, Tag } from '@openrunic/ui';
 import Link from 'next/link';
 import type { ReactElement, ReactNode } from 'react';
@@ -7,18 +9,24 @@ import type { ReactElement, ReactNode } from 'react';
 import type { Appointment, Patient } from '@/lib/api';
 import type { AllergyRecord, Allergy, ChartSummary, Visit } from '@/lib/api/chart';
 import {
+  calendarDay,
   formatAge,
-  formatCount,
   formatDate,
   formatDateTime,
-  formatEnumLabel,
   formatInitials,
   formatMoney,
   formatMrn,
   formatName,
-  NOT_RECORDED,
-  pluralise,
 } from '@/lib/format';
+import {
+  ALLERGY_CATEGORY_LABELS,
+  ALLERGY_SEVERITY_LABELS,
+  SENSITIVITY_INLINE,
+  SEX_AT_BIRTH_INLINE,
+} from './labels';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The patient context rail: who this is, and what must never be forgotten
@@ -35,6 +43,11 @@ import {
  * alone: section headings that deep-link into the chart are real buttons or
  * links, and the reaction behind each allergy chip is written under it rather
  * than tucked into a tooltip.
+ *
+ * Every word the rail owns comes from the catalogue; every word it shows about
+ * a patient does not. An allergen, a problem name, a medication and an
+ * appointment type are already named by the record, and naming them a second
+ * time here would put a diverging label on a coded value.
  */
 
 export interface PatientContextRailProps {
@@ -61,28 +74,67 @@ const SEVERITY_TONE = {
   MILD: 'neutral',
 } as const;
 
-function allergyChip(allergy: Allergy): ReactElement {
+/**
+ * The two catalogue keys a count chooses between, and the choice itself.
+ *
+ * A flat catalogue has no room for a plural inside one message, so each form
+ * English distinguishes is its own key and `Intl.PluralRules` picks between
+ * them on the reader's locale rather than on `count === 1`.
+ *
+ * The properties are named `oneKey` and `otherKey` rather than `one` and
+ * `other` because that is the shape the drift test looks for: a direct
+ * translator call, or a property whose name ends in `Key`. A catalogue key held
+ * under any other property name is a key nothing checks exists. Naming these
+ * for the plural category alone read better and left six catalogue entries
+ * unguarded.
+ */
+const MEDICATION_COUNT_KEYS: CountedMessage = {
+  oneKey: 'chart.rail.medications.count.one',
+  otherKey: 'chart.rail.medications.count.other',
+};
+
+const UNSIGNED_NOTE_KEYS: CountedMessage = {
+  oneKey: 'chart.rail.documentation.unsigned.one',
+  otherKey: 'chart.rail.documentation.unsigned.other',
+};
+
+/**
+ * The chip for one allergy.
+ *
+ * The allergen and the reaction come from the record and are rendered as they
+ * arrived. The reaction used to be lowercased on the way out, to read as a
+ * clause after the category; that re-cased a clinician's own words - "Hives and
+ * facial swelling" became "hives and facial swelling" - and would have gone on
+ * doing it in every language this frame is translated into. It is printed as
+ * written now, which is the same rule the dashboard tiles follow for a label
+ * the server owns.
+ *
+ * The severity and the category are the other side of that line. The API sends
+ * `SEVERE` and `DRUG` and no display for either, so those words are this
+ * codebase's and it takes a translator to write them.
+ */
+function allergyChip(t: Translator, allergy: Allergy): ReactElement {
   return (
     <li key={allergy.id} className="or-rail__allergy">
       <Badge tone={SEVERITY_TONE[allergy.severity]}>
-        {allergy.allergen} - {formatEnumLabel(allergy.severity)}
+        {allergy.allergen} - {t(ALLERGY_SEVERITY_LABELS[allergy.severity].labelKey)}
       </Badge>
       <p className="or-caption or-rail__reaction">
-        {formatEnumLabel(allergy.category)}, {allergy.reaction.toLowerCase()}
+        {t(ALLERGY_CATEGORY_LABELS[allergy.category].labelKey)}, {allergy.reaction}
       </p>
     </li>
   );
 }
 
-function AllergyBlock({ record }: Readonly<{ record: AllergyRecord }>): ReactElement {
+function AllergyBlock({
+  record,
+  t,
+}: Readonly<{ record: AllergyRecord; t: Translator }>): ReactElement {
   if (record.state === 'NOT_RECORDED') {
     return (
       <div className="or-rail__prompt">
-        <Badge tone="danger">Allergies not recorded</Badge>
-        <p className="or-caption or-rail__prompt-text">
-          Nobody has asked yet. Record allergies before prescribing: an empty list is not the same
-          as none.
-        </p>
+        <Badge tone="danger">{t('chart.rail.allergies.notRecorded')}</Badge>
+        <p className="or-caption or-rail__prompt-text">{t('chart.rail.allergies.prompt')}</p>
       </div>
     );
   }
@@ -90,13 +142,19 @@ function AllergyBlock({ record }: Readonly<{ record: AllergyRecord }>): ReactEle
   if (record.state === 'NO_KNOWN_ALLERGIES') {
     return (
       <div className="or-rail__affirmed">
-        <Badge tone="success">No known allergies</Badge>
-        <p className="or-caption or-rail__reaction">Affirmed {formatDate(record.affirmedOn)}</p>
+        <Badge tone="success">{t('chart.rail.allergies.none')}</Badge>
+        <p className="or-caption or-rail__reaction">
+          {t('chart.rail.allergies.affirmed', { date: formatDate(t, record.affirmedOn) })}
+        </p>
       </div>
     );
   }
 
-  return <ul className="or-rail__allergy-list">{record.entries.map(allergyChip)}</ul>;
+  return (
+    <ul className="or-rail__allergy-list">
+      {record.entries.map((allergy) => allergyChip(t, allergy))}
+    </ul>
+  );
 }
 
 /** The heading of a rail section: a button on the chart, a link everywhere else. */
@@ -128,7 +186,14 @@ function SectionHeading({
   return <p className="or-overline or-rail__heading-static">{label}</p>;
 }
 
-function lastVisit(visits: readonly Visit[], today: string): Visit | null {
+/**
+ * `today` is nullable because `calendarDay` is: an instant it cannot read has no
+ * clinic day, and there is nothing for a visit to be before. Answering "no
+ * previous visit" is the same answer this gave when the day was unreadable
+ * before, and it is now the answer the type says it gives.
+ */
+function lastVisit(visits: readonly Visit[], today: string | null): Visit | null {
+  if (today === null) return null;
   const past = visits
     .filter((visit) => visit.date < today)
     .toSorted((a, b) => b.date.localeCompare(a.date));
@@ -140,8 +205,13 @@ function lastVisit(visits: readonly Visit[], today: string): Visit | null {
  * something else, and their pronouns. Omitted entirely when there is neither,
  * rather than left as an empty line.
  */
-function IdentityMeta({ patient }: Readonly<{ patient: Patient }>): ReactElement | null {
-  const legalName = patient.name.preferred ? `Legal name ${patient.name.given}` : '';
+function IdentityMeta({
+  patient,
+  t,
+}: Readonly<{ patient: Patient; t: Translator }>): ReactElement | null {
+  const legalName = patient.name.preferred
+    ? t('chart.rail.identity.legalName', { name: patient.name.given })
+    : '';
   const pronouns = patient.pronouns ?? '';
   if (!legalName && !pronouns) return null;
 
@@ -157,7 +227,8 @@ function IdentityMeta({ patient }: Readonly<{ patient: Patient }>): ReactElement
 function IdentityBlock({
   patient,
   now,
-}: Readonly<{ patient: Patient; now: string }>): ReactElement {
+  t,
+}: Readonly<{ patient: Patient; now: string; t: Translator }>): ReactElement {
   const deceased = patient.deceasedAt !== null;
 
   return (
@@ -173,17 +244,24 @@ function IdentityBlock({
             still written out: it is what the insurance card and the wristband
             say, and staff have to be able to match them. */}
         <p className="or-rail__name">{formatName(patient.name)}</p>
-        <IdentityMeta patient={patient} />
+        <IdentityMeta patient={patient} t={t} />
+        {/* One message rather than three fragments joined here: the order of an
+            age, a birth date and a sex is a decision the translator has to be
+            able to make, and a sentence assembled at the call site takes it
+            away from them. */}
         <p className="or-caption or-rail__meta">
-          {formatAge(patient.birthDate, now)}, born {formatDate(patient.birthDate)},{' '}
-          {formatEnumLabel(patient.sexAtBirth).toLowerCase()}
+          {t('chart.rail.identity.demographics', {
+            age: formatAge(t, patient.birthDate, now),
+            birthDate: formatDate(t, patient.birthDate),
+            sex: t(SEX_AT_BIRTH_INLINE[patient.sexAtBirth].labelKey),
+          })}
         </p>
         <p className="or-caption or-rail__meta">
-          MRN <span className="or-mono">{formatMrn(patient.mrn)}</span>
+          {t('chart.rail.identity.mrn')} <span className="or-mono">{formatMrn(patient.mrn)}</span>
         </p>
         {deceased ? (
           <p className="or-small or-rail__deceased">
-            Deceased {formatDate(patient.deceasedAt)}. This chart is read-only.
+            {t('chart.rail.identity.deceased', { date: formatDate(t, patient.deceasedAt) })}
           </p>
         ) : null}
       </div>
@@ -192,15 +270,19 @@ function IdentityBlock({
 }
 
 /** The handling flags: interpreter, privacy, portal. Only the ones that apply. */
-function FlagList({ patient }: Readonly<{ patient: Patient }>): ReactElement {
+function FlagList({ patient, t }: Readonly<{ patient: Patient; t: Translator }>): ReactElement {
   const flags: string[] = [];
   if (patient.languageCode !== 'en-US') {
-    flags.push(`Interpreter needed, ${patient.languageCode}`);
+    flags.push(t('chart.rail.flags.interpreter', { language: patient.languageCode }));
   }
   if (patient.sensitivityClass !== 'NORMAL') {
-    flags.push(`Privacy: ${formatEnumLabel(patient.sensitivityClass).toLowerCase()}`);
+    flags.push(
+      t('chart.rail.flags.privacy', {
+        level: t(SENSITIVITY_INLINE[patient.sensitivityClass].labelKey),
+      })
+    );
   }
-  if (patient.portalEnabled) flags.push('Portal active');
+  if (patient.portalEnabled) flags.push(t('chart.rail.flags.portal'));
 
   return (
     <ul className="or-rail__flags">
@@ -216,9 +298,13 @@ function FlagList({ patient }: Readonly<{ patient: Patient }>): ReactElement {
 /** Three problems, then a count of the rest. The rail never becomes the list. */
 function ProblemList({
   problems,
-}: Readonly<{ problems: readonly ChartSummary['problems'][number][] }>): ReactElement {
+  t,
+}: Readonly<{
+  problems: readonly ChartSummary['problems'][number][];
+  t: Translator;
+}>): ReactElement {
   if (problems.length === 0) {
-    return <p className="or-small or-rail__line">No problems recorded</p>;
+    return <p className="or-small or-rail__line">{t('chart.rail.problems.none')}</p>;
   }
 
   const overflow = problems.length - 3;
@@ -230,7 +316,9 @@ function ProblemList({
         </li>
       ))}
       {overflow > 0 ? (
-        <li className="or-caption or-rail__meta">{overflow} more on the summary</li>
+        <li className="or-caption or-rail__meta">
+          {t('chart.rail.problems.more', { count: formatCount(overflow, t.locale) })}
+        </li>
       ) : null}
     </ul>
   );
@@ -238,13 +326,17 @@ function ProblemList({
 
 function MedicationSummary({
   medications,
-}: Readonly<{ medications: readonly ChartSummary['medications'][number][] }>): ReactElement {
+  t,
+}: Readonly<{
+  medications: readonly ChartSummary['medications'][number][];
+  t: Translator;
+}>): ReactElement {
   return (
     <>
       <p className="or-small or-rail__line">
         {medications.length === 0
-          ? 'No current medications'
-          : `${formatCount(medications.length, 'active medication')}`}
+          ? t('chart.rail.medications.none')
+          : counted(t, MEDICATION_COUNT_KEYS, medications.length)}
       </p>
       {medications.length > 0 ? (
         <ul className="or-rail__list">
@@ -263,31 +355,44 @@ function MedicationSummary({
 function AppointmentLines({
   nextAppointment,
   previous,
-}: Readonly<{ nextAppointment: Appointment | null; previous: Visit | null }>): ReactElement {
+  t,
+}: Readonly<{
+  nextAppointment: Appointment | null;
+  previous: Visit | null;
+  t: Translator;
+}>): ReactElement {
   return (
     <>
       <p className="or-small or-rail__line">
         {nextAppointment
-          ? `Next ${formatDateTime(nextAppointment.start, 'dense')}, ${nextAppointment.type.display.toLowerCase()}`
-          : 'No appointment scheduled'}
+          ? t('chart.rail.appointments.next', {
+              when: formatDateTime(t, nextAppointment.start, 'dense'),
+              type: nextAppointment.type.display.toLowerCase(),
+            })
+          : t('chart.rail.appointments.none')}
       </p>
       <p className="or-caption or-rail__meta">
-        Last visit {previous ? formatDate(previous.date) : NOT_RECORDED}
+        {t('chart.rail.appointments.lastVisit', {
+          date: previous ? formatDate(t, previous.date) : t('common.notRecorded'),
+        })}
       </p>
     </>
   );
 }
 
 /** What the patient owes, with the state said in words as well as in tint. */
-function BalanceLine({ balanceDue }: Readonly<{ balanceDue: number }>): ReactElement {
-  const balance = formatMoney(balanceDue);
+function BalanceLine({
+  balanceDue,
+  t,
+}: Readonly<{ balanceDue: number; t: Translator }>): ReactElement {
+  const balance = formatMoney(t, balanceDue);
   const due = balanceDue > 0;
 
   return (
     <p className={due ? 'or-rail__balance or-rail__balance--due' : 'or-rail__balance'}>
       <span className="or-mono or-rail__amount">{balance.text}</span>
       <span className="or-caption or-rail__meta">
-        {due ? 'Patient responsibility, due' : 'Patient responsibility, settled'}
+        {due ? t('chart.rail.balance.due') : t('chart.rail.balance.settled')}
       </span>
       <span className="or-visually-hidden">{balance.srText}</span>
     </p>
@@ -303,10 +408,11 @@ export function PatientContextRail({
   patientHref,
   children,
 }: Readonly<PatientContextRailProps>): ReactElement {
+  const t = useTranslator();
   const activeProblems = chart.problems.filter((problem) => problem.status !== 'RESOLVED');
   const activeMeds = chart.medications.filter((med) => med.status === 'ACTIVE');
   const unsigned = chart.visits.filter((visit) => visit.noteState === 'UNSIGNED');
-  const previous = lastVisit(chart.visits, formatDate(now, 'iso'));
+  const previous = lastVisit(chart.visits, calendarDay(now));
 
   const heading = (label: string, tab: string) => (
     <SectionHeading
@@ -317,35 +423,57 @@ export function PatientContextRail({
     />
   );
 
+  /* The heading a reader sees and the accessible name of the section it opens
+     are the same words, from the same key: two keys with one wording is two
+     chances for a translation to make them disagree. */
+  const allergies = t('chart.section.allergies');
+  const problems = t('chart.section.problems');
+  const medications = t('chart.section.medications');
+  const careGaps = t('chart.section.careGaps');
+  const documentation = t('chart.section.documentation');
+  const appointments = t('chart.section.appointments');
+  const balance = t('chart.section.balance');
+
   return (
-    <Card className="or-rail" aria-label={`Patient context for ${formatName(patient.name)}`}>
-      <IdentityBlock patient={patient} now={now} />
+    <Card
+      className="or-rail"
+      aria-label={t('chart.rail.label', { name: formatName(patient.name) })}
+    >
+      <IdentityBlock patient={patient} now={now} t={t} />
 
-      <FlagList patient={patient} />
+      <FlagList patient={patient} t={t} />
 
-      <section className="or-rail__section" aria-label="Allergies">
-        {heading('Allergies', 'summary')}
-        <AllergyBlock record={chart.allergies} />
+      <section className="or-rail__section" aria-label={allergies}>
+        {heading(allergies, 'summary')}
+        <AllergyBlock record={chart.allergies} t={t} />
       </section>
 
-      <section className="or-rail__section" aria-label="Problems">
-        {heading('Problems', 'summary')}
-        <ProblemList problems={activeProblems} />
+      <section className="or-rail__section" aria-label={problems}>
+        {heading(problems, 'summary')}
+        <ProblemList problems={activeProblems} t={t} />
       </section>
 
-      <section className="or-rail__section" aria-label="Medications">
-        {heading('Medications', 'medications')}
-        <MedicationSummary medications={activeMeds} />
+      <section className="or-rail__section" aria-label={medications}>
+        {heading(medications, 'medications')}
+        <MedicationSummary medications={activeMeds} t={t} />
       </section>
 
       {chart.careGaps.length > 0 ? (
-        <section className="or-rail__section" aria-label="Care gaps">
-          {heading('Care gaps', 'summary')}
+        <section className="or-rail__section" aria-label={careGaps}>
+          {heading(careGaps, 'summary')}
           <ul className="or-rail__list">
             {chart.careGaps.map((gap) => (
               <li key={gap.id} className="or-caption or-rail__meta">
-                {gap.label}
-                {gap.dueOn ? `, due ${formatDate(gap.dueOn, 'dense')}` : ''}
+                {/* The gap's own label is record data. When there is a date it
+                    goes into one message with it rather than being followed by
+                    a translated fragment, because a fragment beginning with a
+                    comma cannot be reordered into another language. */}
+                {gap.dueOn
+                  ? t('chart.rail.careGaps.due', {
+                      gap: gap.label,
+                      date: formatDate(t, gap.dueOn, 'dense'),
+                    })
+                  : gap.label}
               </li>
             ))}
           </ul>
@@ -353,27 +481,29 @@ export function PatientContextRail({
       ) : null}
 
       {unsigned.length > 0 ? (
-        <section className="or-rail__section" aria-label="Documentation">
-          {heading('Documentation', 'visits')}
+        <section className="or-rail__section" aria-label={documentation}>
+          {heading(documentation, 'visits')}
           <p className="or-small or-rail__line">
-            {unsigned.length} unsigned {pluralise(unsigned.length, 'note')}
+            {counted(t, UNSIGNED_NOTE_KEYS, unsigned.length)}
           </p>
           {unsigned[0]?.encounterId ? (
             <Link className="or-rail__link" href={`/encounters/${unsigned[0].encounterId}`}>
-              Open the {formatDate(unsigned[0].date, 'dense')} note
+              {t('chart.rail.documentation.openNote', {
+                date: formatDate(t, unsigned[0].date, 'dense'),
+              })}
             </Link>
           ) : null}
         </section>
       ) : null}
 
-      <section className="or-rail__section" aria-label="Appointments">
-        {heading('Appointments', 'visits')}
-        <AppointmentLines nextAppointment={nextAppointment} previous={previous} />
+      <section className="or-rail__section" aria-label={appointments}>
+        {heading(appointments, 'visits')}
+        <AppointmentLines nextAppointment={nextAppointment} previous={previous} t={t} />
       </section>
 
-      <section className="or-rail__section" aria-label="Balance">
-        {heading('Balance', 'summary')}
-        <BalanceLine balanceDue={chart.balanceDue} />
+      <section className="or-rail__section" aria-label={balance}>
+        {heading(balance, 'summary')}
+        <BalanceLine balanceDue={chart.balanceDue} t={t} />
       </section>
 
       {children}

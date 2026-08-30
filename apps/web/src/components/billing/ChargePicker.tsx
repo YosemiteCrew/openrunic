@@ -6,6 +6,7 @@ import type { ReactElement } from 'react';
 
 import type { ProcedureCode } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * Code search and the shortcut panels above the charge table.
@@ -41,6 +42,7 @@ export function ChargePicker({
   onAdd,
   searchInputId,
 }: Readonly<ChargePickerProps>): ReactElement {
+  const t = useTranslator();
   const needle = query.trim().toLowerCase();
 
   const matches = useMemo(() => {
@@ -51,12 +53,12 @@ export function ChargePicker({
   }, [catalog, needle]);
 
   return (
-    <Card overline="Add charges" title="Codes">
+    <Card overline={t('billing.chargePicker.overline')} title={t('billing.chargePicker.title')}>
       <div className="or-code-picker">
         <Input
           id={searchInputId}
-          label="Search CPT and HCPCS"
-          placeholder="Code or description"
+          label={t('billing.chargePicker.searchLabel')}
+          placeholder={t('billing.chargePicker.searchPlaceholder')}
           iconLeft="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
@@ -67,7 +69,7 @@ export function ChargePicker({
           <div className="or-code-picker__results">
             {matches.length === 0 ? (
               <p className="or-small or-billing__hint">
-                No code matches {`"${query.trim()}"`}. Try the code number or a shorter word.
+                {t('billing.chargePicker.noMatch', { query: query.trim() })}
               </p>
             ) : (
               <ul className="or-code-picker__list">
@@ -83,7 +85,7 @@ export function ChargePicker({
                       <span className="or-mono">{code.code}</span>
                       <span className="or-code-picker__display">{code.display}</span>
                       <span className="or-mono or-code-picker__fee">
-                        {formatMoney(code.fee, { currency }).text}
+                        {formatMoney(t, code.fee, { currency }).text}
                       </span>
                     </Button>
                   </li>
@@ -98,6 +100,9 @@ export function ChargePicker({
           if (codes.length === 0) return null;
           return (
             <div key={panel} className="or-code-picker__panel">
+              {/* The panel's own name, as the fee schedule groups its codes.
+                  It arrives as data and is rendered as data: naming a group of
+                  CPT codes is the schedule's job, not this screen's. */}
               <p className="or-overline">{panel}</p>
               <div className="or-code-picker__chips">
                 {codes.map((code) => (
@@ -106,7 +111,10 @@ export function ChargePicker({
                     variant="secondary"
                     size="sm"
                     onClick={() => onAdd(code)}
-                    aria-label={`Add ${code.code}, ${code.display}`}
+                    aria-label={t('billing.chargePicker.add', {
+                      code: code.code,
+                      display: code.display,
+                    })}
                   >
                     <span className="or-mono">{code.code}</span>
                   </Button>

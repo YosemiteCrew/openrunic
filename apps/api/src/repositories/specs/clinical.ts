@@ -1167,6 +1167,36 @@ const PRIORITY_RANK: Readonly<Record<ReferralPriority, number>> = {
   ROUTINE: 2,
 };
 
+/**
+ * The statuses a referral query accepts, as one set.
+ *
+ * `status` names one; `openOnly` names the outstanding tray. Both used to write
+ * the same `where` key from two spreads, so with both set the second won at
+ * construction and the explicit status simply vanished from the Postgres query
+ * while `matches` went on ANDing them. `?status=DECLINED&openOnly=true`
+ * returned nothing in memory, where every test runs, and the entire open tray
+ * from the database.
+ *
+ * Resolving them here means both ports read one decision. `undefined` is no
+ * status filter; an empty array is one that matches nothing, which is the
+ * honest answer for a status that is not open being asked for inside the open
+ * tray.
+ *
+ * This is the ONLY place either port reads the status decision from, and it has
+ * to stay that way. `matches` used to keep a scalar `row.status === query.status`
+ * test alongside this one. That was inert - the two agreed on all 270
+ * combinations - but it meant `matches` narrowed on something `where` did not,
+ * so any future widening here would have split the ports again while the scalar
+ * quietly held the memory side together. One decision, read twice.
+ */
+function referralStatuses(query: ReferralListQuery): readonly ReferralStatus[] | undefined {
+  const open = query.openOnly === true ? OPEN_REFERRAL_STATUSES : undefined;
+  const { status } = query;
+  if (open === undefined) return status === undefined ? undefined : [status];
+  if (status === undefined) return open;
+  return open.includes(status) ? [status] : [];
+}
+
 export const referralSpec: CollectionSpec<
   'Referral',
   ReferralInput,
@@ -1237,25 +1267,25 @@ export const referralSpec: CollectionSpec<
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
     if (query.referredById !== undefined && row.referredById !== query.referredById) return false;
-    if (query.status !== undefined && row.status !== query.status) return false;
     if (query.priority !== undefined && row.priority !== query.priority) return false;
     if (query.specialtyCode !== undefined && row.specialtyCode !== query.specialtyCode) {
       return false;
     }
-    if (query.openOnly === true && !OPEN_REFERRAL_STATUSES.includes(row.status)) return false;
+    const wanted = referralStatuses(query);
+    if (wanted !== undefined && !wanted.includes(row.status)) return false;
     return inWindow(row.createdAt, query.from, query.to);
   },
 
   where(query: ReferralListQuery) {
     const createdAt = windowFilter(query.from, query.to);
+    const wanted = referralStatuses(query);
     return {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.referredById === undefined ? {} : { referredById: query.referredById }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(wanted === undefined ? {} : { status: { in: [...wanted] } }),
       ...(query.priority === undefined ? {} : { priority: query.priority }),
       ...(query.specialtyCode === undefined ? {} : { specialtyCode: query.specialtyCode }),
-      ...(query.openOnly === true ? { status: { in: [...OPEN_REFERRAL_STATUSES] } } : {}),
       ...(createdAt === undefined ? {} : { createdAt }),
     };
   },

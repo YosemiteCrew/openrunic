@@ -43,6 +43,7 @@ import { useConversation } from '@/components/assistant/useConversation';
 import { getPortalApi } from '@/lib/api';
 import type { PortalApi } from '@/lib/api/types';
 import type { AssistantCapabilities } from '@/lib/assistant';
+import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
 
 export interface AssistantScreenProps {
@@ -71,28 +72,32 @@ interface ConfiguredAssistantProps {
 }
 
 function ConfiguredAssistant({ api, capabilities }: Readonly<ConfiguredAssistantProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getPatient(), [api]);
   const { state, reload } = useAsync(load);
 
   return (
     <>
       <PageHeader
-        overline="Your record"
-        title="Assistant"
-        lede="Ask a question about what your care team has written down, and see the records each answer came from."
+        overline={t('portal.assistant.overline')}
+        title={t('portal.assistant.title')}
+        lede={t('portal.assistant.lede')}
       />
 
       {/* Above the box, always. A note under it is read after the question has
           been written and usually after it has been sent. */}
-      <Notice title="What this can and cannot do">
-        It looks things up in your own record and shows you where each answer came from. It cannot
-        tell you what something means, whether it matters, or what to do next. For those, message
-        your care team. For a medical emergency, call the emergency services on your local number.
+      <Notice title={t('portal.assistant.notice.title')}>
+        {t('portal.assistant.notice.body')}
       </Notice>
 
       <ServiceLine capabilities={capabilities} />
 
-      <AsyncBoundary state={state} what="your record" onRetry={reload}>
+      <AsyncBoundary
+        state={state}
+        loadingKey="portal.assistant.async.loading"
+        errorKey="portal.assistant.async.error"
+        onRetry={reload}
+      >
         {(patient) => <Conversation capabilities={capabilities} chartPatientId={patient.id} />}
       </AsyncBoundary>
     </>
@@ -105,13 +110,17 @@ interface ConversationProps {
 }
 
 function Conversation({ capabilities, chartPatientId }: Readonly<ConversationProps>) {
+  const t = useTranslator();
   const { runTurn } = useAssistant();
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
 
   return (
-    <section className="portal-section portal-assistant" aria-label="Assistant">
+    <section
+      className="portal-section portal-assistant"
+      aria-label={t('portal.assistant.section.label')}
+    >
       <details className="portal-assistant__reach">
-        <summary>What it is allowed to look at</summary>
+        <summary>{t('portal.assistant.reach.summary')}</summary>
         <ul className="portal-inline-list">
           {capabilities.capabilities.map((capability) => (
             <li key={capability.id}>{capability.summary}</li>
@@ -123,15 +132,14 @@ function Conversation({ capabilities, chartPatientId }: Readonly<ConversationPro
           restart the answer on every one of them. One short sentence per state
           change instead. */}
       <output aria-live="polite" className="portal-visually-hidden">
-        {announcementFor(state)}
+        {announcementFor(t, state)}
       </output>
 
       {state.turns.length === 0 ? (
         <p className="portal-assistant__intro">
-          Ask about something already written down, such as when your next appointment is, what
-          medicines are on your record, or what is left to pay. Every answer shows the records
-          behind it, and you can open each one.{' '}
-          <Link href="/messages">Write to your care team</Link> for anything else.
+          {t('portal.assistant.intro')}{' '}
+          <Link href="/messages">{t('portal.assistant.intro.careTeam')}</Link>{' '}
+          {t('portal.assistant.intro.forAnythingElse')}
         </p>
       ) : (
         <ol className="portal-assistant__turns">
@@ -160,16 +168,27 @@ function Conversation({ capabilities, chartPatientId }: Readonly<ConversationPro
  * because the person whose words are being sent is the one reading here.
  */
 function ServiceLine({ capabilities }: Readonly<{ capabilities: AssistantCapabilities }>) {
+  const t = useTranslator();
   const { service } = capabilities;
 
+  /*
+   * One sentence with the model and the host in it, rather than two spans set
+   * into English prose. Which name comes first, and what sits between them, is
+   * a decision each language makes; the emphasis the spans carried was styling
+   * on two values, and a sentence that has to say where a patient's words go
+   * should not need markup in the middle of it to be sayable.
+   */
   return (
     <p className="portal-assistant__service">
-      Your practice uses a computer service to write these answers. It is called{' '}
-      <span className="portal-assistant__service-name">{service.modelId}</span> and it runs at{' '}
-      <span className="portal-assistant__service-name">{service.endpointHost}</span>.{' '}
-      {service.dataLeavesDeployment
-        ? 'What you type here is sent out of your practice to that service. Your practice chose it and holds the agreement with it.'
-        : "What you type here stays on the practice's own computers and is not sent anywhere else."}
+      {t('portal.assistant.service.line', {
+        model: service.modelId,
+        host: service.endpointHost,
+      })}{' '}
+      {t(
+        service.dataLeavesDeployment
+          ? 'portal.assistant.service.leaves'
+          : 'portal.assistant.service.stays'
+      )}
     </p>
   );
 }

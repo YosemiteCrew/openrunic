@@ -6,6 +6,7 @@ import { AsyncBoundary } from '@/components/state';
 import { useAppointments, usePatient } from '@/lib/api';
 import { clinicNow, useChartSummary } from '@/lib/api/chart';
 import type { ChartClient } from '@/lib/api/chart';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { nextBookedAppointment } from './appointments';
 import { PatientContextRail } from './PatientContextRail';
@@ -18,9 +19,9 @@ import { PatientContextRail } from './PatientContextRail';
  * editor: same request, same states, same order of information.
  *
  * The appointment lookup degrades on purpose. If the appointment read fails the
- * rail still renders with "No appointment scheduled" rather than replacing the
- * whole rail with an error: allergies are more important than a booking, and a
- * read failure on one must never hide the other.
+ * rail still renders, saying no appointment is scheduled, rather than replacing
+ * the whole rail with an error: allergies are more important than a booking,
+ * and a read failure on one must never hide the other.
  */
 
 export interface ChartRailProps {
@@ -39,6 +40,7 @@ export function ChartRail({
   chartClient,
   children,
 }: Readonly<ChartRailProps>): ReactElement {
+  const t = useTranslator();
   const now = clinicNow();
   const patient = usePatient(patientId);
   const chart = useChartSummary(patientId, chartClient ? { client: chartClient } : {});
@@ -47,21 +49,24 @@ export function ChartRail({
   return (
     <AsyncBoundary
       state={patient}
-      subject="this patient"
+      subject={t('chart.boundary.patient.subject')}
       loadingVariant="text"
       loadingRows={8}
       empty={{
-        title: 'No patient loaded',
-        message: 'Open a chart from the patient index, or press Cmd-K to search.',
+        title: t('chart.boundary.patient.title'),
+        message: t('chart.boundary.patient.message'),
       }}
     >
       {(record) => (
         <AsyncBoundary
           state={chart}
-          subject="this chart"
+          subject={t('chart.boundary.chart.subject')}
           loadingVariant="text"
           loadingRows={8}
-          empty={{ title: 'No chart data', message: 'Nothing has been recorded for this patient.' }}
+          empty={{
+            title: t('chart.boundary.chart.title'),
+            message: t('chart.boundary.chart.message'),
+          }}
         >
           {(summary) => (
             <PatientContextRail

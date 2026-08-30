@@ -1,10 +1,11 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Badge, Card } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { ChargeDiagnosis, ChargeLine } from '@/lib/api';
-import { formatCount } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { diagnosisPointer } from './billing';
 
@@ -16,6 +17,9 @@ import { diagnosisPointer } from './billing';
  * readable in both directions: from the line to the diagnosis on the table, and
  * from the diagnosis back to the lines here. A diagnosis nothing points at says
  * so plainly rather than looking the same as one that is doing work.
+ *
+ * The code and its display are the terminology's own words and render as they
+ * arrived. Only the panel's own copy is translated.
  */
 
 export interface DiagnosisPanelProps {
@@ -24,14 +28,12 @@ export interface DiagnosisPanelProps {
 }
 
 export function DiagnosisPanel({ diagnoses, lines }: Readonly<DiagnosisPanelProps>): ReactElement {
+  const t = useTranslator();
   const active = lines.filter((line) => !line.deleted);
 
   return (
-    <Card overline="Visit diagnoses" title="Justify sources">
-      <p className="or-small or-billing__hint">
-        Link a diagnosis to a charge with its letter on the line. A charge with no diagnosis cannot
-        be billed.
-      </p>
+    <Card overline={t('billing.diagnoses.overline')} title={t('billing.diagnoses.title')}>
+      <p className="or-small or-billing__hint">{t('billing.diagnoses.hint')}</p>
       <ul className="or-dx-list">
         {diagnoses.map((diagnosis, index) => {
           const pointer = diagnosisPointer(index);
@@ -47,10 +49,17 @@ export function DiagnosisPanel({ diagnoses, lines }: Readonly<DiagnosisPanelProp
               </span>
               {uses === 0 ? (
                 <Badge tone="neutral" icon="minus">
-                  Not linked
+                  {t('billing.diagnoses.notLinked')}
                 </Badge>
               ) : (
-                <Badge tone="success">{formatCount(uses, 'charge')}</Badge>
+                <Badge tone="success">
+                  {t(
+                    uses === 1
+                      ? 'billing.diagnoses.chargeCount.one'
+                      : 'billing.diagnoses.chargeCount.other',
+                    { count: formatCount(uses, t.locale) }
+                  )}
+                </Badge>
               )}
             </li>
           );

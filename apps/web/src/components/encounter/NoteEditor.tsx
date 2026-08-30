@@ -1,9 +1,10 @@
 'use client';
 
-import { Badge, Button, Card, Modal, Toast } from '@openrunic/ui';
+import { Badge, Button, Card, Modal } from '@openrunic/ui';
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import type { ReactElement } from 'react';
 
+import { Toast } from '@/components/state';
 import { useRegisterCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import { ATTESTATION, chartApi } from '@/lib/api/chart';
@@ -16,6 +17,7 @@ import type {
 } from '@/lib/api/chart';
 import { useMutation } from '@/lib/api';
 import { formatCredentialed, formatDate, formatDateTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { NoteBlock } from './NoteBlock';
 import { initialDraft, isLocked, reduceNoteDraft } from './note-draft';
@@ -53,12 +55,17 @@ export interface NoteEditorProps {
 type Confirming = 'sign' | 'addendum' | null;
 
 export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>): ReactElement {
+  const t = useTranslator();
   /* The note itself is one value with one transition per action. The rest is
      interface state that belongs to this screen and to nothing in the record. */
   const [draft, dispatch] = useReducer(reduceNoteDraft, note, initialDraft);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [addendumText, setAddendumText] = useState('');
   const [writingAddendum, setWritingAddendum] = useState(false);
+  /* The rendered sentence rather than its key, because the toast is transient
+     interface state and holding a key here would put a lookup the drift test
+     cannot see between the action and the words. It is set from a literal key
+     at the moment the write comes back. */
   const [toast, setToast] = useState<string | null>(null);
 
   const { sections, state, signature, addenda } = draft;
@@ -91,7 +98,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
     if (!outcome.ok) return;
     dispatch({ type: 'replace', note: outcome.value });
     setConfirming(null);
-    setToast('Note signed');
+    setToast(t('encounter.toast.noteSigned'));
   };
 
   const signAddendum = async () => {
@@ -101,18 +108,37 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
     setAddendumText('');
     setWritingAddendum(false);
     setConfirming(null);
-    setToast('Addendum signed');
+    setToast(t('encounter.toast.addendumSigned'));
   };
 
+  /* The palette entries depend on the reader as well as on the lock, so the
+     translator joins the dependency list: a list built once in English would
+     otherwise survive a language change intact.
+
+     That dependency is only sound because the translator is memoised on the
+     locale. `useRegisterCommands` registers whenever this array's identity
+     changes and registering sets state, so a translator with a new identity
+     every render would make this a render loop rather than a wasted
+     allocation.
+
+     Keywords are a comma-separated catalogue string split here, the way the
+     navigation table already does it: somebody searching in another language
+     does not type the English word. */
   useRegisterCommands(
     useMemo<Command[]>(() => {
+      const keywords = (key: string) =>
+        t(key)
+          .split(',')
+          .map((word) => word.trim())
+          .filter((word) => word !== '');
+
       if (locked) {
         return [
           {
             id: 'note.addendum',
             group: 'actions',
-            label: 'Add addendum',
-            keywords: ['amend', 'correct', 'append', 'note'],
+            label: t('encounter.action.addAddendum'),
+            keywords: keywords('encounter.command.addendum.keywords'),
             icon: 'file-plus',
             perform: () => setWritingAddendum(true),
           },
@@ -122,13 +148,13 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
         {
           id: 'note.sign',
           group: 'actions',
-          label: 'Sign note',
-          keywords: ['sign', 'lock', 'finish', 'attest'],
+          label: t('encounter.action.signNote'),
+          keywords: keywords('encounter.command.sign.keywords'),
           icon: 'pen-line',
           perform: () => setConfirming('sign'),
         },
       ];
-    }, [locked])
+    }, [locked, t])
   );
 
   return (
@@ -137,19 +163,20 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
         <Card className="or-note__banner or-note__banner--signed">
           <div className="or-note__banner-row">
             <Badge tone="success" icon="lock">
-              Signed and locked
+              {t('encounter.banner.signedTitle')}
             </Badge>
             <p className="or-body">
-              Signed by {signature?.signerName ?? note.providerName} on{' '}
-              {formatDateTime(signature?.signedAt)}. The text cannot be changed; corrections are
-              added as an addendum.
+              {t('encounter.banner.signedDetail', {
+                signer: signature?.signerName ?? note.providerName,
+                when: formatDateTime(t, signature?.signedAt),
+              })}
             </p>
             <Button
               variant="secondary"
               iconLeft="file-plus"
               onClick={() => setWritingAddendum(true)}
             >
-              Add addendum
+              {t('encounter.action.addAddendum')}
             </Button>
           </div>
         </Card>
@@ -157,15 +184,15 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
         <Card className="or-note__banner or-note__banner--caution">
           <div className="or-note__banner-row">
             <Badge tone="neutral" icon="pen-line">
-              {state === 'DRAFT' ? 'Draft' : 'Unsigned'}
+              {state === 'DRAFT' ? t('encounter.banner.draft') : t('encounter.banner.unsigned')}
             </Badge>
             <p className="or-body">
               {state === 'DRAFT'
-                ? 'This note is a draft. It is not part of the record until it is signed.'
-                : 'This note is unsigned. Signing locks the text into the record; addenda remain possible.'}
+                ? t('encounter.banner.draftDetail')
+                : t('encounter.banner.unsignedDetail')}
             </p>
             <Button variant="primary" iconLeft="pen-line" onClick={() => setConfirming('sign')}>
-              Sign note
+              {t('encounter.action.signNote')}
             </Button>
           </div>
         </Card>
@@ -188,20 +215,20 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
         <SignatureBlock signature={signature} addenda={addenda} />
       ) : (
         <p className="or-caption or-note__footnote">
-          Nothing is signed yet, so this note carries no signature block. Written{' '}
-          {formatDate(note.visitDate)} by{' '}
-          {formatCredentialed(note.providerName, note.providerCredential)}.
+          {t('encounter.footnote.unsigned', {
+            date: formatDate(t, note.visitDate),
+            author: formatCredentialed(note.providerName, note.providerCredential),
+          })}
         </p>
       )}
 
       {writingAddendum ? (
-        <Card title="New addendum" className="or-note__addendum">
+        <Card title={t('encounter.addendum.title')} className="or-note__addendum">
           <p className="or-caption" id="addendum-hint">
-            An addendum is appended to the signed note with its own signature. The original text
-            stays exactly as it was signed.
+            {t('encounter.addendum.hint')}
           </p>
           <label className="or-note__addendum-label" htmlFor="addendum-text">
-            Addendum text
+            {t('encounter.addendum.label')}
           </label>
           <textarea
             id="addendum-text"
@@ -219,7 +246,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
                 setAddendumText('');
               }}
             >
-              Discard addendum
+              {t('encounter.addendum.discard')}
             </Button>
             <Button
               variant="primary"
@@ -227,7 +254,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
               disabled={addendumText.trim().length === 0}
               onClick={() => setConfirming('addendum')}
             >
-              Sign addendum
+              {t('encounter.action.signAddendum')}
             </Button>
           </div>
         </Card>
@@ -236,23 +263,28 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
       <Modal
         open={confirming === 'sign'}
         role="alertdialog"
-        title="Sign this note?"
-        description="Sign and lock this note. The text cannot be changed afterwards; addenda remain possible."
+        title={t('encounter.confirm.sign.title')}
+        description={t('encounter.confirm.sign.description')}
         onClose={() => setConfirming(null)}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirming(null)}>
-              Cancel
+              {t('encounter.action.cancel')}
             </Button>
             <Button variant="primary" disabled={signing.pending} onClick={sign}>
-              {signing.pending ? 'Signing...' : 'Sign note'}
+              {signing.pending ? t('encounter.action.signing') : t('encounter.action.signNote')}
             </Button>
           </>
         }
       >
+        {/* The sentence the signer is attesting to, rendered exactly as the
+            record will store it. Not a catalogue string: a clinician must read
+            the words that go into the note, not a translation of them. */}
         <p className="or-body">{ATTESTATION}</p>
         <p className="or-caption">
-          Signing as {formatCredentialed(note.providerName, note.providerCredential)}.
+          {t('encounter.confirm.sign.signingAs', {
+            signer: formatCredentialed(note.providerName, note.providerCredential),
+          })}
         </p>
         {signing.error ? (
           <p className="or-body" role="alert">
@@ -264,16 +296,18 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
       <Modal
         open={confirming === 'addendum'}
         role="alertdialog"
-        title="Sign this addendum?"
-        description="The addendum is added to the signed note and cannot be edited afterwards."
+        title={t('encounter.confirm.addendum.title')}
+        description={t('encounter.confirm.addendum.description')}
         onClose={() => setConfirming(null)}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirming(null)}>
-              Cancel
+              {t('encounter.action.cancel')}
             </Button>
             <Button variant="primary" disabled={amending.pending} onClick={signAddendum}>
-              {amending.pending ? 'Signing...' : 'Sign addendum'}
+              {amending.pending
+                ? t('encounter.action.signing')
+                : t('encounter.action.signAddendum')}
             </Button>
           </>
         }
@@ -291,7 +325,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
           <Toast
             tone="success"
             title={toast}
-            message="Recorded against this visit. The text is locked; corrections are added as an addendum."
+            message={t('encounter.toast.message')}
             onClose={() => setToast(null)}
           />
         </div>

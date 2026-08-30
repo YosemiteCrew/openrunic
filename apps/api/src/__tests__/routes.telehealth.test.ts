@@ -7,6 +7,8 @@ import {
   bearer,
   createTestApp,
   jsonBearer,
+  DEMO_FACILITY_A,
+  DEMO_FACILITY_B,
   makeAppointmentRow,
   seed,
   testId,
@@ -135,6 +137,42 @@ describe('opening a room', () => {
     );
 
     expect(res.status).toBe(403);
+  });
+
+  it('refuses a principal who may not reach the appointment\u2019s site', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: APPOINTMENT, facilityId: DEMO_FACILITY_B })
+    );
+
+    // `dev-frontdesk-a` holds appointment.write and is granted facility A only.
+    // Opening a room is a WRITE: it creates a TelehealthVisit and asks a vendor
+    // for a joinable address, so a caller who cannot reach the site must not be
+    // able to start a consultation there. `/appointments/:id` has always
+    // refused this; its sibling on the same collection did not.
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it('lets that same principal open a room at a site they hold', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: APPOINTMENT, facilityId: DEMO_FACILITY_A })
+    );
+
+    // The other half, so the guard is proved to narrow rather than to refuse.
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    expect(res.status).toBe(201);
   });
 });
 

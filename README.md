@@ -132,11 +132,18 @@ A modern, fast, lightweight EMR:
 
 ## Project status
 
-**0.1.0.** Substantial EMR functionality has shipped and has tests behind it.
-[`docs/emr-capabilities.md`](docs/emr-capabilities.md) is the capability map: it records more than
-thirty capabilities as Done, and seventeen more as Partial, a seam only, Missing, or not startable at
-all without an external certifying body. Read it before assuming this project is either further
-along or further behind than it is.
+**0.2.0.** Substantial EMR functionality has shipped and has tests behind it.
+[`docs/emr-capabilities.md`](docs/emr-capabilities.md) is the capability map: it records 45 of 53
+capabilities as Done. Read it before assuming this project is either further along or further behind
+than it is.
+
+The eight that are not Done are worth reading as a group, because none of them is waiting on
+engineering. Four need licensed content that cannot be committed to an AGPL repository: drug-drug
+interactions, dose range and renal dosing, formulary and benefit check, and the CPT and ICD-10 code
+sets. Four need an external body: Direct secure messaging needs a HISP, transmission to pharmacy
+needs Surescripts, controlled substances need DEA identity proofing, and ONC certification needs a
+testing body rather than a sprint. Each one has a named seam in the code rather than a gap: the
+adapter, the port or the loader is there, and what is missing is a licence or an accreditation.
 
 Two things follow from a version that still starts with a zero, and they matter more than the
 feature list:
@@ -156,6 +163,10 @@ feature list:
 
 [`docs/self-hosting.md`](docs/self-hosting.md) covers what openrunic is ready for today: an
 evaluation on a machine you control, on a network nobody else is on.
+
+[`docs/demo.md`](docs/demo.md) covers the other way to look at it: a public demonstration, built
+from the same source with the data layer left on its fixtures. Nothing is saved, every record in it
+is invented, and the build that opens its sign-in door cannot be pointed at a real API.
 
 ## Tech stack
 
@@ -181,7 +192,7 @@ openrunic/
 │   ├── api/       # Hono: the FHIR R4 API boundary, and the BFF both apps call
 │   └── e2e/       # The full-day clinical drill: the acceptance test for the whole product
 ├── packages/      # The shared libraries, grouped below
-└── docs/          # ADRs, the capability map, self-hosting, and the gate documentation
+└── docs/          # ADRs, the capability map, self-hosting, the demo, and the gate documentation
 ```
 
 **Foundations** - `types` (branded identifiers and `Result`), `database` (Prisma 7, Postgres,

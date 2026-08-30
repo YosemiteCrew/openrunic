@@ -1,13 +1,15 @@
 'use client';
 
 import { Badge, Button, Table } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { Payment } from '@/lib/api';
 import { formatDate, formatDateTime, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { receiptRows } from './billing';
+import { translateColumns } from './columns';
+import type { KeyedColumn } from './columns';
 import { Drawer } from './Drawer';
 import { Money } from './Money';
 
@@ -18,12 +20,17 @@ import { Money } from './Money';
  * because "a payment" with no allocation behind it is what makes a patient
  * ledger unarguable-with later. Reprint is always available: a receipt that can
  * only be printed once is a receipt that gets lost.
+ *
+ * `payment.method.label` is not translated here. It is the description the
+ * payment carries - "Visa ending 4242" from the processor, or the words the
+ * desk chose when it took the money - and a receipt that renames the method
+ * after the fact is a receipt that no longer matches the transaction.
  */
 
-const COLUMNS: TableColumn[] = [
-  { key: 'serviceDate', header: 'Visit' },
-  { key: 'description', header: 'Description' },
-  { key: 'allocated', header: 'Applied', numeric: true },
+const COLUMNS: readonly KeyedColumn[] = [
+  { key: 'serviceDate', headerKey: 'billing.receipt.column.visit' },
+  { key: 'description', headerKey: 'billing.receipt.column.description' },
+  { key: 'allocated', headerKey: 'billing.receipt.column.applied', numeric: true },
 ];
 
 export interface ReceiptProps {
@@ -38,11 +45,13 @@ export function Receipt({
   onClose,
   onDeliver,
 }: Readonly<ReceiptProps>): ReactElement | null {
+  const t = useTranslator();
+
   if (!payment) return null;
 
   const rows = receiptRows(payment.allocations).map((allocation): Record<string, ReactNode> => ({
     id: allocation.id,
-    serviceDate: formatDate(allocation.serviceDate),
+    serviceDate: formatDate(t, allocation.serviceDate),
     description: allocation.description,
     allocated: <Money amount={allocation.allocated} currency={payment.currency} />,
   }));
@@ -50,7 +59,7 @@ export function Receipt({
   return (
     <Drawer
       open
-      title={`Receipt ${payment.receiptNumber}`}
+      title={t('billing.receipt.title', { number: payment.receiptNumber })}
       subtitle={
         <>
           {formatName(payment.patient.name)}{' '}
@@ -65,10 +74,10 @@ export function Receipt({
             iconLeft="printer"
             onClick={() => onDeliver(payment, 'print')}
           >
-            Print receipt
+            {t('billing.receipt.print')}
           </Button>
           <Button iconLeft="mail" onClick={() => onDeliver(payment, 'email')}>
-            Email receipt
+            {t('billing.receipt.email')}
           </Button>
         </>
       }
@@ -76,30 +85,37 @@ export function Receipt({
       <div className="or-receipt">
         <dl className="or-totals">
           <div className="or-totals__row">
-            <dt>Amount</dt>
+            <dt>{t('billing.receipt.amount')}</dt>
             <dd>
               <Money amount={payment.amount} currency={payment.currency} emphasis />
             </dd>
           </div>
           <div className="or-totals__row">
-            <dt>Method</dt>
+            <dt>{t('billing.receipt.method')}</dt>
             <dd>{payment.method.label}</dd>
           </div>
           <div className="or-totals__row">
-            <dt>Taken</dt>
+            <dt>{t('billing.receipt.taken')}</dt>
             <dd>
-              {formatDateTime(payment.takenAt)} by {payment.takenBy}
+              {t('billing.receipt.takenAtBy', {
+                at: formatDateTime(t, payment.takenAt),
+                by: payment.takenBy,
+              })}
             </dd>
           </div>
         </dl>
 
         {payment.status === 'REVERSED' ? (
-          <Badge tone="danger">Reversed, this receipt no longer applies</Badge>
+          <Badge tone="danger">{t('billing.receipt.reversed')}</Badge>
         ) : (
-          <Badge tone="success">Captured</Badge>
+          <Badge tone="success">{t('billing.receipt.captured')}</Badge>
         )}
 
-        <Table caption="What this payment paid" columns={COLUMNS} rows={rows} />
+        <Table
+          caption={t('billing.receipt.caption')}
+          columns={translateColumns(COLUMNS, t)}
+          rows={rows}
+        />
       </div>
     </Drawer>
   );

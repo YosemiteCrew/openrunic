@@ -5,7 +5,7 @@ import { Logo } from './Logo';
 
 /** Both branches render an image named for the brand, so one query serves the whole suite. */
 function mark(): HTMLElement {
-  return screen.getByRole('img', { name: 'OpenRunic' });
+  return screen.getByRole('img', { name: 'openrunic' });
 }
 
 describe('Logo', () => {

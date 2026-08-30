@@ -12,6 +12,7 @@
  * sign is easy to miss on a phone and impossible to hear.
  */
 
+import type { Translator } from '@openrunic/i18n';
 import { useCallback, useState } from 'react';
 import { Badge, Button, Card, EmptyState, Modal, Table } from '@openrunic/ui';
 import type { BadgeTone, TableColumn } from '@openrunic/ui';
@@ -20,17 +21,26 @@ import { Money } from '@/components/Money';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
 import type { PortalApi, Receipt, Statement, StatementStatus } from '@/lib/api/types';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
+import { formatDate, formatDateTime, formatMoney, formatMoneyWithCode } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
 export interface BillsScreenProps {
   api?: PortalApi;
 }
 
-const STATUS_LABEL: Record<StatementStatus, string> = {
-  due: 'Due',
-  paid: 'Paid',
-  credit: 'In credit',
+/*
+ * The three states a statement can be in.
+ *
+ * Keys as the map's values, which is the shape `catalogue-drift.test.ts`
+ * reaches by checking the catalogue against the source rather than the source
+ * against the catalogue: the property name is the status, not `somethingKey`,
+ * so the forward scan cannot see these.
+ */
+const STATUS_LABEL_KEYS: Record<StatementStatus, string> = {
+  due: 'portal.bills.status.due',
+  paid: 'portal.bills.status.paid',
+  credit: 'portal.bills.status.credit',
 };
 
 /* Terracotta is for actions, so a status badge never wears it. */
@@ -40,12 +50,22 @@ const STATUS_TONE: Record<StatementStatus, BadgeTone> = {
   credit: 'success',
 };
 
-const LINE_COLUMNS: TableColumn[] = [
-  { key: 'description', header: 'What it was for' },
-  { key: 'code', header: 'Code', mono: true },
-  { key: 'quantity', header: 'Quantity', numeric: true },
-  { key: 'amount', header: 'Amount (GBP)', align: 'right' },
-];
+/**
+ * The columns, built per statement because one of them names the currency.
+ *
+ * The header used to read `Amount (GBP)` whatever the money said. A practice
+ * billing in euros got euro figures under a column headed GBP, which is the
+ * kind of wrong that reads as authoritative: the reader has no reason to
+ * distrust a column header, and the figures underneath look right.
+ */
+function lineColumns(t: Translator, currency: string): TableColumn[] {
+  return [
+    { key: 'description', header: t('portal.bills.lines.description') },
+    { key: 'code', header: t('portal.bills.lines.code'), mono: true },
+    { key: 'quantity', header: t('portal.bills.lines.quantity'), numeric: true },
+    { key: 'amount', header: t('portal.bills.lines.amount', { currency }), align: 'right' },
+  ];
+}
 
 interface StatementDetailProps {
   statement: Statement;
@@ -54,6 +74,7 @@ interface StatementDetailProps {
 }
 
 function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailProps>) {
+  const t = useTranslator();
   const [confirming, setConfirming] = useState(false);
   const pay = useAction((id: string) => api.payStatement(id));
   const receipt: Receipt | undefined = pay.value;
@@ -76,70 +97,84 @@ function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailPr
 
   return (
     <Card
-      overline={`Statement ${statement.reference}`}
-      title={`Issued ${formatDate(statement.issuedOn)}`}
+      overline={t('portal.bills.statement.overline', { reference: statement.reference })}
+      title={t('portal.bills.statement.title', { date: formatDate(t, statement.issuedOn) })}
     >
       <Table
-        caption={`Charges on statement ${statement.reference}`}
-        columns={LINE_COLUMNS}
+        caption={t('portal.bills.lines.caption', { reference: statement.reference })}
+        columns={lineColumns(t, statement.total.currency)}
         rows={rows}
       />
 
       <p className="portal-table-note">
-        Amounts are in pounds sterling. A figure marked credit is money owed back to you.
+        {t('portal.bills.lines.note', { currency: statement.total.currency })}
       </p>
 
       <div className="portal-total-row">
-        <p className="portal-total-row__label">Total</p>
+        <p className="portal-total-row__label">{t('portal.bills.statement.total')}</p>
         <Money showCode value={statement.total} />
       </div>
 
       <div className="portal-total-row">
-        <p className="portal-total-row__label">Still to pay</p>
+        <p className="portal-total-row__label">{t('portal.bills.statement.stillToPay')}</p>
         <Money showCode value={statement.balance} />
       </div>
 
       {receipt ? (
         <output className="portal-confirmation">
-          <p className="portal-confirmation__title">Payment received</p>
+          <p className="portal-confirmation__title">{t('portal.bills.receipt.title')}</p>
+          {/* One message rather than a sentence built round a rendered <Money>.
+              The figure was a component in the middle of prose, which fixed
+              where the amount sits and made the rest of the sentence four
+              fragments either side of it. */}
           <p className="or-small">
-            You paid <Money value={receipt.amount} /> on {formatDateTime(receipt.paidOn)} with the
-            card ending {receipt.cardLast4}. Your receipt reference is {receipt.id}. Keep it if you
-            need to query the payment.
+            {t('portal.bills.receipt.body', {
+              amount: formatMoney(t, receipt.amount),
+              paidOn: formatDateTime(t, receipt.paidOn),
+              cardLast4: receipt.cardLast4,
+              reference: receipt.id,
+            })}
           </p>
         </output>
       ) : null}
 
       {pay.status === 'failed' ? (
         <p className="portal-record__meta" role="alert">
-          The payment did not go through and you have not been charged. Check your connection, then
-          try again.
+          {t('portal.bills.pay.failed')}
         </p>
       ) : null}
 
       <div className="portal-actions">
         {statement.status === 'due' && receipt === undefined ? (
           <Button iconLeft="credit-card" onClick={() => setConfirming(true)}>
-            Pay this statement
+            {t('portal.bills.pay.action')}
           </Button>
         ) : null}
         <Button variant="secondary" iconLeft="arrow-left" onClick={onClose}>
-          Back to your statements
+          {t('portal.bills.back')}
         </Button>
       </div>
 
       {confirming ? (
         <Modal
           open
-          title="Pay this statement?"
-          description={`This takes ${statement.balance.currency} ${(statement.balance.amountMinor / 100).toFixed(2)} from the card the practice holds for you. Payments cannot be reversed from this portal. To get the money back you would have to ask the practice for a refund.`}
+          title={t('portal.bills.payDialog.title')}
+          /* `formatMoneyWithCode` rather than the code and a fixed-point number
+             glued together, which is what this said. That spelled every amount
+             `GBP 42.50`: no symbol, no grouping, and a full stop for a decimal
+             separator in front of a reader whose language writes a comma. The
+             figure a payment dialog names is the one figure on the screen that
+             has to be unmistakable. */
+          description={t('portal.bills.payDialog.description', {
+            amount: formatMoneyWithCode(t, statement.balance),
+          })}
           onClose={() => setConfirming(false)}
           footer={
             <>
               <Button variant="secondary" onClick={() => setConfirming(false)}>
-                Not now
+                {t('portal.bills.payDialog.notNow')}
               </Button>
-              <Button onClick={confirmPay}>Pay now</Button>
+              <Button onClick={confirmPay}>{t('portal.bills.payDialog.confirm')}</Button>
             </>
           }
         />
@@ -149,6 +184,7 @@ function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailPr
 }
 
 export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getStatements(), [api]);
   const { state, reload } = useAsync(load);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -156,21 +192,22 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
   return (
     <>
       <PageHeader
-        overline="Your account"
-        title="Bills"
-        lede="Every statement the practice has issued, what each charge was for, and how to pay."
+        overline={t('portal.bills.overline')}
+        title={t('portal.bills.title')}
+        lede={t('portal.bills.lede')}
       />
 
       <AsyncBoundary
         state={state}
-        what="your statements"
+        loadingKey="portal.bills.async.loading"
+        errorKey="portal.bills.async.error"
         onRetry={reload}
         isEmpty={(statements) => statements.length === 0}
         empty={
           <EmptyState
             icon="receipt"
-            title="You have no statements."
-            message="When the practice bills you for a visit, the statement appears here."
+            title={t('portal.bills.empty.title')}
+            message={t('portal.bills.empty.message')}
           />
         }
       >
@@ -196,24 +233,34 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
               {statements.map((statement) => (
                 <Card
                   key={statement.id}
-                  overline={`Statement ${statement.reference}`}
-                  title={`Issued ${formatDate(statement.issuedOn)}`}
+                  overline={t('portal.bills.statement.overline', {
+                    reference: statement.reference,
+                  })}
+                  title={t('portal.bills.statement.title', {
+                    date: formatDate(t, statement.issuedOn),
+                  })}
                 >
                   <dl className="portal-data-list">
                     <div className="portal-data-list__row">
-                      <dt className="portal-data-list__term">Status</dt>
+                      <dt className="portal-data-list__term">
+                        {t('portal.bills.statement.status')}
+                      </dt>
                       <dd className="portal-data-list__value">
                         <Badge tone={STATUS_TONE[statement.status]}>
-                          {STATUS_LABEL[statement.status]}
+                          {t(STATUS_LABEL_KEYS[statement.status])}
                         </Badge>
                       </dd>
                     </div>
                     <div className="portal-data-list__row">
-                      <dt className="portal-data-list__term">Due by</dt>
-                      <dd className="portal-data-list__value">{formatDate(statement.dueOn)}</dd>
+                      <dt className="portal-data-list__term">
+                        {t('portal.bills.statement.dueBy')}
+                      </dt>
+                      <dd className="portal-data-list__value">{formatDate(t, statement.dueOn)}</dd>
                     </div>
                     <div className="portal-data-list__row">
-                      <dt className="portal-data-list__term">Still to pay</dt>
+                      <dt className="portal-data-list__term">
+                        {t('portal.bills.statement.stillToPay')}
+                      </dt>
                       <dd className="portal-data-list__value">
                         <Money showCode value={statement.balance} />
                       </dd>
@@ -226,7 +273,7 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
                       variant={statement.status === 'due' ? 'primary' : 'secondary'}
                       onClick={() => setOpenId(statement.id)}
                     >
-                      See what this was for
+                      {t('portal.bills.statement.open')}
                     </Button>
                   </div>
                 </Card>

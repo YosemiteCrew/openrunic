@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import type { Addendum, NoteSignature } from '@/lib/api/chart';
 import { formatCredentialed, formatDateTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * The e-sign unit, C25.
@@ -31,37 +32,42 @@ export function SignatureBlock({
   signature,
   addenda,
 }: Readonly<SignatureBlockProps>): ReactElement {
+  const t = useTranslator();
+
   return (
-    <Card title="Signature" className="or-signature">
+    <Card title={t('encounter.signature.title')} className="or-signature">
+      {/* The attestation is the sentence the signer signed. It comes back with
+          the signature and is rendered verbatim: a clinician must read the words
+          they attested to, not this application's rendering of them. */}
       <p className="or-body or-signature__attestation">{signature.attestation}</p>
       <dl className="or-signature__grid">
         <div className="or-signature__pair">
-          <dt className="or-overline">Signed by</dt>
+          <dt className="or-overline">{t('encounter.signature.signedBy')}</dt>
           <dd className="or-body">
             {formatCredentialed(signature.signerName, signature.credential)}
           </dd>
         </div>
         <div className="or-signature__pair">
-          <dt className="or-overline">Signed at</dt>
-          <dd className="or-body">{formatDateTime(signature.signedAt)}</dd>
+          <dt className="or-overline">{t('encounter.signature.signedAt')}</dt>
+          <dd className="or-body">{formatDateTime(t, signature.signedAt)}</dd>
         </div>
         <div className="or-signature__pair">
-          <dt className="or-overline">Note fingerprint</dt>
+          <dt className="or-overline">{t('encounter.signature.fingerprint')}</dt>
           <dd className="or-body or-mono">{signature.fingerprint}</dd>
         </div>
       </dl>
 
       {addenda.length > 0 ? (
         <div className="or-signature__addenda">
-          <h4 className="or-h3 or-signature__addenda-title">Addenda</h4>
+          <h4 className="or-h3 or-signature__addenda-title">{t('encounter.signature.addenda')}</h4>
           <ul className="or-signature__addenda-list">
             {addenda.map((addendum) => (
               <li key={addendum.id} className="or-signature__addendum">
-                <Badge tone="neutral">Addendum</Badge>
+                <Badge tone="neutral">{t('encounter.signature.addendum')}</Badge>
                 <p className="or-body or-signature__addendum-text">{addendum.text}</p>
                 <p className="or-caption">
                   {formatCredentialed(addendum.authorName, addendum.credential)},{' '}
-                  {formatDateTime(addendum.addedAt)}
+                  {formatDateTime(t, addendum.addedAt)}
                 </p>
               </li>
             ))}

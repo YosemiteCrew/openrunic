@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/terminology",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bring-your-own terminology services for Openrunic. Ships no licensed code content.",
   "license": "AGPL-3.0-only",
   "type": "module",

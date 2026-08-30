@@ -4,6 +4,7 @@ import { Badge, Button, Card, Checkbox } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import type { DuplicateMatch } from './registration';
 
@@ -35,21 +36,19 @@ export function DuplicatePanel({
   onOverrideChange,
   asOf,
 }: Readonly<DuplicatePanelProps>): ReactElement {
+  const t = useTranslator();
+
   return (
     <Card
-      overline="Possible duplicate"
+      overline={t('patients.duplicate.overline')}
       title={
-        blocking
-          ? 'This patient may already have a record'
-          : 'Similar records exist in the practice'
+        blocking ? t('patients.duplicate.blockingTitle') : t('patients.duplicate.similarTitle')
       }
       className="or-duplicates"
     >
       {/* A blocking match interrupts a save in progress, so it is announced. */}
       <p className="or-body" role={blocking ? 'alert' : undefined}>
-        {blocking
-          ? 'Registering a second record splits the history for this person. Open the existing record, or confirm below that this is a different person.'
-          : 'These records look close. Check them before registering a new one.'}
+        {blocking ? t('patients.duplicate.blockingBody') : t('patients.duplicate.similarBody')}
       </p>
 
       <ul className="or-duplicates__list">
@@ -60,14 +59,14 @@ export function DuplicatePanel({
               <p className="or-small">
                 <span className="or-mono">{formatMrn(match.patient.mrn)}</span>
                 {' · '}
-                {formatDate(match.patient.birthDate)}
+                {formatDate(t, match.patient.birthDate)}
                 {' · '}
-                {formatAge(match.patient.birthDate, asOf)}
+                {formatAge(t, match.patient.birthDate, asOf)}
               </p>
               <div className="or-duplicates__reasons">
-                {match.reasons.map((reason) => (
-                  <Badge key={reason} tone="neutral">
-                    {reason}
+                {match.reasonKeys.map((reasonKey) => (
+                  <Badge key={reasonKey} tone="neutral">
+                    {t(reasonKey)}
                   </Badge>
                 ))}
               </div>
@@ -77,9 +76,11 @@ export function DuplicatePanel({
               size="sm"
               iconLeft="folder-open"
               href={`/patients/${match.patient.id}`}
-              aria-label={`Open the existing record for ${formatName(match.patient.name)}`}
+              aria-label={t('patients.duplicate.openFor', {
+                name: formatName(match.patient.name),
+              })}
             >
-              Open this record
+              {t('patients.duplicate.open')}
             </Button>
           </li>
         ))}
@@ -87,8 +88,8 @@ export function DuplicatePanel({
 
       {blocking ? (
         <Checkbox
-          label="This is a different person"
-          hint="Recorded with the registration, so the decision is auditable."
+          label={t('patients.duplicate.overrideLabel')}
+          hint={t('patients.duplicate.overrideHint')}
           checked={overridden}
           onChange={(event) => onOverrideChange(event.target.checked)}
         />

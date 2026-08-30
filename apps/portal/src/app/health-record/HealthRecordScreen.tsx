@@ -8,6 +8,13 @@
  * measured value never appears alone either: it carries its unit, its usual range and a
  * labelled verdict, plus an explicit way to ask about it. A patient should never be left
  * looking at a red number with no way to find out what it means.
+ *
+ * What the practice wrote down arrives already worded and is rendered as it
+ * arrived: the condition, the dose label, the severity, the plain-language
+ * gloss. Only the frame around it comes from the catalogue. Inventing a
+ * translation for a clinical word this file never chose is the failure the rest
+ * of the catalogue is careful to avoid, and it would be invisible: a wrong
+ * Spanish word for a severity still renders as a severity.
  */
 
 import { useCallback, useState } from 'react';
@@ -18,6 +25,7 @@ import { PlainTerm } from '@/components/PlainTerm';
 import { RangeBadge } from '@/components/RangeBadge';
 import { getPortalApi } from '@/lib/api';
 import type { HealthRecord, PortalApi, Result } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDate, formatMeasurement } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
@@ -44,6 +52,7 @@ function isRecordEmpty(record: HealthRecord): boolean {
  * and the panel says that in plain words before offering the message box.
  */
 function ResultRow({ result }: Readonly<{ result: Result }>) {
+  const t = useTranslator();
   const [askOpen, setAskOpen] = useState(false);
   const panelId = `result-${result.id}-ask`;
 
@@ -55,15 +64,19 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
       </div>
 
       <p className="portal-record__reading">
-        <span className="portal-record__value">{formatMeasurement(result.value, result.unit)}</span>
+        <span className="portal-record__value">
+          {formatMeasurement(t, result.value, result.unit)}
+        </span>
         <span className="portal-record__meta">
           {result.referenceRange === ''
-            ? 'No usual range was recorded for this test.'
-            : `Usual range: ${result.referenceRange}`}
+            ? t('portal.healthRecord.results.noRange')
+            : t('portal.healthRecord.results.usualRange', { range: result.referenceRange })}
         </span>
       </p>
 
-      <p className="portal-record__meta">Taken on {formatDate(result.takenOn)}</p>
+      <p className="portal-record__meta">
+        {t('portal.healthRecord.results.takenOn', { date: formatDate(t, result.takenOn) })}
+      </p>
 
       <div className="portal-actions">
         <Button
@@ -73,21 +86,19 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
           aria-controls={panelId}
           onClick={() => setAskOpen((open) => !open)}
         >
-          Ask about this result
+          {t('portal.healthRecord.results.ask')}
         </Button>
       </div>
 
       {askOpen ? (
         <div className="portal-explainer" id={panelId}>
-          <p className="portal-explainer__title">What to do about this number</p>
-          <p className="or-small">
-            A single result is one moment, not a diagnosis. Your care team reads it alongside
-            everything else they know about you. If you want it explained, send them a message and
-            quote the test name and the date.
+          <p className="portal-explainer__title">
+            {t('portal.healthRecord.results.explainer.title')}
           </p>
+          <p className="or-small">{t('portal.healthRecord.results.explainer.body')}</p>
           <div className="portal-actions">
             <Button href="/messages" iconLeft="message-square">
-              Message your care team
+              {t('portal.healthRecord.results.explainer.action')}
             </Button>
           </div>
         </div>
@@ -97,35 +108,41 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
 }
 
 export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthRecordScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getHealthRecord(), [api]);
   const { state, reload } = useAsync(load);
 
   return (
     <>
       <PageHeader
-        overline="Your record"
-        title="Health record"
-        lede="Everything your care team has written down, with a plain-language explanation beside each clinical term."
+        overline={t('portal.healthRecord.overline')}
+        title={t('portal.healthRecord.title')}
+        lede={t('portal.healthRecord.lede')}
       />
 
       <AsyncBoundary
         state={state}
-        what="your health record"
+        loadingKey="portal.healthRecord.async.loading"
+        errorKey="portal.healthRecord.async.error"
         onRetry={reload}
         isEmpty={isRecordEmpty}
         empty={
           <EmptyState
             icon="heart-pulse"
-            title="Your record has nothing in it yet."
-            message="Results, conditions, medicines and documents appear here after your first appointment."
+            title={t('portal.healthRecord.empty.title')}
+            message={t('portal.healthRecord.empty.message')}
           />
         }
       >
         {(record) => (
           <div className="portal-stack">
-            <Card overline="Results" title="Recent test results" tone="cream">
+            <Card
+              overline={t('portal.healthRecord.results.overline')}
+              title={t('portal.healthRecord.results.title')}
+              tone="cream"
+            >
               {record.results.length === 0 ? (
-                <p className="or-body">No results have been added to your record.</p>
+                <p className="or-body">{t('portal.healthRecord.results.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {record.results.map((result) => (
@@ -135,9 +152,12 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
               )}
             </Card>
 
-            <Card overline="Conditions" title="Problems on your record">
+            <Card
+              overline={t('portal.healthRecord.problems.overline')}
+              title={t('portal.healthRecord.problems.title')}
+            >
               {record.problems.length === 0 ? (
-                <p className="or-body">No conditions are recorded.</p>
+                <p className="or-body">{t('portal.healthRecord.problems.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {record.problems.map((problem) => (
@@ -147,7 +167,9 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                         <Badge tone="neutral">{problem.status}</Badge>
                       </div>
                       <p className="portal-record__meta">
-                        Recorded on {formatDate(problem.recordedOn)}
+                        {t('portal.healthRecord.problems.recordedOn', {
+                          date: formatDate(t, problem.recordedOn),
+                        })}
                       </p>
                     </li>
                   ))}
@@ -155,9 +177,12 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
               )}
             </Card>
 
-            <Card overline="Medicines" title="What you have been prescribed">
+            <Card
+              overline={t('portal.healthRecord.medications.overline')}
+              title={t('portal.healthRecord.medications.title')}
+            >
               {record.medications.length === 0 ? (
-                <p className="or-body">No medicines are recorded.</p>
+                <p className="or-body">{t('portal.healthRecord.medications.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {record.medications.map((medication) => (
@@ -165,13 +190,15 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       <div className="portal-record__head">
                         <PlainTerm term={medication.name} plain={medication.plain} />
                         <span className="portal-record__value">
-                          {formatMeasurement(medication.strength, medication.unit)}
+                          {formatMeasurement(t, medication.strength, medication.unit)}
                         </span>
                       </div>
                       <p className="or-body">{medication.instruction}</p>
                       <p className="portal-record__meta">
-                        Prescribed by {medication.prescribedBy}, started{' '}
-                        {formatDate(medication.startedOn)}
+                        {t('portal.healthRecord.medications.prescribedBy', {
+                          clinician: medication.prescribedBy,
+                          date: formatDate(t, medication.startedOn),
+                        })}
                       </p>
                     </li>
                   ))}
@@ -179,9 +206,12 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
               )}
             </Card>
 
-            <Card overline="Allergies" title="What to avoid">
+            <Card
+              overline={t('portal.healthRecord.allergies.overline')}
+              title={t('portal.healthRecord.allergies.title')}
+            >
               {record.allergies.length === 0 ? (
-                <p className="or-body">No allergies are recorded.</p>
+                <p className="or-body">{t('portal.healthRecord.allergies.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {record.allergies.map((allergy) => (
@@ -192,9 +222,15 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                           {allergy.severity}
                         </Badge>
                       </div>
-                      <p className="or-body">What happened: {allergy.reaction}</p>
+                      <p className="or-body">
+                        {t('portal.healthRecord.allergies.reaction', {
+                          reaction: allergy.reaction,
+                        })}
+                      </p>
                       <p className="portal-record__meta">
-                        Recorded on {formatDate(allergy.recordedOn)}
+                        {t('portal.healthRecord.allergies.recordedOn', {
+                          date: formatDate(t, allergy.recordedOn),
+                        })}
                       </p>
                     </li>
                   ))}
@@ -202,9 +238,12 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
               )}
             </Card>
 
-            <Card overline="Vaccinations" title="Immunisations you have had">
+            <Card
+              overline={t('portal.healthRecord.immunisations.overline')}
+              title={t('portal.healthRecord.immunisations.title')}
+            >
               {record.immunisations.length === 0 ? (
-                <p className="or-body">No vaccinations are recorded.</p>
+                <p className="or-body">{t('portal.healthRecord.immunisations.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {record.immunisations.map((immunisation) => (
@@ -214,7 +253,9 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                         <Badge tone="success">{immunisation.doseLabel}</Badge>
                       </div>
                       <p className="portal-record__meta">
-                        Given on {formatDate(immunisation.givenOn)}
+                        {t('portal.healthRecord.immunisations.givenOn', {
+                          date: formatDate(t, immunisation.givenOn),
+                        })}
                       </p>
                     </li>
                   ))}
@@ -222,9 +263,12 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
               )}
             </Card>
 
-            <Card overline="Documents" title="Letters and reports">
+            <Card
+              overline={t('portal.healthRecord.documents.overline')}
+              title={t('portal.healthRecord.documents.title')}
+            >
               {record.documents.length === 0 ? (
-                <p className="or-body">No documents have been added.</p>
+                <p className="or-body">{t('portal.healthRecord.documents.none')}</p>
               ) : (
                 <ul className="portal-inline-list">
                   {record.documents.map((document) => (
@@ -235,7 +279,11 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                           {document.format}
                         </Badge>
                       </div>
-                      <p className="portal-record__meta">Added on {formatDate(document.addedOn)}</p>
+                      <p className="portal-record__meta">
+                        {t('portal.healthRecord.documents.addedOn', {
+                          date: formatDate(t, document.addedOn),
+                        })}
+                      </p>
                     </li>
                   ))}
                 </ul>

@@ -18,6 +18,62 @@
 ARG NODE_IMAGE=node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
 
 FROM ${NODE_IMAGE} AS base
+
+# Take Alpine's current packages before anything else runs.
+#
+# CVE-2026-14456 is a high-severity flaw in libssl3/libcrypto3. Alpine shipped
+# the fix as 3.5.8-r0; the Node image still carries 3.5.7-r0 because it has not
+# been rebuilt since. Re-resolving the tag above does not help - the digest
+# pinned there already IS the current node:22-alpine, so there is nothing newer
+# to bump to. The patch exists in the package repository and not yet in the
+# image, which is the one case the digest comment's "bump it deliberately"
+# answer cannot reach.
+#
+# **This sits in every stage that starts from ${NODE_IMAGE}.** There are two
+# roots here, `base` and `runtime`, and only `runtime` is shipped: nothing
+# descended from `base` leaves this file, because `fetch` and `build` exist to
+# produce the standalone output that `runtime` copies. So the `runtime` copy is
+# what closes the vulnerability here, not this one.
+#
+# It is here anyway, deliberately. `apps/api/Dockerfile` has a third descendant
+# of `base` - `migrate`, which docker-compose builds by name and ships as its
+# own image - so the equivalent line there is load-bearing, and that is the gap
+# the container scan would have stayed green over. Keeping the two files the
+# same shape is what stops somebody adding a shipped stage here later and
+# inheriting a stale package set from a `base` nobody thought to check.
+#
+# Every apk package rather than the two by name. A named list is a second place
+# to maintain and it goes stale silently: the next Alpine advisory lands and the
+# line still says libssl3. Pinning a version is worse again, because Alpine
+# drops superseded versions from the index and the build starts failing the day
+# 3.5.8-r0 is replaced.
+#
+# ## What this costs, and the layer that can outlive the fix
+#
+# The OS package set is no longer reproducible from the digest alone. That is a
+# real trade against what the digest is for, and it is the right way round for
+# an image serving patient data: a reproducible build of a known-vulnerable
+# openssl is not the property worth keeping.
+#
+# The subtler cost is that this layer is cacheable. Nothing above it changes
+# between rebuilds, so a daemon that already has it - a self-hosted operator
+# running `docker compose up --build` again - reuses it and never contacts
+# Alpine, keeping the package set from whenever it first ran. Bumping
+# ${NODE_IMAGE} invalidates the whole chain and fixes that, but the window this
+# patch exists for is exactly when the base digest has NOT moved.
+#
+# `APK_UPGRADE_STAMP` is the handle for that: it is part of the command string,
+# so changing it forces the upgrade to re-run. It is a cache key and never a
+# credential - the name avoids "token", because hadolint DL3064 and Trivy
+# DS-0031 both match on the name alone and would read one as a leaked secret.
+#
+#     docker compose build --build-arg APK_UPGRADE_STAMP=$(date +%F) web
+#
+# CI needs no token because its runners are ephemeral and share no layer cache,
+# so the scan always resolves packages fresh.
+ARG APK_UPGRADE_STAMP=pinned
+RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
+    && apk --no-cache upgrade
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true \
@@ -40,8 +96,16 @@ FROM fetch AS build
 
 ARG NEXT_PUBLIC_API_MODE=live
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+# Off, and given a value rather than left unset on purpose. Next inlines a
+# NEXT_PUBLIC_* that has a build-time value and leaves the expression to read
+# process.env when it does not, so an image built with no value at all could be
+# turned into a demonstration by an environment variable at run time. Baking
+# `false` in is what makes the header comment above true of this one too: it
+# takes a rebuild to move it. See docs/demo.md.
+ARG NEXT_PUBLIC_DEMO_MODE=false
 ENV NEXT_PUBLIC_API_MODE=$NEXT_PUBLIC_API_MODE \
     NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_DEMO_MODE=$NEXT_PUBLIC_DEMO_MODE \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production
 
@@ -66,12 +130,20 @@ RUN pnpm exec turbo run build --filter=web...
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 
+# Alpine's current packages, for the reason spelled out at the `base` stage.
+# This stage starts from ${NODE_IMAGE} rather than from `base`, so it does not
+# inherit that upgrade and needs its own.
+ARG APK_UPGRADE_STAMP=pinned
+RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
+    && apk --no-cache upgrade
+
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     # Next's standalone server binds 127.0.0.1 unless told otherwise, which
     # inside a container means nothing outside it can ever connect.
     HOSTNAME=0.0.0.0
+
 
 # Strip the package manager out of the runtime.
 #

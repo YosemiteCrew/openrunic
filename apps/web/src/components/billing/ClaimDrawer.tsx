@@ -1,14 +1,17 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Table, Tag } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { Claim } from '@/lib/api';
-import { formatDate, formatDateTime, formatMrn, formatName, NOT_RECORDED } from '@/lib/format';
+import { formatDate, formatDateTime, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
-import { CLAIM_STATUS_LABELS, CLAIM_STATUS_TONE, claimLifecycle } from './billing';
+import { CLAIM_STATUS_LABEL_KEYS, CLAIM_STATUS_TONE, claimLifecycle } from './billing';
+import { translateColumns } from './columns';
+import type { KeyedColumn } from './columns';
 import { Drawer } from './Drawer';
 import { Money } from './Money';
 
@@ -24,16 +27,21 @@ import { Money } from './Money';
  * The rebill confirmation happens inside the drawer's own footer rather than in
  * a dialog on top of it. Stacking a modal over a drawer is the pattern the
  * canon forbids, and the consequence sentence reads just as clearly here.
+ *
+ * The denial reason, the denial code, the scrub errors and every event on the
+ * timeline arrive from the payer or the clearinghouse and are rendered in the
+ * words they came in. Rewording a denial in the interface would leave the
+ * practice arguing a case in language the payer never used.
  */
 
-const LINE_COLUMNS: TableColumn[] = [
-  { key: 'code', header: 'Code', mono: true },
-  { key: 'description', header: 'Description' },
-  { key: 'units', header: 'Units', numeric: true },
-  { key: 'billed', header: 'Billed', numeric: true },
-  { key: 'allowed', header: 'Allowed', numeric: true },
-  { key: 'paid', header: 'Paid', numeric: true },
-  { key: 'responsibility', header: 'Patient responsibility', numeric: true },
+const LINE_COLUMNS: readonly KeyedColumn[] = [
+  { key: 'code', headerKey: 'billing.claimDrawer.line.code', mono: true },
+  { key: 'description', headerKey: 'billing.claimDrawer.line.description' },
+  { key: 'units', headerKey: 'billing.claimDrawer.line.units', numeric: true },
+  { key: 'billed', headerKey: 'billing.claimDrawer.line.billed', numeric: true },
+  { key: 'allowed', headerKey: 'billing.claimDrawer.line.allowed', numeric: true },
+  { key: 'paid', headerKey: 'billing.claimDrawer.line.paid', numeric: true },
+  { key: 'responsibility', headerKey: 'billing.claimDrawer.line.responsibility', numeric: true },
 ];
 
 export interface ClaimDrawerProps {
@@ -46,8 +54,8 @@ export interface ClaimDrawerProps {
  * A money cell that has not been adjudicated yet says so, rather than showing a
  * zero a biller would read as "the payer allowed nothing".
  */
-function amountCell(amount: number | null, currency: string): ReactNode {
-  if (amount === null) return <span className="or-small">{NOT_RECORDED}</span>;
+function amountCell(t: Translator, amount: number | null, currency: string): ReactNode {
+  if (amount === null) return <span className="or-small">{t('common.notRecorded')}</span>;
   return <Money amount={amount} currency={currency} />;
 }
 
@@ -56,6 +64,7 @@ interface RebillFooterProps {
   confirming: boolean;
   onConfirmingChange: (confirming: boolean) => void;
   onRebill: (claim: Claim) => void;
+  translate: Translator;
 }
 
 /**
@@ -67,13 +76,14 @@ function RebillFooter({
   confirming,
   onConfirmingChange,
   onRebill,
+  translate,
 }: Readonly<RebillFooterProps>): ReactElement | null {
   if (claim.status !== 'DENIED') return null;
 
   if (!confirming) {
     return (
       <Button iconLeft="refresh-cw" onClick={() => onConfirmingChange(true)}>
-        Correct and rebill
+        {translate('billing.claimDrawer.rebill')}
       </Button>
     );
   }
@@ -81,11 +91,13 @@ function RebillFooter({
   return (
     <>
       <p className="or-small or-drawer__confirm">
-        Correct and rebill {claim.claimNumber} to {claim.payer.name}. The original stays on the
-        record and the replacement links back to it.
+        {translate('billing.claimDrawer.rebillConfirm', {
+          number: claim.claimNumber,
+          payer: claim.payer.name,
+        })}
       </p>
       <Button variant="secondary" onClick={() => onConfirmingChange(false)}>
-        Cancel
+        {translate('billing.claimDrawer.cancel')}
       </Button>
       <Button
         onClick={() => {
@@ -93,7 +105,7 @@ function RebillFooter({
           onRebill(claim);
         }}
       >
-        Rebill claim
+        {translate('billing.claimDrawer.rebillAction')}
       </Button>
     </>
   );
@@ -104,6 +116,7 @@ export function ClaimDrawer({
   onClose,
   onRebill,
 }: Readonly<ClaimDrawerProps>): ReactElement | null {
+  const t = useTranslator();
   const [confirming, setConfirming] = useState(false);
 
   if (!claim) return null;
@@ -122,21 +135,24 @@ export function ClaimDrawer({
     ),
     units: <span className="or-mono">{line.units}</span>,
     billed: <Money amount={line.billed} currency={claim.currency} />,
-    allowed: amountCell(line.allowed, claim.currency),
-    paid: amountCell(line.paid, claim.currency),
-    responsibility: amountCell(line.patientResponsibility, claim.currency),
+    allowed: amountCell(t, line.allowed, claim.currency),
+    paid: amountCell(t, line.paid, claim.currency),
+    responsibility: amountCell(t, line.patientResponsibility, claim.currency),
   }));
 
   return (
     <Drawer
       open
-      title={`Claim ${claim.claimNumber}`}
+      title={t('billing.claimDrawer.title', { number: claim.claimNumber })}
       subtitle={
         <>
           {formatName(claim.patient.name)}{' '}
           <span className="or-mono">{formatMrn(claim.patient.mrn)}</span>
           {', '}
-          {claim.payer.name}, seen {formatDate(claim.serviceDate)}
+          {t('billing.claimDrawer.payerSeen', {
+            payer: claim.payer.name,
+            date: formatDate(t, claim.serviceDate),
+          })}
         </>
       }
       onClose={onClose}
@@ -146,27 +162,30 @@ export function ClaimDrawer({
           confirming={confirming}
           onConfirmingChange={setConfirming}
           onRebill={onRebill}
+          translate={t}
         />
       }
     >
       <div className="or-claim-detail">
         <div className="or-claim-detail__summary">
-          <Badge tone={CLAIM_STATUS_TONE[claim.status]}>{CLAIM_STATUS_LABELS[claim.status]}</Badge>
+          <Badge tone={CLAIM_STATUS_TONE[claim.status]}>
+            {t(CLAIM_STATUS_LABEL_KEYS[claim.status])}
+          </Badge>
           <dl className="or-totals">
             <div className="or-totals__row">
-              <dt>Billed</dt>
+              <dt>{t('billing.claimDrawer.totals.billed')}</dt>
               <dd>
                 <Money amount={claim.billed} currency={claim.currency} emphasis />
               </dd>
             </div>
             <div className="or-totals__row">
-              <dt>Paid</dt>
+              <dt>{t('billing.claimDrawer.totals.paid')}</dt>
               <dd>
                 <Money amount={claim.paid} currency={claim.currency} />
               </dd>
             </div>
             <div className="or-totals__row">
-              <dt>Patient responsibility</dt>
+              <dt>{t('billing.claimDrawer.totals.responsibility')}</dt>
               <dd>
                 <Money amount={claim.patientResponsibility} currency={claim.currency} />
               </dd>
@@ -182,22 +201,27 @@ export function ClaimDrawer({
           <Card
             tone="cream"
             headingLevel={3}
-            overline="Denial"
-            title={claim.denialCode ?? 'Denied'}
+            overline={t('billing.claimDrawer.denial.overline')}
+            title={claim.denialCode ?? t('billing.claimDrawer.denial.untitled')}
           >
             <p className="or-body">{claim.denialReason}</p>
           </Card>
         ) : null}
 
         {claim.scrubErrors.length > 0 ? (
-          <Card tone="cream" headingLevel={3} overline="Scrub" title="Fix before submitting">
+          <Card
+            tone="cream"
+            headingLevel={3}
+            overline={t('billing.claimDrawer.scrub.overline')}
+            title={t('billing.claimDrawer.scrub.title')}
+          >
             <ul className="or-scrub-list">
               {claim.scrubErrors.map((error) => (
                 <li key={error.code} className="or-scrub-list__item">
                   <Badge tone="danger">{error.code}</Badge>
                   <span className="or-small">{error.message}</span>
                   <Button variant="ghost" size="sm" href={error.fixHref}>
-                    Fix on the fee sheet
+                    {t('billing.claimDrawer.scrub.fix')}
                   </Button>
                 </li>
               ))}
@@ -207,7 +231,7 @@ export function ClaimDrawer({
 
         <section aria-labelledby="claim-lifecycle">
           <h3 id="claim-lifecycle" className="or-h3">
-            Lifecycle
+            {t('billing.claimDrawer.lifecycle')}
           </h3>
           <ol className="or-stepper">
             {steps.map((step, index) => {
@@ -217,8 +241,12 @@ export function ClaimDrawer({
                   key={step}
                   className={done ? 'or-stepper__step or-stepper__step--done' : 'or-stepper__step'}
                 >
-                  <span className="or-stepper__label">{CLAIM_STATUS_LABELS[step]}</span>
-                  <span className="or-caption or-stepper__state">{done ? 'Done' : 'Pending'}</span>
+                  <span className="or-stepper__label">{t(CLAIM_STATUS_LABEL_KEYS[step])}</span>
+                  <span className="or-caption or-stepper__state">
+                    {done
+                      ? t('billing.claimDrawer.step.done')
+                      : t('billing.claimDrawer.step.pending')}
+                  </span>
                 </li>
               );
             })}
@@ -227,14 +255,14 @@ export function ClaimDrawer({
 
         <section aria-labelledby="claim-events">
           <h3 id="claim-events" className="or-h3">
-            Event history
+            {t('billing.claimDrawer.events')}
           </h3>
           <ol className="or-timeline">
             {claim.events.map((event) => (
               <li key={event.id} className="or-timeline__item">
                 <p className="or-timeline__head">
                   <span className="or-timeline__label">{event.label}</span>
-                  <span className="or-caption">{formatDateTime(event.at)}</span>
+                  <span className="or-caption">{formatDateTime(t, event.at)}</span>
                 </p>
                 {event.detail ? <p className="or-small">{event.detail}</p> : null}
                 <p className="or-caption or-timeline__actor">{event.actor}</p>
@@ -245,9 +273,13 @@ export function ClaimDrawer({
 
         <section aria-labelledby="claim-lines">
           <h3 id="claim-lines" className="or-h3">
-            Service lines
+            {t('billing.claimDrawer.serviceLines')}
           </h3>
-          <Table caption="Service lines" columns={LINE_COLUMNS} rows={lineRows} />
+          <Table
+            caption={t('billing.claimDrawer.serviceLines')}
+            columns={translateColumns(LINE_COLUMNS, t)}
+            rows={lineRows}
+          />
         </section>
       </div>
     </Drawer>

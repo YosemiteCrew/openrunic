@@ -21,8 +21,21 @@ export function isAllowed(
   return overrides[permissionKey(row.id, role)] ?? row.roles[role] === 'ALLOW';
 }
 
-/** "Can view charts, edit charts and sign notes. Cannot work claims." */
+/**
+ * "Can view charts, edit charts and sign notes. Cannot work claims."
+ *
+ * Takes the translator because the sentence is read by a person and this is
+ * not a component, so there is no hook to reach for. Two whole sentences
+ * rather than one assembled from clauses: "Can" and "Cannot" are not
+ * interchangeable prefixes in every language, and a sentence built from
+ * fragments cannot be translated correctly by whoever is handed the catalogue.
+ *
+ * The capability names inside them are not translated. They arrive from the
+ * API already named, and putting a second name on a capability that already
+ * has one is how a grid and a policy engine end up disagreeing in words.
+ */
 export function summariseRole(
+  translate: (key: string, values?: Readonly<Record<string, string | number>>) => string,
   rows: PermissionRow[],
   role: StaffRole,
   overrides: Record<string, boolean>
@@ -36,7 +49,10 @@ export function summariseRole(
   const list = (items: PermissionRow[]) =>
     items.map((row) => row.capability.toLowerCase()).join(', ');
 
-  if (can.length === 0) return 'This role can do nothing yet. Grant at least one capability.';
-  const cannotSentence = cannot.length === 0 ? '' : ` Cannot ${list(cannot)}.`;
-  return `Can ${list(can)}.${cannotSentence}`;
+  if (can.length === 0) return translate('admin.permissions.none');
+  const cannotSentence =
+    cannot.length === 0
+      ? ''
+      : ` ${translate('admin.permissions.cannot', { capabilities: list(cannot) })}`;
+  return `${translate('admin.permissions.can', { capabilities: list(can) })}${cannotSentence}`;
 }

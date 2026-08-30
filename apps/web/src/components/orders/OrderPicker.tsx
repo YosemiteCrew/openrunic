@@ -6,6 +6,7 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
 import { rankCatalog } from '@/lib/api';
 import type { OrderCatalogEntry, PatientProblem } from '@/lib/api';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /**
  * Favourites and type-ahead: the two ways a clinician actually finds an order.
@@ -43,6 +44,7 @@ export function OrderPicker({
   onAdd,
   searchInputId,
 }: Readonly<OrderPickerProps>): ReactElement {
+  const t = useTranslator();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const baseId = useId();
@@ -88,10 +90,10 @@ export function OrderPicker({
   return (
     <div className="or-picker">
       <div className="or-picker__favourites">
-        <p className="or-overline">Favourites</p>
+        <p className="or-overline">{t('orders.picker.favourites')}</p>
         {/* Named as a group so "the favourites row" is one thing to a screen
             reader and to an agent, not eight loose buttons. */}
-        <fieldset className="or-cluster" aria-label="Favourite orders">
+        <fieldset className="or-cluster" aria-label={t('orders.picker.favouritesLabel')}>
           {favourites.map((entry) => (
             <Button
               key={entry.code}
@@ -108,9 +110,9 @@ export function OrderPicker({
 
       <Input
         id={searchInputId}
-        label="Search the order catalogue"
-        hint="Ranked against this patient's problem list. Arrow keys move, Enter adds."
-        placeholder="Test, scan or procedure"
+        label={t('orders.picker.searchLabel')}
+        hint={t('orders.picker.searchHint')}
+        placeholder={t('orders.picker.searchPlaceholder')}
         iconLeft="search"
         value={query}
         autoComplete="off"
@@ -126,11 +128,10 @@ export function OrderPicker({
         onKeyDown={onKeyDown}
       />
 
-      <ul id={listId} className="or-picker__list" aria-label="Matching orders">
+      <ul id={listId} className="or-picker__list" aria-label={t('orders.picker.listLabel')}>
         {results.length === 0 ? (
           <li className="or-picker__empty or-small">
-            Nothing in the catalogue matches {`"${query.trim()}"`}. Try the test name or its short
-            code.
+            {t('orders.picker.noMatch', { query: query.trim() })}
           </li>
         ) : null}
 
@@ -156,10 +157,10 @@ export function OrderPicker({
                 </span>
               </button>
               <span className="or-picker__flags">
-                {linked ? <Tag>On the problem list</Tag> : null}
+                {linked ? <Tag>{t('orders.picker.onProblemList')}</Tag> : null}
                 {already ? (
                   <Badge tone="neutral" icon="check">
-                    Already drafted
+                    {t('orders.picker.alreadyDrafted')}
                   </Badge>
                 ) : null}
               </span>

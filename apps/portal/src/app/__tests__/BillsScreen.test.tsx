@@ -6,7 +6,7 @@ import { emptyApi, fails, never, stubApi } from '@/__tests__/support';
 
 async function openFirstStatement(api = stubApi()) {
   render(<BillsScreen api={api} />);
-  await screen.findByRole('heading', { level: 2, name: 'Issued 15 June 2026' });
+  await screen.findByRole('heading', { level: 2, name: 'Issued June 15, 2026' });
   const [first] = screen.getAllByRole('button', { name: 'See what this was for' });
   await userEvent.click(first as HTMLElement);
 }
@@ -16,7 +16,7 @@ describe('BillsScreen', () => {
     render(<BillsScreen api={stubApi()} />);
 
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Issued 15 June 2026' })
+      await screen.findByRole('heading', { level: 2, name: 'Issued June 15, 2026' })
     ).toBeInTheDocument();
     expect(screen.getByText('Statement ST-2026-0418')).toBeInTheDocument();
     expect(screen.getByText('Due')).toBeInTheDocument();
@@ -48,7 +48,33 @@ describe('BillsScreen', () => {
 
     const amountHeader = screen.getByRole('columnheader', { name: 'Amount (GBP)' });
     expect(amountHeader).toHaveClass('or-table__cell--right');
-    expect(screen.getByText(/Amounts are in pounds sterling\./)).toBeInTheDocument();
+    expect(screen.getByText(/Amounts are in GBP\./)).toBeInTheDocument();
+  });
+
+  it('takes the currency it names from the money, not from a fixed word', async () => {
+    /*
+     * The header used to read `Amount (GBP)` and the note under it "Amounts are
+     * in pounds sterling", whatever the statement said. A practice billing in
+     * euros got euro figures under a column headed GBP, which is the kind of
+     * wrong that reads as authoritative: nobody distrusts a column header, and
+     * the figures underneath look right.
+     */
+    const statements = await stubApi().getStatements();
+    const inEuros = statements.map((statement) => ({
+      ...statement,
+      total: { ...statement.total, currency: 'EUR' },
+      balance: { ...statement.balance, currency: 'EUR' },
+      lines: statement.lines.map((line) => ({
+        ...line,
+        amount: { ...line.amount, currency: 'EUR' },
+      })),
+    }));
+
+    await openFirstStatement(stubApi({ getStatements: () => Promise.resolve(inEuros) }));
+
+    expect(screen.getByRole('columnheader', { name: 'Amount (EUR)' })).toBeInTheDocument();
+    expect(screen.getByText(/Amounts are in EUR\./)).toBeInTheDocument();
+    expect(screen.queryByText(/GBP/)).not.toBeInTheDocument();
   });
 
   it('states the total and what is still to pay', async () => {
@@ -68,8 +94,16 @@ describe('BillsScreen', () => {
     expect(paySpy).not.toHaveBeenCalled();
 
     const dialog = screen.getByRole('dialog');
+    /*
+     * The amount used to be the currency code and a fixed-point number glued
+     * together, which read `GBP 84.50`: no symbol, no grouping, and a full stop
+     * for a decimal separator in front of a reader whose language writes a
+     * comma. The figure a payment dialog names is the one figure on the screen
+     * that has to be unmistakable, so it goes through the same formatter as
+     * every other amount.
+     */
     expect(dialog).toHaveTextContent(
-      'This takes GBP 84.50 from the card the practice holds for you.'
+      'This takes £84.50 GBP from the card the practice holds for you.'
     );
     expect(dialog).toHaveTextContent('Payments cannot be reversed from this portal.');
 

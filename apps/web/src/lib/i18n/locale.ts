@@ -1,4 +1,4 @@
-import { appCatalogue, negotiateLocale, SUPPORTED_LOCALES } from '@openrunic/i18n';
+import { localeFrom } from '@openrunic/i18n';
 import { headers } from 'next/headers';
 
 /**
@@ -19,14 +19,15 @@ import { headers } from 'next/headers';
  *
  * ## What this costs
  *
- * `headers()` opts the whole route tree into dynamic rendering, so every page
- * is server-rendered on demand where 27 of them were prerendered before. For
- * the 23 authenticated shells that is close to free: they sit behind
- * `SessionGate` and their prerendered output was an empty shell that
- * immediately fetched. For the four public pages it is a real cost, and the fix
- * is locale-segmented routes (`/es/...`) with `generateStaticParams`, which
- * prerenders each locale instead. That is a routing change rather than a
- * rendering one, and it is tracked separately.
+ * `headers()` opts a route tree into dynamic rendering, which is why this is
+ * read by the `(app)` root layout and not by the public one. The four public
+ * pages take their locale from the URL instead - `(public)/[locale]` with
+ * `generateStaticParams` - so they prerender once per language while every
+ * route that could not use a prerender anyway keeps resolving from the request.
+ *
+ * For the routes that still read this, the cost is close to nothing: they sit
+ * behind `SessionGate` and their prerendered output was an empty shell that
+ * immediately fetched.
  *
  * Rendering in the right language in one pass was worth more than the
  * prerender: the alternative shows the wrong language to the person least able
@@ -39,37 +40,22 @@ import { headers } from 'next/headers';
  * a signed-in user changing their preference writes the cookie.
  */
 
-/** The reader's explicit choice, when they have made one. */
-export const LOCALE_COOKIE = 'or_locale';
-
+/**
+ * The reader's language, for a server component.
+ *
+ * The rule itself is `localeFrom` in `@openrunic/i18n`, which takes two strings
+ * and touches no framework. This is the half that cannot be shared: reading the
+ * request. The proxy asks the same question from middleware, which cannot call
+ * `headers()`, and `apps/portal` asks it for the same reader - a patient who
+ * chose Spanish on the public pages has chosen once, not once per application.
+ *
+ * Two implementations of "what language is this person reading in" would drift,
+ * and the first symptom would be a reader redirected to `/es` and then served
+ * English.
+ */
 export async function resolveLocale(): Promise<string> {
   const requestHeaders = await headers();
-
-  const chosen = readLocaleCookie(requestHeaders.get('cookie'));
-  if (chosen !== null) return chosen;
-
-  return negotiateLocale(
-    requestHeaders.get('accept-language'),
-    SUPPORTED_LOCALES,
-    appCatalogue.sourceLocale
-  );
+  return localeFrom(requestHeaders.get('cookie'), requestHeaders.get('accept-language'));
 }
 
-/**
- * Reads the choice cookie, and refuses anything that is not a locale this build
- * carries.
- *
- * The value reaches `<html lang>` and the catalogue lookup, so it is checked
- * against the supported list rather than trusted: a cookie is attacker-writable,
- * and an unchecked one would put arbitrary text into an attribute.
- */
-function readLocaleCookie(header: string | null): string | null {
-  if (header === null) return null;
-  for (const pair of header.split(';')) {
-    const [name, ...rest] = pair.trim().split('=');
-    if (name !== LOCALE_COOKIE) continue;
-    const value = decodeURIComponent(rest.join('='));
-    return SUPPORTED_LOCALES.includes(value) ? value : null;
-  }
-  return null;
-}
+export { LOCALE_COOKIE, localeFrom, readLocaleCookie } from '@openrunic/i18n';

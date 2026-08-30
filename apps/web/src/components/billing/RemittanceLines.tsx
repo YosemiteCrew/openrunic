@@ -1,14 +1,16 @@
 'use client';
 
 import { Badge, Button, Table, Tag } from '@openrunic/ui';
-import type { TableColumn } from '@openrunic/ui';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { RemittanceLine } from '@/lib/api';
 import { formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
-import { lineVariance, RESOLUTION_LABELS } from './billing';
+import { lineVariance, RESOLUTION_LABEL_KEYS } from './billing';
 import type { ExceptionResolution } from './billing';
+import { translateColumns } from './columns';
+import type { KeyedColumn } from './columns';
 import { Money } from './Money';
 
 /**
@@ -22,9 +24,40 @@ import { Money } from './Money';
  *
  * Resolving an exception happens in the row. Each disposition is named after
  * what it does to the money, never "OK".
+ *
+ * The adjustment code, the exception reason and the secondary payer's name come
+ * off the 835 and render in the payer's words. The dispositions are the
+ * practice's own decisions, so those are translated.
  */
 
-const RESOLUTIONS: ExceptionResolution[] = ['ACCEPTED', 'ADJUSTED', 'TRANSFERRED', 'FLAGGED'];
+const RESOLUTIONS: readonly ExceptionResolution[] = [
+  'ACCEPTED',
+  'ADJUSTED',
+  'TRANSFERRED',
+  'FLAGGED',
+];
+
+const COLUMNS: readonly KeyedColumn[] = [
+  { key: 'claim', headerKey: 'billing.remittanceLines.column.claim', mono: true },
+  { key: 'patient', headerKey: 'billing.remittanceLines.column.patient' },
+  { key: 'code', headerKey: 'billing.remittanceLines.column.code', mono: true },
+  { key: 'billed', headerKey: 'billing.remittanceLines.column.billed', numeric: true },
+  { key: 'allowed', headerKey: 'billing.remittanceLines.column.allowed', numeric: true },
+  { key: 'paid', headerKey: 'billing.remittanceLines.column.paid', numeric: true },
+  { key: 'adjustment', headerKey: 'billing.remittanceLines.column.adjustment', numeric: true },
+  {
+    key: 'responsibility',
+    headerKey: 'billing.remittanceLines.column.responsibility',
+    numeric: true,
+  },
+  { key: 'variance', headerKey: 'billing.remittanceLines.column.variance' },
+];
+
+const RESOLVE_COLUMN: KeyedColumn = {
+  key: 'actions',
+  headerKey: 'billing.remittanceLines.column.resolve',
+  align: 'right',
+};
 
 export interface RemittanceLinesProps {
   lines: readonly RemittanceLine[];
@@ -43,18 +76,8 @@ export function RemittanceLines({
   onResolve,
   caption,
 }: Readonly<RemittanceLinesProps>): ReactElement {
-  const columns: TableColumn[] = [
-    { key: 'claim', header: 'Claim', mono: true },
-    { key: 'patient', header: 'Patient' },
-    { key: 'code', header: 'Code', mono: true },
-    { key: 'billed', header: 'Billed', numeric: true },
-    { key: 'allowed', header: 'Allowed', numeric: true },
-    { key: 'paid', header: 'Paid', numeric: true },
-    { key: 'adjustment', header: 'Adjustment', numeric: true },
-    { key: 'responsibility', header: 'Patient responsibility', numeric: true },
-    { key: 'variance', header: 'Variance' },
-    ...(onResolve ? [{ key: 'actions', header: 'Resolve', align: 'right' as const }] : []),
-  ];
+  const t = useTranslator();
+  const columns = translateColumns(onResolve ? [...COLUMNS, RESOLVE_COLUMN] : COLUMNS, t);
 
   const rows = lines.map((line): Record<string, ReactNode> => {
     const variance = lineVariance(line);
@@ -77,19 +100,21 @@ export function RemittanceLines({
       responsibility: <Money amount={line.patientResponsibility} currency={currency} />,
       variance: (
         <span className="or-variance">
-          <Badge tone={variance.tone}>{variance.label}</Badge>
-          <Money amount={variance.amount} currency={currency} negativeLabel="Credit" />
+          <Badge tone={variance.tone}>{t(variance.labelKey)}</Badge>
+          <Money amount={variance.amount} currency={currency} negativeLabel="credit" />
           {line.adjustmentCode ? <Tag mono>{line.adjustmentCode}</Tag> : null}
           {line.exceptionReason ? <span className="or-small">{line.exceptionReason}</span> : null}
           {line.secondaryPayerName ? (
-            <span className="or-small">Cascades to {line.secondaryPayerName}</span>
+            <span className="or-small">
+              {t('billing.remittanceLines.cascades', { payer: line.secondaryPayerName })}
+            </span>
           ) : null}
         </span>
       ),
       ...(onResolve
         ? {
             actions: resolved ? (
-              <Badge tone="success">{RESOLUTION_LABELS[resolved]}</Badge>
+              <Badge tone="success">{t(RESOLUTION_LABEL_KEYS[resolved])}</Badge>
             ) : (
               <span className="or-row-actions">
                 {RESOLUTIONS.map((resolution) => (
@@ -98,9 +123,13 @@ export function RemittanceLines({
                     variant="ghost"
                     size="sm"
                     onClick={() => onResolve(line.id, resolution)}
-                    aria-label={`${RESOLUTION_LABELS[resolution]} for ${line.claimNumber} ${line.code}`}
+                    aria-label={t('billing.remittanceLines.resolveFor', {
+                      resolution: t(RESOLUTION_LABEL_KEYS[resolution]),
+                      claim: line.claimNumber,
+                      code: line.code,
+                    })}
                   >
-                    {RESOLUTION_LABELS[resolution]}
+                    {t(RESOLUTION_LABEL_KEYS[resolution])}
                   </Button>
                 ))}
               </span>

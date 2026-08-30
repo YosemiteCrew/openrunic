@@ -52,12 +52,43 @@ allow:
   # packages; every branch is independently on this list.
   - (MIT OR Apache-2.0)
   - (MIT OR CC0-1.0)
+  # (AFL-2.1 OR BSD-3-Clause) is NOT here, and its absence is deliberate. grant
+  # decomposes an OR expression and tests each branch, so an entry naming the
+  # whole expression never matches while one of its branches is off the list.
+  # The two entries above survive that treatment because every branch of each is
+  # independently allowed; that one would not, because AFL-2.1 alone is
+  # GPL-incompatible and must stay off. The election is recorded as a package
+  # exception instead - see `json-schema` below.
 
-# Packages with no machine-readable license in their package.json (mostly
-# store-internal artifacts and packages with nonstandard license fields) would
-# otherwise fail the gate on missing metadata rather than on an actual license
-# conflict. Flipping this to true is the documented follow-up hardening once
-# that tail is triaged.
+# Left false, and the reason has changed. It used to be that the SBOM carried
+# no licences at all: syft picks catalogers by source type, a `dir:` scan gets
+# only the ones tagged `declared`, and `javascript-package-cataloger` is tagged
+# `installed`. So every JavaScript package came from `pnpm-lock.yaml`, which
+# records names and versions and nothing else, and this gate was adjudicating
+# 12 packages out of 1202 while reporting a pass. That is fixed in
+# `.github/workflows/supply-chain.yml`, which now selects the package cataloger
+# explicitly; the gate reads 1169 packages, of which 1206 npm entries carry a
+# declared licence and 11 do not.
+#
+# What keeps the flag off now is the shape of the SBOM rather than the state of
+# the tree. It contains 105 artifacts that are not packages and have no licence
+# to declare: GitHub Actions references and workflow files, catalogued because
+# they are dependencies of the build in every sense that matters for supply
+# chain, and correctly licence-free. `require-license: true` would deny all of
+# them.
+#
+# The 11 npm packages with no licence field are: babel-packages, baz,
+# browser_field, busboy, constants-browserify, false_main and invalid_main.
+# Every one is a test fixture vendored inside a dependency - `baz`,
+# `browser_field`, `false_main` and `invalid_main` are resolve's own fixtures -
+# rather than a package anything imports.
+#
+# Turning this on therefore needs the actions catalogers excluded from the SBOM
+# the gate reads, or an exception per fixture. The first is right and the second
+# is brittle, since fixture names are somebody else's to change. Doing it should
+# not mean weakening the SBOM that ships with a release, so it wants its own
+# change: a second, npm-only scan for the gate, with the published SBOM left
+# describing everything.
 require-license: false
 
 # Package-level exceptions. Every entry MUST carry: the verified reason, an
@@ -124,3 +155,91 @@ ignore-packages:
   # code analysis is a substantial part of the value.
   - react-doctor
   - oxlint-plugin-react-doctor
+  #
+  # `deslop-js` is react-doctor's own dependency, from the same publisher
+  # (Million Software, Inc.), carrying the identical Modified MIT License text.
+  # VERIFIED 2026-08-22 by reading node_modules/.pnpm/deslop-js@0.9.11/.../LICENSE.
+  # It reaches the tree only through react-doctor, so it is in scope of exactly
+  # the argument above and falls out the moment that dependency does.
+  # Owner: ankit-yc. Re-review by: 2027-02-13, with react-doctor.
+  - deslop-js
+
+  # ---------------------------------------------------------------------------
+  # The rest of this list is a different kind of entry from the block above.
+  # Those are a non-free licence knowingly accepted. These are packages whose
+  # licence IS acceptable and whose METADATA is not machine-readable, which the
+  # gate cannot tell apart. Each was verified by reading the installed LICENSE
+  # file, per the rule at the top of this section.
+  # ---------------------------------------------------------------------------
+
+  # elkjs: Eclipse Public License 2.0, and this one is a real incompatibility
+  # rather than a spelling problem. EPL-2.0 is not on the FSF GPL-compatible
+  # list, so elkjs code linked into this AGPL work would be a licence conflict
+  # that no policy file can settle.
+  #
+  # It is excepted because no such combination exists. It arrives as a
+  # transitive dependency of @prisma/studio-core, the dev-time database GUI.
+  # Nothing under apps/ or packages/ imports it, and apps/api/Dockerfile deletes
+  # `elkjs@*` by name in the prune stage, so it is not in the published image
+  # and is not distributed with the product. That deletion is not an assertion
+  # either: the compose smoke drill boots the pruned image against a real
+  # Postgres and reads seeded rows through the Prisma client, so a future Prisma
+  # release that starts needing elkjs at runtime fails the drill.
+  #
+  # The condition that invalidates this: elkjs appearing in the runtime image,
+  # or any source file importing it. Either turns this from a dev-tool footnote
+  # into a licensing decision that has to be made properly.
+  # Owner: ankit-yc. Re-review by: 2027-02-22.
+  - elkjs
+
+  # @visx/vendor: package.json says "MIT and ISC", which is not valid SPDX (that
+  # would be "MIT AND ISC"), so grant cannot classify it. Both halves are
+  # independently on the allow list above. VERIFIED 2026-08-22 by reading the
+  # installed LICENSE file, which carries the MIT grant.
+  #
+  # A package exception rather than allow-listing the literal string, because
+  # the string is not an SPDX expression and the allow list's stated basis is
+  # SPDX identifiers. Admitting the raw text would admit anything that happens
+  # to spell a combination the same wrong way.
+  #
+  # Also dev-time only: it reaches the tree through @prisma/studio-core, which
+  # the Dockerfile prune removes.
+  # Owner: ankit-yc. Re-review by: 2027-02-22.
+  - '@visx/vendor'
+
+  # seq-queue: no `license` field in package.json at all, which is the single
+  # package that kept `require-license` off. VERIFIED 2026-08-22 by reading the
+  # installed LICENSE file: "(The MIT License)", Copyright (c) 2012 Netease,
+  # Inc. and other pomelo contributors. MIT is on the allow list; only the
+  # metadata is missing.
+  #
+  # It arrives via mysql2 under the `prisma` CLI, which is a devDependency and
+  # is deleted from the published image by the same prune stage.
+  # Owner: ankit-yc. Re-review by: 2027-02-22, or sooner if the package
+  # publishes a release that declares its licence, at which point this entry
+  # should simply be deleted.
+  - seq-queue
+  # json-schema declares `(AFL-2.1 OR BSD-3-Clause)`. Under an OR the recipient
+  # chooses, and its LICENSE file says so in as many words: "As a recipient of
+  # Dojo, you may choose which license to receive this code under". openrunic
+  # receives it under BSD-3-Clause, which is on the allow list above.
+  #
+  # An exception rather than an allow-list entry because grant tests each branch
+  # of an OR separately, so `(AFL-2.1 OR BSD-3-Clause)` on the allow list is
+  # inert while AFL-2.1 is off it - and AFL-2.1 must stay off, since on its own
+  # it is GPL-incompatible. Naming the package is the only way to say "this one
+  # offers a choice and we have made it".
+  #
+  # Reached through @ai-sdk/provider, so it is a real runtime dependency rather
+  # than tooling - the only entry in this list that is not confined to dev-time.
+  #
+  # VERIFIED 2026-08-23 by reading the installed LICENSE file, and re-verified
+  # 2026-08-24 at json-schema@0.4.0: package.json still declares
+  # `(AFL-2.1 OR BSD-3-Clause)`, the LICENSE still says the recipient chooses,
+  # and `@ai-sdk/provider@4.0.7` is still the only thing in the lockfile that
+  # depends on it.
+  #
+  # Owner: ankit-yc. Re-review by: 2027-02-22, with the three entries above.
+  # Revisit condition: json-schema changing its licence expression, or ceasing
+  # to reach the tree, at which point this entry should simply be deleted.
+  - json-schema

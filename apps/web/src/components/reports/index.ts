@@ -5,7 +5,8 @@
  */
 export { BarMeter } from './BarMeter';
 export type { BarMeterProps, BarMeterRow } from './BarMeter';
-export { trendWord } from './trend';
+export { TREND_LABELS, trendOf } from './trend';
+export type { Trend } from './trend';
 export { Sparkline } from './Sparkline';
 export type { SparklineProps } from './Sparkline';
 export { StatTile } from './StatTile';

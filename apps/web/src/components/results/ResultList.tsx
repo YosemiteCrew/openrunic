@@ -1,12 +1,15 @@
 'use client';
 
+import { formatCount, plural } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
 import { Badge, Button } from '@openrunic/ui';
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 
 import { mockPatientById } from '@/lib/api';
 import type { ResultAnalyte, ResultReport } from '@/lib/api';
-import { formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
+import { formatDateTime, formatMrn, formatName, formatVital, vitalState } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { ResultFlagBadge } from './ResultFlagBadge';
 
@@ -17,33 +20,52 @@ import { ResultFlagBadge } from './ResultFlagBadge';
  * nothing to do about them. Here the queue is designed to shrink: the row
  * carries the value that matters and the sign-off action, and moving down the
  * list is Arrow keys rather than Tab through every control.
+ *
+ * The panel name, the analyte labels, the narrative and the performer are the
+ * laboratory's own words and are rendered as they arrived. Only the sentences
+ * this application wrote around them come from the catalogue.
  */
 
-/** The reading that earned the flag, in one phrase. */
-function headline(report: ResultReport): string {
+/**
+ * The reading that earned the flag, in one phrase.
+ *
+ * Takes the translator rather than returning a key, because two of the three
+ * answers are a whole phrase built around a value the laboratory supplied, and
+ * the third is a narrative it wrote.
+ */
+function headline(t: Translator, report: ResultReport): string {
   const outOfRange = report.analytes.find((analyte) => stateOf(analyte) === 'danger');
   if (outOfRange) {
-    const reading = formatVital({
+    const reading = formatVital(t, {
       label: outOfRange.label,
       value: outOfRange.value,
       unit: outOfRange.unit,
       range: { low: outOfRange.low, high: outOfRange.high },
       decimals: outOfRange.decimals,
     });
-    return `${outOfRange.label} ${reading.text}`;
+    // One message rather than a template literal, because the analyte name and
+    // the reading are two translated-or-supplied pieces and which comes first is
+    // a language decision. Concatenating them here fixes English word order into
+    // code, where no translator can reach it.
+    return t('results.row.outOfRange', { label: outOfRange.label, reading: reading.text });
   }
-  if (report.analytes.length > 0) return `${report.analytes.length} analytes, all in range`;
-  return report.narrative ?? 'Report attached';
+  if (report.analytes.length > 0) {
+    const count = report.analytes.length;
+    const values = { count: formatCount(count, t.locale) };
+    return plural(
+      {
+        one: t('results.row.allInRangeOne', values),
+        other: t('results.row.allInRangeOther', values),
+      },
+      count,
+      t.locale
+    );
+  }
+  return report.narrative ?? t('results.row.reportAttached');
 }
 
 function stateOf(analyte: ResultAnalyte): string {
-  return formatVital({
-    label: analyte.label,
-    value: analyte.value,
-    unit: analyte.unit,
-    range: { low: analyte.low, high: analyte.high },
-    decimals: analyte.decimals,
-  }).state;
+  return vitalState(analyte.value, { low: analyte.low, high: analyte.high });
 }
 
 export interface ResultListProps {
@@ -62,6 +84,7 @@ export function ResultList({
   onSign,
   signedIds,
 }: Readonly<ResultListProps>): ReactElement {
+  const t = useTranslator();
   const listRef = useRef<HTMLUListElement>(null);
   const signed = new Set(signedIds);
 
@@ -97,7 +120,7 @@ export function ResultList({
   };
 
   return (
-    <ul ref={listRef} className="or-results__list" aria-label="Results to review">
+    <ul ref={listRef} className="or-results__list" aria-label={t('results.queue.title')}>
       {reports.map((report) => {
         const patient = mockPatientById(report.patientId);
         const isSigned = report.status === 'SIGNED' || signed.has(report.id);
@@ -113,21 +136,24 @@ export function ResultList({
             >
               <span className="or-result-row__head">
                 <span className="or-result-row__patient">
-                  {patient ? formatName(patient.name, 'listing') : 'Not recorded'}
+                  {patient ? formatName(patient.name, 'listing') : t('results.notRecorded')}
                 </span>
                 <span className="or-mono or-muted">{patient ? formatMrn(patient.mrn) : ''}</span>
               </span>
               <span className="or-result-row__panel">{report.panel}</span>
-              <span className="or-small or-result-row__headline">{headline(report)}</span>
+              <span className="or-small or-result-row__headline">{headline(t, report)}</span>
               <span className="or-small or-muted">
-                Reported {formatDateTime(report.reportedAt, 'dense')}, {report.performer}
+                {t('results.row.reported', {
+                  at: formatDateTime(t, report.reportedAt, 'dense'),
+                  performer: report.performer,
+                })}
               </span>
             </button>
             <span className="or-result-row__flags">
               <ResultFlagBadge flag={report.flag} />
               {isSigned ? (
                 <Badge tone="neutral" icon="check">
-                  Signed
+                  {t('results.signedBadge')}
                 </Badge>
               ) : (
                 <Button
@@ -136,7 +162,7 @@ export function ResultList({
                   iconLeft="pen-line"
                   onClick={() => onSign(report.id)}
                 >
-                  {`Sign ${report.panel}`}
+                  {t('results.row.sign', { panel: report.panel })}
                 </Button>
               )}
             </span>

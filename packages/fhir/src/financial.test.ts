@@ -88,6 +88,48 @@ describe('claim mapping', () => {
     lines: [],
   };
 
+  /**
+   * R4 lets `Claim.provider` reference a Practitioner or an Organization, and
+   * this codec needs both: the clinician who treated the patient normally, and
+   * the practice itself when the API cannot resolve one. Writing the second as
+   * `Practitioner/{id}` named a practitioner that does not exist, and once the
+   * server began serving Organization it resolved at the wrong type - which a
+   * client is less likely to notice than a 404.
+   */
+  it('names the practice as an Organization when the biller is the practice', () => {
+    const resource = toFhirClaim({ ...denied, providerId: 'org-1', providerType: 'Organization' });
+
+    expect(resource.provider).toStrictEqual({
+      type: 'Organization',
+      reference: 'Organization/org-1',
+    });
+  });
+
+  it('names a person as a Practitioner, which is what an absent type means', () => {
+    expect(toFhirClaim(denied).provider).toStrictEqual({
+      type: 'Practitioner',
+      reference: 'Practitioner/u-1',
+    });
+  });
+
+  it('round-trips both provider types without turning one into the other', () => {
+    const asOrganisation = {
+      ...denied,
+      providerId: 'org-1',
+      providerType: 'Organization' as const,
+    };
+    const back = fromFhirClaim(toFhirClaim(asOrganisation));
+
+    expect(back.providerId).toBe('org-1');
+    expect(back.providerType).toBe('Organization');
+
+    const asPerson = fromFhirClaim(toFhirClaim(denied));
+    expect(asPerson.providerId).toBe('u-1');
+    // Absent rather than 'Practitioner': the default is the absence, so a
+    // round trip that invented the field would not be a round trip.
+    expect(asPerson.providerType).toBeUndefined();
+  });
+
   it('keeps the lifecycle state R4 cannot express', () => {
     const resource = toFhirClaim(denied);
     expect(resource.status).toBe('active');

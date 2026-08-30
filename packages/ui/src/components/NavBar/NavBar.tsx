@@ -25,6 +25,20 @@ export interface NavBarProps extends HTMLAttributes<HTMLElement> {
    * instead of the mark bundled with this package. The mark is a shipped file either way.
    */
   logoBasePath?: string;
+  /**
+   * The words this component says, as props. A design system has no translator
+   * and should not grow one: the accessible name of a navigation landmark is
+   * configuration, the same as its items are. Each defaults to the English it
+   * used to hardcode, so passing nothing gets today's behaviour.
+   */
+  /** Accessible name of the lockup link. */
+  homeLabel?: string;
+  /** Accessible name of the navigation landmark. */
+  navLabel?: string;
+  /** The button that opens the sections below md. */
+  menuLabel?: string;
+  /** The default call to action on the right, when `cta` is not given. */
+  ctaLabel?: string;
 }
 
 /**
@@ -40,6 +54,10 @@ export function NavBar({
   tone = 'bone',
   cta,
   logoBasePath,
+  homeLabel = 'openrunic home',
+  navLabel = 'Sections',
+  menuLabel = 'Menu',
+  ctaLabel = 'Get started',
   className,
   id,
   ...rest
@@ -86,7 +104,7 @@ export function NavBar({
         <a
           className="or-nav-bar__home"
           href={`#${encodeURIComponent(home)}`}
-          aria-label="OpenRunic home"
+          aria-label={homeLabel}
           onClick={navigate(home)}
         >
           <span className="or-nav-bar__logo" style={logoStyle} aria-hidden="true" />
@@ -102,12 +120,12 @@ export function NavBar({
         aria-controls={menuId}
         onClick={() => setMenuOpen((open) => !open)}
       >
-        Menu
+        {menuLabel}
       </Button>
 
       <div id={menuId} className={cx('or-nav-bar__panel', menuOpen && 'or-nav-bar__panel--open')}>
         {items.length > 0 ? (
-          <nav className="or-nav-bar__nav" aria-label="Sections">
+          <nav className="or-nav-bar__nav" aria-label={navLabel}>
             <ul className="or-nav-bar__list">
               {items.map((item) => {
                 const current = item === active;
@@ -130,7 +148,7 @@ export function NavBar({
         <div className="or-nav-bar__actions">
           {cta ?? (
             <Button size="sm" variant={inverse ? 'inverse' : 'primary'}>
-              Get started
+              {ctaLabel}
             </Button>
           )}
         </div>

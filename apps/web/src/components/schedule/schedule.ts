@@ -1,7 +1,7 @@
 import type { BadgeTone } from '@openrunic/ui';
 
 import type { Appointment, AppointmentStatus, PatientName, UserDto } from '@/lib/api';
-import { formatEnumLabel, formatTime } from '@/lib/format';
+import { clockTime } from '@/lib/format';
 
 import type { ScheduleProvider } from './ScheduleGrid';
 
@@ -21,9 +21,67 @@ export const SLOT_MINUTES = 10;
 const DEFAULT_OPEN_MINUTES = 8 * 60;
 const DEFAULT_CLOSE_MINUTES = 17 * 60;
 
+/**
+ * The word a badge or a column heading shows for each state.
+ *
+ * A literal map rather than a key built from the status at the call site. The
+ * catalogue drift test reads the source for the keys it asks for and finds
+ * literals; a key assembled from a variable is invisible to it, and so is
+ * invisible to whoever has to find the string when it is wrong.
+ *
+ * These replaced a rule that lowercased the enum member and capitalised the
+ * first letter. That rule needed two hand-written exceptions because it turns
+ * `NOSHOW` into "Noshow", and it could not be translated at all - which matters
+ * most on the flow board, where a column heading and the badge on every card in
+ * it name the same state and must not say two different things.
+ */
+export const STATUS_LABEL_KEY: Readonly<Record<AppointmentStatus, string>> = {
+  PROPOSED: 'schedule.status.proposed',
+  PENDING: 'schedule.status.pending',
+  BOOKED: 'schedule.status.booked',
+  ARRIVED: 'schedule.status.arrived',
+  CHECKED_IN: 'schedule.status.checkedIn',
+  ROOMED: 'schedule.status.roomed',
+  IN_PROGRESS: 'schedule.status.inProgress',
+  CHECKED_OUT: 'schedule.status.checkedOut',
+  FULFILLED: 'schedule.status.fulfilled',
+  CANCELLED: 'schedule.status.cancelled',
+  NOSHOW: 'schedule.status.noShow',
+  ENTERED_IN_ERROR: 'schedule.status.enteredInError',
+};
+
+/**
+ * The same states, written to sit inside a sentence: "moved from arrived to
+ * checked in".
+ *
+ * A second message rather than `toLowerCase()` on the first, because casing is
+ * a per-language decision code cannot make. German capitalises its nouns
+ * wherever they stand, and Turkish has two i rules that turn a correct word
+ * into a wrong one.
+ */
+export const STATUS_INLINE_KEY: Readonly<Record<AppointmentStatus, string>> = {
+  PROPOSED: 'schedule.status.inline.proposed',
+  PENDING: 'schedule.status.inline.pending',
+  BOOKED: 'schedule.status.inline.booked',
+  ARRIVED: 'schedule.status.inline.arrived',
+  CHECKED_IN: 'schedule.status.inline.checkedIn',
+  ROOMED: 'schedule.status.inline.roomed',
+  IN_PROGRESS: 'schedule.status.inline.inProgress',
+  CHECKED_OUT: 'schedule.status.inline.checkedOut',
+  FULFILLED: 'schedule.status.inline.fulfilled',
+  CANCELLED: 'schedule.status.inline.cancelled',
+  NOSHOW: 'schedule.status.inline.noShow',
+  ENTERED_IN_ERROR: 'schedule.status.inline.enteredInError',
+};
+
 export interface StatusPresentation {
-  /** A real word, always rendered: status is never colour alone. */
-  label: string;
+  /**
+   * Catalogue key for the word, always rendered: status is never colour alone.
+   *
+   * A key rather than the word, because this is a pure function with no
+   * translator and the screens that call it all have one.
+   */
+  labelKey: string;
   tone: BadgeTone;
   /** The visit is over, so the block reads quiet rather than live. */
   done: boolean;
@@ -35,19 +93,15 @@ export interface StatusPresentation {
  * Terracotta is for actions, never for state.
  */
 export function presentStatus(status: AppointmentStatus): StatusPresentation {
-  const label = formatEnumLabel(status);
+  const labelKey = STATUS_LABEL_KEY[status];
   if (status === 'CHECKED_OUT' || status === 'FULFILLED') {
-    return { label, tone: 'success', done: true };
+    return { labelKey, tone: 'success', done: true };
   }
   if (status === 'NOSHOW' || status === 'ENTERED_IN_ERROR') {
-    return {
-      label: status === 'NOSHOW' ? 'No show' : 'Entered in error',
-      tone: 'danger',
-      done: true,
-    };
+    return { labelKey, tone: 'danger', done: true };
   }
-  if (status === 'CANCELLED') return { label, tone: 'neutral', done: true };
-  return { label, tone: 'neutral', done: false };
+  if (status === 'CANCELLED') return { labelKey, tone: 'neutral', done: true };
+  return { labelKey, tone: 'neutral', done: false };
 }
 
 /**
@@ -97,12 +151,19 @@ export function categoryViz(code: string): number {
 }
 
 /**
- * Minutes past midnight in the clinic's timezone, read through the shared
- * formatter so the grid can never disagree with the times printed on it.
+ * Minutes past midnight in the clinic's timezone, read through the shared clock
+ * so the grid can never disagree with the times printed on it.
+ *
+ * Reads `clockTime` rather than `formatTime`: this is arithmetic, and what it
+ * wants is the coordinate rather than the label. It used to call the display
+ * formatter and guard the result with `/^\d{2}:\d{2}$/`, which was a regex
+ * asking "did I get a time or did I get the words 'Not recorded'". The two are
+ * separate functions now, so the question does not arise and the null comes
+ * back typed.
  */
 export function minutesOfDay(instant: string | null | undefined): number | null {
-  const time = formatTime(instant);
-  if (!/^\d{2}:\d{2}$/.test(time)) return null;
+  const time = clockTime(instant);
+  if (time === null) return null;
   const [hours, minutes] = time.split(':').map(Number);
   return (hours ?? 0) * 60 + (minutes ?? 0);
 }
@@ -235,7 +296,16 @@ export const FLOW_SEQUENCE: readonly AppointmentStatus[] = [
 
 export interface FlowColumn {
   id: string;
-  label: string;
+  /**
+   * Catalogue key for the heading, and deliberately the same key the badge on
+   * a card in this column uses.
+   *
+   * One key rather than a column heading of its own, because the heading and
+   * the badge name one state: two keys would be two chances for the board to
+   * tell a reader that somebody is "Roomed" under a column headed something
+   * else, and there is no version of that which is right.
+   */
+  labelKey: string;
   statuses: readonly AppointmentStatus[];
   /** The visit is finished, so the column reads muted. */
   done: boolean;
@@ -243,11 +313,26 @@ export interface FlowColumn {
 
 /** The board's columns. Fulfilled folds into checked out: both mean "gone home". */
 export const FLOW_COLUMNS: readonly FlowColumn[] = [
-  { id: 'ARRIVED', label: 'Arrived', statuses: ['ARRIVED'], done: false },
-  { id: 'CHECKED_IN', label: 'Checked in', statuses: ['CHECKED_IN'], done: false },
-  { id: 'ROOMED', label: 'Roomed', statuses: ['ROOMED'], done: false },
-  { id: 'IN_PROGRESS', label: 'In progress', statuses: ['IN_PROGRESS'], done: false },
-  { id: 'DONE', label: 'Checked out', statuses: ['CHECKED_OUT', 'FULFILLED'], done: true },
+  { id: 'ARRIVED', labelKey: STATUS_LABEL_KEY.ARRIVED, statuses: ['ARRIVED'], done: false },
+  {
+    id: 'CHECKED_IN',
+    labelKey: STATUS_LABEL_KEY.CHECKED_IN,
+    statuses: ['CHECKED_IN'],
+    done: false,
+  },
+  { id: 'ROOMED', labelKey: STATUS_LABEL_KEY.ROOMED, statuses: ['ROOMED'], done: false },
+  {
+    id: 'IN_PROGRESS',
+    labelKey: STATUS_LABEL_KEY.IN_PROGRESS,
+    statuses: ['IN_PROGRESS'],
+    done: false,
+  },
+  {
+    id: 'DONE',
+    labelKey: STATUS_LABEL_KEY.CHECKED_OUT,
+    statuses: ['CHECKED_OUT', 'FULFILLED'],
+    done: true,
+  },
 ];
 
 /**

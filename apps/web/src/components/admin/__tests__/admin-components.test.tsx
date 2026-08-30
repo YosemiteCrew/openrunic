@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,12 +8,18 @@ import { DetailList } from '@/components/admin/DetailList';
 import { Drawer } from '@/components/admin/Drawer';
 import { FilterBar } from '@/components/admin/FilterBar';
 import { PermissionMatrix } from '@/components/admin/PermissionMatrix';
+import { pluralKey, translateColumns } from '@/components/admin/copy';
 import { isAllowed, permissionKey, summariseRole } from '@/components/admin/permissions';
 import { TabPanel, Tabs } from '@/components/admin/Tabs';
 import { MOCK_PERMISSIONS } from '@/lib/api';
 import type { PermissionRow } from '@/lib/api';
 
 const ROWS: PermissionRow[] = [...MOCK_PERMISSIONS];
+
+/* The source locale, so these assertions read in the language this file is
+   written in. Components under test get the same translator from the setup
+   file; the helpers below are plain functions and are handed it directly. */
+const t = createTranslator(appCatalogue, 'en');
 
 describe('Drawer', () => {
   it('renders nothing while closed, so it holds no focus stops', () => {
@@ -220,7 +227,7 @@ describe('PermissionMatrix', () => {
 
 describe('summariseRole', () => {
   it('says what the role can and cannot do, in one plain sentence', () => {
-    const summary = summariseRole(ROWS, 'FRONT_DESK', {});
+    const summary = summariseRole(t, ROWS, 'FRONT_DESK', {});
     expect(summary).toContain('Can view charts');
     expect(summary).toContain('Cannot');
     expect(summary).toContain('sign notes');
@@ -231,7 +238,7 @@ describe('summariseRole', () => {
       ...row,
       roles: { ...row.roles, READ_ONLY: 'DENY' as const },
     }));
-    expect(summariseRole(stripped, 'READ_ONLY', {})).toContain('can do nothing yet');
+    expect(summariseRole(t, stripped, 'READ_ONLY', {})).toContain('can do nothing yet');
   });
 });
 
@@ -363,5 +370,37 @@ describe('Drawer, the focus trap', () => {
     // end; Tab stays inside it.
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe('the admin copy helpers', () => {
+  it('builds table headers from catalogue keys and keeps the rest of the column', () => {
+    const columns = translateColumns(t, [
+      { key: 'name', headerKey: 'admin.users.column.name' },
+      { key: 'actions', headerKey: 'admin.users.column.actions', align: 'right' },
+    ]);
+
+    expect(columns).toStrictEqual([
+      { key: 'name', header: 'Name' },
+      { key: 'actions', header: 'Actions', align: 'right' },
+    ]);
+  });
+
+  it('picks the plural form the locale selects, not the one English would', () => {
+    const keys = {
+      oneKey: 'admin.users.accountCount.one',
+      otherKey: 'admin.users.accountCount.other',
+    };
+    // A second translator, because the key this picks and the language it
+    // renders in are two separate decisions and the test has to be able to get
+    // one right while the other is wrong.
+    const es = createTranslator(appCatalogue, 'es');
+
+    expect(t(pluralKey(keys, 1, 'en'), { count: 1 })).toBe('1 account');
+    expect(t(pluralKey(keys, 4, 'en'), { count: 4 })).toBe('4 accounts');
+    expect(es(pluralKey(keys, 1, 'es'), { count: 1 })).toBe('1 cuenta');
+    // Zero is `other` in both languages this build carries, and the count that
+    // most often gets hard-coded to the singular by mistake.
+    expect(es(pluralKey(keys, 0, 'es'), { count: 0 })).toBe('0 cuentas');
   });
 });

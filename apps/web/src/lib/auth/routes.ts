@@ -1,3 +1,5 @@
+import { SUPPORTED_LOCALES } from '@openrunic/i18n';
+
 /**
  * Which URLs a stranger may reach, and where a signed-in clinician belongs.
  *
@@ -17,6 +19,19 @@ export const SIGN_IN_PATH = '/sign-in';
 
 /** The route handler that mints, refreshes and clears the session cookie. */
 export const SESSION_PATH = '/session';
+
+/**
+ * The connectivity probe's target: the route handler in `app/api/health/route.ts`
+ * that answers with a bare `{status}` and nothing else.
+ *
+ * It is public because there is nothing here to protect - no PHI, no clue to the
+ * topology behind it - and because the probe has to reach it while signed out, so
+ * a browser that has lost its session still learns whether the server is up rather
+ * than being redirected to sign in. It mirrors `HEALTH_PATH` in
+ * `ConnectivityProvider`, the caller on the other end. It stays an exact match,
+ * never a prefix, for the reason written at the top of this file.
+ */
+export const HEALTH_PATH = '/api/health';
 
 /**
  * The header that says a request to {@link SESSION_PATH} came from this
@@ -58,15 +73,45 @@ export const SESSION_FETCH_MARKER = 'same-origin';
  */
 export const SIGNED_IN_HOME = '/schedule';
 
-/** The `(marketing)` route group, which is public by design. */
-const MARKETING_PATHS: readonly string[] = [
+/**
+ * The public pages, as they were addressed before they carried a language.
+ *
+ * These four are the only routes a stranger is meant to reach. They are also
+ * the addresses that still arrive from bookmarks, links and anything written
+ * down before the change, which is why the list survives: `proxy.ts` matches it
+ * to send those readers on to the same page in their own language.
+ */
+export const UNPREFIXED_MARKETING_PATHS: readonly string[] = [
   '/',
   '/for/developers',
   '/for/hospitals',
   '/for/patients',
 ];
 
-const PUBLIC_PATHS: ReadonlySet<string> = new Set([...MARKETING_PATHS, SIGN_IN_PATH, SESSION_PATH]);
+/** The same page under a language segment: `/` becomes `/es`, not `/es/`. */
+export function localisedPath(pathname: string, locale: string): string {
+  return pathname === '/' ? `/${locale}` : `/${locale}${pathname}`;
+}
+
+/**
+ * Every address the public pages actually answer on.
+ *
+ * Still exact matches, and still a set rather than a pattern - the reasoning at
+ * the top of this file has not changed, and a `startsWith('/en')` rule here
+ * would be one typo away from publishing an area of the chart. It is built from
+ * the supported languages rather than typed out so that adding a language stays
+ * a catalogue file and one line, which it would not be if this were a literal.
+ */
+const MARKETING_PATHS: readonly string[] = SUPPORTED_LOCALES.flatMap((locale) =>
+  UNPREFIXED_MARKETING_PATHS.map((path) => localisedPath(path, locale))
+);
+
+const PUBLIC_PATHS: ReadonlySet<string> = new Set([
+  ...MARKETING_PATHS,
+  SIGN_IN_PATH,
+  SESSION_PATH,
+  HEALTH_PATH,
+]);
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname);

@@ -96,6 +96,21 @@ export interface DomainClaim {
   payerId: string;
   /** Billing provider; the API resolves it from the encounter. */
   providerId: string;
+  /**
+   * What `providerId` names.
+   *
+   * R4 allows `Claim.provider` to reference a Practitioner, a PractitionerRole
+   * or an Organization, and this server needs two of those: the person who
+   * treated the patient normally, and the practice itself when the encounter
+   * behind the claim is unreadable in the caller's scope. Emitting the second
+   * as `Practitioner/{id}` shipped a reference to a Practitioner that does not
+   * exist, and once Organization was served it resolved - at the wrong type,
+   * which is harder to notice than a 404.
+   *
+   * Absent means Practitioner, so a caller that has only ever had people here
+   * keeps working.
+   */
+  providerType?: 'Practitioner' | 'Organization';
   status: DomainClaimStatus;
   frequency: DomainClaimFrequency;
   /** Claim-level diagnosis list; line pointers index into it. */
@@ -192,7 +207,7 @@ export function toFhirClaim(input: DomainClaim): fhir4.Claim {
     use: 'claim',
     patient: fhirReference('Patient', input.patientId),
     created: input.createdAt,
-    provider: fhirReference('Practitioner', input.providerId),
+    provider: fhirReference(input.providerType ?? 'Practitioner', input.providerId),
     priority: codeableConcept({ system: SYSTEMS.processPriority, code: 'normal' }) ?? {},
     insurance: [
       {
@@ -208,6 +223,16 @@ export function toFhirClaim(input: DomainClaim): fhir4.Claim {
   });
 }
 
+/** The billing provider and what it is, from either reference type. */
+function readProvider(reference: fhir4.Reference | undefined): {
+  providerId: string;
+  providerType?: 'Organization';
+} {
+  const organisation = referenceId(reference, 'Organization');
+  if (organisation !== undefined) return { providerId: organisation, providerType: 'Organization' };
+  return { providerId: referenceId(reference, 'Practitioner') ?? '' };
+}
+
 /** Maps a FHIR R4 `Claim` back to a {@link DomainClaim}. */
 export function fromFhirClaim(resource: fhir4.Claim): DomainClaim {
   const frequency = readCodeExtension(resource.extension, CLAIM_FREQUENCY_EXTENSION);
@@ -216,7 +241,9 @@ export function fromFhirClaim(resource: fhir4.Claim): DomainClaim {
     patientId: referenceId(resource.patient, 'Patient') ?? '',
     coverageId: referenceId(resource.insurance?.[0]?.coverage, 'Coverage') ?? '',
     payerId: referenceId(resource.insurer, 'Organization') ?? '',
-    providerId: referenceId(resource.provider, 'Practitioner') ?? '',
+    // Reads back whichever of the two types it was written as, so the
+    // round trip does not quietly turn the practice into a practitioner.
+    ...readProvider(resource.provider),
     status: readLocalStatus(CLAIM_STATUS, resource.extension, resource.status),
     frequency: CLAIM_FREQUENCIES.find((value) => value === frequency) ?? 'ORIGINAL',
     diagnosisCodes: (resource.diagnosis ?? []).map(

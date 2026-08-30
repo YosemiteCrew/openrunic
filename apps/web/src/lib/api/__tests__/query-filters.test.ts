@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { MOCK_ENCOUNTERS, MOCK_NOTES } from '@/lib/api/mock/records';
 import {
   filterAppointments,
+  filterEncounters,
+  filterNotes,
   filterAuditEvents,
   filterDirectoryUsers,
   filterFacilities,
@@ -479,5 +482,152 @@ describe('filterDirectoryUsers', () => {
       filterDirectoryUsers(MOCK_DIRECTORY_USERS, { sort: 'email', order: 'desc' })[0]?.email
     ).toBe('r.mbeki@cedar.clinic.invalid');
     expect(filterDirectoryUsers(MOCK_DIRECTORY_USERS, { sort: 'createdAt' })).toHaveLength(3);
+  });
+});
+
+/**
+ * `filterEncounters` and `filterNotes` were the two filters in this file's
+ * subject that nothing had ever queried, so every clause on them was read but
+ * never applied. Writing these found the two of them defaulting to descending
+ * while the four beside them, and `sortOrderField` in the API's own pagination
+ * schema, default to ascending. That is now aligned, which is also what makes
+ * the signature sort agree with the comment above it.
+ */
+
+/* A second site, so a facility filter has something to separate. Every fixture
+   visit is at one clinic, and a filter that returns none or all is satisfied by
+   one that compares the wrong field. */
+const OTHER_FACILITY = 'facility-that-is-not-cedar';
+const VISITS = MOCK_ENCOUNTERS.map((visit, index) =>
+  index === 0 ? { ...visit, facilityId: OTHER_FACILITY } : visit
+);
+
+describe('filterEncounters', () => {
+  it('returns every visit oldest first when nothing is asked of it', () => {
+    const all = filterEncounters(MOCK_ENCOUNTERS);
+
+    expect(all).toHaveLength(MOCK_ENCOUNTERS.length);
+    const startedAt = all.map((visit) => visit.startedAt);
+    expect(startedAt).toEqual([...startedAt].sort());
+  });
+
+  it('scopes to a facility, so a visit cannot surface under another site', () => {
+    const moved = VISITS[0];
+    expect(moved).toBeDefined();
+    if (moved === undefined) return;
+
+    expect(filterEncounters(VISITS, { facilityId: OTHER_FACILITY })).toEqual([moved]);
+    expect(filterEncounters(VISITS, { facilityId: moved.facilityId })).toHaveLength(1);
+    expect(filterEncounters(VISITS, { facilityId: 'nowhere' })).toHaveLength(0);
+  });
+
+  it('scopes to a provider and to a status independently', () => {
+    const provider = MOCK_ENCOUNTERS[0]?.providerId;
+    expect(provider).toBeDefined();
+    if (provider === undefined) return;
+
+    const theirs = filterEncounters(MOCK_ENCOUNTERS, { providerId: provider });
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(theirs.length).toBeLessThan(MOCK_ENCOUNTERS.length);
+    expect(theirs.every((visit) => visit.providerId === provider)).toBe(true);
+
+    const open = filterEncounters(MOCK_ENCOUNTERS, { status: 'IN_PROGRESS' });
+    expect(open.length).toBeGreaterThan(0);
+    expect(open.every((visit) => visit.status === 'IN_PROGRESS')).toBe(true);
+    expect(open.length).toBeLessThan(MOCK_ENCOUNTERS.length);
+  });
+
+  it('takes the window from inclusively and to exclusively', () => {
+    /*
+     * The asymmetry is the point, and it is what lets consecutive windows tile
+     * a day without a visit landing in two of them or in neither. `from` uses
+     * `<` to reject and `to` uses `>=`, so a visit starting exactly at `from`
+     * is kept and one starting exactly at `to` belongs to the next window.
+     */
+    const second = MOCK_ENCOUNTERS[1];
+    expect(second).toBeDefined();
+    if (second === undefined) return;
+
+    const fromItsStart = filterEncounters(MOCK_ENCOUNTERS, { from: second.startedAt });
+    expect(fromItsStart.map((visit) => visit.id)).toContain(second.id);
+
+    const toItsStart = filterEncounters(MOCK_ENCOUNTERS, { to: second.startedAt });
+    expect(toItsStart.map((visit) => visit.id)).not.toContain(second.id);
+
+    /* And together they tile: no visit in both halves, none in neither. */
+    expect(fromItsStart.length + toItsStart.length).toBe(MOCK_ENCOUNTERS.length);
+  });
+
+  it('reverses on request', () => {
+    const ascending = filterEncounters(MOCK_ENCOUNTERS, {});
+    const descending = filterEncounters(MOCK_ENCOUNTERS, { order: 'desc' });
+
+    expect(descending.map((visit) => visit.id)).toEqual(
+      [...ascending].reverse().map((visit) => visit.id)
+    );
+  });
+});
+
+describe('filterNotes', () => {
+  it('returns every note oldest first when nothing is asked of it', () => {
+    const all = filterNotes(MOCK_NOTES);
+
+    expect(all).toHaveLength(MOCK_NOTES.length);
+    const createdAt = all.map((note) => note.createdAt);
+    expect(createdAt).toEqual([...createdAt].sort());
+  });
+
+  it('scopes to a visit, to an author and to a state independently', () => {
+    const first = MOCK_NOTES[0];
+    expect(first).toBeDefined();
+    if (first === undefined) return;
+
+    expect(filterNotes(MOCK_NOTES, { encounterId: first.encounterId })).toEqual([first]);
+
+    const theirs = filterNotes(MOCK_NOTES, { authorId: first.authorId });
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(theirs.every((note) => note.authorId === first.authorId)).toBe(true);
+    expect(theirs.length).toBeLessThan(MOCK_NOTES.length);
+
+    const unsigned = filterNotes(MOCK_NOTES, { state: 'UNSIGNED' });
+    expect(unsigned.length).toBeGreaterThan(0);
+    expect(unsigned.every((note) => note.state === 'UNSIGNED')).toBe(true);
+  });
+
+  it('sorts by signature with the unsigned notes last, and first when reversed', () => {
+    /*
+     * A note with no signature has no value to sort on, and the sentinel it is
+     * given has to put it at the end of an ascending sort rather than at the
+     * start: `signedAt` sorted ascending is a completion order, and a note that
+     * was never completed comes after every note that was. The API agrees, by
+     * way of `signedAt?.getTime() ?? POSITIVE_INFINITY` in its own spec.
+     *
+     * Reversing has to carry the unsigned notes with it. A sentinel applied
+     * before the direction, as here, does; one applied after would pin them to
+     * the same end in both directions, and the board chasing missing
+     * signatures is the one that asks for the reversed order.
+     */
+    const signedFirst = filterNotes(MOCK_NOTES, { sort: 'signedAt' });
+    const unsignedCount = MOCK_NOTES.filter((note) => note.signedAt === null).length;
+    expect(unsignedCount).toBeGreaterThan(0);
+
+    const tail = signedFirst.slice(-unsignedCount);
+    expect(tail.every((note) => note.signedAt === null)).toBe(true);
+    expect(signedFirst.slice(0, -unsignedCount).every((note) => note.signedAt !== null)).toBe(true);
+
+    const reversed = filterNotes(MOCK_NOTES, { sort: 'signedAt', order: 'desc' });
+    expect(reversed.slice(0, unsignedCount).every((note) => note.signedAt === null)).toBe(true);
+  });
+
+  it('sorts by creation when asked for that instead, which is the default column', () => {
+    /* The two sorts have to disagree on this fixture set, or the signature
+       assertions above would hold for a function that ignored `sort`. */
+    const byCreation = filterNotes(MOCK_NOTES, { sort: 'createdAt' });
+    const bySignature = filterNotes(MOCK_NOTES, { sort: 'signedAt' });
+
+    expect(byCreation.map((note) => note.id)).not.toEqual(bySignature.map((note) => note.id));
+    expect(byCreation.map((note) => note.id)).toEqual(
+      filterNotes(MOCK_NOTES).map((note) => note.id)
+    );
   });
 });

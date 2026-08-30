@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { clearSessionCookie } from '@/lib/auth/cookie';
-import { SIGNED_IN_HOME, SIGN_IN_PATH, isPublicPath, signInQuery } from '@/lib/auth/routes';
+import {
+  SIGNED_IN_HOME,
+  SIGN_IN_PATH,
+  UNPREFIXED_MARKETING_PATHS,
+  isPublicPath,
+  localisedPath,
+  signInQuery,
+} from '@/lib/auth/routes';
+import { localeFrom } from '@/lib/i18n/locale';
 import { sessionSealKey, unsealSessionCookie } from '@/lib/auth/seal';
 import { SESSION_COOKIE, sessionState } from '@/lib/auth/session';
 
@@ -100,6 +108,32 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       return redirect(request, SIGNED_IN_HOME);
     }
     return NextResponse.next();
+  }
+
+  // The public pages are prerendered one per language, so they live at `/en`,
+  // `/es` and so on. Somebody typing the bare address, or following a link
+  // written before that, has to land on the same page in the language they
+  // would have been served anyway - otherwise the prerender has bought a
+  // redirect to the wrong article.
+  //
+  // `localeFrom` is the same negotiation the app root layout does, from the
+  // same two inputs in the same order. Shared rather than reimplemented,
+  // because two answers to "what language is this person reading in" drift, and
+  // the first symptom is a reader sent to `/es` and then served English.
+  //
+  // Temporary rather than permanent, which `NextResponse.redirect` already is:
+  // it answers 307 unless told otherwise. That matters here rather than being
+  // incidental - the destination depends on a cookie the reader can change, and
+  // a permanent redirect is cached by the browser against a URL with no fixed
+  // answer, so somebody switching to Spanish would keep landing on the English
+  // page with no way to tell why. The proxy test pins the 307 so a future
+  // `status` argument cannot quietly make it permanent.
+  if (UNPREFIXED_MARKETING_PATHS.includes(pathname)) {
+    const locale = localeFrom(
+      request.headers.get('cookie'),
+      request.headers.get('accept-language')
+    );
+    return redirect(request, localisedPath(pathname, locale), search);
   }
 
   if (isPublicPath(pathname)) return NextResponse.next();

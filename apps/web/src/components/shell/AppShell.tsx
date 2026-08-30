@@ -98,12 +98,18 @@ export function AppShell({
           the shipped default - nothing below changes by so much as a pixel. */}
       <AssistantProvider>
         <div className="or-app">
+          {/* The words the rail says come from here rather than from the design
+              system, which has no translator: it used to announce itself as
+              "Primary" and its menu button as "Menu" on a Spanish screen. */}
           <SideNav
             className="or-app__nav"
             items={items}
             active={active}
             onNavigate={navigate}
             logoBasePath="/assets/logo"
+            navLabel={t('shell.mainNavigation')}
+            menuLabel={t('shell.menu')}
+            closeLabel={t('shell.closeMenu')}
           />
 
           <div className="or-app__body">

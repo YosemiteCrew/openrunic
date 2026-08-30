@@ -16,7 +16,7 @@ import type {
 } from '../chart/types';
 import { ATTESTATION, contentHash } from '../chart/signature';
 
-import { MOCK_CLINIC_DAY, MOCK_PATIENTS } from './fixtures';
+import { MOCK_CLINIC_DAY, mockPatientIdByMrn } from './fixtures';
 
 /**
  * The chart half of the demo clinic.
@@ -36,10 +36,10 @@ import { MOCK_CLINIC_DAY, MOCK_PATIENTS } from './fixtures';
  */
 
 const PATIENT_IDS = {
-  testina: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100482')?.id ?? '',
-  exampla: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100517')?.id ?? '',
-  demonstra: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100608')?.id ?? '',
-  syntheta: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100702')?.id ?? '',
+  testina: mockPatientIdByMrn('OR-100482'),
+  exampla: mockPatientIdByMrn('OR-100517'),
+  demonstra: mockPatientIdByMrn('OR-100608'),
+  syntheta: mockPatientIdByMrn('OR-100702'),
 } as const;
 
 /**
@@ -653,14 +653,20 @@ export function mockChartFor(patientId: string): ChartSummary {
 /* Notes                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A note block. The key decides what it is called, so the fixtures no longer say.
+ *
+ * They used to pass a heading and a hint alongside the text, in English, which
+ * was a second copy of the four strings `lib/api/chart/live.ts` also held. Both
+ * were the editor's own words rather than anything a server sends, so they live
+ * in the catalogue now and `components/encounter/labels.ts` points at them.
+ */
 function section(
   key: NoteSection['key'],
-  label: string,
-  hint: string,
   text: string,
   emitted: NoteSection['emitted'] = []
 ): NoteSection {
-  return { key, label, hint, text, emitted };
+  return { key, text, emitted };
 }
 
 const TESTINA_UNSIGNED_NOTE: EncounterNote = {
@@ -675,20 +681,14 @@ const TESTINA_UNSIGNED_NOTE: EncounterNote = {
   sections: [
     section(
       'subjective',
-      'Subjective',
-      'What the patient reports, in their words where it matters.',
       'Here for blood pressure review. Taking lisinopril daily, no missed doses in the last month. Reports two migraines since May, both settled with sumatriptan. Still tired most afternoons; started the iron tablets in November and takes them with breakfast and dinner.'
     ),
     section(
       'objective',
-      'Objective',
-      'Measurements and examination. Vitals flow in from rooming.',
       'BP 128/78 mmHg seated, repeat 126/76 mmHg. Pulse 72 bpm regular. Weight 68.4 kg, BMI 24.1. Conjunctivae pale. Chest clear, heart sounds normal, no oedema.'
     ),
     section(
       'assessment',
-      'Assessment',
-      'The clinical picture, and the coded problems it maps to.',
       'Hypertension controlled on current dose. Iron deficiency anaemia not yet corrected: haemoglobin 11.2 g/dL and ferritin 9 ng/mL on 10 Aug, both below range. Migraine stable at two per quarter.',
       [
         { id: 'em-t-001', kind: 'PROBLEM', label: 'Iron deficiency anaemia (D50.9)' },
@@ -697,8 +697,6 @@ const TESTINA_UNSIGNED_NOTE: EncounterNote = {
     ),
     section(
       'plan',
-      'Plan',
-      'What happens next, and what it writes to the chart.',
       'Continue lisinopril 10 mg daily. Continue ferrous sulfate twice daily with food and recheck full blood count and ferritin in six weeks. Discussed dietary iron. Return sooner if palpitations or breathlessness.',
       [
         { id: 'em-t-003', kind: 'ORDER', label: 'Full blood count, routine' },
@@ -724,26 +722,15 @@ const TESTINA_SIGNED_ADDENDA: Addendum[] = [
 const TESTINA_SIGNED_SECTIONS: NoteSection[] = [
   section(
     'subjective',
-    'Subjective',
-    'What the patient reports, in their words where it matters.',
     'Reports steady tiredness for about six months, worse in the afternoons. No bleeding noticed. Periods heavy for two to three days each cycle.'
   ),
   section(
     'objective',
-    'Objective',
-    'Measurements and examination. Vitals flow in from rooming.',
     'BP 124/76 mmHg. Pulse 76 bpm. Conjunctivae pale. Abdomen soft and non-tender.'
   ),
-  section(
-    'assessment',
-    'Assessment',
-    'The clinical picture, and the coded problems it maps to.',
-    'Iron deficiency anaemia, likely menstrual loss. Hypertension controlled.'
-  ),
+  section('assessment', 'Iron deficiency anaemia, likely menstrual loss. Hypertension controlled.'),
   section(
     'plan',
-    'Plan',
-    'What happens next, and what it writes to the chart.',
     'Full blood count and iron studies today. Start ferrous sulfate 325 mg twice daily with food. Review in three months.',
     [{ id: 'em-m-001', kind: 'PRESCRIPTION', label: 'Ferrous sulfate 325 mg, twice daily' }]
   ),
@@ -775,27 +762,19 @@ const TESTINA_SIGNED_NOTE: EncounterNote = {
 const MAREK_SIGNED_SECTIONS: NoteSection[] = [
   section(
     'subjective',
-    'Subjective',
-    'What the patient reports, in their words where it matters.',
     'Three-monthly diabetes review. Taking metformin twice daily. Home glucose readings mostly 9 to 11 mmol/L before breakfast. Walking twice a week. No foot ulcers or numbness.'
   ),
   section(
     'objective',
-    'Objective',
-    'Measurements and examination. Vitals flow in from rooming.',
     'BP 138/84 mmHg. Weight 91.2 kg. Feet examined: pulses present, monofilament intact at all sites. HbA1c 7.9% on 9 Feb, above range.'
   ),
   section(
     'assessment',
-    'Assessment',
-    'The clinical picture, and the coded problems it maps to.',
     'Type 2 diabetes above target. Hypertension at the upper limit. Eye screening due in July.',
     [{ id: 'em-k-001', kind: 'PROBLEM', label: 'Type 2 diabetes mellitus (E11.9)' }]
   ),
   section(
     'plan',
-    'Plan',
-    'What happens next, and what it writes to the chart.',
     'Continue metformin. Refer for retinal screening. Repeat HbA1c in three months and review medication then.',
     [
       { id: 'em-k-002', kind: 'ORDER', label: 'Retinal screening referral' },
@@ -836,23 +815,11 @@ const AIKO_DRAFT_NOTE: EncounterNote = {
   sections: [
     section(
       'subjective',
-      'Subjective',
-      'What the patient reports, in their words where it matters.',
       'Seven-year check. Parent reports occasional wheeze with colds, inhaler used twice since March. Eating and sleeping well, doing well at school.'
     ),
-    section(
-      'objective',
-      'Objective',
-      'Measurements and examination. Vitals flow in from rooming.',
-      'Height 122 cm, weight 23.1 kg. Chest clear, no wheeze today.'
-    ),
-    section(
-      'assessment',
-      'Assessment',
-      'The clinical picture, and the coded problems it maps to.',
-      ''
-    ),
-    section('plan', 'Plan', 'What happens next, and what it writes to the chart.', ''),
+    section('objective', 'Height 122 cm, weight 23.1 kg. Chest clear, no wheeze today.'),
+    section('assessment', ''),
+    section('plan', ''),
   ],
   signature: null,
   addenda: [],

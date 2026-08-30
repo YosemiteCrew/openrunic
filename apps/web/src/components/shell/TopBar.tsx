@@ -78,7 +78,7 @@ export function TopBar({
             <Tag className="or-topbar__facility">{MOCK_FACILITY.name}</Tag>
             {/* Demo data is never silent: every screen says so, in the same place. */}
             <Badge tone="neutral" icon="flask-conical">
-              Demo data
+              {t('shell.demoData')}
             </Badge>
           </>
         ) : null}
@@ -97,9 +97,17 @@ export function TopBar({
         </button>
         {session === null ? null : (
           <>
-            <span className="or-topbar__user">{session.identity.displayName}</span>
+            {/* The name on its own is a name floating in a header: a screen
+                reader announces it with nothing saying what it is. The visible
+                text is unchanged, and the sentence is what is read. */}
+            <span className="or-topbar__user">
+              <span className="or-visually-hidden">
+                {t('shell.signedInAs', { name: session.identity.displayName })}
+              </span>
+              <span aria-hidden="true">{session.identity.displayName}</span>
+            </span>
             <Button variant="ghost" size="sm" onClick={() => void signOut()}>
-              Sign out
+              {t('shell.signOut')}
             </Button>
           </>
         )}

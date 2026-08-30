@@ -24,6 +24,13 @@ export interface ToastProps extends HTMLAttributes<HTMLElement> {
   action?: ReactNode;
   /** Renders the dismiss control when given. */
   onClose?: () => void;
+  /**
+   * The accessible name of the dismiss control. A prop rather than a literal
+   * because a design system has no translator: "Dismiss" is the only word this
+   * component says, and a consumer rendering in another language has to be able
+   * to say it. Defaults to the English it used to hardcode.
+   */
+  closeLabel?: string;
 }
 
 /**
@@ -40,6 +47,7 @@ export function Toast({
   message,
   action,
   onClose,
+  closeLabel = 'Dismiss',
   className,
   ...rest
 }: ToastProps) {
@@ -68,7 +76,7 @@ export function Toast({
         {action}
       </div>
       {onClose ? (
-        <button type="button" className="or-toast__close" aria-label="Dismiss" onClick={onClose}>
+        <button type="button" className="or-toast__close" aria-label={closeLabel} onClick={onClose}>
           {CloseIcon ? (
             <CloseIcon size={16} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
           ) : null}

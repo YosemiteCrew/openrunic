@@ -53,6 +53,40 @@ describe('NoteEditor, unsigned', () => {
     );
   });
 
+  it('says what belongs in each block, under its heading', () => {
+    /*
+     * The hint used to ride along on the section object, written out in English
+     * in both `lib/api/chart/live.ts` and `lib/api/mock/chart.ts` - two copies
+     * of four strings the API never sends. Nothing asserted it rendered at all,
+     * so a section could have arrived without one and no test would have said.
+     * It comes from the catalogue now, keyed off the section key.
+     */
+    renderEditor(unsigned);
+
+    expect(
+      screen.getByText('What the patient reports, in their words where it matters.')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('What happens next, and what it writes to the chart.')
+    ).toBeInTheDocument();
+  });
+
+  it('names the block in a sentence without lower-casing its heading', () => {
+    /*
+     * The button that inserts a command says which block it will insert into.
+     * That sentence used to be built with `section.label.toLowerCase()`, which
+     * is an English capitalisation rule applied to every language. The heading
+     * and the mid-sentence name are two messages now, so a language that
+     * capitalises the noun in both places can have it.
+     */
+    renderEditor(unsigned);
+
+    expect(
+      screen.getByRole('button', { name: 'Insert a command in subjective' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Subjective' })).toBeInTheDocument();
+  });
+
   it('shows what each block already wrote to the chart', () => {
     renderEditor(unsigned);
     expect(screen.getByText('Order: Full blood count, routine')).toBeInTheDocument();

@@ -169,4 +169,12 @@ describe('Alert without resolvable icons', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Verify the source');
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
   });
+
+  it('takes the dismiss label from the consumer', () => {
+    // `aria-label="Dismiss"` was written into this component, so a Spanish
+    // screen had an English close button on every notice it raised.
+    render(<Alert message="x" onClose={() => {}} closeLabel="Descartar" />);
+
+    expect(screen.getByRole('button', { name: 'Descartar' })).toBeInTheDocument();
+  });
 });

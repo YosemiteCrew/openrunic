@@ -8,6 +8,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useActiveOptionInView } from '@/lib/active-option';
 import { usePatients } from '@/lib/api';
 import { formatDate, formatMrn, formatName } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { useCommandPalette } from './CommandProvider';
 import { filterCommands, flattenSections } from './filter';
@@ -81,6 +82,7 @@ interface CommandPaletteDialogProps {
 
 function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) {
   const router = useRouter();
+  const t = useTranslator();
   const { commands } = useCommandPalette();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -118,11 +120,11 @@ function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) 
         <span className="or-palette__hint">
           <span className="or-mono">{formatMrn(patient.mrn)}</span>
           <span aria-hidden="true"> | </span>
-          <span>Born {formatDate(patient.birthDate)}</span>
+          <span>{t('shell.palette.born', { date: formatDate(t, patient.birthDate) })}</span>
         </span>
       ),
     }));
-  }, [patients.data]);
+  }, [patients.data, t]);
 
   const sections = useMemo(
     () => filterCommands([...patientCommands, ...commands], query),
@@ -204,13 +206,13 @@ function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) 
         aria-labelledby={titleId}
       >
         <h2 id={titleId} className="or-visually-hidden">
-          Command palette
+          {t('shell.palette.title')}
         </h2>
 
         <div ref={inputWrapRef} className="or-palette__field">
           <Input
-            label="Search patients, screens and actions"
-            placeholder="Type a patient, a screen, or an action"
+            label={t('shell.palette.searchLabel')}
+            placeholder={t('shell.palette.searchPlaceholder')}
             iconLeft="search"
             value={query}
             onChange={(event) => {
@@ -232,10 +234,15 @@ function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) 
           />
         </div>
 
-        <div id={listId} className="or-palette__list" role="listbox" aria-label="Results">
+        <div
+          id={listId}
+          className="or-palette__list"
+          role="listbox"
+          aria-label={t('shell.palette.results')}
+        >
           {sections.length === 0 ? (
             <p className="or-palette__empty or-body">
-              Nothing matches {`"${query.trim()}"`}. Try a patient name, an MRN, or a screen.
+              {t('shell.palette.empty', { query: query.trim() })}
             </p>
           ) : null}
 
@@ -249,7 +256,7 @@ function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) 
                 aria-labelledby={headingId}
               >
                 <p id={headingId} className="or-overline or-palette__group-label">
-                  {section.label}
+                  {t(section.labelKey)}
                   <span className="or-palette__count"> ({section.commands.length})</span>
                 </p>
                 {section.commands.map((command) => {
@@ -294,9 +301,7 @@ function CommandPaletteDialog({ onClose }: Readonly<CommandPaletteDialogProps>) 
           })}
         </div>
 
-        <p className="or-palette__footer or-caption">
-          Arrow keys move, Enter opens, Escape closes.
-        </p>
+        <p className="or-palette__footer or-caption">{t('shell.palette.footer')}</p>
       </dialog>
     </div>
   );

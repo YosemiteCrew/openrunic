@@ -48,6 +48,25 @@ export interface Collection<TRow, TCreate, TPatch, TQuery extends BaseQuery> {
   list(query: TQuery): Promise<Page<TRow>>;
   /** Resolves to `null` when the id belongs to no row *in this scope*. */
   findById(id: string): Promise<TRow | null>;
+  /**
+   * The rows for these ids that exist in this scope, in no particular order.
+   *
+   * For loaders. A `prepare` hook resolving a page's references had only
+   * `findById`, so it issued one read per distinct id: a page of fifty grants
+   * naming fifty different practitioners was fifty reads, and a bulk-export
+   * page of five hundred could put a thousand concurrent reads through a
+   * connection pool sized for far fewer.
+   *
+   * Ids that name nothing are simply absent from the result, which is what the
+   * loaders already expect - a grant can name a user that has since been
+   * deleted. An empty input is an empty result and no query.
+   *
+   * The narrowing is `findById`'s, exactly: same tenant binding, same
+   * compartment refusal, same facility hiding, and a read recorded against the
+   * audit trail for every row returned. Passing many ids must not reach a row
+   * that passing one would not.
+   */
+  findByIds(ids: readonly string[]): Promise<TRow[]>;
   create(input: TCreate): Promise<TRow>;
   update(id: string, patch: TPatch): Promise<TRow | null>;
 }
@@ -91,6 +110,41 @@ export function childBatch<C extends PrismaModelName>(
   rows: readonly (Writable<C> & { readonly id: string })[]
 ): ChildBatch {
   return { model, rows: rows };
+}
+
+/**
+ * A row the parent's write amends, in the parent's transaction.
+ *
+ * The narrow sibling of {@link ChildBatch}, and it exists for one shape: a
+ * denormalised column that a child insert makes stale. `StockLot.status` is
+ * that column. The truth of a lot's status lives in its history table, but the
+ * lot list narrows on the column, so a recall recorded in the history and not
+ * copied to the column produces a `status=RECALLED` listing that omits the
+ * recalled carton. That is the direction that hurts somebody.
+ *
+ * Two writes from the route would leave the two disagreeing whenever the second
+ * one failed, and the append-only history cannot then be corrected. So the
+ * amendment travels with the insert or neither happens.
+ *
+ * Deliberately not a general update facility. There is no `where`, only an id:
+ * a patch that could match a set is a patch that could match the wrong set, and
+ * nothing needs one. Both implementations refuse a patch that matches no row in
+ * scope by rolling the parent back, so a cross-tenant id cannot be a silent
+ * no-op that leaves the parent written.
+ */
+export interface ChildPatch {
+  readonly model: PrismaModelName;
+  readonly id: string;
+  readonly data: Record<string, unknown>;
+}
+
+/** Types one amendment against its own model, for the reason {@link childBatch} does. */
+export function childPatch<C extends PrismaModelName>(
+  model: C,
+  id: string,
+  data: Partial<Writable<C>>
+): ChildPatch {
+  return { model, id, data };
 }
 
 /** A natural key the database enforces and the API should refuse before it. */
@@ -155,6 +209,25 @@ export interface CollectionSpec<
    * `RequestScope.hideFacilityRows`, not this flag.
    */
   readonly facilityScoped?: true;
+  /**
+   * Whether a row addressed by its own id may also be hidden by the facility
+   * narrowing. Defaults to true; only `Patient` sets it false.
+   *
+   * The distinction already exists for every spec - a list is always narrowed,
+   * an addressed read only when `RequestScope.hideFacilityRows` says so - and
+   * this is the one collection where the answer has to differ from the scope's.
+   *
+   * `Patient.primaryFacilityId` is the site that registered somebody, not the
+   * site an act happened at. Narrowing a LIST on it is defensible and useful: a
+   * work queue should be local, and that is what keeps a site-limited caller
+   * from paging through the whole practice. Refusing an addressed READ on it is
+   * not, because the caller already has the id and is treating the person - and
+   * a patient registered at the north clinic is standing in front of the south
+   * clinic often enough that it is the ordinary case, not the edge.
+   *
+   * See #139 for the decision and `specs/core.ts` for the reasoning in full.
+   */
+  readonly facilityHidesAddressed?: false;
   /** The column naming the visit, when the row hangs off one. */
   readonly encounterColumn?: keyof Row<NoInfer<M>> & string;
   /** What a patient-scoped token may see of this aggregate. */
@@ -176,6 +249,19 @@ export interface CollectionSpec<
     parent: ScopedRow<NoInfer<M>>,
     context: RowContext
   ): ChildBatch[];
+  /**
+   * Rows the parent's write amends, in the parent's transaction, after
+   * {@link CollectionSpec.childRows} have been written.
+   *
+   * After rather than before, so an amendment can name a row the same write
+   * created. Nothing does today; the order is fixed anyway, because "it happened
+   * to work" is not a thing to leave for a spec author to discover.
+   */
+  childPatches?(
+    input: NoInfer<TCreate>,
+    parent: ScopedRow<NoInfer<M>>,
+    context: RowContext
+  ): ChildPatch[];
   /**
    * Columns a patch changes. An absent key means "not mentioned", never
    * "clear". The context carries the request's clock, so a column a patch
@@ -255,6 +341,51 @@ export function matchesIfSet<T>(expected: T | undefined, test: (value: T) => boo
 }
 
 /** Case-insensitive substring match over several columns. */
+/**
+ * Escapes the LIKE metacharacters in a caller's search string.
+ *
+ * Prisma's `contains` and `startsWith` are not literal substring tests. They
+ * compile to `ILIKE ('%' || $1 || '%')`, splicing the value straight into the
+ * pattern, so a `%` in what the caller typed is a wildcard and a `_` matches any
+ * single character. `containsFold` below, which answers the same filter in
+ * memory, uses `String.includes` and treats both literally.
+ *
+ * That is a divergence rather than a nuisance, and it fails in the dangerous
+ * direction: a search for `%` returned nothing in memory and every row the
+ * caller could reach from Postgres. It is not hypothetical for `_` either -
+ * stock SKUs and terminology codes carry underscores routinely, and each one
+ * was quietly matching more rows than the caller asked for.
+ *
+ * Escaping here rather than refusing the characters at the schema keeps a
+ * literal search for them possible, which for an SKU or a code is a search
+ * somebody will actually want. The backslash is Postgres's default LIKE escape
+ * character and Prisma emits no `ESCAPE` clause, so it is the one that applies.
+ */
+export function escapeLike(value: string): string {
+  // The backslash goes first, or escaping the other two would double-escape
+  // the backslashes this adds.
+  return value
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('%', String.raw`\%`)
+    .replaceAll('_', String.raw`\_`);
+}
+
+/** A case-insensitive substring filter over a literal needle. */
+export function likeContains(needle: string): {
+  contains: string;
+  mode: 'insensitive';
+} {
+  return { contains: escapeLike(needle), mode: 'insensitive' };
+}
+
+/** A case-insensitive prefix filter over a literal prefix. */
+export function likeStartsWith(prefix: string): {
+  startsWith: string;
+  mode: 'insensitive';
+} {
+  return { startsWith: escapeLike(prefix), mode: 'insensitive' };
+}
+
 export function containsFold(values: readonly (string | null)[], needle: string): boolean {
   const folded = needle.toLowerCase();
   return values.some((value) => value?.toLowerCase().includes(folded) ?? false);

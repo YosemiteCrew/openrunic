@@ -6,8 +6,9 @@ import type { ChangeEvent, ReactElement } from 'react';
 
 import type { OrderCatalogEntry, OrderPriority, PatientProblem } from '@/lib/api';
 import { ORDER_PRIORITIES } from '@/lib/api';
-import { formatEnumLabel } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
+import { ORDER_CATEGORY_LABELS, ORDER_PRIORITY_LABELS } from './labels';
 import { SPECIMEN_OPTIONS } from './specimens';
 
 /**
@@ -29,11 +30,6 @@ export interface DraftOrder {
   diagnosisCode: string | null;
 }
 
-const PRIORITY_OPTIONS: SelectOption[] = ORDER_PRIORITIES.map((priority) => ({
-  value: priority,
-  label: formatEnumLabel(priority),
-}));
-
 /** The one field the workflow does require: a coded reason, for the claim later. */
 const NO_DIAGNOSIS = '';
 
@@ -50,8 +46,18 @@ export function DraftOrders({
   onChange,
   onRemove,
 }: Readonly<DraftOrdersProps>): ReactElement {
+  const t = useTranslator();
+
+  const priorityOptions: SelectOption[] = ORDER_PRIORITIES.map((priority) => ({
+    value: priority,
+    label: t(ORDER_PRIORITY_LABELS[priority].labelKey),
+  }));
+
+  /* The problem's own display and ICD-10 code, exactly as the problem list
+     holds them. A translated label on a coded diagnosis would be a second name
+     for a code that already has one. */
   const diagnosisOptions: SelectOption[] = [
-    { value: NO_DIAGNOSIS, label: 'Not linked yet' },
+    { value: NO_DIAGNOSIS, label: t('orders.draft.notLinked') },
     ...problems.map((problem) => ({
       value: problem.code,
       label: `${problem.display} (${problem.code})`,
@@ -59,7 +65,7 @@ export function DraftOrders({
   ];
 
   return (
-    <ol className="or-drafts" aria-label="Drafted orders">
+    <ol className="or-drafts" aria-label={t('orders.draft.listLabel')}>
       {drafts.map((draft) => (
         <li key={draft.key}>
           <Card
@@ -73,20 +79,20 @@ export function DraftOrders({
             }
           >
             <div className="or-cluster or-draft__meta">
-              <Tag>{formatEnumLabel(draft.entry.category)}</Tag>
+              <Tag>{t(ORDER_CATEGORY_LABELS[draft.entry.category].labelKey)}</Tag>
               <Tag>{draft.entry.destination}</Tag>
               <Tag>{draft.entry.turnaround}</Tag>
               {draft.diagnosisCode ? null : (
                 <Badge tone="neutral" icon="circle-alert">
-                  Needs a diagnosis
+                  {t('orders.draft.needsDiagnosis')}
                 </Badge>
               )}
             </div>
 
             <div className="or-draft__fields">
               <Select
-                label="Priority"
-                options={PRIORITY_OPTIONS}
+                label={t('orders.draft.priority')}
+                options={priorityOptions}
                 value={draft.priority}
                 onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                   onChange(draft.key, { priority: event.target.value as OrderPriority })
@@ -95,7 +101,7 @@ export function DraftOrders({
 
               {draft.entry.category === 'LAB' ? (
                 <Select
-                  label="Specimen"
+                  label={t('orders.draft.specimen')}
                   options={[...SPECIMEN_OPTIONS]}
                   value={draft.specimen ?? SPECIMEN_OPTIONS[0]}
                   onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -104,14 +110,20 @@ export function DraftOrders({
                 />
               ) : (
                 <p className="or-small or-draft__note">
-                  No specimen is collected for {formatEnumLabel(draft.entry.category).toLowerCase()}
-                  .
+                  {t('orders.draft.noSpecimen', {
+                    /* Lower-cased with the reader's own rules rather than the
+                       runtime default: a Turkish "I" does not lower-case to
+                       "i", and the word is a translated one. */
+                    category: t(
+                      ORDER_CATEGORY_LABELS[draft.entry.category].labelKey
+                    ).toLocaleLowerCase(t.locale),
+                  })}
                 </p>
               )}
 
               <Select
-                label="Diagnosis this order justifies"
-                hint="From the active problem list. Required before signing."
+                label={t('orders.draft.diagnosis')}
+                hint={t('orders.draft.diagnosisHint')}
                 options={diagnosisOptions}
                 value={draft.diagnosisCode ?? NO_DIAGNOSIS}
                 onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -129,7 +141,7 @@ export function DraftOrders({
                 iconLeft="trash-2"
                 onClick={() => onRemove(draft.key)}
               >
-                {`Remove ${draft.entry.name}`}
+                {t('orders.draft.remove', { order: draft.entry.name })}
               </Button>
             </div>
           </Card>

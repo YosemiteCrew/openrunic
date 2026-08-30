@@ -73,9 +73,9 @@ const dtoSchema = z.strictObject({
 });
 
 /**
- * A `Collection` whose four methods default to the least interesting answer -
- * an empty page, a missing row, an echo create - and whose behaviour any one
- * test overrides for the branch it is after.
+ * A `Collection` whose methods default to the least interesting answer - an
+ * empty page, a missing row, an echo create - and whose behaviour any one test
+ * overrides for the branch it is after.
  */
 function fakeCollection(
   overrides: Partial<Collection<Widget, WidgetCreate, WidgetPatch, BaseQuery>> = {}
@@ -83,6 +83,7 @@ function fakeCollection(
   return {
     list: () => Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 25 }),
     findById: () => Promise.resolve(null),
+    findByIds: () => Promise.resolve([]),
     create: (input) =>
       Promise.resolve({ id: testId(1), facilityId: input.facilityId, name: input.name }),
     update: () => Promise.resolve(null),

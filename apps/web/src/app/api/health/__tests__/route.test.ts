@@ -2,6 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GET } from '../route';
 
+/*
+ * These exercise the live path, so the mode is declared rather than inherited.
+ *
+ * The suite runs in mock mode like the rest of this app, and the route short
+ * circuits there - it has no API to probe. Without this every case below would
+ * pass on the mock branch and prove nothing about the probe.
+ */
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+  return { ...actual, IS_MOCK_MODE: false };
+});
+
 /**
  * The three answers this route can give, and why each one matters.
  *
@@ -142,5 +154,44 @@ describe('GET /api/health', () => {
 
     // A cached health check is not a health check.
     expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+});
+
+describe('in mock mode', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('@/lib/api');
+  });
+
+  it('answers ok without probing, because there is no API to be down', async () => {
+    /*
+     * The defect this closes, found by looking at a screenshot rather than by a
+     * test: a fixtures build has no API, so OPENRUNIC_API_INTERNAL_URL is
+     * unset, the probe throws, the route answers 502 and the downtime banner
+     * lights and stays lit. That is the permanently-on banner this route was
+     * written to remove, reappearing in the one configuration where the
+     * question is meaningless - and it is the configuration a hosted
+     * demonstration runs in.
+     */
+    vi.resetModules();
+    vi.doMock('@/lib/api', async () => {
+      const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+      return { ...actual, IS_MOCK_MODE: true };
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    delete process.env.OPENRUNIC_API_INTERNAL_URL;
+
+    const route = await import('../route');
+    const response = await route.GET();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: 'ok', mode: 'mock' });
+    // Nothing was asked of the network. A probe here would be asking whether a
+    // service this build does not use is reachable.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(response.headers.get('cache-control')).toBe('no-store');
+
+    vi.unstubAllGlobals();
   });
 });

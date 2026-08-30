@@ -16,6 +16,7 @@ import { Notice } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
 import type { MessageThread, PortalApi } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDateTime } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
@@ -29,6 +30,7 @@ interface ConversationProps {
 }
 
 function Conversation({ thread, api }: Readonly<ConversationProps>) {
+  const t = useTranslator();
   const [draft, setDraft] = useState('');
   const send = useAction((body: string) => api.sendMessage(thread.id, body));
 
@@ -39,12 +41,15 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
   };
 
   return (
-    <Card overline="Conversation" title={thread.subject}>
+    <Card overline={t('portal.messages.conversation.overline')} title={thread.subject}>
       <ul className="portal-conversation">
         {thread.messages.map((message) => (
           <li className={`portal-message portal-message--${message.author}`} key={message.id}>
             <p className="portal-message__who">
-              {message.authorName}, {formatDateTime(message.sentAt)}
+              {t('portal.messages.conversation.who', {
+                author: message.authorName,
+                when: formatDateTime(t, message.sentAt),
+              })}
             </p>
             <p className="portal-message__body">{message.body}</p>
           </li>
@@ -52,14 +57,11 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
       </ul>
 
       {/* Above the box, always. */}
-      <Notice title="Not for emergencies">
-        Replies can take a few working days. If you need help now, call the practice. For a medical
-        emergency, call the emergency services on your local number.
-      </Notice>
+      <Notice title={t('portal.messages.notice.title')}>{t('portal.messages.notice.body')}</Notice>
 
       <div className="portal-compose">
         <label className="portal-field-label" htmlFor="compose-body">
-          Your message
+          {t('portal.messages.compose.label')}
         </label>
         <textarea
           className="portal-textarea"
@@ -67,25 +69,26 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
           name="body"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Write your reply here."
+          placeholder={t('portal.messages.compose.placeholder')}
         />
 
         <div className="portal-actions">
           <Button iconLeft="send" disabled={draft.trim() === ''} onClick={submit}>
-            {send.status === 'pending' ? 'Sending' : 'Send message'}
+            {t(
+              send.status === 'pending'
+                ? 'portal.messages.compose.sending'
+                : 'portal.messages.compose.send'
+            )}
           </Button>
         </div>
 
         {send.status === 'done' ? (
-          <output className="portal-record__meta">
-            Message sent. It is at the bottom of the conversation above.
-          </output>
+          <output className="portal-record__meta">{t('portal.messages.compose.sent')}</output>
         ) : null}
 
         {send.status === 'failed' ? (
           <p className="portal-record__meta" role="alert">
-            Your message did not send, and your draft is still in the box. Check your connection,
-            then send it again.
+            {t('portal.messages.compose.failed')}
           </p>
         ) : null}
       </div>
@@ -94,6 +97,7 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
 }
 
 export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getThreads(), [api]);
   const { state, reload } = useAsync(load);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -101,12 +105,17 @@ export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreen
   return (
     <>
       <PageHeader
-        overline="Your care team"
-        title="Messages"
-        lede="Read what your care team has written and reply. This is not the way to get help quickly."
+        overline={t('portal.messages.overline')}
+        title={t('portal.messages.title')}
+        lede={t('portal.messages.lede')}
       />
 
-      <AsyncBoundary state={state} what="your messages" onRetry={reload}>
+      <AsyncBoundary
+        state={state}
+        loadingKey="portal.messages.async.loading"
+        errorKey="portal.messages.async.error"
+        onRetry={reload}
+      >
         {(threads) => {
           /* Falling back to the first thread rather than syncing state in an effect: the
              selection is derived from the data, so it never needs a second render to
@@ -118,16 +127,18 @@ export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreen
             return (
               <EmptyState
                 icon="inbox"
-                title="You have no messages."
-                message="When your care team writes to you, the conversation appears here."
+                title={t('portal.messages.empty.title')}
+                message={t('portal.messages.empty.message')}
               />
             );
           }
 
           return (
             <div className="portal-messages">
-              <section className="portal-section" aria-label="Conversations">
-                <h2 className="or-h3 portal-section__heading">Conversations</h2>
+              <section className="portal-section" aria-label={t('portal.messages.threads.label')}>
+                <h2 className="or-h3 portal-section__heading">
+                  {t('portal.messages.threads.heading')}
+                </h2>
                 <ul className="portal-threads">
                   {threads.map((thread) => (
                     <li key={thread.id}>
@@ -139,10 +150,15 @@ export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreen
                       >
                         <span className="portal-thread-button__subject">
                           {thread.subject}
-                          {thread.unread ? <Badge tone="accent">Unread</Badge> : null}
+                          {thread.unread ? (
+                            <Badge tone="accent">{t('portal.messages.threads.unread')}</Badge>
+                          ) : null}
                         </span>
                         <span className="portal-thread-button__meta">
-                          {thread.correspondent}, {formatDateTime(thread.lastMessageAt)}
+                          {t('portal.messages.threads.meta', {
+                            correspondent: thread.correspondent,
+                            when: formatDateTime(t, thread.lastMessageAt),
+                          })}
                         </span>
                       </button>
                     </li>

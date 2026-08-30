@@ -9,10 +9,14 @@ organised by what you see on screen, not by what is wrong underneath.
 
 > **Read this before you put real patient records into openrunic.**
 >
-> openrunic does not have a login system yet. Access is granted by a short list
-> of demo tokens that are published in the source code. Anyone who can reach the
-> server can read everything in it. The software will tell you this every time it
-> starts.
+> openrunic signs people in against your own identity provider, and it is off
+> until you configure it. Set `OIDC_ISSUER`, `OIDC_AUDIENCE` and `OIDC_JWKS_URI`
+> and the API verifies every token against your provider's published keys.
+>
+> A deployment that sets none of them falls back to a short list of demo tokens
+> that are published in the source code, and then anyone who can reach the server
+> can read everything in it. The software prints a banner saying so every time it
+> starts. The [Security](#security) section has the full list.
 >
 > Today openrunic is safe to evaluate on a machine you control, on a network
 > nobody else is on. It is not yet safe to hold a real patient record. The

@@ -16,19 +16,25 @@ export type PortalRoute =
 
 export interface NavItem {
   href: PortalRoute;
-  /** Full label, used at every width; the tab bar shortens nothing. */
-  label: string;
+  /**
+   * Full label, used at every width; the tab bar shortens nothing.
+   *
+   * A key rather than the word, in the `labelKey` shape the staff application's
+   * navigation table already uses. That shape is one `catalogue-drift.test.ts`
+   * can see, which a key assembled from the route could not be.
+   */
+  labelKey: string;
   /** Lucide slug. Decorative - the label always carries the meaning. */
   icon: string;
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { href: '/', label: 'Home', icon: 'house' },
-  { href: '/health-record', label: 'Health record', icon: 'heart-pulse' },
-  { href: '/messages', label: 'Messages', icon: 'message-square' },
-  { href: '/appointments', label: 'Appointments', icon: 'calendar' },
-  { href: '/forms', label: 'Forms', icon: 'clipboard-list' },
-  { href: '/bills', label: 'Bills', icon: 'receipt' },
+  { href: '/', labelKey: 'portal.nav.home', icon: 'house' },
+  { href: '/health-record', labelKey: 'portal.nav.healthRecord', icon: 'heart-pulse' },
+  { href: '/messages', labelKey: 'portal.nav.messages', icon: 'message-square' },
+  { href: '/appointments', labelKey: 'portal.nav.appointments', icon: 'calendar' },
+  { href: '/forms', labelKey: 'portal.nav.forms', icon: 'clipboard-list' },
+  { href: '/bills', labelKey: 'portal.nav.bills', icon: 'receipt' },
 ];
 
 /**
@@ -40,7 +46,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
  */
 export const ASSISTANT_NAV_ITEM: NavItem = {
   href: '/assistant',
-  label: 'Assistant',
+  labelKey: 'portal.nav.assistant',
   icon: 'message-circle',
 };
 

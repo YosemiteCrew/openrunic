@@ -171,8 +171,13 @@ export function filterEncounters(
     return true;
   });
 
-  // Newest visit first, which is the order a chart's visit list reads in.
-  const direction = query.order === 'asc' ? 1 : -1;
+  // Oldest first unless asked otherwise, because `sortOrderField` in
+  // `apps/api/src/schemas/pagination.ts` defaults to `asc` and this client
+  // exists to stand in for that API. It used to default the other way, which
+  // meant the same query answered in opposite orders depending on which mode
+  // the app was running in - the kind of difference that survives every test
+  // and shows up the first day against a real server.
+  const direction = query.order === 'desc' ? -1 : 1;
   return [...matched].sort((a, b) => a.startedAt.localeCompare(b.startedAt) * direction);
 }
 
@@ -188,7 +193,8 @@ export function filterNotes(
     return true;
   });
 
-  const direction = query.order === 'asc' ? 1 : -1;
+  // Ascending by default, for the reason given in `filterEncounters`.
+  const direction = query.order === 'desc' ? -1 : 1;
   if (query.sort === 'signedAt') {
     // Sorting by signature puts unsigned notes last, because the board that
     // asks for this ordering is the one chasing the ones with no signature.

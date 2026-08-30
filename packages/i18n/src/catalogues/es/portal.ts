@@ -1,0 +1,368 @@
+import type { Messages } from '../../catalogue.js';
+
+/**
+ * El portal del paciente.
+ *
+ * Traducido, a diferencia de las áreas clínicas: quien lee esto es el paciente,
+ * y no se puede dar por supuesto que pueda leer inglés para consultar su propio
+ * historial. Lo que no se traduce es lo que ya llega con nombre - el analito que
+ * envía el laboratorio, el nombre que la aseguradora se da a sí misma.
+ */
+export const portal: Messages = {
+  'portal.duration.minutes': '{count} minutos',
+  'portal.duration.minute': '{count} minuto',
+  'portal.duration.hours': '{count} horas',
+  'portal.duration.hour': '{count} hora',
+  'portal.duration.hoursAndMinutes': '{hours} y {minutes}',
+
+  'portal.dateTime': '{date} a las {time}',
+
+  'portal.progress': '{done} de {total} respondidas',
+
+  'portal.home.unread.one': 'Tiene {count} mensaje sin leer.',
+  'portal.home.unread.other': 'Tiene {count} mensajes sin leer.',
+
+  'portal.skipToContent': 'Saltar al contenido',
+  'portal.eyebrow': 'Portal del paciente',
+  'portal.recordNumber': 'Número de historia {mrn}',
+  'portal.navLabel': 'Secciones del portal',
+  'portal.nav.home': 'Inicio',
+  'portal.nav.healthRecord': 'Historial',
+  'portal.nav.messages': 'Mensajes',
+  'portal.nav.appointments': 'Citas',
+  'portal.nav.forms': 'Formularios',
+  'portal.nav.bills': 'Facturas',
+  'portal.nav.assistant': 'Asistente',
+  'portal.footer.whatThisIs':
+    'Este portal muestra el historial que guarda su equipo asistencial. Si algo parece incorrecto, escríbales y pida que lo revisen.',
+  'portal.footer.emergency':
+    'Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
+
+  'portal.home.overline': 'Su atención',
+  'portal.home.title': 'Inicio',
+  'portal.home.lede':
+    'Lo que necesita su atención hoy. Todo lo demás está en las secciones alrededor de esta página.',
+  'portal.home.empty.title': 'No hay nada que necesite su atención.',
+  'portal.home.empty.message':
+    'Sus citas, su historial, sus mensajes y sus facturas siguen aquí cuando los quiera.',
+  'portal.home.balance.overline': 'Saldo',
+  'portal.home.balance.title': 'Lo que debe',
+  'portal.home.balance.nothing': 'No hay nada que pagar.',
+  'portal.home.balance.dueUnknown':
+    'Pregunte a la consulta cuándo vence. Puede pagar en línea, o preguntar a la consulta por el pago a plazos.',
+  'portal.home.balance.dueBy':
+    'Vence el {date}. Puede pagar en línea, o preguntar a la consulta por el pago a plazos.',
+  'portal.home.balance.seeBills': 'Ver sus facturas',
+  'portal.home.balance.pay': 'Pagar una factura',
+  'portal.home.messages.overline': 'Mensajes',
+  'portal.home.messages.title': 'De su equipo asistencial',
+  'portal.home.messages.open': 'Abrir los mensajes',
+  'portal.home.actions.overline': 'Requiere acción',
+  'portal.home.actions.title': 'Cosas que solo puede hacer usted',
+  'portal.home.actions.none': 'No hay nada pendiente de usted.',
+  'portal.home.actions.badge': 'Pendiente',
+  'portal.home.appointment.overline': 'Próxima cita',
+  'portal.home.appointment.none': 'No tiene ninguna cita reservada',
+  'portal.home.appointment.noneMessage':
+    'Pida una hora a la consulta y se la confirmarán por mensaje.',
+  'portal.home.appointment.request': 'Pedir una cita',
+  'portal.home.appointment.videoLocation': 'Una videollamada. El enlace se abre en este navegador.',
+  'portal.home.page.title': 'Inicio',
+  'portal.home.page.description':
+    'Su próxima cita, su saldo, sus mensajes y todo lo que está pendiente de usted.',
+  'portal.app.title': 'Portal del paciente',
+  'portal.app.titleTemplate': '{page} - portal del paciente',
+  'portal.app.description':
+    'Consulte sus citas, su historia clínica, sus mensajes, sus formularios y sus facturas.',
+  'portal.appointments.page.title': 'Citas',
+  'portal.appointments.page.description':
+    'Sus citas próximas y pasadas, y cómo pedir, cambiar o anular una.',
+  'portal.bills.page.title': 'Facturas',
+  'portal.bills.page.description': 'Sus facturas, el motivo de cada cargo y cómo pagarlas.',
+  'portal.forms.page.title': 'Formularios',
+  'portal.forms.page.description':
+    'Cuestionarios para rellenar antes de sus citas. Guarde a medida que avanza y termine más tarde.',
+  'portal.healthRecord.page.title': 'Historia clínica',
+  'portal.healthRecord.page.description':
+    'Sus resultados, sus diagnósticos, sus medicamentos, sus alergias, sus vacunas y sus documentos, cada uno con una explicación en lenguaje claro.',
+  'portal.messages.page.title': 'Mensajes',
+  'portal.messages.page.description': 'Lea lo que ha escrito su equipo asistencial y respóndales.',
+  'portal.assistant.page.title': 'Asistente',
+  'portal.assistant.page.description':
+    'Pregunte por lo que ha anotado su equipo asistencial y vea los registros de los que sale cada respuesta.',
+  'portal.async.error.message':
+    'Compruebe su conexión y vuelva a intentarlo. Si sigue fallando, escriba a su equipo asistencial.',
+  'portal.async.retry': 'Volver a intentarlo',
+  'portal.home.async.loading': 'Cargando su resumen.',
+  'portal.home.async.error': 'Su resumen no se ha cargado.',
+  'portal.appointments.async.loading': 'Cargando sus citas.',
+  'portal.appointments.async.error': 'Sus citas no se han cargado.',
+  'portal.healthRecord.async.loading': 'Cargando su historia clínica.',
+  'portal.healthRecord.async.error': 'Su historia clínica no se ha cargado.',
+  'portal.messages.async.loading': 'Cargando sus mensajes.',
+  'portal.messages.async.error': 'Sus mensajes no se han cargado.',
+  'portal.forms.async.loading': 'Cargando sus formularios.',
+  'portal.forms.async.error': 'Sus formularios no se han cargado.',
+  'portal.bills.async.loading': 'Cargando sus facturas.',
+  'portal.bills.async.error': 'Sus facturas no se han cargado.',
+  'portal.assistant.async.loading': 'Cargando su historia clínica.',
+  'portal.assistant.async.error': 'Su historia clínica no se ha cargado.',
+  'portal.money.credit': 'a su favor',
+  'portal.appointment.when': 'Cuándo',
+  'portal.appointment.whenValue': '{dateTime}, {duration}',
+  'portal.appointment.whoWith': 'Con quién',
+  'portal.appointment.whoWithValue': '{clinician}, {department}',
+  'portal.appointment.where': 'Dónde',
+  'portal.appointment.videoDefault': 'Una videollamada',
+  'portal.appointment.roomUnconfirmed': 'La consulta le confirmará la sala.',
+  'portal.appointments.overline': 'Sus visitas',
+  'portal.appointments.title': 'Citas',
+  'portal.appointments.lede': 'Lo que tiene reservado, lo que ya ha pasado y cómo pedir un cambio.',
+  'portal.appointments.request': 'Pedir una cita',
+  'portal.appointments.requested':
+    'Su solicitud ha llegado a la consulta. Se lo confirmarán por mensaje. No hay nada reservado hasta que lo hagan.',
+  'portal.appointments.cancelFailed':
+    'La cita no se ha anulado y sigue reservada. Compruebe su conexión y vuelva a intentarlo.',
+  'portal.appointments.empty.title': 'No tiene ninguna cita.',
+  'portal.appointments.empty.message': 'Pida una y la consulta le confirmará una hora por mensaje.',
+  'portal.appointments.upcoming.label': 'Próximas citas',
+  'portal.appointments.upcoming.heading': 'Próximas',
+  'portal.appointments.upcoming.none': 'No tiene nada reservado.',
+  'portal.appointments.past.label': 'Citas pasadas',
+  'portal.appointments.past.heading': 'Pasadas',
+  'portal.appointments.past.none': 'No consta ninguna cita pasada.',
+  'portal.appointments.mode.video': 'Videollamada',
+  'portal.appointments.mode.inPerson': 'Presencial',
+  'portal.appointments.mode.past': 'Pasada',
+  'portal.appointments.join': 'Entrar en la videollamada',
+  'portal.appointments.directions': 'Cómo llegar',
+  'portal.appointments.move': 'Pedir un cambio de hora',
+  'portal.appointments.cancel': 'Anular',
+  'portal.appointments.cancelledBadge': 'Anulada',
+  'portal.appointments.cancelDialog.title': '¿Anular esta cita?',
+  'portal.appointments.cancelDialog.description':
+    'Esto anularía {reason} con {clinician} el {when}. La hora pasa a otra persona y, para que le vean, tendría que pedir una cita nueva. Puede que la siguiente hora libre tarde semanas.',
+  'portal.appointments.cancelDialog.keep': 'Mantener la cita',
+  'portal.appointments.cancelDialog.confirm': 'Anular la cita',
+  'portal.appointments.requestDialog.title': 'Pedir una cita',
+  'portal.appointments.requestDialog.rescheduleTitle': 'Pedir un cambio de hora',
+  'portal.appointments.requestDialog.description':
+    'Esto llega a la consulta como una solicitud. Le confirmarán una hora por mensaje. No hay nada reservado hasta que lo hagan.',
+  'portal.appointments.requestDialog.close': 'Cerrar sin enviar',
+  'portal.appointments.requestDialog.send': 'Enviar la solicitud',
+  'portal.appointments.requestDialog.reason.label': '¿Por qué necesita que le vean?',
+  'portal.appointments.requestDialog.reason.hint': 'Con una línea basta.',
+  'portal.appointments.requestDialog.times.label': '¿Cuándo puede venir?',
+  'portal.appointments.requestDialog.times.hint': 'Por ejemplo, las mañanas entre semana.',
+  'portal.appointments.requestDialog.failed':
+    'Su solicitud no se ha enviado y lo que escribió sigue aquí. Compruebe su conexión y vuelva a enviarla.',
+  'portal.healthRecord.overline': 'Su historia',
+  'portal.healthRecord.title': 'Historia clínica',
+  'portal.healthRecord.lede':
+    'Todo lo que ha anotado su equipo asistencial, con una explicación en lenguaje claro junto a cada término clínico.',
+  'portal.healthRecord.empty.title': 'Su historia clínica todavía no tiene nada.',
+  'portal.healthRecord.empty.message':
+    'Sus resultados, sus diagnósticos, sus medicamentos y sus documentos aparecerán aquí después de su primera cita.',
+  'portal.healthRecord.results.overline': 'Resultados',
+  'portal.healthRecord.results.title': 'Resultados recientes',
+  'portal.healthRecord.results.none': 'No se ha añadido ningún resultado a su historia clínica.',
+  'portal.healthRecord.results.noRange': 'No consta un rango habitual para esta prueba.',
+  'portal.healthRecord.results.usualRange': 'Rango habitual: {range}',
+  'portal.healthRecord.results.takenOn': 'Tomada el {date}',
+  'portal.healthRecord.results.ask': 'Preguntar por este resultado',
+  'portal.healthRecord.results.explainer.title': 'Qué hacer con esta cifra',
+  'portal.healthRecord.results.explainer.body':
+    'Un resultado aislado es un momento, no un diagnóstico. Su equipo asistencial lo lee junto con todo lo demás que sabe de usted. Si quiere que se lo expliquen, escríbales indicando el nombre de la prueba y la fecha.',
+  'portal.healthRecord.results.explainer.action': 'Escribir a su equipo asistencial',
+  'portal.healthRecord.problems.overline': 'Diagnósticos',
+  'portal.healthRecord.problems.title': 'Diagnósticos en su historia clínica',
+  'portal.healthRecord.problems.none': 'No consta ningún diagnóstico.',
+  'portal.healthRecord.problems.recordedOn': 'Registrado el {date}',
+  'portal.healthRecord.medications.overline': 'Medicamentos',
+  'portal.healthRecord.medications.title': 'Lo que le han recetado',
+  'portal.healthRecord.medications.none': 'No consta ningún medicamento.',
+  'portal.healthRecord.medications.prescribedBy': 'Recetado por {clinician}, iniciado el {date}',
+  'portal.healthRecord.allergies.overline': 'Alergias',
+  'portal.healthRecord.allergies.title': 'Lo que debe evitar',
+  'portal.healthRecord.allergies.none': 'No consta ninguna alergia.',
+  'portal.healthRecord.allergies.reaction': 'Qué pasó: {reaction}',
+  'portal.healthRecord.allergies.recordedOn': 'Registrada el {date}',
+  'portal.healthRecord.immunisations.overline': 'Vacunas',
+  'portal.healthRecord.immunisations.title': 'Vacunas que ha recibido',
+  'portal.healthRecord.immunisations.none': 'No consta ninguna vacuna.',
+  'portal.healthRecord.immunisations.givenOn': 'Administrada el {date}',
+  'portal.healthRecord.documents.overline': 'Documentos',
+  'portal.healthRecord.documents.title': 'Informes y cartas',
+  'portal.healthRecord.documents.none': 'No se ha añadido ningún documento.',
+  'portal.healthRecord.documents.addedOn': 'Añadido el {date}',
+  'portal.bills.overline': 'Su cuenta',
+  'portal.bills.title': 'Facturas',
+  'portal.bills.lede':
+    'Todas las facturas que ha emitido la consulta, el motivo de cada cargo y cómo pagarlas.',
+  'portal.bills.empty.title': 'No tiene ninguna factura.',
+  'portal.bills.empty.message':
+    'Cuando la consulta le facture una visita, la factura aparecerá aquí.',
+  'portal.bills.statement.overline': 'Factura {reference}',
+  'portal.bills.statement.title': 'Emitida el {date}',
+  'portal.bills.statement.status': 'Estado',
+  'portal.bills.statement.dueBy': 'Vence el',
+  'portal.bills.statement.stillToPay': 'Pendiente de pago',
+  'portal.bills.statement.total': 'Total',
+  'portal.bills.statement.open': 'Ver el motivo',
+  'portal.bills.status.due': 'Pendiente',
+  'portal.bills.status.paid': 'Pagada',
+  'portal.bills.status.credit': 'A su favor',
+  'portal.bills.lines.caption': 'Cargos de la factura {reference}',
+  'portal.bills.lines.description': 'Motivo',
+  'portal.bills.lines.code': 'Código',
+  'portal.bills.lines.quantity': 'Cantidad',
+  'portal.bills.lines.amount': 'Importe ({currency})',
+  'portal.bills.lines.note':
+    'Los importes están en {currency}. Una cifra marcada como a su favor es dinero que se le debe.',
+  'portal.bills.receipt.title': 'Pago recibido',
+  'portal.bills.receipt.body':
+    'Pagó {amount} el {paidOn} con la tarjeta terminada en {cardLast4}. Su referencia de recibo es {reference}. Guárdela por si necesita consultar el pago.',
+  'portal.bills.pay.failed':
+    'El pago no se ha realizado y no se le ha cobrado nada. Compruebe su conexión y vuelva a intentarlo.',
+  'portal.bills.pay.action': 'Pagar esta factura',
+  'portal.bills.back': 'Volver a sus facturas',
+  'portal.bills.payDialog.title': '¿Pagar esta factura?',
+  'portal.bills.payDialog.description':
+    'Esto carga {amount} en la tarjeta que la consulta tiene registrada. Los pagos no se pueden revertir desde este portal. Para recuperar el dinero tendría que pedir una devolución a la consulta.',
+  'portal.bills.payDialog.notNow': 'Ahora no',
+  'portal.bills.payDialog.confirm': 'Pagar ahora',
+  'portal.messages.overline': 'Su equipo asistencial',
+  'portal.messages.title': 'Mensajes',
+  'portal.messages.lede':
+    'Lea lo que ha escrito su equipo asistencial y respóndales. Esta no es la vía para conseguir ayuda rápida.',
+  'portal.messages.empty.title': 'No tiene ningún mensaje.',
+  'portal.messages.empty.message':
+    'Cuando su equipo asistencial le escriba, la conversación aparecerá aquí.',
+  'portal.messages.threads.label': 'Conversaciones',
+  'portal.messages.threads.heading': 'Conversaciones',
+  'portal.messages.threads.unread': 'Sin leer',
+  'portal.messages.threads.meta': '{correspondent}, {when}',
+  'portal.messages.conversation.overline': 'Conversación',
+  'portal.messages.conversation.who': '{author}, {when}',
+  'portal.messages.notice.title': 'No es para urgencias',
+  'portal.messages.notice.body':
+    'Las respuestas pueden tardar unos días laborables. Si necesita ayuda ahora, llame a la consulta. Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
+  'portal.messages.compose.label': 'Su mensaje',
+  'portal.messages.compose.placeholder': 'Escriba aquí su respuesta.',
+  'portal.messages.compose.send': 'Enviar el mensaje',
+  'portal.messages.compose.sending': 'Enviando',
+  'portal.messages.compose.sent': 'Mensaje enviado. Está al final de la conversación de arriba.',
+  'portal.messages.compose.failed':
+    'Su mensaje no se ha enviado y su borrador sigue en la caja. Compruebe su conexión y vuelva a enviarlo.',
+  'portal.forms.overline': 'Antes de su visita',
+  'portal.forms.title': 'Formularios',
+  'portal.forms.lede':
+    'Cuestionarios que su equipo asistencial le ha pedido que rellene. Guarde a medida que avanza y termine cuando quiera.',
+  'portal.forms.empty.title': 'No tiene ningún formulario que rellenar.',
+  'portal.forms.empty.message':
+    'Cuando su equipo asistencial le envíe uno, aparecerá aquí con la fecha para la que se necesita.',
+  'portal.forms.status.notStarted': 'Sin empezar',
+  'portal.forms.status.inProgress': 'Guardado, sin enviar',
+  'portal.forms.status.submitted': 'Enviado',
+  'portal.forms.neededBy': 'Se necesita para el {date}',
+  'portal.forms.open': 'Abrir el formulario',
+  'portal.forms.continue': 'Continuar el formulario',
+  'portal.forms.yes': 'Sí',
+  'portal.forms.no': 'No',
+  'portal.forms.inProgress.overline': 'En curso',
+  'portal.forms.save': 'Guardar y terminar más tarde',
+  'portal.forms.submit': 'Enviar a la consulta',
+  'portal.forms.back': 'Volver a sus formularios',
+  'portal.forms.saved': 'Sus respuestas están guardadas. Puede cerrar esto y volver más tarde.',
+  'portal.forms.saveFailed':
+    'Sus respuestas no se han guardado y siguen en esta página. Compruebe su conexión y vuelva a guardarlas.',
+  'portal.forms.submitFailed':
+    'Su formulario no se ha enviado y sus respuestas siguen en esta página. Compruebe su conexión y vuelva a enviarlo.',
+  'portal.forms.sent.overline': 'Enviado',
+  'portal.forms.sent.title': 'Su formulario ha llegado a la consulta',
+  'portal.forms.sent.body':
+    'Sus respuestas están con su equipo asistencial y se leerán antes de su cita. No tiene que hacer nada más.',
+  'portal.assistant.overline': 'Su historia',
+  'portal.assistant.title': 'Asistente',
+  'portal.assistant.lede':
+    'Pregunte por lo que ha anotado su equipo asistencial y vea los registros de los que sale cada respuesta.',
+  'portal.assistant.notice.title': 'Lo que puede y lo que no puede hacer',
+  'portal.assistant.notice.body':
+    'Consulta cosas en su propia historia clínica y le enseña de dónde sale cada respuesta. No puede decirle qué significa algo, si es importante ni qué hacer a continuación. Para eso, escriba a su equipo asistencial. Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
+  'portal.assistant.service.line':
+    'Su consulta usa un servicio informático para escribir estas respuestas. Se llama {model} y funciona en {host}.',
+  'portal.assistant.service.leaves':
+    'Lo que escriba aquí sale de su consulta hacia ese servicio. Su consulta lo eligió y tiene el acuerdo con él.',
+  'portal.assistant.service.stays':
+    'Lo que escriba aquí se queda en los ordenadores de la propia consulta y no se envía a ningún otro sitio.',
+  'portal.assistant.section.label': 'Asistente',
+  'portal.assistant.reach.summary': 'Lo que puede consultar',
+  'portal.assistant.intro':
+    'Pregunte por algo que ya esté anotado, como cuándo es su próxima cita, qué medicamentos constan en su historia clínica o qué queda por pagar. Cada respuesta enseña los registros de los que sale y puede abrir cada uno.',
+  'portal.assistant.intro.careTeam': 'Escriba a su equipo asistencial',
+  'portal.assistant.intro.forAnythingElse': 'para cualquier otra cosa.',
+  'portal.assistant.compose.label': 'Su pregunta',
+  'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
+  'portal.assistant.compose.ask': 'Preguntar',
+  'portal.assistant.compose.stop': 'Parar',
+  'portal.assistant.turn.youAsked': 'Usted preguntó:',
+  'portal.assistant.turn.stillLooking': 'Sigue buscando.',
+  'portal.assistant.step.done': ', hecho',
+  'portal.assistant.step.stillGoing': ', en curso',
+  'portal.assistant.step.notFinished': ', sin terminar',
+  'portal.assistant.withheld.unsourced':
+    'La respuesta llegó sin los registros en los que se basaba, así que no se muestra. Una respuesta que no puede contrastar con su propia historia clínica no es de fiar.',
+  'portal.assistant.withheld.incomplete':
+    'Usted lo paró antes de que terminara una frase, así que no hay nada que mostrar.',
+  'portal.assistant.withheld.careTeam':
+    'Esto es para una persona, no para esta página. Puede consultar cosas en su historia clínica; no puede decirle qué significa algo, si es importante ni qué hacer.',
+  'portal.assistant.deferral': 'El asistente no siguió adelante con parte de esto: {reason}',
+  'portal.assistant.careTeam.text':
+    'Pregunte a su equipo asistencial. Ven la misma historia clínica y pueden responder a preguntas que esta página no puede.',
+  'portal.assistant.careTeam.link': 'Escriba a su equipo asistencial',
+  'portal.assistant.sources.head': 'De dónde sale esto',
+  'portal.assistant.sources.untrusted': 'Escrito por usted o por alguien de fuera de la consulta',
+  'portal.assistant.sources.line': '{name}: {label}',
+  'portal.assistant.sources.lineBeforeLink': '{name}: {label} -',
+  'portal.assistant.sources.seeIn': 'verlo en {destination}',
+  'portal.assistant.record.condition': 'Diagnóstico',
+  'portal.assistant.record.medicine': 'Medicamento',
+  'portal.assistant.record.allergy': 'Alergia',
+  'portal.assistant.record.vaccination': 'Vacuna',
+  'portal.assistant.record.appointment': 'Cita',
+  'portal.assistant.record.bill': 'Factura',
+  'portal.assistant.record.other': 'Registro',
+  'portal.assistant.destination.home': 'Inicio',
+  'portal.assistant.destination.healthRecord': 'su historia clínica',
+  'portal.assistant.destination.messages': 'sus mensajes',
+  'portal.assistant.destination.appointments': 'sus citas',
+  'portal.assistant.destination.forms': 'sus formularios',
+  'portal.assistant.destination.bills': 'sus facturas',
+  'portal.assistant.destination.assistant': 'el asistente',
+  'portal.assistant.announce.looking': 'Buscando en su historia clínica.',
+  'portal.assistant.announce.careTeam': 'Esto es para su equipo asistencial.',
+  'portal.assistant.announce.failed': 'No llegó ninguna respuesta.',
+  'portal.assistant.announce.withheld': 'No se muestra ninguna respuesta.',
+  'portal.assistant.announce.ready.one': 'Respuesta lista, de {count} registro.',
+  'portal.assistant.announce.ready.other': 'Respuesta lista, de {count} registros.',
+  'portal.assistant.failure.unreachable':
+    'No se ha podido contactar con el asistente. Sus citas, sus mensajes, sus formularios y sus facturas siguen funcionando. Vuelva a intentarlo en un momento.',
+  'portal.assistant.failure.unexpectedDraft':
+    'Ha llegado algo que esta página no le va a mostrar. No ha cambiado nada en su historia clínica. Dígale a su equipo asistencial que ha visto esto.',
+  'portal.assistant.failure.upstreamUnreachable':
+    'El servicio que escribe estas respuestas no ha contestado, así que no hay respuesta. Nada más del portal depende de él.',
+  'portal.assistant.failure.quotaExceeded':
+    'El asistente se ha usado todo lo que permite su consulta por ahora. Todo lo demás del portal sigue funcionando.',
+  'portal.assistant.failure.turnLimit':
+    'Eso ha tardado más de lo que se permite a una sola pregunta. Pruebe a preguntar una cosa cada vez.',
+  'portal.assistant.failure.scopeDenied':
+    'El asistente ha pedido algo que no tiene permitido consultar. Se le ha denegado y no se ha leído nada.',
+  'portal.assistant.failure.compartmentViolation':
+    'Ha llegado algo que no era de su historia clínica, así que la respuesta se ha descartado y no se muestra nada. Dígale a su equipo asistencial que ha visto esto.',
+  'portal.assistant.failure.responseInvalid':
+    'La respuesta ha llegado con una forma que esta página no ha podido leer, así que no se muestra nada en lugar de adivinarla.',
+  'portal.assistant.failure.toolFailed':
+    'Su historia clínica no se ha podido leer ahora mismo. Vuelva a intentarlo en un momento.',
+  'portal.assistant.failure.unknown':
+    'Eso no ha funcionado. No ha cambiado nada en su historia clínica y el resto del portal está bien.',
+};

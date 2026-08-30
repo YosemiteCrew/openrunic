@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/x12",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "X12 5010 codec for the Openrunic EMR: 837P, 835, 277, 999, 270 and 271.",
   "license": "AGPL-3.0-only",
   "type": "module",

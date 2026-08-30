@@ -7,6 +7,7 @@ import type {
   SENSITIVITY_CLASSES,
 } from '@openrunic/database';
 
+import type { OrganisationQueryRepository } from './organisation-query.js';
 import type { AuditQueryRepository } from './audit-query.js';
 import type { Collection, CollectionSpec } from './collection.js';
 import type { RequestScope } from './registry.js';
@@ -68,6 +69,14 @@ export type Repositories = {
   readonly tenantId: string;
   /** The audit log: readable, never writable through the API. */
   readonly audit: AuditQueryRepository;
+  /**
+   * The caller's own organisation: readable, never writable through the API.
+   *
+   * Hand-written like `audit` rather than generated from a spec, because
+   * `Organisation` is the tenant rather than a row inside one and a spec has no
+   * way to say so. See `organisation-query.ts`.
+   */
+  readonly organisations: OrganisationQueryRepository;
 } & {
   readonly [K in CollectionKey]: CollectionOf<(typeof COLLECTION_SPECS)[K]>;
 };

@@ -4,9 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { SERVED_MODULES } from '../fhir/resources.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
+import type { ScopedRow } from '../repositories/rows.js';
+import type { ClaimStatus } from '../repositories/specs/financial.js';
 
 import {
   DEMO_TENANT_A,
+  DEMO_TENANT_B,
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
@@ -35,14 +38,32 @@ const PATIENT = testId(1);
 const PROVIDER = testId(900);
 const ENCOUNTER = testId(20);
 const CLAIM = testId(940);
+const SECOND_CLAIM = testId(941);
 const ORDER = testId(30);
 const REPORT = testId(40);
 const NURSE_ROLE = testId(970);
 const SITE_GRANT = testId(971);
 const ORG_GRANT = testId(972);
+const SECOND_PROVIDER = testId(901);
+const SECOND_GRANT = testId(976);
 const SECOND_SITE = testId(975);
 
 function seedChart(dataset: MemoryDataset): void {
+  // The tenant's own row. Its id IS the tenant id, which is the whole reason
+  // `Organisation` carries no `tenantId` column and cannot be a spec: it is the
+  // thing every other row's `tenantId` points at.
+  seed(dataset, 'Organisation', {
+    id: DEMO_TENANT_A,
+    slug: 'demo-practice',
+    name: 'Demo Family Practice',
+    mode: 'SELF_HOST',
+    status: 'ACTIVE',
+    timezone: 'UTC',
+    flags: {},
+    createdAt: FIXED_NOW,
+    updatedAt: FIXED_NOW,
+  } as unknown as Parameters<typeof seed>[2]);
+
   seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
   seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101) }));
 
@@ -468,6 +489,40 @@ function seedChart(dataset: MemoryDataset): void {
  * difference between "grouped the lines correctly" and "returned whatever came
  * back first", and the sequence ordering has nothing to prove with one row.
  */
+/**
+ * A claim in a given state, on the seeded patient and encounter.
+ *
+ * Both are load bearing rather than incidental: `claimSpec` compartments on
+ * `patientId`, and `prepareClaims` resolves the billing provider through
+ * `encounterId` and falls back to the tenant when the encounter is unreadable.
+ * A claim seeded against anything else would quietly exercise that fallback
+ * instead of the path under test.
+ */
+function claimRow(id: string, status: ClaimStatus): ScopedRow<'Claim'> {
+  return {
+    ...storageColumns(id),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    coverageId: testId(10),
+    payerId: testId(11),
+    status,
+    frequency: 'ORIGINAL',
+    diagnosisCodes: ['E11.9'],
+    totalChargedCents: 24_500,
+    totalPaidCents: 0,
+    totalAdjustedCents: 0,
+    patientResponsibilityCents: 0,
+    secondaryOfId: null,
+    priorClaimId: null,
+    controlNumbers: {},
+    snapshot: {},
+    statusReason: null,
+    submittedAt: FIXED_NOW,
+    acknowledgedAt: null,
+    adjudicatedAt: null,
+  };
+}
+
 function seedClaim(dataset: MemoryDataset): void {
   seed(dataset, 'Claim', {
     ...storageColumns(CLAIM),
@@ -756,6 +811,175 @@ describe('the projections', () => {
     expect(bundle.total).toBe(2);
   });
 
+  /**
+   * `specialty` is a US Core must-support parameter and the code it searches
+   * lives on the practitioner, not on the role assignment the search returns.
+   * So every case below is really testing one thing: that the code is resolved
+   * to its practitioners and the rows narrowed to them.
+   *
+   * The second practitioner is seeded per test rather than in `harness()`,
+   * which is shared by every assertion in this file. A globally seeded extra
+   * user is the kind of fixture that makes an unrelated count assertion fail
+   * six months later for reasons nobody can reconstruct.
+   */
+  const seedSecondPractitioner = (dataset: MemoryDataset, taxonomyCode: string): void => {
+    seed(dataset, 'User', {
+      ...storageColumns(SECOND_PROVIDER),
+      email: 'r.mbeki@example.invalid',
+      givenName: 'Refilwe',
+      familyName: 'Mbeki',
+      credential: 'MD',
+      npi: '1234567810',
+      dea: null,
+      taxonomyCode,
+      isProvider: true,
+      locale: 'en-US',
+      status: 'ACTIVE',
+      lastLoginAt: null,
+    });
+    seed(dataset, 'RoleAssignment', {
+      ...storageColumns(SECOND_GRANT),
+      userId: SECOND_PROVIDER,
+      roleId: NURSE_ROLE,
+      facilityId: null,
+    });
+  };
+
+  const roleIds = async (app: ReturnType<typeof harness>['app'], query: string) => {
+    const res = await app.request(`/fhir/PractitionerRole?${query}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    if (res.status !== 200) return res.status;
+    const bundle = (await res.json()) as Bundle;
+    return (bundle.entry ?? [])
+      .map((entry) => (entry.resource as FhirResource).id)
+      .sort((left, right) => (left ?? '').localeCompare(right ?? ''));
+  };
+
+  it('finds the roles held by every practitioner carrying the code', async () => {
+    const created = harness();
+    // The same code the seeded provider carries, so both practitioners match.
+    seedSecondPractitioner(created.dataset, '207Q00000X');
+
+    await expect(roleIds(created.app, 'specialty=207Q00000X')).resolves.toEqual(
+      [SITE_GRANT, ORG_GRANT, SECOND_GRANT].sort((left, right) => left.localeCompare(right))
+    );
+  });
+
+  it('leaves out the practitioners carrying a different code', async () => {
+    const created = harness();
+    // Internal medicine, against the seeded provider's family medicine.
+    seedSecondPractitioner(created.dataset, '207R00000X');
+
+    await expect(roleIds(created.app, 'specialty=207R00000X')).resolves.toEqual([SECOND_GRANT]);
+    await expect(roleIds(created.app, 'specialty=207Q00000X')).resolves.toEqual(
+      [SITE_GRANT, ORG_GRANT].sort((left, right) => left.localeCompare(right))
+    );
+  });
+
+  /**
+   * Both parameters at once. This is the case where the two filters write the
+   * same `where` key: a spec that let one overwrite the other would answer with
+   * every family-medicine practitioner's grants here, rather than with the
+   * intersection the client asked for.
+   */
+  it('meets a practitioner filter and a specialty filter rather than picking one', async () => {
+    const created = harness();
+    seedSecondPractitioner(created.dataset, '207Q00000X');
+
+    // Both carry the code; only one is the named practitioner.
+    await expect(
+      roleIds(created.app, `practitioner=Practitioner/${SECOND_PROVIDER}&specialty=207Q00000X`)
+    ).resolves.toEqual([SECOND_GRANT]);
+
+    // And a pair that cannot both hold matches nothing rather than everything.
+    await expect(
+      roleIds(created.app, `practitioner=Practitioner/${SECOND_PROVIDER}&specialty=207R00000X`)
+    ).resolves.toEqual([]);
+  });
+
+  it('accepts the code qualified by the system it belongs to', async () => {
+    const { app } = harness();
+
+    await expect(
+      roleIds(app, 'specialty=http://nucc.org/provider-taxonomy|207Q00000X')
+    ).resolves.toEqual([SITE_GRANT, ORG_GRANT].sort((left, right) => left.localeCompare(right)));
+  });
+
+  /**
+   * A system this server stores no codes in is a search whose answer is empty,
+   * not a malformed search. The two are different things to a client: a 400
+   * says "fix your query" and an empty bundle says "nobody here matches", and
+   * only one of those is true.
+   */
+  it('matches nothing for a system it holds no codes in', async () => {
+    const { app } = harness();
+
+    await expect(roleIds(app, 'specialty=http://snomed.info/sct|207Q00000X')).resolves.toEqual([]);
+    // `|code` is the form that means "this code, in no system at all".
+    await expect(roleIds(app, 'specialty=|207Q00000X')).resolves.toEqual([]);
+  });
+
+  it('matches nothing for a code no practitioner carries, rather than refusing', async () => {
+    const { app } = harness();
+
+    await expect(roleIds(app, 'specialty=208D00000X')).resolves.toEqual([]);
+  });
+
+  /**
+   * The bound is a refusal rather than a truncation, and this is the test that
+   * says so. A truncated set would silently drop practitioners, and a client
+   * that filtered on `specialty` and received a slice believing it received the
+   * whole is the failure this boundary exists to prevent. The cost is stated
+   * plainly on the constant: a practice with more than a thousand providers
+   * sharing one code gets a 400 here rather than a wrong answer.
+   */
+  it('refuses to resolve a specialty more practitioners carry than it will read', async () => {
+    const created = harness();
+    for (let index = 0; index < 1001; index += 1) {
+      seed(created.dataset, 'User', {
+        ...storageColumns(testId(20_000 + index)),
+        email: `bulk-${index}@example.invalid`,
+        givenName: 'Bulk',
+        familyName: `Provider${index}`,
+        credential: 'MD',
+        npi: null,
+        dea: null,
+        taxonomyCode: '363L00000X',
+        isProvider: true,
+        locale: 'en-US',
+        status: 'ACTIVE',
+        lastLoginAt: null,
+      });
+    }
+
+    await expect(roleIds(created.app, 'specialty=363L00000X')).resolves.toBe(400);
+  });
+
+  it('resolves a specialty exactly at the bound rather than refusing it', async () => {
+    const created = harness();
+    for (let index = 0; index < 1000; index += 1) {
+      seed(created.dataset, 'User', {
+        ...storageColumns(testId(20_000 + index)),
+        email: `bulk-${index}@example.invalid`,
+        givenName: 'Bulk',
+        familyName: `Provider${index}`,
+        credential: 'MD',
+        npi: null,
+        dea: null,
+        taxonomyCode: '363L00000X',
+        isProvider: true,
+        locale: 'en-US',
+        status: 'ACTIVE',
+        lastLoginAt: null,
+      });
+    }
+
+    // None of them holds a role assignment, so the answer is empty - but it is
+    // a 200 with an empty bundle, which is the point: the bound was not hit.
+    await expect(roleIds(created.app, 'specialty=363L00000X')).resolves.toEqual([]);
+  });
+
   it('refuses a practitioner filter that references the wrong resource type', async () => {
     const { app } = harness();
 
@@ -1019,6 +1243,65 @@ describe('Provenance', () => {
 });
 
 describe('Claim', () => {
+  /**
+   * The biller, and the one case where it is not a person.
+   *
+   * `provider` normally names the clinician the encounter records. When the
+   * encounter is unreadable in the caller's scope there is no clinician to
+   * name, and the truthful answer is the practice - a claim naming no biller at
+   * all would fail validation at the clearinghouse.
+   *
+   * The reference has to say which it is. Emitting the practice as
+   * `Practitioner/{id}` named a practitioner that does not exist, and once this
+   * server began serving Organization it resolved at the wrong type, which a
+   * client is less likely to catch than a 404.
+   */
+  const providerOf = async (app: ReturnType<typeof harness>['app'], id: string) => {
+    const claim = (await (
+      await app.request(`/fhir/Claim/${id}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { provider?: { reference?: string; type?: string } };
+    return claim.provider;
+  };
+
+  it('names the encounter clinician as a Practitioner', async () => {
+    const { app } = harness();
+
+    await expect(providerOf(app, CLAIM)).resolves.toMatchObject({
+      type: 'Practitioner',
+      reference: `Practitioner/${PROVIDER}`,
+    });
+  });
+
+  it('names the practice as an Organization when no clinician can be resolved', async () => {
+    const created = harness();
+    // A claim on an encounter this dataset does not hold, which is the shape a
+    // caller sees when the encounter is outside their scope.
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'SUBMITTED'));
+    const orphan = created.dataset.table('Claim').find((row) => row.id === SECOND_CLAIM);
+    if (orphan !== undefined) orphan.encounterId = testId(9_999);
+
+    await expect(providerOf(created.app, SECOND_CLAIM)).resolves.toMatchObject({
+      type: 'Organization',
+      reference: `Organization/${DEMO_TENANT_A}`,
+    });
+  });
+
+  it('emits a provider reference that resolves at the type it claims', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'SUBMITTED'));
+    const orphan = created.dataset.table('Claim').find((row) => row.id === SECOND_CLAIM);
+    if (orphan !== undefined) orphan.encounterId = testId(9_999);
+
+    const reference = (await providerOf(created.app, SECOND_CLAIM))?.reference ?? '';
+    const followed = await created.app.request(`/fhir/${reference}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    // The whole point: following the pointer as the type it names finds
+    // something. Before this it named Practitioner and found nothing.
+    expect(followed.status).toBe(200);
+  });
+
   it('carries every line of the claim, in sequence order', async () => {
     const { app } = harness();
 
@@ -1062,30 +1345,76 @@ describe('Claim', () => {
   });
 
   /**
-   * The search parameter is a free string and the column is an enum. Passing an
-   * unmapped value through would filter on something the database cannot hold
-   * and return an empty bundle, which a client reads as "no claims" rather than
-   * "that is not a status".
+   * `status` answers the FHIR code, not the ten domain states behind it.
+   *
+   * `CLAIM_STATUS` collapses seven of those states into `active`, so the test
+   * that matters is not that `active` is accepted but that it returns all of
+   * them. A scalar filter resolving the code to its canonical state would pass
+   * an "is it accepted" test and return one claim out of two here.
    */
-  it('refuses a status the column cannot hold, rather than returning nothing', async () => {
-    const { app } = harness();
-
-    const res = await app.request('/fhir/Claim?status=not-a-status', {
+  const claimStatuses = async (app: ReturnType<typeof harness>['app'], value: string) => {
+    const res = await app.request(`/fhir/Claim?status=${value}`, {
       headers: bearer(TOKENS.adminA),
     });
+    if (res.status !== 200) return res.status;
+    const bundle = (await res.json()) as Bundle;
+    return (bundle.entry ?? [])
+      .map((entry) => (entry.resource as FhirResource).id)
+      .sort((left, right) => (left ?? '').localeCompare(right ?? ''));
+  };
 
-    expect(res.status).toBe(400);
+  it('answers a FHIR code with every domain state it collapses', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'DENIED'));
+
+    // SUBMITTED and DENIED are different domain states that both map to
+    // `active`, and both have to come back.
+    await expect(claimStatuses(created.app, 'active')).resolves.toEqual(
+      [CLAIM, SECOND_CLAIM].sort((left, right) => left.localeCompare(right))
+    );
   });
 
-  it('accepts a known status, in either case', async () => {
+  it('does not match a code none of the seeded states map to', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'DENIED'));
+
+    await expect(claimStatuses(created.app, 'draft')).resolves.toEqual([]);
+    await expect(claimStatuses(created.app, 'cancelled')).resolves.toEqual([]);
+  });
+
+  it('finds the one claim whose state maps to the code, not its neighbours', async () => {
+    const created = harness();
+    seed(created.dataset, 'Claim', claimRow(SECOND_CLAIM, 'VOID'));
+
+    await expect(claimStatuses(created.app, 'cancelled')).resolves.toEqual([SECOND_CLAIM]);
+    await expect(claimStatuses(created.app, 'active')).resolves.toEqual([CLAIM]);
+  });
+
+  /**
+   * The domain names used to work here, and that was the bug: an integrator who
+   * read `active` in the CapabilityStatement, got a 400 and went looking would
+   * find `SUBMITTED` and write an integration against a vocabulary no client
+   * outside this repository can discover.
+   */
+  it('refuses the domain status names it used to accept', async () => {
     const { app } = harness();
 
-    for (const value of ['SUBMITTED', 'submitted']) {
-      const bundle = (await (
-        await app.request(`/fhir/Claim?status=${value}`, { headers: bearer(TOKENS.adminA) })
-      ).json()) as Bundle;
-      expect(bundle.total, `status=${value}`).toBe(1);
-    }
+    await expect(claimStatuses(app, 'SUBMITTED')).resolves.toBe(400);
+    await expect(claimStatuses(app, 'submitted')).resolves.toBe(400);
+  });
+
+  /**
+   * `entered-in-error` is inside R4's Claim status value set and no domain state
+   * maps to it. Refused rather than answered with an empty bundle, because an
+   * empty bundle reads as "no claims" rather than "this server has no such
+   * state" - and because `Observation` already 400s `status=unknown` for the
+   * same reason, fourteen lines away in the same file.
+   */
+  it('refuses a legal FHIR code no domain state maps to', async () => {
+    const { app } = harness();
+
+    await expect(claimStatuses(app, 'entered-in-error')).resolves.toBe(400);
+    await expect(claimStatuses(app, 'not-a-status')).resolves.toBe(400);
   });
 });
 
@@ -1111,8 +1440,20 @@ const ANNEXE_GRANT = testId(993);
 const UNSITED_PATIENT = testId(994);
 
 /** Rows at the annexe, one per resource type that carries a facility. */
+/**
+ * The rows a site-limited caller must not reach, and Patient is not among them.
+ *
+ * Every entry here narrows on `facilityId`: the appointment happened at that
+ * site, the encounter happened there, the grant is held there. Containment.
+ *
+ * `Patient.primaryFacilityId` is attribution - the site that registered
+ * somebody - and #139 decided it is not a boundary. It hid the chart of a
+ * patient registered at one site from the clinician treating them at another,
+ * while still showing a patient registered here who has only ever been seen
+ * elsewhere. The `patients` collection carries the column and does not narrow
+ * on it; `repositories.facility-scope.test.ts` records the exemption.
+ */
 const ANNEXE_ROWS = [
-  { type: 'Patient', id: ANNEXE_PATIENT },
   { type: 'Appointment', id: ANNEXE_APPOINTMENT },
   { type: 'Encounter', id: ANNEXE_ENCOUNTER },
   { type: 'PractitionerRole', id: ANNEXE_GRANT },
@@ -1193,6 +1534,39 @@ async function bundleIds(
 }
 
 describe('the facility scope the caller arrived with', () => {
+  /**
+   * The decision in #139, asserted on the boundary that used to implement the
+   * opposite.
+   *
+   * The FHIR boundary narrowed patient reads on `primaryFacilityId` and the BFF
+   * did not, so the same caller got 404 from one and 200 from the other for the
+   * same chart. They agree now, and they agree on the answer that lets a
+   * clinician open the chart of the patient in front of them.
+   */
+  it('serves a chart registered at another site, because that is not containment', async () => {
+    const { app } = scopedHarness();
+
+    const res = await app.request(`/fhir/Patient/${ANNEXE_PATIENT}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  /**
+   * The other half of #139, and the half the first draft of it got wrong.
+   *
+   * A list stays narrowed. A work queue should be local, and this is what keeps
+   * a site-limited caller from paging the whole practice's index of names, MRNs
+   * and birth dates. Dropping it would have widened a listing surface to fix a
+   * lookup problem.
+   */
+  it('still leaves that chart out of a search, because a work queue is local', async () => {
+    const { app } = scopedHarness();
+
+    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).not.toContain(ANNEXE_PATIENT);
+  });
+
   it.each(ANNEXE_ROWS)(
     '$type: a row at another site reads as absent, not as forbidden',
     async ({ type, id }) => {
@@ -1266,5 +1640,128 @@ describe('the facility scope the caller arrived with', () => {
 
     expect(res.status).toBe(200);
     expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(PATIENT);
+  });
+});
+
+/**
+ * The practice itself, and the one narrowing that holds it.
+ *
+ * `Organisation` is the only model in the schema with no `tenantId` column,
+ * because it *is* the tenant. Every other collection is confined by a tenant
+ * filter it inherits from a spec; this one is confined by `id === tenantId` in
+ * a hand-written repository. So the tests that matter are the ones that would
+ * still pass if that narrowing were deleted, and these are written to fail.
+ */
+describe('the practice organisation', () => {
+  const organisationRow = (id: string, name: string): Parameters<typeof seed>[2] =>
+    ({
+      id,
+      slug: name.toLowerCase().replaceAll(' ', '-'),
+      name,
+      mode: 'SELF_HOST',
+      status: 'ACTIVE',
+      timezone: 'UTC',
+      flags: {},
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    }) as unknown as Parameters<typeof seed>[2];
+
+  it('serves the caller their own practice, as a page of one', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Organization', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(1);
+    expect((bundle.entry?.[0]?.resource as FhirResource).id).toBe(DEMO_TENANT_A);
+  });
+
+  it('leaves another practice out of the search entirely', async () => {
+    const created = harness();
+    seed(created.dataset, 'Organisation', organisationRow(DEMO_TENANT_B, 'Other Practice'));
+
+    const bundle = (await (
+      await created.app.request('/fhir/Organization', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    // Two rows in the table, one in the bundle. Nothing about the other
+    // practice reaches this caller, not even its existence.
+    expect(created.dataset.table('Organisation')).toHaveLength(2);
+    expect(bundle.total).toBe(1);
+    expect((bundle.entry?.[0]?.resource as FhirResource).id).toBe(DEMO_TENANT_A);
+  });
+
+  it('reports another practice as absent rather than forbidden', async () => {
+    const created = harness();
+    seed(created.dataset, 'Organisation', organisationRow(DEMO_TENANT_B, 'Other Practice'));
+
+    const res = await created.app.request(`/fhir/Organization/${DEMO_TENANT_B}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    // 404 and not 403: a 403 would confirm the id names something real, which
+    // is a fact about another practice this caller has no business learning.
+    expect(res.status).toBe(404);
+  });
+
+  it('gives each practice its own row, not the first one seeded', async () => {
+    const created = harness();
+    seed(created.dataset, 'Organisation', organisationRow(DEMO_TENANT_B, 'Other Practice'));
+
+    const bundle = (await (
+      await created.app.request('/fhir/Organization', { headers: bearer(TOKENS.adminB) })
+    ).json()) as Bundle;
+
+    expect((bundle.entry?.[0]?.resource as FhirResource).id).toBe(DEMO_TENANT_B);
+  });
+
+  it('filters by name, and matching nothing is an empty bundle', async () => {
+    const { app } = harness();
+
+    const hit = (await (
+      await app.request('/fhir/Organization?name=family', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const miss = (await (
+      await app.request('/fhir/Organization?name=nowhere', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    // Case-insensitive substring, as the FHIR string parameter means it.
+    expect(hit.total).toBe(1);
+    expect(miss.total).toBe(0);
+  });
+
+  it('carries the practice name and the provider type', async () => {
+    const { app } = harness();
+
+    const organization = (await (
+      await app.request(`/fhir/Organization/${DEMO_TENANT_A}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as fhir4.Organization;
+
+    expect(organization.name).toBe('Demo Family Practice');
+    expect(organization.active).toBe(true);
+    expect(organization.type?.[0]?.coding?.[0]?.code).toBe('prov');
+  });
+
+  it('refuses a caller without the permission Location needs', async () => {
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Organization', { headers: bearer(UNPRIVILEGED_TOKEN) });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('resolves the references other resources emit at it', async () => {
+    const { app } = harness();
+
+    const role = (await (
+      await app.request(`/fhir/PractitionerRole/${SITE_GRANT}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { organization?: { reference?: string } };
+    const reference = role.organization?.reference ?? '';
+
+    expect(reference).toBe(`Organization/${DEMO_TENANT_A}`);
+    // The point of serving it: following the pointer now finds something.
+    const followed = await app.request(`/fhir/${reference}`, { headers: bearer(TOKENS.adminA) });
+    expect(followed.status).toBe(200);
   });
 });

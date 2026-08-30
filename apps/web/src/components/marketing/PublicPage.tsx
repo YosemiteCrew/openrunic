@@ -7,6 +7,11 @@ import type { PublicRoute } from './links';
 export interface PublicPageProps {
   /** The route being rendered, so the masthead can mark its own link. */
   active: PublicRoute;
+  /**
+   * The language segment the page is prerendered under: the addresses the
+   * masthead points at, and the language the frame's own words come from.
+   */
+  locale: string;
   children: ReactNode;
 }
 
@@ -23,14 +28,14 @@ export interface PublicPageProps {
  * (`tabIndex={-1}`) and carries the id that link points at. Its outline is
  * suppressed in CSS: it is a landmark, not a control.
  */
-export function PublicPage({ active, children }: Readonly<PublicPageProps>) {
+export function PublicPage({ active, locale, children }: Readonly<PublicPageProps>) {
   return (
     <>
-      <SiteHeader active={active} />
+      <SiteHeader active={active} locale={locale} />
       <main id="main-content" className="or-mk-main" tabIndex={-1}>
         {children}
       </main>
-      <SiteFooter />
+      <SiteFooter locale={locale} />
     </>
   );
 }

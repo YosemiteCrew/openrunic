@@ -150,6 +150,7 @@ export const NON_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
   'Practitioner',
   'PractitionerRole',
   'Location',
+  'Organization',
 ]);
 
 export interface ExportFile {

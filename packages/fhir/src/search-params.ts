@@ -578,9 +578,16 @@ export function mustSupportParams(resourceType: string): readonly SearchParamDef
 }
 
 /**
- * Builds `CapabilityStatement.rest[0].resource` from this registry, so the
- * `/metadata` endpoint reports exactly what is implemented and cannot drift
- * from it.
+ * Builds `CapabilityStatement.rest[0].resource` from the whole catalogue.
+ *
+ * Note what this is not: it is not what `apps/api` serves at `/metadata`. That
+ * is built from the mounted resource modules, which know which parameters are
+ * implemented, and it reaches into this catalogue only for each parameter's
+ * definition. Building it from here instead would publish every catalogued
+ * parameter, including the ones no repository can answer yet - the drift this
+ * doc block used to claim it prevented.
+ *
+ * It stays for a consumer that wants the catalogue's own view of itself.
  */
 export function capabilityStatementResources(): fhir4.CapabilityStatementRestResource[] {
   return SUPPORTED_RESOURCE_TYPES.map((resourceType) => {

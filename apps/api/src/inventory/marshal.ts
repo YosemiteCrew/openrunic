@@ -1,9 +1,12 @@
 import type {
   IsoDate,
   Lot,
+  LotStatus,
   StockItem as PackageStockItem,
   StockMovement as PackageMovement,
 } from '@openrunic/inventory';
+
+import { isKnownLotStatus, statusAt } from '@openrunic/inventory';
 
 import type { Writable } from '../repositories/collection.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -120,17 +123,52 @@ export function todayAt(timeZone: string, now: Date): IsoDate {
 }
 
 /** A stored lot, as `fefo`, `lastUsableDay` and `unusableReason` read it. */
-export function toLot(row: ScopedRow<'StockLot'>): Lot {
+export function toLot(
+  row: ScopedRow<'StockLot'>,
+  statusHistory: readonly ScopedRow<'StockLotStatusChange'>[] = []
+): Lot {
   return {
     id: row.id,
     itemId: row.itemId,
     lotNumber: row.lotNumber,
     status: row.status,
+    // Absent rather than empty when nothing is recorded, because the package
+    // reads the two differently: an absent history means "judge on `status`",
+    // which is what every caller did before the table existed, while an empty
+    // one would be a history that says the lot has never had a status.
+    ...(statusHistory.length === 0
+      ? {}
+      : {
+          statusHistory: statusHistory.map((change) => ({
+            status: change.status,
+            effectiveOn: toIsoDate(change.effectiveOn),
+          })),
+        }),
     ...(row.expiresOn === null ? {} : { expiresOn: toIsoDate(row.expiresOn) }),
     ...(row.openedOn === null ? {} : { openedOn: toIsoDate(row.openedOn) }),
     ...(row.beyondUseDays === null ? {} : { beyondUseDays: row.beyondUseDays }),
     receivedOn: toIsoDate(row.receivedOn),
   };
+}
+
+/**
+ * The status in force on a day, as one of the four this system stores.
+ *
+ * `statusAt` returns a plain string on purpose: it must never throw, so a
+ * history it cannot order comes back as a sentinel that the package's own
+ * fail-closed branches refuse. A listing has no fail-closed branch to take -
+ * every row it renders has to carry one of the four - so an unorderable history
+ * falls back to the stored column, which is the answer this API gave for that
+ * lot before it could be asked about a date at all.
+ *
+ * That fallback is unreachable through the routes: `effectiveOn` is a `@db.Date`
+ * column rendered by {@link toIsoDate}, and `asOf` is either validated by the
+ * schema or produced by {@link todayAt}. It is written and tested anyway,
+ * because the type says `string` and the next caller will not know why.
+ */
+export function statusOf(lot: Lot, asOf: IsoDate): LotStatus {
+  const resolved = statusAt(lot, asOf);
+  return isKnownLotStatus(resolved) ? resolved : lot.status;
 }
 
 /**

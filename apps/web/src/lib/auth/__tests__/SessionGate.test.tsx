@@ -82,7 +82,7 @@ afterEach(() => {
 
 describe('a public page', () => {
   it('renders without waiting for anything', () => {
-    pathname = '/';
+    pathname = '/en';
     renderGate();
 
     expect(screen.getByText('Chart for PATIENTSSON, Testina')).toBeInTheDocument();
@@ -241,7 +241,7 @@ describe('a workstation left unattended', () => {
   });
 
   it('ends the session on a public page without throwing the reader off it', async () => {
-    pathname = '/';
+    pathname = '/en';
     holdSession(SESSION);
     fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
     renderGate();

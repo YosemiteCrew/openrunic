@@ -7,10 +7,12 @@ export {
   isKnownLotStatus,
   isUsable,
   lastUsableDay,
+  statusAt,
   unusableReason,
   type IsoDate,
   type Lot,
   type LotStatus,
+  type LotStatusChange,
 } from './lots.js';
 
 export {

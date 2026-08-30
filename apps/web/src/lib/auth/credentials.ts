@@ -45,17 +45,19 @@ function sameCredential(candidate: string, expected: string): boolean {
 /**
  * The identity this build recognises the token as, or null.
  *
- * `nodeEnv` is passed rather than read from `process.env` here so that the
- * production answer - no credentials, therefore no identity - is a case a test
- * can actually run. See `directory.ts` for why production has no door yet.
+ * Neither argument is read from `process.env` here, so that the two answers that
+ * matter - production has no identity, a demonstration build has these ones -
+ * are both cases a test can actually run. See `directory.ts` for what opens the
+ * door and `build.ts` for the two conditions that have to hold before it can.
  */
 export function identityForAccessToken(
   token: string,
-  nodeEnv: string | undefined
+  nodeEnv: string | undefined,
+  demoBuild = false
 ): Identity | null {
   let matched: Identity | null = null;
 
-  for (const credential of developmentCredentials(nodeEnv)) {
+  for (const credential of developmentCredentials(nodeEnv, demoBuild)) {
     if (sameCredential(token, credential.token)) matched = credential.identity;
   }
 

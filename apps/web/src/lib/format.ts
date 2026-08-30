@@ -1,3 +1,6 @@
+import { formatCount } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
+
 import type { PatientName } from '@/lib/api/types';
 
 /**
@@ -6,12 +9,49 @@ import type { PatientName } from '@/lib/api/types';
  * Two screens that render a date differently are a defect, not a style choice:
  * a clinician reading "08/12" cannot tell a US date from a European one, and
  * on a chart that ambiguity is dangerous. So every date on a staff surface is
- * "12 Aug 2026" (prose) or "12 Aug" (dense), and nothing else.
+ * day, named month and year - "12 Aug 2026", or "12 ago 2026" for a Spanish
+ * reader - and nothing else. The words change with the reader; the order does
+ * not, and {@link formatDate} says why.
  *
  * Everything here is pure and deterministic. Times are rendered in the clinic's
  * timezone, passed explicitly and defaulting to {@link CLINIC_TIME_ZONE}, never
  * in the machine's local zone: an appointment must not move by an hour because
  * the front desk's laptop travelled.
+ *
+ * ## Why most of these take a translator, and three do not
+ *
+ * A formatter that produces a word has to produce it in the reader's language,
+ * and a shared helper is the one place a `useTranslator` call cannot reach. So
+ * everything here that produces a word takes the translator as its first
+ * argument, the way `counted` in `lib/i18n/counted.ts` already does: that is
+ * `formatDate`, `formatTime`, `formatDateTime`, `formatAge`, `formatElapsed`,
+ * `formatMoney` and `formatVital`. A deliberately dull mechanism - no hook, no
+ * context - so they can still be called from a plain module like
+ * `components/inbox/sla.ts`.
+ *
+ * Three groups do not, and each for its own reason.
+ *
+ * `formatName`, `formatInitials`, `formatMrn` and `formatCredentialed` produce
+ * no words. They rearrange a name the server supplied and uppercase an
+ * identifier, and neither is a language decision.
+ *
+ * `calendarDay` and `clockTime` produce a value rather than a label: the ISO day
+ * a screen compares against `visit.date`, and the `HH:MM` the schedule grid
+ * splits back into minutes. They answer `null` for an input they cannot read,
+ * because a sentence is not a key and two absences must not compare equal by
+ * having been given the same words. `formatTime` is the display wrapper over
+ * `clockTime`; `formatDate` is not a wrapper over `calendarDay`, because a
+ * prose date and a sortable key are built from different parts.
+ *
+ * `vitalState` answers what is out of range, which is a fact about a number and
+ * a threshold. A caller deciding what to flag should not have to hold a
+ * translator to ask.
+ *
+ * The numbers inside a translated string go through `formatCount` from
+ * `@openrunic/i18n` rather than being interpolated raw. The wording and the
+ * digits are two separate locale decisions - Arabic writes its numerals
+ * differently - and a message that got the wording right and the numerals wrong
+ * would still be wrong.
  */
 
 /**
@@ -20,47 +60,32 @@ import type { PatientName } from '@/lib/api/types';
  */
 export const CLINIC_TIME_ZONE = 'UTC';
 
-/** The locale every formatter uses. en-US primary; DE ships at v1. */
-const LOCALE = 'en-US';
-
 /**
  * Built formatters, kept for the life of the page.
  *
  * Constructing an `Intl.NumberFormat` is one of the more expensive things in
  * the standard library, and a ledger screen formats one per cell per render.
  * The options cannot be hoisted to a constant because the currency comes from
- * the row, so they are memoised on the option set instead. The key space is the
- * currencies a practice actually bills in, which is a handful, so this cannot
- * grow without bound.
+ * the row and the locale comes from the reader, so they are memoised on both
+ * instead. The key space is the currencies a practice bills in times the
+ * languages this build ships, both of which are a handful, so this cannot grow
+ * without bound.
+ *
+ * The locale is part of the key rather than fixed, and that is the whole reason
+ * this function changed: keyed on the options alone, the first reader to open a
+ * ledger would decide how every later reader saw one, whatever language they
+ * had asked for.
  */
 const NUMBER_FORMATTERS = new Map<string, Intl.NumberFormat>();
 
-function numberFormatter(options: Intl.NumberFormatOptions): Intl.NumberFormat {
-  const key = JSON.stringify(options);
+function numberFormatter(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
   const cached = NUMBER_FORMATTERS.get(key);
   if (cached) return cached;
-  const built = new Intl.NumberFormat(LOCALE, options);
+  const built = new Intl.NumberFormat(locale, options);
   NUMBER_FORMATTERS.set(key, built);
   return built;
 }
-
-const MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
-
-/** What a formatter renders when a value is genuinely absent. Never an empty cell. */
-export const NOT_RECORDED = 'Not recorded';
 
 /**
  * Anything a date formatter accepts. Named because five signatures take it, and
@@ -68,28 +93,6 @@ export const NOT_RECORDED = 'Not recorded';
  * time.
  */
 export type DateInput = string | Date | null | undefined;
-
-/* -------------------------------------------------------------------------- */
-/* Counts                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The noun for a count: "note" or "notes".
- *
- * The plural is a parameter rather than a suffix rule because clinical English
- * does not derive: "coverage"/"coverages" is regular, but the summary line
- * "1 error blocks billing" has to become "2 errors block billing", where the
- * verb moves too. Passing both words keeps that decision at the call site,
- * where the sentence is.
- */
-export function pluralise(count: number, singular: string, plural = `${singular}s`): string {
-  return count === 1 ? singular : plural;
-}
-
-/** The count and its noun together: "1 claim", "4 claims". */
-export function formatCount(count: number, singular: string, plural = `${singular}s`): string {
-  return `${count} ${pluralise(count, singular, plural)}`;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Names and identifiers                                                       */
@@ -150,9 +153,7 @@ export type DateStyle =
   /** "12 Aug 2026". The default on any surface with room. */
   | 'prose'
   /** "12 Aug". Dense tables, where the year is implied by the filter. */
-  | 'dense'
-  /** "2026-08-12". Machine-facing surfaces and export filenames only. */
-  | 'iso';
+  | 'dense';
 
 interface CalendarParts {
   year: number;
@@ -172,7 +173,16 @@ function parseValue(value: string): Date {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00.000Z`) : new Date(value);
 }
 
-/** Splits an instant into the clinic's wall-clock fields, via Intl rather than getters. */
+/**
+ * Splits an instant into the clinic's wall-clock fields, via Intl rather than getters.
+ *
+ * `en-US` is hardcoded and is correct here, which is worth saying because every
+ * other fixed locale in this file was a bug. Nothing this returns is displayed:
+ * it produces the numbers the callers do arithmetic on, and it reads them back
+ * out of `formatToParts` with `Number()`. A locale that writes Arabic-Indic
+ * digits would make that `Number()` return `NaN`, so the one requirement is a
+ * locale guaranteed to emit ASCII digits.
+ */
 function calendarParts(date: Date, timeZone: string): CalendarParts {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -200,40 +210,127 @@ function pad(value: number): string {
   return value.toString().padStart(2, '0');
 }
 
-export function formatDate(
-  value: DateInput,
-  style: DateStyle = 'prose',
-  timeZone: string = CLINIC_TIME_ZONE
-): string {
-  if (!value) return NOT_RECORDED;
+/**
+ * The calendar day as `YYYY-MM-DD`, or null when there is nothing to read.
+ *
+ * A key rather than a label. Every caller compares it: `visit.date === today`,
+ * or looks up the appointment whose start falls on the same clinic day. It used
+ * to be `formatDate(value, 'iso')`, which made it look like a third way of
+ * displaying a date and gave it a display's failure mode - an absent value came
+ * back as the words "Not recorded", and two absences compared equal because
+ * they had been given the same sentence. `null` is the honest answer, and it is
+ * the one the type system can make a caller think about.
+ */
+export function calendarDay(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string | null {
+  if (!value) return null;
   const date = toDate(value);
-  if (!date) return NOT_RECORDED;
-
+  if (!date) return null;
   const { year, month, day } = calendarParts(date, timeZone);
-  if (style === 'iso') return `${year}-${pad(month)}-${pad(day)}`;
-  const monthName = MONTHS[month - 1] ?? '';
-  return style === 'dense' ? `${day} ${monthName}` : `${day} ${monthName} ${year}`;
+  return `${year}-${pad(month)}-${pad(day)}`;
 }
 
-/** "09:20". 24-hour, because a clinic day crosses noon and am/pm doubles the reading. */
-export function formatTime(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string {
-  if (!value) return NOT_RECORDED;
+/**
+ * "09:20" in the clinic's timezone, or null. 24-hour, because a clinic day
+ * crosses noon and am/pm doubles the reading.
+ *
+ * ASCII digits and a colon, in every language, because the same string is a
+ * coordinate: `minutesOfDay` in `components/schedule/schedule.ts` splits it back
+ * into numbers to place a visit on the grid. A locale whose numerals differ
+ * would need a display-only variant beside this one rather than a change to it,
+ * and this build ships two languages that both write a clock this way.
+ */
+export function clockTime(value: DateInput, timeZone: string = CLINIC_TIME_ZONE): string | null {
+  if (!value) return null;
   const date = toDate(value);
-  if (!date) return NOT_RECORDED;
+  if (!date) return null;
   const { hour, minute } = calendarParts(date, timeZone);
   return `${pad(hour)}:${pad(minute)}`;
 }
 
-/** "12 Aug 2026, 09:20". */
-export function formatDateTime(
+/**
+ * Built date formatters, kept for the life of the page, for the same reason the
+ * number formatters are: constructing one is expensive and a roster builds one
+ * per row. Keyed on locale and timezone, which is the whole of what varies.
+ */
+const MONTH_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+const DIGIT_FORMATTERS = new Map<string, Intl.NumberFormat>();
+
+function monthName(locale: string, timeZone: string, date: Date): string {
+  const key = `${locale}|${timeZone}`;
+  const cached = MONTH_FORMATTERS.get(key);
+  if (cached) return cached.format(date);
+  // Formatted alone rather than pulled out of a full date's parts. Japanese
+  // writes the short month as "8月", where the 月 is a `literal` part next to
+  // the number: reading only the `month` part would leave a bare "8" and
+  // nothing would report it.
+  const built = new Intl.DateTimeFormat(locale, { timeZone, month: 'short' });
+  MONTH_FORMATTERS.set(key, built);
+  return built.format(date);
+}
+
+/** A day or a year as the reader writes digits. Ungrouped: a year is not "2,026". */
+function digits(locale: string, value: number): string {
+  const cached = DIGIT_FORMATTERS.get(locale);
+  if (cached) return cached.format(value);
+  const built = new Intl.NumberFormat(locale, { useGrouping: false });
+  DIGIT_FORMATTERS.set(locale, built);
+  return built.format(value);
+}
+
+/**
+ * "12 Aug 2026", in the reader's language.
+ *
+ * The month name and the digits are the reader's. **The order is not**, and
+ * this is the one place in this file where a language decision is deliberately
+ * overruled. A clinician reading "08/12" cannot tell a US date from a European
+ * one, and on a chart that ambiguity is dangerous; day, named month, year is
+ * unambiguous in every language that reads it, and letting each locale pick its
+ * own order would put some readers back in front of a date they have to guess
+ * at. So there is no catalogue message for the frame: a translator can change
+ * "Aug" to "ago" and cannot move it.
+ */
+export function formatDate(
+  t: Translator,
   value: DateInput,
   style: DateStyle = 'prose',
   timeZone: string = CLINIC_TIME_ZONE
 ): string {
-  if (!value) return NOT_RECORDED;
+  if (!value) return t('common.notRecorded');
   const date = toDate(value);
-  if (!date) return NOT_RECORDED;
-  return `${formatDate(date, style, timeZone)}, ${formatTime(date, timeZone)}`;
+  if (!date) return t('common.notRecorded');
+
+  const { year, day } = calendarParts(date, timeZone);
+  const month = monthName(t.locale, timeZone, date);
+  const dayText = digits(t.locale, day);
+  return style === 'dense'
+    ? `${dayText} ${month}`
+    : `${dayText} ${month} ${digits(t.locale, year)}`;
+}
+
+/** "09:20", or the words for an absent value. */
+export function formatTime(
+  t: Translator,
+  value: DateInput,
+  timeZone: string = CLINIC_TIME_ZONE
+): string {
+  return clockTime(value, timeZone) ?? t('common.notRecorded');
+}
+
+/** "12 Aug 2026, 09:20". */
+export function formatDateTime(
+  t: Translator,
+  value: DateInput,
+  style: DateStyle = 'prose',
+  timeZone: string = CLINIC_TIME_ZONE
+): string {
+  if (!value) return t('common.notRecorded');
+  const date = toDate(value);
+  if (!date) return t('common.notRecorded');
+  // The comma is the separator this product prints between a date and a time,
+  // not a sentence: both halves are already in the reader's language and
+  // neither can move relative to the other without changing what the date
+  // above deliberately fixes.
+  return `${formatDate(t, date, style, timeZone)}, ${formatTime(t, date, timeZone)}`;
 }
 
 /**
@@ -241,21 +338,25 @@ export function formatDateTime(
  * month, days before that. Pass `asOf` on any surface that must not move with
  * the clock (fixtures, tests, printed records).
  */
-export function formatAge(birthDate: DateInput, asOf: string | Date = new Date()): string {
-  if (!birthDate) return NOT_RECORDED;
+export function formatAge(
+  t: Translator,
+  birthDate: DateInput,
+  asOf: string | Date = new Date()
+): string {
+  if (!birthDate) return t('common.notRecorded');
   const born = toDate(birthDate);
   const now = toDate(asOf);
-  if (!born || !now || born > now) return NOT_RECORDED;
+  if (!born || !now || born > now) return t('common.notRecorded');
 
   const days = Math.floor((now.getTime() - born.getTime()) / 86_400_000);
-  if (days < 31) return `${days} d`;
+  if (days < 31) return t('common.age.days', { count: formatCount(days, t.locale) });
 
   const months =
     (now.getUTCFullYear() - born.getUTCFullYear()) * 12 +
     (now.getUTCMonth() - born.getUTCMonth()) -
     (now.getUTCDate() < born.getUTCDate() ? 1 : 0);
-  if (months < 24) return `${months} mo`;
-  return `${Math.floor(months / 12)} y`;
+  if (months < 24) return t('common.age.months', { count: formatCount(months, t.locale) });
+  return t('common.age.years', { count: formatCount(Math.floor(months / 12), t.locale) });
 }
 
 /**
@@ -263,37 +364,71 @@ export function formatAge(birthDate: DateInput, asOf: string | Date = new Date()
  * Under a minute reads "just now" rather than counting seconds, because a
  * second-by-second number on a clinical board invites watching it.
  */
-export function formatElapsed(from: DateInput, to: string | Date = new Date()): string {
-  if (!from) return NOT_RECORDED;
+export function formatElapsed(
+  t: Translator,
+  from: DateInput,
+  to: string | Date = new Date()
+): string {
+  if (!from) return t('common.notRecorded');
   const start = toDate(from);
   const end = toDate(to);
-  if (!start || !end) return NOT_RECORDED;
+  if (!start || !end) return t('common.notRecorded');
 
   const minutes = Math.floor((end.getTime() - start.getTime()) / 60_000);
-  if (minutes < 0) return NOT_RECORDED;
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 0) return t('common.notRecorded');
+  if (minutes < 1) return t('common.elapsed.justNow');
+  if (minutes < 60) return t('common.elapsed.minutes', { count: formatCount(minutes, t.locale) });
 
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
     const rest = minutes % 60;
-    return rest === 0 ? `${hours} h` : `${hours} h ${pad(rest)} min`;
+    // The minutes are zero-padded and the hours are not, because these render
+    // in an `or-mono` column on the flow board where "1 h 05 min" lines up under
+    // "1 h 40 min" and "1 h 5 min" does not. A padded field is a column width
+    // rather than a count, which is why it does not go through `countInLocale`.
+    return rest === 0
+      ? t('common.elapsed.hours', { count: formatCount(hours, t.locale) })
+      : t('common.elapsed.hoursMinutes', {
+          count: formatCount(hours, t.locale),
+          minutes: pad(rest),
+        });
   }
-  return `${Math.floor(hours / 24)} d`;
+  return t('common.elapsed.days', { count: formatCount(Math.floor(hours / 24), t.locale) });
 }
 
 /* -------------------------------------------------------------------------- */
 /* Money                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export type NegativeLabel = 'Credit' | 'Refund';
+/**
+ * What a negative amount means on this screen, as a discriminator rather than as
+ * the word.
+ *
+ * It used to be `'Credit' | 'Refund'`, which made a display string double as a
+ * type: the value a screen passed in was also the text a reader saw, so there
+ * was no seam to translate at without changing what every call site typed. The
+ * words now live in the catalogue and this names which pair to look up.
+ */
+export type NegativeLabel = 'credit' | 'refund';
+
+interface NegativeWords {
+  /** The standalone word beside the amount. */
+  readonly labelKey: string;
+  /** The whole spoken sentence, amount included. Never the label glued on. */
+  readonly spokenKey: string;
+}
+
+const NEGATIVE_WORDS = {
+  credit: { labelKey: 'billing.money.credit', spokenKey: 'billing.money.spokenCredit' },
+  refund: { labelKey: 'billing.money.refund', spokenKey: 'billing.money.spokenRefund' },
+} as const satisfies Readonly<Record<NegativeLabel, NegativeWords>>;
 
 export interface MoneyOptions {
   /** ISO 4217. Always explicit: a bare number on a billing screen is a defect. */
   currency?: string;
   /**
-   * What a negative amount means on this screen. Billing surfaces read "Credit"
-   * (money the practice owes the patient); payment surfaces read "Refund".
+   * What a negative amount means on this screen. Billing surfaces read a credit
+   * (money the practice owes the patient); payment surfaces read a refund.
    */
   negativeLabel?: NegativeLabel;
 }
@@ -301,8 +436,8 @@ export interface MoneyOptions {
 export interface Money {
   /** "$38.00", or "($38.00)" when negative. Right-align it, tabular figures. */
   text: string;
-  /** "Credit" or "Refund" for a negative amount, otherwise null. Render it. */
-  label: NegativeLabel | null;
+  /** The word for a negative amount, in the reader's language, otherwise null. Render it. */
+  label: string | null;
   /** "38.00 US dollars credit". For `aria-label` where the parentheses do not read. */
   srText: string;
   negative: boolean;
@@ -314,19 +449,28 @@ export interface Money {
  * Negatives are rendered in parentheses AND carry an explicit word, because
  * a minus sign is easy to miss at the end of a long ledger column and colour is
  * never the only signal.
+ *
+ * The digits, the separators and the symbol's position come from the reader's
+ * locale, so a Spanish reader sees "38,00 $" where an English one sees "$38.00".
+ * The parentheses do not. `Intl` can produce them itself with
+ * `currencySign: 'accounting'`, and for Spanish and German it produces a leading
+ * minus instead - which is exactly the signal this wraps them for. The
+ * parentheses are this product's rule about not losing a negative in a column,
+ * the way day-month-year above is its rule about not losing a date, and neither
+ * is the reader's language to decide.
  */
-export function formatMoney(amount: number, options: MoneyOptions = {}): Money {
+export function formatMoney(t: Translator, amount: number, options: MoneyOptions = {}): Money {
   const currency = options.currency ?? 'USD';
   const negative = amount < 0;
-  const label = negative ? (options.negativeLabel ?? 'Credit') : null;
+  const words = negative ? NEGATIVE_WORDS[options.negativeLabel ?? 'credit'] : null;
 
-  const magnitude = numberFormatter({
+  const magnitude = numberFormatter(t.locale, {
     style: 'currency',
     currency,
     currencyDisplay: 'narrowSymbol',
   }).format(Math.abs(amount));
 
-  const spoken = numberFormatter({
+  const spoken = numberFormatter(t.locale, {
     style: 'currency',
     currency,
     currencyDisplay: 'name',
@@ -334,8 +478,12 @@ export function formatMoney(amount: number, options: MoneyOptions = {}): Money {
 
   return {
     text: negative ? `(${magnitude})` : magnitude,
-    label,
-    srText: label ? `${spoken} ${label.toLowerCase()}` : spoken,
+    label: words ? t(words.labelKey) : null,
+    // One message rather than the amount with the label lowercased onto the end.
+    // "credit" is lower case mid-sentence in English and the label beside the
+    // number is not, which is a fact about English rather than a rule to apply
+    // to every language.
+    srText: words ? t(words.spokenKey, { amount: spoken }) : spoken,
     negative,
   };
 }
@@ -375,13 +523,53 @@ export interface FormattedVital {
   rangeText: string | null;
 }
 
-function rangeState(value: number, range: ReferenceRange | undefined): [RangeState, string] {
-  if (!range || (range.low === undefined && range.high === undefined)) {
-    return ['neutral', 'No range recorded'];
-  }
-  if (range.high !== undefined && value > range.high) return ['danger', 'Above range'];
-  if (range.low !== undefined && value < range.low) return ['danger', 'Below range'];
-  return ['success', 'In range'];
+/**
+ * The tone, the standalone label and the whole sentence for one range state.
+ *
+ * Three things rather than two because the label and the sentence are separate
+ * messages, not one lowercased into the other. "Above range" beside a number and
+ * "7.4 mmol/L, above range" read to a screen reader are different strings in
+ * English and stay different strings in every other language, so a translator
+ * gets both rather than a rule for deriving one from the other.
+ *
+ * The keys are written out as `labelKey` and `readingKey` properties so
+ * `catalogue-drift.test.ts` can see them. A key built from the state name would
+ * be invisible to it, and therefore invisible to whoever has to find it later.
+ */
+interface RangeWords {
+  readonly state: RangeState;
+  readonly labelKey: string;
+  readonly readingKey: string;
+}
+
+const RANGE_WORDS = {
+  in: {
+    state: 'success',
+    labelKey: 'clinical.range.in',
+    readingKey: 'clinical.vital.reading.in',
+  },
+  above: {
+    state: 'danger',
+    labelKey: 'clinical.range.above',
+    readingKey: 'clinical.vital.reading.above',
+  },
+  below: {
+    state: 'danger',
+    labelKey: 'clinical.range.below',
+    readingKey: 'clinical.vital.reading.below',
+  },
+  none: {
+    state: 'neutral',
+    labelKey: 'clinical.range.none',
+    readingKey: 'clinical.vital.reading.none',
+  },
+} as const satisfies Readonly<Record<string, RangeWords>>;
+
+function rangeWords(value: number, range: ReferenceRange | undefined): RangeWords {
+  if (!range || (range.low === undefined && range.high === undefined)) return RANGE_WORDS.none;
+  if (range.high !== undefined && value > range.high) return RANGE_WORDS.above;
+  if (range.low !== undefined && value < range.low) return RANGE_WORDS.below;
+  return RANGE_WORDS.in;
 }
 
 /**
@@ -391,52 +579,62 @@ function rangeState(value: number, range: ReferenceRange | undefined): [RangeSta
  * and a labelled range state. The colour that goes with the state is decoration
  * on top of `stateLabel`, never a substitute for it.
  */
-export function formatVital(input: VitalInput): FormattedVital {
+/**
+ * The tone a reading carries, without the words.
+ *
+ * Separate from {@link formatVital} because a caller that only needs to know
+ * whether a value is out of range is not making a language decision, and should
+ * not have to hold a translator to ask. The results list sorts and flags on this
+ * before it renders anything; it used to build a whole formatted vital and read
+ * one field off it, which meant a screen could not decide what was abnormal
+ * without first deciding what language to say so in.
+ *
+ * An absent value is `neutral` rather than an error: nothing recorded is not out
+ * of range, it is not measured.
+ */
+export function vitalState(value: number | null | undefined, range?: ReferenceRange): RangeState {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'neutral';
+  return rangeWords(value, range).state;
+}
+
+export function formatVital(t: Translator, input: VitalInput): FormattedVital {
   const { label, unit, range, decimals } = input;
 
   if (input.value === null || input.value === undefined || Number.isNaN(input.value)) {
     return {
       label,
-      value: NOT_RECORDED,
+      value: t('common.notRecorded'),
       unit,
       state: 'neutral',
-      stateLabel: 'Not recorded',
-      text: `${label}: ${NOT_RECORDED}`,
+      stateLabel: t('common.notRecorded'),
+      text: t('clinical.vital.absent', { label }),
       rangeText: null,
     };
   }
 
-  const [state, stateLabel] = rangeState(input.value, range);
+  const words = rangeWords(input.value, range);
+
+  // The number itself is not locale-formatted, so 7.4 stays 7.4 rather than
+  // becoming 7,4. That is deliberate and it is tied to the `clinical.` area
+  // having no Spanish file: while the sentence around it falls back to English,
+  // a Spanish decimal comma inside an English sentence is a worse reading than
+  // either language on its own. Whoever writes `es/clinical.ts` decides this at
+  // the same time as the words, which is the only point it can be decided from.
   const value =
     decimals === undefined ? String(input.value) : input.value.toFixed(Math.max(decimals, 0));
 
   const bounds: string | null =
     range && (range.low !== undefined || range.high !== undefined)
-      ? `${range.low ?? '-'} to ${range.high ?? '-'} ${unit}`
+      ? t('clinical.vital.range', { low: range.low ?? '-', high: range.high ?? '-', unit })
       : null;
 
   return {
     label,
     value,
     unit,
-    state,
-    stateLabel,
-    text: `${value} ${unit}, ${stateLabel.toLowerCase()}`,
+    state: words.state,
+    stateLabel: t(words.labelKey),
+    text: t(words.readingKey, { value, unit }),
     rangeText: bounds,
   };
-}
-
-/* -------------------------------------------------------------------------- */
-/* Enum labels                                                                 */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Turns a schema enum into sentence case: `CHECKED_IN` becomes "Checked in".
- * Sentence case is the system's only casing; overline is the sole exception.
- */
-export function formatEnumLabel(value: string): string {
-  const words = value.toLowerCase().split('_').filter(Boolean);
-  const [first, ...rest] = words;
-  if (!first) return '';
-  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' ');
 }

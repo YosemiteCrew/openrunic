@@ -119,6 +119,19 @@ export function ConnectivityProvider({
       const response = await doFetch(healthUrl ?? HEALTH_PATH, {
         method: 'GET',
         cache: 'no-store',
+        // Not followed, deliberately. `fetch` follows redirects by default, and
+        // a probe that follows one reports on wherever it landed rather than on
+        // what it asked about: for most of this application's life `/api/health`
+        // was not a public path, so the probe was redirected to the sign-in
+        // screen and read its 200 as health. The banner that tells a
+        // receptionist the records system is unreachable could therefore never
+        // fire, and nobody would find out until the day it was needed.
+        //
+        // `manual` makes that impossible rather than currently-untrue. A
+        // redirect surfaces as an opaque response, which is not `ok`, so any
+        // future guard in front of this route breaks the probe loudly instead
+        // of silently turning it into a liar.
+        redirect: 'manual',
         signal: AbortSignal.timeout(5_000),
       });
 
@@ -132,6 +145,11 @@ export function ConnectivityProvider({
       // API said it cannot serve data: a database outage. Anything else -
       // notably 502, which the route uses for "the API did not answer at all" -
       // is a total outage, where "read-only" would be the wrong thing to say.
+      //
+      // A redirect arrives here too, as an opaque response with status 0, and
+      // lands on `down`. That is the right answer: something stood between this
+      // probe and the health route, so what the health route would have said is
+      // unknown, and unknown is not health.
       setProbeResult(response.status === 503 ? 'degraded' : 'down');
     } catch {
       // The request never completed: nothing is answering on this origin.

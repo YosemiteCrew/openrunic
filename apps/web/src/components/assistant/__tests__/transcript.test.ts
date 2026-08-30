@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -17,6 +18,13 @@ import type { AgentEvent, AgentSource } from '@/lib/agent';
  * DOM. The interruption cases are the ones a demo never reaches: an answer is
  * stopped mid-sentence far more often in a clinic than it is read to the end.
  */
+
+/**
+ * These three are plain functions rather than components, so they take a
+ * translator instead of reading one from context. The source locale, so the
+ * sentences asserted below read in the language the tests are written in.
+ */
+const t = createTranslator(appCatalogue, 'en');
 
 function source(partial: Partial<AgentSource> = {}): AgentSource {
   return {
@@ -244,14 +252,14 @@ describe('trimToLastSentence', () => {
 
 describe('announcementFor', () => {
   it('says nothing before a question is asked', () => {
-    expect(announcementFor(EMPTY_TRANSCRIPT)).toBe('');
+    expect(announcementFor(t, EMPTY_TRANSCRIPT)).toBe('');
   });
 
   it('announces the start once rather than on every token', () => {
     const started = run([ask(), event({ type: 'text-delta', text: 'Two ' })]);
     const later = run([ask(), event({ type: 'text-delta', text: 'Two visits are recorded.' })]);
-    expect(announcementFor(started)).toBe('The assistant is answering.');
-    expect(announcementFor(later)).toBe(announcementFor(started));
+    expect(announcementFor(t, started)).toBe('The assistant is answering.');
+    expect(announcementFor(t, later)).toBe(announcementFor(t, started));
   });
 
   it.each([
@@ -302,7 +310,7 @@ describe('announcementFor', () => {
       'The assistant could not answer.',
     ],
   ])('announces %s', (_name, actions, expected) => {
-    expect(announcementFor(run(actions as TranscriptAction[]))).toBe(expected);
+    expect(announcementFor(t, run(actions as TranscriptAction[]))).toBe(expected);
   });
 });
 
@@ -316,7 +324,7 @@ describe('describeFailure', () => {
     'AGENT_COMPARTMENT_VIOLATION',
     'AGENT_RESPONSE_INVALID',
   ])('says what happened and what is unaffected for %s', (code) => {
-    const explained = describeFailure({ code, detail: 'raw server detail' });
+    const explained = describeFailure(t, { code, detail: 'raw server detail' });
     expect(explained.title.length).toBeGreaterThan(0);
     expect(explained.message.length).toBeGreaterThan(0);
     // Never the machine code, and never the server's raw sentence, for a code
@@ -326,7 +334,9 @@ describe('describeFailure', () => {
   });
 
   it('falls back to the written sentence the API sent', () => {
-    expect(describeFailure({ code: 'AGENT_SOMETHING_NEW', detail: 'That step failed.' })).toEqual({
+    expect(
+      describeFailure(t, { code: 'AGENT_SOMETHING_NEW', detail: 'That step failed.' })
+    ).toEqual({
       title: 'That did not complete',
       message: 'That step failed.',
     });
@@ -350,9 +360,9 @@ describe('citations', () => {
   });
 
   it('reads the resource type the way a clinician says it', () => {
-    expect(citationTypeLabel(source({ resourceType: 'ClinicalNote' }))).toBe('Note');
-    expect(citationTypeLabel(source({ resourceType: 'DiagnosticReport' }))).toBe('Result');
-    expect(citationTypeLabel(source({ resourceType: 'ProblemList' }))).toBe('Problem list');
-    expect(citationTypeLabel(source({ resourceType: 'Encounter' }))).toBe('Encounter');
+    expect(citationTypeLabel(t, source({ resourceType: 'ClinicalNote' }))).toBe('Note');
+    expect(citationTypeLabel(t, source({ resourceType: 'DiagnosticReport' }))).toBe('Result');
+    expect(citationTypeLabel(t, source({ resourceType: 'ProblemList' }))).toBe('Problem list');
+    expect(citationTypeLabel(t, source({ resourceType: 'Encounter' }))).toBe('Encounter');
   });
 });

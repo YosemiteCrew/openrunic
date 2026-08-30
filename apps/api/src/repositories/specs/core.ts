@@ -5,17 +5,19 @@ import type {
 } from '@openrunic/database';
 
 import {
+  type BaseQuery,
+  type CollectionSpec,
   containsFold,
   equalsIfSet,
-  jsonColumn,
-  matchesIfSet,
   inWindow,
+  jsonColumn,
+  likeContains,
+  likeStartsWith,
+  matchesIfSet,
+  type RowContext,
   startsWithFold,
   statusMetadata,
   windowFilter,
-  type BaseQuery,
-  type CollectionSpec,
-  type RowContext,
   type Writable,
 } from '../collection.js';
 import { APPOINTMENT_DEFAULTS, PATIENT_DEFAULTS } from '../defaults.js';
@@ -44,7 +46,7 @@ export interface PatientListQuery extends BaseQuery {
   sexAtBirth?: AdministrativeGender;
   family?: string;
   given?: string;
-  /** Exact date of birth, midnight UTC. */
+  /** Date of birth. Selects any birth recorded on this UTC day. */
   birthDate?: Date;
   active?: boolean;
   facilityId?: string;
@@ -59,6 +61,32 @@ function sameUtcDay(left: Date, right: Date): boolean {
   );
 }
 
+/**
+ * The same rule as `sameUtcDay`, as a half-open range Prisma can filter with.
+ *
+ * `where` used to emit exact instant equality here while `matches` compared the
+ * UTC day, which are two different rules for one filter. They agreed only
+ * because three unrelated facts held at once: `birthDate` is `@db.Date` so
+ * Postgres stores no time, and both entry points parse a bare `YYYY-MM-DD` and
+ * append midnight UTC. Any one of those changing - a column type, or accepting
+ * an ISO instant the way the window parameters already do - would have split
+ * the two ports silently.
+ *
+ * A range says what `matches` says, so the agreement no longer rests on
+ * arithmetic happening to coincide in three files nobody reads together.
+ */
+function utcDayRange(day: Date): { gte: Date; lt: Date } {
+  const year = day.getUTCFullYear();
+  const month = day.getUTCMonth();
+  const date = day.getUTCDate();
+  // `Date.UTC` rolls `date + 1` over a month or year end on its own, so the
+  // upper bound needs no special case for the 31st or for December.
+  return {
+    gte: new Date(Date.UTC(year, month, date)),
+    lt: new Date(Date.UTC(year, month, date + 1)),
+  };
+}
+
 export const patientSpec: CollectionSpec<
   'Patient',
   PatientCreateInput,
@@ -68,8 +96,47 @@ export const patientSpec: CollectionSpec<
   model: 'Patient',
   targetType: 'Patient',
   action: 'patient',
+  /**
+   * The patient's usual site. It narrows lists and it does NOT refuse an
+   * addressed read. This is #139, decided.
+   *
+   * Every other facility-scoped collection narrows on `facilityId`, which is
+   * containment: the appointment happened there, the encounter happened there,
+   * the charge was raised there. `primaryFacilityId` is attribution - the site
+   * that registered them. Patient was the only one of nine narrowing on a
+   * column that is not `facilityId`, and that uniqueness is the tell.
+   *
+   * The two halves want different answers, which is why this spec is the only
+   * one that sets `facilityHidesAddressed`.
+   *
+   * A LIST stays narrowed. A work queue should be local, and this is what keeps
+   * a site-limited caller from paging the whole practice's index of names, MRNs
+   * and birth dates. Removing that was the first draft of this change and it
+   * was wrong: it widened a listing surface to fix a lookup problem.
+   *
+   * An addressed READ is not refused. The caller already has the id and is
+   * treating the person, and a patient registered at the north clinic standing
+   * in front of the south clinic is the ordinary case rather than the edge. The
+   * old behaviour failed in both directions at once - it hid that chart from
+   * the clinician holding it, while still showing a patient registered here who
+   * has only ever been seen elsewhere.
+   *
+   * The portal made it sharper. The facility and compartment clauses are ANDed
+   * rather than alternatives, so pinning a token to one chart did not exempt
+   * it, and `Principal.facilityIds` comes from an IdP claim - so an IdP that
+   * omits `facilities` locked every portal user out of their own record. That
+   * is an addressed read, and it works now.
+   *
+   * What this is NOT is a care-relationship model. Nothing here asks whether
+   * the caller is treating this patient; it asks whether they know the id. The
+   * real answer is an explicit care relationship or an audited break-glass, and
+   * that is filed rather than pretended at. Every read is recorded in the audit
+   * trail meanwhile, which is detection rather than prevention and is worth
+   * being honest about.
+   */
   facilityColumn: 'primaryFacilityId',
   facilityScoped: true,
+  facilityHidesAddressed: false,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.
   compartment: { column: 'id' },
@@ -138,23 +205,19 @@ export const patientSpec: CollectionSpec<
       ...(query.id === undefined ? {} : { id: query.id }),
       ...(query.mrn === undefined ? {} : { mrn: query.mrn }),
       ...(query.sexAtBirth === undefined ? {} : { sexAtBirth: query.sexAtBirth }),
-      ...(query.family === undefined
-        ? {}
-        : { familyName: { startsWith: query.family, mode: 'insensitive' as const } }),
-      ...(query.given === undefined
-        ? {}
-        : { givenName: { startsWith: query.given, mode: 'insensitive' as const } }),
+      ...(query.family === undefined ? {} : { familyName: likeStartsWith(query.family) }),
+      ...(query.given === undefined ? {} : { givenName: likeStartsWith(query.given) }),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.facilityId === undefined ? {} : { primaryFacilityId: query.facilityId }),
-      ...(query.birthDate === undefined ? {} : { birthDate: query.birthDate }),
+      ...(query.birthDate === undefined ? {} : { birthDate: utcDayRange(query.birthDate) }),
       ...(query.q === undefined
         ? {}
         : {
             OR: [
-              { familyName: { contains: query.q, mode: 'insensitive' as const } },
-              { givenName: { contains: query.q, mode: 'insensitive' as const } },
-              { preferredName: { contains: query.q, mode: 'insensitive' as const } },
-              { mrn: { contains: query.q, mode: 'insensitive' as const } },
+              { familyName: likeContains(query.q) },
+              { givenName: likeContains(query.q) },
+              { preferredName: likeContains(query.q) },
+              { mrn: likeContains(query.q) },
             ],
           }),
     };

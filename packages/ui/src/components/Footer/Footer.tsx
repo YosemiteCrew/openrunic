@@ -26,7 +26,7 @@ export interface FooterProps extends HTMLAttributes<HTMLElement> {
 
 /**
  * The closing espresso band for marketing and docs, and the one place the Yosemite Crew
- * sibling may be named alongside OpenRunic - beside it, never merged into one lockup.
+ * sibling may be named alongside openrunic - beside it, never merged into one lockup.
  * Columns sit next to the lockup from md and stack below it on a phone.
  */
 export function Footer({
@@ -47,7 +47,10 @@ export function Footer({
     <footer className={cx('or-footer', className)} {...rest}>
       <div className="or-footer__inner">
         <div className="or-footer__brand">
-          <span className="or-footer__logo" style={logoStyle} role="img" aria-label="OpenRunic" />
+          {/* The product's name, not a word. It is `openrunic` in every language,
+              the same way it is on the README and in the page titles, so it stays
+              a literal here while the words beside it became props. See #196. */}
+          <span className="or-footer__logo" style={logoStyle} role="img" aria-label="openrunic" />
           {note ? <p className="or-small or-footer__note">{note}</p> : null}
         </div>
 

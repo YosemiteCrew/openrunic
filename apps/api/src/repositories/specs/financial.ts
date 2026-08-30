@@ -375,6 +375,15 @@ export interface ClaimListQuery extends BaseQuery {
   payerId?: string;
   encounterId?: string;
   status?: ClaimStatus;
+  /**
+   * Several statuses at once, intersected with `status` when both are given.
+   *
+   * The FHIR boundary sends this: `Claim.status` collapses ten domain states
+   * into three FHIR codes, so `?status=active` names seven of them and a scalar
+   * filter would answer with one. An empty array is a filter that matches
+   * nothing, not an absent one.
+   */
+  statuses?: readonly ClaimStatus[];
   /** Which instant the window applies to. A claim has two that matter. */
   window: 'createdAt' | 'submittedAt';
   from?: Date;
@@ -426,6 +435,25 @@ function claimWindow(query: ClaimListQuery) {
   if (stamp === undefined) return {};
   if (query.window === 'submittedAt') return { submittedAt: stamp };
   return { createdAt: stamp };
+}
+
+/**
+ * One status filter from the two ways a caller can ask for one.
+ *
+ * `status` is the collection's own scalar parameter; `statuses` is the set the
+ * FHIR boundary sends. They are resolved here rather than spread side by side
+ * because both write the same `where` key, and two clauses writing one key is
+ * how one of them silently stops applying. Intersecting is the safe direction:
+ * a search that quietly widens hands somebody rows they did not ask for.
+ *
+ * `undefined` means no status filter. An empty array means one that matches
+ * nothing, which is what an impossible intersection deserves.
+ */
+function claimStatusFilter(query: ClaimListQuery): readonly ClaimStatus[] | undefined {
+  const { status, statuses } = query;
+  if (statuses === undefined) return status === undefined ? undefined : [status];
+  if (status === undefined) return statuses;
+  return statuses.includes(status) ? [status] : [];
 }
 
 export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInput, ClaimListQuery> =
@@ -488,18 +516,20 @@ export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInpu
       if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
       if (query.payerId !== undefined && row.payerId !== query.payerId) return false;
       if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
-      if (query.status !== undefined && row.status !== query.status) return false;
+      const wanted = claimStatusFilter(query);
+      if (wanted !== undefined && !wanted.includes(row.status)) return false;
       const stamp = query.window === 'submittedAt' ? row.submittedAt : row.createdAt;
       return inWindow(stamp, query.from, query.to);
     },
 
     where(query: ClaimListQuery) {
       const windowed = claimWindow(query);
+      const wanted = claimStatusFilter(query);
       return {
         ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
         ...(query.payerId === undefined ? {} : { payerId: query.payerId }),
         ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
-        ...(query.status === undefined ? {} : { status: query.status }),
+        ...(wanted === undefined ? {} : { status: { in: [...wanted] } }),
         ...windowed,
       };
     },
@@ -578,6 +608,27 @@ function claimLineColumns(input: ClaimLineCreateInput): Writable<'ClaimLine'> {
   };
 }
 
+/**
+ * One claim filter from the two ways a caller can ask for one.
+ *
+ * `claimId` is the single-claim routes; `claimIds` is the FHIR boundary asking
+ * for a whole page's lines at once. They used to be two spreads writing the
+ * same `where` key, so with both set the later won and the scalar vanished from
+ * the Prisma query while `matches` went on ANDing them. Nothing could reach it -
+ * each caller sets exactly one - but a filter that is only correct because
+ * nobody has combined it yet is a trap with a date on it rather than a design.
+ *
+ * `undefined` is no claim filter. An empty array is one that matches nothing,
+ * which is what the caller asked for when they named an empty set of claims:
+ * widening that to every line in the table is the opposite of the request.
+ */
+function claimLineClaims(query: ClaimLineListQuery): readonly string[] | undefined {
+  const { claimId, claimIds } = query;
+  if (claimIds === undefined) return claimId === undefined ? undefined : [claimId];
+  if (claimId === undefined) return claimIds;
+  return claimIds.includes(claimId) ? [claimId] : [];
+}
+
 export const claimLineSpec: CollectionSpec<
   'ClaimLine',
   ClaimLineCreateInput,
@@ -601,18 +652,15 @@ export const claimLineSpec: CollectionSpec<
   },
 
   matches(row: ScopedRow<'ClaimLine'>, query: ClaimLineListQuery): boolean {
-    if (query.claimId !== undefined && row.claimId !== query.claimId) return false;
-    // An empty list means "no claims", not "every claim". The distinction
-    // matters because a page with no rows would otherwise widen to the whole
-    // table, which is the opposite of what the caller asked for.
-    if (query.claimIds !== undefined && !query.claimIds.includes(row.claimId)) return false;
+    const wanted = claimLineClaims(query);
+    if (wanted !== undefined && !wanted.includes(row.claimId)) return false;
     return query.chargeItemId === undefined || row.chargeItemId === query.chargeItemId;
   },
 
   where(query: ClaimLineListQuery) {
+    const wanted = claimLineClaims(query);
     return {
-      ...(query.claimId === undefined ? {} : { claimId: query.claimId }),
-      ...(query.claimIds === undefined ? {} : { claimId: { in: [...query.claimIds] } }),
+      ...(wanted === undefined ? {} : { claimId: { in: [...wanted] } }),
       ...(query.chargeItemId === undefined ? {} : { chargeItemId: query.chargeItemId }),
     };
   },

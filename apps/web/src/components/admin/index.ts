@@ -7,10 +7,14 @@
  * all three on more than one screen. They are composed from library primitives
  * here rather than forked from them, so moving them up is a file move.
  */
-export { ADMIN_AREAS, adminBreadcrumb } from './areas';
-export type { AdminArea } from './areas';
+export { ADMIN_AREAS, adminArea, adminBreadcrumb } from './areas';
+export type { AdminArea, AdminAreaId } from './areas';
 export { ConfirmDialog } from './ConfirmDialog';
+export { Demonstration } from './Demonstration';
 export type { ConfirmDialogProps } from './ConfirmDialog';
+export { pluralKey, translateColumns } from './copy';
+export { AUDIT_ACTION_LABELS, PURPOSE_OF_USE_LABELS, STAFF_ROLE_KEYS } from './labels';
+export type { AdminColumn, PluralKeys } from './copy';
 export { DetailList } from './DetailList';
 export type { DetailItem, DetailListProps } from './DetailList';
 export { Drawer } from './Drawer';

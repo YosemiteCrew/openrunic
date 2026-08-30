@@ -1,10 +1,12 @@
 'use client';
 
+import type { Translator } from '@openrunic/i18n';
 import { Button, Modal } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
 import type { Appointment, Patient } from '@/lib/api';
 import { formatName, formatTime } from '@/lib/format';
+import { useTranslator } from '@/lib/i18n/messages';
 
 import { givenName } from './schedule';
 
@@ -35,16 +37,25 @@ export interface CheckInDialogProps {
 }
 
 /** The verb names the patient, so the button says who it is about to check in. */
-function confirmLabel(patient: Patient | undefined, pending: boolean): string {
-  if (pending) return 'Checking in...';
-  return patient ? `Check in ${givenName(patient.name)}` : 'Check in visit';
+function confirmLabel(t: Translator, patient: Patient | undefined, pending: boolean): string {
+  if (pending) return t('schedule.checkIn.submitting');
+  return patient
+    ? t('schedule.checkIn.named', { name: givenName(patient.name) })
+    : t('schedule.checkIn.visit');
 }
 
-function describe(appointment: Appointment, patient: Patient | undefined): string {
-  if (!patient) return 'Check in this visit. This moves it onto the Flow Board.';
-  return `Check in ${formatName(patient.name)} for the ${formatTime(
-    appointment.start
-  )} ${appointment.type.display.toLowerCase()}. This moves them onto the Flow Board.`;
+/**
+ * The visit type is interpolated as it stands on the appointment, lower-cased,
+ * because it is the practice's own catalogue entry rather than a word this
+ * screen owns. See `BookingModal`'s note on why it is not translated.
+ */
+function describe(t: Translator, appointment: Appointment, patient: Patient | undefined): string {
+  if (!patient) return t('schedule.checkIn.describeUnassigned');
+  return t('schedule.checkIn.describe', {
+    name: formatName(patient.name),
+    time: formatTime(t, appointment.start),
+    visitType: appointment.type.display.toLowerCase(),
+  });
 }
 
 export function CheckInDialog({
@@ -55,21 +66,23 @@ export function CheckInDialog({
   onCancel,
   onConfirm,
 }: Readonly<CheckInDialogProps>): ReactElement {
+  const t = useTranslator();
+
   return (
     <Modal
       open
       role="alertdialog"
       width={520}
-      title="Check in this patient"
-      description={describe(appointment, patient)}
+      title={t('schedule.checkIn.title')}
+      description={describe(t, appointment, patient)}
       onClose={onCancel}
       footer={
         <>
           <Button variant="secondary" disabled={pending} onClick={onCancel}>
-            Cancel
+            {t('schedule.action.cancel')}
           </Button>
           <Button disabled={pending} onClick={() => onConfirm(appointment)}>
-            {confirmLabel(patient, pending)}
+            {confirmLabel(t, patient, pending)}
           </Button>
         </>
       }

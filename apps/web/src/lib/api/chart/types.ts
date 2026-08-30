@@ -13,9 +13,19 @@
  * stops needing to differ from the wire and moves to `../types.ts` beside
  * `Patient` and `Appointment`, and nothing in the screens changes.
  *
- * Every enum here mirrors an enum that already exists in `@openrunic/database`,
- * uppercase and underscored, so `formatEnumLabel` renders it and no screen ever
- * hard-codes a display string for a state.
+ * The enums here are uppercase and underscored, and only some of them are
+ * Prisma enums: `AllergyCategory`, `MedicationSource` and `NoteState` are,
+ * while `AllergySeverity`, `CareTeamRelationship`, `ProblemStatus` and
+ * `EmittedItemKind` exist only in this contract. This file used to say all of
+ * them mirrored the database, which was wrong and was quoted elsewhere as
+ * evidence before anyone checked.
+ *
+ * It decides nothing either way. The API sends the member and no display for it
+ * whichever it is, so
+ * the words a screen shows are this codebase's to write: they live in the
+ * message catalogue and reach a screen through `components/chart/labels.ts`.
+ * They were derived from the member by a formatter until #132, which is the
+ * same thing as hard-coding a display string, only harder to find.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -198,7 +208,16 @@ export interface ChartSummary {
 /* The note                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** The four SOAP blocks, in the order they are documented. */
+/**
+ * The four SOAP blocks, in the order they are documented.
+ *
+ * The key is all a section carries about what it is called. It used to carry a
+ * `label` and a `hint` beside it, written out in English in both the live client
+ * and the fixtures - two copies of the same four headings, and neither of them
+ * anything the API sends. `components/encounter/labels.ts` maps the key to the
+ * catalogue instead, so the words exist once and in every language the build
+ * ships.
+ */
 export const NOTE_SECTION_KEYS = ['subjective', 'objective', 'assessment', 'plan'] as const;
 
 export type NoteSectionKey = (typeof NOTE_SECTION_KEYS)[number];
@@ -215,10 +234,6 @@ export interface EmittedItem {
 
 export interface NoteSection {
   key: NoteSectionKey;
-  /** "Subjective". Sentence case, the block's own heading. */
-  label: string;
-  /** One line of what belongs in the block. Shown under the label, never as a placeholder. */
-  hint: string;
   text: string;
   /** Structured data this block wrote. Rendered as chips under the text. */
   emitted: EmittedItem[];

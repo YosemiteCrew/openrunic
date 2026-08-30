@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError, createHttpClient, requestJson, toSearchParams } from '@/lib/api/client';
 import { API_BASE_URL, API_CONFIG, resolveApiMode } from '@/lib/api/config';
 import { createMockClient, filterAppointments, filterPatients } from '@/lib/api/mock/client';
+import { MOCK_STATEMENT_RECORDS } from '@/lib/api/mock/records';
 import {
   MOCK_APPOINTMENTS,
   MOCK_CLINIC_DAY,
@@ -217,6 +218,50 @@ describe('createMockClient', () => {
   it('can be handed its own fixtures for a screen test', async () => {
     const client = createMockClient({ patients: [], appointments: [] });
     await expect(client.appointments.list()).resolves.toMatchObject({ data: [] });
+  });
+
+  it('answers every list called with no query at all', async () => {
+    /*
+     * Every list takes an optional query and every caller in the app passes
+     * one, so the no-argument form - the shape a console, a story or a first
+     * draft of a screen reaches for - was never exercised on any of the six.
+     * A list that needed its query would throw here rather than page one.
+     */
+    const client = createMockClient();
+
+    const pages = await Promise.all([
+      client.facilities.list(),
+      client.users.list(),
+      client.patients.list(),
+      client.appointments.list(),
+      client.encounters.list(),
+      client.notes.list(),
+    ]);
+
+    for (const page of pages) {
+      expect(page.page.page).toBe(1);
+      expect(page.data.length).toBeGreaterThan(0);
+      expect(page.data.length).toBeLessThanOrEqual(page.page.pageSize);
+    }
+  });
+
+  it('generates a statement with no overrides, taking the balance already on it', async () => {
+    /*
+     * The body is optional because generating is usually just a state change:
+     * the balance and the stored document are already known. Passing one is
+     * the exception, and it was the only path anything had taken.
+     */
+    const draft = MOCK_STATEMENT_RECORDS.find((record) => record.status === 'DRAFT');
+    expect(draft, 'no fixture statement is still a draft').toBeDefined();
+    if (draft === undefined) return;
+
+    const generated = await createMockClient().statements.generate(draft.id);
+
+    expect(generated.status).toBe('GENERATED');
+    /* The balance is carried over rather than zeroed, which is what an absent
+       override has to mean for a statement that already knows what is owed. */
+    expect(generated.balanceCents).toBe(draft.balanceCents);
+    expect(generated.pdfStorageKey).toBe(draft.pdfStorageKey);
   });
 });
 

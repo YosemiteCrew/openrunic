@@ -32,6 +32,56 @@ ARG NODE_IMAGE=node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f716
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS base
 
+# Take Alpine's current packages before anything else runs.
+#
+# CVE-2026-14456 is a high-severity flaw in libssl3/libcrypto3. Alpine shipped
+# the fix as 3.5.8-r0; the Node image still carries 3.5.7-r0 because it has not
+# been rebuilt since. Re-resolving the tag above does not help - the digest
+# pinned there already IS the current node:22-alpine, so there is nothing newer
+# to bump to. The patch exists in the package repository and not yet in the
+# image, which is the one case the digest comment's "bump it deliberately"
+# answer cannot reach.
+#
+# **This has to sit in every stage that starts from ${NODE_IMAGE}.** There are
+# two roots here, `base` and `runtime`, and putting it only in `runtime` leaves
+# every stage descended from `base` on the vulnerable packages - including
+# `migrate`, which docker-compose builds by name as its own image and ships to
+# self-hosting operators. The container scan builds only the default target, so
+# that gap would have stayed green.
+#
+# Every apk package rather than the two by name. A named list is a second place
+# to maintain and it goes stale silently: the next Alpine advisory lands and the
+# line still says libssl3. Pinning a version is worse again, because Alpine
+# drops superseded versions from the index and the build starts failing the day
+# 3.5.8-r0 is replaced.
+#
+# ## What this costs, and the layer that can outlive the fix
+#
+# The OS package set is no longer reproducible from the digest alone. That is a
+# real trade against what the digest is for, and it is the right way round for
+# an image serving patient data: a reproducible build of a known-vulnerable
+# openssl is not the property worth keeping.
+#
+# The subtler cost is that this layer is cacheable. Nothing above it changes
+# between rebuilds, so a daemon that already has it - a self-hosted operator
+# running `docker compose up --build` again - reuses it and never contacts
+# Alpine, keeping the package set from whenever it first ran. Bumping
+# ${NODE_IMAGE} invalidates the whole chain and fixes that, but the window this
+# patch exists for is exactly when the base digest has NOT moved.
+#
+# `APK_UPGRADE_STAMP` is the handle for that: it is part of the command string,
+# so changing it forces the upgrade to re-run. It is a cache key and never a
+# credential - the name avoids "token", because hadolint DL3064 and Trivy
+# DS-0031 both match on the name alone and would read one as a leaked secret.
+#
+#     docker compose build --build-arg APK_UPGRADE_STAMP=$(date +%F) api
+#
+# CI needs no token because its runners are ephemeral and share no layer cache,
+# so the scan always resolves packages fresh.
+ARG APK_UPGRADE_STAMP=pinned
+RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
+    && apk --no-cache upgrade
+
 # corepack activates the pnpm version pinned in the root package.json's
 # `packageManager` field, so the image can never build with a different pnpm
 # than the lockfile was written by.
@@ -175,8 +225,16 @@ RUN find node_modules -name '*.d.ts' -delete \
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 
+# Alpine's current packages, for the reason spelled out at the `base` stage.
+# This stage starts from ${NODE_IMAGE} rather than from `base`, so it does not
+# inherit that upgrade and needs its own.
+ARG APK_UPGRADE_STAMP=pinned
+RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
+    && apk --no-cache upgrade
+
 ENV NODE_ENV=production \
     PORT=4000
+
 
 # Strip the package manager out of the runtime.
 #

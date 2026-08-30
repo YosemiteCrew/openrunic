@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { AppointmentFacts } from '@/components/appointments/AppointmentFacts';
 import { getPortalApi } from '@/lib/api';
 import type { Appointment, PortalApi } from '@/lib/api/types';
+import { useTranslator } from '@/lib/i18n/messages';
 import { formatDateTime } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
 
@@ -26,6 +27,7 @@ export interface AppointmentsScreenProps {
 }
 
 export function AppointmentsScreen({ api = getPortalApi() }: Readonly<AppointmentsScreenProps>) {
+  const t = useTranslator();
   const load = useCallback(() => api.getAppointments(), [api]);
   const { state, reload } = useAsync(load);
 
@@ -66,44 +68,41 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
   return (
     <>
       <PageHeader
-        overline="Your visits"
-        title="Appointments"
-        lede="What is booked, what has already happened, and how to ask for a change."
+        overline={t('portal.appointments.overline')}
+        title={t('portal.appointments.title')}
+        lede={t('portal.appointments.lede')}
       />
 
       <div className="portal-actions">
         <Button iconLeft="calendar-plus" onClick={() => setRequestFor({})}>
-          Request an appointment
+          {t('portal.appointments.request')}
         </Button>
       </div>
 
       {request.status === 'done' ? (
-        <output className="portal-record__meta">
-          Your request has gone to the practice. They will confirm by message. Nothing is booked
-          until they do.
-        </output>
+        <output className="portal-record__meta">{t('portal.appointments.requested')}</output>
       ) : null}
 
       {cancel.status === 'failed' ? (
         <p className="portal-record__meta" role="alert">
-          The appointment was not cancelled and is still booked. Check your connection, then try
-          again.
+          {t('portal.appointments.cancelFailed')}
         </p>
       ) : null}
 
       <AsyncBoundary
         state={state}
-        what="your appointments"
+        loadingKey="portal.appointments.async.loading"
+        errorKey="portal.appointments.async.error"
         onRetry={reload}
         isEmpty={(data) => data.upcoming.length === 0 && data.past.length === 0}
         empty={
           <EmptyState
             icon="calendar"
-            title="You have no appointments."
-            message="Request one and the practice will confirm a time by message."
+            title={t('portal.appointments.empty.title')}
+            message={t('portal.appointments.empty.message')}
             action={
               <Button iconLeft="calendar-plus" onClick={() => setRequestFor({})}>
-                Request an appointment
+                {t('portal.appointments.request')}
               </Button>
             }
           />
@@ -111,10 +110,15 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
       >
         {(data) => (
           <div className="portal-stack">
-            <section className="portal-section" aria-label="Upcoming appointments">
-              <h2 className="or-h2 portal-section__heading">Upcoming</h2>
+            <section
+              className="portal-section"
+              aria-label={t('portal.appointments.upcoming.label')}
+            >
+              <h2 className="or-h2 portal-section__heading">
+                {t('portal.appointments.upcoming.heading')}
+              </h2>
               {data.upcoming.length === 0 ? (
-                <p className="or-body">You have nothing booked.</p>
+                <p className="or-body">{t('portal.appointments.upcoming.none')}</p>
               ) : (
                 data.upcoming.map((appointment) => (
                   /* Unlike the other screens, these cards sit inside a section that
@@ -123,19 +127,23 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                   <Card
                     key={appointment.id}
                     headingLevel={3}
-                    overline={appointment.mode === 'video' ? 'Video call' : 'In person'}
+                    overline={t(
+                      appointment.mode === 'video'
+                        ? 'portal.appointments.mode.video'
+                        : 'portal.appointments.mode.inPerson'
+                    )}
                     title={appointment.reason}
                   >
-                    <AppointmentFacts appointment={appointment} />
+                    <AppointmentFacts t={t} appointment={appointment} />
                     <div className="portal-actions">
                       {appointment.joinUrl ? (
                         <Button href={appointment.joinUrl} iconLeft="video">
-                          Join the video call
+                          {t('portal.appointments.join')}
                         </Button>
                       ) : null}
                       {appointment.directionsUrl ? (
                         <Button href={appointment.directionsUrl} iconLeft="map-pin">
-                          Get directions
+                          {t('portal.appointments.directions')}
                         </Button>
                       ) : null}
                       <Button
@@ -143,14 +151,14 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                         iconLeft="calendar-clock"
                         onClick={() => setRequestFor({ rescheduleOf: appointment.id })}
                       >
-                        Ask to move it
+                        {t('portal.appointments.move')}
                       </Button>
                       <Button
                         variant="danger"
                         iconLeft="calendar-x"
                         onClick={() => setPendingCancel(appointment)}
                       >
-                        Cancel
+                        {t('portal.appointments.cancel')}
                       </Button>
                     </div>
                   </Card>
@@ -158,22 +166,25 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
               )}
             </section>
 
-            <section className="portal-section" aria-label="Past appointments">
-              <h2 className="or-h2 portal-section__heading">Past</h2>
+            <section className="portal-section" aria-label={t('portal.appointments.past.label')}>
+              <h2 className="or-h2 portal-section__heading">
+                {t('portal.appointments.past.heading')}
+              </h2>
               {data.past.length === 0 ? (
-                <p className="or-body">You have no past appointments on record.</p>
+                <p className="or-body">{t('portal.appointments.past.none')}</p>
               ) : (
                 data.past.map((appointment) => (
                   <Card
                     key={appointment.id}
                     headingLevel={3}
-                    overline="Past"
+                    overline={t('portal.appointments.mode.past')}
                     title={appointment.reason}
                   >
-                    <AppointmentFacts appointment={appointment} />
+                    <AppointmentFacts t={t} appointment={appointment} />
                     {appointment.cancelledReason ? (
                       <p className="portal-record__meta">
-                        <Badge tone="neutral">Cancelled</Badge> {appointment.cancelledReason}
+                        <Badge tone="neutral">{t('portal.appointments.cancelledBadge')}</Badge>{' '}
+                        {appointment.cancelledReason}
                       </p>
                     ) : null}
                   </Card>
@@ -188,16 +199,24 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
       {pendingCancel ? (
         <Modal
           open
-          title="Cancel this appointment?"
-          description={`This would cancel ${pendingCancel.reason} with ${pendingCancel.clinician} on ${formatDateTime(pendingCancel.startsAt)}. The slot goes to someone else, and to be seen you would have to request a new appointment. The next opening may be weeks later.`}
+          title={t('portal.appointments.cancelDialog.title')}
+          /* One message with three holes rather than three clauses assembled
+             here. What this costs a patient is the whole point of the dialog,
+             and a sentence built from fragments is the one place that argument
+             would quietly come apart in another language. */
+          description={t('portal.appointments.cancelDialog.description', {
+            reason: pendingCancel.reason,
+            clinician: pendingCancel.clinician,
+            when: formatDateTime(t, pendingCancel.startsAt),
+          })}
           onClose={() => setPendingCancel(null)}
           footer={
             <>
               <Button variant="secondary" onClick={() => setPendingCancel(null)}>
-                Keep the appointment
+                {t('portal.appointments.cancelDialog.keep')}
               </Button>
               <Button variant="danger" onClick={() => confirmCancel(pendingCancel)}>
-                Cancel the appointment
+                {t('portal.appointments.cancelDialog.confirm')}
               </Button>
             </>
           }
@@ -207,48 +226,47 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
       {requestFor ? (
         <Modal
           open
-          title={
+          title={t(
             requestFor.rescheduleOf === undefined
-              ? 'Request an appointment'
-              : 'Ask to move this appointment'
-          }
-          description="This goes to the practice as a request. They will confirm a time by message. Nothing is booked until they do."
+              ? 'portal.appointments.requestDialog.title'
+              : 'portal.appointments.requestDialog.rescheduleTitle'
+          )}
+          description={t('portal.appointments.requestDialog.description')}
           onClose={() => setRequestFor(null)}
           footer={
             <>
               {/* Not "Close": Modal already ships a dismiss control with that name, and
                   two controls answering to the same word is a maze for a screen reader. */}
               <Button variant="secondary" onClick={() => setRequestFor(null)}>
-                Close without sending
+                {t('portal.appointments.requestDialog.close')}
               </Button>
               <Button
                 disabled={reason.trim() === ''}
                 onClick={() => submitRequest(requestFor.rescheduleOf)}
               >
-                Send the request
+                {t('portal.appointments.requestDialog.send')}
               </Button>
             </>
           }
         >
           <div className="portal-stack portal-stack--tight">
             <Input
-              label="What do you need to be seen about?"
-              hint="A short line is enough."
+              label={t('portal.appointments.requestDialog.reason.label')}
+              hint={t('portal.appointments.requestDialog.reason.hint')}
               name="reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />
             <Input
-              label="When can you come?"
-              hint="For example, weekday mornings."
+              label={t('portal.appointments.requestDialog.times.label')}
+              hint={t('portal.appointments.requestDialog.times.hint')}
               name="preferredTimes"
               value={preferredTimes}
               onChange={(event) => setPreferredTimes(event.target.value)}
             />
             {request.status === 'failed' ? (
               <p className="portal-record__meta" role="alert">
-                Your request did not send, and what you typed is still here. Check your connection,
-                then send it again.
+                {t('portal.appointments.requestDialog.failed')}
               </p>
             ) : null}
           </div>

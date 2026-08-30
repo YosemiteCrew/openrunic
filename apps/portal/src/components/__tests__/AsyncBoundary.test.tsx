@@ -2,11 +2,26 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
+import type { AsyncBoundaryProps } from '@/components/AsyncBoundary';
 import type { AsyncState } from '@/lib/useAsync';
 
-function renderBoundary(state: AsyncState<string[]>, extra: Record<string, unknown> = {}) {
+/**
+ * The two keys are the appointments screen's, because the assertions below read
+ * the words a patient sees rather than the key that produced them. A key that
+ * named nothing would render the key itself, and every assertion here would
+ * fail on that.
+ */
+function renderBoundary(
+  state: AsyncState<string[]>,
+  extra: Partial<AsyncBoundaryProps<string[]>> = {}
+) {
   return render(
-    <AsyncBoundary state={state} what="your appointments" {...extra}>
+    <AsyncBoundary
+      state={state}
+      loadingKey="portal.appointments.async.loading"
+      errorKey="portal.appointments.async.error"
+      {...extra}
+    >
       {(data: string[]) => <p>{data.join(', ')}</p>}
     </AsyncBoundary>
   );
@@ -60,7 +75,7 @@ describe('AsyncBoundary', () => {
   it('renders the empty node when the caller says the data is empty', () => {
     renderBoundary(
       { status: 'ready', data: [] },
-      { isEmpty: (data: string[]) => data.length === 0, empty: <p>Nothing here.</p> }
+      { isEmpty: (data) => data.length === 0, empty: <p>Nothing here.</p> }
     );
 
     expect(screen.getByText('Nothing here.')).toBeInTheDocument();
@@ -69,10 +84,31 @@ describe('AsyncBoundary', () => {
   it('renders the data when the caller says it is not empty', () => {
     renderBoundary(
       { status: 'ready', data: ['first'] },
-      { isEmpty: (data: string[]) => data.length === 0, empty: <p>Nothing here.</p> }
+      { isEmpty: (data) => data.length === 0, empty: <p>Nothing here.</p> }
     );
 
     expect(screen.getByText('first')).toBeInTheDocument();
     expect(screen.queryByText('Nothing here.')).not.toBeInTheDocument();
+  });
+
+  it('states the whole sentence rather than one it assembled', () => {
+    /*
+     * The failure this replaces: every screen passed a noun phrase such as
+     * "your appointments", which this component dropped into "Loading ..." and
+     * capitalised for the error title. Both are English rules, and neither
+     * survives a language that puts the verb elsewhere or starts a sentence
+     * differently. Nothing here builds a sentence, so there is no frame left to
+     * assert on - only that the two messages arrive whole.
+     */
+    const { unmount } = renderBoundary({ status: 'loading' });
+    expect(screen.getByRole('status')).toHaveTextContent('Loading your appointments.');
+    unmount();
+
+    renderBoundary(
+      { status: 'error', error: new Error('offline') },
+      { errorKey: 'portal.bills.async.error' }
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Your statements did not load.');
   });
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -447,6 +447,88 @@ function commandLintMigrations(argv: readonly string[]): number {
   return argv.includes('--strict') && report.findings.length > 0 ? 1 : 0;
 }
 
+/**
+ * Reads a file an operator named on the command line.
+ *
+ * The path is deliberately unrestricted. A licensed extract lives wherever the
+ * deployment keeps licensed material - very often an absolute path outside the
+ * checkout - so refusing absolute or parent-relative paths would refuse the
+ * ordinary case. Whoever runs this already has a shell on the machine and can
+ * read any of these files without it; the command reads what it is pointed at
+ * and crosses no privilege boundary doing so.
+ *
+ * What it does check is that the path names a regular file. A directory, a
+ * device or a socket otherwise reaches the loader as a read error or, worse, as
+ * content, and "is not a regular file" is the answer the operator can act on.
+ */
+async function readOperatorFile(source: string): Promise<string> {
+  const resolved = path.resolve(source);
+  const info = await stat(resolved).catch(() => null);
+  if (info === null) throw new Error(`no such file: ${resolved}`);
+  if (!info.isFile()) throw new Error(`not a regular file: ${resolved}`);
+  return readFile(resolved, 'utf8');
+}
+
+/** `--flag value` out of an argv, so the command reads the same as the usage line. */
+function flag(argv: readonly string[], name: string): string | undefined {
+  const at = argv.indexOf(`--${name}`);
+  if (at === -1) return undefined;
+  return argv[at + 1];
+}
+
+/**
+ * Verifying a code system before it is loaded.
+ *
+ * The subcommand exists because `terminology` will grow others - listing what a
+ * deployment has loaded, superseding a release - and a flat `verify-terminology`
+ * would strand them.
+ */
+async function commandTerminology(argv: readonly string[]): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub !== 'verify') {
+    out('openrunic-ops terminology verify --manifest <path> --content <path>');
+    out('                                 [--format ndjson|tsv] [--emit <path>]');
+    return sub === undefined || sub === '--help' ? 0 : 1;
+  }
+
+  const manifestPath = flag(rest, 'manifest');
+  const contentPath = flag(rest, 'content');
+  if (manifestPath === undefined || contentPath === undefined) {
+    out('Both --manifest and --content are required.');
+    return 1;
+  }
+
+  // Defaulted rather than required: ndjson is the format the loader emits and
+  // the one a deployer who has not chosen is best served by.
+  /*
+   * Imported here rather than at the top of the file.
+   *
+   * This is the only command that needs `@openrunic/terminology`, and a static
+   * import would make every other one - `lint-migrations` in a lint job,
+   * `restore` in a drill - fail to start until that package is built. An
+   * operational CLI that cannot run its backup command because an unrelated
+   * library is unbuilt is worse than a slightly later import.
+   */
+  const { isCodeSystemFormat, verifyCodeSystem } = await import('./commands/terminology.js');
+
+  const format = flag(rest, 'format') ?? 'ndjson';
+  if (!isCodeSystemFormat(format)) {
+    out(`Unknown format ${format}. Use ndjson or tsv.`);
+    return 1;
+  }
+
+  const report = await verifyCodeSystem({
+    manifestPath,
+    contentPath,
+    format,
+    emitPath: flag(rest, 'emit'),
+    readFile: readOperatorFile,
+  });
+
+  for (const line of report.lines) out(line);
+  return report.ok ? 0 : 1;
+}
+
 const USAGE = `openrunic-ops <command>
 
   doctor                    check prerequisites
@@ -456,6 +538,8 @@ const USAGE = `openrunic-ops <command>
   restore [manifest]        restore a backup  [--into <db>] [--yes]
   upgrade [--apply]         pre-flight; applies only with --apply  [--force]
   lint-migrations           report destructive migration statements  [--annotate] [--strict] [--dir <path>]
+  terminology verify        check a code system load before any row is written
+                            --manifest <path> --content <path> [--format ndjson|tsv] [--emit <path>]
 `;
 
 async function main(): Promise<number> {
@@ -476,6 +560,8 @@ async function main(): Promise<number> {
       return commandUpgrade(argv);
     case 'lint-migrations':
       return commandLintMigrations(argv);
+    case 'terminology':
+      return commandTerminology(argv);
     default:
       out(USAGE);
       return command === undefined || command === '--help' ? 0 : 1;

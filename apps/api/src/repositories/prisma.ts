@@ -3,9 +3,11 @@ import { uuidv7 } from '@openrunic/database';
 import { ApiError } from '../errors.js';
 
 import { createPrismaAuditQuery } from './audit-query.js';
+import { createPrismaOrganisationQuery } from './organisation-query.js';
 import {
   type BaseQuery,
   type ChildBatch,
+  type ChildPatch,
   type Collection,
   type CollectionSpec,
   type Page,
@@ -50,7 +52,8 @@ export function createPrismaRepositoryRegistry(connect: DbPortFactory): Reposito
       return buildRepositories(
         scope,
         (spec) => createPrismaCollection(spec, port, scope),
-        createPrismaAuditQuery(port, scope)
+        createPrismaAuditQuery(port, scope),
+        createPrismaOrganisationQuery(port, scope)
       );
     },
   };
@@ -79,6 +82,14 @@ const TENANT_STAMPED_BY_CLIENT = '';
  * arrives from somewhere other than a route.
  */
 const byId = (id: string): Record<string, unknown> => ({ id: { equals: id } });
+
+/**
+ * The same rule for a set. Deduplicated because the caller's list is theirs and
+ * a repeated id would otherwise widen the `IN` for no reason.
+ */
+const byIds = (ids: readonly string[]): Record<string, unknown> => ({
+  id: { in: [...new Set(ids)] },
+});
 
 export function createPrismaCollection<
   M extends PrismaModelName,
@@ -125,7 +136,7 @@ export function createPrismaCollection<
    * route to refuse and nothing but the narrowing standing between a
    * facility-limited caller and the rest of the tenant.
    */
-  const hideAddressed = scope.hideFacilityRows === true;
+  const hideAddressed = scope.hideFacilityRows === true && spec.facilityHidesAddressed !== false;
 
   const scoped = (
     where: Record<string, unknown> | undefined,
@@ -201,6 +212,19 @@ export function createPrismaCollection<
       return row;
     },
 
+    async findByIds(ids: readonly string[]): Promise<ScopedRow<M>[]> {
+      // Both guards come first and in this order, so a compartment-refused
+      // caller and an empty set each cost no query at all.
+      if (closed) return [];
+      if (ids.length === 0) return [];
+      const records = await delegate.findMany({
+        where: scoped(byIds(ids), hideAddressed),
+      });
+      const rows = records.map((record) => toPlainRow<M>(record) as ScopedRow<M>);
+      rows.forEach(recordRead);
+      return rows;
+    },
+
     create(input: TCreate): Promise<ScopedRow<M>> {
       return port.$transaction(async (tx) => {
         const unique = spec.uniqueBy;
@@ -228,6 +252,9 @@ export function createPrismaCollection<
 
         for (const batch of spec.childRows?.(input, row, context) ?? []) {
           await writeChildren(tx, batch);
+        }
+        for (const patch of spec.childPatches?.(input, row, context) ?? []) {
+          await patchChild(tx, patch);
         }
 
         await audit.write(writeEvent(row, null, Object.keys(columns)), tx);
@@ -276,6 +303,32 @@ async function writeChildren(tx: DbTransaction, batch: ChildBatch): Promise<void
     await tx.model(batch.model).create({
       data: { ...omitNulls(child), tenantId: TENANT_STAMPED_BY_CLIENT },
     } as CreateArgs<PrismaModelName>);
+  }
+}
+
+/**
+ * Amends one row the parent's write depends on, inside its transaction.
+ *
+ * `updateMany` rather than `update`, so a row RLS hides is a count of zero
+ * rather than a Prisma exception about a record that, from this connection's
+ * point of view, does not exist. The zero is then refused here, which rolls the
+ * parent back: a posting whose denormalised column was never updated is exactly
+ * the half-written state this hook exists to prevent, and completing it quietly
+ * would be worse than failing.
+ *
+ * Through {@link byId} rather than the `{ id: patch.id }` shorthand, and the
+ * reason that helper exists matters more here than at any read: this is an
+ * `updateMany`, so an id that reached the layer as an object would have its keys
+ * read as filter operators and amend every row of the model rather than merely
+ * select them.
+ */
+async function patchChild(tx: DbTransaction, patch: ChildPatch): Promise<void> {
+  const result = await tx.model(patch.model).updateMany({
+    where: byId(patch.id),
+    data: patch.data,
+  });
+  if (result.count === 0) {
+    throw new Error(`No ${patch.model} ${patch.id} in this tenant to amend.`);
   }
 }
 

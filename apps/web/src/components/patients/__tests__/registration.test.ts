@@ -1,3 +1,4 @@
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -17,9 +18,22 @@ import { MOCK_NOW, MOCK_PATIENTS } from '@/lib/api';
  * The registration rules. Two things are load-bearing: exactly four fields are
  * required, and a person who is already in the practice cannot be registered
  * again by accident.
+ *
+ * The rules name their messages rather than writing them, so the assertions
+ * about wording go through the catalogue. That is the same sentence the screen
+ * renders, reached the same way the screen reaches it: asserting on the key
+ * alone would let the words behind it rot.
  */
 
 const NOW = new Date(MOCK_NOW);
+
+/** The source locale, which is the language these assertions are written in. */
+const t = createTranslator(appCatalogue, 'en');
+
+/** The message a field's error resolves to, or the empty string when there is none. */
+function messageFor(key: string | undefined): string {
+  return key === undefined ? '' : t(key);
+}
 
 /** The form as the screen presents it: empty, but with an MRN already proposed. */
 const PROPOSED: RegistrationDraft = { ...EMPTY_DRAFT, mrn: proposeMrn(NOW) };
@@ -44,7 +58,9 @@ describe('validateRegistration', () => {
   });
 
   it('asks for a record number only when somebody has cleared the proposal', () => {
-    expect(validateRegistration({ ...draft(), mrn: '   ' }, NOW).mrn).toMatch(/record number/);
+    expect(messageFor(validateRegistration({ ...draft(), mrn: '   ' }, NOW).mrn)).toMatch(
+      /record number/
+    );
     expect(validateRegistration(draft(), NOW).mrn).toBeUndefined();
   });
 
@@ -53,15 +69,15 @@ describe('validateRegistration', () => {
   });
 
   it('rejects a date of birth that is not a date', () => {
-    expect(validateRegistration(draft({ birthDate: '17/02/1991' }), NOW).birthDate).toMatch(
-      /YYYY-MM-DD/
-    );
+    expect(
+      messageFor(validateRegistration(draft({ birthDate: '17/02/1991' }), NOW).birthDate)
+    ).toMatch(/YYYY-MM-DD/);
   });
 
   it('rejects a date of birth in the future and says which part to check', () => {
-    expect(validateRegistration(draft({ birthDate: '2027-01-01' }), NOW).birthDate).toMatch(
-      /future/
-    );
+    expect(
+      messageFor(validateRegistration(draft({ birthDate: '2027-01-01' }), NOW).birthDate)
+    ).toMatch(/future/);
   });
 
   it('rejects an impossible calendar date', () => {
@@ -104,13 +120,41 @@ describe('validateRegistration', () => {
   });
 
   it('asks for an email when the portal invitation needs somewhere to go', () => {
-    expect(validateRegistration(draft({ portalEnabled: true }), NOW).email).toMatch(/Portal/);
+    expect(messageFor(validateRegistration(draft({ portalEnabled: true }), NOW).email)).toMatch(
+      /Portal/
+    );
   });
 
   it('says what to do, not only what is wrong', () => {
-    for (const message of Object.values(validateRegistration(EMPTY_DRAFT, NOW))) {
-      expect(message).toMatch(/^Enter |^Use |^Check /);
+    // Through the catalogue, because that is where the words now live: a check
+    // on the key alone would pass forever while the sentence behind it rotted.
+    for (const key of Object.values(validateRegistration(EMPTY_DRAFT, NOW))) {
+      expect(t(key)).toMatch(/^Enter |^Use |^Check /);
     }
+  });
+
+  it('names a message the catalogue actually has, never a bare key', () => {
+    // An unknown key renders as the key, which is a bug the screen cannot see.
+    for (const key of Object.values(validateRegistration(EMPTY_DRAFT, NOW))) {
+      expect(t(key)).not.toBe(key);
+    }
+  });
+});
+
+describe('validateRegistration, with no clock passed', () => {
+  it('reads the birth date against today rather than needing one supplied', () => {
+    /*
+     * `asOf` defaults to now, and the default is what every caller outside a
+     * test takes: the screen validates as the registrar types. Asserted with a
+     * birth date far enough either side of any real day that the assertion
+     * cannot depend on when it runs - a date in 1990 is past on every day this
+     * will ever execute, and one in 3000 is future on all of them.
+     */
+    expect(validateRegistration(draft({ birthDate: '1990-01-01' })).birthDate).toBeUndefined();
+
+    expect(messageFor(validateRegistration(draft({ birthDate: '3000-01-01' })).birthDate)).toMatch(
+      /future/
+    );
   });
 });
 
@@ -133,7 +177,7 @@ describe('findDuplicates', () => {
       draft({ given: 'Tess', family: 'Patientsson', birthDate: '1987-03-14' }),
       MOCK_PATIENTS
     );
-    expect(matches[0]?.reasons).toContain('Same given name');
+    expect(matches[0]?.reasonKeys.map((key) => t(key))).toContain('Same given name');
   });
 
   it('treats a phone number that already exists as the strongest signal', () => {
@@ -141,7 +185,7 @@ describe('findDuplicates', () => {
       draft({ given: 'Different', family: 'Person', phoneMobile: '5550142118' }),
       MOCK_PATIENTS
     );
-    expect(matches[0]?.reasons).toContain('Same mobile number');
+    expect(matches[0]?.reasonKeys.map((key) => t(key))).toContain('Same mobile number');
     expect(isBlocking(matches)).toBe(true);
   });
 
@@ -163,13 +207,56 @@ describe('findDuplicates', () => {
       draft({ given: 'Testina', family: 'Patientsson', birthDate: '1987-03-14' }),
       MOCK_PATIENTS
     );
-    for (const match of matches) expect(match.reasons.length).toBeGreaterThan(0);
+    expect(matches.length).toBeGreaterThan(0);
+    for (const match of matches) {
+      expect(match.reasonKeys.length).toBeGreaterThan(0);
+      // Words, not keys: an unknown key renders as itself and would read as a
+      // reason on the panel while saying nothing.
+      for (const key of match.reasonKeys) expect(t(key)).not.toBe(key);
+    }
   });
 
   it('caps the candidate list so the panel stays readable', () => {
     expect(
       findDuplicates(draft({ given: 'Testina', family: 'Patientsson' }), MOCK_PATIENTS, 1)
     ).toHaveLength(1);
+  });
+});
+
+describe('findDuplicates, when two candidates score the same', () => {
+  it('orders them by family name rather than by the order the list arrived in', () => {
+    /*
+     * A shared date of birth is worth 3 on its own, which clears the candidate
+     * filter and leaves two candidates tied. Without the name tie-break the
+     * panel keeps whatever order the patient list happened to be in, so the
+     * same draft can list the two the other way round on the next keystroke -
+     * and a registrar comparing two similar records is doing it by reading
+     * position.
+     */
+    const [first, second] = MOCK_PATIENTS;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) return;
+
+    const shared = '1988-04-09';
+    const zeta = {
+      ...first,
+      id: 'zeta',
+      birthDate: shared,
+      name: { ...first.name, family: 'Zima' },
+    };
+    const adia = {
+      ...second,
+      id: 'adia',
+      birthDate: shared,
+      name: { ...second.name, family: 'Abara' },
+    };
+
+    const matches = findDuplicates({ ...EMPTY_DRAFT, birthDate: shared }, [zeta, adia]);
+
+    expect(matches.map((match) => match.patient.name.family)).toEqual(['Abara', 'Zima']);
+    /* Tied, which is what makes the second comparator the one deciding. */
+    expect(new Set(matches.map((match) => match.score)).size).toBe(1);
   });
 });
 
@@ -215,5 +302,43 @@ describe('toPatientCreateBody', () => {
     expect(body.portalEnabled).toBe(true);
     expect(body.languageCode).toBe('en-US');
     expect(body.sensitivityClass).toBe('NORMAL');
+  });
+
+  it('carries every optional field that was actually typed', () => {
+    /*
+     * The absent case was covered and the present case was not, on all but one
+     * of them, which is the half that decides whether a field reaches the API
+     * at all. A field silently dropped here is a phone number the practice
+     * cannot ring back on, and nothing on the screen would say so.
+     */
+    const body = toPatientCreateBody(
+      draft({
+        preferred: ' Vee ',
+        pronouns: ' she/her ',
+        email: ' vee@example.invalid ',
+        line1: ' 14 Rowan Street ',
+        city: ' Birchwood ',
+        state: ' OR ',
+        postalCode: ' 97205 ',
+      })
+    );
+
+    expect(body).toMatchObject({
+      preferredName: 'Vee',
+      pronouns: 'she/her',
+      email: 'vee@example.invalid',
+      line1: '14 Rowan Street',
+      city: 'Birchwood',
+      state: 'OR',
+      postalCode: '97205',
+    });
+  });
+
+  it('drops a phone number that was cleared rather than sending an empty one', () => {
+    /* Whitespace rather than an empty string, because that is what clearing a
+       field by hand leaves behind and it is the case `trim` exists for. */
+    const body = toPatientCreateBody(draft({ phoneMobile: '   ' }));
+
+    expect(Object.keys(body)).not.toContain('phoneMobile');
   });
 });

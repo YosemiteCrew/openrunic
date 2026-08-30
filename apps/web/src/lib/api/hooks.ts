@@ -212,6 +212,17 @@ export function useMutation<TArgs extends readonly unknown[], TResult>(
   return useMemo(() => ({ run, pending, error, reset }), [error, pending, reset, run]);
 }
 
+/*
+ * The single-record hooks resolve their id before describing the request rather
+ * than inside it. Written the other way - `client.patients.get(id ?? '')` - the
+ * fallback sits in a closure that only runs when the query is enabled, and the
+ * query is only enabled when the id is present, so it was a default nothing
+ * could take. Resolving first also lets one value answer both questions, which
+ * is why an empty id is now treated the same as a missing one: a request for
+ * `/patients/` cannot succeed, and the honest answer to being handed no patient
+ * is to make no request however the caller spells it.
+ */
+
 export interface HookOptions {
   /** Injectable for tests and stories. Defaults to the app's `api`. */
   client?: ApiClient;
@@ -232,10 +243,11 @@ export function usePatients(
 
 export function usePatient(id: string | null, options: HookOptions = {}): AsyncState<Patient> {
   const client = options.client ?? api;
+  const resolved = id ?? '';
   return useApiQuery(
     queryKey('patients.get', { id }),
-    (signal) => client.patients.get(id ?? '', signal),
-    { enabled: (options.enabled ?? true) && id !== null }
+    (signal) => client.patients.get(resolved, signal),
+    { enabled: (options.enabled ?? true) && resolved !== '' }
   );
 }
 
@@ -256,9 +268,10 @@ export function useAppointment(
   options: HookOptions = {}
 ): AsyncState<Appointment> {
   const client = options.client ?? api;
+  const resolved = id ?? '';
   return useApiQuery(
     queryKey('appointments.get', { id }),
-    (signal) => client.appointments.get(id ?? '', signal),
-    { enabled: (options.enabled ?? true) && id !== null }
+    (signal) => client.appointments.get(resolved, signal),
+    { enabled: (options.enabled ?? true) && resolved !== '' }
   );
 }

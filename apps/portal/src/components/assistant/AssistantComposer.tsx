@@ -18,6 +18,7 @@
 
 import { useState } from 'react';
 import { Button } from '@openrunic/ui';
+import { useTranslator } from '@/lib/i18n/messages';
 
 /** The API refuses a longer turn. Saying so beats a rejection after the fact. */
 const MAX_QUESTION = 8000;
@@ -29,6 +30,7 @@ export interface AssistantComposerProps {
 }
 
 export function AssistantComposer({ answering, onAsk, onStop }: Readonly<AssistantComposerProps>) {
+  const t = useTranslator();
   const [question, setQuestion] = useState('');
 
   const send = () => {
@@ -40,7 +42,7 @@ export function AssistantComposer({ answering, onAsk, onStop }: Readonly<Assista
   return (
     <div className="portal-compose portal-assistant__compose">
       <label className="portal-field-label" htmlFor="assistant-question">
-        Your question
+        {t('portal.assistant.compose.label')}
       </label>
       <textarea
         className="portal-textarea"
@@ -48,18 +50,18 @@ export function AssistantComposer({ answering, onAsk, onStop }: Readonly<Assista
         maxLength={MAX_QUESTION}
         name="question"
         onChange={(event) => setQuestion(event.target.value)}
-        placeholder="What did the practice write down about my last visit?"
+        placeholder={t('portal.assistant.compose.placeholder')}
         value={question}
       />
 
       <div className="portal-actions">
         {answering ? (
           <Button variant="secondary" iconLeft="square" onClick={onStop}>
-            Stop
+            {t('portal.assistant.compose.stop')}
           </Button>
         ) : null}
         <Button iconLeft="corner-down-left" disabled={question.trim() === ''} onClick={send}>
-          Ask
+          {t('portal.assistant.compose.ask')}
         </Button>
       </div>
     </div>

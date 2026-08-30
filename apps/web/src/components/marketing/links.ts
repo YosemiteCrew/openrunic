@@ -34,7 +34,8 @@ export const OFFSITE = {
 export type PublicRoute = '/' | '/for/hospitals' | '/for/patients' | '/for/developers';
 
 export interface NavItem {
-  readonly label: string;
+  /** Catalogue key for the link's words. Looked up by the masthead, per render. */
+  readonly labelKey: string;
   readonly href: PublicRoute;
 }
 
@@ -44,17 +45,35 @@ export interface NavItem {
  * expect. Home is reached through the lockup rather than a fourth link.
  */
 export const SITE_NAV: readonly NavItem[] = [
-  { label: 'Hospitals', href: '/for/hospitals' },
-  { label: 'Patients', href: '/for/patients' },
-  { label: 'Developers', href: '/for/developers' },
+  { labelKey: 'marketing.nav.hospitals', href: '/for/hospitals' },
+  { labelKey: 'marketing.nav.patients', href: '/for/patients' },
+  { labelKey: 'marketing.nav.developers', href: '/for/developers' },
 ];
 
+/**
+ * One audience, as catalogue keys.
+ *
+ * Keys rather than words because this is a module-scope constant and the
+ * reader's language is not known until a page renders. Named `titleKey`,
+ * `summaryKey` and so on because `catalogue-drift.test.ts` reads
+ * `somethingKey:` out of the source, so a card whose copy is defined nowhere
+ * fails the build instead of rendering three message keys on the home page.
+ *
+ * `pointKeys` is a list of objects rather than a list of strings for the same
+ * reason: a bare array of keys is invisible to that scan.
+ *
+ * `linkKey` is a whole sentence rather than "openrunic for" joined to the
+ * title. The English happens to read as a prefix plus a noun; other languages
+ * do not agree about the order or the article, and a sentence assembled from
+ * pieces cannot be reordered by a translator.
+ */
 export interface Pillar {
-  readonly title: string;
+  readonly titleKey: string;
   readonly href: PublicRoute;
-  readonly summary: string;
+  readonly summaryKey: string;
   /** What this audience actually gets today. Three at most: a card is not a list. */
-  readonly points: readonly string[];
+  readonly pointKeys: readonly { readonly labelKey: string }[];
+  readonly linkKey: string;
 }
 
 /**
@@ -66,37 +85,37 @@ export interface Pillar {
  */
 export const PILLARS: readonly Pillar[] = [
   {
-    title: 'Hospitals and clinics',
+    titleKey: 'marketing.pillar.hospitals.title',
     href: '/for/hospitals',
-    summary:
-      'Run scheduling, charts, orders, results and billing on software your practice controls, on a database you can read.',
-    points: [
-      'A staff application covering the clinical day, from the schedule to the claim',
-      'Postgres you own, with no per-seat licence and no vendor holding the export',
-      'An audit trail the repositories cannot serve a record without writing to',
+    summaryKey: 'marketing.pillar.hospitals.summary',
+    pointKeys: [
+      { labelKey: 'marketing.pillar.hospitals.point1' },
+      { labelKey: 'marketing.pillar.hospitals.point2' },
+      { labelKey: 'marketing.pillar.hospitals.point3' },
     ],
+    linkKey: 'marketing.pillar.hospitals.link',
   },
   {
-    title: 'Patients',
+    titleKey: 'marketing.pillar.patients.title',
     href: '/for/patients',
-    summary:
-      'Your record belongs to you. openrunic keeps it in an open standard so it can travel with you between providers.',
-    points: [
-      'A portal for appointments, results, messages, forms and bills',
-      'FHIR R4 at the boundary, so the record is not locked in a private format',
-      'No interpretation of your results by software, by design',
+    summaryKey: 'marketing.pillar.patients.summary',
+    pointKeys: [
+      { labelKey: 'marketing.pillar.patients.point1' },
+      { labelKey: 'marketing.pillar.patients.point2' },
+      { labelKey: 'marketing.pillar.patients.point3' },
     ],
+    linkKey: 'marketing.pillar.patients.link',
   },
   {
-    title: 'Developers',
+    titleKey: 'marketing.pillar.developers.title',
     href: '/for/developers',
-    summary:
-      'An open platform with a typed monorepo, a generated FHIR conformance statement and no edition holding features back.',
-    points: [
-      'FHIR R4 at the service boundary, advertising only what it can answer',
-      'Typed workspace packages for FHIR mapping, the data model and the UI',
-      'AGPL-3.0-only, no open core, decisions recorded as ADRs in the repository',
+    summaryKey: 'marketing.pillar.developers.summary',
+    pointKeys: [
+      { labelKey: 'marketing.pillar.developers.point1' },
+      { labelKey: 'marketing.pillar.developers.point2' },
+      { labelKey: 'marketing.pillar.developers.point3' },
     ],
+    linkKey: 'marketing.pillar.developers.link',
   },
 ];
 

@@ -1,3 +1,4 @@
+import { en as EN_MESSAGES } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -88,11 +89,11 @@ describe('claimAgeingBands', () => {
     );
 
     expect(bands.map((band) => band.count)).toEqual([2, 2, 2, 1]);
-    expect(bands.map((band) => band.label)).toEqual([
-      '0 to 13 days',
-      '14 to 29 days',
-      '30 to 59 days',
-      '60 days and over',
+    expect(bands.map((band) => band.labelKey)).toEqual([
+      'billing.ageingBand.fresh',
+      'billing.ageingBand.ageing',
+      'billing.ageingBand.late',
+      'billing.ageingBand.stale',
     ]);
   });
 
@@ -128,16 +129,22 @@ describe('lineVariance', () => {
     expect(lineVariance(line(120, 100))).toEqual({
       amount: 20,
       tone: 'neutral',
-      label: 'Overpaid',
+      labelKey: 'billing.variance.overpaid',
     });
   });
 
   it('names an underpayment with the shortfall as a negative', () => {
-    expect(lineVariance(line(80, 100))).toMatchObject({ amount: -20, label: 'Underpaid' });
+    expect(lineVariance(line(80, 100))).toMatchObject({
+      amount: -20,
+      labelKey: 'billing.variance.underpaid',
+    });
   });
 
   it('calls an exact payment matched', () => {
-    expect(lineVariance(line(100, 100))).toMatchObject({ amount: 0, label: 'Matched' });
+    expect(lineVariance(line(100, 100))).toMatchObject({
+      amount: 0,
+      labelKey: 'billing.variance.matched',
+    });
   });
 });
 
@@ -170,11 +177,13 @@ describe('nextDunningStage', () => {
 describe('presentStatus', () => {
   it('gives cancelled and entered-in-error their own words', () => {
     expect(presentStatus('CANCELLED')).toMatchObject({ tone: 'neutral', done: true });
-    expect(presentStatus('ENTERED_IN_ERROR')).toMatchObject({
-      label: 'Entered in error',
-      tone: 'danger',
-      done: true,
-    });
+    // The word is a catalogue key now, and the source catalogue still spells it
+    // out rather than leaving it to be derived from the enum member - which is
+    // what used to render `ENTERED_IN_ERROR` as "Entered in error" only because
+    // two statuses carried a hand-written exception.
+    const presented = presentStatus('ENTERED_IN_ERROR');
+    expect(presented).toMatchObject({ tone: 'danger', done: true });
+    expect(EN_MESSAGES[presented.labelKey]).toBe('Entered in error');
   });
 });
 

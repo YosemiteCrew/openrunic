@@ -1,3 +1,4 @@
+import type { Translator } from '@openrunic/i18n';
 import type { StatusTone } from '@openrunic/ui';
 
 import type {
@@ -28,6 +29,14 @@ import { formatMoney } from '@/lib/format';
  *
  * Every function is pure and takes its "now" explicitly, so a workbench looks
  * identical in a test, a screenshot and a demo.
+ *
+ * Nothing here holds a word a person reads. Where a decision has a name - a
+ * claim's state, an ageing band, what a variance was - the name is a catalogue
+ * key and the screen looks it up. That is what keeps this module pure: a
+ * sentence written here would be written in one language, and this module has
+ * no way of knowing which language the reader is in. The keys are literal maps
+ * rather than templates built from the value, so the drift test can see every
+ * one of them and so can the next person to rename a state.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -100,8 +109,28 @@ export type ScrubSeverity =
 export interface ScrubFinding {
   id: string;
   severity: ScrubSeverity;
-  /** What is wrong and what to change, in the biller register. */
-  message: string;
+  /**
+   * Catalogue key for what is wrong and what to change, in the biller register.
+   *
+   * A key rather than the sentence, because this module is pure and has no
+   * translator: the words belong to whoever is reading the scrub panel, and a
+   * sentence baked in here would be English on a Spanish screen.
+   *
+   * Null on the one finding whose text this module did not write - see
+   * `message` below.
+   */
+  messageKey: string | null;
+  /** Placeholder values for `messageKey`. */
+  messageValues?: Readonly<Record<string, string | number>>;
+  /**
+   * Text that arrived from the API rather than from the catalogue, which today
+   * is the payer's own prior-authorisation warning. It is rendered in the words
+   * it came in: translating a payer's sentence in the interface would put a
+   * second, diverging wording on something the payer will be quoted back.
+   *
+   * Null whenever `messageKey` carries the words, which is every other finding.
+   */
+  message: string | null;
   /** The line the finding is about, so the panel can point at a row. */
   lineId: string | null;
 }
@@ -116,7 +145,16 @@ export interface ScrubFinding {
  * defect in the claim, and the biller may still decide to bill it; it is
  * surfaced where the money is captured so the decision is deliberate.
  */
-export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): ScrubFinding[] {
+export function scrubFeeSheet(
+  // The findings this returns are decided by billing rules, not by language.
+  // The translator is here because one of them quotes an amount, and an amount
+  // is written differently in different languages: the outstanding copay reads
+  // "$38.00" or "38,00 $" depending on who is looking at the fee sheet. The
+  // rules above it do not consult it and must not start to.
+  t: Translator,
+  sheet: FeeSheet,
+  lines: readonly ChargeLine[]
+): ScrubFinding[] {
   const findings: ScrubFinding[] = [];
   const active = lines.filter((line) => !line.deleted);
 
@@ -124,7 +162,8 @@ export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): Sc
     findings.push({
       id: 'no-charges',
       severity: 'BLOCKING',
-      message: 'No charges captured. Add at least one code before marking this visit ready.',
+      messageKey: 'billing.scrub.finding.noCharges',
+      message: null,
       lineId: null,
     });
   }
@@ -134,7 +173,9 @@ export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): Sc
       findings.push({
         id: `unjustified-${line.id}`,
         severity: 'BLOCKING',
-        message: `${line.code} has no diagnosis linked. Link one from the visit diagnoses.`,
+        messageKey: 'billing.scrub.finding.unjustified',
+        messageValues: { code: line.code },
+        message: null,
         lineId: line.id,
       });
     }
@@ -146,7 +187,9 @@ export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): Sc
       findings.push({
         id: `duplicate-${line.id}`,
         severity: 'ADVISORY',
-        message: `${line.code} appears more than once without a modifier. Add 59 or merge the lines.`,
+        messageKey: 'billing.scrub.finding.duplicate',
+        messageValues: { code: line.code },
+        message: null,
         lineId: line.id,
       });
     }
@@ -154,13 +197,15 @@ export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): Sc
   }
 
   if (sheet.copayDue > sheet.copayCollected) {
-    const outstanding = formatMoney(sheet.copayDue - sheet.copayCollected, {
+    const outstanding = formatMoney(t, sheet.copayDue - sheet.copayCollected, {
       currency: sheet.currency,
     });
     findings.push({
       id: 'copay-outstanding',
       severity: 'ADVISORY',
-      message: `Copay of ${outstanding.text} is not collected. Take it at checkout or bill it to the patient.`,
+      messageKey: 'billing.scrub.finding.copay',
+      messageValues: { amount: outstanding.text },
+      message: null,
       lineId: null,
     });
   }
@@ -169,6 +214,8 @@ export function scrubFeeSheet(sheet: FeeSheet, lines: readonly ChargeLine[]): Sc
     findings.push({
       id: 'auth',
       severity: 'ADVISORY',
+      // The payer's own wording, so it is passed through rather than keyed.
+      messageKey: null,
       message: sheet.authWarning,
       lineId: null,
     });
@@ -200,14 +247,22 @@ export const CLAIM_STATUS_TONE: Record<ClaimStatus, StatusTone> = {
   REBILLED: 'neutral',
 };
 
-export const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
-  CAPTURED: 'Captured',
-  SCRUBBED: 'Scrubbed',
-  SUBMITTED: 'Submitted',
-  ACKNOWLEDGED: 'Acknowledged',
-  PAID: 'Paid',
-  DENIED: 'Denied',
-  REBILLED: 'Rebilled',
+/**
+ * The catalogue key for each state's name.
+ *
+ * A literal map rather than a key built from the status at the call site. A
+ * template such as `billing.claimStatus.${status}` is invisible to the drift
+ * test, which means it is also invisible to whoever has to find it the day a
+ * state is renamed and one screen starts rendering its key.
+ */
+export const CLAIM_STATUS_LABEL_KEYS: Record<ClaimStatus, string> = {
+  CAPTURED: 'billing.claimStatus.captured',
+  SCRUBBED: 'billing.claimStatus.scrubbed',
+  SUBMITTED: 'billing.claimStatus.submitted',
+  ACKNOWLEDGED: 'billing.claimStatus.acknowledged',
+  PAID: 'billing.claimStatus.paid',
+  DENIED: 'billing.claimStatus.denied',
+  REBILLED: 'billing.claimStatus.rebilled',
 };
 
 /** Whole days the claim has sat in its current state. */
@@ -221,8 +276,11 @@ export function claimAgeDays(claim: Claim, now: string | Date): number {
 export interface AgeingState {
   days: number;
   tone: StatusTone;
-  /** Always rendered beside the number: age is never a colour on its own. */
-  label: string;
+  /**
+   * Catalogue key for the word beside the number. Always rendered: age is never
+   * a colour on its own.
+   */
+  labelKey: string;
 }
 
 /**
@@ -231,10 +289,10 @@ export interface AgeingState {
  * is late, sixty days is money at risk.
  */
 export function ageingState(days: number): AgeingState {
-  if (days >= 60) return { days, tone: 'danger', label: 'Over 60 days' };
-  if (days >= 30) return { days, tone: 'danger', label: 'Over 30 days' };
-  if (days >= 14) return { days, tone: 'neutral', label: 'Ageing' };
-  return { days, tone: 'success', label: 'On track' };
+  if (days >= 60) return { days, tone: 'danger', labelKey: 'billing.claimAge.over60' };
+  if (days >= 30) return { days, tone: 'danger', labelKey: 'billing.claimAge.over30' };
+  if (days >= 14) return { days, tone: 'neutral', labelKey: 'billing.claimAge.ageing' };
+  return { days, tone: 'success', labelKey: 'billing.claimAge.onTrack' };
 }
 
 export function claimCounts(claims: readonly Claim[]): Record<ClaimStatus, number> {
@@ -253,7 +311,8 @@ export function claimCounts(claims: readonly Claim[]): Record<ClaimStatus, numbe
 
 export interface AgeingBand {
   key: string;
-  label: string;
+  /** Catalogue key for the band's range, as the strip prints it. */
+  labelKey: string;
   count: number;
   amount: number;
   tone: StatusTone;
@@ -273,10 +332,10 @@ function ageingBandIndex(days: number): number {
 /** The strip above the workbench: how much money is sitting where, by age. */
 export function claimAgeingBands(claims: readonly Claim[], now: string | Date): AgeingBand[] {
   const bands: AgeingBand[] = [
-    { key: 'fresh', label: '0 to 13 days', count: 0, amount: 0, tone: 'success' },
-    { key: 'ageing', label: '14 to 29 days', count: 0, amount: 0, tone: 'neutral' },
-    { key: 'late', label: '30 to 59 days', count: 0, amount: 0, tone: 'danger' },
-    { key: 'stale', label: '60 days and over', count: 0, amount: 0, tone: 'danger' },
+    { key: 'fresh', labelKey: 'billing.ageingBand.fresh', count: 0, amount: 0, tone: 'success' },
+    { key: 'ageing', labelKey: 'billing.ageingBand.ageing', count: 0, amount: 0, tone: 'neutral' },
+    { key: 'late', labelKey: 'billing.ageingBand.late', count: 0, amount: 0, tone: 'danger' },
+    { key: 'stale', labelKey: 'billing.ageingBand.stale', count: 0, amount: 0, tone: 'danger' },
   ];
 
   for (const claim of claims) {
@@ -304,10 +363,8 @@ export function claimLifecycle(status: ClaimStatus): ClaimStatus[] {
 
 export interface BulkAction {
   id: string;
-  /** Names the verb and its object, per the voice rules. */
-  label: string;
-  /** What the toast says once it has run. */
-  done: string;
+  /** Catalogue key for the label, which names the verb and its object. */
+  labelKey: string;
   /** The state the selected claims move to. */
   next: ClaimStatus;
 }
@@ -319,22 +376,13 @@ export interface BulkAction {
  */
 export function bulkActionsFor(status: ClaimStatus): BulkAction[] {
   if (status === 'CAPTURED') {
-    return [{ id: 'scrub', label: 'Scrub selected claims', done: 'Scrubbed', next: 'SCRUBBED' }];
+    return [{ id: 'scrub', labelKey: 'billing.bulkAction.scrub', next: 'SCRUBBED' }];
   }
   if (status === 'SCRUBBED') {
-    return [
-      { id: 'submit', label: 'Submit selected claims', done: 'Submitted', next: 'SUBMITTED' },
-    ];
+    return [{ id: 'submit', labelKey: 'billing.bulkAction.submit', next: 'SUBMITTED' }];
   }
   if (status === 'DENIED') {
-    return [
-      {
-        id: 'rebill',
-        label: 'Correct and rebill selected claims',
-        done: 'Rebilled',
-        next: 'REBILLED',
-      },
-    ];
+    return [{ id: 'rebill', labelKey: 'billing.bulkAction.rebill', next: 'REBILLED' }];
   }
   return [];
 }
@@ -352,8 +400,11 @@ export interface Variance {
   /** Paid minus expected, in major units. Negative means underpaid. */
   amount: number;
   tone: StatusTone;
-  /** "Underpaid", "Matched", "Overpaid". Rendered next to the number, always. */
-  label: string;
+  /**
+   * Catalogue key for "Underpaid", "Matched" or "Overpaid". Rendered next to
+   * the number, always.
+   */
+  labelKey: string;
 }
 
 /**
@@ -363,9 +414,9 @@ export interface Variance {
  */
 export function lineVariance(line: RemittanceLine): Variance {
   const amount = line.paid - line.expectedPaid;
-  if (amount === 0) return { amount, tone: 'success', label: 'Matched' };
-  if (amount < 0) return { amount, tone: 'danger', label: 'Underpaid' };
-  return { amount, tone: 'neutral', label: 'Overpaid' };
+  if (amount === 0) return { amount, tone: 'success', labelKey: 'billing.variance.matched' };
+  if (amount < 0) return { amount, tone: 'danger', labelKey: 'billing.variance.underpaid' };
+  return { amount, tone: 'neutral', labelKey: 'billing.variance.overpaid' };
 }
 
 export interface RemittanceSummary {
@@ -398,22 +449,22 @@ export function remittanceSummary(remittance: Remittance): RemittanceSummary {
 /** How an exception was cleared. Each one is an auditable disposition. */
 export type ExceptionResolution = 'ACCEPTED' | 'ADJUSTED' | 'TRANSFERRED' | 'FLAGGED';
 
-export const RESOLUTION_LABELS: Record<ExceptionResolution, string> = {
-  ACCEPTED: 'Accepted as paid',
-  ADJUSTED: 'Adjusted off',
-  TRANSFERRED: 'Transferred to patient',
-  FLAGGED: 'Flagged for appeal',
+export const RESOLUTION_LABEL_KEYS: Record<ExceptionResolution, string> = {
+  ACCEPTED: 'billing.resolution.accepted',
+  ADJUSTED: 'billing.resolution.adjusted',
+  TRANSFERRED: 'billing.resolution.transferred',
+  FLAGGED: 'billing.resolution.flagged',
 };
 
 /* -------------------------------------------------------------------------- */
 /* Statements and AR (BL-07, BL-08)                                            */
 /* -------------------------------------------------------------------------- */
 
-export const BUCKET_LABELS: Record<AgeingBucket, string> = {
-  CURRENT: '0 to 30 days',
-  DAYS_31_60: '31 to 60 days',
-  DAYS_61_90: '61 to 90 days',
-  DAYS_91_PLUS: '91 days and over',
+export const BUCKET_LABEL_KEYS: Record<AgeingBucket, string> = {
+  CURRENT: 'billing.bucket.current',
+  DAYS_31_60: 'billing.bucket.days3160',
+  DAYS_61_90: 'billing.bucket.days6190',
+  DAYS_91_PLUS: 'billing.bucket.days91Plus',
 };
 
 export const BUCKET_ORDER: readonly AgeingBucket[] = [
@@ -427,11 +478,11 @@ export const BUCKET_ORDER: readonly AgeingBucket[] = [
  * The state word beside a bucket's amount. It says the same thing the tone
  * does, in words, so the tint is never the only signal on the AR strip.
  */
-export const BUCKET_STATE_LABELS: Record<AgeingBucket, string> = {
-  CURRENT: 'On track',
-  DAYS_31_60: 'Ageing',
-  DAYS_61_90: 'Chase these',
-  DAYS_91_PLUS: 'Chase these',
+export const BUCKET_STATE_LABEL_KEYS: Record<AgeingBucket, string> = {
+  CURRENT: 'billing.bucketState.onTrack',
+  DAYS_31_60: 'billing.bucketState.ageing',
+  DAYS_61_90: 'billing.bucketState.chase',
+  DAYS_91_PLUS: 'billing.bucketState.chase',
 };
 
 export function bucketTone(bucket: AgeingBucket): StatusTone {
@@ -441,12 +492,12 @@ export function bucketTone(bucket: AgeingBucket): StatusTone {
   return 'success';
 }
 
-export const DUNNING_LABELS: Record<DunningStage, string> = {
-  NONE: 'No statement sent',
-  FIRST_NOTICE: 'First notice',
-  SECOND_NOTICE: 'Second notice',
-  FINAL_NOTICE: 'Final notice',
-  COLLECTIONS: 'With collections',
+export const DUNNING_LABEL_KEYS: Record<DunningStage, string> = {
+  NONE: 'billing.dunning.none',
+  FIRST_NOTICE: 'billing.dunning.firstNotice',
+  SECOND_NOTICE: 'billing.dunning.secondNotice',
+  FINAL_NOTICE: 'billing.dunning.finalNotice',
+  COLLECTIONS: 'billing.dunning.collections',
 };
 
 /** The next stage a statement run would move this account to. */
@@ -615,18 +666,21 @@ export function allocationStateName(state: AllocationState): AllocationStateName
   return 'short';
 }
 
-/** The chip beside the running total. */
-export const ALLOCATION_STATE_LABELS: Record<AllocationStateName, string> = {
-  over: 'Over-allocated',
-  balanced: 'Fully allocated',
-  short: 'Still to allocate',
+/** Catalogue keys for the chip beside the running total. */
+export const ALLOCATION_STATE_LABEL_KEYS: Record<AllocationStateName, string> = {
+  over: 'billing.allocationState.over',
+  balanced: 'billing.allocationState.balanced',
+  short: 'billing.allocationState.short',
 };
 
-/** The line under the Take payment button: why it is disabled, or that it is ready. */
-export const ALLOCATION_HINTS: Record<AllocationStateName, string> = {
-  over: 'More is allocated than is being taken.',
-  balanced: 'Every amount is applied to a visit.',
-  short: 'Allocate the whole payment before taking it.',
+/**
+ * Catalogue keys for the line under the Take payment button: why it is
+ * disabled, or that it is ready.
+ */
+export const ALLOCATION_HINT_KEYS: Record<AllocationStateName, string> = {
+  over: 'billing.allocationHint.over',
+  balanced: 'billing.allocationHint.balanced',
+  short: 'billing.allocationHint.short',
 };
 
 /** Turns a saved payment's allocations back into the rows a receipt renders. */

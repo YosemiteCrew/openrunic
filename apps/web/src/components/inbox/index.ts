@@ -3,7 +3,7 @@
  */
 export { InboxList } from './InboxList';
 export type { InboxListProps } from './InboxList';
-export { INBOX_STREAM_ICON, INBOX_STREAM_LABELS } from './streams';
+export { INBOX_STREAM_ICON, INBOX_STREAM_INLINE_KEYS, INBOX_STREAM_LABEL_KEYS } from './streams';
 export { InboxStreamFilter } from './InboxStreamFilter';
 export type { InboxStreamFilterProps } from './InboxStreamFilter';
 export { slaLabel } from './sla';

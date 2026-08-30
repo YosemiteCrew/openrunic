@@ -18,7 +18,7 @@ describe('FormsScreen', () => {
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Before your thyroid review' })
     ).toBeInTheDocument();
-    expect(screen.getByText('Needed by 1 September 2026')).toBeInTheDocument();
+    expect(screen.getByText('Needed by September 1, 2026')).toBeInTheDocument();
     expect(screen.getByText('Saved, not sent')).toBeInTheDocument();
     expect(screen.getByText('Not started')).toBeInTheDocument();
   });

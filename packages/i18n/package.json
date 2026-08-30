@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/i18n",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Message catalogues for the Openrunic EMR: what a screen says, in the language the person reading it uses.",
   "license": "AGPL-3.0-only",
   "type": "module",

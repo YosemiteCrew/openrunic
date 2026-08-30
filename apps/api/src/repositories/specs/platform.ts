@@ -5,13 +5,14 @@ import type {
 } from '@openrunic/database';
 
 import {
+  type BaseQuery,
+  type CollectionSpec,
   containsFold,
   inWindow,
   jsonColumn,
-  windowFilter,
-  type BaseQuery,
-  type CollectionSpec,
+  likeContains,
   type RowContext,
+  windowFilter,
   type Writable,
 } from '../collection.js';
 import type { Row, ScopedRow } from '../rows.js';
@@ -364,6 +365,13 @@ export const formSubmissionSpec: CollectionSpec<
 export interface UserListQuery extends BaseQuery {
   status?: UserStatus;
   isProvider?: boolean;
+  /**
+   * NUCC provider taxonomy code, matched exactly.
+   *
+   * The FHIR boundary resolves `PractitionerRole?specialty=` through this: the
+   * code lives on the user, and the roles that answer the search hang off it.
+   */
+  taxonomyCode?: string;
   /** Free text over given name, family name and email. */
   q?: string;
   sort: 'familyName' | 'email' | 'createdAt';
@@ -439,6 +447,7 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
   matches(row: ScopedRow<'User'>, query: UserListQuery): boolean {
     if (query.status !== undefined && row.status !== query.status) return false;
     if (query.isProvider !== undefined && row.isProvider !== query.isProvider) return false;
+    if (query.taxonomyCode !== undefined && row.taxonomyCode !== query.taxonomyCode) return false;
     return (
       query.q === undefined || containsFold([row.givenName, row.familyName, row.email], query.q)
     );
@@ -448,13 +457,14 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
     return {
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.isProvider === undefined ? {} : { isProvider: query.isProvider }),
+      ...(query.taxonomyCode === undefined ? {} : { taxonomyCode: query.taxonomyCode }),
       ...(query.q === undefined
         ? {}
         : {
             OR: [
-              { givenName: { contains: query.q, mode: 'insensitive' as const } },
-              { familyName: { contains: query.q, mode: 'insensitive' as const } },
-              { email: { contains: query.q, mode: 'insensitive' as const } },
+              { givenName: likeContains(query.q) },
+              { familyName: likeContains(query.q) },
+              { email: likeContains(query.q) },
             ],
           }),
     };
@@ -564,6 +574,15 @@ export const roleSpec: CollectionSpec<'Role', RoleCreateInput, RoleUpdateInput, 
 
 export interface RoleAssignmentListQuery extends BaseQuery {
   userId?: string;
+  /**
+   * Several users at once, intersected with `userId` when both are given.
+   *
+   * The FHIR boundary sends this: `PractitionerRole?specialty=` names a set of
+   * practitioners rather than one, and the roles wanted are the ones held by
+   * any of them. An empty array is a filter that matches nothing, not an
+   * absent one.
+   */
+  userIds?: readonly string[];
   roleId?: string;
   facilityId?: string;
   sort: 'createdAt';
@@ -584,6 +603,27 @@ export interface RoleAssignmentCreateInput {
  * able to show it as two events rather than as one silent edit.
  */
 export type RoleAssignmentUpdateInput = Record<string, never>;
+
+/**
+ * One user filter from the two ways a caller can ask for one.
+ *
+ * `userId` is the collection's scalar parameter; `userIds` is the set the FHIR
+ * boundary sends when it has resolved a specialty code to its practitioners.
+ * They are resolved here rather than spread side by side because both write the
+ * same `where` key, and the later spread would win at construction while
+ * `matches` went on ANDing both. That divergence is the worst shape a bug can
+ * take here: green tests on the memory port, and a Postgres answer that returns
+ * every practitioner's grants to a client that asked for one practitioner's.
+ *
+ * `undefined` means no user filter. An empty array means one that matches
+ * nothing, which is what an impossible intersection deserves.
+ */
+function roleAssignmentUsers(query: RoleAssignmentListQuery): readonly string[] | undefined {
+  const { userId, userIds } = query;
+  if (userIds === undefined) return userId === undefined ? undefined : [userId];
+  if (userId === undefined) return userIds;
+  return userIds.includes(userId) ? [userId] : [];
+}
 
 export const roleAssignmentSpec: CollectionSpec<
   'RoleAssignment',
@@ -613,14 +653,16 @@ export const roleAssignmentSpec: CollectionSpec<
   },
 
   matches(row: ScopedRow<'RoleAssignment'>, query: RoleAssignmentListQuery): boolean {
-    if (query.userId !== undefined && row.userId !== query.userId) return false;
+    const wanted = roleAssignmentUsers(query);
+    if (wanted !== undefined && !wanted.includes(row.userId)) return false;
     if (query.roleId !== undefined && row.roleId !== query.roleId) return false;
     return query.facilityId === undefined || row.facilityId === query.facilityId;
   },
 
   where(query: RoleAssignmentListQuery) {
+    const wanted = roleAssignmentUsers(query);
     return {
-      ...(query.userId === undefined ? {} : { userId: query.userId }),
+      ...(wanted === undefined ? {} : { userId: { in: [...wanted] } }),
       ...(query.roleId === undefined ? {} : { roleId: query.roleId }),
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
     };
@@ -845,10 +887,7 @@ export const facilitySpec: CollectionSpec<
       ...(query.q === undefined
         ? {}
         : {
-            OR: [
-              { name: { contains: query.q, mode: 'insensitive' as const } },
-              { code: { contains: query.q, mode: 'insensitive' as const } },
-            ],
+            OR: [{ name: likeContains(query.q) }, { code: likeContains(query.q) }],
           }),
     };
   },
@@ -948,9 +987,7 @@ export const terminologyCodeSpec: CollectionSpec<
       ...(query.system === undefined ? {} : { system: query.system }),
       ...(query.code === undefined ? {} : { code: query.code }),
       ...(query.isActive === undefined ? {} : { isActive: query.isActive }),
-      ...(query.q === undefined
-        ? {}
-        : { display: { contains: query.q, mode: 'insensitive' as const } }),
+      ...(query.q === undefined ? {} : { display: likeContains(query.q) }),
     };
   },
 

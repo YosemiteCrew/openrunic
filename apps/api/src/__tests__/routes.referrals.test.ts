@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
+import { REFERRAL_STATUSES } from '@openrunic/database';
+
+import { clinicalSpecs } from '../repositories/specs/clinical.js';
+import type { ScopedRow } from '../repositories/rows.js';
+
+import { matchesWhere } from './fake-port.js';
+
 import {
   bearer,
   createTestApp,
+  FIXED_NOW,
   jsonBearer,
   makePatientRow,
   seed,
@@ -345,6 +353,52 @@ describe('the outstanding tray', () => {
     expect(body.items.map((item) => item.id)).not.toContain(draft.id);
   });
 
+  /**
+   * Both filters at once. They used to write the same `where` key from two
+   * spreads, so the second won at construction and the explicit status vanished
+   * from the Postgres query while `matches` went on ANDing them. That divergence
+   * is invisible to the HTTP suite, which runs on the memory port, so the spec
+   * assertions below check the emitted `where` shape rather than only the answer.
+   */
+  it('narrows the tray by status rather than ignoring one of the two filters', async () => {
+    const { app } = harness();
+
+    const sent = await create(app);
+    await stepOk(app, sent.id, 'send');
+    const accepted = await create(app);
+    await stepOk(app, accepted.id, 'send');
+    await stepOk(app, accepted.id, 'accept');
+
+    const res = await app.request('/bff/v0/referrals?openOnly=true&status=SENT', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const body = (await res.json()) as { items: Referral[]; total: number };
+
+    // Both are open. Only one is SENT, and asking for SENT inside the tray has
+    // to mean both, not whichever filter was applied last.
+    expect(body.items.map((item) => item.id)).toEqual([sent.id]);
+  });
+
+  it('returns nothing for a status that cannot be open, rather than the whole tray', async () => {
+    const { app } = harness();
+
+    const sent = await create(app);
+    await stepOk(app, sent.id, 'send');
+    const declined = await create(app);
+    await stepOk(app, declined.id, 'send');
+    await stepOk(app, declined.id, 'decline', { reason: 'Closed list' });
+
+    const res = await app.request('/bff/v0/referrals?openOnly=true&status=DECLINED', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const body = (await res.json()) as { items: Referral[]; total: number };
+
+    // DECLINED is closed, so the intersection is empty. Before the fix this
+    // returned every open referral from Postgres.
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
   it('lists everything when the flag is not set', async () => {
     const { app } = harness();
     await create(app);
@@ -492,5 +546,106 @@ describe('GET /bff/v0/referrals, and what a malformed query gets', () => {
     });
 
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * The `where` the referral spec emits, asserted as a shape.
+ *
+ * These exist because the HTTP tests above cannot see the bug they guard. The
+ * whole suite runs on the memory port, where `matches` decides, and `matches`
+ * was always right. The defect lived only in the Prisma `where`, where two
+ * spreads wrote one key and the second silently won. So the assertion has to be
+ * about the object handed to Prisma, not about the answer that came back.
+ */
+describe('the referral status filter', () => {
+  const paged = { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' } as const;
+  const open = ['SENT', 'ACCEPTED', 'SCHEDULED', 'SEEN'];
+
+  it('sends the tray through as the set of open statuses', () => {
+    expect(clinicalSpecs.referrals.where({ ...paged, openOnly: true })).toEqual({
+      status: { in: open },
+    });
+  });
+
+  it('sends a bare status through as a set of one', () => {
+    expect(clinicalSpecs.referrals.where({ ...paged, status: 'DECLINED' })).toEqual({
+      status: { in: ['DECLINED'] },
+    });
+  });
+
+  it('meets the tray and the status rather than emitting one of them', () => {
+    expect(clinicalSpecs.referrals.where({ ...paged, openOnly: true, status: 'SENT' })).toEqual({
+      status: { in: ['SENT'] },
+    });
+  });
+
+  it('emits a filter that matches nothing when the status cannot be open', () => {
+    // Before the fix this emitted `{ status: { in: [...open] } }` - the whole
+    // tray, for a caller who asked for the declined ones inside it.
+    expect(clinicalSpecs.referrals.where({ ...paged, openOnly: true, status: 'DECLINED' })).toEqual(
+      { status: { in: [] } }
+    );
+  });
+
+  it('emits a filter that matches nothing for a DRAFT asked for inside the tray', () => {
+    // DRAFT is the status the reproducer on this bug used, and it was the case
+    // furthest from the fix: nothing that is still a draft has been sent, so it
+    // can never be open.
+    expect(clinicalSpecs.referrals.where({ ...paged, openOnly: true, status: 'DRAFT' })).toEqual({
+      status: { in: [] },
+    });
+  });
+
+  it('leaves the clause out when neither is given', () => {
+    expect(clinicalSpecs.referrals.where({ ...paged })).toEqual({});
+  });
+
+  /**
+   * The invariant the fix exists to establish, asserted directly.
+   *
+   * Every test above pins the shape `where` emits, which is necessary but not
+   * sufficient: a shape can be pinned correctly and still disagree with what
+   * `matches` does with the same query, and it is that disagreement - not the
+   * shape - that let the two ports return different rows.
+   *
+   * So this evaluates the emitted `where` against the same row `matches` sees,
+   * using `matchesWhere`, the same Prisma-where interpreter the fake port uses
+   * to answer queries. Every combination of the two parameters against every
+   * referral status: 9 statuses x (9 + 1 status values) x 2 openOnly values.
+   *
+   * `CollectionSpec` says the two must agree (`collection.ts`, on `matches` and
+   * on `where`). Before this, nothing in the repository checked that they did.
+   */
+  it('agrees with matches for every status, in and out of the tray', () => {
+    // Only the columns either side reads for this query. `createdAt` is here
+    // because `matches` ends on the date window, which is open at both ends.
+    const referral = (status: string): ScopedRow<'Referral'> =>
+      ({ status, createdAt: FIXED_NOW }) as unknown as ScopedRow<'Referral'>;
+
+    const disagreements: string[] = [];
+    for (const asked of [...REFERRAL_STATUSES, undefined]) {
+      for (const openOnly of [true, false]) {
+        const query = {
+          ...paged,
+          ...(asked === undefined ? {} : { status: asked }),
+          ...(openOnly ? { openOnly: true } : {}),
+        } as Parameters<typeof clinicalSpecs.referrals.where>[0];
+        const emitted = clinicalSpecs.referrals.where(query);
+
+        for (const rowStatus of REFERRAL_STATUSES) {
+          const row = referral(rowStatus);
+          const memory = clinicalSpecs.referrals.matches(row, query);
+          const prisma = matchesWhere(row as unknown as Record<string, unknown>, emitted);
+          if (memory !== prisma) {
+            disagreements.push(
+              `status=${asked ?? 'any'} openOnly=${openOnly} row=${rowStatus}: memory=${memory} prisma=${prisma}`
+            );
+          }
+        }
+      }
+    }
+
+    expect(disagreements).toEqual([]);
   });
 });

@@ -35,6 +35,7 @@ import {
   seed,
   storageColumns,
   DEMO_FACILITY_A,
+  DEMO_FACILITY_B,
   DEMO_TENANT_A,
   FIXED_NOW,
   TOKENS,
@@ -1831,6 +1832,92 @@ async function auditedApp(): Promise<TestApp> {
   return harness;
 }
 
+describe('the audit log and the caller\u2019s facilities', () => {
+  /**
+   * An auditor confined to one site should read that site's log, and not the
+   * organisation's. The events themselves carry `facilityId` - where the act
+   * happened - so this is a containment boundary rather than an attribution,
+   * and narrowing on it is the same rule every row repository already applies.
+   */
+  function seedSitedEvents(store: AuditChainStore): void {
+    const base = {
+      actorType: 'user' as const,
+      actorId: testId(900),
+      actorDisplay: 'Adaeze Okafor',
+      action: 'PATIENT_READ',
+      targetType: 'Patient',
+      purposeOfUse: 'TREAT',
+      outcome: 'success' as const,
+      metadata: {},
+    };
+    store.append(
+      DEMO_TENANT_A,
+      { ...base, targetId: testId(1), facilityId: DEMO_FACILITY_A },
+      FIXED_NOW
+    );
+    store.append(
+      DEMO_TENANT_A,
+      { ...base, targetId: testId(2), facilityId: DEMO_FACILITY_B },
+      FIXED_NOW
+    );
+    // No facility at all: an act that was not sited. It has to stay visible,
+    // for the same reason a null facility stays visible on every other table -
+    // hiding it would empty the page of exactly the organisation-wide events an
+    // auditor most needs to see.
+    store.append(DEMO_TENANT_A, { ...base, targetId: testId(3) }, FIXED_NOW);
+  }
+
+  it('shows a site-confined auditor their own site and the unsited events', async () => {
+    const { app, auditStore } = createTestApp();
+    seedSitedEvents(auditStore);
+
+    const page = await body<ListResponse<AuditEventDto>>(
+      await get(app, '/bff/v0/audit?pageSize=50', TOKENS.siteReaderA)
+    );
+
+    const targets = page.data.map((event) => event.targetId);
+    expect(targets).toContain(testId(1));
+    expect(targets).toContain(testId(3));
+    // The other site's event is the one that must not be there. `read-only`
+    // holds audit.read and not facility.all, so before this narrowing a site
+    // auditor read the whole organisation's log.
+    expect(targets).not.toContain(testId(2));
+  });
+
+  it('shows an organisation-wide auditor everything', async () => {
+    const { app, auditStore } = createTestApp();
+    seedSitedEvents(auditStore);
+
+    const page = await body<ListResponse<AuditEventDto>>(
+      await get(app, '/bff/v0/audit?pageSize=50')
+    );
+
+    // The narrowing is a floor for callers who lack facility.all, not a new
+    // restriction on the ones who hold it. Without this, a clause that matched
+    // nothing would satisfy the assertion above.
+    const targets = page.data.map((event) => event.targetId);
+    expect(targets).toContain(testId(1));
+    expect(targets).toContain(testId(2));
+  });
+
+  it('hides another site\u2019s event from a by-id read as well as from the list', async () => {
+    const { app, auditStore } = createTestApp();
+    seedSitedEvents(auditStore);
+    const all = await body<ListResponse<AuditEventDto>>(
+      await get(app, '/bff/v0/audit?pageSize=50')
+    );
+    const other = all.data.find((event) => event.targetId === testId(2));
+    expect(other, 'the facility-B event should exist for an admin').toBeDefined();
+
+    const res = await get(app, `/bff/v0/audit/${other?.id ?? ''}`, TOKENS.siteReaderA);
+
+    // 404 rather than 403: a distinguishable refusal would confirm the event
+    // exists, which on an audit log tells the caller an act happened at a site
+    // they cannot see.
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /bff/v0/audit', () => {
   it('returns the events this process wrote, newest first', async () => {
     const { app } = await auditedApp();
@@ -2111,7 +2198,7 @@ describe('every filter has a matching Prisma projection', () => {
         roleId: ROLE_ID,
         facilityId: DEMO_FACILITY_A,
       })
-    ).toEqual({ userId: USER_ID, roleId: ROLE_ID, facilityId: DEMO_FACILITY_A });
+    ).toEqual({ userId: { in: [USER_ID] }, roleId: ROLE_ID, facilityId: DEMO_FACILITY_A });
     expect(roleAssignmentSpec.where({ ...base, sort: 'createdAt' })).toEqual({});
     expect(roleAssignmentSpec.orderBy({ ...base, sort: 'createdAt' })).toEqual([
       { createdAt: 'asc' },
@@ -2234,5 +2321,56 @@ describe('the published contracts', () => {
     // would let an actor forge their own alibi.
     const { app } = createTestApp();
     expect((await send(app, 'POST', '/bff/v0/audit', {})).status).toBe(404);
+  });
+});
+
+/**
+ * The two ways a caller can ask for a role assignment's user, and what happens
+ * when both arrive.
+ *
+ * `userId` is the collection's scalar parameter. `userIds` is the set the FHIR
+ * boundary sends once it has resolved `PractitionerRole?specialty=` to its
+ * practitioners. Both write the same `where` key, so these assert the emitted
+ * shape and not only the in-memory answer: two spreads onto one key diverge
+ * exactly where the memory port cannot see it, which is a green suite and a
+ * Postgres query that returns every practitioner's grants to a client that
+ * asked for one practitioner's.
+ */
+describe('the role assignment user filter', () => {
+  const paged = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+  const other = testId(902);
+  const assignment = (userId: string): ScopedRow<'RoleAssignment'> => ({
+    ...makeRoleAssignmentRow(),
+    userId,
+  });
+
+  it('sends a set through as a set', () => {
+    const query = { ...paged, userIds: [USER_ID, other] } as const;
+
+    expect(roleAssignmentSpec.where(query)).toEqual({ userId: { in: [USER_ID, other] } });
+    expect(roleAssignmentSpec.matches(assignment(other), query)).toBe(true);
+    expect(roleAssignmentSpec.matches(assignment(testId(903)), query)).toBe(false);
+  });
+
+  it('intersects the two rather than letting one overwrite the other', () => {
+    const query = { ...paged, userId: USER_ID, userIds: [USER_ID, other] } as const;
+
+    expect(roleAssignmentSpec.where(query)).toEqual({ userId: { in: [USER_ID] } });
+    expect(roleAssignmentSpec.matches(assignment(USER_ID), query)).toBe(true);
+    // The row the scalar excludes. Were `userIds` to win, this would be true.
+    expect(roleAssignmentSpec.matches(assignment(other), query)).toBe(false);
+  });
+
+  it('matches nothing when the two cannot both hold', () => {
+    const query = { ...paged, userId: testId(903), userIds: [USER_ID, other] } as const;
+
+    expect(roleAssignmentSpec.where(query)).toEqual({ userId: { in: [] } });
+    expect(roleAssignmentSpec.matches(assignment(USER_ID), query)).toBe(false);
+    expect(roleAssignmentSpec.matches(assignment(testId(903)), query)).toBe(false);
+  });
+
+  it('leaves the clause out when neither is given', () => {
+    expect(roleAssignmentSpec.where({ ...paged })).toEqual({});
+    expect(roleAssignmentSpec.matches(assignment(USER_ID), { ...paged })).toBe(true);
   });
 });

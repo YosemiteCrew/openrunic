@@ -8,6 +8,13 @@ import { explain } from '@/components/state/explain';
 import { LoadingState } from '@/components/state/LoadingState';
 import { ApiError } from '@/lib/api/client';
 import type { AsyncState } from '@/lib/api/hooks';
+import { appCatalogue } from '@openrunic/i18n';
+
+/* The real catalogue in the source language. `explain` returns keys now, so an
+   assertion on the words a clinician reads has to go through the catalogue -
+   asserting on the key alone would pass against a key that resolves to
+   nothing, which is the failure the drift test exists for. */
+const EN = appCatalogue.messages['en'] ?? {};
 
 function state<T>(partial: Partial<AsyncState<T>> & Pick<AsyncState<T>, 'status'>): AsyncState<T> {
   return { data: null, error: null, refetch: vi.fn(), ...partial };
@@ -43,23 +50,29 @@ describe('LoadingState', () => {
 
 describe('explain', () => {
   it('separates a partner outage from our own failure', () => {
-    const network = explain('the schedule', new ApiError('down', { kind: 'network' }));
-    expect(network.title).toBe('No connection to the server');
+    const network = explain(new ApiError('down', { kind: 'network' }));
+    expect(EN[network.titleKey]).toBe('No connection to the server');
     expect(network.retryable).toBe(true);
   });
 
   it('does not offer a retry for a permission failure', () => {
-    expect(explain('billing', problemError(403)).retryable).toBe(false);
+    expect(explain(problemError(403)).retryable).toBe(false);
   });
 
   it('names an unbuilt aggregate honestly', () => {
-    expect(explain('orders', problemError(501)).title).toBe('Not built yet');
+    expect(EN[explain(problemError(501)).titleKey]).toBe('Not built yet');
   });
 
   it('always says what to do next', () => {
     for (const status of [401, 403, 404, 500, 501]) {
-      expect(explain('this', problemError(status)).message.length).toBeGreaterThan(0);
+      expect(EN[explain(problemError(status)).messageKey]?.length ?? 0).toBeGreaterThan(0);
     }
+  });
+
+  /* The server's own sentence is data: it arrives in the problem document and
+     is shown as received, rather than being given a second wording here. */
+  it('carries the detail the server sent rather than restating it', () => {
+    expect(explain(problemError(400)).detail).toBe('The role lacks the permission.');
   });
 });
 

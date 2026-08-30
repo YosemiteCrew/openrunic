@@ -16,7 +16,7 @@ import type {
 } from '../chart/types';
 import { ATTESTATION, contentHash } from '../chart/signature';
 
-import { MOCK_CLINIC_DAY, MOCK_PATIENTS } from './fixtures';
+import { MOCK_CLINIC_DAY, mockPatientIdByMrn } from './fixtures';
 
 /**
  * The chart half of the demo clinic.
@@ -36,10 +36,10 @@ import { MOCK_CLINIC_DAY, MOCK_PATIENTS } from './fixtures';
  */
 
 const PATIENT_IDS = {
-  testina: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100482')?.id ?? '',
-  exampla: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100517')?.id ?? '',
-  demonstra: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100608')?.id ?? '',
-  syntheta: MOCK_PATIENTS.find((patient) => patient.mrn === 'OR-100702')?.id ?? '',
+  testina: mockPatientIdByMrn('OR-100482'),
+  exampla: mockPatientIdByMrn('OR-100517'),
+  demonstra: mockPatientIdByMrn('OR-100608'),
+  syntheta: mockPatientIdByMrn('OR-100702'),
 } as const;
 
 /**

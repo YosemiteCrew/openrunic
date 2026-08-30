@@ -608,6 +608,21 @@ export const MOCK_APPOINTMENTS: readonly Appointment[] = APPOINTMENT_SEEDS.map(t
 );
 
 /** Convenience lookup for screens that render a patient name beside an appointment. */
+/**
+ * The fixture patient with this MRN, or a failure naming the one that is gone.
+ *
+ * The chart fixtures key themselves by patient id and reach it through the MRN,
+ * because an MRN is the part a reader recognises. Answering `''` for an MRN
+ * that no longer exists, which is what `?.id ?? ''` did, keys a chart by the
+ * empty string: every lookup then misses, every patient shows an empty chart,
+ * and the demo looks like a chart bug rather than like a renamed fixture.
+ */
+export function mockPatientIdByMrn(mrn: string): string {
+  const patient = MOCK_PATIENTS.find((candidate) => candidate.mrn === mrn);
+  if (patient === undefined) throw new Error(`no fixture patient carries MRN ${mrn}`);
+  return patient.id;
+}
+
 export function mockPatientById(patientId: string | null): Patient | undefined {
   if (!patientId) return undefined;
   return MOCK_PATIENTS.find((patient) => patient.id === patientId);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +14,6 @@ import { doctor, ensureEnvFile, type Check } from './commands/setup.js';
 import { decideUpgrade, preflight } from './commands/upgrade.js';
 import { copyIntoContainer, restoreInto, rowCounts, type PostgresTarget } from './db/postgres.js';
 import { parseEnvLines } from './env/secrets.js';
-import { isCodeSystemFormat, verifyCodeSystem } from './commands/terminology.js';
 import { lintMigrationDirectory } from './migration-lint/lint.js';
 import { formatAnnotations, formatHuman } from './migration-lint/report.js';
 import { composeStreaming } from './process/compose.js';
@@ -448,6 +447,28 @@ function commandLintMigrations(argv: readonly string[]): number {
   return argv.includes('--strict') && report.findings.length > 0 ? 1 : 0;
 }
 
+/**
+ * Reads a file an operator named on the command line.
+ *
+ * The path is deliberately unrestricted. A licensed extract lives wherever the
+ * deployment keeps licensed material - very often an absolute path outside the
+ * checkout - so refusing absolute or parent-relative paths would refuse the
+ * ordinary case. Whoever runs this already has a shell on the machine and can
+ * read any of these files without it; the command reads what it is pointed at
+ * and crosses no privilege boundary doing so.
+ *
+ * What it does check is that the path names a regular file. A directory, a
+ * device or a socket otherwise reaches the loader as a read error or, worse, as
+ * content, and "is not a regular file" is the answer the operator can act on.
+ */
+async function readOperatorFile(source: string): Promise<string> {
+  const resolved = path.resolve(source);
+  const info = await stat(resolved).catch(() => null);
+  if (info === null) throw new Error(`no such file: ${resolved}`);
+  if (!info.isFile()) throw new Error(`not a regular file: ${resolved}`);
+  return readFile(resolved, 'utf8');
+}
+
 /** `--flag value` out of an argv, so the command reads the same as the usage line. */
 function flag(argv: readonly string[], name: string): string | undefined {
   const at = argv.indexOf(`--${name}`);
@@ -479,6 +500,17 @@ async function commandTerminology(argv: readonly string[]): Promise<number> {
 
   // Defaulted rather than required: ndjson is the format the loader emits and
   // the one a deployer who has not chosen is best served by.
+  /*
+   * Imported here rather than at the top of the file.
+   *
+   * This is the only command that needs `@openrunic/terminology`, and a static
+   * import would make every other one - `lint-migrations` in a lint job,
+   * `restore` in a drill - fail to start until that package is built. An
+   * operational CLI that cannot run its backup command because an unrelated
+   * library is unbuilt is worse than a slightly later import.
+   */
+  const { isCodeSystemFormat, verifyCodeSystem } = await import('./commands/terminology.js');
+
   const format = flag(rest, 'format') ?? 'ndjson';
   if (!isCodeSystemFormat(format)) {
     out(`Unknown format ${format}. Use ndjson or tsv.`);
@@ -490,7 +522,7 @@ async function commandTerminology(argv: readonly string[]): Promise<number> {
     contentPath,
     format,
     emitPath: flag(rest, 'emit'),
-    readFile: (source) => readFile(source, 'utf8'),
+    readFile: readOperatorFile,
   });
 
   for (const line of report.lines) out(line);

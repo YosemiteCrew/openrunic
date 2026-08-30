@@ -58,18 +58,19 @@ describe('keyboard navigation', () => {
      * page under it at the same time.
      */
     expect(event.defaultPrevented, `${key} was not cancelled`).toBe(true);
-  });
-
-  it('moves focus with the selection, not just the selection', () => {
     /*
-     * The roving tabindex is only half of it. If focus stays on the old tab the
-     * next arrow press moves relative to somewhere the reader is not.
+     * Focus, for every key rather than for one of them. The roving tabindex is
+     * only half the behaviour: if focus stays behind, the next press moves
+     * relative to somewhere the reader is not. Asserting it once, on ArrowRight
+     * from the first tab, left a handler that always focused the second tab
+     * indistinguishable from a correct one on the other five.
      */
-    renderTabs('first');
-
-    fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'ArrowRight' });
-
-    expect(screen.getByRole('tab', { name: 'Second' })).toHaveFocus();
+    const target = ITEMS.find((item) => item.id === expected);
+    expect(target, `${expected} is not one of the fixture tabs`).toBeDefined();
+    expect(
+      screen.getByRole('tab', { name: target?.label }),
+      `${key} from ${active} left focus behind`
+    ).toHaveFocus();
   });
 
   it('leaves a key it does not handle uncancelled, not merely unselected', () => {

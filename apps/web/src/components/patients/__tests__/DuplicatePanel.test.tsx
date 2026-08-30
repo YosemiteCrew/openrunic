@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DuplicatePanel } from '@/components/patients/DuplicatePanel';
-import { BLOCKING_SCORE } from '@/components/patients/registration';
+import { EMPTY_DRAFT, findDuplicates, isBlocking } from '@/components/patients/registration';
 import type { DuplicateMatch } from '@/components/patients/registration';
 import { MOCK_PATIENTS } from '@/lib/api';
 
@@ -28,54 +28,62 @@ vi.mock('next/navigation', () => ({
 
 const PATIENT = MOCK_PATIENTS.find((candidate) => candidate.mrn === 'OR-101088');
 
+/**
+ * Every role ARIA defines as a live region, and the attribute form.
+ *
+ * The list is the complete set from the specification rather than the roles
+ * that happened to come to mind: `alert`, `status`, `log`, `marquee` and
+ * `timer` are all announced without focus moving to them.
+ */
+const LIVE_REGION =
+  '[aria-live], [role="alert"], [role="status"], [role="log"], [role="marquee"], [role="timer"]';
+
 /* The two bodies, quoted, because which one a strength carries is the point. */
 const BLOCKING_BODY =
   'Registering a second record splits the history for this person. Open the existing record, or confirm below that this is a different person.';
 const SIMILAR_BODY = 'These records look close. Check them before registering a new one.';
 
 /**
- * A match whose score is the sum of its own reasons.
+ * The matches, produced by `findDuplicates` rather than written by hand.
  *
- * `findDuplicates` builds a score by adding the weight of every signal that
- * held, so a score and a reason list that disagree describe a match production
- * never produces. `sameFamilyName` and `sameGivenName` are 2 each and
- * `sameBirthDate` is 3, and `BLOCKING_SCORE` is 5 - so family name alone is
- * under the threshold and all three together are over it.
+ * Every hand-written fixture in this file's history described a match
+ * production cannot produce: a score that did not equal its own reasons, then
+ * one that sat under the floor `findDuplicates` filters at. Both looked
+ * plausible and neither could reach the panel through the only caller. Asking
+ * production for the match removes the whole class: the weights, the floor and
+ * the blocking threshold are all applied by the code that owns them, so a
+ * change to any of them fails here instead of quietly making this file fiction.
  *
- * `blocking` is derived here for the same reason: the screen computes it from
- * the score, so passing it independently would let a test render a panel that
- * cannot occur.
+ * The two drafts differ only in the birth date, which is what moves the score
+ * across the threshold. `phoneMobile` stays empty in both: a phone match alone
+ * is worth 5 and would block the weaker case.
  */
-const CANDIDATE_FLOOR = 3;
-
-const WEAK_MATCH = {
-  reasonKeys: ['patients.duplicate.sameFamilyName', 'patients.duplicate.sameGivenName'],
-  score: 4,
-} as const;
-
-const STRONG_MATCH = {
-  reasonKeys: [
-    'patients.duplicate.sameFamilyName',
-    'patients.duplicate.sameGivenName',
-    'patients.duplicate.sameBirthDate',
-  ],
-  score: 7,
-} as const;
-
-function matches(blocking: boolean): DuplicateMatch[] {
+function matchesFor(blocking: boolean): DuplicateMatch[] {
   if (PATIENT === undefined) throw new Error('fixture patient OR-101088 is missing');
-  const shape = blocking ? STRONG_MATCH : WEAK_MATCH;
-  /* The fixture is only honest if its own score decides the flag, and only
-     reachable if the score clears the candidate floor. */
-  expect(shape.score >= BLOCKING_SCORE).toBe(blocking);
-  expect(shape.score).toBeGreaterThanOrEqual(CANDIDATE_FLOOR);
-  return [{ patient: PATIENT, score: shape.score, reasonKeys: [...shape.reasonKeys] }];
+
+  const found = findDuplicates(
+    {
+      ...EMPTY_DRAFT,
+      family: PATIENT.name.family,
+      given: PATIENT.name.given,
+      birthDate: blocking ? PATIENT.birthDate : '',
+    },
+    [PATIENT]
+  );
+
+  /* Reachability and strength, both answered by production rather than by a
+     constant copied out of it. An empty result means the draft no longer
+     clears the candidate filter, so the panel could never receive it. */
+  expect(found).toHaveLength(1);
+  expect(isBlocking(found)).toBe(blocking);
+
+  return found;
 }
 
 function renderPanel(blocking: boolean) {
   return render(
     <DuplicatePanel
-      matches={matches(blocking)}
+      matches={matchesFor(blocking)}
       blocking={blocking}
       overridden={false}
       onOverrideChange={vi.fn()}
@@ -134,15 +142,17 @@ describe('a weaker match', () => {
      * meaning anything.
      */
     /*
-     * Asserted as "carries no role at all" rather than as a list of roles to
-     * exclude. `status`, `log`, `marquee` and `timer` all have implicit live
-     * region semantics, and an exclusion list is one role behind whoever adds
-     * the next one.
+     * Checked across the whole rendered panel, not only the paragraph. The
+     * announcement is what a reader hears, and it is heard the same whether the
+     * live region is the paragraph, the card around it, or the list inside it.
      */
+    expect(container.querySelectorAll(LIVE_REGION)).toHaveLength(0);
+
+    /* The paragraph itself carries no role at all, which is stricter than the
+       sweep above and pins the element the message actually lives in. */
     const paragraph = container.querySelector('p.or-body');
     expect(paragraph).not.toBeNull();
     expect(paragraph?.getAttribute('role')).toBeNull();
-    expect(paragraph?.getAttribute('aria-live')).toBeNull();
   });
 
   it('carries the softer title and body, not the blocking pair', () => {

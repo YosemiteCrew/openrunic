@@ -259,6 +259,14 @@ function expiryCell(document: ChartDocument, today: string | null, t: Translator
   // No clinic day means nothing to measure the expiry against, so the date is
   // rendered plainly rather than badged as though it had been checked and found
   // safe. An unchecked date that looks checked is the failure worth avoiding.
+  //
+  // Deleting this line happens to produce the same output today, because the
+  // arithmetic below would then run against an invalid date and every
+  // comparison with NaN is false, so it falls through to the same plain date.
+  // That agreement is an accident of which way round the comparisons are
+  // written: inverting one of them - returning the date early and badging on
+  // the fall-through - would start badging an expiry nothing checked. The
+  // guard is what makes the answer intentional rather than lucky.
   if (today === null) return formatDate(t, document.expiresOn);
 
   const days = Math.floor(

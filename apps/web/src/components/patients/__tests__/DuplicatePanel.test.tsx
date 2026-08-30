@@ -34,30 +34,42 @@ const BLOCKING_BODY =
 const SIMILAR_BODY = 'These records look close. Check them before registering a new one.';
 
 /**
- * A match at a score the caller would actually pass this `blocking` value for.
+ * A match whose score is the sum of its own reasons.
  *
- * `RegisterPatientScreen` derives `blocking` by comparing the score against
- * `BLOCKING_SCORE`, so a high-scoring match rendered with `blocking={false}` is
- * a state production never produces. Deriving the score from the flag keeps the
- * fixture honest.
+ * `findDuplicates` builds a score by adding the weight of every signal that
+ * held, so a score and a reason list that disagree describe a match production
+ * never produces. `sameFamilyName` and `sameGivenName` are 2 each and
+ * `sameBirthDate` is 3, and `BLOCKING_SCORE` is 5 - so family name alone is
+ * under the threshold and all three together are over it.
  *
- * The reason key is a real one from `registration.ts`. `reasonKeys` is rendered
- * through the translator, so an invented key renders as the key itself and the
- * panel under test would be showing something no reader ever sees.
+ * `blocking` is derived here for the same reason: the screen computes it from
+ * the score, so passing it independently would let a test render a panel that
+ * cannot occur.
  */
+const WEAK_MATCH = {
+  reasonKeys: ['patients.duplicate.sameFamilyName'],
+  score: 2,
+} as const;
+
+const STRONG_MATCH = {
+  reasonKeys: [
+    'patients.duplicate.sameFamilyName',
+    'patients.duplicate.sameGivenName',
+    'patients.duplicate.sameBirthDate',
+  ],
+  score: 7,
+} as const;
+
 function matches(blocking: boolean): DuplicateMatch[] {
   if (PATIENT === undefined) throw new Error('fixture patient OR-101088 is missing');
-  return [
-    {
-      patient: PATIENT,
-      score: blocking ? BLOCKING_SCORE + 1 : BLOCKING_SCORE - 1,
-      reasonKeys: ['patients.duplicate.sameFamilyName'],
-    },
-  ];
+  const shape = blocking ? STRONG_MATCH : WEAK_MATCH;
+  /* The fixture is only honest if its own score decides the flag. */
+  expect(shape.score >= BLOCKING_SCORE).toBe(blocking);
+  return [{ patient: PATIENT, score: shape.score, reasonKeys: [...shape.reasonKeys] }];
 }
 
 function renderPanel(blocking: boolean) {
-  render(
+  return render(
     <DuplicatePanel
       matches={matches(blocking)}
       blocking={blocking}
@@ -108,9 +120,17 @@ describe('a weaker match', () => {
      * one of them is how the announcement stops meaning anything by the time a
      * blocking match arrives.
      */
-    renderPanel(false);
+    const { container } = renderPanel(false);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    /*
+     * `role="alert"` is not the only way to announce. `role="status"` or an
+     * `aria-live` attribute would announce every similar-name hit while the
+     * registrar is still typing, which is what makes the blocking one stop
+     * meaning anything.
+     */
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-live]')).toBeNull();
   });
 
   it('carries the softer title and body, not the blocking pair', () => {

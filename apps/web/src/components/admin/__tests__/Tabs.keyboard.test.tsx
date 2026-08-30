@@ -46,9 +46,18 @@ describe('keyboard navigation', () => {
      */
     const { onChange } = renderTabs(active);
 
-    fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key });
+    const tab = screen.getByRole('tab', { selected: true });
+    const event = createEvent.keyDown(tab, { key });
+    fireEvent(tab, event);
 
     expect(onChange).toHaveBeenCalledWith(expected);
+    /*
+     * Cancelled, as well as handled. Home and End scroll the document and the
+     * arrows scroll a scrollable ancestor, so a handler that moved the
+     * selection without calling `preventDefault` would move the tab and the
+     * page under it at the same time.
+     */
+    expect(event.defaultPrevented, `${key} was not cancelled`).toBe(true);
   });
 
   it('moves focus with the selection, not just the selection', () => {

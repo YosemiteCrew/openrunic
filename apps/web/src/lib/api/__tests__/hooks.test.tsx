@@ -243,6 +243,70 @@ describe('the remaining read hooks', () => {
     );
   });
 
+  it('fires no request for an id that is empty rather than null', () => {
+    /*
+     * An empty string is what a screen reading a route segment hands over when
+     * the segment is missing. It is not null, so a null check alone lets the
+     * request through, and the request it builds asks the API for the record
+     * with no id at all.
+     */
+    const calls = { patient: 0, appointment: 0 };
+    const client = {
+      mode: 'mock',
+      patients: {
+        list: () => Promise.reject(new Error('unused')),
+        get: () => {
+          calls.patient += 1;
+          return Promise.reject(new Error('the query should not have run'));
+        },
+      },
+      appointments: {
+        list: () => Promise.reject(new Error('unused')),
+        get: () => {
+          calls.appointment += 1;
+          return Promise.reject(new Error('the query should not have run'));
+        },
+      },
+    } as unknown as ApiClient;
+
+    function EmptyIdProbe() {
+      const patient = usePatient('', { client });
+      const appointment = useAppointment('', { client });
+      return <p data-testid="both">{`${patient.status}:${appointment.status}`}</p>;
+    }
+
+    render(<EmptyIdProbe />);
+
+    expect(calls).toEqual({ patient: 0, appointment: 0 });
+    /* Success with nothing, not loading: there is no request to wait for. */
+    expect(screen.getByTestId('both')).toHaveTextContent('success:success');
+  });
+
+  it('reaches the app client when no options are passed at all', async () => {
+    /*
+     * Every caller in the app passes a client, so the documented default was
+     * never taken on any of the four read hooks. It is the shape a story or a
+     * console reaches for, and a bad default would fail only there.
+     */
+    function DefaultProbe() {
+      const patients = usePatients();
+      const appointments = useAppointments();
+      const patient = usePatient(MOCK_PATIENTS[0]?.id ?? null);
+      const appointment = useAppointment(MOCK_APPOINTMENTS[0]?.id ?? null);
+      return (
+        <p data-testid="all">
+          {[patients, appointments, patient, appointment].map((one) => one.status).join(',')}
+        </p>
+      );
+    }
+
+    render(<DefaultProbe />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('all')).toHaveTextContent('success,success,success,success')
+    );
+  });
+
   it('fires no request for an appointment with no id', () => {
     render(<AppointmentProbe id={null} />);
 

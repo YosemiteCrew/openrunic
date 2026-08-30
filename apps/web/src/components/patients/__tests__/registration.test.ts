@@ -141,6 +141,23 @@ describe('validateRegistration', () => {
   });
 });
 
+describe('validateRegistration, with no clock passed', () => {
+  it('reads the birth date against today rather than needing one supplied', () => {
+    /*
+     * `asOf` defaults to now, and the default is what every caller outside a
+     * test takes: the screen validates as the registrar types. Asserted with a
+     * birth date far enough either side of any real day that the assertion
+     * cannot depend on when it runs - a date in 1990 is past on every day this
+     * will ever execute, and one in 3000 is future on all of them.
+     */
+    expect(validateRegistration(draft({ birthDate: '1990-01-01' })).birthDate).toBeUndefined();
+
+    expect(messageFor(validateRegistration(draft({ birthDate: '3000-01-01' })).birthDate)).toMatch(
+      /future/
+    );
+  });
+});
+
 describe('findDuplicates', () => {
   it('finds nothing for a person who is genuinely new', () => {
     expect(findDuplicates(draft(), MOCK_PATIENTS)).toEqual([]);
@@ -206,6 +223,43 @@ describe('findDuplicates', () => {
   });
 });
 
+describe('findDuplicates, when two candidates score the same', () => {
+  it('orders them by family name rather than by the order the list arrived in', () => {
+    /*
+     * A shared date of birth is worth 3 on its own, which clears the candidate
+     * filter and leaves two candidates tied. Without the name tie-break the
+     * panel keeps whatever order the patient list happened to be in, so the
+     * same draft can list the two the other way round on the next keystroke -
+     * and a registrar comparing two similar records is doing it by reading
+     * position.
+     */
+    const [first, second] = MOCK_PATIENTS;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) return;
+
+    const shared = '1988-04-09';
+    const zeta = {
+      ...first,
+      id: 'zeta',
+      birthDate: shared,
+      name: { ...first.name, family: 'Zima' },
+    };
+    const adia = {
+      ...second,
+      id: 'adia',
+      birthDate: shared,
+      name: { ...second.name, family: 'Abara' },
+    };
+
+    const matches = findDuplicates({ ...EMPTY_DRAFT, birthDate: shared }, [zeta, adia]);
+
+    expect(matches.map((match) => match.patient.name.family)).toEqual(['Abara', 'Zima']);
+    /* Tied, which is what makes the second comparator the one deciding. */
+    expect(new Set(matches.map((match) => match.score)).size).toBe(1);
+  });
+});
+
 describe('proposeMrn', () => {
   it('proposes a number in the practice format, stable for the same instant', () => {
     expect(proposeMrn(NOW)).toMatch(/^OR-\d{6}$/);
@@ -248,5 +302,43 @@ describe('toPatientCreateBody', () => {
     expect(body.portalEnabled).toBe(true);
     expect(body.languageCode).toBe('en-US');
     expect(body.sensitivityClass).toBe('NORMAL');
+  });
+
+  it('carries every optional field that was actually typed', () => {
+    /*
+     * The absent case was covered and the present case was not, on all but one
+     * of them, which is the half that decides whether a field reaches the API
+     * at all. A field silently dropped here is a phone number the practice
+     * cannot ring back on, and nothing on the screen would say so.
+     */
+    const body = toPatientCreateBody(
+      draft({
+        preferred: ' Vee ',
+        pronouns: ' she/her ',
+        email: ' vee@example.invalid ',
+        line1: ' 14 Rowan Street ',
+        city: ' Birchwood ',
+        state: ' OR ',
+        postalCode: ' 97205 ',
+      })
+    );
+
+    expect(body).toMatchObject({
+      preferredName: 'Vee',
+      pronouns: 'she/her',
+      email: 'vee@example.invalid',
+      line1: '14 Rowan Street',
+      city: 'Birchwood',
+      state: 'OR',
+      postalCode: '97205',
+    });
+  });
+
+  it('drops a phone number that was cleared rather than sending an empty one', () => {
+    /* Whitespace rather than an empty string, because that is what clearing a
+       field by hand leaves behind and it is the case `trim` exists for. */
+    const body = toPatientCreateBody(draft({ phoneMobile: '   ' }));
+
+    expect(Object.keys(body)).not.toContain('phoneMobile');
   });
 });

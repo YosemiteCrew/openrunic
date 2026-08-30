@@ -46,9 +46,11 @@ const SIMILAR_BODY = 'These records look close. Check them before registering a 
  * the score, so passing it independently would let a test render a panel that
  * cannot occur.
  */
+const CANDIDATE_FLOOR = 3;
+
 const WEAK_MATCH = {
-  reasonKeys: ['patients.duplicate.sameFamilyName'],
-  score: 2,
+  reasonKeys: ['patients.duplicate.sameFamilyName', 'patients.duplicate.sameGivenName'],
+  score: 4,
 } as const;
 
 const STRONG_MATCH = {
@@ -63,8 +65,10 @@ const STRONG_MATCH = {
 function matches(blocking: boolean): DuplicateMatch[] {
   if (PATIENT === undefined) throw new Error('fixture patient OR-101088 is missing');
   const shape = blocking ? STRONG_MATCH : WEAK_MATCH;
-  /* The fixture is only honest if its own score decides the flag. */
+  /* The fixture is only honest if its own score decides the flag, and only
+     reachable if the score clears the candidate floor. */
   expect(shape.score >= BLOCKING_SCORE).toBe(blocking);
+  expect(shape.score).toBeGreaterThanOrEqual(CANDIDATE_FLOOR);
   return [{ patient: PATIENT, score: shape.score, reasonKeys: [...shape.reasonKeys] }];
 }
 
@@ -129,8 +133,16 @@ describe('a weaker match', () => {
      * registrar is still typing, which is what makes the blocking one stop
      * meaning anything.
      */
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(container.querySelector('[aria-live]')).toBeNull();
+    /*
+     * Asserted as "carries no role at all" rather than as a list of roles to
+     * exclude. `status`, `log`, `marquee` and `timer` all have implicit live
+     * region semantics, and an exclusion list is one role behind whoever adds
+     * the next one.
+     */
+    const paragraph = container.querySelector('p.or-body');
+    expect(paragraph).not.toBeNull();
+    expect(paragraph?.getAttribute('role')).toBeNull();
+    expect(paragraph?.getAttribute('aria-live')).toBeNull();
   });
 
   it('carries the softer title and body, not the blocking pair', () => {

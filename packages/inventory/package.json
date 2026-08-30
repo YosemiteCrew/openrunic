@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/inventory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Stock, lots and dispensing for the Openrunic EMR: what is on the shelf, which lot it comes from, and what leaves it.",
   "license": "AGPL-3.0-only",
   "type": "module",

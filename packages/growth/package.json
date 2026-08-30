@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/growth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Growth percentiles for the Openrunic EMR: CDC LMS reference data and z-score computation.",
   "license": "AGPL-3.0-only",
   "type": "module",

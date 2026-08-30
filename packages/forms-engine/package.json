@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/forms-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime for Openrunic's no-code form engine: compile, validate, render, print, promote.",
   "license": "AGPL-3.0-only",
   "type": "module",

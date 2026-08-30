@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/agent-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The openrunic agent tool registry. Every tool calls the HTTP API with the end user's own credentials; nothing here touches the database.",
   "license": "AGPL-3.0-only",
   "type": "module",

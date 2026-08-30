@@ -28,7 +28,7 @@ export const marketing: Messages = {
   'marketing.nav.developers': 'Developers',
 
   'marketing.footer.note':
-    'An open-source operating system for human health, built by Yosemite Crew. Pre-alpha: there are no releases yet.',
+    'An open-source operating system for human health, built by Yosemite Crew. Early: released, and not finished.',
   'marketing.footer.project': 'Project',
   'marketing.footer.documentation': 'Documentation',
   'marketing.footer.architecture': 'Architecture',
@@ -103,7 +103,7 @@ export const marketing: Messages = {
     'The first product is a modern, lightweight electronic medical record: registration, scheduling, encounters, orders, results and the revenue cycle, with FHIR R4 at the API boundary and an audit trail that was the first model in the schema.',
   'marketing.home.statusLabel': 'Where the project is',
   'marketing.home.statusBody':
-    'Pre-alpha. There are no releases and no published container images, APIs and schemas change without notice, and no part of this is ready for a live practice. Do not put real patient data into it.',
+    'Early. The version number still starts with a zero, which means APIs, schemas and package boundaries change without notice, and no part of this is ready for a live practice. Do not put real patient data into it.',
 
   'marketing.home.audiences.title': 'Three audiences',
   'marketing.home.audiences.lead':
@@ -153,7 +153,7 @@ export const marketing: Messages = {
   'marketing.hospitals.selfHosting': 'How self-hosting will work',
   'marketing.hospitals.statusLabel': 'What you can run today',
   'marketing.hospitals.statusBody':
-    'Not a clinic, honestly. There are no releases, no published container images and no install documentation; self-host packaging is being built and is not finished. What exists is source you can read, and a development server that runs the whole staff application against deterministic synthetic fixtures without a database.',
+    'Not a clinic, honestly. There are releases and there is an install guide, and the container images are built but not yet readable without an account, so self-hosting means building them yourself. What exists is source you can read, and a development server that runs the whole staff application against deterministic synthetic fixtures without a database.',
   'marketing.hospitals.coverage.title': 'What the application covers',
   'marketing.hospitals.coverage.lead':
     'Five areas, all of them screens in the repository today rather than roadmap items.',
@@ -197,7 +197,7 @@ export const marketing: Messages = {
   'marketing.patients.howThePortalWorks': 'How the portal works',
   'marketing.patients.statusLabel': 'What this means today',
   'marketing.patients.statusBody':
-    'There is nothing here to sign up for. openrunic is pre-alpha software with no releases, and whether you ever use it depends on a practice choosing to run it. This page describes how the project is built, not a service you can join.',
+    'There is nothing here to sign up for. openrunic is early software, and whether you ever use it depends on a practice choosing to run it. This page describes how the project is built, not a service you can join.',
   'marketing.patients.portal.title': 'What the portal shows',
   'marketing.patients.portal.lead':
     'Three things, on six screens, all of them in the repository today.',
@@ -237,7 +237,7 @@ export const marketing: Messages = {
   'marketing.developers.apiDesign': 'API design',
   'marketing.developers.statusLabel': 'Stability',
   'marketing.developers.statusBody':
-    'Pre-alpha, and the version numbers say so. Nothing is published to a registry, there are no releases, and APIs, schemas and package boundaries change without notice. Build against it to learn from it or to contribute, not to ship on it.',
+    'Early, and the version numbers say so. Nothing is published to a package registry, and APIs, schemas and package boundaries change without notice. Build against it to learn from it or to contribute, not to ship on it.',
   'marketing.developers.boundary.title': 'The service boundary',
   'marketing.developers.boundary.lead':
     'What another system has to talk to, and the rules it holds itself to.',

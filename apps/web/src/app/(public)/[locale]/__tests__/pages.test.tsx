@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import type { Metadata } from 'next';
+import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it, vi } from 'vitest';
 
 import PublicLayout, { generateMetadata, generateStaticParams } from '../layout';
@@ -34,6 +35,8 @@ vi.mock('next/link', () => ({
 const PAGES = [
   {
     route: '/',
+    /* The key this page's status note is written from. */
+    statusKey: 'marketing.home.statusBody',
     Page: HomePage,
     metadata: homeMetadata,
     heading: 'Open-source operating system for human health',
@@ -42,6 +45,8 @@ const PAGES = [
   },
   {
     route: '/for/hospitals',
+    /* The key this page's status note is written from. */
+    statusKey: 'marketing.hospitals.statusBody',
     Page: HospitalsPage,
     metadata: hospitalsMetadata,
     heading: 'Run the clinical day on software you control',
@@ -49,6 +54,8 @@ const PAGES = [
   },
   {
     route: '/for/patients',
+    /* The key this page's status note is written from. */
+    statusKey: 'marketing.patients.statusBody',
     Page: PatientsPage,
     metadata: patientsMetadata,
     heading: 'Your record, in a format that can leave',
@@ -56,6 +63,8 @@ const PAGES = [
   },
   {
     route: '/for/developers',
+    /* The key this page's status note is written from. */
+    statusKey: 'marketing.developers.statusBody',
     Page: DevelopersPage,
     metadata: developersMetadata,
     heading: 'An open platform with the boundary written down',
@@ -146,7 +155,7 @@ async function renderPage(
   render(await Page({ params: Promise.resolve({ locale: 'en' }) }));
 }
 
-describe.each(PAGES)('$route', ({ Page, metadata, heading, current }) => {
+describe.each(PAGES)('$route', ({ Page, metadata, heading, current, statusKey }) => {
   it('has exactly one h1, and it states what the page is', async () => {
     await renderPage(Page);
 
@@ -207,9 +216,20 @@ describe.each(PAGES)('$route', ({ Page, metadata, heading, current }) => {
   });
 
   it('states where the project actually is before it states anything else', async () => {
+    /*
+     * Asserted through the catalogue rather than against a phrase. The rule is
+     * that every public page carries the project's own present tense beside its
+     * claims, and the wording of that sentence changes as the project does -
+     * it said "pre-alpha, no releases" until there were releases. A regex over
+     * the old words fails on an honest update and passes on a dishonest one,
+     * so what is pinned here is that the note is present and is the status
+     * message for this page, reached the way the page reaches it.
+     */
     await renderPage(Page);
 
-    expect(screen.getByRole('complementary')).toHaveTextContent(/pre-alpha|no releases/i);
+    expect(screen.getByRole('complementary')).toHaveTextContent(
+      createTranslator(appCatalogue, 'en')(statusKey)
+    );
   });
 });
 

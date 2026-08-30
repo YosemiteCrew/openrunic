@@ -4,12 +4,17 @@ import { contentHash } from '@/lib/api/chart/signature';
 import type { NoteSection } from '@/lib/api/chart';
 
 /**
- * The fingerprint a signed note carries.
+ * A display fingerprint of the note text a caller is holding.
  *
- * Its job is to change when the note changes and not otherwise, so that a
- * signature stops matching text that was edited after it was signed. The
- * property worth pinning is the one the implementation went out of its way to
- * get right: iteration by code point rather than by code unit.
+ * It is emphatically NOT tamper evidence, and the module says so at length:
+ * nothing on the wire is compared against it, `noteDtoSchema` carries no hash
+ * field, and the API never states what the text was when a signature was taken.
+ * An earlier version of this file described it as making a signature stop
+ * matching edited text, which is precisely the claim the source forbids.
+ *
+ * What it actually does is tell two versions of the same note apart within a
+ * session, deterministically, so a signed fixture reads the same every run.
+ * Those are the properties tested here.
  */
 
 function sections(...pairs: readonly (readonly [string, string])[]): NoteSection[] {
@@ -42,20 +47,20 @@ describe('contentHash', () => {
     expect(after).not.toBe(before);
   });
 
-  it('counts a character outside the basic plane once, not twice', () => {
+  it('hashes a character outside the basic plane by code point, not code unit', () => {
     /*
-     * The reason the loop iterates by code point. An astral character is two
-     * code units and one character; hashing by unit would let two visibly
-     * different notes of the same code-unit length collide more readily, and
-     * would make the length component disagree with what the clinician typed.
+     * The reason the loop iterates by code point rather than by code unit.
      *
-     * `'\u{1d5a0}'` is one character and `'ab'` is two, so a code-unit
-     * implementation sees the same length for both.
+     * Asserted as an exact value, because the obvious comparison does not
+     * distinguish the two. An earlier version checked that this differed from
+     * the hash of a two-character ASCII string, which is true under BOTH
+     * implementations - so it stayed green under the exact rewrite it claimed
+     * to guard against.
+     *
+     * `subjective:\u{1d5a0}` hashes to this by code point and to
+     * `5f4f-3cc8-000d` by code unit, so only one of the two can pass.
      */
-    const astral = contentHash(sections(['subjective', '\u{1d5a0}']));
-    const twoAscii = contentHash(sections(['subjective', 'ab']));
-
-    expect(astral).not.toBe(twoAscii);
+    expect(contentHash(sections(['subjective', '\u{1d5a0}']))).toBe('21ec-1793-000d');
   });
 
   it('keeps its shape whatever the content', () => {

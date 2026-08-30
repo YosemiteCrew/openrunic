@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChartRail } from '@/components/chart/ChartRail';
 import { MOCK_PATIENTS } from '@/lib/api';
 import { createMockChartClient } from '@/lib/api/chart';
-import { emptyChart } from '@/lib/api/mock/chart';
+import { mockChartFor } from '@/lib/api/mock/chart';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -40,20 +40,39 @@ describe('ChartRail', () => {
     expect(await screen.findByText(/Quinta Examplebury/u)).toBeInTheDocument();
   });
 
-  it('renders the rail even when no appointment comes back', async () => {
+  it('renders the rail even when the appointment read fails', async () => {
     /*
-     * `appointments.data?.data ?? []` is the degradation the header promises.
-     * With nothing booked the rail still has to draw, because the clinical
-     * facts beside it are the reason anyone opened it.
+     * The degradation the module header promises: allergies matter more than a
+     * booking, and a failed appointment read must never replace the whole rail
+     * with an error.
+     *
+     * The read is made to fail rather than relying on a patient who happens to
+     * have no appointment. The first version of this used the fixture above,
+     * which has a booked appointment - so it asserted the degradation while
+     * exercising the ordinary path, and would have passed with the fallback
+     * removed.
      */
-    render(<ChartRail patientId={PATIENT?.id ?? ''} />);
+    vi.resetModules();
+    vi.doMock('@/lib/api', async () => {
+      const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+      return {
+        ...actual,
+        // The shape a failed read leaves behind: no data, so the `?? []`
+        // fallback is the only thing standing between the rail and a crash.
+        useAppointments: () => ({ status: 'error', data: undefined, error: new Error('refused') }),
+      };
+    });
+    const { ChartRail: Rail } = await import('@/components/chart/ChartRail');
+
+    render(<Rail patientId={PATIENT?.id ?? ''} />);
 
     await screen.findByText(/Quinta Examplebury/u);
 
-    /* The clinical facts are still there, and nothing rendered an error in
-       their place. */
     expect(screen.getByText(/Allergies not recorded/u)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    vi.doUnmock('@/lib/api');
+    vi.resetModules();
   });
 
   it('uses an injected client when a test hands it one', async () => {
@@ -62,18 +81,30 @@ describe('ChartRail', () => {
      * Asserting it explicitly means the default path above is not silently the
      * only one exercised, which is what left this at 50% branch coverage.
      */
+    /*
+     * The injected chart is somebody else's, and a full one.
+     *
+     * The first version injected `emptyChart` for this patient, whose default
+     * chart is already empty - identical output, so the test passed whether or
+     * not the client was used at all. Borrowing a populated chart makes the
+     * difference visible: a problem name that the default chart for this
+     * patient does not contain.
+     */
     const patientId = PATIENT?.id ?? '';
+    const populated = MOCK_PATIENTS.find((candidate) => candidate.mrn === 'OR-100482');
+    expect(populated).toBeDefined();
+    const borrowed = { ...mockChartFor(populated?.id ?? ''), patientId };
+
     render(
       <ChartRail
         patientId={patientId}
-        chartClient={createMockChartClient({ charts: [emptyChart(patientId)] })}
+        chartClient={createMockChartClient({ charts: [borrowed] })}
       />
     );
 
     await screen.findByText(/Quinta Examplebury/u);
 
-    /* An empty chart, from the injected client rather than the app's, so the
-       rail says so instead of showing the fixture's own summary. */
-    expect(screen.getByText(/Allergies not recorded/u)).toBeInTheDocument();
+    expect(screen.getByText(/Essential hypertension/u)).toBeInTheDocument();
+    expect(screen.queryByText(/No problems recorded/u)).not.toBeInTheDocument();
   });
 });

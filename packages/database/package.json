@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/database",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Prisma schema, migrations, and client factory for Openrunic's Postgres database.",
   "license": "AGPL-3.0-only",
   "type": "module",

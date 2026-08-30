@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/cds-hooks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CDS Hooks service surface for the Openrunic EMR: discovery, request validation and cards.",
   "license": "AGPL-3.0-only",
   "type": "module",

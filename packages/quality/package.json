@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/quality",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Electronic clinical quality measures for the Openrunic EMR: what a measure says a practice did, and what it will not say.",
   "license": "AGPL-3.0-only",
   "type": "module",

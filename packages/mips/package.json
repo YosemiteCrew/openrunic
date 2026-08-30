@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/mips",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MIPS scoring for the Openrunic EMR: the categories an EMR can compute, and the one it cannot.",
   "license": "AGPL-3.0-only",
   "type": "module",

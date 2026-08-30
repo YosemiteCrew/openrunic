@@ -132,11 +132,18 @@ A modern, fast, lightweight EMR:
 
 ## Project status
 
-**0.1.0.** Substantial EMR functionality has shipped and has tests behind it.
-[`docs/emr-capabilities.md`](docs/emr-capabilities.md) is the capability map: it records more than
-thirty capabilities as Done, and seventeen more as Partial, a seam only, Missing, or not startable at
-all without an external certifying body. Read it before assuming this project is either further
-along or further behind than it is.
+**0.2.0.** Substantial EMR functionality has shipped and has tests behind it.
+[`docs/emr-capabilities.md`](docs/emr-capabilities.md) is the capability map: it records 45 of 53
+capabilities as Done. Read it before assuming this project is either further along or further behind
+than it is.
+
+The eight that are not Done are worth reading as a group, because none of them is waiting on
+engineering. Four need licensed content that cannot be committed to an AGPL repository: drug-drug
+interactions, dose range and renal dosing, formulary and benefit check, and the CPT and ICD-10 code
+sets. Four need an external body: Direct secure messaging needs a HISP, transmission to pharmacy
+needs Surescripts, controlled substances need DEA identity proofing, and ONC certification needs a
+testing body rather than a sprint. Each one has a named seam in the code rather than a gap: the
+adapter, the port or the loader is there, and what is missing is a licence or an accreditation.
 
 Two things follow from a version that still starts with a zero, and they matter more than the
 feature list:

@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/ops",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-host operations for openrunic: first-run install, backup and restore, upgrades, and the migration-safety linter.",
   "license": "AGPL-3.0-only",
   "type": "module",

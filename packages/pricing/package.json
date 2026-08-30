@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/pricing",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fee schedules and sliding-scale discounts for the Openrunic EMR: what a practice bills, and what it will be paid.",
   "license": "AGPL-3.0-only",
   "type": "module",

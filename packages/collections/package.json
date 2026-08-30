@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/collections",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Patient-balance collections for the Openrunic EMR: when the next notice is due, and when a practice should stop asking.",
   "license": "AGPL-3.0-only",
   "type": "module",

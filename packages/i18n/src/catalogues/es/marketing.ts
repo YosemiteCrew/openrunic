@@ -24,7 +24,7 @@ export const marketing: Messages = {
   'marketing.nav.developers': 'Desarrolladores',
 
   'marketing.footer.note':
-    'Un sistema operativo de código abierto para la salud humana, construido por Yosemite Crew. Prealfa: todavía no hay versiones publicadas.',
+    'Un sistema operativo de código abierto para la salud humana, construido por Yosemite Crew. Temprano: publicado, y sin terminar.',
   'marketing.footer.project': 'Proyecto',
   'marketing.footer.documentation': 'Documentación',
   'marketing.footer.architecture': 'Arquitectura',
@@ -96,7 +96,7 @@ export const marketing: Messages = {
     'El primer producto es un expediente médico electrónico moderno y ligero: registro, agenda, consultas, órdenes, resultados y el ciclo de ingresos, con FHIR R4 en la frontera de la API y un registro de auditoría que fue el primer modelo del esquema.',
   'marketing.home.statusLabel': 'En qué punto está el proyecto',
   'marketing.home.statusBody':
-    'Prealfa. No hay versiones publicadas ni imágenes de contenedor, las API y los esquemas cambian sin aviso, y ninguna parte de esto está lista para una consulta real. No cargue datos reales de pacientes.',
+    'Temprano. El número de versión todavía empieza por cero, lo que significa que las API, los esquemas y los límites entre paquetes cambian sin aviso, y ninguna parte de esto está lista para una consulta real. No cargue datos reales de pacientes.',
 
   'marketing.home.audiences.title': 'Tres públicos',
   'marketing.home.audiences.lead':
@@ -145,7 +145,7 @@ export const marketing: Messages = {
   'marketing.hospitals.selfHosting': 'Cómo funcionará la instalación propia',
   'marketing.hospitals.statusLabel': 'Qué puede ejecutar hoy',
   'marketing.hospitals.statusBody':
-    'Una clínica no, con toda honestidad. No hay versiones publicadas, ni imágenes de contenedor, ni documentación de instalación; el empaquetado para instalación propia está en construcción y no está terminado. Lo que existe es código que usted puede leer, y un servidor de desarrollo que ejecuta toda la aplicación de personal contra datos sintéticos deterministas, sin base de datos.',
+    'Una clínica no, con toda honestidad. Hay versiones publicadas y hay una guía de instalación, y las imágenes de contenedor se construyen pero todavía no se pueden leer sin una cuenta, así que instalarlo por su cuenta implica construirlas usted mismo. Lo que existe es código que usted puede leer, y un servidor de desarrollo que ejecuta toda la aplicación de personal contra datos sintéticos deterministas, sin base de datos.',
   'marketing.hospitals.coverage.title': 'Qué cubre la aplicación',
   'marketing.hospitals.coverage.lead':
     'Cinco áreas, todas ellas pantallas que hoy están en el repositorio y no elementos de una hoja de ruta.',
@@ -189,7 +189,7 @@ export const marketing: Messages = {
   'marketing.patients.howThePortalWorks': 'Cómo funciona el portal',
   'marketing.patients.statusLabel': 'Qué significa esto hoy',
   'marketing.patients.statusBody':
-    'Aquí no hay nada a lo que registrarse. openrunic es software prealfa sin versiones publicadas, y que usted llegue a usarlo depende de que una consulta decida operarlo. Esta página describe cómo está construido el proyecto, no un servicio al que pueda unirse.',
+    'Aquí no hay nada a lo que registrarse. openrunic es software temprano, y que usted llegue a usarlo depende de que una consulta decida operarlo. Esta página describe cómo está construido el proyecto, no un servicio al que pueda unirse.',
   'marketing.patients.portal.title': 'Qué muestra el portal',
   'marketing.patients.portal.lead':
     'Tres cosas, en seis pantallas, todas ellas hoy en el repositorio.',
@@ -228,7 +228,7 @@ export const marketing: Messages = {
   'marketing.developers.apiDesign': 'Diseño de la API',
   'marketing.developers.statusLabel': 'Estabilidad',
   'marketing.developers.statusBody':
-    'Prealfa, y los números de versión lo dicen. Nada se publica en un registro de paquetes, no hay versiones publicadas, y las API, los esquemas y los límites entre paquetes cambian sin aviso. Constrúyalo para aprender de él o para contribuir, no para publicar sobre él.',
+    'Temprano, y los números de versión lo dicen. Nada se publica en un registro de paquetes, y las API, los esquemas y los límites entre paquetes cambian sin aviso. Constrúyalo para aprender de él o para contribuir, no para publicar sobre él.',
   'marketing.developers.boundary.title': 'La frontera del servicio',
   'marketing.developers.boundary.lead':
     'Con qué tiene que hablar otro sistema, y las reglas que se impone a sí misma.',

@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/e2e",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The full-day clinical drill: the acceptance test for the whole product.",
   "license": "AGPL-3.0-only",

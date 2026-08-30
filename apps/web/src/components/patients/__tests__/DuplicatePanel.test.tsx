@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DuplicatePanel } from '@/components/patients/DuplicatePanel';
+import { BLOCKING_SCORE } from '@/components/patients/registration';
 import type { DuplicateMatch } from '@/components/patients/registration';
 import { MOCK_PATIENTS } from '@/lib/api';
 
@@ -27,15 +28,38 @@ vi.mock('next/navigation', () => ({
 
 const PATIENT = MOCK_PATIENTS.find((candidate) => candidate.mrn === 'OR-101088');
 
-function matches(): DuplicateMatch[] {
+/* The two bodies, quoted, because which one a strength carries is the point. */
+const BLOCKING_BODY =
+  'Registering a second record splits the history for this person. Open the existing record, or confirm below that this is a different person.';
+const SIMILAR_BODY = 'These records look close. Check them before registering a new one.';
+
+/**
+ * A match at a score the caller would actually pass this `blocking` value for.
+ *
+ * `RegisterPatientScreen` derives `blocking` by comparing the score against
+ * `BLOCKING_SCORE`, so a high-scoring match rendered with `blocking={false}` is
+ * a state production never produces. Deriving the score from the flag keeps the
+ * fixture honest.
+ *
+ * The reason key is a real one from `registration.ts`. `reasonKeys` is rendered
+ * through the translator, so an invented key renders as the key itself and the
+ * panel under test would be showing something no reader ever sees.
+ */
+function matches(blocking: boolean): DuplicateMatch[] {
   if (PATIENT === undefined) throw new Error('fixture patient OR-101088 is missing');
-  return [{ patient: PATIENT, score: 90, reasonKeys: ['patients.duplicate.reason.name'] }];
+  return [
+    {
+      patient: PATIENT,
+      score: blocking ? BLOCKING_SCORE + 1 : BLOCKING_SCORE - 1,
+      reasonKeys: ['patients.duplicate.sameFamilyName'],
+    },
+  ];
 }
 
 function renderPanel(blocking: boolean) {
   render(
     <DuplicatePanel
-      matches={matches()}
+      matches={matches(blocking)}
       blocking={blocking}
       overridden={false}
       onOverrideChange={vi.fn()}
@@ -67,6 +91,13 @@ describe('a match strong enough to block saving', () => {
 
     expect(screen.getByText('This patient may already have a record')).toBeInTheDocument();
     expect(screen.queryByText('Similar records exist in the practice')).not.toBeInTheDocument();
+
+    /*
+     * The body as well as the title. The two bodies are what tell a registrar
+     * what to do next, and swapping only those would leave every title
+     * assertion green while the hard stop gave the softer instruction.
+     */
+    expect(screen.getByRole('alert').textContent).toBe(BLOCKING_BODY);
   });
 });
 
@@ -82,10 +113,13 @@ describe('a weaker match', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('carries the softer title, not the blocking one', () => {
+  it('carries the softer title and body, not the blocking pair', () => {
     renderPanel(false);
 
     expect(screen.getByText('Similar records exist in the practice')).toBeInTheDocument();
     expect(screen.queryByText('This patient may already have a record')).not.toBeInTheDocument();
+    /* The body too. Swapping only the bodies leaves both titles correct. */
+    expect(screen.getByText(SIMILAR_BODY)).toBeInTheDocument();
+    expect(screen.queryByText(BLOCKING_BODY)).not.toBeInTheDocument();
   });
 });

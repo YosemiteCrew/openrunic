@@ -29,14 +29,16 @@ vi.mock('next/navigation', () => ({
 const PATIENT = MOCK_PATIENTS.find((candidate) => candidate.mrn === 'OR-101088');
 
 /**
- * Every role ARIA defines as a live region, and the attribute form.
+ * What actually announces, which is narrower than "is a live region".
  *
- * The list is the complete set from the specification rather than the roles
- * that happened to come to mind: `alert`, `status`, `log`, `marquee` and
- * `timer` are all announced without focus moving to them.
+ * `alert`, `status` and `log` carry an implicit live value that announces.
+ * `timer` and `marquee` are live region roles too, but their implicit value is
+ * `off`, so they say nothing while focus is elsewhere - and `aria-live="off"`
+ * is the explicit form of the same thing. Including any of those three would
+ * fail this test for markup that is silent to the reader it describes.
  */
-const LIVE_REGION =
-  '[aria-live], [role="alert"], [role="status"], [role="log"], [role="marquee"], [role="timer"]';
+const ANNOUNCES =
+  '[role="alert"], [role="status"], [role="log"], [aria-live]:not([aria-live="off"])';
 
 /* The two bodies, quoted, because which one a strength carries is the point. */
 const BLOCKING_BODY =
@@ -146,7 +148,7 @@ describe('a weaker match', () => {
      * announcement is what a reader hears, and it is heard the same whether the
      * live region is the paragraph, the card around it, or the list inside it.
      */
-    expect(container.querySelectorAll(LIVE_REGION)).toHaveLength(0);
+    expect(container.querySelectorAll(ANNOUNCES)).toHaveLength(0);
 
     /* The paragraph itself carries no role at all, which is stricter than the
        sweep above and pins the element the message actually lives in. */

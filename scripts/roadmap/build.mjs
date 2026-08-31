@@ -25,9 +25,16 @@
  * `format:check` reflows the committed copy, and `--check` then reports the
  * file it just formatted as out of date. Formatting here means both gates are
  * asking the same question.
+ *
+ * Prettier is imported inside `render` rather than at the top of the file, and
+ * that is load-bearing rather than tidy. The parsers below are unit-tested in
+ * the `node --test` job, which deliberately runs with no install because every
+ * script it covers is dependency-free. A top-level import of prettier makes
+ * merely LOADING this module require node_modules, so that job dies at import
+ * before a single assertion runs. Kept here, the parsers stay importable with
+ * nothing installed and only generating needs the dependency.
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
-import prettier from 'prettier';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -177,6 +184,7 @@ const bar = (done, total, width = 18) => {
 };
 
 async function render() {
+  const { default: prettier } = await import('prettier');
   const version = JSON.parse(read('package.json')).version;
   const capabilities = readCapabilities(read('docs/emr-capabilities.md'));
   const served = readServedResources(read('apps/api/src/fhir/resources.ts'));

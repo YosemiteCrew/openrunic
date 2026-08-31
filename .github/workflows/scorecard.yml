@@ -30,18 +30,23 @@ on:
 # what keeps this workflow honest with the token-permissions check it runs.
 permissions: {}
 
+# One scoring run per ref. The score is a property of a ref at a point in time,
+# so a run superseded by a newer commit on the same ref is answering a question
+# nobody is asking any more.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      # Upload the SARIF result to the code-scanning dashboard.
-      security-events: write
-      # Publish the result to the OpenSSF API (OIDC, no long-lived secret).
-      id-token: write
-      contents: read
-      actions: read
+      security-events: write # upload the SARIF result to the code-scanning dashboard
+      id-token: write # publish to the OpenSSF API over OIDC, no long-lived secret
+      contents: read # read the tree the analysis runs over
+      actions: read # Dangerous-Workflow and Token-Permissions read this repo's own workflows and runs
 
     steps:
       - name: Check out the repository

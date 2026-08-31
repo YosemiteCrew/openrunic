@@ -34,6 +34,13 @@ on:
 
 permissions: {}
 
+# One guard run per pull request. Pushing again to a promotion supersedes the
+# previous answer rather than adding to it, and the check is re-reported against
+# the new head, so cancelling the older run loses nothing.
+concurrency:
+  group: promotion-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   promotion-source:
     name: Promotion source

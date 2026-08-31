@@ -8,9 +8,9 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 - **Buildable** - needs engineering time and nothing else.
 - **Needs licensed content** - the code is easy, the data is not ours to ship. Drug interaction
-  databases (First Databank, Medi-Span), full SNOMED CT, CPT and ICD-10 code sets are commercial
-  licences. AGPL software cannot bundle them, so the pattern is always the same: build the seam, let
-  the deployer supply the content.
+  databases, full SNOMED CT, and the CPT and ICD-10 code sets are commercial licences. AGPL software
+  cannot bundle them, so the pattern is always the same: build the seam, let the deployer supply the
+  content.
 - **Needs certification** - cannot be switched on by writing code at all. Electronic prescribing of
   controlled substances requires DEA-audited identity proofing and a certified application; routing
   prescriptions to pharmacies requires certification with a national prescription routing network;
@@ -52,13 +52,13 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Prescribing
 
-| Capability                           | State             | Note                                                                                                       |
-| ------------------------------------ | ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| Prescription authoring, sign, cancel | **Done**          | Status transitions with a legal-transition graph                                                           |
-| Safety screening before signing      | **Done**          | See clinical core                                                                                          |
-| Transmission to pharmacy             | **Seam only**     | _Needs certification_ with a national prescription routing network. `packages/adapters` holds the eRx seam |
-| Controlled substances (EPCS)         | **Not startable** | _Needs certification_ - DEA identity proofing, two-factor at signing, audited application                  |
-| Formulary and benefit check          | **Missing**       | _Needs licensed content_                                                                                   |
+| Capability                           | State             | Note                                                                                                                                                |
+| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prescription authoring, sign, cancel | **Done**          | Status transitions with a legal-transition graph                                                                                                    |
+| Safety screening before signing      | **Done**          | See clinical core                                                                                                                                   |
+| Transmission to pharmacy             | **Seam only**     | _Needs certification_ with a national prescription routing network. `packages/adapters` holds the eRx seam                                          |
+| Controlled substances (EPCS)         | **Not startable** | _Needs certification_ - DEA identity proofing, two-factor at signing, audited application                                                           |
+| Formulary and benefit check          | **Seam only**     | _Needs licensed content._ `checkFormulary` on the `ErxAdapter` contract, with a typed result carrying tier, prior-auth flag, copay and alternatives |
 
 ## Revenue cycle
 

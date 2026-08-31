@@ -97,9 +97,23 @@ what a deployment may redistribute. That separation is `packages/terminology`'s 
 | OpenSSF Scorecard                      | `scorecard.yml`                      | Supply-chain posture, published                     |
 | Storybook + axe                        | `storybook.yml`                      | Every story renders and passes accessibility checks |
 | Promotion source                       | `promotion-guard.yaml`               | Only `dev` may merge into `main`                    |
+| Generated docs                         | `_repo.yaml`, `roadmap:check`        | `docs/roadmap.md` matches what its sources say      |
 
 `CI Required` and `Supply Chain Required` are fail-closed aggregates: a skipped dependency passes,
 a cancelled one fails. Do not edit an aggregate to make a branch green.
+
+### Why a generated page needs a gate at all
+
+`docs/roadmap.md` is built by `scripts/roadmap/build.mjs` from the files that already own the
+truth: the capability map, the served FHIR module list, the message catalogues and the workspace
+manifests. It is committed rather than built on demand so that a reader gets the page without
+running anything and a reviewer sees, in the diff, what a change does to the published status.
+
+Committing a generated file creates the one failure it was written to prevent. The day a capability
+moves from a seam to shipped, `emr-capabilities.md` changes and the roadmap does not, and nothing
+complains: the page keeps saying the old thing, in public, indefinitely. `pnpm roadmap:check`
+regenerates in memory and fails if the committed copy differs, which turns that silence into a red
+check on the pull request that caused it.
 
 ## The Sonar bar, and why it is not a quality gate
 

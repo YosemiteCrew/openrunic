@@ -13,8 +13,8 @@ Three kinds of gap appear below, and they are not the same kind of work:
   the deployer supply the content.
 - **Needs certification** - cannot be switched on by writing code at all. Electronic prescribing of
   controlled substances requires DEA-audited identity proofing and a certified application; routing
-  prescriptions to pharmacies requires Surescripts certification; ONC certification requires a
-  testing body.
+  prescriptions to pharmacies requires certification with a national prescription routing network;
+  ONC certification requires a testing body.
 
 ## Clinical core
 
@@ -52,13 +52,13 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Prescribing
 
-| Capability                           | State             | Note                                                                                      |
-| ------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------- |
-| Prescription authoring, sign, cancel | **Done**          | Status transitions with a legal-transition graph                                          |
-| Safety screening before signing      | **Done**          | See clinical core                                                                         |
-| Transmission to pharmacy             | **Seam only**     | _Needs certification_ - Surescripts. `packages/adapters` holds the eRx seam               |
-| Controlled substances (EPCS)         | **Not startable** | _Needs certification_ - DEA identity proofing, two-factor at signing, audited application |
-| Formulary and benefit check          | **Missing**       | _Needs licensed content_                                                                  |
+| Capability                           | State             | Note                                                                                                       |
+| ------------------------------------ | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| Prescription authoring, sign, cancel | **Done**          | Status transitions with a legal-transition graph                                                           |
+| Safety screening before signing      | **Done**          | See clinical core                                                                                          |
+| Transmission to pharmacy             | **Seam only**     | _Needs certification_ with a national prescription routing network. `packages/adapters` holds the eRx seam |
+| Controlled substances (EPCS)         | **Not startable** | _Needs certification_ - DEA identity proofing, two-factor at signing, audited application                  |
+| Formulary and benefit check          | **Missing**       | _Needs licensed content_                                                                                   |
 
 ## Revenue cycle
 

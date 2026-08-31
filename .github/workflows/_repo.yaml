@@ -85,9 +85,42 @@ jobs:
       # runs on a pull request or a push to main - so their own tests must run
       # somewhere unconditional. Matching `scripts/ci/*.test.mjs` means a script
       # added later is covered by having a test rather than by remembering to
-      # wire one up here.
+      # wire one up here. `scripts/roadmap/*.test.mjs` is in the same glob for
+      # the same reason: it parses the capability map that docs/roadmap.md is
+      # published from, and a parser that silently drops a row does not fail,
+      # it publishes a shorter and wrong roadmap.
       - name: Run the CI script tests
         run: pnpm run check:ci-scripts:test
+
+  generated-docs:
+    name: Generated docs (roadmap)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Reads the checkout and nothing else.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # This one does install. The generator reads only the tree, but it formats
+      # its output with Prettier and the repository's own config, because
+      # otherwise this gate and `format:check` disagree about the same file:
+      # one reflows the committed copy and the other then calls it out of date.
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # docs/roadmap.md is generated from docs/emr-capabilities.md, the served
+      # FHIR module list and the message catalogues. Committing it means a
+      # reader gets the page without running anything and a reviewer sees the
+      # diff a change produces; checking it here is what stops the committed
+      # copy drifting from the sources the moment a capability ships.
+      - name: Check the roadmap is current
+        run: pnpm run roadmap:check
 
   styles:
     name: Stylesheets (stylelint)

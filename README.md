@@ -140,9 +140,10 @@ than it is.
 The eight that are not Done are worth reading as a group, because none of them is waiting on
 engineering. Four need licensed content that cannot be committed to an AGPL repository: drug-drug
 interactions, dose range and renal dosing, formulary and benefit check, and the CPT and ICD-10 code
-sets. Four need an external body: Direct secure messaging needs a HISP, transmission to pharmacy
-needs Surescripts, controlled substances need DEA identity proofing, and ONC certification needs a
-testing body rather than a sprint. Each one has a named seam in the code rather than a gap: the
+sets. Four need an external body: Direct secure messaging needs an accredited health information
+service provider, transmission to pharmacy needs certification with a national prescription routing
+network, controlled substances need DEA identity proofing, and ONC certification needs a testing
+body rather than a sprint. Each one has a named seam in the code rather than a gap: the
 adapter, the port or the loader is there, and what is missing is a licence or an accreditation.
 
 Two things follow from a version that still starts with a zero, and they matter more than the

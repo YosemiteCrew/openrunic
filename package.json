@@ -31,7 +31,7 @@
     "check:phi": "node scripts/ci/phi-guard.mjs",
     "check:phi:test": "node --test scripts/ci/phi-guard.test.mjs",
     "check:compose:test": "node --test scripts/ci/compose-guard.test.mjs",
-    "check:ci-scripts:test": "node --test scripts/ci/*.test.mjs",
+    "check:ci-scripts:test": "node --test scripts/ci/*.test.mjs scripts/roadmap/*.test.mjs",
     "verify": "pnpm run format:check && pnpm run lint:css && pnpm run lint && pnpm run type-check && pnpm run check:secrets && pnpm run check:phi && pnpm run check:exceptions && pnpm run test && pnpm run build",
     "setup:selfhost": "pnpm --filter @openrunic/ops run ops setup",
     "ops:doctor": "pnpm --filter @openrunic/ops run ops doctor",
@@ -41,7 +41,9 @@
     "ops:upgrade": "pnpm --filter @openrunic/ops run ops upgrade",
     "ops:lint-migrations": "pnpm --filter @openrunic/ops run ops lint-migrations",
     "e2e": "pnpm --filter @openrunic/e2e run drill",
-    "e2e:install": "pnpm --filter @openrunic/e2e exec playwright install --with-deps chromium"
+    "e2e:install": "pnpm --filter @openrunic/e2e exec playwright install --with-deps chromium",
+    "roadmap": "node scripts/roadmap/build.mjs",
+    "roadmap:check": "node scripts/roadmap/build.mjs --check"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",

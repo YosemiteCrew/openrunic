@@ -119,6 +119,28 @@ function seedChart(dataset: MemoryDataset): void {
     acceptAssignment: true,
   });
 
+  /* A guardian who is also the emergency contact, so the projection exercises
+     both role codings rather than only the recorded relationship. */
+  seed(dataset, 'RelatedPerson', {
+    ...storageColumns(testId(12)),
+    patientId: PATIENT,
+    relationshipCode: 'MTH',
+    relationshipText: 'Mother',
+    givenName: 'Marisol',
+    familyName: 'Verificada',
+    phone: '+1 555 0142 118',
+    email: null,
+    addressLine1: null,
+    city: null,
+    state: null,
+    postalCode: null,
+    country: 'US',
+    isGuardian: true,
+    isEmergencyContact: true,
+    isPortalProxy: false,
+    active: true,
+  });
+
   seed(dataset, 'Encounter', {
     ...storageColumns(ENCOUNTER),
     facilityId: DEMO_FACILITY_A,

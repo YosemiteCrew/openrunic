@@ -41,6 +41,7 @@ export type SupportedResourceType =
   | 'Task'
   | 'Claim'
   | 'Consent'
+  | 'RelatedPerson'
   | 'Provenance';
 
 /** FHIR search parameter types. */
@@ -276,6 +277,18 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
     profile: `${US_CORE}us-core-coverage`,
     interactions: WRITABLE,
     searchParams: [patientParam(), statusParam('Coverage status.', false)],
+  },
+  RelatedPerson: {
+    resourceType: 'RelatedPerson',
+    profile: `${US_CORE}us-core-relatedperson`,
+    /*
+     * Read-only at this boundary. The people around a patient are recorded
+     * during registration and maintained there, and a guardian created by an
+     * API client with no registration workflow behind it is a consent decision
+     * made by whoever held a token.
+     */
+    interactions: READ_ONLY,
+    searchParams: [patientParam()],
   },
   Appointment: {
     resourceType: 'Appointment',

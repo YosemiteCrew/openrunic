@@ -41,6 +41,7 @@ import {
   practitionerResource,
   practitionerRoleResource,
   provenanceResource,
+  relatedPersonResource,
   serviceRequestResource,
   imagingStudyResource,
   specimenResource,
@@ -539,6 +540,34 @@ const coverageModule = defineFhirResource({
   toResource: coverageResource,
 });
 
+const relatedPersonModule = defineFhirResource({
+  type: 'RelatedPerson',
+  /*
+   * Read and search only. These rows are created during registration, and a
+   * guardian written by any client holding a token is a consent decision made
+   * in the wrong place. The search catalogue says the same thing, and
+   * `fhir.test.ts` asserts the two agree.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient'],
+  /*
+   * `patient.read` rather than a permission of its own. Who a patient's
+   * guardian and emergency contact are is demographics: a role that can open
+   * the chart and cannot see who to ring in an emergency is a worse answer than
+   * either, and a new permission would silently deny every existing role until
+   * each grant was edited.
+   */
+  permission: 'patient.read',
+  collection: (repositories) => repositories.relatedPersons,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    sort: 'familyName' as const,
+    order: 'asc' as const,
+  }),
+  toResource: relatedPersonResource,
+});
+
 const appointmentModule = defineFhirResource({
   type: 'Appointment',
   interactions: ['read', 'search-type'],
@@ -967,6 +996,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   organizationModule,
   locationModule,
   coverageModule,
+  relatedPersonModule,
   appointmentModule,
   encounterModule,
   conditionModule,

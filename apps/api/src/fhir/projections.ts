@@ -5,6 +5,7 @@ import {
   toFhirClaim,
   toFhirCondition,
   toFhirCoverage,
+  toFhirRelatedPerson,
   toFhirDiagnosticReport,
   toFhirDocumentReference,
   toFhirEncounter,
@@ -25,6 +26,7 @@ import {
   type Claim,
   type Condition,
   type Coverage,
+  type RelatedPerson,
   type DiagnosticReport,
   type DocumentReference,
   type Encounter,
@@ -248,6 +250,37 @@ export function locationResource(row: ScopedRow<'Facility'>): Location {
       state: absent(row.state),
       postalCode: absent(row.postalCode),
       country: row.country,
+      active: row.active,
+    })
+  );
+}
+
+/**
+ * A guardian, an emergency contact or a portal proxy, as US Core sees them.
+ *
+ * The three booleans on the row become relationship codings and one extension
+ * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
+ * the same reading of them if they ever need it.
+ */
+export function relatedPersonResource(row: ScopedRow<'RelatedPerson'>): RelatedPerson {
+  return toFhirRelatedPerson(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      relationshipCode: row.relationshipCode,
+      relationshipText: absent(row.relationshipText),
+      givenName: row.givenName,
+      familyName: row.familyName,
+      phone: absent(row.phone),
+      email: absent(row.email),
+      addressLine1: absent(row.addressLine1),
+      city: absent(row.city),
+      state: absent(row.state),
+      postalCode: absent(row.postalCode),
+      country: row.country,
+      isGuardian: row.isGuardian,
+      isEmergencyContact: row.isEmergencyContact,
+      isPortalProxy: row.isPortalProxy,
       active: row.active,
     })
   );

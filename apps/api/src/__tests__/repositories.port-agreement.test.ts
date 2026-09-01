@@ -111,6 +111,16 @@ const FILTERS: {
     from: new Date('2026-08-01T00:00:00.000Z'),
     to: new Date('2026-09-01T00:00:00.000Z'),
   },
+  relatedPersons: {
+    page: 1,
+    pageSize: 25,
+    sort: 'familyName',
+    order: 'asc',
+    patientId: 'id-patientId',
+    active: true,
+    isGuardian: true,
+    isEmergencyContact: true,
+  },
   coverages: {
     page: 1,
     pageSize: 25,

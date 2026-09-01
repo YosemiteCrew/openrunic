@@ -126,6 +126,7 @@ export const BULK_EXPORT_OPERATIONS: readonly BulkExportEntry[] = [
  */
 export const PATIENT_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
   'Patient',
+  'RelatedPerson',
   'Coverage',
   'Appointment',
   'Encounter',

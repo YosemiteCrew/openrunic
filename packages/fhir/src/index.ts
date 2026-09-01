@@ -16,6 +16,7 @@ export type PractitionerRole = fhir4.PractitionerRole;
 export type Organization = fhir4.Organization;
 export type Location = fhir4.Location;
 export type Coverage = fhir4.Coverage;
+export type RelatedPerson = fhir4.RelatedPerson;
 export type Appointment = fhir4.Appointment;
 export type Encounter = fhir4.Encounter;
 export type Condition = fhir4.Condition;
@@ -196,6 +197,12 @@ export {
 } from './organization.js';
 export type { DomainLocation, DomainOrganization } from './organization.js';
 
+export {
+  fromFhirRelatedPerson,
+  PORTAL_PROXY_EXTENSION,
+  toFhirRelatedPerson,
+} from './related-person.js';
+export type { DomainRelatedPerson } from './related-person.js';
 export { COVERAGE_DROPPED_FIELDS, fromFhirCoverage, toFhirCoverage } from './coverage.js';
 export type { DomainCoverage, DomainCoverageRank, DomainCoverageStatus } from './coverage.js';
 

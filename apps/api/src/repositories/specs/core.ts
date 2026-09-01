@@ -2,6 +2,7 @@ import type {
   AppointmentCreateInput,
   PatientCreateInput,
   PatientUpdateInput,
+  RelatedPersonInput,
 } from '@openrunic/database';
 
 import {
@@ -477,8 +478,102 @@ export const telehealthVisitSpec: CollectionSpec<
   },
 };
 
+/**
+ * The people around a patient, as their own collection.
+ *
+ * The row has existed since registration shipped and had no repository, so
+ * nothing outside a direct query could read one. `ConsentGrant` points at these
+ * rows, which made the gap worse than an unexposed table: a client could be
+ * told a consent was granted to a related person it had no way to resolve.
+ *
+ * Compartmented on `patientId` like every other chart-scoped collection, so a
+ * token bound to one patient sees that patient's contacts and no others.
+ * Not facility-scoped: a guardian belongs to a person, not to a site.
+ */
+export interface RelatedPersonListQuery extends BaseQuery {
+  patientId?: string;
+  active?: boolean;
+  isGuardian?: boolean;
+  isEmergencyContact?: boolean;
+  sort: 'familyName' | 'createdAt';
+}
+
+export type RelatedPersonPatchInput = Partial<Omit<RelatedPersonInput, 'patientId'>>;
+
+export const relatedPersonSpec: CollectionSpec<
+  'RelatedPerson',
+  RelatedPersonInput,
+  RelatedPersonPatchInput,
+  RelatedPersonListQuery
+> = {
+  model: 'RelatedPerson',
+  targetType: 'RelatedPerson',
+  action: 'relatedPerson',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: RelatedPersonInput): Writable<'RelatedPerson'> {
+    return {
+      patientId: input.patientId,
+      relationshipCode: input.relationshipCode,
+      relationshipText: input.relationshipText ?? null,
+      givenName: input.givenName,
+      familyName: input.familyName,
+      phone: input.phone ?? null,
+      email: input.email ?? null,
+      addressLine1: input.addressLine1 ?? null,
+      city: input.city ?? null,
+      state: input.state ?? null,
+      postalCode: input.postalCode ?? null,
+      country: input.country ?? PATIENT_DEFAULTS.country,
+      isGuardian: input.isGuardian ?? false,
+      isEmergencyContact: input.isEmergencyContact ?? false,
+      isPortalProxy: input.isPortalProxy ?? false,
+      active: input.active ?? true,
+    };
+  },
+
+  patchData(patch: RelatedPersonPatchInput): Partial<Writable<'RelatedPerson'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'RelatedPerson'>, query: RelatedPersonListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.active !== undefined && row.active !== query.active) return false;
+    if (query.isGuardian !== undefined && row.isGuardian !== query.isGuardian) return false;
+    return query.isEmergencyContact === undefined
+      ? true
+      : row.isEmergencyContact === query.isEmergencyContact;
+  },
+
+  where(query: RelatedPersonListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.active === undefined ? {} : { active: query.active }),
+      ...(query.isGuardian === undefined ? {} : { isGuardian: query.isGuardian }),
+      ...(query.isEmergencyContact === undefined
+        ? {}
+        : { isEmergencyContact: query.isEmergencyContact }),
+    };
+  },
+
+  sortValue(
+    row: ScopedRow<'RelatedPerson'>,
+    sort: RelatedPersonListQuery['sort']
+  ): string | number {
+    return sort === 'createdAt' ? row.createdAt.getTime() : row.familyName;
+  },
+
+  orderBy(query: RelatedPersonListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ familyName: order }, { id: 'asc' as const }];
+  },
+};
+
 export const coreSpecs = {
   patients: patientSpec,
+  relatedPersons: relatedPersonSpec,
   appointments: appointmentSpec,
   telehealthVisits: telehealthVisitSpec,
 } as const;

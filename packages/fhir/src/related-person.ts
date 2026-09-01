@@ -83,9 +83,17 @@ export interface DomainRelatedPerson {
   state?: string;
   postalCode?: string;
   country?: string;
-  isGuardian?: boolean;
-  isEmergencyContact?: boolean;
-  isPortalProxy?: boolean;
+  /*
+   * Required, not optional, and that is the fix for a real asymmetry. These
+   * three are NOT NULL on the row, so a domain object that omits one describes
+   * a record the database cannot hold. While they were optional the round trip
+   * was not identity: absence wrote no coding, and reading a resource with no
+   * coding can only answer false, so an omitted flag came back as `false` and
+   * `toEqual` had no way to call that correct.
+   */
+  isGuardian: boolean;
+  isEmergencyContact: boolean;
+  isPortalProxy: boolean;
   active?: boolean;
 }
 
@@ -109,8 +117,8 @@ export function toFhirRelatedPerson(input: DomainRelatedPerson): fhir4.RelatedPe
    * twice for a guardian recorded as `GUARD` says nothing extra and would give
    * a client a duplicate to explain.
    */
-  const roleFor = (code: string, held: boolean | undefined): fhir4.CodeableConcept | undefined =>
-    held === true && input.relationshipCode !== code
+  const roleFor = (code: string, held: boolean): fhir4.CodeableConcept | undefined =>
+    held && input.relationshipCode !== code
       ? codeableConcept({ system: SYSTEMS.roleCode, code })
       : undefined;
 
@@ -133,15 +141,19 @@ export function toFhirRelatedPerson(input: DomainRelatedPerson): fhir4.RelatedPe
     name: present<fhir4.HumanName>([
       humanName({ given: [input.givenName], family: input.familyName, use: 'official' }),
     ]),
+    /* No `use`. The row stores one phone and one email with nothing saying
+       whether either is a home, work or mobile number, and publishing `home`
+       would be this mapper inventing a classification the practice never
+       recorded. The reader below matches on system alone for the same reason,
+       which also lets it read another system's `mobile` or `work` entry. */
     telecom: present<fhir4.ContactPoint>([
-      contactPoint('phone', input.phone, 'home'),
-      contactPoint('email', input.email, 'home'),
+      contactPoint('phone', input.phone),
+      contactPoint('email', input.email),
     ]),
     address: home ? [home] : undefined,
-    extension:
-      input.isPortalProxy === true
-        ? [{ url: PORTAL_PROXY_EXTENSION, valueBoolean: true }]
-        : undefined,
+    extension: input.isPortalProxy
+      ? [{ url: PORTAL_PROXY_EXTENSION, valueBoolean: true }]
+      : undefined,
   });
 }
 
@@ -161,17 +173,28 @@ export function fromFhirRelatedPerson(resource: fhir4.RelatedPerson): DomainRela
   const primary = relationship[0];
 
   const name = resource.name?.[0];
+  const relationshipSet = relationship;
   const domain: DomainRelatedPerson = {
     id: resource.id ?? '',
     patientId: referenceId(resource.patient, 'Patient') ?? '',
     relationshipCode: readCode(primary, SYSTEMS.roleCode) ?? '',
     givenName: readString(name?.given?.[0]) ?? '',
     familyName: readString(name?.family) ?? '',
+    /*
+     * Always written, because the field is always present. The lookup runs over
+     * every coding including the first, so a person recorded as `GUARD` comes
+     * back a guardian.
+     */
+    isGuardian: hasRole(relationshipSet, GUARDIAN_CODE),
+    isEmergencyContact: hasRole(relationshipSet, EMERGENCY_CONTACT_CODE),
+    isPortalProxy: (resource.extension ?? []).some(
+      (entry) => entry.url === PORTAL_PROXY_EXTENSION && entry.valueBoolean === true
+    ),
   };
 
   setOptional(domain, 'relationshipText', readConceptText(primary));
-  setOptional(domain, 'phone', readContactPoint(resource.telecom, 'phone', 'home'));
-  setOptional(domain, 'email', readContactPoint(resource.telecom, 'email', 'home'));
+  setOptional(domain, 'phone', readContactPoint(resource.telecom, 'phone'));
+  setOptional(domain, 'email', readContactPoint(resource.telecom, 'email'));
 
   const home = resource.address?.[0];
   setOptional(domain, 'addressLine1', readString(home?.line?.[0]));
@@ -179,19 +202,6 @@ export function fromFhirRelatedPerson(resource: fhir4.RelatedPerson): DomainRela
   setOptional(domain, 'state', readString(home?.state));
   setOptional(domain, 'postalCode', readString(home?.postalCode));
   setOptional(domain, 'country', readString(home?.country));
-
-  /*
-   * Written unconditionally rather than only when true. A guardian flag that
-   * disappears on the way back is indistinguishable from one that was never
-   * set, and the round-trip test is what would have to notice. The lookup is
-   * over every coding including the first, so a person recorded as `GUARD`
-   * comes back a guardian.
-   */
-  domain.isGuardian = hasRole(relationship, GUARDIAN_CODE);
-  domain.isEmergencyContact = hasRole(relationship, EMERGENCY_CONTACT_CODE);
-  domain.isPortalProxy = (resource.extension ?? []).some(
-    (entry) => entry.url === PORTAL_PROXY_EXTENSION && entry.valueBoolean === true
-  );
 
   if (typeof resource.active === 'boolean') {
     domain.active = resource.active;

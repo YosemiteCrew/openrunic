@@ -93,9 +93,12 @@ describe('toFhirRelatedPerson', () => {
     const resource = toFhirRelatedPerson(MOTHER);
 
     expect(resource.name?.[0]).toMatchObject({ family: 'Verificada', given: ['Marisol'] });
+    /* No `use`. The row records one phone and one email and says nothing about
+       whether either is a home, work or mobile number, so publishing a use
+       would be this mapper making that up. */
     expect(resource.telecom).toEqual([
-      { system: 'phone', value: '+1 555 0142 118', use: 'home' },
-      { system: 'email', value: 'marisol@example.invalid', use: 'home' },
+      { system: 'phone', value: '+1 555 0142 118' },
+      { system: 'email', value: 'marisol@example.invalid' },
     ]);
     expect(resource.address?.[0]).toMatchObject({ city: 'Birchwood', postalCode: '97205' });
   });
@@ -183,6 +186,29 @@ describe('round trip', () => {
 
     expect(codes).toEqual(['GUARD']);
     expect(fromFhirRelatedPerson(toFhirRelatedPerson(guardian)).isGuardian).toBe(true);
+  });
+});
+
+describe('telecom, which the row does not classify', () => {
+  it('reads a contact point another system marked mobile or work', () => {
+    /*
+     * The reader matches on system alone. Requiring `home` would silently drop
+     * the phone number of every `RelatedPerson` written by a system that did
+     * record a use, which is most of them.
+     */
+    const domain = fromFhirRelatedPerson({
+      resourceType: 'RelatedPerson',
+      patient: { reference: 'Patient/p-1' },
+      relationship: [{ coding: [{ system: SYSTEMS.roleCode, code: 'MTH' }] }],
+      name: [{ family: 'Verificada', given: ['Marisol'] }],
+      telecom: [
+        { system: 'phone', value: '+1 555 0142 900', use: 'mobile' },
+        { system: 'email', value: 'work@example.invalid', use: 'work' },
+      ],
+    });
+
+    expect(domain.phone).toBe('+1 555 0142 900');
+    expect(domain.email).toBe('work@example.invalid');
   });
 });
 

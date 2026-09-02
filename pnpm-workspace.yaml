@@ -33,6 +33,11 @@ overrides:
   # range; 8.0.1 is the current latest of that line. Re-check when Prisma
   # updates.
   deepmerge-ts: 8.0.1
+  # GHSA-3f6p-5ww8-9rcr: mysql_clear_password leaks plaintext credentials in
+  # mysql2 < 3.22.0. Reached only transitively via the prisma CLI
+  # devDependency; dev-time only and pruned from the published image. 3.24.2 is
+  # the first patched line past the release-age cooldown.
+  mysql2: 3.24.2
 
 # pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
 onlyBuiltDependencies:

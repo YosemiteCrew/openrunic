@@ -207,18 +207,6 @@ ignore-packages:
   # Owner: ankit-yc. Re-review by: 2027-02-22.
   - '@visx/vendor'
 
-  # seq-queue: no `license` field in package.json at all, which is the single
-  # package that kept `require-license` off. VERIFIED 2026-08-22 by reading the
-  # installed LICENSE file: "(The MIT License)", Copyright (c) 2012 Netease,
-  # Inc. and other pomelo contributors. MIT is on the allow list; only the
-  # metadata is missing.
-  #
-  # It arrives via mysql2 under the `prisma` CLI, which is a devDependency and
-  # is deleted from the published image by the same prune stage.
-  # Owner: ankit-yc. Re-review by: 2027-02-22, or sooner if the package
-  # publishes a release that declares its licence, at which point this entry
-  # should simply be deleted.
-  - seq-queue
   # json-schema declares `(AFL-2.1 OR BSD-3-Clause)`. Under an OR the recipient
   # chooses, and its LICENSE file says so in as many words: "As a recipient of
   # Dojo, you may choose which license to receive this code under". openrunic

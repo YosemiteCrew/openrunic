@@ -333,6 +333,15 @@ const FILTERS: {
     status: 'ACTIVE',
     ids: ['id-id'],
   },
+  devices: {
+    page: 1,
+    pageSize: 25,
+    sort: 'createdAt',
+    order: 'desc',
+    patientId: 'id-patientId',
+    status: 'ACTIVE',
+    deviceIdentifier: '08717648200274',
+  },
   goals: {
     page: 1,
     pageSize: 25,

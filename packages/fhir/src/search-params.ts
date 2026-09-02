@@ -46,6 +46,7 @@ export type SupportedResourceType =
   | 'CareTeam'
   | 'CarePlan'
   | 'Goal'
+  | 'Device'
   | 'Questionnaire'
   | 'QuestionnaireResponse'
   | 'MedicationDispense'
@@ -330,6 +331,26 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
        asserting care happened with nothing behind it. */
     interactions: READ_ONLY,
     searchParams: [patientParam(), dateParam('date', 'When the procedure was performed.')],
+  },
+  Device: {
+    resourceType: 'Device',
+    profile: `${US_CORE}us-core-implantable-device`,
+    /* Read-only. A device is recorded where it was implanted, and one written
+       through an API is an implant nobody performed. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      /* The recall query, and the reason this resource is served at all: a
+         manufacturer names a device identifier and the practice has to turn it
+         into a list of patients. */
+      {
+        name: 'identifier',
+        type: 'token',
+        documentation: 'The UDI device identifier, as a recall names it.',
+        mustSupport: true,
+      },
+      statusParam('Whether the record is in force.'),
+    ],
   },
   Goal: {
     resourceType: 'Goal',

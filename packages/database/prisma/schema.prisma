@@ -774,6 +774,7 @@ model Organisation {
   careTeams             CareTeam[]
   carePlans             CarePlan[]
   goals                 Goal[]
+  devices               Device[]
   careTeamParticipants  CareTeamParticipant[]
   medicationStatements  MedicationStatement[]
   medicationRequests    MedicationRequest[]
@@ -1077,6 +1078,7 @@ model Patient {
   imagingStudies ImagingStudy[]
   carePlans      CarePlan[]
   goals          Goal[]
+  devices        Device[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
@@ -3360,4 +3362,78 @@ enum GoalPriority {
   HIGH
   MEDIUM
   LOW
+}
+
+/// A device implanted in a patient, and the identifier a recall arrives by.
+///
+/// The last of the US Core profiles, and the one with the sharpest reason to
+/// exist. When a manufacturer recalls a batch of pacemaker leads, the question
+/// is "which of our patients has one", and every other table in this schema
+/// answers a different question: `StockLot` knows what the practice bought and
+/// `StockPosting` knows what left the shelf, but neither knows what is still
+/// inside somebody. A device outlives the inventory record of it by twenty
+/// years.
+///
+/// So `deviceIdentifier` is indexed, and that index is the point of the table.
+///
+/// ## The UDI is stored, not parsed
+///
+/// A Unique Device Identifier carries the device identifier and the production
+/// identifiers - lot, serial, expiry, manufacture date - in one string, encoded
+/// by whichever issuing agency the manufacturer uses. Parsing that is a codec:
+/// GS1 application identifiers and HIBCC have different grammars, variable
+/// length fields and no self-description, and a half-parser that mis-splits a
+/// lot number produces a wrong lot with no error, which is worse for a recall
+/// than an unparsed string. The carrier is kept exactly as scanned, and the
+/// fields beside it are what somebody recorded.
+///
+/// ## No implant date, deliberately
+///
+/// FHIR has nowhere to put one on this resource, and the standard's own answer
+/// is a `Procedure` referencing the device. That resource is already served
+/// here, so the date lives where a receiving system will look for it rather
+/// than in an extension only this server understands.
+model Device {
+  id                 String       @id @db.Uuid
+  tenantId           String       @db.Uuid
+  patientId          String       @db.Uuid
+  status             DeviceStatus @default(ACTIVE)
+  /// SNOMED CT code for the kind of device. Coded, so a string.
+  typeCode           String?
+  typeSystem         String?
+  typeText           String
+  /// The device identifier half of the UDI: the part a recall names. Indexed,
+  /// because "which of our patients has one of these" is the question.
+  deviceIdentifier   String?
+  /// The UDI exactly as it was scanned or read off the label, in whichever
+  /// form the issuing agency uses. Never reconstructed from the parts.
+  udiCarrierHrf      String?
+  /// The distinct identifier, for a device that is a single instance of a
+  /// biological product rather than a manufactured lot.
+  distinctIdentifier String?
+  lotNumber          String?
+  serialNumber       String?
+  manufacturer       String?
+  modelNumber        String?
+  manufactureDate    DateTime?    @db.Date
+  expirationDate     DateTime?    @db.Date
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, status])
+  /// The recall query. Tenant-first like every other index here, so one
+  /// practice's search does not scan another's rows.
+  @@index([tenantId, deviceIdentifier])
+}
+
+/// FHIR's device-status value set, which says whether the record is in force
+/// rather than whether the device is working.
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  ENTERED_IN_ERROR
+  UNKNOWN
 }

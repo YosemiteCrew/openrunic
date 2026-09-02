@@ -7,6 +7,7 @@ import {
   toFhirCoverage,
   toFhirMedicationDispense,
   toFhirCarePlan,
+  toFhirDevice,
   toFhirGoal,
   toFhirCareTeam,
   toFhirProcedure,
@@ -33,6 +34,7 @@ import {
   type Coverage,
   type MedicationDispense,
   type CarePlan,
+  type Device,
   type Goal,
   type CareTeam,
   type Procedure,
@@ -478,6 +480,29 @@ export function goalResource(row: ScopedRow<'Goal'>): Goal {
       dueDate: row.dueDate?.toISOString().slice(0, 10),
       statusReason: absent(row.statusReason),
       expressedByUserId: absent(row.expressedByUserId),
+    })
+  );
+}
+
+/** An implanted device, from its own row. */
+export function deviceResource(row: ScopedRow<'Device'>): Device {
+  return toFhirDevice(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      status: row.status,
+      typeCode: absent(row.typeCode),
+      typeSystem: absent(row.typeSystem),
+      typeText: row.typeText,
+      deviceIdentifier: absent(row.deviceIdentifier),
+      udiCarrierHrf: absent(row.udiCarrierHrf),
+      distinctIdentifier: absent(row.distinctIdentifier),
+      lotNumber: absent(row.lotNumber),
+      serialNumber: absent(row.serialNumber),
+      manufacturer: absent(row.manufacturer),
+      modelNumber: absent(row.modelNumber),
+      manufactureDate: row.manufactureDate?.toISOString().slice(0, 10),
+      expirationDate: row.expirationDate?.toISOString().slice(0, 10),
     })
   );
 }

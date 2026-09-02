@@ -1,4 +1,9 @@
-import type { Bundle, FhirResource } from '@openrunic/fhir';
+import {
+  SEARCH_SUPPORT,
+  type Bundle,
+  type FhirResource,
+  type SearchParamDefinition,
+} from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
 import { SERVED_MODULES } from '../fhir/resources.js';
@@ -1371,6 +1376,100 @@ describe('every served resource', () => {
 
       expect(res.status).toBe(200);
       expect(((await res.json()) as FhirResource).resourceType).toBe(type);
+    }
+  );
+});
+
+describe('every advertised search parameter narrows', () => {
+  /*
+   * The conformance suite proves the CapabilityStatement and the router agree
+   * about which parameters exist, and that an unlisted one is refused rather
+   * than ignored. Neither catches the failure that actually happened: a
+   * parameter listed in both places, accepted by the router, and dropped on the
+   * way to the collection.
+   *
+   * `Procedure?date=` was exactly that. The module built a date window, spread
+   * it onto the query, and the query type never declared the fields, so nothing
+   * below read them. It compiled, because a spread into an object literal is
+   * not excess-property-checked. It passed every test, because every test asked
+   * for something that was there. A client asking for last month's procedures
+   * received the patient's whole history and had no way to tell.
+   *
+   * So: one search per parameter with a value nothing carries, against the
+   * unfiltered search. A working filter returns fewer rows; a dropped one
+   * returns the same rows. A 4xx is a pass, because refusing a value is not
+   * ignoring it, and several parameters legitimately reject a code outside
+   * their value set rather than answering with an empty bundle.
+   */
+
+  /** A value of the right shape that no seeded row can carry. */
+  const absentValue = (param: SearchParamDefinition): string => {
+    if (param.type === 'reference') {
+      /* A well-formed uuid belonging to nobody. A malformed one would be
+         refused for its shape, which passes without saying anything about the
+         filter. */
+      return '01890000-0000-7000-8000-0000000dead1';
+    }
+    if (param.type === 'date') return 'lt1900-01-01';
+    if (param.type === 'number' || param.type === 'quantity') return '999999';
+    /* Token and string alike, and deliberately not a plausible code: a value
+       that happened to be legal in some value set would be refused rather than
+       missed, and the refusal would hide a dropped filter. */
+    return 'openrunic-no-such-value';
+  };
+
+  /*
+   * `_id` is not one of these. It is a common parameter the router answers for
+   * every resource, not a filter any module declares, and it is covered by the
+   * conformance suite. Nothing else is exempt: an exemption here is a filter
+   * nobody checks.
+   */
+  const cases = SERVED_MODULES.flatMap((module) =>
+    module.params
+      .filter((name) => name !== '_id')
+      .map((name) => ({
+        type: module.type,
+        name,
+        definition: SEARCH_SUPPORT[module.type].searchParams.find((param) => param.name === name),
+      }))
+  );
+
+  it('has a case for every parameter of every served resource', () => {
+    /* The guard on the guard. A module whose params list were read wrongly
+       would produce no cases and this suite would pass by testing nothing. */
+    expect(cases.length).toBeGreaterThanOrEqual(SERVED_MODULES.length);
+    for (const one of cases) {
+      expect(
+        one.definition,
+        `${one.type}?${one.name} is mounted but absent from SEARCH_SUPPORT`
+      ).toBeDefined();
+    }
+  });
+
+  it.each(cases.map((one) => [`${one.type}?${one.name}`, one] as const))(
+    '%s returns fewer rows for a value nothing carries',
+    async (_label, one) => {
+      const { app } = harness();
+      const headers = bearer(TOKENS.adminA);
+
+      const all = (await (await app.request(`/fhir/${one.type}`, { headers })).json()) as Bundle;
+      const total = all.total ?? 0;
+      expect(total, `${one.type} has no seeded rows, so this proves nothing`).toBeGreaterThan(0);
+
+      const value = absentValue(one.definition as SearchParamDefinition);
+      const res = await app.request(`/fhir/${one.type}?${one.name}=${encodeURIComponent(value)}`, {
+        headers,
+      });
+
+      if (res.status >= 400 && res.status < 500) return;
+
+      expect(res.status).toBe(200);
+      const filtered = (await res.json()) as Bundle;
+      expect(
+        filtered.total,
+        `${one.type}?${one.name} is advertised but does not narrow: filtering on a value ` +
+          `nothing carries returned all ${String(total)} rows`
+      ).toBeLessThan(total);
     }
   );
 });

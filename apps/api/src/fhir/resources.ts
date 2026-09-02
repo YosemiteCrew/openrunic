@@ -841,7 +841,6 @@ const goalModule = defineFhirResource({
           ),
         }),
     ...window(query['target-date'], 'target-date'),
-    window: 'dueDate' as const,
     sort: 'dueDate' as const,
     order: 'asc' as const,
   }),

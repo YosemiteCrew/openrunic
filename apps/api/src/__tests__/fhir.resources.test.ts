@@ -180,6 +180,70 @@ function seedChart(dataset: MemoryDataset): void {
     effectiveAt: FIXED_NOW,
   });
 
+  /*
+   * A dispense: the posting, the lot it came from, the item and the movement
+   * that ties them together. All four are needed because the resource is
+   * assembled from the ledger rather than read from one row.
+   */
+  seed(dataset, 'StockItem', {
+    ...storageColumns(testId(30)),
+    sku: 'MET-500',
+    name: 'Metformin 500 mg tablet',
+    unit: 'tablet',
+    rxnormCode: '860975',
+    ndcCode: null,
+    cvxCode: null,
+    packSize: null,
+    reorderLevel: null,
+    controlled: false,
+    controlledSchedule: null,
+    active: true,
+  });
+
+  seed(dataset, 'StockLot', {
+    ...storageColumns(testId(31)),
+    itemId: testId(30),
+    facilityId: DEMO_FACILITY_A,
+    lotNumber: 'LOT-7741',
+    status: 'AVAILABLE',
+    expiresOn: null,
+    openedOn: null,
+    beyondUseDays: null,
+    manufacturer: null,
+    ndcCode: null,
+    receivedOn: FIXED_NOW,
+  });
+
+  seed(dataset, 'StockPosting', {
+    ...storageColumns(testId(32)),
+    kind: 'DISPENSE',
+    facilityId: DEMO_FACILITY_A,
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    prescriptionId: null,
+    immunizationId: null,
+    occurredOn: FIXED_NOW,
+    postedById: PROVIDER,
+    witnessedById: null,
+    reference: null,
+    note: null,
+  });
+
+  seed(dataset, 'StockMovement', {
+    ...storageColumns(testId(33)),
+    postingId: testId(32),
+    lotId: testId(31),
+    itemId: testId(30),
+    facilityId: DEMO_FACILITY_A,
+    kind: 'DISPENSE',
+    quantity: 60,
+    occurredOn: FIXED_NOW,
+    actorId: PROVIDER,
+    reason: null,
+    correctsMovementId: null,
+    lotSeq: 1,
+  });
+
   seed(dataset, 'Encounter', {
     ...storageColumns(ENCOUNTER),
     facilityId: DEMO_FACILITY_A,

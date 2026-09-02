@@ -44,6 +44,7 @@ export type SupportedResourceType =
   | 'RelatedPerson'
   | 'Questionnaire'
   | 'QuestionnaireResponse'
+  | 'MedicationDispense'
   | 'Provenance';
 
 /** FHIR search parameter types. */
@@ -279,6 +280,15 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
     profile: `${US_CORE}us-core-coverage`,
     interactions: WRITABLE,
     searchParams: [patientParam(), statusParam('Coverage status.', false)],
+  },
+  MedicationDispense: {
+    resourceType: 'MedicationDispense',
+    profile: `${US_CORE}us-core-medicationdispense`,
+    /* Read-only. A dispense is recorded by posting to the stock ledger, which
+       decrements a lot and is not something an API client should be able to do
+       by writing a resource. */
+    interactions: READ_ONLY,
+    searchParams: [patientParam()],
   },
   Questionnaire: {
     resourceType: 'Questionnaire',

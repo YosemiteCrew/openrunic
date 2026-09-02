@@ -390,6 +390,8 @@ const APPEND_ONLY =
 export interface StockPostingListQuery extends BaseQuery {
   facilityId?: string;
   kind?: StockPostingKind;
+  /** The chart a posting belongs to, for the postings that belong to one. */
+  patientId?: string;
   sort: 'occurredOn' | 'createdAt';
 }
 
@@ -402,12 +404,28 @@ export const stockPostingSpec: CollectionSpec<
   model: 'StockPosting',
   targetType: 'StockPosting',
   action: 'stock.posting',
-  // Declared for the audit stamp, not for narrowing. See the header.
   patientColumn: 'patientId',
   facilityColumn: 'facilityId',
   facilityScoped: true,
   encounterColumn: 'encounterId',
-  compartment: 'closed',
+  /*
+   * Compartmented on the chart rather than closed, which is a deliberate
+   * widening and the reason `MedicationDispense` can be served at all.
+   *
+   * `closed` refuses a patient-scoped principal the whole table. That was the
+   * right default while nothing here was addressed to a patient, and it stops
+   * being right once a dispense to that patient is a resource they are entitled
+   * to read: US Core requires it, and a patient reconciling their medicines
+   * against a recall has nowhere else to find the lot.
+   *
+   * The narrowing is an equality on `patientId`, so it excludes rather than
+   * exposes the operational postings. A receipt, a cycle count, a wastage and a
+   * transfer all carry a null chart, and null does not equal a compartment id
+   * in either storage implementation, so none of them is reachable by a
+   * patient-scoped token. `specs.stock-posting-compartment.test.ts` pins that,
+   * because it is the half a reader has to take on trust otherwise.
+   */
+  compartment: { column: 'patientId' },
 
   newRow(input: StockPostingCreateInput): Writable<'StockPosting'> {
     return {
@@ -521,6 +539,7 @@ export const stockPostingSpec: CollectionSpec<
   },
 
   matches(row: ScopedRow<'StockPosting'>, query: StockPostingListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     return equalsIfSet(query.facilityId, row.facilityId) && equalsIfSet(query.kind, row.kind);
   },
 
@@ -528,6 +547,7 @@ export const stockPostingSpec: CollectionSpec<
     return {
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.kind === undefined ? {} : { kind: query.kind }),
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
     };
   },
 

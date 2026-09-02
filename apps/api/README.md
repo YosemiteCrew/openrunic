@@ -50,7 +50,7 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 ### The FHIR boundary
 
 `GET /fhir/metadata` publishes the CapabilityStatement, generated from the mounted resource
-modules. Twenty-five resource types are served with `read` and `search-type`; `Patient` also accepts
+modules. Twenty-six resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
 
 Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
@@ -84,6 +84,7 @@ truthful-looking "no claims". The domain names are no longer accepted through th
 | `Location`              | `name`                                                                |
 | `Coverage`              | `patient`                                                             |
 | `RelatedPerson`         | `patient`                                                             |
+| `MedicationDispense`    | `patient`                                                             |
 | `Questionnaire`         | `status`                                                              |
 | `QuestionnaireResponse` | `patient`                                                             |
 | `Appointment`           | `_id`, `patient`, `date`, `practitioner`, `location`                  |

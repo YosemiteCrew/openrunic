@@ -468,6 +468,7 @@ const FILTERS: {
   stockPostings: {
     page: 1,
     pageSize: 25,
+    patientId: 'id-patientId',
     sort: 'occurredOn',
     order: 'asc',
     facilityId: 'id-facilityId',

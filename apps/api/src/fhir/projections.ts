@@ -5,6 +5,7 @@ import {
   toFhirClaim,
   toFhirCondition,
   toFhirCoverage,
+  toFhirMedicationDispense,
   toFhirRelatedPerson,
   toFhirDiagnosticReport,
   toFhirDocumentReference,
@@ -26,6 +27,7 @@ import {
   type Claim,
   type Condition,
   type Coverage,
+  type MedicationDispense,
   type RelatedPerson,
   type Questionnaire,
   type QuestionnaireResponse,
@@ -260,6 +262,58 @@ export function locationResource(row: ScopedRow<'Facility'>): Location {
       postalCode: absent(row.postalCode),
       country: row.country,
       active: row.active,
+    })
+  );
+}
+
+/**
+ * What a dispense needs from beyond its own posting.
+ *
+ * A posting says who and when; the movements hanging off it say which product,
+ * how much and from which lot. Both are loaded per page rather than per row.
+ */
+export interface DispensePageData {
+  readonly movementsByPosting: ReadonlyMap<string, readonly ScopedRow<'StockMovement'>[]>;
+  readonly itemsById: ReadonlyMap<string, ScopedRow<'StockItem'>>;
+  readonly lotsById: ReadonlyMap<string, ScopedRow<'StockLot'>>;
+}
+
+/**
+ * Medicine handed to a patient, from the stock posting that recorded it.
+ *
+ * One resource per posting, using its first movement for the product. A
+ * posting of kind DISPENSE is one hand-over, and the ledger writes one movement
+ * per lot it came from, so a second movement means the same medicine drawn from
+ * two lots rather than a second medicine. The first lot is the one reported; a
+ * split across lots is rare and losing the second lot number is a smaller wrong
+ * answer than inventing a second dispense with an id nothing can address.
+ */
+export function medicationDispenseResource(
+  row: ScopedRow<'StockPosting'>,
+  page: DispensePageData
+): MedicationDispense {
+  const movements = page.movementsByPosting.get(row.id) ?? [];
+  const first = movements[0];
+  const item = first === undefined ? undefined : page.itemsById.get(first.itemId);
+  const lot = first === undefined ? undefined : page.lotsById.get(first.lotId);
+
+  return toFhirMedicationDispense(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId ?? '',
+      encounterId: absent(row.encounterId),
+      prescriptionId: absent(row.prescriptionId),
+      rxnormCode: absent(item?.rxnormCode ?? null),
+      ndcCode: absent(item?.ndcCode ?? null),
+      /* The ledger cannot hold a movement without an item, so an absent name
+         means the item row is gone rather than unnamed. Saying so beats an
+         empty string, which reads as a product with no name. */
+      medicationDisplay: item?.name ?? 'Unknown product',
+      quantityValue: first === undefined ? undefined : Number(first.quantity),
+      quantityUnit: absent(item?.unit ?? null),
+      whenHandedOver: row.occurredOn.toISOString(),
+      performerId: row.postedById,
+      lotNumber: absent(lot?.lotNumber ?? null),
     })
   );
 }

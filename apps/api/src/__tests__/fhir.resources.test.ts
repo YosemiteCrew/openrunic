@@ -266,6 +266,45 @@ function seedChart(dataset: MemoryDataset): void {
     recordedById: PROVIDER,
   });
 
+  /* Two implants: one scanned with a full UDI and one recorded from a letter,
+     because the second is the shape most likely to be recalled and the first is
+     the shape a recall is matched against. */
+  seed(dataset, 'Device', {
+    ...storageColumns(testId(47)),
+    patientId: PATIENT,
+    status: 'ACTIVE',
+    typeCode: '14106009',
+    typeSystem: 'http://snomed.info/sct',
+    typeText: 'Cardiac pacemaker',
+    deviceIdentifier: '08717648200274',
+    udiCarrierHrf: '(01)08717648200274(17)141120(10)7654321D',
+    distinctIdentifier: null,
+    lotNumber: '7654321D',
+    serialNumber: '10987654d321',
+    manufacturer: 'Testmaker Medical',
+    modelNumber: 'TM-2200',
+    manufactureDate: FIXED_NOW,
+    expirationDate: null,
+  });
+
+  seed(dataset, 'Device', {
+    ...storageColumns(testId(48)),
+    patientId: PATIENT,
+    status: 'ACTIVE',
+    typeCode: null,
+    typeSystem: null,
+    typeText: 'Hip prosthesis, left',
+    deviceIdentifier: null,
+    udiCarrierHrf: null,
+    distinctIdentifier: null,
+    lotNumber: null,
+    serialNumber: null,
+    manufacturer: null,
+    modelNumber: null,
+    manufactureDate: null,
+    expirationDate: null,
+  });
+
   /* Two goals: one with a single-value target and one with a range, so the
      projection exercises both halves of the detail[x] choice rather than the
      same half twice. */
@@ -910,6 +949,65 @@ describe('Questionnaire serves published forms only', () => {
     expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
       testId(13),
     ]);
+  });
+});
+
+describe('the Device identifier filter answers the recall question', () => {
+  it('finds the patients carrying a recalled identifier and nobody else', async () => {
+    /*
+     * The reason this resource is served. A manufacturer names a device
+     * identifier and the practice turns it into a list of patients. A filter
+     * that were advertised and dropped would answer with every implanted device
+     * in the practice, and the resulting recall list would be unusable in the
+     * direction nobody checks.
+     */
+    const { app } = harness();
+
+    const matched = (await (
+      await app.request('/fhir/Device?identifier=08717648200274', {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+    expect(matched.total).toBe(1);
+
+    const missed = (await (
+      await app.request('/fhir/Device?identifier=00000000000000', {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+    expect(missed.total).toBe(0);
+  });
+
+  it('does not match a recall identifier against the barcode it appears inside', async () => {
+    /*
+     * The carrier string contains the device identifier and the lot and the
+     * serial. Matching against it as a substring would find devices whose lot
+     * happened to contain those digits, and a recall list with strangers on it
+     * is as unusable as one with people missing.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Device?identifier=7654321D', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(0);
+  });
+
+  it('serves the carrier exactly as it was scanned', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Device?identifier=08717648200274', {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+    const device = bundle.entry?.[0]?.resource as {
+      udiCarrier?: { carrierHRF?: string; deviceIdentifier?: string }[];
+    };
+
+    expect(device.udiCarrier?.[0]?.carrierHRF).toBe('(01)08717648200274(17)141120(10)7654321D');
+    expect(device.udiCarrier?.[0]?.deviceIdentifier).toBe('08717648200274');
   });
 });
 

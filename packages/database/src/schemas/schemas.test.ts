@@ -33,6 +33,7 @@ import {
   paymentCreateInput,
   promotionManifestInput,
   carePlanInput,
+  deviceInput,
   goalInput,
   careTeamInput,
   careTeamParticipantInput,
@@ -474,6 +475,57 @@ describe('goalInput', () => {
     rejects(goalInput, { ...validGoal, lifecycleStatus: 'ABANDONED' });
     rejects(goalInput, { ...validGoal, achievementStatus: 'GOING_WELL' });
     rejects(goalInput, { ...validGoal, priority: 'URGENT' });
+  });
+});
+
+describe('deviceInput', () => {
+  const validDevice = { patientId: ID.patient, typeText: 'Cardiac pacemaker' };
+
+  it('accepts a device recorded from a letter, with no UDI at all', () => {
+    /* Most older implants are. A schema that required the barcode would refuse
+       the devices most likely to be recalled. */
+    accepts(deviceInput, validDevice);
+  });
+
+  it('accepts a scanned device with its carrier and identifier', () => {
+    accepts(deviceInput, {
+      ...validDevice,
+      deviceIdentifier: '08717648200274',
+      udiCarrierHrf: '(01)08717648200274(17)141120(10)7654321D',
+      lotNumber: '7654321D',
+    });
+  });
+
+  it('rejects a type name that is only whitespace', () => {
+    rejects(deviceInput, { ...validDevice, typeText: '   ' });
+  });
+
+  it('rejects a code without its system, and a system without its code', () => {
+    rejects(deviceInput, { ...validDevice, typeCode: '14106009' });
+    rejects(deviceInput, { ...validDevice, typeSystem: 'http://snomed.info/sct' });
+  });
+
+  it('accepts both together', () => {
+    accepts(deviceInput, {
+      ...validDevice,
+      typeCode: '14106009',
+      typeSystem: 'http://snomed.info/sct',
+    });
+  });
+
+  it('rejects an expiry before manufacture', () => {
+    rejects(deviceInput, {
+      ...validDevice,
+      manufactureDate: '2026-01-05',
+      expirationDate: '2025-01-05',
+    });
+  });
+
+  it('accepts a carrier longer than a short text field would hold', () => {
+    /* A GS1 form with every production identifier runs past 100 characters and
+       HIBCC concatenates more, so the ordinary 256 limit is not the right one
+       here and a scanned device would be refused at the door. */
+    accepts(deviceInput, { ...validDevice, udiCarrierHrf: '+'.repeat(300) });
   });
 });
 

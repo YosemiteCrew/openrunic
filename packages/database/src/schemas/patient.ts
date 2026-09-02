@@ -5,6 +5,7 @@ import {
   GOAL_ACHIEVEMENT_STATUSES,
   GOAL_LIFECYCLE_STATUSES,
   GOAL_PRIORITIES,
+  DEVICE_STATUSES,
   CARE_PLAN_INTENTS,
   CARE_PLAN_STATUSES,
   CARE_TEAM_MEMBER_TYPES,
@@ -229,6 +230,43 @@ export const goalInput = z
     { message: 'a numeric target needs a unit', path: ['targetUnit'] }
   );
 
+export const deviceInput = z
+  .strictObject({
+    patientId: uuid,
+    status: z.enum(DEVICE_STATUSES).optional(),
+    typeCode: code.optional(),
+    typeSystem: codeSystem.optional(),
+    typeText: shortText,
+    deviceIdentifier: z.string().min(1).max(128).optional(),
+    /* Up to 512 because a UDI carrier is long: a GS1 form with every production
+       identifier runs past 100 characters and HIBCC concatenates more. */
+    udiCarrierHrf: z.string().min(1).max(512).optional(),
+    distinctIdentifier: z.string().min(1).max(128).optional(),
+    lotNumber: z.string().min(1).max(64).optional(),
+    serialNumber: z.string().min(1).max(64).optional(),
+    manufacturer: shortText.optional(),
+    modelNumber: z.string().min(1).max(128).optional(),
+    manufactureDate: localDate.optional(),
+    expirationDate: localDate.optional(),
+  })
+  .refine((value) => value.typeText.trim().length > 0, {
+    message: 'typeText must name the device',
+    path: ['typeText'],
+  })
+  /* Both or neither. A code with no system is a string nobody can look up, and
+     a system with no code names a vocabulary and no term in it. */
+  .refine((value) => (value.typeCode === undefined) === (value.typeSystem === undefined), {
+    message: 'typeCode and typeSystem are set together or not at all',
+    path: ['typeSystem'],
+  })
+  .refine(
+    (value) =>
+      !value.expirationDate ||
+      !value.manufactureDate ||
+      value.expirationDate >= value.manufactureDate,
+    { message: 'expirationDate must not precede manufactureDate', path: ['expirationDate'] }
+  );
+
 export const payerInput = z.strictObject({
   name: z.string().min(1).max(256),
   /** Trading-partner id used in the 837 NM109. */
@@ -292,6 +330,7 @@ export type CareTeamInput = z.infer<typeof careTeamInput>;
 export type CareTeamParticipantInput = z.infer<typeof careTeamParticipantInput>;
 export type CarePlanInput = z.infer<typeof carePlanInput>;
 export type GoalInput = z.infer<typeof goalInput>;
+export type DeviceInput = z.infer<typeof deviceInput>;
 export type PayerInput = z.infer<typeof payerInput>;
 export type CoverageInput = z.infer<typeof coverageInput>;
 export type ConsentGrantInput = z.infer<typeof consentGrantInput>;

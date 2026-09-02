@@ -153,6 +153,9 @@ export type GoalAchievementStatus = (typeof GOAL_ACHIEVEMENT_STATUSES)[number];
 export const GOAL_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
 export type GoalPriority = (typeof GOAL_PRIORITIES)[number];
 
+export const DEVICE_STATUSES = ['ACTIVE', 'INACTIVE', 'ENTERED_IN_ERROR', 'UNKNOWN'] as const;
+export type DeviceStatus = (typeof DEVICE_STATUSES)[number];
+
 export const CONDITION_CATEGORIES = [
   'PROBLEM_LIST_ITEM',
   'ENCOUNTER_DIAGNOSIS',
@@ -509,6 +512,7 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.GoalLifecycleStatus, typeof GOAL_LIFECYCLE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.GoalAchievementStatus, typeof GOAL_ACHIEVEMENT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.GoalPriority, typeof GOAL_PRIORITIES>>,
+  AssertOk<AssertMirrors<Prisma.DeviceStatus, typeof DEVICE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.ImagingStudyStatus, typeof IMAGING_STUDY_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.TelehealthVisitStatus, typeof TELEHEALTH_VISIT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormStatus, typeof FORM_STATUSES>>,

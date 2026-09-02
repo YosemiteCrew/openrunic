@@ -120,6 +120,11 @@ describe('the README resource table', () => {
       'Twenty-eight',
       'Twenty-nine',
       'Thirty',
+      'Thirty-one',
+      'Thirty-two',
+      'Thirty-three',
+      'Thirty-four',
+      'Thirty-five',
     ];
     const expected = words[SERVED_MODULES.length - 17];
     expect(expected, 'the count sentence needs a word for this many resources').toBeDefined();

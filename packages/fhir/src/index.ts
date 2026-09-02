@@ -442,3 +442,6 @@ export type {
   DomainGoalLifecycleStatus,
   DomainGoalPriority,
 } from './goal.js';
+export type Device = fhir4.Device;
+export { DEVICE_STATUS, fromFhirDevice, toFhirDevice } from './device.js';
+export type { DomainDevice, DomainDeviceStatus } from './device.js';

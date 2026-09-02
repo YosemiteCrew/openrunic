@@ -1,6 +1,7 @@
 import type {
   AllergyIntoleranceInput,
   CarePlanInput,
+  DeviceInput,
   GoalInput,
   CareTeamInput,
   CareTeamParticipantInput,
@@ -1750,6 +1751,76 @@ export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalLis
   },
 };
 
+export type DeviceStatus = Row<'Device'>['status'];
+
+export interface DeviceListQuery extends BaseQuery {
+  patientId?: string;
+  status?: DeviceStatus;
+  /** The recall query: every patient carrying this device identifier. */
+  deviceIdentifier?: string;
+  sort: 'createdAt';
+}
+
+export type DevicePatchInput = Partial<Omit<DeviceInput, 'patientId'>>;
+
+export const deviceSpec: CollectionSpec<'Device', DeviceInput, DevicePatchInput, DeviceListQuery> =
+  {
+    model: 'Device',
+    targetType: 'Device',
+    action: 'device',
+    patientColumn: 'patientId',
+    compartment: { column: 'patientId' },
+
+    newRow(input: DeviceInput): Writable<'Device'> {
+      return {
+        patientId: input.patientId,
+        status: input.status ?? 'ACTIVE',
+        typeCode: input.typeCode ?? null,
+        typeSystem: input.typeSystem ?? null,
+        typeText: input.typeText,
+        deviceIdentifier: input.deviceIdentifier ?? null,
+        udiCarrierHrf: input.udiCarrierHrf ?? null,
+        distinctIdentifier: input.distinctIdentifier ?? null,
+        lotNumber: input.lotNumber ?? null,
+        serialNumber: input.serialNumber ?? null,
+        manufacturer: input.manufacturer ?? null,
+        modelNumber: input.modelNumber ?? null,
+        manufactureDate: input.manufactureDate ?? null,
+        expirationDate: input.expirationDate ?? null,
+      };
+    },
+
+    patchData(patch: DevicePatchInput): Partial<Writable<'Device'>> {
+      return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    },
+
+    matches(row: ScopedRow<'Device'>, query: DeviceListQuery): boolean {
+      if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+      if (query.status !== undefined && row.status !== query.status) return false;
+      return (
+        query.deviceIdentifier === undefined || row.deviceIdentifier === query.deviceIdentifier
+      );
+    },
+
+    where(query: DeviceListQuery) {
+      return {
+        ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+        ...(query.status === undefined ? {} : { status: query.status }),
+        ...(query.deviceIdentifier === undefined
+          ? {}
+          : { deviceIdentifier: query.deviceIdentifier }),
+      };
+    },
+
+    sortValue(row: ScopedRow<'Device'>): number {
+      return row.createdAt.getTime();
+    },
+
+    orderBy(query: DeviceListQuery) {
+      return [{ createdAt: query.order }, { id: 'asc' as const }];
+    },
+  };
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
@@ -1758,6 +1829,7 @@ export const clinicalSpecs = {
   procedures: procedureSpec,
   carePlans: carePlanSpec,
   goals: goalSpec,
+  devices: deviceSpec,
   careTeams: careTeamSpec,
   careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,

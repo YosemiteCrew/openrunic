@@ -1,5 +1,6 @@
 import {
   CARE_PLAN_STATUS,
+  DEVICE_STATUS,
   GOAL_LIFECYCLE_STATUS,
   CARE_TEAM_STATUS,
   CLAIM_STATUS,
@@ -48,6 +49,7 @@ import {
   medicationDispenseResource,
   type DispensePageData,
   carePlanResource,
+  deviceResource,
   goalResource,
   careTeamResource,
   procedureResource,
@@ -855,6 +857,44 @@ function goalLifecycleParam(): string[] {
   return GOAL_LIFECYCLE_STATUS.lossyValues.length === 0 ? ['lifecycle-status'] : [];
 }
 
+/**
+ * A device implanted in a patient.
+ *
+ * `identifier` is why this is served. A manufacturer recalls a batch and names
+ * a device identifier; the practice has to turn that into a list of patients,
+ * and no other resource here can answer it. Inventory knows what was bought and
+ * what left the shelf, and neither knows what is still inside somebody twenty
+ * years later.
+ *
+ * The parameter is answered against the stored device identifier and never
+ * against the carrier string. Matching a recall's identifier as a substring of
+ * a scanned barcode would find devices whose lot or serial happened to contain
+ * those digits, and a recall list with strangers on it is as unusable as one
+ * with people missing.
+ */
+const deviceModule = defineFhirResource({
+  type: 'Device',
+  /*
+   * Read and search only. A device is recorded where it was implanted, and one
+   * written through an API is an implant nobody performed.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'identifier', ...losslessStatus(DEVICE_STATUS)],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.devices,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.identifier === undefined ? {} : { deviceIdentifier: tokenValue(query.identifier) }),
+    ...(query.status === undefined
+      ? {}
+      : { status: statusToken(DEVICE_STATUS, query.status, 'status') }),
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  toResource: deviceResource,
+});
+
 const carePlanModule = defineFhirResource({
   type: 'CarePlan',
   /*
@@ -1390,6 +1430,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   procedureModule,
   carePlanModule,
   goalModule,
+  deviceModule,
   careTeamModule,
   questionnaireModule,
   questionnaireResponseModule,

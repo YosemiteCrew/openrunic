@@ -382,6 +382,104 @@ describe('the care plan repository', () => {
   });
 });
 
+describe('the device repository', () => {
+  const DEVICE = { patientId: PATIENT, typeText: 'Cardiac pacemaker' };
+
+  it('creates a device that is active, with no UDI recorded', () => {
+    /* Most older implants are entered from a clinic letter and have no barcode
+       at all. A default that assumed one would refuse the devices most likely
+       to be recalled. */
+    return harness()
+      .repos()
+      .devices.create(DEVICE)
+      .then((row) => {
+        expect(row.status).toBe('ACTIVE');
+        expect(row.deviceIdentifier).toBeNull();
+        expect(row.udiCarrierHrf).toBeNull();
+        expect(row.typeCode).toBeNull();
+      });
+  });
+
+  it('carries the whole UDI through', async () => {
+    const row = await harness()
+      .repos()
+      .devices.create({
+        ...DEVICE,
+        typeCode: '14106009',
+        typeSystem: 'http://snomed.info/sct',
+        deviceIdentifier: '08717648200274',
+        udiCarrierHrf: '(01)08717648200274(17)141120(10)7654321D',
+        distinctIdentifier: 'D-1',
+        lotNumber: '7654321D',
+        serialNumber: '10987654d321',
+        manufacturer: 'Testmaker Medical',
+        modelNumber: 'TM-2200',
+        manufactureDate: FIXED_NOW,
+        expirationDate: LATER,
+      });
+
+    expect(row).toMatchObject({
+      deviceIdentifier: '08717648200274',
+      udiCarrierHrf: '(01)08717648200274(17)141120(10)7654321D',
+      lotNumber: '7654321D',
+      serialNumber: '10987654d321',
+      manufactureDate: FIXED_NOW,
+      expirationDate: LATER,
+    });
+  });
+
+  it.each(['memory', 'prisma'] as const)(
+    'narrows to one device identifier, which is the recall query (%s)',
+    async (backend) => {
+      /*
+       * The reason the table exists. Both backends, because the filter is
+       * applied in two places that nothing ties together, and a recall list
+       * that is wrong in either direction is unusable.
+       */
+      const repos = harness(backend).repos();
+      const recalled = await repos.devices.create({
+        ...DEVICE,
+        deviceIdentifier: '08717648200274',
+      });
+      await repos.devices.create({ ...DEVICE, deviceIdentifier: '99999999999999' });
+
+      const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+      await expect(
+        repos.devices
+          .list({ ...query, deviceIdentifier: '08717648200274' })
+          .then((page) => page.rows.map((row) => row.id))
+      ).resolves.toEqual([recalled.id]);
+      await expect(
+        repos.devices.list({ ...query, deviceIdentifier: 'not-a-device' })
+      ).resolves.toMatchObject({ total: 0 });
+    }
+  );
+
+  it('filters by patient and status', async () => {
+    const repos = harness().repos();
+    await repos.devices.create(DEVICE);
+    await repos.devices.create({ ...DEVICE, patientId: testId(210), status: 'INACTIVE' });
+
+    const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+    await expect(repos.devices.list({ ...query, patientId: PATIENT })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(repos.devices.list({ ...query, status: 'INACTIVE' })).resolves.toMatchObject({
+      total: 1,
+    });
+  });
+
+  it('patches the status without disturbing the identifier', async () => {
+    const repos = harness().repos();
+    const row = await repos.devices.create({ ...DEVICE, deviceIdentifier: '08717648200274' });
+
+    const patched = await repos.devices.update(row.id, { status: 'INACTIVE' });
+
+    expect(patched?.status).toBe('INACTIVE');
+    expect(patched?.deviceIdentifier).toBe('08717648200274');
+  });
+});
+
 describe('the goal repository', () => {
   const GOAL = { patientId: PATIENT, description: 'HbA1c below 7%' };
 

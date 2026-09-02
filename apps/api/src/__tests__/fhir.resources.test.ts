@@ -660,6 +660,39 @@ function harness(): ReturnType<typeof createTestApp> {
   return created;
 }
 
+describe('a submission whose definition cannot be read', () => {
+  it('refuses rather than serving a response with no questions', async () => {
+    /*
+     * `formDefinitionId` is a required foreign key, so a submission that cannot
+     * reach its definition means the row was deleted or belongs to another
+     * tenant. Either way the answers cannot be attached to the questions they
+     * answer, and a QuestionnaireResponse with bare values and no questionnaire
+     * is a clinical record a reader cannot interpret.
+     */
+    const { app, dataset } = harness();
+    seed(dataset, 'FormSubmission', {
+      ...storageColumns(testId(15)),
+      formDefinitionId: testId(9999),
+      patientId: PATIENT,
+      encounterId: null,
+      status: 'COMPLETED',
+      values: { reason: 'Orphaned' },
+      completedByType: 'USER',
+      completedByUserId: null,
+      completedAt: FIXED_NOW,
+      signedAt: null,
+      signedById: null,
+      effectiveAt: FIXED_NOW,
+    });
+
+    const res = await app.request('/fhir/QuestionnaireResponse', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(500);
+  });
+});
+
 describe('every served resource', () => {
   it.each(SERVED_MODULES.map((module) => module.type))(
     '%s comes back from a search as a resource of its own type',

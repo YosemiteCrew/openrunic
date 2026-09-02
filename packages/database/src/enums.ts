@@ -117,6 +117,42 @@ export type CarePlanStatus = (typeof CARE_PLAN_STATUSES)[number];
 export const CARE_PLAN_INTENTS = ['PROPOSAL', 'PLAN', 'ORDER', 'OPTION'] as const;
 export type CarePlanIntent = (typeof CARE_PLAN_INTENTS)[number];
 
+export const GOAL_LIFECYCLE_STATUSES = [
+  'PROPOSED',
+  'PLANNED',
+  'ACCEPTED',
+  'ACTIVE',
+  'ON_HOLD',
+  'COMPLETED',
+  'CANCELLED',
+  'ENTERED_IN_ERROR',
+  'REJECTED',
+] as const;
+export type GoalLifecycleStatus = (typeof GOAL_LIFECYCLE_STATUSES)[number];
+
+/**
+ * How a goal is going, kept separate from where it is in its life.
+ *
+ * Collapsing the two loses whichever the other was set from: a goal recorded as
+ * WORSENING would stop being ACTIVE, and a worklist of active goals would
+ * quietly shed the patients who most need to be on it.
+ */
+export const GOAL_ACHIEVEMENT_STATUSES = [
+  'IN_PROGRESS',
+  'IMPROVING',
+  'WORSENING',
+  'NO_CHANGE',
+  'ACHIEVED',
+  'SUSTAINING',
+  'NOT_ACHIEVED',
+  'NO_PROGRESS',
+  'NOT_ATTAINABLE',
+] as const;
+export type GoalAchievementStatus = (typeof GOAL_ACHIEVEMENT_STATUSES)[number];
+
+export const GOAL_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
+export type GoalPriority = (typeof GOAL_PRIORITIES)[number];
+
 export const CONDITION_CATEGORIES = [
   'PROBLEM_LIST_ITEM',
   'ENCOUNTER_DIAGNOSIS',
@@ -470,6 +506,9 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.CareTeamMemberType, typeof CARE_TEAM_MEMBER_TYPES>>,
   AssertOk<AssertMirrors<Prisma.CarePlanStatus, typeof CARE_PLAN_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.CarePlanIntent, typeof CARE_PLAN_INTENTS>>,
+  AssertOk<AssertMirrors<Prisma.GoalLifecycleStatus, typeof GOAL_LIFECYCLE_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.GoalAchievementStatus, typeof GOAL_ACHIEVEMENT_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.GoalPriority, typeof GOAL_PRIORITIES>>,
   AssertOk<AssertMirrors<Prisma.ImagingStudyStatus, typeof IMAGING_STUDY_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.TelehealthVisitStatus, typeof TELEHEALTH_VISIT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormStatus, typeof FORM_STATUSES>>,

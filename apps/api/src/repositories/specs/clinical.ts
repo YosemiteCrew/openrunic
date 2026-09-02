@@ -1,6 +1,7 @@
 import type {
   AllergyIntoleranceInput,
   CarePlanInput,
+  GoalInput,
   CareTeamInput,
   CareTeamParticipantInput,
   ClinicalNoteInput,
@@ -1625,6 +1626,80 @@ export const carePlanSpec: CollectionSpec<
   },
 };
 
+export type GoalLifecycleStatus = Row<'Goal'>['lifecycleStatus'];
+
+export interface GoalListQuery extends BaseQuery {
+  patientId?: string;
+  carePlanId?: string;
+  lifecycleStatus?: GoalLifecycleStatus;
+  sort: 'createdAt' | 'dueDate';
+}
+
+export type GoalPatchInput = Partial<Omit<GoalInput, 'patientId'>>;
+
+export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalListQuery> = {
+  model: 'Goal',
+  targetType: 'Goal',
+  action: 'goal',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: GoalInput): Writable<'Goal'> {
+    return {
+      patientId: input.patientId,
+      carePlanId: input.carePlanId ?? null,
+      lifecycleStatus: input.lifecycleStatus ?? 'ACTIVE',
+      achievementStatus: input.achievementStatus ?? null,
+      priority: input.priority ?? null,
+      description: input.description,
+      descriptionCode: input.descriptionCode ?? null,
+      descriptionSystem: input.descriptionSystem ?? null,
+      targetMeasureCode: input.targetMeasureCode ?? null,
+      targetMeasureSystem: input.targetMeasureSystem ?? null,
+      targetValue: input.targetValue ?? null,
+      targetLow: input.targetLow ?? null,
+      targetHigh: input.targetHigh ?? null,
+      targetUnit: input.targetUnit ?? null,
+      startDate: input.startDate ?? null,
+      dueDate: input.dueDate ?? null,
+      statusReason: input.statusReason ?? null,
+      expressedByUserId: input.expressedByUserId ?? null,
+    };
+  },
+
+  patchData(patch: GoalPatchInput): Partial<Writable<'Goal'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'Goal'>, query: GoalListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.carePlanId !== undefined && row.carePlanId !== query.carePlanId) return false;
+    return query.lifecycleStatus === undefined || row.lifecycleStatus === query.lifecycleStatus;
+  },
+
+  where(query: GoalListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.carePlanId === undefined ? {} : { carePlanId: query.carePlanId }),
+      ...(query.lifecycleStatus === undefined ? {} : { lifecycleStatus: query.lifecycleStatus }),
+    };
+  },
+
+  /* A goal with no due date sorts as if it were due at the epoch, which puts it
+     first ascending. That is the honest place for it: an undated goal is one
+     nobody has committed to a date for, and burying it at the end of the list
+     is how it stays undated. */
+  sortValue(row: ScopedRow<'Goal'>, sort: GoalListQuery['sort']): number {
+    return sort === 'dueDate' ? (row.dueDate?.getTime() ?? 0) : row.createdAt.getTime();
+  },
+
+  orderBy(query: GoalListQuery) {
+    const { order } = query;
+    if (query.sort === 'dueDate') return [{ dueDate: order }, { id: 'asc' as const }];
+    return [{ createdAt: order }, { id: 'asc' as const }];
+  },
+};
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
@@ -1632,6 +1707,7 @@ export const clinicalSpecs = {
   problems: conditionSpec,
   procedures: procedureSpec,
   carePlans: carePlanSpec,
+  goals: goalSpec,
   careTeams: careTeamSpec,
   careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,

@@ -1,5 +1,6 @@
 import {
   CARE_PLAN_STATUS,
+  GOAL_LIFECYCLE_STATUS,
   CARE_TEAM_STATUS,
   CLAIM_STATUS,
   DOCUMENT_STATUS,
@@ -46,6 +47,7 @@ import {
   medicationDispenseResource,
   type DispensePageData,
   carePlanResource,
+  goalResource,
   careTeamResource,
   procedureResource,
   relatedPersonResource,
@@ -784,6 +786,55 @@ async function prepareCareTeams(
  * ordinary search fail, and accepting it without answering would be the failure
  * this boundary exists to prevent.
  */
+/**
+ * What the patient and the clinician agreed to aim at.
+ *
+ * The status parameter is `lifecycle-status`, not `status`. R4 gives Goal no
+ * `status` parameter at all, so `losslessStatus` is not used here: it names the
+ * parameter it advertises, and the name would be one no conforming client sends
+ * and no other server answers. The losslessness argument still applies and is
+ * asserted rather than assumed, because a lossy mapping behind an advertised
+ * filter is the failure this boundary exists to prevent.
+ *
+ * `target-date` is the due date, which is the one target element US Core
+ * requires support for. It sorts on the same column it filters, so a client
+ * paging through goals by when they are due gets a stable order.
+ */
+const goalModule = defineFhirResource({
+  type: 'Goal',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'target-date', ...goalLifecycleParam()],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.goals,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query['lifecycle-status'] === undefined
+      ? {}
+      : {
+          lifecycleStatus: statusToken(
+            GOAL_LIFECYCLE_STATUS,
+            query['lifecycle-status'],
+            'lifecycle-status'
+          ),
+        }),
+    ...window(query['target-date'], 'target-date'),
+    window: 'dueDate' as const,
+    sort: 'dueDate' as const,
+    order: 'asc' as const,
+  }),
+  toResource: goalResource,
+});
+
+/**
+ * Advertises `lifecycle-status` only when the FHIR value set covers every
+ * domain state, which is what {@link losslessStatus} does for the parameter
+ * that is actually called `status`.
+ */
+function goalLifecycleParam(): string[] {
+  return GOAL_LIFECYCLE_STATUS.lossyValues.length === 0 ? ['lifecycle-status'] : [];
+}
+
 const carePlanModule = defineFhirResource({
   type: 'CarePlan',
   /*
@@ -1315,6 +1366,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   medicationDispenseModule,
   procedureModule,
   carePlanModule,
+  goalModule,
   careTeamModule,
   questionnaireModule,
   questionnaireResponseModule,

@@ -266,6 +266,53 @@ function seedChart(dataset: MemoryDataset): void {
     recordedById: PROVIDER,
   });
 
+  /* Two goals: one with a single-value target and one with a range, so the
+     projection exercises both halves of the detail[x] choice rather than the
+     same half twice. */
+  seed(dataset, 'Goal', {
+    ...storageColumns(testId(45)),
+    patientId: PATIENT,
+    carePlanId: testId(44),
+    lifecycleStatus: 'ACTIVE',
+    achievementStatus: 'IMPROVING',
+    priority: 'HIGH',
+    description: 'HbA1c below 7%',
+    descriptionCode: '443631005',
+    descriptionSystem: 'http://snomed.info/sct',
+    targetMeasureCode: '4548-4',
+    targetMeasureSystem: 'http://loinc.org',
+    targetValue: 7,
+    targetLow: null,
+    targetHigh: null,
+    targetUnit: '%',
+    startDate: FIXED_NOW,
+    dueDate: FIXED_NOW,
+    statusReason: null,
+    expressedByUserId: PROVIDER,
+  });
+
+  seed(dataset, 'Goal', {
+    ...storageColumns(testId(46)),
+    patientId: PATIENT,
+    carePlanId: null,
+    lifecycleStatus: 'ACTIVE',
+    achievementStatus: null,
+    priority: null,
+    description: 'Systolic between 110 and 130',
+    descriptionCode: null,
+    descriptionSystem: null,
+    targetMeasureCode: '8480-6',
+    targetMeasureSystem: 'http://loinc.org',
+    targetValue: null,
+    targetLow: 110,
+    targetHigh: 130,
+    targetUnit: 'mm[Hg]',
+    startDate: null,
+    dueDate: FIXED_NOW,
+    statusReason: null,
+    expressedByUserId: null,
+  });
+
   /* A plan with a period and an author, so the projection exercises the
      optional branches rather than only the required ones. */
   seed(dataset, 'CarePlan', {
@@ -861,6 +908,92 @@ describe('Questionnaire serves published forms only', () => {
     expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
       testId(13),
     ]);
+  });
+});
+
+describe('the Goal filters are honoured, not merely advertised', () => {
+  it('narrows by lifecycle status and refuses a code outside the value set', async () => {
+    const { app } = harness();
+
+    const active = (await (
+      await app.request('/fhir/Goal?lifecycle-status=active', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(active.total).toBe(2);
+
+    /* The half that catches a dropped filter: both seeded goals are active, so
+       a filter that is read and ignored answers `completed` with both of them. */
+    const completed = (await (
+      await app.request('/fhir/Goal?lifecycle-status=completed', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(completed.total).toBe(0);
+
+    const refused = await app.request('/fhir/Goal?lifecycle-status=nonsense', {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(refused.status).toBe(400);
+  });
+
+  it('refuses `status`, which R4 does not define for this resource', async () => {
+    /*
+     * Goal has no `status` search parameter in R4; the one it has is
+     * `lifecycle-status`. Accepting `status` would answer a parameter no other
+     * server implements, and quietly, since every value would filter nothing.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Goal?status=active', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('serves both halves of the target choice, and never both on one goal', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Goal', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const targets = bundle.entry?.map(
+      (entry) =>
+        (entry.resource as { target?: { detailQuantity?: unknown; detailRange?: unknown }[] })
+          .target?.[0]
+    );
+
+    expect(targets?.some((target) => target?.detailQuantity !== undefined)).toBe(true);
+    expect(targets?.some((target) => target?.detailRange !== undefined)).toBe(true);
+    for (const target of targets ?? []) {
+      expect(target?.detailQuantity !== undefined && target?.detailRange !== undefined).toBe(false);
+    }
+  });
+
+  it('serves the target value as a number, not as a decimal object', async () => {
+    /*
+     * The column is a `Decimal`, and `toPlainRow` flattens it at the row
+     * boundary. Asserted end to end rather than trusted: a decimal that reached
+     * the wire would serialise as an object, which is valid JSON and not a
+     * number, and a client parsing `Quantity.value` gets NaN.
+     *
+     * The memory dataset holds a plain number, so this passes over that
+     * backend either way. It is here for the shape of the served resource;
+     * `rows.test.ts` is what proves the flattening, against a value that
+     * actually carries `toNumber`.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Goal', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const values = (bundle.entry ?? [])
+      .map(
+        (entry) =>
+          (entry.resource as { target?: { detailQuantity?: { value?: unknown } }[] }).target?.[0]
+            ?.detailQuantity?.value
+      )
+      .filter((value) => value !== undefined);
+
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) expect(typeof value).toBe('number');
   });
 });
 

@@ -347,6 +347,174 @@ describe('the care plan repository', () => {
   });
 });
 
+describe('the goal repository', () => {
+  const GOAL = { patientId: PATIENT, description: 'HbA1c below 7%' };
+
+  it('creates a goal that is active and unassessed', () => {
+    /* `achievementStatus` stays null rather than defaulting to IN_PROGRESS.
+       "Nobody has looked yet" and "no progress" are different clinical facts,
+       and a default would report the second when the first is true. */
+    return harness()
+      .repos()
+      .goals.create(GOAL)
+      .then((row) => {
+        expect(row.lifecycleStatus).toBe('ACTIVE');
+        expect(row.achievementStatus).toBeNull();
+        expect(row.priority).toBeNull();
+        expect(row.carePlanId).toBeNull();
+        expect(row.targetValue).toBeNull();
+      });
+  });
+
+  it('carries a single-value target through, leaving the range columns null', async () => {
+    const row = await harness()
+      .repos()
+      .goals.create({
+        ...GOAL,
+        targetMeasureCode: '4548-4',
+        targetMeasureSystem: 'http://loinc.org',
+        targetValue: 7,
+        targetUnit: '%',
+        dueDate: LATER,
+      });
+
+    expect(row.targetValue).toBe(7);
+    expect(row.targetLow).toBeNull();
+    expect(row.targetHigh).toBeNull();
+    expect(row.targetUnit).toBe('%');
+  });
+
+  it('carries a range target through, leaving the value column null', async () => {
+    const row = await harness()
+      .repos()
+      .goals.create({
+        ...GOAL,
+        description: 'Systolic between 110 and 130',
+        targetLow: 110,
+        targetHigh: 130,
+        targetUnit: 'mm[Hg]',
+      });
+
+    expect(row.targetValue).toBeNull();
+    expect(row.targetLow).toBe(110);
+    expect(row.targetHigh).toBe(130);
+  });
+
+  it('carries every remaining optional field through', async () => {
+    const row = await harness()
+      .repos()
+      .goals.create({
+        ...GOAL,
+        carePlanId: testId(220),
+        lifecycleStatus: 'ON_HOLD',
+        achievementStatus: 'WORSENING',
+        priority: 'HIGH',
+        descriptionCode: '443631005',
+        descriptionSystem: 'http://snomed.info/sct',
+        startDate: FIXED_NOW,
+        statusReason: 'Deferred until after surgery',
+        expressedByUserId: PROVIDER,
+      });
+
+    expect(row).toMatchObject({
+      carePlanId: testId(220),
+      lifecycleStatus: 'ON_HOLD',
+      achievementStatus: 'WORSENING',
+      priority: 'HIGH',
+      descriptionCode: '443631005',
+      startDate: FIXED_NOW,
+      statusReason: 'Deferred until after surgery',
+      expressedByUserId: PROVIDER,
+    });
+  });
+
+  it('filters by patient, care plan and lifecycle status', async () => {
+    const repos = harness().repos();
+    await repos.goals.create(GOAL);
+    await repos.goals.create({
+      ...GOAL,
+      patientId: testId(210),
+      carePlanId: testId(220),
+      lifecycleStatus: 'COMPLETED',
+    });
+
+    const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+    await expect(repos.goals.list({ ...query, patientId: PATIENT })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(repos.goals.list({ ...query, carePlanId: testId(220) })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(
+      repos.goals.list({ ...query, lifecycleStatus: 'COMPLETED' })
+    ).resolves.toMatchObject({ total: 1 });
+  });
+
+  it.each(['memory', 'prisma'] as const)(
+    'sorts by due date and by creation (%s)',
+    async (backend) => {
+      /*
+       * Two different questions, and both backends, because the memory one
+       * answers from `sortValue` and the Prisma one from `orderBy`.
+       */
+      const { dataset, repos } = harness(backend);
+      for (const [id, createdAt, dueDate] of [
+        [testId(340), FIXED_NOW, LATER],
+        [testId(341), LATER, FIXED_NOW],
+      ] as const) {
+        seed(dataset, 'Goal', {
+          ...storageColumns(id),
+          createdAt,
+          updatedAt: createdAt,
+          patientId: PATIENT,
+          carePlanId: null,
+          lifecycleStatus: 'ACTIVE',
+          achievementStatus: null,
+          priority: null,
+          description: 'Something',
+          descriptionCode: null,
+          descriptionSystem: null,
+          targetMeasureCode: null,
+          targetMeasureSystem: null,
+          targetValue: null,
+          targetLow: null,
+          targetHigh: null,
+          targetUnit: null,
+          startDate: null,
+          dueDate,
+          statusReason: null,
+          expressedByUserId: null,
+        });
+      }
+
+      const query = { page: 1, pageSize: 25, order: 'asc' } as const;
+      await expect(
+        repos()
+          .goals.list({ ...query, sort: 'dueDate' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(341), testId(340)]);
+      await expect(
+        repos()
+          .goals.list({ ...query, sort: 'createdAt' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(340), testId(341)]);
+    }
+  );
+
+  it('patches the achievement without disturbing the lifecycle', async () => {
+    /* The pair that must stay independent: a goal going badly is still active,
+       and a worklist of active goals that shed it would drop the patients who
+       most need to be on it. */
+    const repos = harness().repos();
+    const row = await repos.goals.create(GOAL);
+
+    const patched = await repos.goals.update(row.id, { achievementStatus: 'WORSENING' });
+
+    expect(patched?.achievementStatus).toBe('WORSENING');
+    expect(patched?.lifecycleStatus).toBe('ACTIVE');
+  });
+});
+
 describe('the care team repository', () => {
   it('creates a team that is active and unnamed, which is the ordinary one', () => {
     /* Most practices run one standing team per patient with no name and no

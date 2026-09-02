@@ -33,6 +33,7 @@ import {
   paymentCreateInput,
   promotionManifestInput,
   carePlanInput,
+  goalInput,
   careTeamInput,
   careTeamParticipantInput,
   relatedPersonInput,
@@ -408,6 +409,71 @@ describe('noteAddendumInput', () => {
 
   it('rejects an addendum with no author', () => {
     rejects(noteAddendumInput, { noteId: ID.note, blocks: [] });
+  });
+});
+
+describe('goalInput', () => {
+  const validGoal = { patientId: ID.patient, description: 'HbA1c below 7%' };
+
+  it('accepts a goal with nothing but a description', () => {
+    /* Most goals are agreed in words and never measured against a number. */
+    accepts(goalInput, validGoal);
+  });
+
+  it('accepts a single-value target with a unit', () => {
+    accepts(goalInput, { ...validGoal, targetValue: 7, targetUnit: '%' });
+  });
+
+  it('accepts a range target with a unit', () => {
+    accepts(goalInput, {
+      ...validGoal,
+      targetLow: 110,
+      targetHigh: 130,
+      targetUnit: 'mm[Hg]',
+    });
+  });
+
+  it('rejects a target that is both a value and a range', () => {
+    /* `Goal.target.detail[x]` is a choice. A resource carrying both is
+       malformed, and a client reading whichever element it prefers gets a
+       different answer from one reading the other. */
+    rejects(goalInput, {
+      ...validGoal,
+      targetValue: 7,
+      targetLow: 6,
+      targetHigh: 8,
+      targetUnit: '%',
+    });
+  });
+
+  it('rejects a range that is the wrong way round', () => {
+    rejects(goalInput, {
+      ...validGoal,
+      targetLow: 130,
+      targetHigh: 110,
+      targetUnit: 'mm[Hg]',
+    });
+  });
+
+  it('accepts a range whose bounds are equal, which is a target of exactly that', () => {
+    accepts(goalInput, { ...validGoal, targetLow: 7, targetHigh: 7, targetUnit: '%' });
+  });
+
+  it('rejects a number with no unit', () => {
+    /* "Below 7" is meaningless without knowing 7 of what, and a client
+       comparing it against an observation would compare the wrong things. */
+    rejects(goalInput, { ...validGoal, targetValue: 7 });
+    rejects(goalInput, { ...validGoal, targetLow: 110, targetHigh: 130 });
+  });
+
+  it('rejects a description that is only whitespace', () => {
+    rejects(goalInput, { ...validGoal, description: '   ' });
+  });
+
+  it('rejects a lifecycle status, achievement status and priority outside their sets', () => {
+    rejects(goalInput, { ...validGoal, lifecycleStatus: 'ABANDONED' });
+    rejects(goalInput, { ...validGoal, achievementStatus: 'GOING_WELL' });
+    rejects(goalInput, { ...validGoal, priority: 'URGENT' });
   });
 });
 

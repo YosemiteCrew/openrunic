@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 import {
   ADMINISTRATIVE_GENDERS,
+  GOAL_ACHIEVEMENT_STATUSES,
+  GOAL_LIFECYCLE_STATUSES,
+  GOAL_PRIORITIES,
   CARE_PLAN_INTENTS,
   CARE_PLAN_STATUSES,
   CARE_TEAM_MEMBER_TYPES,
@@ -169,6 +172,59 @@ export const carePlanInput = z
     { message: 'periodEnd must not precede periodStart', path: ['periodEnd'] }
   );
 
+export const goalInput = z
+  .strictObject({
+    patientId: uuid,
+    carePlanId: uuid.optional(),
+    lifecycleStatus: z.enum(GOAL_LIFECYCLE_STATUSES).optional(),
+    achievementStatus: z.enum(GOAL_ACHIEVEMENT_STATUSES).optional(),
+    priority: z.enum(GOAL_PRIORITIES).optional(),
+    description: shortText,
+    descriptionCode: code.optional(),
+    descriptionSystem: codeSystem.optional(),
+    targetMeasureCode: code.optional(),
+    targetMeasureSystem: codeSystem.optional(),
+    targetValue: z.number().optional(),
+    targetLow: z.number().optional(),
+    targetHigh: z.number().optional(),
+    targetUnit: code.optional(),
+    startDate: localDate.optional(),
+    dueDate: localDate.optional(),
+    statusReason: shortText.optional(),
+    expressedByUserId: uuid.optional(),
+  })
+  .refine((value) => value.description.trim().length > 0, {
+    message: 'description must say something',
+    path: ['description'],
+  })
+  /* `Goal.target.detail[x]` is a choice in FHIR, so both set is malformed
+     rather than generous: a client reading whichever element it prefers would
+     get a different answer from one reading the other. */
+  .refine(
+    (value) =>
+      value.targetValue === undefined ||
+      (value.targetLow === undefined && value.targetHigh === undefined),
+    { message: 'a target is a single value or a range, never both', path: ['targetValue'] }
+  )
+  .refine(
+    (value) =>
+      value.targetLow === undefined ||
+      value.targetHigh === undefined ||
+      value.targetHigh >= value.targetLow,
+    { message: 'targetHigh must not be below targetLow', path: ['targetHigh'] }
+  )
+  /* A number with no unit is not a measurement. "Below 7" is meaningless
+     without knowing 7 of what, and a client comparing it against an observation
+     would silently compare the wrong things. */
+  .refine(
+    (value) =>
+      (value.targetValue === undefined &&
+        value.targetLow === undefined &&
+        value.targetHigh === undefined) ||
+      value.targetUnit !== undefined,
+    { message: 'a numeric target needs a unit', path: ['targetUnit'] }
+  );
+
 export const payerInput = z.strictObject({
   name: z.string().min(1).max(256),
   /** Trading-partner id used in the 837 NM109. */
@@ -231,6 +287,7 @@ export type RelatedPersonInput = z.infer<typeof relatedPersonInput>;
 export type CareTeamInput = z.infer<typeof careTeamInput>;
 export type CareTeamParticipantInput = z.infer<typeof careTeamParticipantInput>;
 export type CarePlanInput = z.infer<typeof carePlanInput>;
+export type GoalInput = z.infer<typeof goalInput>;
 export type PayerInput = z.infer<typeof payerInput>;
 export type CoverageInput = z.infer<typeof coverageInput>;
 export type ConsentGrantInput = z.infer<typeof consentGrantInput>;

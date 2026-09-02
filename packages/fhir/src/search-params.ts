@@ -45,6 +45,7 @@ export type SupportedResourceType =
   | 'Procedure'
   | 'CareTeam'
   | 'CarePlan'
+  | 'Goal'
   | 'Questionnaire'
   | 'QuestionnaireResponse'
   | 'MedicationDispense'
@@ -329,6 +330,26 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
        asserting care happened with nothing behind it. */
     interactions: READ_ONLY,
     searchParams: [patientParam(), dateParam('date', 'When the procedure was performed.')],
+  },
+  Goal: {
+    resourceType: 'Goal',
+    profile: `${US_CORE}us-core-goal`,
+    /* Read-only. A goal is something a patient and a clinician agreed to, and a
+       client writing one would be recording an agreement that never happened. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      dateParam('target-date', 'When the goal is meant to be reached.'),
+      /* `lifecycle-status`, not `status`. R4 gives Goal no `status` parameter
+         at all, and advertising one would be a name no conforming client sends
+         and no other server answers. */
+      {
+        name: 'lifecycle-status',
+        type: 'token',
+        documentation: 'Where the goal is in its life.',
+        mustSupport: true,
+      },
+    ],
   },
   CarePlan: {
     resourceType: 'CarePlan',

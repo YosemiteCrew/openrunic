@@ -773,6 +773,7 @@ model Organisation {
   procedures            Procedure[]
   careTeams             CareTeam[]
   carePlans             CarePlan[]
+  goals                 Goal[]
   careTeamParticipants  CareTeamParticipant[]
   medicationStatements  MedicationStatement[]
   medicationRequests    MedicationRequest[]
@@ -890,6 +891,7 @@ model User {
   renderedCharges    ChargeItem[]
   careTeamRoles      CareTeamParticipant[]
   carePlans          CarePlan[]
+  goals              Goal[]
 
   @@unique([tenantId, email])
   @@index([tenantId, isProvider, status])
@@ -1074,6 +1076,7 @@ model Patient {
   stockPostings  StockPosting[]
   imagingStudies ImagingStudy[]
   carePlans      CarePlan[]
+  goals          Goal[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
@@ -3204,6 +3207,7 @@ model CarePlan {
   patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
   author       User?        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  goals        Goal[]
 
   @@index([tenantId, patientId, status])
   @@index([tenantId, encounterId])
@@ -3229,4 +3233,110 @@ enum CarePlanIntent {
   PLAN
   ORDER
   OPTION
+}
+
+/// What the patient and the clinician agreed to aim at.
+///
+/// A goal is not a plan and not an order. The plan says what will be done, the
+/// order says do it, and the goal says what would count as it having worked.
+/// Nothing else here records that, so a receiving system can see every
+/// medication and every visit and still not know what anybody was trying to
+/// achieve, which is the first thing a clinician taking over asks.
+///
+/// ## The target is a choice, and the columns say so
+///
+/// FHIR's `Goal.target.detail[x]` is a choice: a single value, a range, a code,
+/// or nothing at all. A goal can be "HbA1c below 7%", "systolic between 110 and
+/// 130", or "walk daily", and those are three different shapes rather than one
+/// shape with holes. `targetValue` and the `targetLow`/`targetHigh` pair are
+/// mutually exclusive, enforced by a check constraint, because a row carrying
+/// both would serialise as a resource carrying both and a client reading
+/// whichever it prefers would get a different answer from one reading the other.
+///
+/// The numeric columns mirror `Observation`: same precision, same unit column,
+/// deliberately. A goal is compared against observations, and two different
+/// numeric shapes for the same quantity is how the comparison quietly stops
+/// being apples to apples.
+model Goal {
+  id                  String                 @id @db.Uuid
+  tenantId            String                 @db.Uuid
+  patientId           String                 @db.Uuid
+  /// The plan this goal belongs to, when it belongs to one. Standing goals
+  /// outlive any single plan, so this is nullable rather than the parent.
+  carePlanId          String?                @db.Uuid
+  lifecycleStatus     GoalLifecycleStatus    @default(ACTIVE)
+  /// How it is going. Null while nobody has assessed it, which is different
+  /// from assessing it as no progress.
+  achievementStatus   GoalAchievementStatus?
+  priority            GoalPriority?
+  /// What the goal is, in the words it was agreed in. Required: a goal nobody
+  /// can read is not a goal.
+  description         String
+  /// A code for the goal when there is one, e.g. SNOMED. Most are narrative.
+  descriptionCode     String?
+  descriptionSystem   String?
+  /// What is being measured, e.g. a LOINC code for HbA1c. Null for a goal that
+  /// is not measured against anything.
+  targetMeasureCode   String?
+  targetMeasureSystem String?
+  /// The single value aimed at. Excludes the range columns.
+  targetValue         Decimal?               @db.Decimal(18, 6)
+  /// The range aimed at. Excludes the single value.
+  targetLow           Decimal?               @db.Decimal(18, 6)
+  targetHigh          Decimal?               @db.Decimal(18, 6)
+  /// UCUM unit for whichever of the two is set. Coded.
+  targetUnit          String?
+  startDate           DateTime?              @db.Date
+  /// When the target is meant to be reached. The one target element US Core
+  /// requires support for.
+  dueDate             DateTime?              @db.Date
+  /// Why it was given up on, for a goal that was. Only meaningful when the
+  /// lifecycle status says so.
+  statusReason        String?
+  expressedByUserId   String?                @db.Uuid
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  carePlan     CarePlan?    @relation(fields: [carePlanId], references: [id], onDelete: SetNull)
+  expressedBy  User?        @relation(fields: [expressedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, lifecycleStatus])
+  @@index([tenantId, carePlanId])
+  @@index([tenantId, patientId, dueDate])
+}
+
+/// Where the goal is in its life, from FHIR's goal-status value set.
+enum GoalLifecycleStatus {
+  PROPOSED
+  PLANNED
+  ACCEPTED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+  ENTERED_IN_ERROR
+  REJECTED
+}
+
+/// How it is going. Separate from the lifecycle on purpose: an active goal can
+/// be improving or worsening, and collapsing the two would lose whichever the
+/// other was set from.
+enum GoalAchievementStatus {
+  IN_PROGRESS
+  IMPROVING
+  WORSENING
+  NO_CHANGE
+  ACHIEVED
+  SUSTAINING
+  NOT_ACHIEVED
+  NO_PROGRESS
+  NOT_ATTAINABLE
+}
+
+enum GoalPriority {
+  HIGH
+  MEDIUM
+  LOW
 }

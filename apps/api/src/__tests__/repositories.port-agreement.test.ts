@@ -333,6 +333,15 @@ const FILTERS: {
     status: 'ACTIVE',
     ids: ['id-id'],
   },
+  goals: {
+    page: 1,
+    pageSize: 25,
+    sort: 'dueDate',
+    order: 'asc',
+    patientId: 'id-patientId',
+    carePlanId: 'id-carePlanId',
+    lifecycleStatus: 'ACTIVE',
+  },
   careTeams: {
     page: 1,
     pageSize: 25,

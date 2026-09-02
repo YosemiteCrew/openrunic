@@ -375,13 +375,13 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
 
     const declared = await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
       method: 'POST',
-      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'Collapsed in reception, no record at this site.' }),
     });
     expect(declared.status).toBe(201);
 
     const res = await app.request(`/bff/v0/patients/${ELSEWHERE}`, {
-      headers: bearer(TOKENS.siteReaderA),
+      headers: bearer(TOKENS.clinicianA),
     });
 
     expect(res.status).toBe(200);
@@ -396,10 +396,10 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
 
     await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
       method: 'POST',
-      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'Collapsed in reception.' }),
     });
-    await app.request(`/bff/v0/patients/${ELSEWHERE}`, { headers: bearer(TOKENS.siteReaderA) });
+    await app.request(`/bff/v0/patients/${ELSEWHERE}`, { headers: bearer(TOKENS.clinicianA) });
 
     const actions = sink.writes().map((entry) => entry.event.action);
     expect(actions).toContain('chart.access.breakGlass');
@@ -431,7 +431,7 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
 
     const res = await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
       method: 'POST',
-      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
       body: JSON.stringify({ reason: '   ' }),
     });
 
@@ -445,7 +445,7 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
 
     const res = await app.request(`/bff/v0/patients/${testId(4243)}/break-glass`, {
       method: 'POST',
-      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'Fishing.' }),
     });
 

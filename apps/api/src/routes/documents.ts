@@ -16,7 +16,7 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam } from '../http/validate.js';
-import { requirePermission } from '../middleware/policy.js';
+import { assertCareRelationship, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { Permission } from '../policy/permissions.js';
 import type { ScopedRow } from '../repositories/types.js';
@@ -141,6 +141,16 @@ export function documentRoutes(router: Hono<AppEnv>): void {
    */
   router.get('/patients/:id/ccd', requirePermission('patient.read'), async (c) => {
     const patientId = parseParam(c.req.param('id'), idParamSchema, 'id');
+    /*
+     * The same gate the addressed read has, and this route needed it more.
+     *
+     * It is mounted three lines above `GET /patients/:id` and takes the same id,
+     * so gating one and not the other left the wider door open: a caller refused
+     * the chart header could ask for the whole C-CDA - problems, medications,
+     * allergies, immunisations, encounters - and get it. A guard that the next
+     * route along defeats is not a guard.
+     */
+    await assertCareRelationship(c, patientId);
     const patient = required(
       await repositories(c).patients.findById(patientId),
       'No such patient.'

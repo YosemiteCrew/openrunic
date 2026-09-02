@@ -171,8 +171,37 @@ export const SUBJECTS = {
  */
 export function seedCareRelationship(
   dataset: MemoryDataset,
-  options: { patientId: string; providerId: string; facilityId?: string; id?: string }
+  options: {
+    patientId: string;
+    providerId: string;
+    facilityId?: string;
+    id?: string;
+    /**
+     * Seed the relationship as a booked appointment rather than an encounter.
+     *
+     * For a test whose subject is a document or a summary that has an
+     * encounters section: an encounter seeded only to authorise the read would
+     * show up in the thing under test and change what it asserts. An
+     * appointment satisfies the same relationship source and appears in
+     * nothing.
+     */
+    as?: 'encounter' | 'appointment';
+  }
 ): void {
+  if (options.as === 'appointment') {
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        id: options.id ?? testId(8_001),
+        patientId: options.patientId,
+        providerId: options.providerId,
+        facilityId: options.facilityId ?? DEMO_FACILITY_A,
+      })
+    );
+    return;
+  }
+
   seed(dataset, 'Encounter', {
     ...storageColumns(options.id ?? testId(8_000)),
     facilityId: options.facilityId ?? DEMO_FACILITY_A,

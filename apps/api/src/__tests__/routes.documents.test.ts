@@ -10,6 +10,8 @@ import {
   jsonBearer,
   makePatientRow,
   seed,
+  seedCareRelationship,
+  SUBJECTS,
   storageColumns,
   testId,
   TOKENS,
@@ -89,6 +91,17 @@ function harness(): ReturnType<typeof createTestApp> {
     recordedAt: FIXED_NOW,
     recordedById: null,
   } as never);
+
+  /* The CCD route is gated by a care relationship, like the addressed read it
+     sits beside. These tests are about what goes into the document, so the
+     relationship is a fixture rather than the subject; `routes.patients.test.ts`
+     is where the refusal is asserted. */
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: SUBJECTS.clinicianA,
+    facilityId: DEMO_FACILITY_A,
+    as: 'appointment',
+  });
 
   return created;
 }
@@ -393,6 +406,12 @@ describe('a patient the record holds only partly', () => {
   it('still names a custodian when the patient has no primary facility', async () => {
     const created = createTestApp();
     seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT, primaryFacilityId: null }));
+    seedCareRelationship(created.dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      facilityId: DEMO_FACILITY_A,
+      as: 'appointment',
+    });
 
     const parsed = parseCcd((await ccdFor(created.app)).document);
 
@@ -405,6 +424,12 @@ describe('a patient the record holds only partly', () => {
   it('produces a document with every section empty for a chart with nothing in it', async () => {
     const created = createTestApp();
     seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(created.dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      facilityId: DEMO_FACILITY_A,
+      as: 'appointment',
+    });
 
     const parsed = parseCcd((await ccdFor(created.app)).document);
 
@@ -526,6 +551,12 @@ describe('rows recorded with the optional columns left empty', () => {
   function sparseChart(): ReturnType<typeof createTestApp> {
     const created = createTestApp();
     seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(created.dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      facilityId: DEMO_FACILITY_A,
+      as: 'appointment',
+    });
 
     seed(created.dataset, 'AllergyIntolerance', {
       ...storageColumns(testId(220)),
@@ -692,6 +723,12 @@ describe('the header, from what the record holds about the person', () => {
         country: 'US',
       })
     );
+    seedCareRelationship(created.dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      facilityId: DEMO_FACILITY_A,
+      as: 'appointment',
+    });
 
     const parsed = parseCcd((await ccdFor(created.app)).document);
 
@@ -727,6 +764,11 @@ describe('the header, from what the record holds about the person', () => {
     for (const [recorded, expected] of cases) {
       const created = createTestApp();
       seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT, sexAtBirth: recorded }));
+      seedCareRelationship(created.dataset, {
+        patientId: PATIENT,
+        providerId: SUBJECTS.clinicianA,
+        facilityId: DEMO_FACILITY_A,
+      });
 
       expect(parseCcd((await ccdFor(created.app)).document).patient.gender, recorded).toBe(
         expected
@@ -741,6 +783,12 @@ describe('the header, from what the record holds about the person', () => {
       'Patient',
       makePatientRow({ id: PATIENT, primaryFacilityId: DEMO_FACILITY_A })
     );
+    seedCareRelationship(created.dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      facilityId: DEMO_FACILITY_A,
+      as: 'appointment',
+    });
     seed(created.dataset, 'Facility', {
       ...storageColumns(DEMO_FACILITY_A),
       name: 'Example Clinic',
@@ -774,6 +822,12 @@ describe('an allergy whose severity nobody assessed', () => {
   it('carries unable-to-assess rather than reading it down to low', async () => {
     const created = createTestApp();
     seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(created.dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      facilityId: DEMO_FACILITY_A,
+      as: 'appointment',
+    });
     seed(created.dataset, 'AllergyIntolerance', {
       ...storageColumns(testId(230)),
       patientId: PATIENT,

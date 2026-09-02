@@ -605,6 +605,12 @@ export const breakGlassGrantSpec: CollectionSpec<
   model: 'BreakGlassGrant',
   targetType: 'BreakGlassGrant',
   action: 'breakGlass',
+  /* Audit metadata, not narrowing. Without it the `breakGlass.created` event
+     names no patient, so "who broke glass on this chart" - the question the
+     `(tenantId, patientId, grantedAt)` index was added for - finds nothing in
+     the audit trail. The compartment below is what decides who may read the
+     table. */
+  patientColumn: 'patientId',
   compartment: 'open',
 
   newRow(input: BreakGlassGrantInput, context): Writable<'BreakGlassGrant'> {

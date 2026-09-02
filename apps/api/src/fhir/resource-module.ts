@@ -126,6 +126,29 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       const page = await descriptor
         .collection(repositories)
         .list(await descriptor.toQuery(params, paging, repositories));
+
+      /*
+       * A search that names one chart is a read wearing a search's clothes.
+       *
+       * Gating only the addressed read left `?_id=` and `?identifier=` as a way
+       * straight past it: `GET /fhir/Patient/{id}` answered 404 and
+       * `GET /fhir/Patient?_id={id}` answered 200 with the whole resource. The
+       * two are the same question, so they get the same answer.
+       *
+       * Only these two parameters, and only for a resource that declares a
+       * chart. Narrowing an ordinary search this way would break registration
+       * and duplicate-checking, which look somebody up by name and birth date
+       * precisely because there is no relationship yet - and #169 requires those
+       * to keep working. `_id` and `identifier` are different: both address a
+       * specific known record rather than looking for one.
+       */
+      if (descriptor.chartId !== undefined && addressesOneChart(params)) {
+        for (const chartId of new Set(
+          page.rows.map((row) => descriptor.chartId?.(row)).filter(isPresent)
+        )) {
+          await assertCareRelationship(c, chartId);
+        }
+      }
       // `toResource` may be synchronous for most resources and asynchronous
       // for the ones that resolve a child list, so the map is wrapped rather
       // than assumed to produce promises.
@@ -197,6 +220,23 @@ export function stampLastUpdated(row: unknown, resource: FhirResource): FhirReso
       lastUpdated: declared !== undefined && declared > stamped ? declared : stamped,
     },
   };
+}
+
+/**
+ * Whether this search names a specific record rather than describing one.
+ *
+ * `_id` is an id and `identifier` is an MRN: both say "this one", which is what
+ * an addressed read says. Every other parameter describes a set, and a caller
+ * with no relationship to anybody still has to be able to search by name and
+ * birth date - that is how a duplicate record is avoided at registration, and
+ * duplicate records are their own patient-safety hazard.
+ */
+function addressesOneChart(params: SearchParams): boolean {
+  return params._id !== undefined || params.identifier !== undefined;
+}
+
+function isPresent(value: string | undefined): value is string {
+  return value !== undefined;
 }
 
 function repositoriesOf(c: Context<AppEnv>): Repositories {

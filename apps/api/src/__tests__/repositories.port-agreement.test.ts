@@ -378,6 +378,7 @@ const FILTERS: {
     careTeamId: 'id-careTeamId',
     careTeamIds: ['id-careTeamId'],
     memberUserId: 'id-memberUserId',
+    patientId: 'id-patientId',
   },
   procedures: {
     page: 1,

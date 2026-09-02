@@ -106,6 +106,10 @@ export async function assertCareRelationship(c: Context<AppEnv>, patientId: stri
       action: 'chart.access.denied',
       targetType: 'Patient',
       targetId: patientId,
+      /* The chart, not only the target. `targetId` is not what the per-patient
+         disclosure report filters on; `patientId` is, and a refusal that does
+         not appear in it is a refusal nobody investigating that chart can see. */
+      patientId,
       metadata: { roles: [...principal.roles] },
     });
     throw ApiError.notFound('No such patient.');
@@ -115,6 +119,17 @@ export async function assertCareRelationship(c: Context<AppEnv>, patientId: stri
     action: source === 'break-glass' ? 'chart.access.breakGlass' : 'chart.access',
     targetType: 'Patient',
     targetId: patientId,
+    patientId,
+    /*
+     * The column the compliance query filters on, not only the action name.
+     *
+     * `AuditEvent` carries a `breakglass` boolean and the audit search exposes
+     * it, so "list every emergency access this quarter" is one query - and it
+     * returned nothing while this wrote the distinction into the action string
+     * alone. A control that is only legible to somebody who already knows to
+     * grep for it is not conspicuous.
+     */
+    breakglass: source === 'break-glass',
     metadata: { relationship: source },
   });
 }

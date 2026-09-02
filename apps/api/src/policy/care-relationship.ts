@@ -92,8 +92,16 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
           sort: 'createdAt',
           order: 'desc',
           memberUserId: query.principal.subject,
+          /*
+           * Narrowed in the query, not filtered afterwards. This asked for one
+           * row and compared it in memory, so it saw only the reader's newest
+           * membership: a clinician added to a second patient's team stopped
+           * being able to open the first one's chart, and the read fell through
+           * to `facility-activity`, which also mislabelled the audit reason.
+           */
+          patientId: query.patientId,
         })
-      ).rows.some((row) => row.patientId === query.patientId),
+      ).total > 0,
   },
   {
     /*

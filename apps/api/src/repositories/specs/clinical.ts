@@ -1481,6 +1481,16 @@ export interface CareTeamParticipantListQuery extends BaseQuery {
   careTeamId?: string;
   careTeamIds?: readonly string[];
   memberUserId?: string;
+  /**
+   * The chart, denormalised onto the row for the compartment rule and useful
+   * here for the same reason it exists there.
+   *
+   * Added because the authorisation check needed it and could not have it: with
+   * no filter to narrow on, "is this reader on this patient's team" had to list
+   * the reader's memberships and compare in memory, which examined only the
+   * page it asked for. A clinician on two teams was refused the older one.
+   */
+  patientId?: string;
   sort: 'createdAt';
 }
 
@@ -1565,6 +1575,7 @@ export const careTeamParticipantSpec: CollectionSpec<
   matches(row: ScopedRow<'CareTeamParticipant'>, query: CareTeamParticipantListQuery): boolean {
     const wanted = careTeamParticipantTeams(query);
     if (wanted !== undefined && !wanted.includes(row.careTeamId)) return false;
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     return query.memberUserId === undefined || row.memberUserId === query.memberUserId;
   },
 
@@ -1572,6 +1583,7 @@ export const careTeamParticipantSpec: CollectionSpec<
     const wanted = careTeamParticipantTeams(query);
     return {
       ...(wanted === undefined ? {} : { careTeamId: { in: [...wanted] } }),
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.memberUserId === undefined ? {} : { memberUserId: query.memberUserId }),
     };
   },

@@ -495,6 +495,15 @@ describe('GET /fhir/Patient', () => {
         birthDate: new Date('1980-01-01T00:00:00.000Z'),
       })
     );
+    /* `_id` and `identifier` address a named chart, so they are gated the same
+       way the addressed read is. Both patients get a relationship here because
+       this test is about the parameters, not about the gate. */
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.clinicianA });
+    seedCareRelationship(dataset, {
+      patientId: testId(2),
+      providerId: SUBJECTS.clinicianA,
+      id: testId(8_002),
+    });
     const total = async (query: string): Promise<number> =>
       (
         (await (

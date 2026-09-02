@@ -7,6 +7,7 @@ import {
   createTestApp,
   DEMO_FACILITY_A,
   DEMO_FACILITY_B,
+  DEMO_PORTAL_PATIENT,
   FIXED_NOW,
   makeAppointmentRow,
   makePatientRow,
@@ -254,5 +255,340 @@ describe('both boundaries answer the chart question identically', () => {
       asserted,
       'a relationship source has no case: adding one is adding a way into a chart'
     ).toBe(RELATIONSHIP_SOURCES.length);
+  });
+});
+
+describe('the gate is not walked around', () => {
+  /*
+   * Every one of these was a live bypass when the gate first landed, found by
+   * reviewing the diff rather than by a test failing. A guard that the next
+   * route along defeats is not a guard, so each way round it gets its own case.
+   */
+
+  function chartWithNoRelationship(): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    baseChart(created.dataset);
+    return created;
+  }
+
+  it('refuses the C-CDA, which returns more of the chart than the read does', async () => {
+    /* This route is mounted three lines above the gated read and takes the same
+       id. Gating one and not the other left the wider door open: refused the
+       chart header, a caller could ask for problems, medications, allergies,
+       immunisations and encounters in one document. */
+    const { app } = chartWithNoRelationship();
+
+    const res = await app.request(`/bff/v0/patients/${PATIENT}/ccd`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a search that names one chart by id', async () => {
+    /* `GET /fhir/Patient?_id={id}` is the addressed read wearing a search's
+       clothes, and it answered 200 with the whole resource while
+       `GET /fhir/Patient/{id}` answered 404. */
+    const { app } = chartWithNoRelationship();
+
+    const res = await app.request(`/fhir/Patient?_id=${PATIENT}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a search that names one chart by MRN', async () => {
+    const { app } = chartWithNoRelationship();
+
+    const res = await app.request('/fhir/Patient?identifier=OR-103001', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('still allows a search that describes a patient rather than naming one', async () => {
+    /*
+     * The other half, and the one that matters more. Registration and
+     * duplicate-checking look somebody up by name and birth date precisely
+     * because there is no relationship yet, and #169 requires those to keep
+     * working. Narrowing them would trade a lookup problem for a duplicate
+     * records problem, which is its own patient-safety hazard.
+     */
+    const { app } = chartWithNoRelationship();
+
+    const res = await app.request('/fhir/Patient?family=Patientsson', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('break-glass is bounded, not merely recorded', () => {
+  async function declare(
+    app: ReturnType<typeof createTestApp>['app'],
+    patientId: string,
+    token: string = TOKENS.clinicianA
+  ): Promise<Response> {
+    return app.request(`/bff/v0/patients/${patientId}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+    });
+  }
+
+  it('is refused to a role that may read charts but may not decide which', async () => {
+    /*
+     * The critical one. Gating a privilege-granting route on the privilege it
+     * grants makes it self-service: `read-only` holds every `.read` permission,
+     * so it held `patient.read`, so it could grant itself every chart in the
+     * tenant one request at a time. `patient.breakGlass` does not end in
+     * `.read`, so the bundle does not pick it up.
+     */
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+
+    const res = await declare(app, PATIENT, TOKENS.siteReaderA);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('is refused to a portal principal', async () => {
+    /*
+     * What refuses it is the permission, not the actor-type guard in the
+     * handler: `patient-portal` does not hold `patient.breakGlass`, so
+     * `requirePermission` answers 403 before the handler runs. Deleting the
+     * actor-type check does not make this test fail, and that is stated rather
+     * than glossed - the check is a backstop for a tenant that forks the roles
+     * and grants the capability somewhere it does not belong, where the grant's
+     * `userId` would otherwise take a Patient id into a foreign key to `User`.
+     *
+     * A portal user never needs break-glass in any case: `own-record` already
+     * covers their one chart.
+     */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: DEMO_PORTAL_PATIENT, mrn: 'OR-103099' }));
+
+    const res = await declare(app, DEMO_PORTAL_PATIENT, TOKENS.portalA);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns the grant already held rather than filing a second', async () => {
+    /* Re-declaring is ordinary: the window is short and an emergency outlasts
+       it. A row per attempt would bury the sweep this table exists to show. */
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+
+    const first = await declare(app, PATIENT);
+    const second = await declare(app, PATIENT);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { id: string }).id).toBe(
+      ((await first.json()) as { id: string }).id
+    );
+  });
+
+  it('refuses once too many charts are held open at once', async () => {
+    /*
+     * The bound that makes this a control rather than a record. Without it an
+     * account holding no write permission at all could take the whole practice,
+     * one request at a time, and the audit trail would describe it afterwards.
+     */
+    const { app, dataset } = createTestApp();
+    for (let index = 0; index < 12; index += 1) {
+      seed(
+        dataset,
+        'Patient',
+        makePatientRow({
+          id: testId(3_100 + index),
+          mrn: `OR-1032${String(index).padStart(2, '0')}`,
+        })
+      );
+    }
+
+    const statuses: number[] = [];
+    for (let index = 0; index < 12; index += 1) {
+      statuses.push((await declare(app, testId(3_100 + index))).status);
+    }
+
+    expect(statuses.filter((status) => status === 201)).toHaveLength(10);
+    expect(statuses.filter((status) => status === 403)).toHaveLength(2);
+  });
+
+  it('records a refused declaration, so a sweep of guessed ids leaves a trail', async () => {
+    /* The response still distinguishes a real id from a fake one - a hit is a
+       201. The record is what makes the sweep visible. */
+    const { app, sink } = createTestApp();
+
+    const res = await declare(app, testId(3_999));
+
+    expect(res.status).toBe(404);
+    expect(sink.writes().map((entry) => entry.event.action)).toContain('breakGlass.denied');
+  });
+});
+
+describe('the audit trail answers the questions it was built to answer', () => {
+  it('files chart access against the chart, not only against a target id', async () => {
+    /* The per-patient disclosure report filters on `patientId`. An access that
+       does not appear in it is one nobody investigating that chart can see. */
+    const { app, dataset, sink } = createTestApp();
+    baseChart(dataset);
+    seed(dataset, 'Encounter', {
+      ...storageColumns(testId(3_200)),
+      facilityId: DEMO_FACILITY_A,
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      appointmentId: null,
+      class: 'AMBULATORY',
+      status: 'COMPLETED',
+      reasonCode: 'R51',
+      reasonText: 'Headache',
+      startedAt: FIXED_NOW,
+      endedAt: null,
+      signedAt: null,
+      signedById: null,
+    });
+
+    await app.request(`/bff/v0/patients/${PATIENT}`, { headers: bearer(TOKENS.clinicianA) });
+
+    const access = sink.writes().find((entry) => entry.event.action === 'chart.access');
+    expect(access?.event.patientId).toBe(PATIENT);
+  });
+
+  it('sets the breakglass flag the compliance query filters on', async () => {
+    /*
+     * `AuditEvent` carries a `breakglass` boolean and the audit search exposes
+     * it, so "every emergency access this quarter" is one query. It returned
+     * nothing while the distinction lived only in the action string, which is a
+     * control legible to whoever already knows to grep for it.
+     */
+    const { app, dataset, sink } = createTestApp();
+    baseChart(dataset);
+
+    await app.request(`/bff/v0/patients/${PATIENT}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+    });
+    await app.request(`/bff/v0/patients/${PATIENT}`, { headers: bearer(TOKENS.clinicianA) });
+
+    const access = sink.writes().find((entry) => entry.event.action === 'chart.access.breakGlass');
+    expect(access?.event.breakglass).toBe(true);
+    expect(access?.event.patientId).toBe(PATIENT);
+  });
+
+  it('names the patient on the declaration event too', async () => {
+    /* "Who broke glass on this chart" is the question the
+       `(tenantId, patientId, grantedAt)` index was added for, and the audit
+       trail has to be able to answer it as well as the table. */
+    const { app, dataset, sink } = createTestApp();
+    baseChart(dataset);
+
+    await app.request(`/bff/v0/patients/${PATIENT}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+    });
+
+    const created = sink.writes().find((entry) => entry.event.action === 'breakGlass.created');
+    expect(created?.event.patientId).toBe(PATIENT);
+  });
+});
+
+describe('a clinician on more than one care team', () => {
+  it('opens either chart, not only the team they joined most recently', async () => {
+    /*
+     * The source listed the reader's memberships one page at a time and
+     * compared in memory, so it saw only their newest. A clinician added to a
+     * second patient's team stopped being able to open the first one's chart,
+     * and where another source happened to cover it the audit trail recorded
+     * the wrong reason.
+     */
+    const { app, dataset } = createTestApp();
+    const other = testId(3_301);
+    baseChart(dataset);
+    seed(dataset, 'Patient', makePatientRow({ id: other, mrn: 'OR-103301' }));
+
+    for (const [index, patientId] of [PATIENT, other].entries()) {
+      const teamId = testId(3_310 + index);
+      seed(dataset, 'CareTeam', {
+        ...storageColumns(teamId),
+        patientId,
+        status: 'ACTIVE',
+        name: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(3_320 + index)),
+        careTeamId: teamId,
+        patientId,
+        memberType: 'USER',
+        memberUserId: SUBJECTS.clinicianA,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    }
+
+    for (const patientId of [PATIENT, other]) {
+      const res = await app.request(`/bff/v0/patients/${patientId}`, {
+        headers: bearer(TOKENS.clinicianA),
+      });
+      expect(res.status, `chart ${patientId}`).toBe(200);
+    }
+  });
+
+  it('does not open a chart they are on no team for', async () => {
+    /*
+     * The other half, and the one that says the fix is a narrowing rather than
+     * a widening. Filtering the membership query by patient is what makes this
+     * a 404; asking only "is this reader on any care team at all" would answer
+     * 200 and pass the case above, so without this the fix could be deleted and
+     * nothing would fail.
+     */
+    const { app, dataset } = createTestApp();
+    const stranger = testId(3_302);
+    baseChart(dataset);
+    seed(dataset, 'Patient', makePatientRow({ id: stranger, mrn: 'OR-103302' }));
+
+    seed(dataset, 'CareTeam', {
+      ...storageColumns(testId(3_330)),
+      patientId: PATIENT,
+      status: 'ACTIVE',
+      name: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+    seed(dataset, 'CareTeamParticipant', {
+      ...storageColumns(testId(3_331)),
+      careTeamId: testId(3_330),
+      patientId: PATIENT,
+      memberType: 'USER',
+      memberUserId: SUBJECTS.clinicianA,
+      memberRelatedPersonId: null,
+      roleCode: '207Q00000X',
+      roleSystem: 'http://nucc.org/provider-taxonomy',
+      roleText: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+
+    const own = await app.request(`/bff/v0/patients/${PATIENT}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const theirs = await app.request(`/bff/v0/patients/${stranger}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(own.status).toBe(200);
+    expect(theirs.status).toBe(404);
   });
 });

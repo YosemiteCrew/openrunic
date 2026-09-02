@@ -2,6 +2,7 @@ import { patientCreateInput, patientUpdateInput } from '@openrunic/database';
 import { Hono } from 'hono';
 
 import type { AppEnv } from '../context.js';
+import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
 import { assertCareRelationship, requirePermission } from '../middleware/policy.js';
@@ -101,13 +102,18 @@ export const patientRouteContracts: RouteContract[] = [
     operationId: 'breakGlass',
     summary: 'Take deliberate access to a chart you have no relationship with.',
     description:
-      'For the patient in front of you when no encounter, appointment or care team names you. The reason is recorded against your name, the window expires, and every read taken under it is marked in the audit trail as break-glass rather than as ordinary access.',
+      'For the patient in front of you when no encounter, appointment or care team names you. The reason is recorded against your name, the window expires, and every read taken under it is marked in the audit trail as break-glass rather than as ordinary access. Needs `patient.breakGlass`, which is deliberately not part of the read-only bundle: a route that grants a privilege must not be gated on the privilege it grants. Re-declaring for a chart already open returns the grant already held (200) rather than filing another.',
     tags: ['patients'],
-    permission: 'patient.read',
+    permission: 'patient.breakGlass',
     pathParams: [{ name: 'id', description: 'Patient id (UUIDv7).', schema: idParamSchema }],
     body: breakGlassRequestSchema,
     responses: [
       { status: 201, description: 'The grant.', schema: breakGlassGrantDtoSchema },
+      {
+        status: 200,
+        description: 'A grant for this chart was already held and is returned unchanged.',
+        schema: breakGlassGrantDtoSchema,
+      },
       ...ERROR_RESPONSES,
       {
         status: 404,
@@ -140,6 +146,16 @@ export const patientRouteContracts: RouteContract[] = [
   },
 ];
 
+/**
+ * How many charts one reader may hold open under break-glass at once.
+ *
+ * Set where a real emergency never reaches it and a sweep always does. One
+ * patient is the emergency; a handful across a bad afternoon is plausible; ten
+ * concurrent, unexpired declarations by one person is not a clinical situation.
+ * It counts only unexpired grants, so it drains without anybody clearing it.
+ */
+const MAX_CONCURRENT_GRANTS = 10;
+
 export function patientRoutes(): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
   documentRoutes(router);
@@ -167,27 +183,120 @@ export function patientRoutes(): Hono<AppEnv> {
   /**
    * Break-glass, and deliberately not gated by a care relationship.
    *
-   * Gating it would be circular: this is the route you take precisely because
-   * you have no relationship. What stands in its way instead is that the
-   * patient must exist, the reason must say something, the window is bounded,
-   * and the grant is written under the caller's own name.
+   * Gating it on a relationship would be circular: this is the route you take
+   * precisely because you have no relationship. What stands in its way instead
+   * is everything below, and each piece is here because without it the route
+   * hands out what the relationship check was added to protect.
    *
-   * The patient is confirmed to exist first, and a missing one is a 404 with
-   * nothing written. A grant recorded against a guessed id would turn this
-   * route into the enumeration oracle the read path refuses to be.
+   * It is NOT gated on `patient.read`. Gating a privilege-granting route on the
+   * privilege it grants makes it self-service: every role that may read a chart
+   * could grant itself every chart, one request at a time, and the only thing
+   * standing in the way would be the audit record. That is detection, which is
+   * exactly the control #169 rejected as insufficient. `patient.breakGlass` is
+   * a separate capability that `read-only` and `patient-portal` do not hold.
    */
-  router.post('/patients/:id/break-glass', requirePermission('patient.read'), async (c) => {
+  router.post('/patients/:id/break-glass', requirePermission('patient.breakGlass'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, breakGlassRequestSchema);
     const repos = repositories(c);
-    required(await repos.patients.findById(id), 'No such patient.');
 
+    /*
+     * The identity is read, never defaulted. `userId` is the one column that
+     * makes a grant evidence, and `?? ''` would write a row attributable to
+     * nobody the moment this route were remounted outside the policy chain -
+     * the same failure `assertCareRelationship` refuses to let pass silently.
+     *
+     * A non-staff actor is refused outright, and this is a backstop rather than
+     * the control: `patient-portal` does not hold `patient.breakGlass`, so the
+     * shipped roles never reach here. It earns its place for a tenant that
+     * forks the roles and grants the capability somewhere it does not belong -
+     * `Principal.subject` is a User id for staff and a Patient id for the
+     * portal, and this column is a foreign key to `User`, so such a grant would
+     * either violate the key or, on a store that does not check it, name a
+     * patient as its own taker. A portal user never needs one in any case:
+     * `own-record` already covers their one chart.
+     */
     const principal = c.get('principal');
+    if (principal === undefined) {
+      throw ApiError.unauthenticated('A bearer token is required.');
+    }
+    if (principal.actorType !== 'user') {
+      throw ApiError.forbidden('Break-glass is taken by a member of staff.');
+    }
+
+    /*
+     * A refused declaration is audited before it is refused, and the two
+     * refusals below are deliberately the same 404.
+     *
+     * Without the audit, a sweep of guessed ids leaves no trace at all: every
+     * miss is silent, and the route's own promise not to be an enumeration
+     * oracle would rest on a status code that still differs from a hit. It
+     * still differs - a real id answers 201 - so the record is what makes the
+     * sweep visible rather than the response.
+     */
+    const refuse = async (reason: string): Promise<never> => {
+      await c.get('audit')?.denial({
+        action: 'breakGlass.denied',
+        targetType: 'Patient',
+        targetId: id,
+        patientId: id,
+        metadata: { reason, roles: [...principal.roles] },
+      });
+      throw ApiError.notFound('No such patient.');
+    };
+
+    if ((await repos.patients.findById(id)) === null) await refuse('no-such-patient');
+
+    const now = new Date();
+    const held = await repos.breakGlassGrants.list({
+      page: 1,
+      pageSize: MAX_CONCURRENT_GRANTS + 1,
+      sort: 'grantedAt',
+      order: 'desc',
+      userId: principal.subject,
+      unexpiredAt: now,
+    });
+
+    /*
+     * A second declaration for a chart already open returns the grant already
+     * held rather than filing another. Re-declaring is ordinary - the window is
+     * short and an emergency outlasts it - and a row per attempt would turn one
+     * clinician's afternoon into a wall of records that buries the sweep this
+     * table exists to make visible.
+     */
+    const existing = held.rows.find((row) => row.patientId === id);
+    if (existing !== undefined) return c.json(toBreakGlassGrantDto(existing), 200);
+
+    /*
+     * A ceiling on charts held open at once, and it is the only thing here that
+     * makes the difference between a control and a record.
+     *
+     * Break-glass on one patient is the emergency. Break-glass on ten at once is
+     * not a clinical situation, it is a sweep, and without this an account
+     * holding no write permission at all could take the whole practice one
+     * request at a time. The ceiling is per reader and counts only unexpired
+     * grants, so it drains on its own and never becomes a lockout somebody has
+     * to be paged to clear.
+     */
+    if (held.total >= MAX_CONCURRENT_GRANTS) {
+      await c.get('audit')?.denial({
+        action: 'breakGlass.denied',
+        targetType: 'Patient',
+        targetId: id,
+        patientId: id,
+        metadata: { reason: 'ceiling', held: held.total, roles: [...principal.roles] },
+      });
+      throw ApiError.forbidden(
+        `Break-glass is limited to ${String(MAX_CONCURRENT_GRANTS)} charts at once. ` +
+          'Wait for one to expire, or ask an administrator.'
+      );
+    }
+
     const grant = await repos.breakGlassGrants.create({
-      userId: principal?.subject ?? '',
+      userId: principal.subject,
       patientId: id,
       reason: body.reason,
-      expiresAt: new Date(Date.now() + body.minutes * 60_000),
+      expiresAt: new Date(now.getTime() + body.minutes * 60_000),
     });
 
     return c.json(toBreakGlassGrantDto(grant), 201);

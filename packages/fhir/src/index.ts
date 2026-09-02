@@ -19,6 +19,7 @@ export type Coverage = fhir4.Coverage;
 export type RelatedPerson = fhir4.RelatedPerson;
 export type Questionnaire = fhir4.Questionnaire;
 export type QuestionnaireResponse = fhir4.QuestionnaireResponse;
+export type MedicationDispense = fhir4.MedicationDispense;
 export type Appointment = fhir4.Appointment;
 export type Encounter = fhir4.Encounter;
 export type Condition = fhir4.Condition;
@@ -205,6 +206,12 @@ export {
   toFhirRelatedPerson,
 } from './related-person.js';
 export type { DomainRelatedPerson } from './related-person.js';
+export {
+  DISPENSE_LOT_EXTENSION,
+  fromFhirMedicationDispense,
+  toFhirMedicationDispense,
+} from './medication-dispense.js';
+export type { DomainMedicationDispense } from './medication-dispense.js';
 export { COVERAGE_DROPPED_FIELDS, fromFhirCoverage, toFhirCoverage } from './coverage.js';
 export type { DomainCoverage, DomainCoverageRank, DomainCoverageStatus } from './coverage.js';
 

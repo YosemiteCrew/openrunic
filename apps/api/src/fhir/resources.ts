@@ -41,6 +41,8 @@ import {
   practitionerResource,
   practitionerRoleResource,
   provenanceResource,
+  medicationDispenseResource,
+  type DispensePageData,
   relatedPersonResource,
   compileFormRow,
   questionnaireResource,
@@ -98,6 +100,10 @@ const CHART_SORT = { order: 'desc' } as const;
  * bad data, and the resource showing the first two hundred of it is a better
  * failure than a page that will not load.
  */
+/** Lots one dispense can be drawn from. A hand-over split across more than
+    a handful of lots is a data problem rather than a page to widen. */
+const MAX_DISPENSE_MOVEMENTS = 50;
+
 const MAX_FACILITY_GRANTS = 200;
 
 /**
@@ -551,6 +557,82 @@ const coverageModule = defineFhirResource({
  * absent one. Publishing is also what proves the definition compiles, which is
  * the invariant `questionnaireResource` relies on.
  */
+/**
+ * Medicine actually handed to a patient.
+ *
+ * Read from the stock ledger, because that is where the fact lives: a
+ * prescription records what was intended and only a posting records what left
+ * the shelf, in what quantity and from which lot. Filtered to DISPENSE, so the
+ * receipts, counts and wastages in the same table stay out of a clinical
+ * search.
+ *
+ * `prepare` loads the movements for the page and then the items and lots those
+ * movements name, three reads for any number of dispenses rather than three
+ * per dispense.
+ */
+const medicationDispenseModule = defineFhirResource({
+  type: 'MedicationDispense',
+  interactions: ['read', 'search-type'],
+  params: ['patient'],
+  permission: 'order.read',
+  collection: (repositories) => {
+    const postings = repositories.stockPostings;
+    return {
+      list: postings.list.bind(postings),
+      /* A read is narrowed the same way the search is. Without this, any
+         posting could be fetched by id through this route, including the
+         receipts and counts that belong to no patient at all. */
+      findById: async (id: string) => {
+        const row = await postings.findById(id);
+        return row?.kind === 'DISPENSE' && row.patientId !== null ? row : null;
+      },
+    };
+  },
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    kind: 'DISPENSE' as const,
+    sort: 'occurredOn' as const,
+    order: 'desc' as const,
+  }),
+  prepare: async (rows, repositories): Promise<DispensePageData> => {
+    const movementsByPosting = new Map<string, ScopedRow<'StockMovement'>[]>();
+    const itemsById = new Map<string, ScopedRow<'StockItem'>>();
+    const lotsById = new Map<string, ScopedRow<'StockLot'>>();
+    if (rows.length === 0) return { movementsByPosting, itemsById, lotsById };
+
+    const pages = await Promise.all(
+      rows.map(async (row) =>
+        repositories.stockMovements.list({
+          postingId: row.id,
+          page: 1,
+          pageSize: MAX_DISPENSE_MOVEMENTS,
+          sort: 'occurredOn',
+          order: 'asc',
+        })
+      )
+    );
+    for (const page of pages) {
+      for (const movement of page.rows) {
+        const bucket = movementsByPosting.get(movement.postingId);
+        if (bucket) bucket.push(movement);
+        else movementsByPosting.set(movement.postingId, [movement]);
+      }
+    }
+
+    const movements = [...movementsByPosting.values()].flat();
+    const [items, lots] = await Promise.all([
+      repositories.stockItems.findByIds([...new Set(movements.map((one) => one.itemId))]),
+      repositories.stockLots.findByIds([...new Set(movements.map((one) => one.lotId))]),
+    ]);
+    for (const item of items) itemsById.set(item.id, item);
+    for (const lot of lots) lotsById.set(lot.id, lot);
+
+    return { movementsByPosting, itemsById, lotsById };
+  },
+  toResource: (row, context) => medicationDispenseResource(row, context.prepared),
+});
+
 const questionnaireModule = defineFhirResource({
   type: 'Questionnaire',
   interactions: ['read', 'search-type'],
@@ -1087,6 +1169,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   locationModule,
   coverageModule,
   relatedPersonModule,
+  medicationDispenseModule,
   questionnaireModule,
   questionnaireResponseModule,
   appointmentModule,

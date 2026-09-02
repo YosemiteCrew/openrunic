@@ -4,7 +4,11 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../context.js';
 import { assertCareRelationship } from '../middleware/policy.js';
 import type { Permission } from '../policy/permissions.js';
-import type { BaseQuery, Page } from '../repositories/collection.js';
+import type { BaseQuery, CollectionSpec, Page } from '../repositories/collection.js';
+import { patientOf } from '../repositories/memory.js';
+import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
+import { COLLECTION_SPECS } from '../repositories/specs/index.js';
+import type { CollectionKey } from '../repositories/types.js';
 import type { Repositories } from '../repositories/types.js';
 
 import type { FhirPaging, SearchParams } from './params.js';
@@ -77,19 +81,27 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
    */
   prepare?(rows: readonly TRow[], repositories: Repositories): Promise<TPrepared>;
   /**
-   * The patient whose chart this row belongs to, for a resource that is one.
+   * The collection whose spec says which column names this row's chart.
    *
-   * A module that declares it has its addressed reads gated by a care
+   * Declaring it gates the resource's addressed reads behind a care
    * relationship: holding `patient.read` says a role may open charts, not which
    * ones, and until that check existed the answer was "any of them, if you know
    * the id".
    *
-   * On `read` only. A search is already narrowed by the patient compartment and
-   * by the query the caller wrote, and running the check per row would be one
-   * relationship lookup per result. The addressed read is the one that turns a
-   * guessed id into a chart.
+   * A collection key rather than a `(row) => id` function, so the chart column
+   * is read from the same `patientColumn` the audit trail and the compartment
+   * rule already use. A hand-written accessor per module would be twenty-five
+   * chances to name the wrong column, and naming the wrong one fails in the
+   * quiet direction: the check runs, passes against somebody else's chart, and
+   * looks like it worked.
+   *
+   * A row whose chart column is null is not gated, because it names no chart to
+   * protect - a held appointment slot with no patient, a stock posting that is a
+   * receipt rather than a dispense. Those rows carry no patient-identifiable
+   * data by construction; `fhir.chart-gate.test.ts` is what checks that claim
+   * stays true for every resource that has such a column.
    */
-  chartId?(row: TRow): string | undefined;
+  chartFrom?: CollectionKey;
   toResource(row: TRow, context: ResourceContext<TPrepared>): FhirResource | Promise<FhirResource>;
 }
 
@@ -99,6 +111,15 @@ export interface FhirResourceModule {
   readonly interactions: readonly Interaction[];
   readonly params: readonly string[];
   readonly permission: Permission;
+  /**
+   * The collection this resource's chart is read from, when it has one.
+   *
+   * Carried onto the mounted module rather than left on the descriptor so the
+   * surface is inspectable: `fhir.chart-gate.test.ts` walks every served module
+   * and asserts that one naming a patient declares it. A rule that can only be
+   * checked by reading the file is a rule somebody adds a resource past.
+   */
+  readonly chartFrom?: CollectionKey;
   search(c: Context<AppEnv>, params: SearchParams, paging: FhirPaging): Promise<Page<FhirResource>>;
   read(c: Context<AppEnv>, id: string): Promise<FhirResource | null>;
 }
@@ -120,6 +141,7 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
     interactions: descriptor.interactions,
     params: descriptor.params,
     permission: descriptor.permission,
+    ...(descriptor.chartFrom === undefined ? {} : { chartFrom: descriptor.chartFrom }),
 
     async search(c, params, paging): Promise<Page<FhirResource>> {
       const repositories = repositoriesOf(c);
@@ -142,9 +164,9 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
        * to keep working. `_id` and `identifier` are different: both address a
        * specific known record rather than looking for one.
        */
-      if (descriptor.chartId !== undefined && addressesOneChart(params)) {
+      if (descriptor.chartFrom !== undefined && addressesOneChart(params)) {
         for (const chartId of new Set(
-          page.rows.map((row) => descriptor.chartId?.(row)).filter(isPresent)
+          page.rows.map((row) => chartOf(descriptor.chartFrom, row)).filter(isPresent)
         )) {
           await assertCareRelationship(c, chartId);
         }
@@ -165,7 +187,7 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       const repositories = repositoriesOf(c);
       const row = await descriptor.collection(repositories).findById(id);
       if (row === null) return null;
-      const chartId = descriptor.chartId?.(row);
+      const chartId = chartOf(descriptor.chartFrom, row);
       // Before the row is mapped, so a refusal reveals nothing about it.
       if (chartId !== undefined) await assertCareRelationship(c, chartId);
       // A read is a page of one, and goes through the same loader: a resource
@@ -237,6 +259,24 @@ function addressesOneChart(params: SearchParams): boolean {
 
 function isPresent(value: string | undefined): value is string {
   return value !== undefined;
+}
+
+/**
+ * The chart a row belongs to, read from its collection's own spec.
+ *
+ * `patientOf` is the same derivation the audit trail uses, including the one
+ * special case that matters: for `Patient` the chart is the row's own id rather
+ * than a column, and a per-module accessor would have had to remember that.
+ */
+function chartOf(key: CollectionKey | undefined, row: unknown): string | undefined {
+  if (key === undefined) return undefined;
+  const spec = COLLECTION_SPECS[key] as CollectionSpec<
+    PrismaModelName,
+    unknown,
+    unknown,
+    BaseQuery
+  >;
+  return patientOf(spec, row as ScopedRow<PrismaModelName>).patientId;
 }
 
 function repositoriesOf(c: Context<AppEnv>): Repositories {

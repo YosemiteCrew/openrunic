@@ -592,3 +592,125 @@ describe('a clinician on more than one care team', () => {
     expect(theirs.status).toBe(404);
   });
 });
+
+describe('the roles that are not at the bedside', () => {
+  /*
+   * The gate covers every resource that names a chart, and the question that
+   * raises is whether the people who legitimately work those charts without
+   * meeting the patient still can. A biller is the sharpest case: they open a
+   * claim from an accounts-receivable queue, they are named on nothing, and
+   * "break glass" is the wrong answer for a daily job.
+   */
+
+  const BILLED = testId(3_400);
+
+  function billedChart(dataset: Dataset): void {
+    seed(dataset, 'Patient', makePatientRow({ id: BILLED, mrn: 'OR-103400' }));
+    seed(dataset, 'Encounter', {
+      ...storageColumns(testId(3_401)),
+      facilityId: DEMO_FACILITY_A,
+      patientId: BILLED,
+      providerId: testId(3_402),
+      appointmentId: null,
+      class: 'AMBULATORY',
+      status: 'COMPLETED',
+      reasonCode: 'R51',
+      reasonText: 'Headache',
+      startedAt: FIXED_NOW,
+      endedAt: null,
+      signedAt: null,
+      signedById: null,
+    });
+  }
+
+  it('lets a biller open a claim for a chart they are named on nowhere', async () => {
+    /*
+     * Works because of `facility-activity` rather than because billing has a
+     * source of its own, and that is worth stating: `ChargeItem.encounterId` is
+     * NOT NULL, so a patient with anything to bill necessarily has an encounter,
+     * and the biller's facility grant is what makes that encounter visible. A
+     * biller granted no facility at all would still be refused - correctly, and
+     * that is what `facility.all` is for.
+     */
+    const { app, dataset } = createTestApp();
+    billedChart(dataset);
+    seed(dataset, 'Claim', {
+      ...storageColumns(testId(3_410)),
+      patientId: BILLED,
+      encounterId: testId(3_401),
+      coverageId: testId(3_411),
+      payerId: testId(3_412),
+      status: 'DRAFT',
+      frequency: 'ORIGINAL',
+      diagnosisCodes: ['E11.9'],
+      totalChargedCents: 12_000,
+      totalPaidCents: 0,
+      totalAdjustedCents: 0,
+      patientResponsibilityCents: 0,
+      secondaryOfId: null,
+      priorClaimId: null,
+      controlNumbers: {},
+      snapshot: {},
+      statusReason: null,
+      submittedAt: null,
+      acknowledgedAt: null,
+      adjudicatedAt: null,
+    });
+
+    const res = await app.request(`/fhir/Claim/${testId(3_410)}`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses the same claim to a biller with no grant for that site', async () => {
+    /* The other half. If this were 200 the facility narrowing would not be
+       doing anything and the source would authorise every claim in the tenant. */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: BILLED, mrn: 'OR-103400' }));
+    seed(dataset, 'Encounter', {
+      ...storageColumns(testId(3_401)),
+      facilityId: DEMO_FACILITY_B,
+      patientId: BILLED,
+      providerId: testId(3_402),
+      appointmentId: null,
+      class: 'AMBULATORY',
+      status: 'COMPLETED',
+      reasonCode: 'R51',
+      reasonText: 'Headache',
+      startedAt: FIXED_NOW,
+      endedAt: null,
+      signedAt: null,
+      signedById: null,
+    });
+    seed(dataset, 'Claim', {
+      ...storageColumns(testId(3_410)),
+      patientId: BILLED,
+      encounterId: testId(3_401),
+      coverageId: testId(3_411),
+      payerId: testId(3_412),
+      status: 'DRAFT',
+      frequency: 'ORIGINAL',
+      diagnosisCodes: ['E11.9'],
+      totalChargedCents: 12_000,
+      totalPaidCents: 0,
+      totalAdjustedCents: 0,
+      patientResponsibilityCents: 0,
+      secondaryOfId: null,
+      priorClaimId: null,
+      controlNumbers: {},
+      snapshot: {},
+      statusReason: null,
+      submittedAt: null,
+      acknowledgedAt: null,
+      adjudicatedAt: null,
+    });
+
+    const res = await app.request(`/fhir/Claim/${testId(3_410)}`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+});

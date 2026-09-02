@@ -289,11 +289,15 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
      * change underneath whoever resolved it.
      */
     interactions: READ_ONLY,
+    /* `name` is the form's stable key. `status` is deliberately absent: only
+       published forms are served, so it would have one legal value and nothing
+       to select between, and advertising a parameter the handler cannot honour
+       is worse than advertising none. */
     searchParams: [
       {
-        name: 'status',
-        type: 'token',
-        documentation: 'Questionnaire status. Only `active` is served.',
+        name: 'name',
+        type: 'string',
+        documentation: "The form's stable key, for example `intake`.",
         mustSupport: false,
       },
     ],

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { questionnaireResource, questionnaireResponseResource } from '../fhir/projections.js';
+import {
+  compileFormRow,
+  questionnaireResource,
+  questionnaireResponseResource,
+} from '../fhir/projections.js';
 import type { ScopedRow } from '../repositories/rows.js';
 
 import { FIXED_NOW, testId } from './support.js';
@@ -127,7 +131,10 @@ describe('questionnaireResource', () => {
 
 describe('questionnaireResponseResource', () => {
   it('answers the questionnaire it was authored against, with the subject and the answer', () => {
-    const resource = questionnaireResponseResource(submissionRow(), definitionRow());
+    const resource = questionnaireResponseResource(
+      submissionRow(),
+      compileFormRow(definitionRow())
+    );
 
     expect(resource.resourceType).toBe('QuestionnaireResponse');
     expect(resource.id).toBe(testId(301));
@@ -137,9 +144,9 @@ describe('questionnaireResponseResource', () => {
   });
 
   it('authors from the completion instant when there is one', () => {
-    expect(questionnaireResponseResource(submissionRow(), definitionRow()).authored).toBe(
-      FIXED_NOW.toISOString()
-    );
+    expect(
+      questionnaireResponseResource(submissionRow(), compileFormRow(definitionRow())).authored
+    ).toBe(FIXED_NOW.toISOString());
   });
 
   it('falls back to the effective instant for a submission still in progress', () => {
@@ -151,18 +158,20 @@ describe('questionnaireResponseResource', () => {
     const effective = new Date('2026-02-01T09:15:00.000Z');
     const row = submissionRow({ status: 'IN_PROGRESS', completedAt: null, effectiveAt: effective });
 
-    expect(questionnaireResponseResource(row, definitionRow()).authored).toBe(
+    expect(questionnaireResponseResource(row, compileFormRow(definitionRow())).authored).toBe(
       effective.toISOString()
     );
   });
 
   it('maps the submission status rather than reporting every response as completed', () => {
-    expect(questionnaireResponseResource(submissionRow(), definitionRow()).status).toBe(
-      'completed'
-    );
     expect(
-      questionnaireResponseResource(submissionRow({ status: 'IN_PROGRESS' }), definitionRow())
-        .status
+      questionnaireResponseResource(submissionRow(), compileFormRow(definitionRow())).status
+    ).toBe('completed');
+    expect(
+      questionnaireResponseResource(
+        submissionRow({ status: 'IN_PROGRESS' }),
+        compileFormRow(definitionRow())
+      ).status
     ).toBe('in-progress');
   });
 
@@ -171,7 +180,7 @@ describe('questionnaireResponseResource', () => {
        and nothing typed. It has to project as a response with no items. */
     const resource = questionnaireResponseResource(
       submissionRow({ values: {}, status: 'IN_PROGRESS' }),
-      definitionRow()
+      compileFormRow(definitionRow())
     );
 
     expect(resource.item ?? []).toEqual([]);

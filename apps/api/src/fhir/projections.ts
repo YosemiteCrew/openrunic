@@ -53,6 +53,7 @@ import {
   type FormDefinition,
 } from '@openrunic/forms-engine';
 
+import { fhirBaseUrl } from '../env.js';
 import type { Row, ScopedRow } from '../repositories/rows.js';
 
 /**
@@ -272,16 +273,26 @@ export function locationResource(row: ScopedRow<'Facility'>): Location {
  * queried, and the fields live in `definition` because nothing queries inside
  * them. The compiler wants them back together.
  */
-function compileFormRow(row: ScopedRow<'FormDefinition'>): CompiledForm {
+export function compileFormRow(row: ScopedRow<'FormDefinition'>): CompiledForm {
+  const baseUrl = fhirBaseUrl();
   const document = (row.definition ?? {}) as { fields?: unknown };
-  const result = compileDefinition({
-    key: row.key,
-    version: row.version,
-    title: row.title,
-    ...(row.description === null ? {} : { description: row.description }),
-    bindTo: row.bindTo,
-    fields: (document.fields ?? []) as FormDefinition['fields'],
-  });
+  const result = compileDefinition(
+    {
+      key: row.key,
+      version: row.version,
+      title: row.title,
+      ...(row.description === null ? {} : { description: row.description }),
+      bindTo: row.bindTo,
+      fields: (document.fields ?? []) as FormDefinition['fields'],
+    },
+    /*
+     * The canonical base is the deployment's own. Left unset the compiler
+     * falls back to this project's domain, and a self-hosted practice would
+     * publish Questionnaires claiming a canonical URL on a host it does not
+     * run and nobody can resolve to its forms. `.env.example` says to set it.
+     */
+    baseUrl === undefined ? {} : { baseUrl }
+  );
   if (!result.ok) {
     /* Unreachable for a PUBLISHED row: publishing compiles first. Reaching it
        means the invariant broke, and saying so beats serving a form that
@@ -321,16 +332,34 @@ export function questionnaireResource(row: ScopedRow<'FormDefinition'>): Questio
  */
 export function questionnaireResponseResource(
   row: ScopedRow<'FormSubmission'>,
-  definition: ScopedRow<'FormDefinition'>
+  compiled: CompiledForm
 ): QuestionnaireResponse {
-  const compiled = compileFormRow(definition);
   const response = toQuestionnaireResponse(compiled, {
     values: (row.values ?? {}) as Record<string, unknown>,
     status: row.status,
     authored: (row.completedAt ?? row.effectiveAt).toISOString(),
     subjectReference: `Patient/${row.patientId}`,
   });
-  return { ...response, id: row.id } as unknown as QuestionnaireResponse;
+  return {
+    ...response,
+    id: row.id,
+    /*
+     * The visit the form was filled in during, when there was one. A response
+     * that drops it reads as free-floating, and an intake answered at a visit
+     * is not the same clinical statement as one answered from home.
+     */
+    ...(row.encounterId === null
+      ? {}
+      : { encounter: { reference: `Encounter/${row.encounterId}` } }),
+    /*
+     * Who filled it in, when a member of staff did. `completedByType` also
+     * allows the patient, and the row records no id for them, so an absent
+     * author here means "not staff" rather than "unknown".
+     */
+    ...(row.completedByUserId === null
+      ? {}
+      : { author: { reference: `Practitioner/${row.completedByUserId}` } }),
+  } as unknown as QuestionnaireResponse;
 }
 
 /**

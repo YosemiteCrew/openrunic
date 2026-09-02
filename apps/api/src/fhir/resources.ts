@@ -42,6 +42,7 @@ import {
   practitionerRoleResource,
   provenanceResource,
   relatedPersonResource,
+  compileFormRow,
   questionnaireResource,
   questionnaireResponseResource,
   serviceRequestResource,
@@ -553,11 +554,39 @@ const coverageModule = defineFhirResource({
 const questionnaireModule = defineFhirResource({
   type: 'Questionnaire',
   interactions: ['read', 'search-type'],
-  params: ['status'],
+  /*
+   * `name`, not `status`. `status` was advertised and then ignored, which is
+   * the exact failure this arrangement exists to make impossible: the router
+   * accepted `?status=draft` and answered with the published list. Only
+   * published forms are served, so a status filter has one legal value and
+   * nothing to select between.
+   *
+   * `name` is the FHIR spelling of the row's `key`, which is the stable
+   * identifier a client integrating against a named form actually has, and it
+   * is honoured below rather than declared.
+   */
+  params: ['name'],
   permission: 'form.read',
-  collection: (repositories) => repositories.formDefinitions,
-  toQuery: (_query: SearchParams, paging: FhirPaging) => ({
+  /*
+   * `findById` is narrowed as well as the search, and it has to be narrowed
+   * here rather than in `toQuery`: a read goes straight to the collection and
+   * never builds a query, so filtering only there left every draft readable at
+   * `/fhir/Questionnaire/{id}` by anyone who could guess an id. Answering null
+   * makes that a 404, which is what an unpublished form should look like.
+   */
+  collection: (repositories) => {
+    const definitions = repositories.formDefinitions;
+    return {
+      list: definitions.list.bind(definitions),
+      findById: async (id: string) => {
+        const row = await definitions.findById(id);
+        return row === null || row.status !== 'PUBLISHED' ? null : row;
+      },
+    };
+  },
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
+    ...(query.name === undefined ? {} : { key: query.name }),
     status: 'PUBLISHED' as const,
     sort: 'version' as const,
     order: 'desc' as const,
@@ -568,9 +597,10 @@ const questionnaireModule = defineFhirResource({
 /**
  * Submitted forms, as QuestionnaireResponses.
  *
- * `prepare` fetches the definitions for a page in one go rather than per row:
- * an intake list is overwhelmingly the same form many times, so the alternative
- * is the same definition read and compiled once per submission.
+ * `prepare` reads AND compiles the definitions for a page, once each. An intake
+ * list is overwhelmingly the same form many times over, so compiling inside
+ * `toResource` would recompile one definition per submission. The first version
+ * of this deduplicated only the read and its comment claimed otherwise.
  */
 const questionnaireResponseModule = defineFhirResource({
   type: 'QuestionnaireResponse',
@@ -587,7 +617,7 @@ const questionnaireResponseModule = defineFhirResource({
   prepare: async (rows, repositories) => {
     const ids = [...new Set(rows.map((row) => row.formDefinitionId))];
     const definitions = ids.length === 0 ? [] : await repositories.formDefinitions.findByIds(ids);
-    return new Map(definitions.map((definition) => [definition.id, definition]));
+    return new Map(definitions.map((definition) => [definition.id, compileFormRow(definition)]));
   },
   toResource: (row, context) => {
     const definition = context.prepared.get(row.formDefinitionId);

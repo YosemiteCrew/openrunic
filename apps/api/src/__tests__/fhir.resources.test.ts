@@ -660,6 +660,135 @@ function harness(): ReturnType<typeof createTestApp> {
   return created;
 }
 
+describe('Questionnaire serves published forms only', () => {
+  it('does not return a draft by id, which the search filter alone did not prevent', async () => {
+    /*
+     * A read goes straight to `findById` and never builds a query, so filtering
+     * in `toQuery` left every draft readable at /fhir/Questionnaire/{id} by
+     * anyone who could guess an id. A draft is a form somebody is still
+     * editing; it should look absent, not unfinished.
+     */
+    const { app, dataset } = harness();
+    seed(dataset, 'FormDefinition', {
+      ...storageColumns(testId(16)),
+      key: 'draft-intake',
+      version: 1,
+      status: 'DRAFT',
+      title: 'Not published yet',
+      description: null,
+      bindTo: 'PATIENT',
+      definition: { fields: [] },
+      compiled: null,
+      promotionManifest: null,
+      publishedAt: null,
+      publishedById: null,
+      retiredAt: null,
+    });
+
+    const read = await app.request(`/fhir/Questionnaire/${testId(16)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(read.status).toBe(404);
+
+    /* And the published one beside it is still readable, so the guard narrows
+       rather than simply refusing everything. */
+    const published = await app.request(`/fhir/Questionnaire/${testId(13)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(published.status).toBe(200);
+  });
+
+  it('keeps the draft out of the search as well', async () => {
+    const { app, dataset } = harness();
+    seed(dataset, 'FormDefinition', {
+      ...storageColumns(testId(17)),
+      key: 'draft-two',
+      version: 1,
+      status: 'DRAFT',
+      title: 'Also not published',
+      description: null,
+      bindTo: 'PATIENT',
+      definition: { fields: [] },
+      compiled: null,
+      promotionManifest: null,
+      publishedAt: null,
+      publishedById: null,
+      retiredAt: null,
+    });
+
+    const bundle = (await (
+      await app.request('/fhir/Questionnaire', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      testId(13),
+    ]);
+  });
+});
+
+describe('the Questionnaire name filter is honoured, not merely advertised', () => {
+  it('narrows to the named form and answers empty for one that does not exist', async () => {
+    const { app } = harness();
+
+    const matched = (await (
+      await app.request('/fhir/Questionnaire?name=intake', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(matched.total).toBe(1);
+
+    /* The half that catches a declared-but-ignored parameter: a filter that is
+       read and dropped returns the whole list here instead of nothing. */
+    const missed = (await (
+      await app.request('/fhir/Questionnaire?name=not-a-form', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(missed.total).toBe(0);
+  });
+});
+
+describe('a response answered during a visit', () => {
+  it('carries the encounter and the member of staff who filled it in', async () => {
+    /*
+     * Both were dropped by the first version. An intake answered at a visit is
+     * not the same clinical statement as one answered from home, and a
+     * response with no author cannot be attributed.
+     */
+    const { app, dataset } = harness();
+    seed(dataset, 'FormSubmission', {
+      ...storageColumns(testId(18)),
+      formDefinitionId: testId(13),
+      patientId: PATIENT,
+      encounterId: ENCOUNTER,
+      status: 'COMPLETED',
+      values: { reason: 'Filled in at the desk' },
+      completedByType: 'USER',
+      completedByUserId: PROVIDER,
+      completedAt: FIXED_NOW,
+      signedAt: null,
+      signedById: null,
+      effectiveAt: FIXED_NOW,
+    });
+
+    const bundle = (await (
+      await app.request(`/fhir/QuestionnaireResponse?patient=Patient/${PATIENT}`, {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    const answered = bundle.entry
+      ?.map(
+        (entry) =>
+          entry.resource as {
+            id?: string;
+            encounter?: { reference?: string };
+            author?: { reference?: string };
+          }
+      )
+      .find((resource) => resource.id === testId(18));
+
+    expect(answered?.encounter?.reference).toBe(`Encounter/${ENCOUNTER}`);
+    expect(answered?.author?.reference).toBe(`Practitioner/${PROVIDER}`);
+  });
+});
+
 describe('a submission whose definition cannot be read', () => {
   it('refuses rather than serving a response with no questions', async () => {
     /*

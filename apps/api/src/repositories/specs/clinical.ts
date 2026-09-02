@@ -1,5 +1,7 @@
 import type {
   AllergyIntoleranceInput,
+  CarePlanInput,
+  GoalInput,
   CareTeamInput,
   CareTeamParticipantInput,
   ClinicalNoteInput,
@@ -506,6 +508,18 @@ export interface ProcedureListQuery extends BaseQuery {
   encounterId?: string;
   status?: ProcedureStatus;
   code?: string;
+  /**
+   * Half-open window on `performedStart`: `[from, to)`.
+   *
+   * Declared here because the FHIR boundary supplies it. `Procedure?date=` used
+   * to spread a window onto this query that nothing below read, so the filter
+   * was advertised, accepted, and silently ignored: a client asking for last
+   * month's procedures received the patient's whole history and had no way to
+   * tell. Object spread is not excess-property-checked, so the compiler said
+   * nothing either.
+   */
+  from?: Date;
+  to?: Date;
   sort: 'performedStart' | 'createdAt';
 }
 
@@ -563,15 +577,18 @@ export const procedureSpec: CollectionSpec<
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (!inWindow(row.performedStart, query.from, query.to)) return false;
     return query.code === undefined || row.code === query.code;
   },
 
   where(query: ProcedureListQuery) {
+    const performedStart = windowFilter(query.from, query.to);
     return {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.code === undefined ? {} : { code: query.code }),
+      ...(performedStart === undefined ? {} : { performedStart }),
     };
   },
 
@@ -1466,19 +1483,36 @@ export interface CareTeamParticipantListQuery extends BaseQuery {
   sort: 'createdAt';
 }
 
+/**
+ * What a participant patch may change, which is not who the member is.
+ *
+ * `memberType` and both member columns are excluded together. They are one
+ * fact spread over three columns, held consistent by a check constraint, and a
+ * patch that could move any of them independently could put the row in a state
+ * the database refuses: a 500 naming a constraint, where the caller wanted to
+ * replace a team member. Removing the old member and adding the new one is the
+ * operation they actually meant, and it keeps the period on the row that ended.
+ */
+
 export type CareTeamParticipantPatchInput = Partial<
-  Omit<CareTeamParticipantInput, 'careTeamId' | 'memberType'>
+  Omit<
+    CareTeamParticipantInput,
+    'careTeamId' | 'patientId' | 'memberType' | 'memberUserId' | 'memberRelatedPersonId'
+  >
 >;
 
 /**
  * The membership rows behind a team.
  *
- * Compartment-closed, like a claim line: a participant reaches a chart only
- * through the team it hangs off, and this layer performs no join, so a
- * patient-scoped token is refused the table outright rather than served one
- * nobody narrowed. The team itself narrows on `patientId` and is what such a
- * token reads; the FHIR projection fetches the members for a page of teams the
- * caller has already been granted.
+ * Narrowed on the participant's own `patientId`, not closed. Closed was the
+ * first answer and it was wrong in a way that produced no error: the compartment
+ * rule is one column equality and this layer performs no join, so a patient
+ * reading their own care team was served the team and none of its members. A
+ * team that appears to have nobody on it, shown to the one person the portal
+ * exists for.
+ *
+ * The column is denormalised from the team and cannot drift, because the
+ * foreign key is composite. See the schema comment on `CareTeamParticipant`.
  */
 export const careTeamParticipantSpec: CollectionSpec<
   'CareTeamParticipant',
@@ -1489,11 +1523,13 @@ export const careTeamParticipantSpec: CollectionSpec<
   model: 'CareTeamParticipant',
   targetType: 'CareTeamParticipant',
   action: 'careTeamParticipant',
-  compartment: 'closed',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
 
   newRow(input: CareTeamParticipantInput): Writable<'CareTeamParticipant'> {
     return {
       careTeamId: input.careTeamId,
+      patientId: input.patientId,
       memberType: input.memberType,
       memberUserId: input.memberUserId ?? null,
       memberRelatedPersonId: input.memberRelatedPersonId ?? null,
@@ -1505,8 +1541,24 @@ export const careTeamParticipantSpec: CollectionSpec<
     };
   },
 
+  /**
+   * Named columns rather than whatever the patch carries.
+   *
+   * The type already excludes the member columns, and a type is documentation:
+   * `Object.entries` copies every key it is handed, so a caller reaching this
+   * with an unvalidated body could still move `memberUserId` and leave the row
+   * disagreeing with its `memberType`. The database refuses that, which turns a
+   * replaced team member into a 500 naming a constraint. Listing what may
+   * change is the only version of this that is true at run time.
+   */
   patchData(patch: CareTeamParticipantPatchInput): Partial<Writable<'CareTeamParticipant'>> {
-    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    return {
+      ...(patch.roleCode === undefined ? {} : { roleCode: patch.roleCode }),
+      ...(patch.roleSystem === undefined ? {} : { roleSystem: patch.roleSystem }),
+      ...(patch.roleText === undefined ? {} : { roleText: patch.roleText }),
+      ...(patch.periodStart === undefined ? {} : { periodStart: patch.periodStart }),
+      ...(patch.periodEnd === undefined ? {} : { periodEnd: patch.periodEnd }),
+    };
   },
 
   matches(row: ScopedRow<'CareTeamParticipant'>, query: CareTeamParticipantListQuery): boolean {
@@ -1549,12 +1601,163 @@ function careTeamParticipantTeams(
   return query.careTeamIds.filter((id) => id === query.careTeamId);
 }
 
+export type CarePlanStatus = Row<'CarePlan'>['status'];
+
+export interface CarePlanListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: CarePlanStatus;
+  /**
+   * Narrow to a known set of plans.
+   *
+   * An empty list means no plan matches, and that is a state the FHIR boundary
+   * reaches: `CarePlan?category=` names a category this server does not serve,
+   * which is a legitimate search with no results rather than an error.
+   */
+  ids?: readonly string[];
+  sort: 'createdAt';
+}
+
+export type CarePlanPatchInput = Partial<Omit<CarePlanInput, 'patientId'>>;
+
+export const carePlanSpec: CollectionSpec<
+  'CarePlan',
+  CarePlanInput,
+  CarePlanPatchInput,
+  CarePlanListQuery
+> = {
+  model: 'CarePlan',
+  targetType: 'CarePlan',
+  action: 'carePlan',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: CarePlanInput): Writable<'CarePlan'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      status: input.status ?? 'ACTIVE',
+      intent: input.intent ?? 'PLAN',
+      title: input.title ?? null,
+      narrative: input.narrative,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+      authorId: input.authorId ?? null,
+    };
+  },
+
+  patchData(patch: CarePlanPatchInput): Partial<Writable<'CarePlan'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'CarePlan'>, query: CarePlanListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.ids !== undefined && !query.ids.includes(row.id)) return false;
+    return query.status === undefined || row.status === query.status;
+  },
+
+  where(query: CarePlanListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.ids === undefined ? {} : { id: { in: [...query.ids] } }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CarePlan'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CarePlanListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
+export type GoalLifecycleStatus = Row<'Goal'>['lifecycleStatus'];
+
+export interface GoalListQuery extends BaseQuery {
+  patientId?: string;
+  carePlanId?: string;
+  lifecycleStatus?: GoalLifecycleStatus;
+  sort: 'createdAt' | 'dueDate';
+}
+
+export type GoalPatchInput = Partial<Omit<GoalInput, 'patientId'>>;
+
+export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalListQuery> = {
+  model: 'Goal',
+  targetType: 'Goal',
+  action: 'goal',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: GoalInput): Writable<'Goal'> {
+    return {
+      patientId: input.patientId,
+      carePlanId: input.carePlanId ?? null,
+      lifecycleStatus: input.lifecycleStatus ?? 'ACTIVE',
+      achievementStatus: input.achievementStatus ?? null,
+      priority: input.priority ?? null,
+      description: input.description,
+      descriptionCode: input.descriptionCode ?? null,
+      descriptionSystem: input.descriptionSystem ?? null,
+      targetMeasureCode: input.targetMeasureCode ?? null,
+      targetMeasureSystem: input.targetMeasureSystem ?? null,
+      targetValue: input.targetValue ?? null,
+      targetLow: input.targetLow ?? null,
+      targetHigh: input.targetHigh ?? null,
+      targetUnit: input.targetUnit ?? null,
+      startDate: input.startDate ?? null,
+      dueDate: input.dueDate ?? null,
+      statusReason: input.statusReason ?? null,
+      expressedByUserId: input.expressedByUserId ?? null,
+    };
+  },
+
+  patchData(patch: GoalPatchInput): Partial<Writable<'Goal'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'Goal'>, query: GoalListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.carePlanId !== undefined && row.carePlanId !== query.carePlanId) return false;
+    return query.lifecycleStatus === undefined || row.lifecycleStatus === query.lifecycleStatus;
+  },
+
+  where(query: GoalListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.carePlanId === undefined ? {} : { carePlanId: query.carePlanId }),
+      ...(query.lifecycleStatus === undefined ? {} : { lifecycleStatus: query.lifecycleStatus }),
+    };
+  },
+
+  /* A goal with no due date sorts as if it were due at the epoch, which puts it
+     first ascending. That is the honest place for it: an undated goal is one
+     nobody has committed to a date for, and burying it at the end of the list
+     is how it stays undated. */
+  sortValue(row: ScopedRow<'Goal'>, sort: GoalListQuery['sort']): number {
+    return sort === 'dueDate' ? (row.dueDate?.getTime() ?? 0) : row.createdAt.getTime();
+  },
+
+  orderBy(query: GoalListQuery) {
+    const { order } = query;
+    if (query.sort === 'dueDate') return [{ dueDate: order }, { id: 'asc' as const }];
+    return [{ createdAt: order }, { id: 'asc' as const }];
+  },
+};
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
   noteAddenda: noteAddendumSpec,
   problems: conditionSpec,
   procedures: procedureSpec,
+  carePlans: carePlanSpec,
+  goals: goalSpec,
   careTeams: careTeamSpec,
   careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,

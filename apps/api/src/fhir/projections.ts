@@ -6,6 +6,8 @@ import {
   toFhirCondition,
   toFhirCoverage,
   toFhirMedicationDispense,
+  toFhirCarePlan,
+  toFhirGoal,
   toFhirCareTeam,
   toFhirProcedure,
   toFhirRelatedPerson,
@@ -30,6 +32,8 @@ import {
   type Condition,
   type Coverage,
   type MedicationDispense,
+  type CarePlan,
+  type Goal,
   type CareTeam,
   type Procedure,
   type RelatedPerson,
@@ -420,13 +424,6 @@ export function questionnaireResponseResource(
   } as unknown as QuestionnaireResponse;
 }
 
-/**
- * A guardian, an emergency contact or a portal proxy, as US Core sees them.
- *
- * The three booleans on the row become relationship codings and one extension
- * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
- * the same reading of them if they ever need it.
- */
 /** A procedure performed, from its own row. */
 export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
   return toFhirProcedure(
@@ -446,6 +443,59 @@ export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
       notDoneReason: absent(row.notDoneReason),
       note: absent(row.note),
       performedById: absent(row.performedById),
+    })
+  );
+}
+
+/**
+ * A goal, from its own row.
+ *
+ * The three target bounds are `Decimal` columns and are read here as plain
+ * numbers, which they already are: `toPlainRow` flattens every decimal once, at
+ * the row boundary, so nothing above it has to know. Converting again here
+ * would be a second answer to a question already settled, and the kind of
+ * duplicate that goes stale when the first one changes.
+ */
+export function goalResource(row: ScopedRow<'Goal'>): Goal {
+  return toFhirGoal(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      carePlanId: absent(row.carePlanId),
+      lifecycleStatus: row.lifecycleStatus,
+      achievementStatus: absent(row.achievementStatus),
+      priority: absent(row.priority),
+      description: row.description,
+      descriptionCode: absent(row.descriptionCode),
+      descriptionSystem: absent(row.descriptionSystem),
+      targetMeasureCode: absent(row.targetMeasureCode),
+      targetMeasureSystem: absent(row.targetMeasureSystem),
+      targetValue: absent(row.targetValue),
+      targetLow: absent(row.targetLow),
+      targetHigh: absent(row.targetHigh),
+      targetUnit: absent(row.targetUnit),
+      startDate: row.startDate?.toISOString().slice(0, 10),
+      dueDate: row.dueDate?.toISOString().slice(0, 10),
+      statusReason: absent(row.statusReason),
+      expressedByUserId: absent(row.expressedByUserId),
+    })
+  );
+}
+
+/** The assessment and plan, from its own row. */
+export function carePlanResource(row: ScopedRow<'CarePlan'>): CarePlan {
+  return toFhirCarePlan(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      encounterId: absent(row.encounterId),
+      status: row.status,
+      intent: row.intent,
+      title: absent(row.title),
+      narrative: row.narrative,
+      periodStart: row.periodStart?.toISOString(),
+      periodEnd: row.periodEnd?.toISOString(),
+      authorId: absent(row.authorId),
     })
   );
 }
@@ -502,6 +552,13 @@ export function careTeamResource(
   return { ...resource, meta: { ...resource.meta, lastUpdated: newest.toISOString() } };
 }
 
+/**
+ * A guardian, an emergency contact or a portal proxy, as US Core sees them.
+ *
+ * The three booleans on the row become relationship codings and one extension
+ * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
+ * the same reading of them if they ever need it.
+ */
 export function relatedPersonResource(row: ScopedRow<'RelatedPerson'>): RelatedPerson {
   return toFhirRelatedPerson(
     compactDomain({

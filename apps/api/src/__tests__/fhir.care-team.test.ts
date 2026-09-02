@@ -45,6 +45,7 @@ function participantRow(
     id: testId(301),
     tenantId: TENANT,
     careTeamId: TEAM,
+    patientId: PATIENT,
     memberType: 'USER',
     memberUserId: testId(400),
     memberRelatedPersonId: null,

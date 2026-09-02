@@ -55,6 +55,8 @@ export const TENANT_SCOPED_MODELS = [
   'Condition',
   'Procedure',
   'CareTeam',
+  'CarePlan',
+  'Goal',
   'CareTeamParticipant',
   'MedicationStatement',
   'MedicationRequest',
@@ -145,6 +147,25 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 /**
+ * The same check, returning the record rather than narrowing in place.
+ *
+ * Spreading a narrowed `args` used to be `isRecord(args) ? { ...args } : {}`,
+ * and that stopped compiling when the schema reached fifty-three models: the
+ * extension's `args` is the union of every operation's arguments for every
+ * model, a guard narrows the union rather than replacing it, and spreading it
+ * makes the compiler distribute the spread across every member. TypeScript
+ * answers "union type that is too complex to represent", pointing at a line
+ * that has not changed in months, for a change that added a table.
+ *
+ * Returning a plain record collapses the union at the boundary instead, so the
+ * cost no longer grows with the schema. It also means the next table does not
+ * break the build in a file nobody would think to look at.
+ */
+function asRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? { ...value } : {};
+}
+
+/**
  * Narrows a `where` clause to one tenant.
  *
  * The predicate is ANDed rather than merged, so a caller that supplies its own
@@ -226,7 +247,7 @@ export function createTenantClient(client: PrismaClient, context: TenantContext)
             );
           }
 
-          const scoped: ScopedArgs = isRecord(args) ? { ...args } : {};
+          const scoped: ScopedArgs = asRecord(args);
 
           if (FILTERED_OPERATIONS.has(operation)) {
             scoped.where = withTenantWhere(scoped.where, tenantId);

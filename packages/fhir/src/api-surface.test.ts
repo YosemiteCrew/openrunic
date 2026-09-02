@@ -226,11 +226,13 @@ describe('operation outcome', () => {
 
 describe('search parameter registry', () => {
   it('covers every resource type the package maps', () => {
-    expect(SUPPORTED_RESOURCE_TYPES).toHaveLength(29);
+    expect(SUPPORTED_RESOURCE_TYPES).toHaveLength(31);
     expect(SUPPORTED_RESOURCE_TYPES).toContain('Patient');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('RelatedPerson');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('Procedure');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('CareTeam');
+    expect(SUPPORTED_RESOURCE_TYPES).toContain('CarePlan');
+    expect(SUPPORTED_RESOURCE_TYPES).toContain('Goal');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('QuestionnaireResponse');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('MedicationDispense');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('Provenance');
@@ -255,9 +257,9 @@ describe('search parameter registry', () => {
 
   it('refuses parameters and resource types it does not implement', () => {
     expect(isSupportedResourceType('Patient')).toBe(true);
-    expect(isSupportedResourceType('CarePlan')).toBe(false);
-    expect(searchSupportFor('CarePlan')).toBeUndefined();
-    expect(findSearchParam('CarePlan', 'patient')).toBeUndefined();
+    expect(isSupportedResourceType('NutritionOrder')).toBe(false);
+    expect(searchSupportFor('NutritionOrder')).toBeUndefined();
+    expect(findSearchParam('NutritionOrder', 'patient')).toBeUndefined();
     expect(isSupportedSearchParam('Patient', 'organization')).toBe(false);
   });
 
@@ -270,7 +272,7 @@ describe('search parameter registry', () => {
       'birthdate',
       'gender',
     ]);
-    expect(mustSupportParams('CarePlan')).toStrictEqual([]);
+    expect(mustSupportParams('NutritionOrder')).toStrictEqual([]);
   });
 
   it('generates CapabilityStatement resources that cannot drift from the registry', () => {

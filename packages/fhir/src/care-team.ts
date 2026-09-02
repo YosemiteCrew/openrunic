@@ -98,6 +98,11 @@ function participantResource(
   if (id === undefined) return undefined;
 
   return compact<fhir4.CareTeamParticipant>({
+    /* The row's own id, carried on the backbone element. Without it a round
+       trip through FHIR replaces every participant id with its position, so
+       reordering the list silently reassigns identities and a patch aimed at
+       one member lands on another. */
+    id: participant.id,
     role: [
       {
         coding: [{ system: participant.roleSystem, code: participant.roleCode }],
@@ -157,9 +162,15 @@ function participantFromFhir(
   if (roleCode === undefined || roleSystem === undefined) return undefined;
 
   const base = {
-    /* Positional, because a participant carries no id of its own in FHIR: it is
-       a backbone element. The row it is written to gets a real one. */
-    id: `${index}`,
+    /*
+     * The element's own id when it has one, and its position when it does not.
+     *
+     * A backbone element may carry an `id`, and this mapper writes the row's
+     * there, so anything it produced comes back with the real identity. Foreign
+     * input often omits it, and the index is then the only stable handle there
+     * is - stable within one read, which is all a caller can use it for.
+     */
+    id: readString(participant.id) ?? `${index}`,
     roleCode,
     roleSystem,
   };

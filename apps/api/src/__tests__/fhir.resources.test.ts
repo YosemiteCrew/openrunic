@@ -266,6 +266,68 @@ function seedChart(dataset: MemoryDataset): void {
     recordedById: PROVIDER,
   });
 
+  /* Two goals: one with a single-value target and one with a range, so the
+     projection exercises both halves of the detail[x] choice rather than the
+     same half twice. */
+  seed(dataset, 'Goal', {
+    ...storageColumns(testId(45)),
+    patientId: PATIENT,
+    carePlanId: testId(44),
+    lifecycleStatus: 'ACTIVE',
+    achievementStatus: 'IMPROVING',
+    priority: 'HIGH',
+    description: 'HbA1c below 7%',
+    descriptionCode: '443631005',
+    descriptionSystem: 'http://snomed.info/sct',
+    targetMeasureCode: '4548-4',
+    targetMeasureSystem: 'http://loinc.org',
+    targetValue: 7,
+    targetLow: null,
+    targetHigh: null,
+    targetUnit: '%',
+    startDate: FIXED_NOW,
+    dueDate: FIXED_NOW,
+    statusReason: null,
+    expressedByUserId: PROVIDER,
+  });
+
+  seed(dataset, 'Goal', {
+    ...storageColumns(testId(46)),
+    patientId: PATIENT,
+    carePlanId: null,
+    lifecycleStatus: 'ACTIVE',
+    achievementStatus: null,
+    priority: null,
+    description: 'Systolic between 110 and 130',
+    descriptionCode: null,
+    descriptionSystem: null,
+    targetMeasureCode: '8480-6',
+    targetMeasureSystem: 'http://loinc.org',
+    targetValue: null,
+    targetLow: 110,
+    targetHigh: 130,
+    targetUnit: 'mm[Hg]',
+    startDate: null,
+    dueDate: FIXED_NOW,
+    statusReason: null,
+    expressedByUserId: null,
+  });
+
+  /* A plan with a period and an author, so the projection exercises the
+     optional branches rather than only the required ones. */
+  seed(dataset, 'CarePlan', {
+    ...storageColumns(testId(44)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    status: 'ACTIVE',
+    intent: 'PLAN',
+    title: 'Diabetes management',
+    narrative: 'Continue metformin.\n\nRecheck HbA1c in three months.',
+    periodStart: FIXED_NOW,
+    periodEnd: null,
+    authorId: PROVIDER,
+  });
+
   /* A team with one member of each kind, so the projection exercises all three
      member reference types rather than the practitioner one three times. */
   seed(dataset, 'CareTeam', {
@@ -280,6 +342,7 @@ function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'CareTeamParticipant', {
     ...storageColumns(testId(42)),
     careTeamId: testId(41),
+    patientId: PATIENT,
     memberType: 'USER',
     memberUserId: PROVIDER,
     memberRelatedPersonId: null,
@@ -293,6 +356,7 @@ function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'CareTeamParticipant', {
     ...storageColumns(testId(43)),
     careTeamId: testId(41),
+    patientId: PATIENT,
     memberType: 'PATIENT',
     memberUserId: null,
     memberRelatedPersonId: null,
@@ -846,6 +910,236 @@ describe('Questionnaire serves published forms only', () => {
     expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
       testId(13),
     ]);
+  });
+});
+
+describe('the Goal filters are honoured, not merely advertised', () => {
+  it('narrows by lifecycle status and refuses a code outside the value set', async () => {
+    const { app } = harness();
+
+    const active = (await (
+      await app.request('/fhir/Goal?lifecycle-status=active', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(active.total).toBe(2);
+
+    /* The half that catches a dropped filter: both seeded goals are active, so
+       a filter that is read and ignored answers `completed` with both of them. */
+    const completed = (await (
+      await app.request('/fhir/Goal?lifecycle-status=completed', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(completed.total).toBe(0);
+
+    const refused = await app.request('/fhir/Goal?lifecycle-status=nonsense', {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(refused.status).toBe(400);
+  });
+
+  it('refuses `status`, which R4 does not define for this resource', async () => {
+    /*
+     * Goal has no `status` search parameter in R4; the one it has is
+     * `lifecycle-status`. Accepting `status` would answer a parameter no other
+     * server implements, and quietly, since every value would filter nothing.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Goal?status=active', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('serves both halves of the target choice, and never both on one goal', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Goal', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const targets = bundle.entry?.map(
+      (entry) =>
+        (entry.resource as { target?: { detailQuantity?: unknown; detailRange?: unknown }[] })
+          .target?.[0]
+    );
+
+    expect(targets?.some((target) => target?.detailQuantity !== undefined)).toBe(true);
+    expect(targets?.some((target) => target?.detailRange !== undefined)).toBe(true);
+    for (const target of targets ?? []) {
+      expect(target?.detailQuantity !== undefined && target?.detailRange !== undefined).toBe(false);
+    }
+  });
+
+  it('serves the target value as a number, not as a decimal object', async () => {
+    /*
+     * The column is a `Decimal`, and `toPlainRow` flattens it at the row
+     * boundary. Asserted end to end rather than trusted: a decimal that reached
+     * the wire would serialise as an object, which is valid JSON and not a
+     * number, and a client parsing `Quantity.value` gets NaN.
+     *
+     * The memory dataset holds a plain number, so this passes over that
+     * backend either way. It is here for the shape of the served resource;
+     * `rows.test.ts` is what proves the flattening, against a value that
+     * actually carries `toNumber`.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/Goal', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const values = (bundle.entry ?? [])
+      .map(
+        (entry) =>
+          (entry.resource as { target?: { detailQuantity?: { value?: unknown } }[] }).target?.[0]
+            ?.detailQuantity?.value
+      )
+      .filter((value) => value !== undefined);
+
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) expect(typeof value).toBe('number');
+  });
+});
+
+describe('one crowded care team does not empty the others', () => {
+  it('trims the crowded team and leaves the rest of the page intact', async () => {
+    /*
+     * The loader fetches participants for the whole page in one query, ordered
+     * by creation across every team on it. A single global page limit is
+     * therefore not a limit of twenty per team at all: one team with more
+     * members than the allowance consumes it, and every team ordered after that
+     * team is emitted with no participants.
+     *
+     * Not an error, and not a truncation a client can detect. A care team that
+     * appears to have nobody on it, because a different patient's team was
+     * malformed. Asserted end to end, because the trim is in the loader and the
+     * loader is not exported.
+     */
+    const { app, dataset } = harness();
+
+    /* Twenty-five on the team seeded first, so it both exceeds the per-team cap
+       and, being older, would consume a global allowance before the second team
+       was reached. */
+    for (let index = 0; index < 25; index += 1) {
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(1000 + index)),
+        careTeamId: testId(41),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: PROVIDER,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    }
+
+    seed(dataset, 'CareTeam', {
+      ...storageColumns(testId(1100)),
+      patientId: PATIENT,
+      status: 'ACTIVE',
+      name: 'Second team',
+      periodStart: null,
+      periodEnd: null,
+    });
+    seed(dataset, 'CareTeamParticipant', {
+      ...storageColumns(testId(1101)),
+      careTeamId: testId(1100),
+      patientId: PATIENT,
+      memberType: 'PATIENT',
+      memberUserId: null,
+      memberRelatedPersonId: null,
+      roleCode: '116154003',
+      roleSystem: 'http://snomed.info/sct',
+      roleText: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+
+    const bundle = (await (
+      await app.request('/fhir/CareTeam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const byId = new Map(
+      (bundle.entry ?? []).map((entry) => {
+        const resource = entry.resource as { id?: string; participant?: unknown[] };
+        return [resource.id, resource.participant?.length ?? 0];
+      })
+    );
+
+    expect(byId.get(testId(41))).toBe(20);
+    /* The assertion that fails without the per-team trim. */
+    expect(byId.get(testId(1100))).toBe(1);
+  });
+});
+
+describe('the CarePlan category filter is honoured, not merely advertised', () => {
+  it('answers the one category it serves and returns nothing for any other', async () => {
+    /*
+     * `category` has exactly one legal value here, which is precisely why it is
+     * the parameter most likely to be advertised and then ignored: every
+     * conforming client sends `assess-plan`, that filter is a no-op, and it
+     * looks like it works. The half that catches the bug is the other request:
+     * a dropped filter answers a query for `careteam` with the whole list, and
+     * the client believes the practice records care-team plans it does not.
+     */
+    const { app } = harness();
+
+    const matched = (await (
+      await app.request('/fhir/CarePlan?category=assess-plan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(matched.total).toBe(1);
+
+    const missed = (await (
+      await app.request('/fhir/CarePlan?category=careteam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(missed.total).toBe(0);
+  });
+
+  it('answers a system-qualified token the same way as a bare code', async () => {
+    /* `system|code` is the ordinary way a client sends a token, and reading the
+       whole thing as the code would match nothing for every conforming
+       client. */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request(
+        '/fhir/CarePlan?category=http%3A%2F%2Fhl7.org%2Ffhir%2Fus%2Fcore%2FCodeSystem%2Fus-core-category%7Cassess-plan',
+        { headers: bearer(TOKENS.adminA) }
+      )
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(1);
+  });
+
+  it('refuses a token that names another system, even with the same code', async () => {
+    /*
+     * `assess-plan` in somebody else's vocabulary is a different concept that
+     * happens to share a spelling. Answering it with this server's plans is the
+     * same class of wrong answer as ignoring the parameter, and harder to
+     * notice, because the code looked right.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan?category=urn%3Aelsewhere%7Cassess-plan', {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(0);
+  });
+
+  it('serves the narrative as escaped XHTML, which is what a client renders', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const plan = bundle.entry?.[0]?.resource as { text?: { div?: string; status?: string } };
+
+    expect(plan.text?.status).toBe('additional');
+    expect(plan.text?.div).toContain('<p>Continue metformin.</p>');
   });
 });
 

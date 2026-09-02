@@ -44,6 +44,8 @@ export type SupportedResourceType =
   | 'RelatedPerson'
   | 'Procedure'
   | 'CareTeam'
+  | 'CarePlan'
+  | 'Goal'
   | 'Questionnaire'
   | 'QuestionnaireResponse'
   | 'MedicationDispense'
@@ -328,6 +330,39 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
        asserting care happened with nothing behind it. */
     interactions: READ_ONLY,
     searchParams: [patientParam(), dateParam('date', 'When the procedure was performed.')],
+  },
+  Goal: {
+    resourceType: 'Goal',
+    profile: `${US_CORE}us-core-goal`,
+    /* Read-only. A goal is something a patient and a clinician agreed to, and a
+       client writing one would be recording an agreement that never happened. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      dateParam('target-date', 'When the goal is meant to be reached.'),
+      /* `lifecycle-status`, not `status`. R4 gives Goal no `status` parameter
+         at all, and advertising one would be a name no conforming client sends
+         and no other server answers. */
+      {
+        name: 'lifecycle-status',
+        type: 'token',
+        documentation: 'Where the goal is in its life.',
+        mustSupport: true,
+      },
+    ],
+  },
+  CarePlan: {
+    resourceType: 'CarePlan',
+    profile: `${US_CORE}us-core-careplan`,
+    /* Read-only. The assessment is the clinician's conclusion about a patient,
+       and a client writing one would be putting words in their mouth that the
+       chart would then attribute to them. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      categoryParam('The kind of plan. This server serves only assess-plan.'),
+      statusParam('The state of the plan.'),
+    ],
   },
   CareTeam: {
     resourceType: 'CareTeam',

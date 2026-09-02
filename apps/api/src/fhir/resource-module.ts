@@ -8,8 +8,7 @@ import type { BaseQuery, CollectionSpec, Page } from '../repositories/collection
 import { patientOf } from '../repositories/memory.js';
 import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
 import { COLLECTION_SPECS } from '../repositories/specs/index.js';
-import type { CollectionKey } from '../repositories/types.js';
-import type { Repositories } from '../repositories/types.js';
+import type { CollectionKey, Repositories } from '../repositories/types.js';
 
 import type { FhirPaging, SearchParams } from './params.js';
 
@@ -245,16 +244,28 @@ export function stampLastUpdated(row: unknown, resource: FhirResource): FhirReso
 }
 
 /**
- * Whether this search names a specific record rather than describing one.
+ * Whether this search names one chart rather than describing a set.
  *
- * `_id` is an id and `identifier` is an MRN: both say "this one", which is what
- * an addressed read says. Every other parameter describes a set, and a caller
- * with no relationship to anybody still has to be able to search by name and
- * birth date - that is how a duplicate record is avoided at registration, and
- * duplicate records are their own patient-safety hazard.
+ * `patient` is the one that matters and was the last hole in the gate. Every
+ * clinical resource advertises it, and `Condition?patient=Patient/{id}` is not a
+ * search at all: it is "open this chart's problem list", spelled differently.
+ * Measured before it was closed: with no relationship, `GET /fhir/Patient/{id}`
+ * and `GET /fhir/Condition/{id}` both answered 404 while
+ * `GET /fhir/Condition?patient=Patient/{id}` answered 200 with the ICD-10
+ * diagnosis. Gating the addressed read and not this is gating the door and
+ * leaving the window.
+ *
+ * `_id` is an id and `identifier` is an MRN; both say "this one" as plainly.
+ *
+ * Every other parameter describes a set, and a caller with no relationship to
+ * anybody still has to be able to search by name and birth date - that is how a
+ * duplicate record is avoided at registration, and duplicate records are their
+ * own patient-safety hazard.
  */
 function addressesOneChart(params: SearchParams): boolean {
-  return params._id !== undefined || params.identifier !== undefined;
+  return (
+    params._id !== undefined || params.identifier !== undefined || params.patient !== undefined
+  );
 }
 
 function isPresent(value: string | undefined): value is string {

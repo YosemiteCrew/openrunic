@@ -308,6 +308,48 @@ describe('the gate is not walked around', () => {
     expect(res.status).toBe(404);
   });
 
+  it('refuses a chart-scoped search, which is the chart spelled differently', async () => {
+    /*
+     * The last hole, and the widest. Every clinical resource advertises
+     * `patient`, and `Condition?patient=Patient/{id}` is not a search at all: it
+     * is "open this chart's problem list". Measured before it was closed - with
+     * no relationship, the addressed Patient read and the addressed Condition
+     * read both answered 404 while this answered 200 with the ICD-10 diagnosis.
+     * Gating the addressed read and leaving this is gating the door and leaving
+     * the window.
+     */
+    const { app, dataset } = chartWithNoRelationship();
+    seed(dataset, 'Condition', {
+      ...storageColumns(testId(3_500)),
+      patientId: PATIENT,
+      encounterId: null,
+      code: 'E11.9',
+      codeSystem: 'http://hl7.org/fhir/sid/icd-10-cm',
+      display: 'Type 2 diabetes',
+      category: 'PROBLEM_LIST_ITEM',
+      snomedCode: null,
+      clinicalStatus: 'ACTIVE',
+      verificationStatus: 'CONFIRMED',
+      onsetDate: null,
+      abatementDate: null,
+      severityCode: null,
+      bodySiteCode: null,
+      note: null,
+      recordedAt: FIXED_NOW,
+      recordedById: null,
+    });
+
+    const addressed = await app.request(`/fhir/Condition/${testId(3_500)}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const scoped = await app.request(`/fhir/Condition?patient=Patient/${PATIENT}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(addressed.status).toBe(404);
+    expect(scoped.status, 'the chart-scoped search must answer like the read').toBe(404);
+  });
+
   it('still allows a search that describes a patient rather than naming one', async () => {
     /*
      * The other half, and the one that matters more. Registration and

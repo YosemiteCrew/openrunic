@@ -580,7 +580,7 @@ const questionnaireModule = defineFhirResource({
       list: definitions.list.bind(definitions),
       findById: async (id: string) => {
         const row = await definitions.findById(id);
-        return row === null || row.status !== 'PUBLISHED' ? null : row;
+        return row?.status === 'PUBLISHED' ? row : null;
       },
     };
   },

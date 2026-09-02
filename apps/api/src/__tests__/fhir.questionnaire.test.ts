@@ -5,6 +5,7 @@ import {
   questionnaireResource,
   questionnaireResponseResource,
 } from '../fhir/projections.js';
+import { fhirBaseUrl } from '../env.js';
 import type { ScopedRow } from '../repositories/rows.js';
 
 import { FIXED_NOW, testId } from './support.js';
@@ -185,5 +186,92 @@ describe('questionnaireResponseResource', () => {
 
     expect(resource.item ?? []).toEqual([]);
     expect(resource.subject?.reference).toBe(`Patient/${PATIENT}`);
+  });
+});
+
+describe('fhirBaseUrl', () => {
+  it('is absent when nothing is configured, which is the default deployment', () => {
+    expect(fhirBaseUrl({})).toBeUndefined();
+    expect(fhirBaseUrl({ OPENRUNIC_FHIR_BASE_URL: '   ' })).toBeUndefined();
+  });
+
+  it('refuses a value that is not a URL rather than putting it in a canonical id', () => {
+    /* Parsed here so a typo fails at the boundary. Passed through, it would
+       surface as an unresolvable canonical URL inside a published resource,
+       which is far harder to trace back to one environment variable. */
+    expect(fhirBaseUrl({ OPENRUNIC_FHIR_BASE_URL: 'not a url' })).toBeUndefined();
+  });
+
+  it('trims trailing slashes so the canonical URL has exactly one separator', () => {
+    expect(fhirBaseUrl({ OPENRUNIC_FHIR_BASE_URL: 'https://fhir.example.invalid/' })).toBe(
+      'https://fhir.example.invalid'
+    );
+    /* A long run of them is the input the old regex backtracked on. */
+    expect(
+      fhirBaseUrl({ OPENRUNIC_FHIR_BASE_URL: `https://fhir.example.invalid${'/'.repeat(40)}` })
+    ).toBe('https://fhir.example.invalid');
+  });
+
+  it('keeps a path prefix, which a deployment behind a gateway needs', () => {
+    expect(fhirBaseUrl({ OPENRUNIC_FHIR_BASE_URL: 'https://example.invalid/api/fhir' })).toBe(
+      'https://example.invalid/api/fhir'
+    );
+  });
+});
+
+describe('compileFormRow, on the shapes a JSON column can hold', () => {
+  it('treats a definition with no fields as an empty form rather than failing', () => {
+    /* `definition` is an opaque JSON object at the API boundary, so a row with
+       nothing in it is reachable. An empty questionnaire is the honest reading
+       of an empty definition. */
+    expect(compileFormRow(definitionRow({ definition: {} })).questionnaire.item).toEqual([]);
+  });
+
+  it('carries the description when the row has one, and omits it when null', () => {
+    expect(
+      compileFormRow(definitionRow({ description: 'Filled in at reception' })).questionnaire
+        .description
+    ).toBe('Filled in at reception');
+    expect(compileFormRow(definitionRow()).questionnaire.description).toBeUndefined();
+  });
+});
+
+describe('the null fallbacks, which a JSON column reaches and a route does not', () => {
+  it('compiles a definition whose JSON column is null', () => {
+    /* Prisma types the column as JSON and the API validates only that it is an
+       object, so null is reachable through a direct write even though no route
+       produces it. Treating it as an empty document beats throwing on a row
+       nobody can fix through the UI. */
+    expect(compileFormRow(definitionRow({ definition: null as never })).questionnaire.item).toEqual(
+      []
+    );
+  });
+
+  it('projects a submission whose values column is null as a response with no answers', () => {
+    const resource = questionnaireResponseResource(
+      submissionRow({ values: null as never }),
+      compileFormRow(definitionRow())
+    );
+
+    expect(resource.item ?? []).toEqual([]);
+    expect(resource.id).toBe(testId(301));
+  });
+
+  it('uses the configured base for the canonical url when one is set', () => {
+    /*
+     * The default is this project's own domain, which is wrong on every
+     * self-hosted deployment. Asserted by setting the variable for one call
+     * rather than by trusting the compiler's fallback.
+     */
+    const previous = process.env['OPENRUNIC_FHIR_BASE_URL'];
+    process.env['OPENRUNIC_FHIR_BASE_URL'] = 'https://fhir.example.invalid';
+    try {
+      expect(compileFormRow(definitionRow()).questionnaire.url).toBe(
+        'https://fhir.example.invalid/Questionnaire/intake'
+      );
+    } finally {
+      if (previous === undefined) delete process.env['OPENRUNIC_FHIR_BASE_URL'];
+      else process.env['OPENRUNIC_FHIR_BASE_URL'] = previous;
+    }
   });
 });

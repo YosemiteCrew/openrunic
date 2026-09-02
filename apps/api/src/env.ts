@@ -182,5 +182,11 @@ export function fhirBaseUrl(
   const raw = source.OPENRUNIC_FHIR_BASE_URL;
   if (raw === undefined || raw.trim() === '') return undefined;
   const parsed = z.url().safeParse(raw.trim());
-  return parsed.success ? parsed.data.replace(/\/+$/, '') : undefined;
+  if (!parsed.success) return undefined;
+  /* Trailing slashes trimmed without a regex. `/\/+$/` backtracks
+     super-linearly on a long run of them, which is a denial of service reachable
+     from a configuration value, and the loop says the same thing in one pass. */
+  let base = parsed.data;
+  while (base.endsWith('/')) base = base.slice(0, -1);
+  return base;
 }

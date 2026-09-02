@@ -323,6 +323,16 @@ const FILTERS: {
     prescriberId: 'id-prescriberId',
     status: 'DRAFT',
   },
+  procedures: {
+    page: 1,
+    pageSize: 25,
+    sort: 'performedStart',
+    order: 'desc',
+    patientId: 'id-patientId',
+    encounterId: 'id-encounterId',
+    status: 'COMPLETED',
+    code: '99213',
+  },
   problems: {
     page: 1,
     pageSize: 25,

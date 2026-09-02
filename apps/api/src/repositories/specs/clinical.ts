@@ -2,6 +2,7 @@ import type {
   AllergyIntoleranceInput,
   ClinicalNoteInput,
   ConditionInput,
+  ProcedureInput,
   EncounterCreateInput,
   ImmunizationInput,
   ReferralInput,
@@ -51,6 +52,7 @@ export type EncounterClass = Row<'Encounter'>['class'];
 export type EncounterStatus = Row<'Encounter'>['status'];
 export type NoteState = Row<'ClinicalNote'>['state'];
 export type ConditionCategory = Row<'Condition'>['category'];
+export type ProcedureStatus = Row<'Procedure'>['status'];
 export type ConditionClinicalStatus = Row<'Condition'>['clinicalStatus'];
 export type ConditionVerificationStatus = Row<'Condition'>['verificationStatus'];
 export type MedicationStatementStatus = Row<'MedicationStatement'>['status'];
@@ -489,6 +491,98 @@ export interface ConditionPatchInput {
   bodySiteCode?: string;
   note?: string;
 }
+
+/**
+ * Procedures performed, which no other collection records.
+ *
+ * `ServiceRequest` holds what was asked for and `ChargeItem` what is billed, so
+ * a procedure carried out and not billed - most of a clinical day - lives only
+ * here.
+ */
+export interface ProcedureListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: ProcedureStatus;
+  code?: string;
+  sort: 'performedStart' | 'createdAt';
+}
+
+export type ProcedurePatchInput = Partial<Omit<ProcedureInput, 'patientId'>>;
+
+/**
+ * CPT rather than SNOMED CT, because that is what a US practice codes a
+ * procedure in and what the charge beside it carries. The SNOMED equivalent US
+ * Core prefers has its own column rather than overwriting this one.
+ */
+const PROCEDURE_DEFAULTS: { codeSystem: string; status: ProcedureStatus } = {
+  codeSystem: 'http://www.ama-assn.org/go/cpt',
+  status: 'COMPLETED',
+};
+
+export const procedureSpec: CollectionSpec<
+  'Procedure',
+  ProcedureInput,
+  ProcedurePatchInput,
+  ProcedureListQuery
+> = {
+  model: 'Procedure',
+  targetType: 'Procedure',
+  action: 'procedure',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: ProcedureInput, context): Writable<'Procedure'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      code: input.code,
+      codeSystem: input.codeSystem ?? PROCEDURE_DEFAULTS.codeSystem,
+      display: input.display,
+      snomedCode: input.snomedCode ?? null,
+      status: input.status ?? PROCEDURE_DEFAULTS.status,
+      performedStart: input.performedStart,
+      performedEnd: input.performedEnd ?? null,
+      bodySiteCode: input.bodySiteCode ?? null,
+      outcomeCode: input.outcomeCode ?? null,
+      notDoneReason: input.notDoneReason ?? null,
+      note: input.note ?? null,
+      performedById: input.performedById ?? null,
+      recordedAt: context.now,
+      recordedById: input.recordedById ?? null,
+    };
+  },
+
+  patchData(patch: ProcedurePatchInput): Partial<Writable<'Procedure'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'Procedure'>, query: ProcedureListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.status !== undefined && row.status !== query.status) return false;
+    return query.code === undefined || row.code === query.code;
+  },
+
+  where(query: ProcedureListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.code === undefined ? {} : { code: query.code }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'Procedure'>, sort: ProcedureListQuery['sort']): number {
+    return sort === 'createdAt' ? row.createdAt.getTime() : row.performedStart.getTime();
+  },
+
+  orderBy(query: ProcedureListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ performedStart: order }, { id: 'asc' as const }];
+  },
+};
 
 export const conditionSpec: CollectionSpec<
   'Condition',
@@ -1310,6 +1404,7 @@ export const clinicalSpecs = {
   notes: clinicalNoteSpec,
   noteAddenda: noteAddendumSpec,
   problems: conditionSpec,
+  procedures: procedureSpec,
   medicationStatements: medicationStatementSpec,
   prescriptions: medicationRequestSpec,
   allergies: allergySpec,

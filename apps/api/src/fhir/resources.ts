@@ -41,6 +41,7 @@ import {
   practitionerResource,
   practitionerRoleResource,
   provenanceResource,
+  procedureResource,
   relatedPersonResource,
   compileFormRow,
   questionnaireResource,
@@ -630,6 +631,29 @@ const questionnaireResponseModule = defineFhirResource({
   },
 });
 
+/**
+ * Procedures performed, which neither the order nor the claim records.
+ *
+ * `ServiceRequest` says what was asked for and may never have happened;
+ * `Claim` says what is billed and exists only when somebody bills. A procedure
+ * carried out and not billed, which is most of a clinical day, is here alone.
+ */
+const procedureModule = defineFhirResource({
+  type: 'Procedure',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'date'],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.procedures,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...window(query.date, 'date'),
+    sort: 'performedStart' as const,
+    order: 'desc' as const,
+  }),
+  toResource: procedureResource,
+});
+
 const relatedPersonModule = defineFhirResource({
   type: 'RelatedPerson',
   /*
@@ -1087,6 +1111,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   locationModule,
   coverageModule,
   relatedPersonModule,
+  procedureModule,
   questionnaireModule,
   questionnaireResponseModule,
   appointmentModule,

@@ -5,6 +5,7 @@ import {
   toFhirClaim,
   toFhirCondition,
   toFhirCoverage,
+  toFhirProcedure,
   toFhirRelatedPerson,
   toFhirDiagnosticReport,
   toFhirDocumentReference,
@@ -26,6 +27,7 @@ import {
   type Claim,
   type Condition,
   type Coverage,
+  type Procedure,
   type RelatedPerson,
   type Questionnaire,
   type QuestionnaireResponse,
@@ -369,6 +371,29 @@ export function questionnaireResponseResource(
  * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
  * the same reading of them if they ever need it.
  */
+/** A procedure performed, from its own row. */
+export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
+  return toFhirProcedure(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      encounterId: absent(row.encounterId),
+      code: row.code,
+      codeSystem: row.codeSystem,
+      display: row.display,
+      snomedCode: absent(row.snomedCode),
+      status: row.status,
+      performedStart: row.performedStart.toISOString(),
+      performedEnd: row.performedEnd?.toISOString(),
+      bodySiteCode: absent(row.bodySiteCode),
+      outcomeCode: absent(row.outcomeCode),
+      notDoneReason: absent(row.notDoneReason),
+      note: absent(row.note),
+      performedById: absent(row.performedById),
+    })
+  );
+}
+
 export function relatedPersonResource(row: ScopedRow<'RelatedPerson'>): RelatedPerson {
   return toFhirRelatedPerson(
     compactDomain({

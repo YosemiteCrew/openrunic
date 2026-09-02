@@ -8,6 +8,7 @@ import {
   APPOINTMENT_CREATED_VIA,
   APPOINTMENT_STATUSES,
   CONDITION_CATEGORIES,
+  PROCEDURE_STATUSES,
   CONDITION_CLINICAL_STATUSES,
   CONDITION_VERIFICATION_STATUSES,
   ENCOUNTER_CLASSES,
@@ -107,6 +108,38 @@ export const noteAddendumInput = z.strictObject({
   blocks: z.array(jsonObject).max(500),
   reason: shortText.optional(),
 });
+
+export const procedureInput = z
+  .strictObject({
+    patientId: uuid,
+    encounterId: uuid.optional(),
+    code,
+    codeSystem: codeSystem.optional(),
+    display,
+    snomedCode: code.optional(),
+    status: z.enum(PROCEDURE_STATUSES).optional(),
+    performedStart: z.coerce.date(),
+    performedEnd: z.coerce.date().optional(),
+    bodySiteCode: code.optional(),
+    outcomeCode: code.optional(),
+    notDoneReason: longText.optional(),
+    note: longText.optional(),
+    performedById: uuid.optional(),
+    recordedById: uuid.optional(),
+  })
+  .refine((value) => !value.performedEnd || value.performedEnd >= value.performedStart, {
+    message: 'performedEnd must not precede performedStart',
+    path: ['performedEnd'],
+  })
+  /*
+   * A reason belongs to the status that needs one. Attached to a COMPLETED
+   * procedure it reads as a reason it was done, which is a different field and
+   * a different clinical claim.
+   */
+  .refine((value) => value.notDoneReason === undefined || value.status === 'NOT_DONE', {
+    message: 'notDoneReason is only meaningful when status is NOT_DONE',
+    path: ['notDoneReason'],
+  });
 
 export const conditionInput = z
   .strictObject({
@@ -283,6 +316,7 @@ export type EncounterCreateInput = z.infer<typeof encounterCreateInput>;
 export type ClinicalNoteInput = z.infer<typeof clinicalNoteInput>;
 export type NoteAddendumInput = z.infer<typeof noteAddendumInput>;
 export type ConditionInput = z.infer<typeof conditionInput>;
+export type ProcedureInput = z.infer<typeof procedureInput>;
 export type AllergyIntoleranceInput = z.infer<typeof allergyIntoleranceInput>;
 export type MedicationStatementInput = z.infer<typeof medicationStatementInput>;
 export type MedicationRequestInput = z.infer<typeof medicationRequestInput>;

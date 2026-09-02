@@ -17,6 +17,7 @@ export type Organization = fhir4.Organization;
 export type Location = fhir4.Location;
 export type Coverage = fhir4.Coverage;
 export type RelatedPerson = fhir4.RelatedPerson;
+export type Procedure = fhir4.Procedure;
 export type Questionnaire = fhir4.Questionnaire;
 export type QuestionnaireResponse = fhir4.QuestionnaireResponse;
 export type Appointment = fhir4.Appointment;
@@ -205,6 +206,8 @@ export {
   toFhirRelatedPerson,
 } from './related-person.js';
 export type { DomainRelatedPerson } from './related-person.js';
+export { fromFhirProcedure, toFhirProcedure } from './procedure.js';
+export type { DomainProcedure, DomainProcedureStatus } from './procedure.js';
 export { COVERAGE_DROPPED_FIELDS, fromFhirCoverage, toFhirCoverage } from './coverage.js';
 export type { DomainCoverage, DomainCoverageRank, DomainCoverageStatus } from './coverage.js';
 

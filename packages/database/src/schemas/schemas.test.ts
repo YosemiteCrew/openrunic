@@ -10,6 +10,7 @@ import {
   claimStatusChangeInput,
   clinicalNoteInput,
   conditionInput,
+  procedureInput,
   consentGrantInput,
   coverageInput,
   diagnosticReportInput,
@@ -404,6 +405,67 @@ describe('noteAddendumInput', () => {
 
   it('rejects an addendum with no author', () => {
     rejects(noteAddendumInput, { noteId: ID.note, blocks: [] });
+  });
+});
+
+describe('procedureInput', () => {
+  const validProcedure = {
+    patientId: ID.patient,
+    code: '45378',
+    display: 'Diagnostic colonoscopy',
+    performedStart: '2026-08-12T09:00:00.000Z',
+  };
+
+  it('accepts a procedure that happened at a moment', () => {
+    accepts(procedureInput, validProcedure);
+  });
+
+  it('accepts one that took a span', () => {
+    accepts(procedureInput, {
+      ...validProcedure,
+      performedEnd: '2026-08-12T09:45:00.000Z',
+    });
+  });
+
+  it('rejects an end before the start', () => {
+    /* A procedure that finished before it began is a typo, and stored it turns
+       into a negative duration in every report that measures one. */
+    rejects(procedureInput, {
+      ...validProcedure,
+      performedEnd: '2026-08-12T08:00:00.000Z',
+    });
+  });
+
+  it('accepts an end equal to the start, which a zero-length record can be', () => {
+    accepts(procedureInput, {
+      ...validProcedure,
+      performedEnd: validProcedure.performedStart,
+    });
+  });
+
+  it('rejects a not-done reason on a procedure that was done', () => {
+    /*
+     * The reason belongs to the status that needs one. Attached to a COMPLETED
+     * procedure it reads as a reason it was carried out, which is a different
+     * clinical claim and a field FHIR spells differently.
+     */
+    rejects(procedureInput, {
+      ...validProcedure,
+      status: 'COMPLETED',
+      notDoneReason: 'Declined by the patient',
+    });
+  });
+
+  it('accepts the reason when the status is the one that takes it', () => {
+    accepts(procedureInput, {
+      ...validProcedure,
+      status: 'NOT_DONE',
+      notDoneReason: 'Declined by the patient',
+    });
+  });
+
+  it('rejects a status outside the closed set', () => {
+    rejects(procedureInput, { ...validProcedure, status: 'FINISHED' });
   });
 });
 

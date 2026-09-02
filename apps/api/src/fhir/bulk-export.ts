@@ -132,6 +132,7 @@ export const PATIENT_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
   'Appointment',
   'Encounter',
   'Condition',
+  'Procedure',
   'MedicationRequest',
   'MedicationStatement',
   'AllergyIntolerance',

@@ -180,6 +180,28 @@ function seedChart(dataset: MemoryDataset): void {
     effectiveAt: FIXED_NOW,
   });
 
+  /* A completed procedure with both codings and a real span, so the projection
+     exercises the period branch rather than the instant one. */
+  seed(dataset, 'Procedure', {
+    ...storageColumns(testId(40)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    code: '45378',
+    codeSystem: 'http://www.ama-assn.org/go/cpt',
+    display: 'Diagnostic colonoscopy',
+    snomedCode: '73761001',
+    status: 'COMPLETED',
+    performedStart: FIXED_NOW,
+    performedEnd: null,
+    bodySiteCode: null,
+    outcomeCode: null,
+    notDoneReason: null,
+    note: null,
+    performedById: PROVIDER,
+    recordedAt: FIXED_NOW,
+    recordedById: PROVIDER,
+  });
+
   seed(dataset, 'Encounter', {
     ...storageColumns(ENCOUNTER),
     facilityId: DEMO_FACILITY_A,

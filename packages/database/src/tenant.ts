@@ -53,6 +53,7 @@ export const TENANT_SCOPED_MODELS = [
   'ClinicalNote',
   'NoteAddendum',
   'Condition',
+  'Procedure',
   'MedicationStatement',
   'MedicationRequest',
   'AllergyIntolerance',

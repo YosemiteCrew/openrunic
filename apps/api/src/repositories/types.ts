@@ -4,6 +4,7 @@ import type {
   IMAGING_STUDY_STATUSES,
   TELEHEALTH_VISIT_STATUSES,
   APPOINTMENT_STATUSES,
+  PROCEDURE_STATUSES,
   SENSITIVITY_CLASSES,
 } from '@openrunic/database';
 
@@ -37,6 +38,8 @@ import type { COLLECTION_SPECS } from './specs/index.js';
 
 export type AdministrativeGender = (typeof ADMINISTRATIVE_GENDERS)[number];
 export type SensitivityClass = (typeof SENSITIVITY_CLASSES)[number];
+/** FHIR's event-status value set, as `Procedure.status` spells it. */
+export type ProcedureStatus = (typeof PROCEDURE_STATUSES)[number];
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 export type AppointmentCreatedVia = (typeof APPOINTMENT_CREATED_VIA)[number];
 export type ImagingStudyStatus = (typeof IMAGING_STUDY_STATUSES)[number];

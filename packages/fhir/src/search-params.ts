@@ -42,6 +42,7 @@ export type SupportedResourceType =
   | 'Claim'
   | 'Consent'
   | 'RelatedPerson'
+  | 'Procedure'
   | 'Questionnaire'
   | 'QuestionnaireResponse'
   | 'MedicationDispense'
@@ -317,6 +318,15 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
     profile: `${US_CORE}us-core-questionnaireresponse`,
     interactions: READ_ONLY,
     searchParams: [patientParam()],
+  },
+  Procedure: {
+    resourceType: 'Procedure',
+    profile: `${US_CORE}us-core-procedure`,
+    /* Read-only. A procedure is recorded where it was performed, in a note or
+       an encounter workflow, and a client writing one directly would be
+       asserting care happened with nothing behind it. */
+    interactions: READ_ONLY,
+    searchParams: [patientParam(), dateParam('date', 'When the procedure was performed.')],
   },
   RelatedPerson: {
     resourceType: 'RelatedPerson',

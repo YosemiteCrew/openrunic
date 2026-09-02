@@ -56,6 +56,24 @@ export const NOTE_STATES = [
   'ENTERED_IN_ERROR',
 ] as const;
 
+/**
+ * FHIR's event-status value set, as this schema spells it.
+ *
+ * `NOT_DONE` earns its place: a procedure declined or abandoned is a clinical
+ * statement, and a list without it pushes that fact into free text.
+ */
+export const PROCEDURE_STATUSES = [
+  'PREPARATION',
+  'IN_PROGRESS',
+  'NOT_DONE',
+  'ON_HOLD',
+  'STOPPED',
+  'COMPLETED',
+  'ENTERED_IN_ERROR',
+  'UNKNOWN',
+] as const;
+export type ProcedureStatus = (typeof PROCEDURE_STATUSES)[number];
+
 export const CONDITION_CATEGORIES = [
   'PROBLEM_LIST_ITEM',
   'ENCOUNTER_DIAGNOSIS',

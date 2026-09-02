@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import {
   ADMINISTRATIVE_GENDERS,
+  CARE_TEAM_MEMBER_TYPES,
+  CARE_TEAM_STATUSES,
   CONSENT_SCOPES,
   CONSENT_STATUSES,
   COVERAGE_RANKS,
@@ -83,6 +85,63 @@ export const relatedPersonInput = z.strictObject({
   active: z.boolean().optional(),
 });
 
+export const careTeamInput = z
+  .strictObject({
+    patientId: uuid,
+    status: z.enum(CARE_TEAM_STATUSES).optional(),
+    name: shortText.optional(),
+    periodStart: timestamp.optional(),
+    periodEnd: timestamp.optional(),
+  })
+  .refine(
+    (value) => !value.periodEnd || !value.periodStart || value.periodEnd >= value.periodStart,
+    {
+      message: 'periodEnd must not precede periodStart',
+      path: ['periodEnd'],
+    }
+  );
+
+/**
+ * One member of a team, with the invariant the database also holds.
+ *
+ * `memberType` picks which member column is set, and the two have to agree.
+ * The check constraint in the migration is the enforcement that matters, since
+ * the API is not the only writer, but refusing it here turns a constraint
+ * violation into a 400 naming the field rather than a 500 naming a constraint.
+ */
+export const careTeamParticipantInput = z
+  .strictObject({
+    careTeamId: uuid,
+    memberType: z.enum(CARE_TEAM_MEMBER_TYPES),
+    memberUserId: uuid.optional(),
+    memberRelatedPersonId: uuid.optional(),
+    roleCode: code,
+    roleSystem: codeSystem,
+    roleText: shortText.optional(),
+    periodStart: timestamp.optional(),
+    periodEnd: timestamp.optional(),
+  })
+  .refine((value) => (value.memberType === 'USER') === (value.memberUserId !== undefined), {
+    message: 'memberUserId is required for a USER member and forbidden otherwise',
+    path: ['memberUserId'],
+  })
+  .refine(
+    (value) =>
+      (value.memberType === 'RELATED_PERSON') === (value.memberRelatedPersonId !== undefined),
+    {
+      message:
+        'memberRelatedPersonId is required for a RELATED_PERSON member and forbidden otherwise',
+      path: ['memberRelatedPersonId'],
+    }
+  )
+  .refine(
+    (value) => !value.periodEnd || !value.periodStart || value.periodEnd >= value.periodStart,
+    {
+      message: 'periodEnd must not precede periodStart',
+      path: ['periodEnd'],
+    }
+  );
+
 export const payerInput = z.strictObject({
   name: z.string().min(1).max(256),
   /** Trading-partner id used in the 837 NM109. */
@@ -142,6 +201,8 @@ export type PatientCreateInput = z.infer<typeof patientCreateInput>;
 export type PatientUpdateInput = z.infer<typeof patientUpdateInput>;
 export type PatientIdentifierInput = z.infer<typeof patientIdentifierInput>;
 export type RelatedPersonInput = z.infer<typeof relatedPersonInput>;
+export type CareTeamInput = z.infer<typeof careTeamInput>;
+export type CareTeamParticipantInput = z.infer<typeof careTeamParticipantInput>;
 export type PayerInput = z.infer<typeof payerInput>;
 export type CoverageInput = z.infer<typeof coverageInput>;
 export type ConsentGrantInput = z.infer<typeof consentGrantInput>;

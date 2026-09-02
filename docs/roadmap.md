@@ -5,7 +5,7 @@
 
 Everything below is counted from this repository at version **0.2.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
 
-**45 available now. 5 next. 3 later.** 26 FHIR R4 resource types served at the boundary. 2 languages.
+**45 available now. 5 next. 3 later.** 28 FHIR R4 resource types served at the boundary. 2 languages.
 
 ## Available now
 
@@ -98,9 +98,9 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Standards at the boundary
 
-26 FHIR R4 resource types are served:
+28 FHIR R4 resource types are served:
 
-`Patient`, `Practitioner`, `PractitionerRole`, `Organization`, `Location`, `Coverage`, `RelatedPerson`, `MedicationDispense`, `Questionnaire`, `QuestionnaireResponse`, `Appointment`, `Encounter`, `Condition`, `MedicationRequest`, `MedicationStatement`, `AllergyIntolerance`, `Immunization`, `Observation`, `DiagnosticReport`, `ServiceRequest`, `ImagingStudy`, `Specimen`, `DocumentReference`, `Task`, `Provenance`, `Claim`.
+`Patient`, `Practitioner`, `PractitionerRole`, `Organization`, `Location`, `Coverage`, `RelatedPerson`, `MedicationDispense`, `Procedure`, `CareTeam`, `Questionnaire`, `QuestionnaireResponse`, `Appointment`, `Encounter`, `Condition`, `MedicationRequest`, `MedicationStatement`, `AllergyIntolerance`, `Immunization`, `Observation`, `DiagnosticReport`, `ServiceRequest`, `ImagingStudy`, `Specimen`, `DocumentReference`, `Task`, `Provenance`, `Claim`.
 
 ## Languages
 

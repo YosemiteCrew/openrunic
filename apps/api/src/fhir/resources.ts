@@ -1,4 +1,5 @@
 import {
+  CARE_TEAM_STATUS,
   CLAIM_STATUS,
   DOCUMENT_STATUS,
   MEDICATION_REQUEST_STATUS,
@@ -43,6 +44,8 @@ import {
   provenanceResource,
   medicationDispenseResource,
   type DispensePageData,
+  careTeamResource,
+  procedureResource,
   relatedPersonResource,
   compileFormRow,
   questionnaireResource,
@@ -712,6 +715,88 @@ const questionnaireResponseModule = defineFhirResource({
   },
 });
 
+/**
+ * Procedures performed, which neither the order nor the claim records.
+ *
+ * `ServiceRequest` says what was asked for and may never have happened;
+ * `Claim` says what is billed and exists only when somebody bills. A procedure
+ * carried out and not billed, which is most of a clinical day, is here alone.
+ */
+const procedureModule = defineFhirResource({
+  type: 'Procedure',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'date'],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.procedures,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...window(query.date, 'date'),
+    sort: 'performedStart' as const,
+    order: 'desc' as const,
+  }),
+  toResource: procedureResource,
+});
+
+/**
+ * Who is looking after this patient, and in what capacity.
+ *
+ * The members come from a second table, so the page loads them once for every
+ * team on it rather than once per team: a lookup inside the mapper would be one
+ * round trip per row, invisible against three fixtures and quadratic on a real
+ * page.
+ */
+async function prepareCareTeams(
+  rows: readonly ScopedRow<'CareTeam'>[],
+  repositories: Repositories
+): Promise<Map<string, ScopedRow<'CareTeamParticipant'>[]>> {
+  const byTeam = new Map<string, ScopedRow<'CareTeamParticipant'>[]>();
+  if (rows.length === 0) return byTeam;
+
+  const participants = await repositories.careTeamParticipants.list({
+    page: 1,
+    /* A ceiling rather than a limit anybody reaches. A team of twenty is a
+       large multidisciplinary one; past that the page is truncated, and the
+       alternative - no bound at all - lets one malformed team exhaust the
+       request. */
+    pageSize: 20 * rows.length,
+    sort: 'createdAt',
+    order: 'asc',
+    careTeamIds: rows.map((row) => row.id),
+  });
+  for (const participant of participants.rows) {
+    const existing = byTeam.get(participant.careTeamId);
+    if (existing === undefined) byTeam.set(participant.careTeamId, [participant]);
+    else existing.push(participant);
+  }
+  return byTeam;
+}
+
+const careTeamModule = defineFhirResource({
+  type: 'CareTeam',
+  /*
+   * Read and search only. Membership is decided in the practice, by the people
+   * who take responsibility for a patient, and a client adding itself to a team
+   * would be granting itself a clinical relationship nobody agreed to.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient', ...losslessStatus(CARE_TEAM_STATUS)],
+  permission: 'patient.read',
+  collection: (repositories) => repositories.careTeams,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.status === undefined
+      ? {}
+      : { status: statusTokens(CARE_TEAM_STATUS, query.status, 'status')[0] }),
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  prepare: prepareCareTeams,
+  toResource: (row: ScopedRow<'CareTeam'>, context) =>
+    careTeamResource(row, context.prepared.get(row.id) ?? []),
+});
+
 const relatedPersonModule = defineFhirResource({
   type: 'RelatedPerson',
   /*
@@ -1170,6 +1255,8 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   coverageModule,
   relatedPersonModule,
   medicationDispenseModule,
+  procedureModule,
+  careTeamModule,
   questionnaireModule,
   questionnaireResponseModule,
   appointmentModule,

@@ -56,6 +56,45 @@ export const NOTE_STATES = [
   'ENTERED_IN_ERROR',
 ] as const;
 
+/**
+ * FHIR's event-status value set, as this schema spells it.
+ *
+ * `NOT_DONE` earns its place: a procedure declined or abandoned is a clinical
+ * statement, and a list without it pushes that fact into free text.
+ */
+export const PROCEDURE_STATUSES = [
+  'PREPARATION',
+  'IN_PROGRESS',
+  'NOT_DONE',
+  'ON_HOLD',
+  'STOPPED',
+  'COMPLETED',
+  'ENTERED_IN_ERROR',
+  'UNKNOWN',
+] as const;
+export type ProcedureStatus = (typeof PROCEDURE_STATUSES)[number];
+
+export const CARE_TEAM_STATUSES = [
+  'PROPOSED',
+  'ACTIVE',
+  'SUSPENDED',
+  'INACTIVE',
+  'ENTERED_IN_ERROR',
+] as const;
+export type CareTeamStatus = (typeof CARE_TEAM_STATUSES)[number];
+
+/**
+ * Which kind of person a care team participant is, and so which member column
+ * carries their id.
+ *
+ * Three, not four. FHIR also allows an Organization, but this deployment has
+ * exactly one Organisation row and it is the practice itself, so a member
+ * pointing at it says nothing. `PATIENT` needs no column: the team already
+ * names its subject.
+ */
+export const CARE_TEAM_MEMBER_TYPES = ['USER', 'RELATED_PERSON', 'PATIENT'] as const;
+export type CareTeamMemberType = (typeof CARE_TEAM_MEMBER_TYPES)[number];
+
 export const CONDITION_CATEGORIES = [
   'PROBLEM_LIST_ITEM',
   'ENCOUNTER_DIAGNOSIS',
@@ -404,6 +443,9 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.RemittanceStatus, typeof REMITTANCE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.StatementStatus, typeof STATEMENT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.StatementDelivery, typeof STATEMENT_DELIVERIES>>,
+  AssertOk<AssertMirrors<Prisma.ProcedureStatus, typeof PROCEDURE_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.CareTeamStatus, typeof CARE_TEAM_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.CareTeamMemberType, typeof CARE_TEAM_MEMBER_TYPES>>,
   AssertOk<AssertMirrors<Prisma.ImagingStudyStatus, typeof IMAGING_STUDY_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.TelehealthVisitStatus, typeof TELEHEALTH_VISIT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormStatus, typeof FORM_STATUSES>>,

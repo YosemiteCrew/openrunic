@@ -282,6 +282,24 @@ enum NoteState {
   ENTERED_IN_ERROR
 }
 
+/// What happened to a procedure, from the FHIR event-status value set.
+///
+/// NOT_DONE is the member worth keeping. A procedure recorded as not done is a
+/// clinical statement in its own right - the colonoscopy was declined, the
+/// biopsy was abandoned - and a schema with no room for it forces that fact
+/// into free text or, worse, into the absence of a row, which reads as nobody
+/// having considered it.
+enum ProcedureStatus {
+  PREPARATION
+  IN_PROGRESS
+  NOT_DONE
+  ON_HOLD
+  STOPPED
+  COMPLETED
+  ENTERED_IN_ERROR
+  UNKNOWN
+}
+
 enum ConditionCategory {
   PROBLEM_LIST_ITEM
   ENCOUNTER_DIAGNOSIS
@@ -752,6 +770,9 @@ model Organisation {
   clinicalNotes         ClinicalNote[]
   noteAddenda           NoteAddendum[]
   conditions            Condition[]
+  procedures            Procedure[]
+  careTeams             CareTeam[]
+  careTeamParticipants  CareTeamParticipant[]
   medicationStatements  MedicationStatement[]
   medicationRequests    MedicationRequest[]
   allergies             AllergyIntolerance[]
@@ -866,6 +887,7 @@ model User {
   assignedTasks      Task[]
   sentMessages       Message[]
   renderedCharges    ChargeItem[]
+  careTeamRoles      CareTeamParticipant[]
 
   @@unique([tenantId, email])
   @@index([tenantId, isProvider, status])
@@ -1021,6 +1043,8 @@ model Patient {
   encounters           Encounter[]
   clinicalNotes        ClinicalNote[]
   conditions           Condition[]
+  careTeams            CareTeam[]
+  procedures           Procedure[]
   medicationStatements MedicationStatement[]
   medicationRequests   MedicationRequest[]
   allergies            AllergyIntolerance[]
@@ -1109,6 +1133,7 @@ model RelatedPerson {
   patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   consentGrants ConsentGrant[]
+  careTeamRoles CareTeamParticipant[]
 
   @@index([tenantId, patientId, active])
 }
@@ -1333,6 +1358,7 @@ model Encounter {
   documents            Document[]
   clinicalNotes        ClinicalNote[]
   conditions           Condition[]
+  procedures           Procedure[]
   medicationStatements MedicationStatement[]
   medicationRequests   MedicationRequest[]
   immunizations        Immunization[]
@@ -1438,6 +1464,54 @@ model Condition {
 
   @@index([tenantId, patientId, clinicalStatus])
   @@index([tenantId, patientId, category, recordedAt])
+  @@index([tenantId, code])
+}
+
+/// Something done to a patient, as opposed to something ordered or billed.
+///
+/// It is a separate table from `ServiceRequest` and from `ChargeItem` because it
+/// answers a different question from either. The request says what was asked
+/// for and may never have happened; the charge says what is being claimed for
+/// and exists only when somebody bills. A procedure performed and not billed,
+/// which is most of what a practice does, has a row here and nowhere else.
+///
+/// `performedEnd` is nullable because most procedures are a moment rather than
+/// a span, and FHIR splits that into `performedDateTime` and `performedPeriod`.
+/// One nullable column carries both rather than two columns that can disagree.
+model Procedure {
+  id             String          @id @db.Uuid
+  tenantId       String          @db.Uuid
+  patientId      String          @db.Uuid
+  encounterId    String?         @db.Uuid
+  /// Primary code, normally CPT. Coded, so a string plus its system.
+  code           String
+  codeSystem     String          @default("http://www.ama-assn.org/go/cpt")
+  display        String
+  /// Optional SNOMED CT equivalent, which is what US Core prefers.
+  snomedCode     String?
+  status         ProcedureStatus @default(COMPLETED)
+  /// When it was performed. The start of the period when there is one.
+  performedStart DateTime
+  /// The end, for a procedure that took a measurable span.
+  performedEnd   DateTime?
+  bodySiteCode   String?
+  outcomeCode    String?
+  /// Why it was not done, for the status that needs one.
+  notDoneReason  String?
+  note           String?
+  /// Who performed it. Nullable for a procedure recorded from outside records.
+  performedById  String?         @db.Uuid
+  recordedAt     DateTime        @default(now())
+  recordedById   String?         @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, performedStart])
+  @@index([tenantId, patientId, status])
   @@index([tenantId, code])
 }
 
@@ -2982,4 +3056,104 @@ enum TelehealthVisitStatus {
   OPEN
   ENDED
   EXPIRED
+}
+
+/// Who is looking after this patient, and in what capacity.
+///
+/// Not derivable from the rows that already exist, which is why it is a table.
+/// An encounter names the provider who saw the patient once; a referral names
+/// one hand-off. Neither answers "who is on this patient's team right now",
+/// which is the question a receiving system asks and the one a care manager
+/// asks every morning. A team also outlives every encounter in it.
+model CareTeam {
+  id          String         @id @db.Uuid
+  tenantId    String         @db.Uuid
+  patientId   String         @db.Uuid
+  status      CareTeamStatus @default(ACTIVE)
+  /// What the practice calls this team, e.g. "Diabetes care". Optional because
+  /// most practices run one unnamed team per patient and naming it adds nothing.
+  name        String?
+  /// When the team took over and when it stood down. Both null for the ordinary
+  /// standing team, which has no start anybody recorded.
+  periodStart DateTime?
+  periodEnd   DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  participants CareTeamParticipant[]
+
+  @@index([tenantId, patientId, status])
+}
+
+/// One person on one team, with the role they hold on it.
+///
+/// A row per member rather than columns on the team, because the membership is
+/// the part that changes: a physician goes on leave, a care coordinator picks
+/// the patient up, the daughter who manages the appointments is added. Each of
+/// those is one row appearing or its period closing.
+///
+/// `memberType` picks which member column is set, the way `Task.assigneeType`
+/// picks between its two assignees. The alternative, one untyped id beside a
+/// type string, cannot carry a foreign key, and a team member that no longer
+/// exists is exactly the row nobody notices until a clinician calls a number
+/// that belongs to somebody else now.
+model CareTeamParticipant {
+  id                    String             @id @db.Uuid
+  tenantId              String             @db.Uuid
+  careTeamId            String             @db.Uuid
+  memberType            CareTeamMemberType
+  memberUserId          String?            @db.Uuid
+  memberRelatedPersonId String?            @db.Uuid
+  /// The role held on this team, e.g. a NUCC taxonomy code for a clinician or a
+  /// SNOMED role for a caregiver. Coded, so a string.
+  roleCode              String
+  /// Which vocabulary `roleCode` belongs to. Stored rather than inferred from
+  /// the member type, because a nurse care coordinator and a daughter acting as
+  /// one hold the same role from different code systems.
+  roleSystem            String
+  roleText              String?
+  /// When this member joined and when they left. A member who left keeps their
+  /// row: deleting it would rewrite who was responsible at the time, which is
+  /// the question asked after something went wrong.
+  periodStart           DateTime?
+  periodEnd             DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  organisation  Organisation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  careTeam      CareTeam       @relation(fields: [careTeamId], references: [id], onDelete: Cascade)
+  memberUser    User?          @relation(fields: [memberUserId], references: [id], onDelete: Restrict)
+  memberRelated RelatedPerson? @relation(fields: [memberRelatedPersonId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, careTeamId])
+  @@index([tenantId, memberUserId])
+}
+
+enum CareTeamStatus {
+  PROPOSED
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  ENTERED_IN_ERROR
+}
+
+/// Which kind of person a participant is, and so which member column is set.
+///
+/// Three, not four. FHIR also allows an Organization, and an outside agency on
+/// a patient's team is a real arrangement, but this deployment has exactly one
+/// Organisation row and it is the practice itself. A member pointing at it says
+/// nothing. Carrying the agency as free text instead would produce a
+/// `participant.member` with a display and no reference a receiving system can
+/// resolve, which is worse than the absence: a client would list a team member
+/// it can never contact.
+///
+/// PATIENT needs no column. The team already names its subject, so a second id
+/// could only agree with it or be wrong.
+enum CareTeamMemberType {
+  USER
+  RELATED_PERSON
+  PATIENT
 }

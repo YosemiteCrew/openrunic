@@ -14,6 +14,17 @@ const envSchema = z
   .object({
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    /**
+     * Canonical base for the FHIR resources this deployment publishes.
+     *
+     * Only `Questionnaire.url` needs it today, and it needs it badly: a form
+     * published without this claims a canonical URL on the openrunic project's
+     * own domain, which the practice does not run and nobody can resolve to
+     * its forms. Left unset the compiler's default applies and that is what
+     * happens, so a self-hosted deployment serving Questionnaires should set
+     * it to its own public API base.
+     */
+    OPENRUNIC_FHIR_BASE_URL: z.url().optional(),
     /** OIDC issuer, matched exactly against the token's `iss`. */
     OIDC_ISSUER: z.url().optional(),
     /** Audience this API answers to. Several may be listed, comma separated. */
@@ -153,4 +164,29 @@ export function smartLaunchSettings(env: Env): SmartLaunchSettings | undefined {
     authorizationEndpoint: env.OIDC_AUTHORIZATION_ENDPOINT,
     tokenEndpoint: env.OIDC_TOKEN_ENDPOINT,
   };
+}
+
+/**
+ * The canonical base for published FHIR resources, or undefined.
+ *
+ * Read from the process rather than threaded through, because the one caller
+ * is a projection: `toResource` receives a row and the page's prepared data,
+ * and widening that signature across every resource to carry one optional
+ * string would be a worse trade than this. Parsed through the same schema as
+ * everything else, so a malformed value fails here rather than surfacing as an
+ * unresolvable canonical URL in a published Questionnaire.
+ */
+export function fhirBaseUrl(
+  source: Record<string, string | undefined> = process.env
+): string | undefined {
+  const raw = source.OPENRUNIC_FHIR_BASE_URL;
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const parsed = z.url().safeParse(raw.trim());
+  if (!parsed.success) return undefined;
+  /* Trailing slashes trimmed without a regex. `/\/+$/` backtracks
+     super-linearly on a long run of them, which is a denial of service reachable
+     from a configuration value, and the loop says the same thing in one pass. */
+  let base = parsed.data;
+  while (base.endsWith('/')) base = base.slice(0, -1);
+  return base;
 }

@@ -141,6 +141,45 @@ function seedChart(dataset: MemoryDataset): void {
     active: true,
   });
 
+  /*
+   * A published form and one completed submission against it. The definition
+   * has to be PUBLISHED and has to compile, because that is exactly the pair of
+   * conditions the Questionnaire modules rely on: the search filters on the
+   * first and the projection assumes the second.
+   */
+  seed(dataset, 'FormDefinition', {
+    ...storageColumns(testId(13)),
+    key: 'intake',
+    version: 1,
+    status: 'PUBLISHED',
+    title: 'New patient intake',
+    description: null,
+    bindTo: 'PATIENT',
+    definition: {
+      fields: [{ type: 'shortText', key: 'reason', label: 'Reason for visit', maxLength: 120 }],
+    },
+    compiled: null,
+    promotionManifest: null,
+    publishedAt: FIXED_NOW,
+    publishedById: PROVIDER,
+    retiredAt: null,
+  });
+
+  seed(dataset, 'FormSubmission', {
+    ...storageColumns(testId(14)),
+    formDefinitionId: testId(13),
+    patientId: PATIENT,
+    encounterId: null,
+    status: 'COMPLETED',
+    values: { reason: 'Annual review' },
+    completedByType: 'USER',
+    completedByUserId: PROVIDER,
+    completedAt: FIXED_NOW,
+    signedAt: null,
+    signedById: null,
+    effectiveAt: FIXED_NOW,
+  });
+
   seed(dataset, 'Encounter', {
     ...storageColumns(ENCOUNTER),
     facilityId: DEMO_FACILITY_A,

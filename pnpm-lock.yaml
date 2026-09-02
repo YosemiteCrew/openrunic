@@ -86,6 +86,9 @@ importers:
       '@openrunic/fhir':
         specifier: workspace:*
         version: link:../../packages/fhir
+      '@openrunic/forms-engine':
+        specifier: workspace:*
+        version: link:../../packages/forms-engine
       '@openrunic/growth':
         specifier: workspace:*
         version: link:../../packages/growth

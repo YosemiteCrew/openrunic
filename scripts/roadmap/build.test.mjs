@@ -111,9 +111,11 @@ test('sorts every state into exactly one of the three columns', () => {
   assert.equal(bucketFor('Something new'), 'later');
 });
 
-test('reads the served resource list and drops the module suffix', () => {
+test('reads the served resource list from each module declared type', () => {
   const names = readServedResources(
     [
+      "const patientModule = defineFhirResource({ type: 'Patient'",
+      "const practitionerRoleModule = defineFhirResource({ type: 'PractitionerRole'",
       'export const SERVED_MODULES: readonly FhirResourceModule[] = [',
       '  patientModule,',
       '  practitionerRoleModule,',
@@ -122,6 +124,56 @@ test('reads the served resource list and drops the module suffix', () => {
   );
 
   assert.deepEqual(names, ['Patient', 'PractitionerRole']);
+});
+
+test('takes the declared type, not the variable name', () => {
+  /*
+   * The regression this exists for. Deriving the name from the variable, by
+   * stripping `Module` and capitalising, published `Allergy` for a server that
+   * serves `AllergyIntolerance`: a wrong resource name on the one page whose
+   * job is telling people what they can call.
+   */
+  const names = readServedResources(
+    [
+      "const allergyModule = defineFhirResource({ type: 'AllergyIntolerance'",
+      'export const SERVED_MODULES: readonly FhirResourceModule[] = [',
+      '  allergyModule,',
+      '];',
+    ].join('\n')
+  );
+
+  assert.deepEqual(names, ['AllergyIntolerance']);
+});
+
+test('reads a type declared under a leading comment', () => {
+  /* Several modules open with a block comment explaining what they serve, so
+     the type is not always the first thing after the brace. */
+  const names = readServedResources(
+    [
+      'const questionnaireModule = defineFhirResource({',
+      '  /* PUBLISHED only. */',
+      "  type: 'Questionnaire',",
+      'export const SERVED_MODULES: readonly FhirResourceModule[] = [',
+      '  questionnaireModule,',
+      '];',
+    ].join('\n')
+  );
+
+  assert.deepEqual(names, ['Questionnaire']);
+});
+
+test('refuses a module whose type it cannot read, rather than guessing', () => {
+  assert.throws(
+    () =>
+      readServedResources(
+        [
+          'export const SERVED_MODULES: readonly FhirResourceModule[] = [',
+          '  mysteryModule,',
+          '];',
+        ].join('\n')
+      ),
+    /mysteryModule/
+  );
 });
 
 test('fails loudly when the served list cannot be found', () => {

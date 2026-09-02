@@ -42,6 +42,8 @@ import {
   practitionerRoleResource,
   provenanceResource,
   relatedPersonResource,
+  questionnaireResource,
+  questionnaireResponseResource,
   serviceRequestResource,
   imagingStudyResource,
   specimenResource,
@@ -540,6 +542,64 @@ const coverageModule = defineFhirResource({
   toResource: coverageResource,
 });
 
+/**
+ * The forms a practice publishes, as Questionnaires.
+ *
+ * PUBLISHED only. A draft is a form somebody is still editing, and a canonical
+ * URL whose content can change underneath whoever resolved it is worse than an
+ * absent one. Publishing is also what proves the definition compiles, which is
+ * the invariant `questionnaireResource` relies on.
+ */
+const questionnaireModule = defineFhirResource({
+  type: 'Questionnaire',
+  interactions: ['read', 'search-type'],
+  params: ['status'],
+  permission: 'form.read',
+  collection: (repositories) => repositories.formDefinitions,
+  toQuery: (_query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    status: 'PUBLISHED' as const,
+    sort: 'version' as const,
+    order: 'desc' as const,
+  }),
+  toResource: questionnaireResource,
+});
+
+/**
+ * Submitted forms, as QuestionnaireResponses.
+ *
+ * `prepare` fetches the definitions for a page in one go rather than per row:
+ * an intake list is overwhelmingly the same form many times, so the alternative
+ * is the same definition read and compiled once per submission.
+ */
+const questionnaireResponseModule = defineFhirResource({
+  type: 'QuestionnaireResponse',
+  interactions: ['read', 'search-type'],
+  params: ['patient'],
+  permission: 'form.read',
+  collection: (repositories) => repositories.formSubmissions,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    sort: 'effectiveAt' as const,
+    order: 'desc' as const,
+  }),
+  prepare: async (rows, repositories) => {
+    const ids = [...new Set(rows.map((row) => row.formDefinitionId))];
+    const definitions = ids.length === 0 ? [] : await repositories.formDefinitions.findByIds(ids);
+    return new Map(definitions.map((definition) => [definition.id, definition]));
+  },
+  toResource: (row, context) => {
+    const definition = context.prepared.get(row.formDefinitionId);
+    if (definition === undefined) {
+      /* The row has a required foreign key to its definition, so this is a
+         deleted or cross-tenant definition rather than an ordinary miss. */
+      throw new Error(`form submission ${row.id} has no readable definition`);
+    }
+    return questionnaireResponseResource(row, definition);
+  },
+});
+
 const relatedPersonModule = defineFhirResource({
   type: 'RelatedPerson',
   /*
@@ -997,6 +1057,8 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   locationModule,
   coverageModule,
   relatedPersonModule,
+  questionnaireModule,
+  questionnaireResponseModule,
   appointmentModule,
   encounterModule,
   conditionModule,

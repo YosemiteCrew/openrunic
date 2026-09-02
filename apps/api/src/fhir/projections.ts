@@ -27,6 +27,8 @@ import {
   type Condition,
   type Coverage,
   type RelatedPerson,
+  type Questionnaire,
+  type QuestionnaireResponse,
   type DiagnosticReport,
   type DocumentReference,
   type Encounter,
@@ -43,6 +45,13 @@ import {
   type Specimen,
   type Task,
 } from '@openrunic/fhir';
+
+import {
+  compileDefinition,
+  toQuestionnaireResponse,
+  type CompiledForm,
+  type FormDefinition,
+} from '@openrunic/forms-engine';
 
 import type { Row, ScopedRow } from '../repositories/rows.js';
 
@@ -253,6 +262,75 @@ export function locationResource(row: ScopedRow<'Facility'>): Location {
       active: row.active,
     })
   );
+}
+
+/**
+ * The row's definition, rebuilt into the shape the compiler takes.
+ *
+ * The columns and the JSON document are two halves of one definition: key,
+ * version, title, description and binding live as columns because they are
+ * queried, and the fields live in `definition` because nothing queries inside
+ * them. The compiler wants them back together.
+ */
+function compileFormRow(row: ScopedRow<'FormDefinition'>): CompiledForm {
+  const document = (row.definition ?? {}) as { fields?: unknown };
+  const result = compileDefinition({
+    key: row.key,
+    version: row.version,
+    title: row.title,
+    ...(row.description === null ? {} : { description: row.description }),
+    bindTo: row.bindTo,
+    fields: (document.fields ?? []) as FormDefinition['fields'],
+  });
+  if (!result.ok) {
+    /* Unreachable for a PUBLISHED row: publishing compiles first. Reaching it
+       means the invariant broke, and saying so beats serving a form that
+       appears to ask nothing. */
+    throw new Error(`form definition ${row.key} v${row.version} is PUBLISHED but does not compile`);
+  }
+  return result.value;
+}
+
+/**
+ * A published form, as its FHIR `Questionnaire`.
+ *
+ * Compiled here from the row's own definition rather than read from the stored
+ * `compiled` blob. That blob arrives from whoever called publish, and a
+ * standards resource this server puts its name to should be derived from the
+ * record, not from something a client handed us.
+ *
+ * Compiling cannot fail for a row this module serves, and that is an invariant
+ * rather than an assumption: `publishDefinition` compiles first, so a
+ * definition that will not compile can never reach PUBLISHED, and the module
+ * searches PUBLISHED only. If it does fail, the invariant has broken and the
+ * honest answer is an error rather than a Questionnaire with no items, which a
+ * client would read as a form that asks nothing.
+ */
+export function questionnaireResource(row: ScopedRow<'FormDefinition'>): Questionnaire {
+  const compiled = compileFormRow(row);
+  return { ...compiled.questionnaire, id: row.id } as unknown as Questionnaire;
+}
+
+/**
+ * One submitted form, as its FHIR `QuestionnaireResponse`.
+ *
+ * The item tree comes from `toQuestionnaireResponse` in `packages/forms-engine`,
+ * which already handles repeating groups and the columnar answer layout, so
+ * this only supplies the row's own metadata and the compiled form it was
+ * authored against.
+ */
+export function questionnaireResponseResource(
+  row: ScopedRow<'FormSubmission'>,
+  definition: ScopedRow<'FormDefinition'>
+): QuestionnaireResponse {
+  const compiled = compileFormRow(definition);
+  const response = toQuestionnaireResponse(compiled, {
+    values: (row.values ?? {}) as Record<string, unknown>,
+    status: row.status,
+    authored: (row.completedAt ?? row.effectiveAt).toISOString(),
+    subjectReference: `Patient/${row.patientId}`,
+  });
+  return { ...response, id: row.id } as unknown as QuestionnaireResponse;
 }
 
 /**

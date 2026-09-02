@@ -141,6 +141,45 @@ function seedChart(dataset: MemoryDataset): void {
     active: true,
   });
 
+  /*
+   * A published form and one completed submission against it. The definition
+   * has to be PUBLISHED and has to compile, because that is exactly the pair of
+   * conditions the Questionnaire modules rely on: the search filters on the
+   * first and the projection assumes the second.
+   */
+  seed(dataset, 'FormDefinition', {
+    ...storageColumns(testId(13)),
+    key: 'intake',
+    version: 1,
+    status: 'PUBLISHED',
+    title: 'New patient intake',
+    description: null,
+    bindTo: 'PATIENT',
+    definition: {
+      fields: [{ type: 'shortText', key: 'reason', label: 'Reason for visit', maxLength: 120 }],
+    },
+    compiled: null,
+    promotionManifest: null,
+    publishedAt: FIXED_NOW,
+    publishedById: PROVIDER,
+    retiredAt: null,
+  });
+
+  seed(dataset, 'FormSubmission', {
+    ...storageColumns(testId(14)),
+    formDefinitionId: testId(13),
+    patientId: PATIENT,
+    encounterId: null,
+    status: 'COMPLETED',
+    values: { reason: 'Annual review' },
+    completedByType: 'USER',
+    completedByUserId: PROVIDER,
+    completedAt: FIXED_NOW,
+    signedAt: null,
+    signedById: null,
+    effectiveAt: FIXED_NOW,
+  });
+
   seed(dataset, 'Encounter', {
     ...storageColumns(ENCOUNTER),
     facilityId: DEMO_FACILITY_A,
@@ -620,6 +659,39 @@ function harness(): ReturnType<typeof createTestApp> {
   seedAuditEvent(created.auditStore);
   return created;
 }
+
+describe('a submission whose definition cannot be read', () => {
+  it('refuses rather than serving a response with no questions', async () => {
+    /*
+     * `formDefinitionId` is a required foreign key, so a submission that cannot
+     * reach its definition means the row was deleted or belongs to another
+     * tenant. Either way the answers cannot be attached to the questions they
+     * answer, and a QuestionnaireResponse with bare values and no questionnaire
+     * is a clinical record a reader cannot interpret.
+     */
+    const { app, dataset } = harness();
+    seed(dataset, 'FormSubmission', {
+      ...storageColumns(testId(15)),
+      formDefinitionId: testId(9999),
+      patientId: PATIENT,
+      encounterId: null,
+      status: 'COMPLETED',
+      values: { reason: 'Orphaned' },
+      completedByType: 'USER',
+      completedByUserId: null,
+      completedAt: FIXED_NOW,
+      signedAt: null,
+      signedById: null,
+      effectiveAt: FIXED_NOW,
+    });
+
+    const res = await app.request('/fhir/QuestionnaireResponse', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(500);
+  });
+});
 
 describe('every served resource', () => {
   it.each(SERVED_MODULES.map((module) => module.type))(

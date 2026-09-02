@@ -101,15 +101,36 @@ export function bucketFor(state) {
 /* The FHIR surface                                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The FHIR resource types served, read from each module's declared `type`.
+ *
+ * Deriving the name from the variable instead - stripping `Module` and
+ * capitalising - is what the first version did, and it published `Allergy` for
+ * a server that serves `AllergyIntolerance`. A page whose whole purpose is
+ * telling people which standard resources they can call cannot be guessing at
+ * their names, so the declaration is the source and a module whose type cannot
+ * be found is an error rather than a silent fallback.
+ */
 export function readServedResources(source) {
   const block = /export const SERVED_MODULES[^=]*=\s*\[([\s\S]*?)\]/.exec(source);
   if (!block) throw new Error('SERVED_MODULES not found in apps/api/src/fhir/resources.ts');
+
+  const declared = new Map();
+  const definition =
+    /const (\w+) = defineFhirResource\(\{\s*(?:\/\*[\s\S]*?\*\/\s*)?type: '([\w]+)'/g;
+  for (const match of source.matchAll(definition)) declared.set(match[1], match[2]);
+
   return block[1]
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean)
-    .map((entry) => entry.replace(/Module$/, ''))
-    .map((name) => name.charAt(0).toUpperCase() + name.slice(1));
+    .map((name) => {
+      const type = declared.get(name);
+      if (type === undefined) {
+        throw new Error(`${name} is in SERVED_MODULES but its resource type could not be read`);
+      }
+      return type;
+    });
 }
 
 /* ------------------------------------------------------------------ */

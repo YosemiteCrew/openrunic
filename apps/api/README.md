@@ -50,7 +50,7 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 ### The FHIR boundary
 
 `GET /fhir/metadata` publishes the CapabilityStatement, generated from the mounted resource
-modules. Twenty-three resource types are served with `read` and `search-type`; `Patient` also accepts
+modules. Twenty-five resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
 
 Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
@@ -75,31 +75,33 @@ it is inside R4's value set and this server has no state for it, so it is a 400 
 truthful-looking "no claims". The domain names are no longer accepted through this parameter;
 `/claims?status=SUBMITTED` on the collection endpoint is where they belong.
 
-| Resource              | Search parameters implemented                                         |
-| --------------------- | --------------------------------------------------------------------- |
-| `Patient`             | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
-| `Practitioner`        | `name`                                                                |
-| `PractitionerRole`    | `practitioner`, `specialty`                                           |
-| `Organization`        | `name`                                                                |
-| `Location`            | `name`                                                                |
-| `Coverage`            | `patient`                                                             |
-| `RelatedPerson`       | `patient`                                                             |
-| `Appointment`         | `_id`, `patient`, `date`, `practitioner`, `location`                  |
-| `Encounter`           | `patient`, `date`                                                     |
-| `Condition`           | `patient`, `code`                                                     |
-| `MedicationRequest`   | `patient`, `encounter`                                                |
-| `MedicationStatement` | `patient`                                                             |
-| `AllergyIntolerance`  | `patient`                                                             |
-| `Immunization`        | `patient`, `date`                                                     |
-| `Observation`         | `patient`, `code`, `date`, `status`                                   |
-| `DiagnosticReport`    | `patient`, `date`                                                     |
-| `ServiceRequest`      | `patient`, `authored`                                                 |
-| `ImagingStudy`        | `patient`, `accession`, `date`                                        |
-| `Specimen`            | `patient`, `accession`                                                |
-| `DocumentReference`   | `patient`, `category`, `date`                                         |
-| `Task`                | `patient`                                                             |
-| `Provenance`          | `target`, `recorded`, `agent`                                         |
-| `Claim`               | `patient`, `status`, `created`                                        |
+| Resource                | Search parameters implemented                                         |
+| ----------------------- | --------------------------------------------------------------------- |
+| `Patient`               | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
+| `Practitioner`          | `name`                                                                |
+| `PractitionerRole`      | `practitioner`, `specialty`                                           |
+| `Organization`          | `name`                                                                |
+| `Location`              | `name`                                                                |
+| `Coverage`              | `patient`                                                             |
+| `RelatedPerson`         | `patient`                                                             |
+| `Questionnaire`         | `status`                                                              |
+| `QuestionnaireResponse` | `patient`                                                             |
+| `Appointment`           | `_id`, `patient`, `date`, `practitioner`, `location`                  |
+| `Encounter`             | `patient`, `date`                                                     |
+| `Condition`             | `patient`, `code`                                                     |
+| `MedicationRequest`     | `patient`, `encounter`                                                |
+| `MedicationStatement`   | `patient`                                                             |
+| `AllergyIntolerance`    | `patient`                                                             |
+| `Immunization`          | `patient`, `date`                                                     |
+| `Observation`           | `patient`, `code`, `date`, `status`                                   |
+| `DiagnosticReport`      | `patient`, `date`                                                     |
+| `ServiceRequest`        | `patient`, `authored`                                                 |
+| `ImagingStudy`          | `patient`, `accession`, `date`                                        |
+| `Specimen`              | `patient`, `accession`                                                |
+| `DocumentReference`     | `patient`, `category`, `date`                                         |
+| `Task`                  | `patient`                                                             |
+| `Provenance`            | `target`, `recorded`, `agent`                                         |
+| `Claim`                 | `patient`, `status`, `created`                                        |
 
 Every resource also accepts `_count` and `_offset`; a parameter that is not listed is refused with
 a `not-supported` OperationOutcome rather than ignored. `fhir.conformance.test.ts` reads the

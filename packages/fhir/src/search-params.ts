@@ -42,6 +42,8 @@ export type SupportedResourceType =
   | 'Claim'
   | 'Consent'
   | 'RelatedPerson'
+  | 'Questionnaire'
+  | 'QuestionnaireResponse'
   | 'Provenance';
 
 /** FHIR search parameter types. */
@@ -277,6 +279,30 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
     profile: `${US_CORE}us-core-coverage`,
     interactions: WRITABLE,
     searchParams: [patientParam(), statusParam('Coverage status.', false)],
+  },
+  Questionnaire: {
+    resourceType: 'Questionnaire',
+    /*
+     * Only published versions are served. A draft is a form somebody is still
+     * editing, and publishing is what freezes a version and proves it compiles,
+     * so a draft Questionnaire would be a canonical URL whose content can still
+     * change underneath whoever resolved it.
+     */
+    interactions: READ_ONLY,
+    searchParams: [
+      {
+        name: 'status',
+        type: 'token',
+        documentation: 'Questionnaire status. Only `active` is served.',
+        mustSupport: false,
+      },
+    ],
+  },
+  QuestionnaireResponse: {
+    resourceType: 'QuestionnaireResponse',
+    profile: `${US_CORE}us-core-questionnaireresponse`,
+    interactions: READ_ONLY,
+    searchParams: [patientParam()],
   },
   RelatedPerson: {
     resourceType: 'RelatedPerson',

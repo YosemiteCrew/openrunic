@@ -2,6 +2,7 @@ import type { FhirResource, Interaction, SupportedResourceType } from '@openruni
 import type { Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
+import { assertCareRelationship } from '../middleware/policy.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Page } from '../repositories/collection.js';
 import type { Repositories } from '../repositories/types.js';
@@ -75,6 +76,20 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
    * pay nothing.
    */
   prepare?(rows: readonly TRow[], repositories: Repositories): Promise<TPrepared>;
+  /**
+   * The patient whose chart this row belongs to, for a resource that is one.
+   *
+   * A module that declares it has its addressed reads gated by a care
+   * relationship: holding `patient.read` says a role may open charts, not which
+   * ones, and until that check existed the answer was "any of them, if you know
+   * the id".
+   *
+   * On `read` only. A search is already narrowed by the patient compartment and
+   * by the query the caller wrote, and running the check per row would be one
+   * relationship lookup per result. The addressed read is the one that turns a
+   * guessed id into a chart.
+   */
+  chartId?(row: TRow): string | undefined;
   toResource(row: TRow, context: ResourceContext<TPrepared>): FhirResource | Promise<FhirResource>;
 }
 
@@ -127,6 +142,9 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       const repositories = repositoriesOf(c);
       const row = await descriptor.collection(repositories).findById(id);
       if (row === null) return null;
+      const chartId = descriptor.chartId?.(row);
+      // Before the row is mapped, so a refusal reveals nothing about it.
+      if (chartId !== undefined) await assertCareRelationship(c, chartId);
       // A read is a page of one, and goes through the same loader: a resource
       // that only worked on search would be the kind of gap nobody notices
       // until a client fetches by id.

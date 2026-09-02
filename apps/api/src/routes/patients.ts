@@ -4,12 +4,15 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../context.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
-import { requirePermission } from '../middleware/policy.js';
+import { assertCareRelationship, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 import {
+  breakGlassGrantDtoSchema,
+  breakGlassRequestSchema,
   patientDtoSchema,
   patientListQuerySchema,
+  toBreakGlassGrantDto,
   toPatientDto,
   toPatientListQuery,
 } from '../schemas/patients.js';
@@ -93,6 +96,28 @@ export const patientRouteContracts: RouteContract[] = [
     ],
   },
   {
+    method: 'post',
+    path: '/bff/v0/patients/{id}/break-glass',
+    operationId: 'breakGlass',
+    summary: 'Take deliberate access to a chart you have no relationship with.',
+    description:
+      'For the patient in front of you when no encounter, appointment or care team names you. The reason is recorded against your name, the window expires, and every read taken under it is marked in the audit trail as break-glass rather than as ordinary access.',
+    tags: ['patients'],
+    permission: 'patient.read',
+    pathParams: [{ name: 'id', description: 'Patient id (UUIDv7).', schema: idParamSchema }],
+    body: breakGlassRequestSchema,
+    responses: [
+      { status: 201, description: 'The grant.', schema: breakGlassGrantDtoSchema },
+      ...ERROR_RESPONSES,
+      {
+        status: 404,
+        description: 'No such patient in this organisation.',
+        schema: problemDocumentSchema,
+      },
+      { status: 422, description: 'The body failed validation.', schema: problemDocumentSchema },
+    ],
+  },
+  {
     method: 'patch',
     path: '/bff/v0/patients/{id}',
     operationId: 'updatePatient',
@@ -127,11 +152,45 @@ export function patientRoutes(): Hono<AppEnv> {
 
   router.get('/patients/:id', requirePermission('patient.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+    // Holding `patient.read` says this role may open charts. It does not say
+    // which, and until this call the answer was "any of them, if you know the
+    // id". See `policy/care-relationship.ts`.
+    await assertCareRelationship(c, id);
     const row = await repositories(c).patients.findById(id);
     // A patient in another organisation is reported as absent, not as
     // forbidden: a 403 here would confirm the id exists somewhere, which is an
-    // enumeration oracle across tenants.
+    // enumeration oracle across tenants. The relationship check above refuses
+    // the same way, and for the same reason inside one tenant.
     return c.json(toPatientDto(required(row, 'No such patient.')));
+  });
+
+  /**
+   * Break-glass, and deliberately not gated by a care relationship.
+   *
+   * Gating it would be circular: this is the route you take precisely because
+   * you have no relationship. What stands in its way instead is that the
+   * patient must exist, the reason must say something, the window is bounded,
+   * and the grant is written under the caller's own name.
+   *
+   * The patient is confirmed to exist first, and a missing one is a 404 with
+   * nothing written. A grant recorded against a guessed id would turn this
+   * route into the enumeration oracle the read path refuses to be.
+   */
+  router.post('/patients/:id/break-glass', requirePermission('patient.read'), async (c) => {
+    const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+    const body = await parseJsonBody(c, breakGlassRequestSchema);
+    const repos = repositories(c);
+    required(await repos.patients.findById(id), 'No such patient.');
+
+    const principal = c.get('principal');
+    const grant = await repos.breakGlassGrants.create({
+      userId: principal?.subject ?? '',
+      patientId: id,
+      reason: body.reason,
+      expiresAt: new Date(Date.now() + body.minutes * 60_000),
+    });
+
+    return c.json(toBreakGlassGrantDto(grant), 201);
   });
 
   router.post('/patients', requirePermission('patient.write'), async (c) => {
@@ -142,6 +201,10 @@ export function patientRoutes(): Hono<AppEnv> {
 
   router.patch('/patients/:id', requirePermission('patient.write'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+    /* Writing a chart needs at least as much standing as reading one. A rule
+       that gated the read and not the amendment would be a rule anybody could
+       walk round by sending a PATCH. */
+    await assertCareRelationship(c, id);
     const input = await parseJsonBody(c, patientUpdateInput);
     const row = await repositories(c).patients.update(id, input);
     return c.json(toPatientDto(required(row, 'No such patient.')));

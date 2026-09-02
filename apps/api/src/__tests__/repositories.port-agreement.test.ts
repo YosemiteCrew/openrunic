@@ -342,6 +342,15 @@ const FILTERS: {
     status: 'ACTIVE',
     deviceIdentifier: '08717648200274',
   },
+  breakGlassGrants: {
+    page: 1,
+    pageSize: 25,
+    sort: 'grantedAt',
+    order: 'desc',
+    userId: 'id-userId',
+    patientId: 'id-patientId',
+    unexpiredAt: new Date('2026-01-01T00:00:00.000Z'),
+  },
   goals: {
     page: 1,
     pageSize: 25,

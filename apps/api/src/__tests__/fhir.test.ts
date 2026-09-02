@@ -32,6 +32,8 @@ import {
   testId,
   UNPRIVILEGED_TOKEN,
   seed,
+  seedCareRelationship,
+  SUBJECTS,
 } from './support.js';
 
 describe('the Patient mapper', () => {
@@ -542,6 +544,7 @@ describe('GET /fhir/Patient/:id', () => {
   it('reads one Patient', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.clinicianA });
 
     const res = await app.request(`/fhir/Patient/${testId(1)}`, {
       headers: bearer(TOKENS.clinicianA),

@@ -2372,19 +2372,42 @@ async function bundleIds(
 
 describe('the facility scope the caller arrived with', () => {
   /**
-   * The decision in #139, asserted on the boundary that used to implement the
-   * opposite.
+   * #169 changes the answer #139 gave here, and both boundaries change together.
    *
-   * The FHIR boundary narrowed patient reads on `primaryFacilityId` and the BFF
-   * did not, so the same caller got 404 from one and 200 from the other for the
-   * same chart. They agree now, and they agree on the answer that lets a
-   * clinician open the chart of the patient in front of them.
+   * The two used to disagree: the FHIR boundary narrowed patient reads on
+   * `primaryFacilityId` and the BFF did not, so the same caller got 404 from one
+   * and 200 from the other for the same chart. #139 made them agree, on the
+   * answer that let a clinician open the chart of the patient in front of them.
+   *
+   * The reasoning was sound and the mechanism was not: it authorised everyone
+   * who could name the chart, not everyone treating the patient, and those are
+   * the same set only when nobody guesses. The clinician with the patient in
+   * front of them still gets in, by saying so - see the break-glass case in
+   * `routes.patients.test.ts`.
+   *
+   * What has not changed is that the two boundaries agree. That is what
+   * `policy.care-relationship.test.ts` exists to keep true.
    */
-  it('serves a chart registered at another site, because that is not containment', async () => {
+  it('refuses a chart nothing connects this reader to', async () => {
     const { app } = scopedHarness();
 
     const res = await app.request(`/fhir/Patient/${ANNEXE_PATIENT}`, {
       headers: bearer(TOKENS.siteReaderA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('serves the same chart to a reader the patient has been seen by', async () => {
+    /*
+     * The other half, and the one that says the refusal above is about the
+     * relationship rather than about the site. `PROVIDER` saw this patient at
+     * the annexe, and reads the chart on the strength of that encounter.
+     */
+    const { app } = scopedHarness();
+
+    const res = await app.request(`/fhir/Patient/${ANNEXE_PATIENT}`, {
+      headers: bearer(TOKENS.adminA),
     });
 
     expect(res.status).toBe(200);
@@ -2441,15 +2464,25 @@ describe('the facility scope the caller arrived with', () => {
     }
   );
 
-  it('keeps a patient with no home site visible to a site-scoped caller', async () => {
+  it('refuses a patient with no home site and no relationship either', async () => {
+    /*
+     * `primaryFacilityId` being null used to matter, because the narrowing this
+     * replaces was a comparison against it and a null compared against nothing.
+     * It no longer matters at all: the question is whether this reader is
+     * involved in this person's care, and a patient nobody has seen anywhere
+     * has no reader who is.
+     *
+     * Registration is unaffected, which is the case that made the old rule
+     * awkward. Creating a patient and searching for one to avoid a duplicate
+     * are both untouched: neither is an addressed read.
+     */
     const { app } = scopedHarness();
 
     const res = await app.request(`/fhir/Patient/${UNSITED_PATIENT}`, {
       headers: bearer(TOKENS.siteReaderA),
     });
 
-    expect(res.status).toBe(200);
-    expect(await bundleIds(app, 'Patient', TOKENS.siteReaderA)).toContain(UNSITED_PATIENT);
+    expect(res.status).toBe(404);
   });
 
   it('keeps an organisation-wide role grant visible to a site-scoped caller', async () => {

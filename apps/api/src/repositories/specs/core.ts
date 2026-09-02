@@ -1,4 +1,5 @@
 import type {
+  BreakGlassGrantInput,
   AppointmentCreateInput,
   PatientCreateInput,
   PatientUpdateInput,
@@ -571,9 +572,86 @@ export const relatedPersonSpec: CollectionSpec<
   },
 };
 
+export interface BreakGlassGrantListQuery extends BaseQuery {
+  userId?: string;
+  patientId?: string;
+  /** Grants still in force at this instant. */
+  unexpiredAt?: Date;
+  sort: 'grantedAt' | 'createdAt';
+}
+
+/**
+ * Break-glass grants: deliberate access to a chart the reader has no
+ * relationship with.
+ *
+ * Compartment-open, and that needs saying. A patient-scoped principal reading
+ * this table sees only their own tenant's rows and only through a query
+ * somebody wrote; there is no route that exposes it to the portal, and the
+ * authorisation check that reads it runs for staff principals. Marking it
+ * closed would refuse the check itself for a portal principal, which is the
+ * wrong failure: a patient reading their own chart has a relationship the
+ * compartment already expresses and never needs a grant.
+ *
+ * There is no patch: a grant is a statement about a moment, and editing the
+ * reason afterwards is exactly what the record exists to prevent. It expires on
+ * its own.
+ */
+export const breakGlassGrantSpec: CollectionSpec<
+  'BreakGlassGrant',
+  BreakGlassGrantInput,
+  never,
+  BreakGlassGrantListQuery
+> = {
+  model: 'BreakGlassGrant',
+  targetType: 'BreakGlassGrant',
+  action: 'breakGlass',
+  compartment: 'open',
+
+  newRow(input: BreakGlassGrantInput, context): Writable<'BreakGlassGrant'> {
+    return {
+      userId: input.userId,
+      patientId: input.patientId,
+      reason: input.reason,
+      grantedAt: context.now,
+      expiresAt: input.expiresAt,
+    };
+  },
+
+  patchData(): Partial<Writable<'BreakGlassGrant'>> {
+    return {};
+  },
+
+  matches(row: ScopedRow<'BreakGlassGrant'>, query: BreakGlassGrantListQuery): boolean {
+    if (query.userId !== undefined && row.userId !== query.userId) return false;
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    /* Strictly after: a grant that expires at this instant has expired. The
+       alternative rounds a window open by however coarse the clock is. */
+    return query.unexpiredAt === undefined || row.expiresAt > query.unexpiredAt;
+  },
+
+  where(query: BreakGlassGrantListQuery) {
+    return {
+      ...(query.userId === undefined ? {} : { userId: query.userId }),
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.unexpiredAt === undefined ? {} : { expiresAt: { gt: query.unexpiredAt } }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'BreakGlassGrant'>, sort: BreakGlassGrantListQuery['sort']): number {
+    return sort === 'createdAt' ? row.createdAt.getTime() : row.grantedAt.getTime();
+  },
+
+  orderBy(query: BreakGlassGrantListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ grantedAt: order }, { id: 'asc' as const }];
+  },
+};
+
 export const coreSpecs = {
   patients: patientSpec,
   relatedPersons: relatedPersonSpec,
   appointments: appointmentSpec,
   telehealthVisits: telehealthVisitSpec,
+  breakGlassGrants: breakGlassGrantSpec,
 } as const;

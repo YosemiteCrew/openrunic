@@ -15,6 +15,8 @@ import {
   TOKENS,
   testId,
   UNPRIVILEGED_TOKEN,
+  seedCareRelationship,
+  SUBJECTS,
   seed,
 } from './support.js';
 
@@ -116,6 +118,7 @@ describe('GET /bff/v0/patients/:id', () => {
   it('reads one patient', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.clinicianA });
 
     const res = await app.request(`/bff/v0/patients/${testId(1)}`, {
       headers: bearer(TOKENS.clinicianA),
@@ -134,6 +137,7 @@ describe('GET /bff/v0/patients/:id', () => {
   it('emits a date of birth with no time component', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.clinicianA });
 
     const body = (await (
       await app.request(`/bff/v0/patients/${testId(1)}`, { headers: bearer(TOKENS.clinicianA) })
@@ -242,6 +246,7 @@ describe('PATCH /bff/v0/patients/:id', () => {
   it('amends the fields it was given and leaves the rest alone', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.frontDeskA });
 
     const res = await app.request(`/bff/v0/patients/${testId(1)}`, {
       method: 'PATCH',
@@ -257,6 +262,7 @@ describe('PATCH /bff/v0/patients/:id', () => {
   it('refuses to reassign the MRN', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.frontDeskA });
 
     const res = await app.request(`/bff/v0/patients/${testId(1)}`, {
       method: 'PATCH',
@@ -336,7 +342,21 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     );
   }
 
-  it('opens the chart of the patient in front of them', async () => {
+  /**
+   * #169 changes the answer #139 gave here, and this records the change rather
+   * than quietly deleting the old assertion.
+   *
+   * #139 asked whether a chart registered at another site should be readable by
+   * id, and answered yes, because the clinician holding the id is treating that
+   * person. The reasoning was sound and the mechanism was not: it authorised
+   * everyone who could name the chart, not everyone treating the patient, and
+   * those are only the same set when nobody guesses.
+   *
+   * The clinician with the patient in front of them still gets in. They take
+   * break-glass, which is one request, and afterwards the chart is open to them
+   * and the trail says why. That is the case below.
+   */
+  it('refuses a chart nothing connects this reader to', async () => {
     const { app, dataset } = createTestApp();
     seedElsewhere(dataset);
 
@@ -344,7 +364,93 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
       headers: bearer(TOKENS.siteReaderA),
     });
 
+    /* Absent, not forbidden. A 403 would confirm the id names a real patient,
+       which is the enumeration oracle the cross-tenant read already avoids. */
+    expect(res.status).toBe(404);
+  });
+
+  it('opens the chart of the patient in front of them, once they say so', async () => {
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+
+    const declared = await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Collapsed in reception, no record at this site.' }),
+    });
+    expect(declared.status).toBe(201);
+
+    const res = await app.request(`/bff/v0/patients/${ELSEWHERE}`, {
+      headers: bearer(TOKENS.siteReaderA),
+    });
+
     expect(res.status).toBe(200);
+  });
+
+  it('marks a read taken under break-glass as break-glass, not as ordinary access', async () => {
+    /* The whole control. A trail that recorded the two identically would make
+       the loud thing quiet, and break-glass would be an ordinary read with an
+       extra step. */
+    const { app, dataset, sink } = createTestApp();
+    seedElsewhere(dataset);
+
+    await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+    });
+    await app.request(`/bff/v0/patients/${ELSEWHERE}`, { headers: bearer(TOKENS.siteReaderA) });
+
+    const actions = sink.writes().map((entry) => entry.event.action);
+    expect(actions).toContain('chart.access.breakGlass');
+    expect(actions).not.toContain('chart.access');
+  });
+
+  it('refuses to amend a chart nothing connects this reader to', async () => {
+    /*
+     * Writing a chart needs at least as much standing as reading one. A rule
+     * that gated the read and not the amendment would be a rule anybody could
+     * walk round by sending a PATCH, and the PATCH response would confirm the
+     * chart exists into the bargain.
+     */
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+
+    const res = await app.request(`/bff/v0/patients/${ELSEWHERE}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.frontDeskA),
+      body: JSON.stringify({ familyName: 'Renamed' }),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a break-glass declaration with no reason', async () => {
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+
+    const res = await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: '   ' }),
+    });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('does not record a grant against an id that names nobody', async () => {
+    /* Otherwise this route is the enumeration oracle the read path refuses to
+       be: post a guess, and a 201 tells you the chart exists. */
+    const { app, sink } = createTestApp();
+
+    const res = await app.request(`/bff/v0/patients/${testId(4243)}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.siteReaderA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Fishing.' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(sink.writes().map((entry) => entry.event.action)).not.toContain('breakGlass.created');
   });
 
   /**

@@ -208,6 +208,10 @@ function patientFilter(raw: string | undefined): { patientId?: string } {
 
 const patientModule = defineFhirResource({
   type: 'Patient',
+  /* The chart is the patient. Every other resource that names one has its own
+     id, and gating those is the same question with a different mapping; this is
+     the one where knowing the id is knowing the chart. */
+  chartId: (row: ScopedRow<'Patient'>) => row.id,
   interactions: ['read', 'search-type', 'create'],
   params: ['_id', 'identifier', 'name', 'family', 'given', 'birthdate', 'gender'],
   permission: 'patient.read',

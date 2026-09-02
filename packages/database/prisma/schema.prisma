@@ -811,8 +811,9 @@ model Organisation {
   auditEvents           AuditEvent[]
   telehealthVisits      TelehealthVisit[]
 
-  valueSets      ValueSet[]
-  imagingStudies ImagingStudy[]
+  valueSets        ValueSet[]
+  imagingStudies   ImagingStudy[]
+  breakGlassGrants BreakGlassGrant[]
 
   @@index([status])
 }
@@ -893,6 +894,7 @@ model User {
   careTeamRoles      CareTeamParticipant[]
   carePlans          CarePlan[]
   goals              Goal[]
+  breakGlassGrants   BreakGlassGrant[]
 
   @@unique([tenantId, email])
   @@index([tenantId, isProvider, status])
@@ -1074,11 +1076,12 @@ model Patient {
   /// Patient search: by MRN (exact), by name, by date of birth. The `active`
   /// prefix keeps the default "search living, non-merged patients" path on one
   /// index.
-  stockPostings  StockPosting[]
-  imagingStudies ImagingStudy[]
-  carePlans      CarePlan[]
-  goals          Goal[]
-  devices        Device[]
+  stockPostings    StockPosting[]
+  imagingStudies   ImagingStudy[]
+  carePlans        CarePlan[]
+  goals            Goal[]
+  devices          Device[]
+  breakGlassGrants BreakGlassGrant[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
@@ -3436,4 +3439,42 @@ enum DeviceStatus {
   INACTIVE
   ENTERED_IN_ERROR
   UNKNOWN
+}
+
+/// Deliberate access to a chart the reader has no relationship with.
+///
+/// Break-glass is a clinical necessity, not a loophole. The patient in front of
+/// somebody at three in the morning may have no encounter, no appointment and
+/// no care team at that site, and refusing the chart is the dangerous answer.
+/// So the control is not refusal: it is that the access is deliberate, carries
+/// a stated reason, expires, and is conspicuous afterwards.
+///
+/// A row here is itself a care relationship, which is what makes the mechanism
+/// simple: the reader declares one, and every subsequent read inside the window
+/// is authorised the same way any other relationship authorises one, and every
+/// one of them is attributable to this row.
+model BreakGlassGrant {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  patientId String   @db.Uuid
+  /// Why. Free text on purpose: the value is that a person wrote it and their
+  /// name is on it, and a dropdown of four options would be picked at random.
+  reason    String
+  grantedAt DateTime @default(now())
+  /// Break-glass is for the emergency in front of you, not for the week. A
+  /// window that outlived the emergency would be an ordinary grant with a
+  /// dramatic name.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  /// The authorisation lookup: has this reader an unexpired grant on this chart.
+  @@index([tenantId, userId, patientId, expiresAt])
+  /// The review query: who broke glass on this patient, and when.
+  @@index([tenantId, patientId, grantedAt])
 }

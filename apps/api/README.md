@@ -86,6 +86,7 @@ truthful-looking "no claims". The domain names are no longer accepted through th
 | `RelatedPerson`         | `patient`                                                             |
 | `MedicationDispense`    | `patient`                                                             |
 | `Procedure`             | `patient`, `date`                                                     |
+| `CareTeam`              | `patient`, `status`                                                   |
 | `Questionnaire`         | `name`                                                                |
 | `QuestionnaireResponse` | `patient`                                                             |
 | `Appointment`           | `_id`, `patient`, `date`, `practitioner`, `location`                  |

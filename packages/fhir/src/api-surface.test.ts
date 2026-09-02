@@ -226,10 +226,11 @@ describe('operation outcome', () => {
 
 describe('search parameter registry', () => {
   it('covers every resource type the package maps', () => {
-    expect(SUPPORTED_RESOURCE_TYPES).toHaveLength(27);
+    expect(SUPPORTED_RESOURCE_TYPES).toHaveLength(28);
     expect(SUPPORTED_RESOURCE_TYPES).toContain('Patient');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('RelatedPerson');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('Procedure');
+    expect(SUPPORTED_RESOURCE_TYPES).toContain('CareTeam');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('QuestionnaireResponse');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('MedicationDispense');
     expect(SUPPORTED_RESOURCE_TYPES).toContain('Provenance');

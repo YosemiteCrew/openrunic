@@ -43,6 +43,7 @@ export type SupportedResourceType =
   | 'Consent'
   | 'RelatedPerson'
   | 'Procedure'
+  | 'CareTeam'
   | 'Questionnaire'
   | 'QuestionnaireResponse'
   | 'MedicationDispense'
@@ -327,6 +328,15 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
        asserting care happened with nothing behind it. */
     interactions: READ_ONLY,
     searchParams: [patientParam(), dateParam('date', 'When the procedure was performed.')],
+  },
+  CareTeam: {
+    resourceType: 'CareTeam',
+    profile: `${US_CORE}us-core-careteam`,
+    /* Read-only. Membership is decided in the practice, by the people who take
+       responsibility for a patient, and a client adding itself to a care team
+       would be granting itself a clinical relationship. */
+    interactions: READ_ONLY,
+    searchParams: [patientParam(), statusParam('The state of the team.')],
   },
   RelatedPerson: {
     resourceType: 'RelatedPerson',

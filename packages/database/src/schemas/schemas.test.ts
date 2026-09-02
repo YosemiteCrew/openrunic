@@ -32,6 +32,8 @@ import {
   payerInput,
   paymentCreateInput,
   promotionManifestInput,
+  careTeamInput,
+  careTeamParticipantInput,
   relatedPersonInput,
   remittanceInput,
   serviceRequestInput,
@@ -405,6 +407,88 @@ describe('noteAddendumInput', () => {
 
   it('rejects an addendum with no author', () => {
     rejects(noteAddendumInput, { noteId: ID.note, blocks: [] });
+  });
+});
+
+describe('careTeamInput', () => {
+  const validTeam = { patientId: ID.patient };
+
+  it('accepts the ordinary standing team, which records no period at all', () => {
+    accepts(careTeamInput, validTeam);
+  });
+
+  it('rejects a team that stood down before it started', () => {
+    rejects(careTeamInput, {
+      ...validTeam,
+      periodStart: '2026-03-01T00:00:00.000Z',
+      periodEnd: '2026-02-01T00:00:00.000Z',
+    });
+  });
+
+  it('rejects a status outside the closed set', () => {
+    rejects(careTeamInput, { ...validTeam, status: 'DISBANDED' });
+  });
+});
+
+describe('careTeamParticipantInput', () => {
+  const base = {
+    careTeamId: ID.patient,
+    roleCode: '207Q00000X',
+    roleSystem: 'http://nucc.org/provider-taxonomy',
+  };
+
+  it('accepts a clinician member carrying a user id', () => {
+    accepts(careTeamParticipantInput, { ...base, memberType: 'USER', memberUserId: ID.provider });
+  });
+
+  it('accepts a related-person member carrying a related-person id', () => {
+    accepts(careTeamParticipantInput, {
+      ...base,
+      memberType: 'RELATED_PERSON',
+      memberRelatedPersonId: ID.provider,
+    });
+  });
+
+  it('accepts a patient member carrying neither, because the team names the subject', () => {
+    accepts(careTeamParticipantInput, { ...base, memberType: 'PATIENT' });
+  });
+
+  it('rejects a clinician member with no user id', () => {
+    /* The pairing is the whole design. Stored, this row projects as a member
+       reference with nothing behind it. */
+    rejects(careTeamParticipantInput, { ...base, memberType: 'USER' });
+  });
+
+  it('rejects a related-person member with no related-person id', () => {
+    rejects(careTeamParticipantInput, { ...base, memberType: 'RELATED_PERSON' });
+  });
+
+  it('rejects a clinician member carrying a related-person id as well', () => {
+    /* Both set is ambiguous rather than generous: the projection would have to
+       pick one, and either choice serves somebody as the wrong resource type. */
+    rejects(careTeamParticipantInput, {
+      ...base,
+      memberType: 'USER',
+      memberUserId: ID.provider,
+      memberRelatedPersonId: ID.patient,
+    });
+  });
+
+  it('rejects a patient member carrying a member id', () => {
+    rejects(careTeamParticipantInput, {
+      ...base,
+      memberType: 'PATIENT',
+      memberUserId: ID.provider,
+    });
+  });
+
+  it('rejects a member whose period ends before it starts', () => {
+    rejects(careTeamParticipantInput, {
+      ...base,
+      memberType: 'PATIENT',
+      periodStart: '2026-03-01T00:00:00.000Z',
+      periodEnd: '2026-02-01T00:00:00.000Z',
+    });
   });
 });
 

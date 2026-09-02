@@ -6,6 +6,7 @@ import {
   toFhirCondition,
   toFhirCoverage,
   toFhirMedicationDispense,
+  toFhirCareTeam,
   toFhirProcedure,
   toFhirRelatedPerson,
   toFhirDiagnosticReport,
@@ -29,6 +30,7 @@ import {
   type Condition,
   type Coverage,
   type MedicationDispense,
+  type CareTeam,
   type Procedure,
   type RelatedPerson,
   type Questionnaire,
@@ -446,6 +448,58 @@ export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
       performedById: absent(row.performedById),
     })
   );
+}
+
+/**
+ * A care team, with the members that make it one.
+ *
+ * Takes its participants rather than fetching them, because the loader has
+ * already read every member for the whole page: a lookup here would be one
+ * round trip per team, which looks fine against three fixtures and degrades
+ * with page size.
+ *
+ * `meta.lastUpdated` is the later of the team and its newest member, not the
+ * team's own. Adding or removing a member changes the resource and does not
+ * touch the team row, so the team's stamp would leave an
+ * `$export?_since=` between the two instants excluding a team whose membership
+ * had just changed. The consumer would never learn a clinician left, and
+ * nothing would report an error.
+ */
+export function careTeamResource(
+  row: ScopedRow<'CareTeam'>,
+  participants: readonly ScopedRow<'CareTeamParticipant'>[]
+): CareTeam {
+  const resource = toFhirCareTeam(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      status: row.status,
+      name: absent(row.name),
+      periodStart: row.periodStart?.toISOString(),
+      periodEnd: row.periodEnd?.toISOString(),
+      participants: participants.map((participant) =>
+        compactDomain({
+          id: participant.id,
+          memberType: participant.memberType,
+          memberUserId: absent(participant.memberUserId),
+          memberRelatedPersonId: absent(participant.memberRelatedPersonId),
+          roleCode: participant.roleCode,
+          roleSystem: participant.roleSystem,
+          roleText: absent(participant.roleText),
+          periodStart: participant.periodStart?.toISOString(),
+          periodEnd: participant.periodEnd?.toISOString(),
+        })
+      ),
+    })
+  );
+
+  const newest = participants.reduce<Date | undefined>(
+    (latest, participant) =>
+      latest === undefined || participant.updatedAt > latest ? participant.updatedAt : latest,
+    undefined
+  );
+  if (newest === undefined || newest <= row.updatedAt) return resource;
+  return { ...resource, meta: { ...resource.meta, lastUpdated: newest.toISOString() } };
 }
 
 export function relatedPersonResource(row: ScopedRow<'RelatedPerson'>): RelatedPerson {

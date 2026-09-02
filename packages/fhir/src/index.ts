@@ -18,6 +18,7 @@ export type Location = fhir4.Location;
 export type Coverage = fhir4.Coverage;
 export type RelatedPerson = fhir4.RelatedPerson;
 export type Procedure = fhir4.Procedure;
+export type CareTeam = fhir4.CareTeam;
 export type Questionnaire = fhir4.Questionnaire;
 export type QuestionnaireResponse = fhir4.QuestionnaireResponse;
 export type MedicationDispense = fhir4.MedicationDispense;
@@ -418,3 +419,10 @@ export {
   type DomainImagingStudy,
   type DomainImagingStudyStatus,
 } from './imaging-study.js';
+export { CARE_TEAM_STATUS, fromFhirCareTeam, toFhirCareTeam } from './care-team.js';
+export type {
+  DomainCareTeam,
+  DomainCareTeamMemberType,
+  DomainCareTeamParticipant,
+  DomainCareTeamStatus,
+} from './care-team.js';

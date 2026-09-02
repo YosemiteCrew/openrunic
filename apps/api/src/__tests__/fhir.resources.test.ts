@@ -264,6 +264,43 @@ function seedChart(dataset: MemoryDataset): void {
     recordedById: PROVIDER,
   });
 
+  /* A team with one member of each kind, so the projection exercises all three
+     member reference types rather than the practitioner one three times. */
+  seed(dataset, 'CareTeam', {
+    ...storageColumns(testId(41)),
+    patientId: PATIENT,
+    status: 'ACTIVE',
+    name: 'Primary care',
+    periodStart: FIXED_NOW,
+    periodEnd: null,
+  });
+
+  seed(dataset, 'CareTeamParticipant', {
+    ...storageColumns(testId(42)),
+    careTeamId: testId(41),
+    memberType: 'USER',
+    memberUserId: PROVIDER,
+    memberRelatedPersonId: null,
+    roleCode: '207Q00000X',
+    roleSystem: 'http://nucc.org/provider-taxonomy',
+    roleText: 'Family medicine',
+    periodStart: null,
+    periodEnd: null,
+  });
+
+  seed(dataset, 'CareTeamParticipant', {
+    ...storageColumns(testId(43)),
+    careTeamId: testId(41),
+    memberType: 'PATIENT',
+    memberUserId: null,
+    memberRelatedPersonId: null,
+    roleCode: '116154003',
+    roleSystem: 'http://snomed.info/sct',
+    roleText: null,
+    periodStart: null,
+    periodEnd: null,
+  });
+
   seed(dataset, 'Encounter', {
     ...storageColumns(ENCOUNTER),
     facilityId: DEMO_FACILITY_A,

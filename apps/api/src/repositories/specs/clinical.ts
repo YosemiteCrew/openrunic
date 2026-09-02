@@ -1,5 +1,7 @@
 import type {
   AllergyIntoleranceInput,
+  CareTeamInput,
+  CareTeamParticipantInput,
   ClinicalNoteInput,
   ConditionInput,
   ProcedureInput,
@@ -1399,12 +1401,162 @@ export const referralSpec: CollectionSpec<
   },
 };
 
+export type CareTeamStatus = Row<'CareTeam'>['status'];
+export type CareTeamMemberType = Row<'CareTeamParticipant'>['memberType'];
+
+export interface CareTeamListQuery extends BaseQuery {
+  patientId?: string;
+  status?: CareTeamStatus;
+  sort: 'createdAt';
+}
+
+export type CareTeamPatchInput = Partial<Omit<CareTeamInput, 'patientId'>>;
+
+export const careTeamSpec: CollectionSpec<
+  'CareTeam',
+  CareTeamInput,
+  CareTeamPatchInput,
+  CareTeamListQuery
+> = {
+  model: 'CareTeam',
+  targetType: 'CareTeam',
+  action: 'careTeam',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: CareTeamInput): Writable<'CareTeam'> {
+    return {
+      patientId: input.patientId,
+      status: input.status ?? 'ACTIVE',
+      name: input.name ?? null,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+    };
+  },
+
+  patchData(patch: CareTeamPatchInput): Partial<Writable<'CareTeam'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'CareTeam'>, query: CareTeamListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    return query.status === undefined || row.status === query.status;
+  },
+
+  where(query: CareTeamListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CareTeam'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CareTeamListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
+export interface CareTeamParticipantListQuery extends BaseQuery {
+  careTeamId?: string;
+  careTeamIds?: readonly string[];
+  memberUserId?: string;
+  sort: 'createdAt';
+}
+
+export type CareTeamParticipantPatchInput = Partial<
+  Omit<CareTeamParticipantInput, 'careTeamId' | 'memberType'>
+>;
+
+/**
+ * The membership rows behind a team.
+ *
+ * Compartment-closed, like a claim line: a participant reaches a chart only
+ * through the team it hangs off, and this layer performs no join, so a
+ * patient-scoped token is refused the table outright rather than served one
+ * nobody narrowed. The team itself narrows on `patientId` and is what such a
+ * token reads; the FHIR projection fetches the members for a page of teams the
+ * caller has already been granted.
+ */
+export const careTeamParticipantSpec: CollectionSpec<
+  'CareTeamParticipant',
+  CareTeamParticipantInput,
+  CareTeamParticipantPatchInput,
+  CareTeamParticipantListQuery
+> = {
+  model: 'CareTeamParticipant',
+  targetType: 'CareTeamParticipant',
+  action: 'careTeamParticipant',
+  compartment: 'closed',
+
+  newRow(input: CareTeamParticipantInput): Writable<'CareTeamParticipant'> {
+    return {
+      careTeamId: input.careTeamId,
+      memberType: input.memberType,
+      memberUserId: input.memberUserId ?? null,
+      memberRelatedPersonId: input.memberRelatedPersonId ?? null,
+      roleCode: input.roleCode,
+      roleSystem: input.roleSystem,
+      roleText: input.roleText ?? null,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+    };
+  },
+
+  patchData(patch: CareTeamParticipantPatchInput): Partial<Writable<'CareTeamParticipant'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'CareTeamParticipant'>, query: CareTeamParticipantListQuery): boolean {
+    const wanted = careTeamParticipantTeams(query);
+    if (wanted !== undefined && !wanted.includes(row.careTeamId)) return false;
+    return query.memberUserId === undefined || row.memberUserId === query.memberUserId;
+  },
+
+  where(query: CareTeamParticipantListQuery) {
+    const wanted = careTeamParticipantTeams(query);
+    return {
+      ...(wanted === undefined ? {} : { careTeamId: { in: [...wanted] } }),
+      ...(query.memberUserId === undefined ? {} : { memberUserId: query.memberUserId }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CareTeamParticipant'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CareTeamParticipantListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
+/**
+ * The teams a participant query narrows to, whether it named one or many.
+ *
+ * Both filters collapse to the same `in` list so the two shapes cannot disagree
+ * about what the query means. A query naming both is the intersection, which is
+ * what a reader expects of two filters on one column.
+ */
+function careTeamParticipantTeams(
+  query: CareTeamParticipantListQuery
+): readonly string[] | undefined {
+  if (query.careTeamIds === undefined) {
+    return query.careTeamId === undefined ? undefined : [query.careTeamId];
+  }
+  if (query.careTeamId === undefined) return query.careTeamIds;
+  return query.careTeamIds.filter((id) => id === query.careTeamId);
+}
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
   noteAddenda: noteAddendumSpec,
   problems: conditionSpec,
   procedures: procedureSpec,
+  careTeams: careTeamSpec,
+  careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,
   prescriptions: medicationRequestSpec,
   allergies: allergySpec,

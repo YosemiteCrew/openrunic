@@ -3088,10 +3088,15 @@ model CareTeam {
   updatedAt   DateTime       @updatedAt
 
   organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
   participants CareTeamParticipant[]
 
+  /// Not a business key - `id` alone is already unique, so this adds no
+  /// collision. It is the target of CareTeamParticipant's patient-carrying
+  /// foreign key, which is what makes that row's denormalised `patientId`
+  /// unable to disagree with this one.
+  @@unique([id, patientId])
   @@index([tenantId, patientId, status])
 }
 
@@ -3111,6 +3116,21 @@ model CareTeamParticipant {
   id                    String             @id @db.Uuid
   tenantId              String             @db.Uuid
   careTeamId            String             @db.Uuid
+  /// The patient whose team this is, copied from the team.
+  ///
+  /// Denormalised on purpose. A patient-scoped token is narrowed by one column
+  /// equality and this layer performs no join, so without the column a patient
+  /// reading their own care team was served the team and none of its members:
+  /// no error, no empty-result signal, just a team that appears to have nobody
+  /// on it. That is the portal's own user seeing the wrong answer.
+  ///
+  /// It cannot drift, because the foreign key is composite: `(careTeamId,
+  /// patientId)` references `CareTeam(id, patientId)`, so a participant whose
+  /// patient disagrees with its team's has no row to point at. Same technique
+  /// as StockLot's tenant-carrying key, and for the same reason: referential
+  /// integrity is checked below row-level security, so the shape of the key is
+  /// the only thing that can forbid the mismatch.
+  patientId             String             @db.Uuid
   memberType            CareTeamMemberType
   memberUserId          String?            @db.Uuid
   memberRelatedPersonId String?            @db.Uuid
@@ -3131,11 +3151,12 @@ model CareTeamParticipant {
   updatedAt             DateTime           @updatedAt
 
   organisation  Organisation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  careTeam      CareTeam       @relation(fields: [careTeamId], references: [id], onDelete: Cascade)
+  careTeam      CareTeam       @relation(fields: [careTeamId, patientId], references: [id, patientId], onDelete: Cascade)
   memberUser    User?          @relation(fields: [memberUserId], references: [id], onDelete: Restrict)
   memberRelated RelatedPerson? @relation(fields: [memberRelatedPersonId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, careTeamId])
+  @@index([tenantId, patientId])
   @@index([tenantId, memberUserId])
 }
 
@@ -3204,7 +3225,7 @@ model CarePlan {
   updatedAt   DateTime       @updatedAt
 
   organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
   author       User?        @relation(fields: [authorId], references: [id], onDelete: Restrict)
   goals        Goal[]
@@ -3298,7 +3319,7 @@ model Goal {
   updatedAt           DateTime               @updatedAt
 
   organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
   carePlan     CarePlan?    @relation(fields: [carePlanId], references: [id], onDelete: SetNull)
   expressedBy  User?        @relation(fields: [expressedByUserId], references: [id], onDelete: Restrict)
 

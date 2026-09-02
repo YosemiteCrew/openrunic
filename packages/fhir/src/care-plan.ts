@@ -165,11 +165,64 @@ function narrativeText(div: string | undefined): string {
 }
 
 /**
+ * Element names that separate the text around them.
+ *
+ * The distinction is the whole point of this list. `<b>` inside a sentence is
+ * not a boundary, so dropping it must leave "Increase lisinopril." intact
+ * rather than "Increase lisinopril ." with a space before the full stop. A
+ * `<br>` between two instructions is a boundary, and dropping it welds them
+ * into "Increase doseMonitor BP", which is not a formatting complaint but a
+ * different instruction.
+ *
+ * Deliberately short. Anything not named here is treated as inline, which is
+ * the safe default: a missing break is easier to read past than an invented
+ * one in the middle of a word.
+ */
+const BLOCK_ELEMENTS: ReadonlySet<string> = new Set([
+  'br',
+  'p',
+  'div',
+  'li',
+  'ul',
+  'ol',
+  'tr',
+  'td',
+  'th',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'hr',
+]);
+
+/**
+ * The element name inside a tag body, lowercased, or nothing.
+ *
+ * Takes the leading run of name characters, so `br /`, `/p` and `p class="x"`
+ * all answer with the element. Scanned rather than matched, like everything
+ * else that reads foreign input here.
+ */
+function elementName(body: string): string {
+  const start = body.startsWith('/') ? 1 : 0;
+  let end = start;
+  while (end < body.length && /[A-Za-z0-9]/.test(body[end] ?? '')) end += 1;
+  return body.slice(start, end).toLowerCase();
+}
+
+/**
  * Drops element tags, keeping the text between them.
  *
- * Same reasoning as the paragraph scan: linear by construction. A `<` with no
- * `>` after it ends the string, because the alternative is to treat the rest as
- * text and hand a consumer back something that looks like markup.
+ * A block-level tag becomes a newline, because it is a boundary the author put
+ * there; an inline one becomes nothing. A single newline survives the trip back
+ * out, since the writer splits paragraphs on blank lines only.
+ *
+ * Same reasoning as the paragraph scan for the loop itself: linear by
+ * construction. A `<` with no `>` after it ends the string, because the
+ * alternative is to treat the rest as text and hand a consumer back something
+ * that looks like markup.
  */
 function stripTags(value: string): string {
   let out = '';
@@ -180,6 +233,14 @@ function stripTags(value: string): string {
     out += value.slice(cursor, open);
     const close = value.indexOf('>', open + 1);
     if (close === -1) return out;
+    /* One break per boundary, however many tags mark it. `</li><li>` is two
+       tags and one boundary, and emitting two newlines would make it a blank
+       line, which the writer reads back as a paragraph break: the number of
+       paragraphs would then depend on how the sender happened to nest its
+       markup. */
+    if (BLOCK_ELEMENTS.has(elementName(value.slice(open + 1, close))) && !out.endsWith('\n')) {
+      out += '\n';
+    }
     cursor = close + 1;
   }
 }

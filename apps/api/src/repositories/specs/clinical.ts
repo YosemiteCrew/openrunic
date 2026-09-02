@@ -508,6 +508,18 @@ export interface ProcedureListQuery extends BaseQuery {
   encounterId?: string;
   status?: ProcedureStatus;
   code?: string;
+  /**
+   * Half-open window on `performedStart`: `[from, to)`.
+   *
+   * Declared here because the FHIR boundary supplies it. `Procedure?date=` used
+   * to spread a window onto this query that nothing below read, so the filter
+   * was advertised, accepted, and silently ignored: a client asking for last
+   * month's procedures received the patient's whole history and had no way to
+   * tell. Object spread is not excess-property-checked, so the compiler said
+   * nothing either.
+   */
+  from?: Date;
+  to?: Date;
   sort: 'performedStart' | 'createdAt';
 }
 
@@ -565,15 +577,18 @@ export const procedureSpec: CollectionSpec<
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (!inWindow(row.performedStart, query.from, query.to)) return false;
     return query.code === undefined || row.code === query.code;
   },
 
   where(query: ProcedureListQuery) {
+    const performedStart = windowFilter(query.from, query.to);
     return {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.code === undefined ? {} : { code: query.code }),
+      ...(performedStart === undefined ? {} : { performedStart }),
     };
   },
 
@@ -1468,19 +1483,36 @@ export interface CareTeamParticipantListQuery extends BaseQuery {
   sort: 'createdAt';
 }
 
+/**
+ * What a participant patch may change, which is not who the member is.
+ *
+ * `memberType` and both member columns are excluded together. They are one
+ * fact spread over three columns, held consistent by a check constraint, and a
+ * patch that could move any of them independently could put the row in a state
+ * the database refuses: a 500 naming a constraint, where the caller wanted to
+ * replace a team member. Removing the old member and adding the new one is the
+ * operation they actually meant, and it keeps the period on the row that ended.
+ */
+
 export type CareTeamParticipantPatchInput = Partial<
-  Omit<CareTeamParticipantInput, 'careTeamId' | 'memberType'>
+  Omit<
+    CareTeamParticipantInput,
+    'careTeamId' | 'patientId' | 'memberType' | 'memberUserId' | 'memberRelatedPersonId'
+  >
 >;
 
 /**
  * The membership rows behind a team.
  *
- * Compartment-closed, like a claim line: a participant reaches a chart only
- * through the team it hangs off, and this layer performs no join, so a
- * patient-scoped token is refused the table outright rather than served one
- * nobody narrowed. The team itself narrows on `patientId` and is what such a
- * token reads; the FHIR projection fetches the members for a page of teams the
- * caller has already been granted.
+ * Narrowed on the participant's own `patientId`, not closed. Closed was the
+ * first answer and it was wrong in a way that produced no error: the compartment
+ * rule is one column equality and this layer performs no join, so a patient
+ * reading their own care team was served the team and none of its members. A
+ * team that appears to have nobody on it, shown to the one person the portal
+ * exists for.
+ *
+ * The column is denormalised from the team and cannot drift, because the
+ * foreign key is composite. See the schema comment on `CareTeamParticipant`.
  */
 export const careTeamParticipantSpec: CollectionSpec<
   'CareTeamParticipant',
@@ -1491,11 +1523,13 @@ export const careTeamParticipantSpec: CollectionSpec<
   model: 'CareTeamParticipant',
   targetType: 'CareTeamParticipant',
   action: 'careTeamParticipant',
-  compartment: 'closed',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
 
   newRow(input: CareTeamParticipantInput): Writable<'CareTeamParticipant'> {
     return {
       careTeamId: input.careTeamId,
+      patientId: input.patientId,
       memberType: input.memberType,
       memberUserId: input.memberUserId ?? null,
       memberRelatedPersonId: input.memberRelatedPersonId ?? null,
@@ -1507,8 +1541,24 @@ export const careTeamParticipantSpec: CollectionSpec<
     };
   },
 
+  /**
+   * Named columns rather than whatever the patch carries.
+   *
+   * The type already excludes the member columns, and a type is documentation:
+   * `Object.entries` copies every key it is handed, so a caller reaching this
+   * with an unvalidated body could still move `memberUserId` and leave the row
+   * disagreeing with its `memberType`. The database refuses that, which turns a
+   * replaced team member into a 500 naming a constraint. Listing what may
+   * change is the only version of this that is true at run time.
+   */
   patchData(patch: CareTeamParticipantPatchInput): Partial<Writable<'CareTeamParticipant'>> {
-    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    return {
+      ...(patch.roleCode === undefined ? {} : { roleCode: patch.roleCode }),
+      ...(patch.roleSystem === undefined ? {} : { roleSystem: patch.roleSystem }),
+      ...(patch.roleText === undefined ? {} : { roleText: patch.roleText }),
+      ...(patch.periodStart === undefined ? {} : { periodStart: patch.periodStart }),
+      ...(patch.periodEnd === undefined ? {} : { periodEnd: patch.periodEnd }),
+    };
   },
 
   matches(row: ScopedRow<'CareTeamParticipant'>, query: CareTeamParticipantListQuery): boolean {

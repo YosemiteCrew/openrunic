@@ -117,6 +117,10 @@ export const careTeamInput = z
 export const careTeamParticipantInput = z
   .strictObject({
     careTeamId: uuid,
+    /* Copied from the team, and the composite foreign key refuses a value that
+       disagrees with it. Required here so the caller cannot omit it and leave a
+       member invisible to the patient it belongs to. */
+    patientId: uuid,
     memberType: z.enum(CARE_TEAM_MEMBER_TYPES),
     memberUserId: uuid.optional(),
     memberRelatedPersonId: uuid.optional(),

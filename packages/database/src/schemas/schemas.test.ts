@@ -535,6 +535,7 @@ describe('careTeamInput', () => {
 describe('careTeamParticipantInput', () => {
   const base = {
     careTeamId: ID.patient,
+    patientId: ID.patient,
     roleCode: '207Q00000X',
     roleSystem: 'http://nucc.org/provider-taxonomy',
   };

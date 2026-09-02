@@ -342,6 +342,7 @@ function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'CareTeamParticipant', {
     ...storageColumns(testId(42)),
     careTeamId: testId(41),
+    patientId: PATIENT,
     memberType: 'USER',
     memberUserId: PROVIDER,
     memberRelatedPersonId: null,
@@ -355,6 +356,7 @@ function seedChart(dataset: MemoryDataset): void {
   seed(dataset, 'CareTeamParticipant', {
     ...storageColumns(testId(43)),
     careTeamId: testId(41),
+    patientId: PATIENT,
     memberType: 'PATIENT',
     memberUserId: null,
     memberRelatedPersonId: null,
@@ -997,6 +999,80 @@ describe('the Goal filters are honoured, not merely advertised', () => {
   });
 });
 
+describe('one crowded care team does not empty the others', () => {
+  it('trims the crowded team and leaves the rest of the page intact', async () => {
+    /*
+     * The loader fetches participants for the whole page in one query, ordered
+     * by creation across every team on it. A single global page limit is
+     * therefore not a limit of twenty per team at all: one team with more
+     * members than the allowance consumes it, and every team ordered after that
+     * team is emitted with no participants.
+     *
+     * Not an error, and not a truncation a client can detect. A care team that
+     * appears to have nobody on it, because a different patient's team was
+     * malformed. Asserted end to end, because the trim is in the loader and the
+     * loader is not exported.
+     */
+    const { app, dataset } = harness();
+
+    /* Twenty-five on the team seeded first, so it both exceeds the per-team cap
+       and, being older, would consume a global allowance before the second team
+       was reached. */
+    for (let index = 0; index < 25; index += 1) {
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(1000 + index)),
+        careTeamId: testId(41),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: PROVIDER,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    }
+
+    seed(dataset, 'CareTeam', {
+      ...storageColumns(testId(1100)),
+      patientId: PATIENT,
+      status: 'ACTIVE',
+      name: 'Second team',
+      periodStart: null,
+      periodEnd: null,
+    });
+    seed(dataset, 'CareTeamParticipant', {
+      ...storageColumns(testId(1101)),
+      careTeamId: testId(1100),
+      patientId: PATIENT,
+      memberType: 'PATIENT',
+      memberUserId: null,
+      memberRelatedPersonId: null,
+      roleCode: '116154003',
+      roleSystem: 'http://snomed.info/sct',
+      roleText: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+
+    const bundle = (await (
+      await app.request('/fhir/CareTeam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const byId = new Map(
+      (bundle.entry ?? []).map((entry) => {
+        const resource = entry.resource as { id?: string; participant?: unknown[] };
+        return [resource.id, resource.participant?.length ?? 0];
+      })
+    );
+
+    expect(byId.get(testId(41))).toBe(20);
+    /* The assertion that fails without the per-team trim. */
+    expect(byId.get(testId(1100))).toBe(1);
+  });
+});
+
 describe('the CarePlan category filter is honoured, not merely advertised', () => {
   it('answers the one category it serves and returns nothing for any other', async () => {
     /*
@@ -1034,6 +1110,24 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
     ).json()) as Bundle;
 
     expect(bundle.total).toBe(1);
+  });
+
+  it('refuses a token that names another system, even with the same code', async () => {
+    /*
+     * `assess-plan` in somebody else's vocabulary is a different concept that
+     * happens to share a spelling. Answering it with this server's plans is the
+     * same class of wrong answer as ignoring the parameter, and harder to
+     * notice, because the code looked right.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan?category=urn%3Aelsewhere%7Cassess-plan', {
+        headers: bearer(TOKENS.adminA),
+      })
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(0);
   });
 
   it('serves the narrative as escaped XHTML, which is what a client renders', async () => {

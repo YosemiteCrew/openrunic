@@ -18,6 +18,7 @@ import {
   dateWindow,
   parseDateOnly,
   referenceId,
+  tokenMatches,
   tokenValue,
   type DateWindow,
   type FhirPaging,
@@ -750,6 +751,16 @@ const procedureModule = defineFhirResource({
  * round trip per row, invisible against three fixtures and quadratic on a real
  * page.
  */
+/**
+ * The most members one team contributes to a page.
+ *
+ * A team of twenty is a large multidisciplinary one, so this is a ceiling
+ * rather than a limit anybody reaches. It is applied per team rather than to
+ * the page, so a team past it loses its own tail and no other team loses
+ * anything.
+ */
+const MAX_TEAM_MEMBERS = 20;
+
 async function prepareCareTeams(
   rows: readonly ScopedRow<'CareTeam'>[],
   repositories: Repositories
@@ -759,11 +770,20 @@ async function prepareCareTeams(
 
   const participants = await repositories.careTeamParticipants.list({
     page: 1,
-    /* A ceiling rather than a limit anybody reaches. A team of twenty is a
-       large multidisciplinary one; past that the page is truncated, and the
-       alternative - no bound at all - lets one malformed team exhaust the
-       request. */
-    pageSize: 20 * rows.length,
+    /*
+     * A global ceiling, and it is only safe because of the per-team trim below.
+     *
+     * On its own it is not a limit of twenty per team: rows come back ordered
+     * by creation across every team on the page, so one team with a thousand
+     * members would consume the whole allowance and every team after it would
+     * be served with no participants at all. Not an error, not a truncation a
+     * client can detect - a care team that appears to have nobody on it,
+     * because a different patient's team was malformed.
+     *
+     * The extra room past the per-team cap is what makes the overflow visible
+     * rather than indistinguishable from a team that is merely large.
+     */
+    pageSize: MAX_TEAM_MEMBERS * rows.length + 1,
     sort: 'createdAt',
     order: 'asc',
     careTeamIds: rows.map((row) => row.id),
@@ -771,7 +791,7 @@ async function prepareCareTeams(
   for (const participant of participants.rows) {
     const existing = byTeam.get(participant.careTeamId);
     if (existing === undefined) byTeam.set(participant.careTeamId, [participant]);
-    else existing.push(participant);
+    else if (existing.length < MAX_TEAM_MEMBERS) existing.push(participant);
   }
   return byTeam;
 }
@@ -878,7 +898,10 @@ const carePlanModule = defineFhirResource({
  */
 function assessPlanOnly(raw: string | undefined): { ids?: readonly string[] } {
   if (raw === undefined) return {};
-  return tokenValue(raw) === 'assess-plan' ? {} : { ids: [] };
+  /* The system is checked, not only the code. `urn:elsewhere|assess-plan` is a
+     different concept that happens to share a code, and answering it with this
+     server's plans is the same wrong answer as ignoring the parameter. */
+  return tokenMatches(raw, SYSTEMS.usCoreCategory, 'assess-plan') ? {} : { ids: [] };
 }
 
 const careTeamModule = defineFhirResource({

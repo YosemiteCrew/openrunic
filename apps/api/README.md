@@ -53,10 +53,13 @@ evaluated inside an organisation; policy before audit means a denial has somewhe
 modules. Thirty resource types are served with `read` and `search-type`; `Patient` also accepts
 `create`.
 
-Only `Observation` and `Claim` advertise `status`, and they arrive there by different routes.
+Five resources advertise a status filter, by two different routes.
 
-`Observation` takes the lossless route: its domain enum and the FHIR value set agree one for one, so
-the parameter is a plain scalar filter. Where a mapping loses states - the schedule has a code for
+`Observation`, `CarePlan` and `CareTeam` take the lossless route, and so does `Goal` under the name
+R4 actually gives it: `lifecycle-status`, because Goal has no `status` parameter in the
+specification and advertising one would be a name no conforming client sends and no other server
+answers. For all four the domain enum and the FHIR value set agree one for one, so the parameter is
+a plain scalar filter. Where a mapping loses states - the schedule has a code for
 "roomed" and R4 does not - the parameter is left out rather than answered with a filter that
 silently matches one collapsed state and misses the rest. `losslessStatus` in `resources.ts` decides
 that per resource from the mapping itself, which is why those absences are visible here rather than

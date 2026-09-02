@@ -161,6 +161,41 @@ describe('the procedure repository', () => {
   });
 
   it.each(['memory', 'prisma'] as const)(
+    'narrows to a half-open window on when it was performed (%s)',
+    async (backend) => {
+      /*
+       * `Procedure?date=` used to spread a window onto the query that nothing
+       * below read, so the filter was advertised, accepted and ignored: a
+       * client asking for last month's procedures received the patient's whole
+       * history and had no way to tell. Object spread is not
+       * excess-property-checked, so the compiler said nothing either.
+       *
+       * Both backends, because the window is applied in two places that nothing
+       * ties together.
+       */
+      const repos = harness(backend).repos();
+      const early = await repos.procedures.create(PROCEDURE);
+      await repos.procedures.create({ ...PROCEDURE, performedStart: LATER });
+
+      const query = { page: 1, pageSize: 25, sort: 'performedStart', order: 'asc' } as const;
+      await expect(
+        repos.procedures
+          .list({ ...query, from: FIXED_NOW, to: LATER })
+          .then((page) => page.rows.map((row) => row.id))
+      ).resolves.toEqual([early.id]);
+
+      /* Half-open at both ends: `to` is exclusive, so a procedure performed at
+         exactly `to` belongs to the next window and not this one. */
+      await expect(repos.procedures.list({ ...query, from: LATER })).resolves.toMatchObject({
+        total: 1,
+      });
+      await expect(repos.procedures.list({ ...query, to: FIXED_NOW })).resolves.toMatchObject({
+        total: 0,
+      });
+    }
+  );
+
+  it.each(['memory', 'prisma'] as const)(
     'sorts by when it was performed or when it was recorded (%s)',
     async (backend) => {
       /*
@@ -620,6 +655,7 @@ describe('the care team repository', () => {
 describe('the care team participant repository', () => {
   const CLINICIAN = {
     careTeamId: testId(300),
+    patientId: PATIENT,
     memberType: 'USER',
     memberUserId: PROVIDER,
     roleCode: '207Q00000X',
@@ -641,6 +677,7 @@ describe('the care team participant repository', () => {
       .repos()
       .careTeamParticipants.create({
         careTeamId: testId(300),
+        patientId: PATIENT,
         memberType: 'PATIENT',
         roleCode: '116154003',
         roleSystem: 'http://snomed.info/sct',
@@ -734,6 +771,7 @@ describe('the care team participant repository', () => {
           createdAt,
           updatedAt: createdAt,
           careTeamId: testId(300),
+          patientId: PATIENT,
           memberType: 'USER',
           memberUserId: PROVIDER,
           memberRelatedPersonId: null,
@@ -759,9 +797,21 @@ describe('the care team participant repository', () => {
     }
   );
 
-  it('patches the role without touching the member', async () => {
+  it('patches the role, and cannot patch who the member is', async () => {
+    /*
+     * `memberType` and both member columns are one fact spread over three, held
+     * consistent by a check constraint. A patch that could move any of them
+     * independently could put the row in a state the database refuses: a 500
+     * naming a constraint, where the caller wanted to replace a team member.
+     * The patch type excludes all three, so the line below does not compile if
+     * that changes, and removing the old member and adding the new one stays
+     * the only way to do it.
+     */
     const repos = harness().repos();
     const row = await repos.careTeamParticipants.create(CLINICIAN);
+
+    // @ts-expect-error the member columns are not patchable, and must not become so
+    await repos.careTeamParticipants.update(row.id, { memberUserId: testId(999) });
 
     const patched = await repos.careTeamParticipants.update(row.id, {
       roleText: 'Internal medicine',

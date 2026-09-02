@@ -173,6 +173,58 @@ describe('fromFhirCarePlan, on input it did not write', () => {
     ).toBe('Increase lisinopril.');
   });
 
+  it('keeps a line break as a break rather than welding two instructions', () => {
+    /*
+     * The failure worth naming: dropping the tag gives "Increase doseMonitor
+     * BP", which is not a formatting complaint but a different instruction, and
+     * it reads as one word so nobody spots it.
+     */
+    expect(
+      fromFhirCarePlan(
+        foreign(
+          '<div xmlns="http://www.w3.org/1999/xhtml"><p>Increase dose<br/>Monitor BP</p></div>'
+        )
+      ).narrative
+    ).toBe('Increase dose\nMonitor BP');
+  });
+
+  it('does not put a space where an inline tag was', () => {
+    /* The other half. Treating every tag as a boundary gives "Increase
+       lisinopril ." with a space before the full stop, which is why the
+       distinction between block and inline has to exist. */
+    expect(
+      fromFhirCarePlan(
+        foreign(
+          '<div xmlns="http://www.w3.org/1999/xhtml"><p>Increase <b>lisinopril</b>.</p></div>'
+        )
+      ).narrative
+    ).toBe('Increase lisinopril.');
+  });
+
+  it('breaks between list items', () => {
+    /* A plan written as a list is common, and run together it becomes one
+       sentence that says something else. */
+    expect(
+      fromFhirCarePlan(
+        foreign(
+          '<div xmlns="http://www.w3.org/1999/xhtml"><ul><li>Stop aspirin</li><li>Start warfarin</li></ul></div>'
+        )
+      ).narrative
+    ).toBe('Stop aspirin\nStart warfarin');
+  });
+
+  it('reads a tag with attributes and a self-closing slash as the same element', () => {
+    /* `<br/>`, `<br />` and `<p class="x">` all name an element that separates.
+       Reading the whole tag body as the name would treat them as inline. */
+    expect(
+      fromFhirCarePlan(
+        foreign(
+          '<div xmlns="http://www.w3.org/1999/xhtml">First<br />Second<p class="x">Third</p></div>'
+        )
+      ).narrative
+    ).toBe('First\nSecond\nThird');
+  });
+
   it('stops at an unclosed paragraph rather than inventing its end', () => {
     /* Treating the rest of the div as the paragraph's content would fabricate a
        boundary the author never wrote. */

@@ -82,6 +82,30 @@ export function tokenValue(token: string): string {
   return separator === -1 ? token : token.slice(separator + 1);
 }
 
+/** Reads the system half of a `system|value` token, or nothing for a bare one. */
+export function tokenSystem(token: string): string | undefined {
+  const separator = token.indexOf('|');
+  return separator === -1 ? undefined : token.slice(0, separator);
+}
+
+/**
+ * Whether a token matches a code in a known system.
+ *
+ * A bare token matches on the code alone, which is what FHIR says and what
+ * every client that does not care about the vocabulary sends. A qualified token
+ * has to agree about the system too: `urn:something-else|assess-plan` is a
+ * different concept that happens to share a code, and answering it with this
+ * server's concept is the same class of wrong answer as ignoring the parameter.
+ *
+ * An empty system, written `|code`, means "a code with no system at all". No
+ * concept this server emits is systemless, so it matches nothing.
+ */
+export function tokenMatches(token: string, system: string, code: string): boolean {
+  if (tokenValue(token) !== code) return false;
+  const supplied = tokenSystem(token);
+  return supplied === undefined || supplied === system;
+}
+
 /**
  * Reads the id out of a reference parameter.
  *

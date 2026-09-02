@@ -129,6 +129,36 @@ describe('round trip', () => {
     expect(fromFhirCareTeam(toFhirCareTeam(bare))).toEqual(bare);
   });
 
+  it('keeps each participant id, so reordering does not reassign identities', () => {
+    /*
+     * Participant ids used to be replaced by their array position on the way
+     * back, so a round trip through FHIR gave every member a new identity and
+     * merely reordering the list swapped them. A patch aimed at one member
+     * would then land on another, with nothing anywhere reporting an error.
+     */
+    const resource = toFhirCareTeam(TEAM);
+    expect(resource.participant?.map((p) => p.id)).toEqual(['0', '1', '2']);
+
+    const reversed: fhir4.CareTeam = {
+      ...resource,
+      participant: [...(resource.participant ?? [])].reverse(),
+    };
+
+    expect(fromFhirCareTeam(reversed).participants.map((p) => p.id)).toEqual(['2', '1', '0']);
+  });
+
+  it('carries a real row id rather than a position', () => {
+    const withUuids = {
+      ...TEAM,
+      participants: TEAM.participants.map((participant, index) => ({
+        ...participant,
+        id: `0192f1a0-0000-7000-8000-00000000010${index}`,
+      })),
+    };
+
+    expect(fromFhirCareTeam(toFhirCareTeam(withUuids))).toEqual(withUuids);
+  });
+
   it('keeps the member type, not just the id', () => {
     /* The failure this guards is a reference read back at the wrong type: the
        daughter arriving as `USER` puts her id in the practitioner column, and

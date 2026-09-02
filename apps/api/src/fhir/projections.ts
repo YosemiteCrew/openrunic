@@ -424,13 +424,6 @@ export function questionnaireResponseResource(
   } as unknown as QuestionnaireResponse;
 }
 
-/**
- * A guardian, an emergency contact or a portal proxy, as US Core sees them.
- *
- * The three booleans on the row become relationship codings and one extension
- * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
- * the same reading of them if they ever need it.
- */
 /** A procedure performed, from its own row. */
 export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
   return toFhirProcedure(
@@ -559,6 +552,13 @@ export function careTeamResource(
   return { ...resource, meta: { ...resource.meta, lastUpdated: newest.toISOString() } };
 }
 
+/**
+ * A guardian, an emergency contact or a portal proxy, as US Core sees them.
+ *
+ * The three booleans on the row become relationship codings and one extension
+ * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
+ * the same reading of them if they ever need it.
+ */
 export function relatedPersonResource(row: ScopedRow<'RelatedPerson'>): RelatedPerson {
   return toFhirRelatedPerson(
     compactDomain({

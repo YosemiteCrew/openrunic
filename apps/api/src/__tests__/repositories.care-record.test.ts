@@ -1,0 +1,459 @@
+import { describe, expect, it } from 'vitest';
+
+import { AuditCollector } from '../audit/collector.js';
+import { createMemoryAuditSink } from '../audit/memory-sink.js';
+import {
+  createEmptyDataset,
+  createMemoryRepositoryRegistry,
+  type MemoryDataset,
+} from '../repositories/memory.js';
+import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
+import type { RepositoryRegistry, Repositories } from '../repositories/types.js';
+
+import { createFakePort } from './fake-port.js';
+
+import { DEMO_TENANT_A, FIXED_NOW, seed, storageColumns, testId } from './support.js';
+
+/**
+ * The two collections behind the record of care given: procedures, and the
+ * teams that give it.
+ *
+ * Neither is writable at the FHIR boundary, which is a decision about that
+ * boundary and not about these tables. Registration creates a care team;
+ * documenting a visit records a procedure. Both paths go through the
+ * repository, so the defaults it applies and the filters it answers are
+ * production code, and untested defaults are exactly where a wrong one sits
+ * unnoticed until a report counts the wrong rows.
+ */
+
+/**
+ * The two backends, over one dataset.
+ *
+ * The memory repository answers a sort from `sortValue` and the Prisma one from
+ * `orderBy`, and a spec has to supply both. They can disagree - one reading a
+ * column the other does not - and nothing links them, so the ordering
+ * assertions below run against each in turn rather than against whichever
+ * happens to be convenient.
+ */
+type Backend = 'memory' | 'prisma';
+
+function harness(backend: Backend = 'memory'): {
+  dataset: MemoryDataset;
+  repos: () => Repositories;
+} {
+  const dataset = createEmptyDataset();
+  let counter = 600;
+  const registry: RepositoryRegistry =
+    backend === 'memory'
+      ? createMemoryRepositoryRegistry({
+          dataset,
+          clock: { now: () => FIXED_NOW },
+          nextId: () => testId((counter += 1)),
+        })
+      : createPrismaRepositoryRegistry((tenantId) =>
+          createFakePort({
+            dataset,
+            tenantId,
+            now: () => FIXED_NOW,
+            nextId: () => testId((counter += 1)),
+          })
+        );
+
+  return {
+    dataset,
+    repos: () =>
+      registry.forRequest({
+        tenantId: DEMO_TENANT_A,
+        audit: new AuditCollector(createMemoryAuditSink(), {
+          tenantId: DEMO_TENANT_A,
+          actorType: 'user',
+          actorId: testId(900),
+          requestId: 'req-care-record',
+          method: 'POST',
+          path: '/test',
+        }),
+      }),
+  };
+}
+
+const PATIENT = testId(200);
+const ENCOUNTER = testId(201);
+const PROVIDER = testId(202);
+const LATER = new Date(FIXED_NOW.getTime() + 24 * 60 * 60 * 1000);
+
+const PROCEDURE = {
+  patientId: PATIENT,
+  code: '45378',
+  display: 'Diagnostic colonoscopy',
+  performedStart: FIXED_NOW,
+};
+
+describe('the procedure repository', () => {
+  it('records one with the schema defaults, which are CPT and completed', () => {
+    /* A practice codes a procedure in CPT and the charge beside it carries the
+       same code. A row that defaulted to SNOMED would not match its charge. */
+    return harness()
+      .repos()
+      .procedures.create(PROCEDURE)
+      .then((row) => {
+        expect(row.codeSystem).toBe('http://www.ama-assn.org/go/cpt');
+        expect(row.status).toBe('COMPLETED');
+        expect(row.performedEnd).toBeNull();
+        expect(row.encounterId).toBeNull();
+      });
+  });
+
+  it('carries every optional field through', async () => {
+    const row = await harness()
+      .repos()
+      .procedures.create({
+        ...PROCEDURE,
+        encounterId: ENCOUNTER,
+        codeSystem: 'http://snomed.info/sct',
+        snomedCode: '73761001',
+        status: 'NOT_DONE',
+        performedEnd: LATER,
+        bodySiteCode: '71854001',
+        outcomeCode: '385669000',
+        notDoneReason: 'Declined by the patient',
+        note: 'Rescheduled.',
+        performedById: PROVIDER,
+        recordedById: PROVIDER,
+      });
+
+    expect(row).toMatchObject({
+      encounterId: ENCOUNTER,
+      snomedCode: '73761001',
+      status: 'NOT_DONE',
+      performedEnd: LATER,
+      bodySiteCode: '71854001',
+      outcomeCode: '385669000',
+      notDoneReason: 'Declined by the patient',
+      note: 'Rescheduled.',
+      performedById: PROVIDER,
+    });
+  });
+
+  it('filters by patient, encounter, status and code', async () => {
+    const repos = harness().repos();
+    await repos.procedures.create(PROCEDURE);
+    await repos.procedures.create({
+      ...PROCEDURE,
+      patientId: testId(210),
+      encounterId: ENCOUNTER,
+      code: '99213',
+      status: 'NOT_DONE',
+    });
+
+    const query = { page: 1, pageSize: 25, sort: 'performedStart', order: 'asc' } as const;
+    await expect(repos.procedures.list({ ...query, patientId: PATIENT })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(
+      repos.procedures.list({ ...query, encounterId: ENCOUNTER })
+    ).resolves.toMatchObject({ total: 1 });
+    await expect(repos.procedures.list({ ...query, status: 'NOT_DONE' })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(repos.procedures.list({ ...query, code: '45378' })).resolves.toMatchObject({
+      total: 1,
+    });
+  });
+
+  it.each(['memory', 'prisma'] as const)(
+    'sorts by when it was performed or when it was recorded (%s)',
+    async (backend) => {
+      /*
+       * Two different questions. The colonoscopy done last week and entered
+       * today is first by one and last by the other, and a list that answered
+       * with the wrong one would put a backdated entry at the top of today's
+       * chart.
+       *
+       * Both backends, because the memory one reads `sortValue` and the Prisma
+       * one reads `orderBy`. They are separate functions on the spec with
+       * nothing tying them together, so a sort key added to one and forgotten
+       * in the other passes every test that only ever asks one of them.
+       */
+      const repos = harness(backend).repos();
+      const first = await repos.procedures.create({ ...PROCEDURE, performedStart: LATER });
+      const second = await repos.procedures.create(PROCEDURE);
+
+      const query = { page: 1, pageSize: 25, order: 'asc' } as const;
+      await expect(
+        repos.procedures
+          .list({ ...query, sort: 'performedStart' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([second.id, first.id]);
+      await expect(
+        repos.procedures.list({ ...query, sort: 'createdAt' }).then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([first.id, second.id]);
+    }
+  );
+
+  it('patches only the fields it was given', async () => {
+    const repos = harness().repos();
+    const row = await repos.procedures.create(PROCEDURE);
+
+    const patched = await repos.procedures.update(row.id, { status: 'ENTERED_IN_ERROR' });
+
+    expect(patched?.status).toBe('ENTERED_IN_ERROR');
+    expect(patched?.display).toBe('Diagnostic colonoscopy');
+  });
+});
+
+describe('the care team repository', () => {
+  it('creates a team that is active and unnamed, which is the ordinary one', () => {
+    /* Most practices run one standing team per patient with no name and no
+       start anybody recorded. Defaulting to PROPOSED would make every such team
+       look like a plan rather than the people currently responsible. */
+    return harness()
+      .repos()
+      .careTeams.create({ patientId: PATIENT })
+      .then((row) => {
+        expect(row.status).toBe('ACTIVE');
+        expect(row.name).toBeNull();
+        expect(row.periodStart).toBeNull();
+        expect(row.periodEnd).toBeNull();
+      });
+  });
+
+  it('carries a name and a period through', async () => {
+    const row = await harness().repos().careTeams.create({
+      patientId: PATIENT,
+      status: 'SUSPENDED',
+      name: 'Diabetes care',
+      periodStart: FIXED_NOW,
+      periodEnd: LATER,
+    });
+
+    expect(row).toMatchObject({
+      status: 'SUSPENDED',
+      name: 'Diabetes care',
+      periodStart: FIXED_NOW,
+      periodEnd: LATER,
+    });
+  });
+
+  it('filters by patient and by status', async () => {
+    const repos = harness().repos();
+    await repos.careTeams.create({ patientId: PATIENT });
+    await repos.careTeams.create({ patientId: testId(210), status: 'INACTIVE' });
+
+    const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+    await expect(repos.careTeams.list({ ...query, patientId: PATIENT })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(repos.careTeams.list({ ...query, status: 'INACTIVE' })).resolves.toMatchObject({
+      total: 1,
+    });
+  });
+
+  it.each(['memory', 'prisma'] as const)(
+    'sorts by creation in both directions (%s)',
+    async (backend) => {
+      /*
+       * Seeded rather than created, because the harness clock is fixed and two
+       * rows made through it share a `createdAt`. The tie-break on id is
+       * ascending in both directions by design, so equal timestamps would give
+       * the same order twice and this assertion would hold whatever `orderBy`
+       * did with the direction.
+       */
+      const { dataset, repos } = harness(backend);
+      seed(dataset, 'CareTeam', {
+        ...storageColumns(testId(310)),
+        patientId: PATIENT,
+        status: 'ACTIVE',
+        name: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+      seed(dataset, 'CareTeam', {
+        ...storageColumns(testId(311)),
+        createdAt: LATER,
+        updatedAt: LATER,
+        patientId: PATIENT,
+        status: 'ACTIVE',
+        name: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+
+      const query = { page: 1, pageSize: 25, sort: 'createdAt' } as const;
+      await expect(
+        repos()
+          .careTeams.list({ ...query, order: 'desc' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(311), testId(310)]);
+      await expect(
+        repos()
+          .careTeams.list({ ...query, order: 'asc' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(310), testId(311)]);
+    }
+  );
+
+  it('patches the status without clearing the name', async () => {
+    const repos = harness().repos();
+    const row = await repos.careTeams.create({ patientId: PATIENT, name: 'Diabetes care' });
+
+    const patched = await repos.careTeams.update(row.id, { status: 'INACTIVE' });
+
+    expect(patched?.status).toBe('INACTIVE');
+    expect(patched?.name).toBe('Diabetes care');
+  });
+});
+
+describe('the care team participant repository', () => {
+  const CLINICIAN = {
+    careTeamId: testId(300),
+    memberType: 'USER',
+    memberUserId: PROVIDER,
+    roleCode: '207Q00000X',
+    roleSystem: 'http://nucc.org/provider-taxonomy',
+  } as const;
+
+  it('creates a clinician member with the other member column left null', async () => {
+    const row = await harness().repos().careTeamParticipants.create(CLINICIAN);
+
+    expect(row.memberUserId).toBe(PROVIDER);
+    expect(row.memberRelatedPersonId).toBeNull();
+    expect(row.roleText).toBeNull();
+  });
+
+  it('creates a patient member carrying neither id', async () => {
+    /* The team already names its subject. A second id could only agree with it
+       or be wrong, and the database refuses the row that carries one. */
+    const row = await harness()
+      .repos()
+      .careTeamParticipants.create({
+        careTeamId: testId(300),
+        memberType: 'PATIENT',
+        roleCode: '116154003',
+        roleSystem: 'http://snomed.info/sct',
+      });
+
+    expect(row.memberUserId).toBeNull();
+    expect(row.memberRelatedPersonId).toBeNull();
+  });
+
+  it('carries a role text and a member period through', async () => {
+    const row = await harness()
+      .repos()
+      .careTeamParticipants.create({
+        ...CLINICIAN,
+        roleText: 'Family medicine',
+        periodStart: FIXED_NOW,
+        periodEnd: LATER,
+      });
+
+    expect(row).toMatchObject({
+      roleText: 'Family medicine',
+      periodStart: FIXED_NOW,
+      periodEnd: LATER,
+    });
+  });
+
+  it('narrows to one team, to several teams, and to a member', async () => {
+    /* The several-teams filter is what the FHIR projection uses: it loads the
+       members for a whole page of teams in one query rather than one per team. */
+    const repos = harness().repos();
+    await repos.careTeamParticipants.create(CLINICIAN);
+    await repos.careTeamParticipants.create({
+      ...CLINICIAN,
+      careTeamId: testId(301),
+      memberUserId: testId(203),
+    });
+
+    const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+    await expect(
+      repos.careTeamParticipants.list({ ...query, careTeamId: testId(300) })
+    ).resolves.toMatchObject({ total: 1 });
+    await expect(
+      repos.careTeamParticipants.list({ ...query, careTeamIds: [testId(300), testId(301)] })
+    ).resolves.toMatchObject({ total: 2 });
+    await expect(
+      repos.careTeamParticipants.list({ ...query, memberUserId: PROVIDER })
+    ).resolves.toMatchObject({ total: 1 });
+  });
+
+  it('intersects the two team filters rather than letting one win', async () => {
+    /*
+     * Both name the same column, and a reader expects two filters to narrow.
+     * Letting either win silently would answer a query for "this team, among
+     * those teams" with rows from a team the caller excluded.
+     */
+    const repos = harness().repos();
+    await repos.careTeamParticipants.create(CLINICIAN);
+    await repos.careTeamParticipants.create({ ...CLINICIAN, careTeamId: testId(301) });
+
+    const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+    await expect(
+      repos.careTeamParticipants.list({
+        ...query,
+        careTeamId: testId(300),
+        careTeamIds: [testId(300), testId(301)],
+      })
+    ).resolves.toMatchObject({ total: 1 });
+    await expect(
+      repos.careTeamParticipants.list({
+        ...query,
+        careTeamId: testId(300),
+        careTeamIds: [testId(301)],
+      })
+    ).resolves.toMatchObject({ total: 0 });
+  });
+
+  it.each(['memory', 'prisma'] as const)(
+    'sorts by creation in both directions (%s)',
+    async (backend) => {
+      /* Seeded for the same reason the team sort test is: a fixed clock gives two
+       created rows the same instant, and the ascending id tie-break then hides
+       the direction entirely, so the assertion would hold whatever `orderBy`
+       did with it. */
+      const { dataset, repos } = harness(backend);
+      for (const [id, createdAt] of [
+        [testId(320), FIXED_NOW],
+        [testId(321), LATER],
+      ] as const) {
+        seed(dataset, 'CareTeamParticipant', {
+          ...storageColumns(id),
+          createdAt,
+          updatedAt: createdAt,
+          careTeamId: testId(300),
+          memberType: 'USER',
+          memberUserId: PROVIDER,
+          memberRelatedPersonId: null,
+          roleCode: '207Q00000X',
+          roleSystem: 'http://nucc.org/provider-taxonomy',
+          roleText: null,
+          periodStart: null,
+          periodEnd: null,
+        });
+      }
+
+      const query = { page: 1, pageSize: 25, sort: 'createdAt' } as const;
+      await expect(
+        repos()
+          .careTeamParticipants.list({ ...query, order: 'desc' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(321), testId(320)]);
+      await expect(
+        repos()
+          .careTeamParticipants.list({ ...query, order: 'asc' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(320), testId(321)]);
+    }
+  );
+
+  it('patches the role without touching the member', async () => {
+    const repos = harness().repos();
+    const row = await repos.careTeamParticipants.create(CLINICIAN);
+
+    const patched = await repos.careTeamParticipants.update(row.id, {
+      roleText: 'Internal medicine',
+    });
+
+    expect(patched?.roleText).toBe('Internal medicine');
+    expect(patched?.memberUserId).toBe(PROVIDER);
+  });
+});

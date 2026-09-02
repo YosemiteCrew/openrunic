@@ -1683,6 +1683,17 @@ export interface GoalListQuery extends BaseQuery {
   patientId?: string;
   carePlanId?: string;
   lifecycleStatus?: GoalLifecycleStatus;
+  /**
+   * Half-open window on `dueDate`: `[from, to)`.
+   *
+   * The same fields `Procedure?date=` needed, missed the same way and for the
+   * same reason: the module spread a window onto this query, object spread is
+   * not excess-property-checked, and nothing below declared or read the fields.
+   * Twice in one day, which is why there is now a test that walks every
+   * advertised parameter of every served resource and asks whether it narrows.
+   */
+  from?: Date;
+  to?: Date;
   sort: 'createdAt' | 'dueDate';
 }
 
@@ -1725,14 +1736,17 @@ export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalLis
   matches(row: ScopedRow<'Goal'>, query: GoalListQuery): boolean {
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.carePlanId !== undefined && row.carePlanId !== query.carePlanId) return false;
+    if (!inWindow(row.dueDate, query.from, query.to)) return false;
     return query.lifecycleStatus === undefined || row.lifecycleStatus === query.lifecycleStatus;
   },
 
   where(query: GoalListQuery) {
+    const dueDate = windowFilter(query.from, query.to);
     return {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.carePlanId === undefined ? {} : { carePlanId: query.carePlanId }),
       ...(query.lifecycleStatus === undefined ? {} : { lifecycleStatus: query.lifecycleStatus }),
+      ...(dueDate === undefined ? {} : { dueDate }),
     };
   },
 

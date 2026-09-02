@@ -350,6 +350,8 @@ const FILTERS: {
     patientId: 'id-patientId',
     carePlanId: 'id-carePlanId',
     lifecycleStatus: 'ACTIVE',
+    from: new Date('2026-01-01T00:00:00.000Z'),
+    to: new Date('2026-02-01T00:00:00.000Z'),
   },
   careTeams: {
     page: 1,

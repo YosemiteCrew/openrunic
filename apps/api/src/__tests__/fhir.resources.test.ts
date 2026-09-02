@@ -242,6 +242,8 @@ function seedChart(dataset: MemoryDataset): void {
     reason: null,
     correctsMovementId: null,
     lotSeq: 1,
+  });
+
   /* A completed procedure with both codings and a real span, so the projection
      exercises the period branch rather than the instant one. */
   seed(dataset, 'Procedure', {

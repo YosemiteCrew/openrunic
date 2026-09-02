@@ -1,5 +1,6 @@
 import type {
   AllergyIntoleranceInput,
+  CarePlanInput,
   CareTeamInput,
   CareTeamParticipantInput,
   ClinicalNoteInput,
@@ -1549,12 +1550,88 @@ function careTeamParticipantTeams(
   return query.careTeamIds.filter((id) => id === query.careTeamId);
 }
 
+export type CarePlanStatus = Row<'CarePlan'>['status'];
+
+export interface CarePlanListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: CarePlanStatus;
+  /**
+   * Narrow to a known set of plans.
+   *
+   * An empty list means no plan matches, and that is a state the FHIR boundary
+   * reaches: `CarePlan?category=` names a category this server does not serve,
+   * which is a legitimate search with no results rather than an error.
+   */
+  ids?: readonly string[];
+  sort: 'createdAt';
+}
+
+export type CarePlanPatchInput = Partial<Omit<CarePlanInput, 'patientId'>>;
+
+export const carePlanSpec: CollectionSpec<
+  'CarePlan',
+  CarePlanInput,
+  CarePlanPatchInput,
+  CarePlanListQuery
+> = {
+  model: 'CarePlan',
+  targetType: 'CarePlan',
+  action: 'carePlan',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: CarePlanInput): Writable<'CarePlan'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      status: input.status ?? 'ACTIVE',
+      intent: input.intent ?? 'PLAN',
+      title: input.title ?? null,
+      narrative: input.narrative,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+      authorId: input.authorId ?? null,
+    };
+  },
+
+  patchData(patch: CarePlanPatchInput): Partial<Writable<'CarePlan'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'CarePlan'>, query: CarePlanListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.ids !== undefined && !query.ids.includes(row.id)) return false;
+    return query.status === undefined || row.status === query.status;
+  },
+
+  where(query: CarePlanListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.ids === undefined ? {} : { id: { in: [...query.ids] } }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CarePlan'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CarePlanListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
   noteAddenda: noteAddendumSpec,
   problems: conditionSpec,
   procedures: procedureSpec,
+  carePlans: carePlanSpec,
   careTeams: careTeamSpec,
   careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,

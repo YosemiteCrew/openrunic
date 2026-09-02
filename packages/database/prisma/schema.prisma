@@ -772,6 +772,7 @@ model Organisation {
   conditions            Condition[]
   procedures            Procedure[]
   careTeams             CareTeam[]
+  carePlans             CarePlan[]
   careTeamParticipants  CareTeamParticipant[]
   medicationStatements  MedicationStatement[]
   medicationRequests    MedicationRequest[]
@@ -888,6 +889,7 @@ model User {
   sentMessages       Message[]
   renderedCharges    ChargeItem[]
   careTeamRoles      CareTeamParticipant[]
+  carePlans          CarePlan[]
 
   @@unique([tenantId, email])
   @@index([tenantId, isProvider, status])
@@ -1071,6 +1073,7 @@ model Patient {
   /// index.
   stockPostings  StockPosting[]
   imagingStudies ImagingStudy[]
+  carePlans      CarePlan[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
@@ -1373,6 +1376,7 @@ model Encounter {
 
   stockPostings  StockPosting[]
   imagingStudies ImagingStudy[]
+  carePlans      CarePlan[]
 
   @@index([tenantId, patientId, startedAt])
   @@index([tenantId, facilityId, status, startedAt])
@@ -3156,4 +3160,73 @@ enum CareTeamMemberType {
   USER
   RELATED_PERSON
   PATIENT
+}
+
+/// The assessment and plan: what the clinician concluded and what happens next.
+///
+/// A table because there is nowhere else for it. A `ServiceRequest` is one
+/// order and says nothing about why; a `Condition` is a problem and says
+/// nothing about what is being done. The narrative that ties them together is
+/// the part a clinician actually writes and the part a receiving system reads
+/// first, and this system had no room for it at all: the C-CDA plan-of-treatment
+/// section is assembled empty because nothing anywhere could fill it.
+///
+/// This does not fill that section yet. `packages/ccda` builds it from coded
+/// activities with a scheduled date, and a narrative plan is a different shape,
+/// so wiring the two together is a change to the section rather than a lookup.
+///
+/// Not read out of `ClinicalNote.blocks`. That column is the editor's document
+/// format and this schema deliberately holds no opinion about its shape, so a
+/// projection that dug a plan out of it would be inventing a contract the
+/// editor never made, and would lose content silently the first time the editor
+/// changed. The plan is authored here, as text, by the person answerable for it.
+model CarePlan {
+  id          String         @id @db.Uuid
+  tenantId    String         @db.Uuid
+  patientId   String         @db.Uuid
+  /// The visit it was written at, when there was one. Null for a plan revised
+  /// between visits, which is most of chronic care.
+  encounterId String?        @db.Uuid
+  status      CarePlanStatus @default(ACTIVE)
+  intent      CarePlanIntent @default(PLAN)
+  title       String?
+  /// The assessment and plan, as the clinician wrote it. Plain text: it is
+  /// wrapped as XHTML at the FHIR boundary, and storing markup would mean
+  /// storing whatever a client sent and serving it back to another one.
+  narrative   String
+  periodStart DateTime?
+  periodEnd   DateTime?
+  authorId    String?        @db.Uuid
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  author       User?        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, status])
+  @@index([tenantId, encounterId])
+}
+
+/// FHIR's request-status value set, as this schema spells it.
+enum CarePlanStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  REVOKED
+  COMPLETED
+  ENTERED_IN_ERROR
+  UNKNOWN
+}
+
+/// How binding the plan is. `PLAN` is what a clinician writes at a visit;
+/// `ORDER` is a plan somebody is obliged to carry out, and `OPTION` is one of
+/// several offered. The distinction is not decoration: a receiving system
+/// treats an order as work to do.
+enum CarePlanIntent {
+  PROPOSAL
+  PLAN
+  ORDER
+  OPTION
 }

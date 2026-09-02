@@ -95,6 +95,28 @@ export type CareTeamStatus = (typeof CARE_TEAM_STATUSES)[number];
 export const CARE_TEAM_MEMBER_TYPES = ['USER', 'RELATED_PERSON', 'PATIENT'] as const;
 export type CareTeamMemberType = (typeof CARE_TEAM_MEMBER_TYPES)[number];
 
+export const CARE_PLAN_STATUSES = [
+  'DRAFT',
+  'ACTIVE',
+  'ON_HOLD',
+  'REVOKED',
+  'COMPLETED',
+  'ENTERED_IN_ERROR',
+  'UNKNOWN',
+] as const;
+export type CarePlanStatus = (typeof CARE_PLAN_STATUSES)[number];
+
+/**
+ * How binding a plan is.
+ *
+ * Not decoration. A receiving system treats `ORDER` as work somebody is obliged
+ * to carry out and `PROPOSAL` as a suggestion, so a plan recorded at the wrong
+ * intent is either ignored or acted on, and both are wrong in a way nobody sees
+ * until afterwards.
+ */
+export const CARE_PLAN_INTENTS = ['PROPOSAL', 'PLAN', 'ORDER', 'OPTION'] as const;
+export type CarePlanIntent = (typeof CARE_PLAN_INTENTS)[number];
+
 export const CONDITION_CATEGORIES = [
   'PROBLEM_LIST_ITEM',
   'ENCOUNTER_DIAGNOSIS',
@@ -446,6 +468,8 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.ProcedureStatus, typeof PROCEDURE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.CareTeamStatus, typeof CARE_TEAM_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.CareTeamMemberType, typeof CARE_TEAM_MEMBER_TYPES>>,
+  AssertOk<AssertMirrors<Prisma.CarePlanStatus, typeof CARE_PLAN_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.CarePlanIntent, typeof CARE_PLAN_INTENTS>>,
   AssertOk<AssertMirrors<Prisma.ImagingStudyStatus, typeof IMAGING_STUDY_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.TelehealthVisitStatus, typeof TELEHEALTH_VISIT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormStatus, typeof FORM_STATUSES>>,

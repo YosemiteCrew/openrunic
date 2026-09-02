@@ -55,6 +55,7 @@ export const TENANT_SCOPED_MODELS = [
   'Condition',
   'Procedure',
   'CareTeam',
+  'CarePlan',
   'CareTeamParticipant',
   'MedicationStatement',
   'MedicationRequest',

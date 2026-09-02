@@ -32,6 +32,7 @@ import {
   payerInput,
   paymentCreateInput,
   promotionManifestInput,
+  carePlanInput,
   careTeamInput,
   careTeamParticipantInput,
   relatedPersonInput,
@@ -407,6 +408,41 @@ describe('noteAddendumInput', () => {
 
   it('rejects an addendum with no author', () => {
     rejects(noteAddendumInput, { noteId: ID.note, blocks: [] });
+  });
+});
+
+describe('carePlanInput', () => {
+  const validPlan = {
+    patientId: ID.patient,
+    narrative: 'Continue metformin. Recheck HbA1c in three months.',
+  };
+
+  it('accepts a plan with a narrative and nothing else', () => {
+    accepts(carePlanInput, validPlan);
+  });
+
+  it('rejects a plan with no narrative', () => {
+    rejects(carePlanInput, { patientId: ID.patient });
+  });
+
+  it('rejects a narrative that is only whitespace', () => {
+    /* The failure this resource exists to prevent. `narrative` being NOT NULL
+       is satisfied by a space, and the plan then serves a `text.div` with
+       nothing in it: valid FHIR, and empty where the content belongs. */
+    rejects(carePlanInput, { ...validPlan, narrative: '   \n  ' });
+  });
+
+  it('rejects a plan that ended before it started', () => {
+    rejects(carePlanInput, {
+      ...validPlan,
+      periodStart: '2026-03-01T00:00:00.000Z',
+      periodEnd: '2026-02-01T00:00:00.000Z',
+    });
+  });
+
+  it('rejects a status and an intent outside their closed sets', () => {
+    rejects(carePlanInput, { ...validPlan, status: 'PENDING' });
+    rejects(carePlanInput, { ...validPlan, intent: 'SUGGESTION' });
   });
 });
 

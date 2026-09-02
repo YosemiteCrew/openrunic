@@ -266,6 +266,21 @@ function seedChart(dataset: MemoryDataset): void {
     recordedById: PROVIDER,
   });
 
+  /* A plan with a period and an author, so the projection exercises the
+     optional branches rather than only the required ones. */
+  seed(dataset, 'CarePlan', {
+    ...storageColumns(testId(44)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    status: 'ACTIVE',
+    intent: 'PLAN',
+    title: 'Diabetes management',
+    narrative: 'Continue metformin.\n\nRecheck HbA1c in three months.',
+    periodStart: FIXED_NOW,
+    periodEnd: null,
+    authorId: PROVIDER,
+  });
+
   /* A team with one member of each kind, so the projection exercises all three
      member reference types rather than the practitioner one three times. */
   seed(dataset, 'CareTeam', {
@@ -846,6 +861,58 @@ describe('Questionnaire serves published forms only', () => {
     expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
       testId(13),
     ]);
+  });
+});
+
+describe('the CarePlan category filter is honoured, not merely advertised', () => {
+  it('answers the one category it serves and returns nothing for any other', async () => {
+    /*
+     * `category` has exactly one legal value here, which is precisely why it is
+     * the parameter most likely to be advertised and then ignored: every
+     * conforming client sends `assess-plan`, that filter is a no-op, and it
+     * looks like it works. The half that catches the bug is the other request:
+     * a dropped filter answers a query for `careteam` with the whole list, and
+     * the client believes the practice records care-team plans it does not.
+     */
+    const { app } = harness();
+
+    const matched = (await (
+      await app.request('/fhir/CarePlan?category=assess-plan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(matched.total).toBe(1);
+
+    const missed = (await (
+      await app.request('/fhir/CarePlan?category=careteam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    expect(missed.total).toBe(0);
+  });
+
+  it('answers a system-qualified token the same way as a bare code', async () => {
+    /* `system|code` is the ordinary way a client sends a token, and reading the
+       whole thing as the code would match nothing for every conforming
+       client. */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request(
+        '/fhir/CarePlan?category=http%3A%2F%2Fhl7.org%2Ffhir%2Fus%2Fcore%2FCodeSystem%2Fus-core-category%7Cassess-plan',
+        { headers: bearer(TOKENS.adminA) }
+      )
+    ).json()) as Bundle;
+
+    expect(bundle.total).toBe(1);
+  });
+
+  it('serves the narrative as escaped XHTML, which is what a client renders', async () => {
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+    const plan = bundle.entry?.[0]?.resource as { text?: { div?: string; status?: string } };
+
+    expect(plan.text?.status).toBe('additional');
+    expect(plan.text?.div).toContain('<p>Continue metformin.</p>');
   });
 });
 

@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import {
   ADMINISTRATIVE_GENDERS,
+  CARE_PLAN_INTENTS,
+  CARE_PLAN_STATUSES,
   CARE_TEAM_MEMBER_TYPES,
   CARE_TEAM_STATUSES,
   CONSENT_SCOPES,
@@ -142,6 +144,31 @@ export const careTeamParticipantInput = z
     }
   );
 
+export const carePlanInput = z
+  .strictObject({
+    patientId: uuid,
+    encounterId: uuid.optional(),
+    status: z.enum(CARE_PLAN_STATUSES).optional(),
+    intent: z.enum(CARE_PLAN_INTENTS).optional(),
+    title: shortText.optional(),
+    /* Required, and required to say something. US Core's must-support list for
+       this resource is barely more than the text, so a plan with an empty
+       narrative is a resource whose only content-bearing element is blank:
+       structurally valid, and empty exactly where the content belongs. */
+    narrative: longText,
+    periodStart: timestamp.optional(),
+    periodEnd: timestamp.optional(),
+    authorId: uuid.optional(),
+  })
+  .refine((value) => value.narrative.trim().length > 0, {
+    message: 'narrative must say something',
+    path: ['narrative'],
+  })
+  .refine(
+    (value) => !value.periodEnd || !value.periodStart || value.periodEnd >= value.periodStart,
+    { message: 'periodEnd must not precede periodStart', path: ['periodEnd'] }
+  );
+
 export const payerInput = z.strictObject({
   name: z.string().min(1).max(256),
   /** Trading-partner id used in the 837 NM109. */
@@ -203,6 +230,7 @@ export type PatientIdentifierInput = z.infer<typeof patientIdentifierInput>;
 export type RelatedPersonInput = z.infer<typeof relatedPersonInput>;
 export type CareTeamInput = z.infer<typeof careTeamInput>;
 export type CareTeamParticipantInput = z.infer<typeof careTeamParticipantInput>;
+export type CarePlanInput = z.infer<typeof carePlanInput>;
 export type PayerInput = z.infer<typeof payerInput>;
 export type CoverageInput = z.infer<typeof coverageInput>;
 export type ConsentGrantInput = z.infer<typeof consentGrantInput>;

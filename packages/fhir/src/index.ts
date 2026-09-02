@@ -426,3 +426,11 @@ export type {
   DomainCareTeamParticipant,
   DomainCareTeamStatus,
 } from './care-team.js';
+export type CarePlan = fhir4.CarePlan;
+export {
+  CARE_PLAN_INTENT,
+  CARE_PLAN_STATUS,
+  fromFhirCarePlan,
+  toFhirCarePlan,
+} from './care-plan.js';
+export type { DomainCarePlan, DomainCarePlanIntent, DomainCarePlanStatus } from './care-plan.js';

@@ -323,6 +323,16 @@ const FILTERS: {
     prescriberId: 'id-prescriberId',
     status: 'DRAFT',
   },
+  carePlans: {
+    page: 1,
+    pageSize: 25,
+    sort: 'createdAt',
+    order: 'desc',
+    patientId: 'id-patientId',
+    encounterId: 'id-encounterId',
+    status: 'ACTIVE',
+    ids: ['id-id'],
+  },
   careTeams: {
     page: 1,
     pageSize: 25,

@@ -6,6 +6,7 @@ import {
   toFhirCondition,
   toFhirCoverage,
   toFhirMedicationDispense,
+  toFhirCarePlan,
   toFhirCareTeam,
   toFhirProcedure,
   toFhirRelatedPerson,
@@ -30,6 +31,7 @@ import {
   type Condition,
   type Coverage,
   type MedicationDispense,
+  type CarePlan,
   type CareTeam,
   type Procedure,
   type RelatedPerson,
@@ -446,6 +448,24 @@ export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
       notDoneReason: absent(row.notDoneReason),
       note: absent(row.note),
       performedById: absent(row.performedById),
+    })
+  );
+}
+
+/** The assessment and plan, from its own row. */
+export function carePlanResource(row: ScopedRow<'CarePlan'>): CarePlan {
+  return toFhirCarePlan(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      encounterId: absent(row.encounterId),
+      status: row.status,
+      intent: row.intent,
+      title: absent(row.title),
+      narrative: row.narrative,
+      periodStart: row.periodStart?.toISOString(),
+      periodEnd: row.periodEnd?.toISOString(),
+      authorId: absent(row.authorId),
     })
   );
 }

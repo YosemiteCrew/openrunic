@@ -1,4 +1,5 @@
 import {
+  CARE_PLAN_STATUS,
   CARE_TEAM_STATUS,
   CLAIM_STATUS,
   DOCUMENT_STATUS,
@@ -44,6 +45,7 @@ import {
   provenanceResource,
   medicationDispenseResource,
   type DispensePageData,
+  carePlanResource,
   careTeamResource,
   procedureResource,
   relatedPersonResource,
@@ -772,6 +774,62 @@ async function prepareCareTeams(
   return byTeam;
 }
 
+/**
+ * The assessment and plan.
+ *
+ * `category` is advertised and answered, unusually for a parameter with one
+ * legal value. US Core requires every conforming CarePlan to carry
+ * `assess-plan`, so a client that filters on it is asking a question this
+ * server can answer exactly; leaving it out would make a conforming client's
+ * ordinary search fail, and accepting it without answering would be the failure
+ * this boundary exists to prevent.
+ */
+const carePlanModule = defineFhirResource({
+  type: 'CarePlan',
+  /*
+   * Read and search only. The assessment is a clinician's conclusion about a
+   * patient, and a plan written through an API is words the chart would then
+   * attribute to whoever it names as author.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'category', ...losslessStatus(CARE_PLAN_STATUS)],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.carePlans,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.status === undefined
+      ? {}
+      : { status: statusTokens(CARE_PLAN_STATUS, query.status, 'status')[0] }),
+    /* The one legal value, checked rather than ignored. Every plan served here
+       is an assessment and plan, so any other category matches nothing, and
+       answering it with the whole list would be the lie this rejects. */
+    ...assessPlanOnly(query.category),
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  toResource: carePlanResource,
+});
+
+/**
+ * Narrows a `category` search to the one category this server serves.
+ *
+ * A token naming `assess-plan` is a no-op, because every row already is one.
+ * Anything else has to answer with nothing, expressed as an empty id set rather
+ * than as a sentinel value: an id no row can have is a claim about ids, and the
+ * empty set is the actual statement, which is that this search matches nothing.
+ *
+ * The alternative - reading the parameter and dropping it - is the failure this
+ * boundary exists to prevent, and it is unusually well hidden here. Every
+ * conforming client sends `assess-plan`, for which the filter is a no-op, so a
+ * dropped filter looks correct in every ordinary request and answers a query
+ * for some other category with the whole list.
+ */
+function assessPlanOnly(raw: string | undefined): { ids?: readonly string[] } {
+  if (raw === undefined) return {};
+  return tokenValue(raw) === 'assess-plan' ? {} : { ids: [] };
+}
+
 const careTeamModule = defineFhirResource({
   type: 'CareTeam',
   /*
@@ -1256,6 +1314,7 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   relatedPersonModule,
   medicationDispenseModule,
   procedureModule,
+  carePlanModule,
   careTeamModule,
   questionnaireModule,
   questionnaireResponseModule,

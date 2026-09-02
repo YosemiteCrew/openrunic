@@ -201,6 +201,152 @@ describe('the procedure repository', () => {
   });
 });
 
+describe('the care plan repository', () => {
+  const PLAN = {
+    patientId: PATIENT,
+    narrative: 'Continue metformin. Recheck HbA1c in three months.',
+  };
+
+  it('creates a plan that is active and a plan, not an order', () => {
+    /* The intent default is not decoration. A receiving system treats ORDER as
+       work somebody is obliged to carry out, so a visit note defaulting to it
+       would put obligations on people who agreed to none. */
+    return harness()
+      .repos()
+      .carePlans.create(PLAN)
+      .then((row) => {
+        expect(row.status).toBe('ACTIVE');
+        expect(row.intent).toBe('PLAN');
+        expect(row.title).toBeNull();
+        expect(row.encounterId).toBeNull();
+        expect(row.authorId).toBeNull();
+      });
+  });
+
+  it('carries every optional field through', async () => {
+    const row = await harness()
+      .repos()
+      .carePlans.create({
+        ...PLAN,
+        encounterId: ENCOUNTER,
+        status: 'ON_HOLD',
+        intent: 'ORDER',
+        title: 'Diabetes management',
+        periodStart: FIXED_NOW,
+        periodEnd: LATER,
+        authorId: PROVIDER,
+      });
+
+    expect(row).toMatchObject({
+      encounterId: ENCOUNTER,
+      status: 'ON_HOLD',
+      intent: 'ORDER',
+      title: 'Diabetes management',
+      periodStart: FIXED_NOW,
+      periodEnd: LATER,
+      authorId: PROVIDER,
+    });
+  });
+
+  it('filters by patient, encounter and status', async () => {
+    const repos = harness().repos();
+    await repos.carePlans.create(PLAN);
+    await repos.carePlans.create({
+      ...PLAN,
+      patientId: testId(210),
+      encounterId: ENCOUNTER,
+      status: 'COMPLETED',
+    });
+
+    const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+    await expect(repos.carePlans.list({ ...query, patientId: PATIENT })).resolves.toMatchObject({
+      total: 1,
+    });
+    await expect(repos.carePlans.list({ ...query, encounterId: ENCOUNTER })).resolves.toMatchObject(
+      {
+        total: 1,
+      }
+    );
+    await expect(repos.carePlans.list({ ...query, status: 'COMPLETED' })).resolves.toMatchObject({
+      total: 1,
+    });
+  });
+
+  it.each(['memory', 'prisma'] as const)(
+    'answers an empty id set with nothing, which is how a category search says no (%s)',
+    async (backend) => {
+      /*
+       * The FHIR boundary reaches this: `CarePlan?category=` naming a category
+       * this server does not serve is a legitimate search with no results. An
+       * empty `in` list has to mean nothing rather than everything.
+       *
+       * Both backends, and this one earned it. With only the memory backend
+       * asked, deleting the `ids` clause from the Prisma `where` passed every
+       * test: the filter would have been advertised, honoured in tests, and
+       * ignored in production.
+       */
+      const repos = harness(backend).repos();
+      const row = await repos.carePlans.create(PLAN);
+
+      const query = { page: 1, pageSize: 25, sort: 'createdAt', order: 'asc' } as const;
+      await expect(repos.carePlans.list({ ...query, ids: [] })).resolves.toMatchObject({
+        total: 0,
+      });
+      await expect(repos.carePlans.list({ ...query, ids: [row.id] })).resolves.toMatchObject({
+        total: 1,
+      });
+    }
+  );
+
+  it.each(['memory', 'prisma'] as const)(
+    'sorts by creation in both directions (%s)',
+    async (backend) => {
+      const { dataset, repos } = harness(backend);
+      for (const [id, createdAt] of [
+        [testId(330), FIXED_NOW],
+        [testId(331), LATER],
+      ] as const) {
+        seed(dataset, 'CarePlan', {
+          ...storageColumns(id),
+          createdAt,
+          updatedAt: createdAt,
+          patientId: PATIENT,
+          encounterId: null,
+          status: 'ACTIVE',
+          intent: 'PLAN',
+          title: null,
+          narrative: 'Reassess at the next visit.',
+          periodStart: null,
+          periodEnd: null,
+          authorId: null,
+        });
+      }
+
+      const query = { page: 1, pageSize: 25, sort: 'createdAt' } as const;
+      await expect(
+        repos()
+          .carePlans.list({ ...query, order: 'desc' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(331), testId(330)]);
+      await expect(
+        repos()
+          .carePlans.list({ ...query, order: 'asc' })
+          .then((p) => p.rows.map((r) => r.id))
+      ).resolves.toEqual([testId(330), testId(331)]);
+    }
+  );
+
+  it('patches the status without rewriting the narrative', async () => {
+    const repos = harness().repos();
+    const row = await repos.carePlans.create(PLAN);
+
+    const patched = await repos.carePlans.update(row.id, { status: 'COMPLETED' });
+
+    expect(patched?.status).toBe('COMPLETED');
+    expect(patched?.narrative).toBe(PLAN.narrative);
+  });
+});
+
 describe('the care team repository', () => {
   it('creates a team that is active and unnamed, which is the ordinary one', () => {
     /* Most practices run one standing team per patient with no name and no

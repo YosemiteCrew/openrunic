@@ -207,10 +207,20 @@ RUN pnpm --filter=api --prod --legacy deploy /out
 # not an assertion - the compose smoke drill boots this image against a real
 # Postgres and reads seeded rows through this client, so a future Prisma release
 # that starts needing one of them fails the drill instead of failing a clinic.
+#
+# mysql2 must be named explicitly, not left to orphan. The prisma CLI depends
+# on it directly (it is the driver behind `prisma db` against a MySQL URL), so
+# it lives in the virtual store under its own key. Removing prisma@* deletes
+# the CLI's directory but pnpm does not garbage-collect the store, so the
+# mysql2@* directory - and the mysql_clear_password path GHSA-3f6p-5ww8-9rcr
+# reported - would otherwise survive in the published image. Naming it here is
+# what makes pnpm-workspace.yaml's "pruned from the published image" true.
+# @openrunic/api never opens a MySQL connection, so deleting it changes nothing
+# the runtime reaches.
 WORKDIR /out/node_modules/.pnpm
 RUN rm -rf prisma@* @prisma+studio-core@* @prisma+dev@* @prisma+engines@* \
            @prisma+get-platform@* @electric-sql+pglite@* effect@* elkjs@* \
-           typescript@* react-dom@* react@*
+           typescript@* react-dom@* react@* mysql2@*
 
 WORKDIR /out
 RUN find node_modules -name '*.d.ts' -delete \

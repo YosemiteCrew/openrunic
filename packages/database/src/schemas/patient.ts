@@ -266,6 +266,17 @@ export const deviceInput = z
       value.expirationDate >= value.manufactureDate,
     { message: 'expirationDate must not precede manufactureDate', path: ['expirationDate'] }
   );
+export const breakGlassGrantInput = z
+  .strictObject({
+    userId: uuid,
+    patientId: uuid,
+    reason: shortText,
+    expiresAt: timestamp,
+  })
+  .refine((value) => value.reason.trim().length > 0, {
+    message: 'reason must say why',
+    path: ['reason'],
+  });
 
 export const payerInput = z.strictObject({
   name: z.string().min(1).max(256),
@@ -331,6 +342,7 @@ export type CareTeamParticipantInput = z.infer<typeof careTeamParticipantInput>;
 export type CarePlanInput = z.infer<typeof carePlanInput>;
 export type GoalInput = z.infer<typeof goalInput>;
 export type DeviceInput = z.infer<typeof deviceInput>;
+export type BreakGlassGrantInput = z.infer<typeof breakGlassGrantInput>;
 export type PayerInput = z.infer<typeof payerInput>;
 export type CoverageInput = z.infer<typeof coverageInput>;
 export type ConsentGrantInput = z.infer<typeof consentGrantInput>;

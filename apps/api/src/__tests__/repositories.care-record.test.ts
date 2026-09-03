@@ -12,7 +12,14 @@ import type { RepositoryRegistry, Repositories } from '../repositories/types.js'
 
 import { createFakePort } from './fake-port.js';
 
-import { DEMO_TENANT_A, FIXED_NOW, seed, storageColumns, testId } from './support.js';
+import {
+  DEMO_FACILITY_A,
+  DEMO_TENANT_A,
+  FIXED_NOW,
+  seed,
+  storageColumns,
+  testId,
+} from './support.js';
 
 /**
  * The two collections behind the record of care given: procedures, and the
@@ -918,4 +925,59 @@ describe('the care team participant repository', () => {
     expect(patched?.roleText).toBe('Internal medicine');
     expect(patched?.memberUserId).toBe(PROVIDER);
   });
+});
+
+describe('excluding a withdrawn state', () => {
+  /*
+   * `excludeStatuses` exists for the care-relationship check, which needs "any
+   * encounter that still counts" and cannot say that with a scalar status.
+   *
+   * Both backends, because they express it differently - `matches` walks the
+   * list and `where` emits a Prisma `notIn` - and the port-agreement suite
+   * cannot tell them apart here: its fixture sets a scalar status too, and an
+   * `equals` already pins the row, so ignoring the exclusion changes no answer
+   * there. This is the query shape that distinguishes them.
+   */
+  it.each(['memory', 'prisma'] as const)(
+    'leaves out an encounter declared never to have happened (%s)',
+    async (backend) => {
+      const { dataset, repos } = harness(backend);
+      for (const [id, status] of [
+        [testId(910), 'COMPLETED'],
+        [testId(911), 'ENTERED_IN_ERROR'],
+      ] as const) {
+        seed(dataset, 'Encounter', {
+          ...storageColumns(id),
+          facilityId: DEMO_FACILITY_A,
+          patientId: PATIENT,
+          providerId: PROVIDER,
+          appointmentId: null,
+          class: 'AMBULATORY',
+          status,
+          reasonCode: 'R51',
+          reasonText: 'Headache',
+          startedAt: FIXED_NOW,
+          endedAt: null,
+          signedAt: null,
+          signedById: null,
+        });
+      }
+
+      const query = { page: 1, pageSize: 25, sort: 'startedAt', order: 'asc' } as const;
+      await expect(
+        repos()
+          .encounters.list({ ...query, patientId: PATIENT })
+          .then((page) => page.total)
+      ).resolves.toBe(2);
+      await expect(
+        repos()
+          .encounters.list({
+            ...query,
+            patientId: PATIENT,
+            excludeStatuses: ['ENTERED_IN_ERROR'],
+          })
+          .then((page) => page.rows.map((row) => row.id))
+      ).resolves.toEqual([testId(910)]);
+    }
+  );
 });

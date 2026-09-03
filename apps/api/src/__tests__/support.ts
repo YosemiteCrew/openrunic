@@ -146,6 +146,80 @@ export function makePatientRow(overrides: Partial<PatientRow> = {}): PatientRow 
   };
 }
 
+/**
+ * The subjects of the static dev principals, so a fixture can name one.
+ *
+ * A care relationship is between a person and a patient, so a test that needs
+ * one has to seed a row naming the same user the token resolves to. Restating
+ * the uuid at each call site is how a fixture drifts from the token it is meant
+ * to match, and drift here does not fail loudly: the relationship simply is not
+ * found and the read is a 404 that looks like a missing row.
+ */
+export const SUBJECTS = {
+  clinicianA: '01890000-0000-7000-8000-000000000101',
+  frontDeskA: '01890000-0000-7000-8000-000000000102',
+  billerA: '01890000-0000-7000-8000-000000000103',
+} as const;
+
+/**
+ * Gives a principal a reason to be allowed to open a chart.
+ *
+ * Seeds the cheapest relationship there is: an encounter naming this provider
+ * and this patient. Most tests that read a chart are about something else -
+ * a date format, a DTO shape, an audit record - and were written when holding
+ * `patient.read` was enough. They now need a relationship, and this says so in
+ * one line rather than restating an encounter row in each of them.
+ */
+export function seedCareRelationship(
+  dataset: MemoryDataset,
+  options: {
+    patientId: string;
+    providerId: string;
+    facilityId?: string;
+    id?: string;
+    /**
+     * Seed the relationship as a booked appointment rather than an encounter.
+     *
+     * For a test whose subject is a document or a summary that has an
+     * encounters section: an encounter seeded only to authorise the read would
+     * show up in the thing under test and change what it asserts. An
+     * appointment satisfies the same relationship source and appears in
+     * nothing.
+     */
+    as?: 'encounter' | 'appointment';
+  }
+): void {
+  if (options.as === 'appointment') {
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        id: options.id ?? testId(8_001),
+        patientId: options.patientId,
+        providerId: options.providerId,
+        facilityId: options.facilityId ?? DEMO_FACILITY_A,
+      })
+    );
+    return;
+  }
+
+  seed(dataset, 'Encounter', {
+    ...storageColumns(options.id ?? testId(8_000)),
+    facilityId: options.facilityId ?? DEMO_FACILITY_A,
+    patientId: options.patientId,
+    providerId: options.providerId,
+    appointmentId: null,
+    class: 'AMBULATORY',
+    status: 'COMPLETED',
+    reasonCode: 'Z00.00',
+    reasonText: 'Established relationship',
+    startedAt: FIXED_NOW,
+    endedAt: null,
+    signedAt: null,
+    signedById: null,
+  });
+}
+
 export function makeAppointmentRow(overrides: Partial<AppointmentRow> = {}): AppointmentRow {
   return {
     id: testId(101),

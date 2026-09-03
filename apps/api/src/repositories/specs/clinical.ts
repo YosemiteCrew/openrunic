@@ -20,6 +20,7 @@ import type {
 import {
   inWindow,
   jsonColumn,
+  statusFilter,
   windowFilter,
   type BaseQuery,
   type CollectionSpec,
@@ -168,6 +169,17 @@ export interface EncounterListQuery extends BaseQuery {
   facilityId?: string;
   providerId?: string;
   status?: EncounterStatus;
+  /**
+   * States to leave out, rather than the one state to keep.
+   *
+   * Added for the care-relationship check, which needs "any encounter that
+   * still counts" and cannot say that with a scalar. This schema retains a
+   * correction as `ENTERED_IN_ERROR` instead of deleting the row, so a visit
+   * explicitly declared never to have happened is still a row, and a source
+   * that counted it would grant access on the strength of a mistake somebody
+   * already withdrew.
+   */
+  excludeStatuses?: readonly EncounterStatus[];
   /** Inclusive lower bound on `startedAt`. */
   from?: Date;
   /** Exclusive upper bound on `startedAt`. */
@@ -256,6 +268,7 @@ export const encounterSpec: CollectionSpec<
     if (query.facilityId !== undefined && row.facilityId !== query.facilityId) return false;
     if (query.providerId !== undefined && row.providerId !== query.providerId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (query.excludeStatuses?.includes(row.status) === true) return false;
     return inWindow(row.startedAt, query.from, query.to);
   },
 
@@ -265,7 +278,11 @@ export const encounterSpec: CollectionSpec<
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.providerId === undefined ? {} : { providerId: query.providerId }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      /* One `status` key, not two spreads. Written as two, the second silently
+         overwrote the first and a query naming both a status and an exclusion
+         lost the status entirely - which the port-agreement suite caught,
+         because `matches` still honoured both. */
+      ...statusFilter(query.status, query.excludeStatuses),
       ...(startedAt === undefined ? {} : { startedAt }),
     };
   },
@@ -1481,6 +1498,16 @@ export interface CareTeamParticipantListQuery extends BaseQuery {
   careTeamId?: string;
   careTeamIds?: readonly string[];
   memberUserId?: string;
+  /**
+   * The chart, denormalised onto the row for the compartment rule and useful
+   * here for the same reason it exists there.
+   *
+   * Added because the authorisation check needed it and could not have it: with
+   * no filter to narrow on, "is this reader on this patient's team" had to list
+   * the reader's memberships and compare in memory, which examined only the
+   * page it asked for. A clinician on two teams was refused the older one.
+   */
+  patientId?: string;
   sort: 'createdAt';
 }
 
@@ -1565,6 +1592,7 @@ export const careTeamParticipantSpec: CollectionSpec<
   matches(row: ScopedRow<'CareTeamParticipant'>, query: CareTeamParticipantListQuery): boolean {
     const wanted = careTeamParticipantTeams(query);
     if (wanted !== undefined && !wanted.includes(row.careTeamId)) return false;
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     return query.memberUserId === undefined || row.memberUserId === query.memberUserId;
   },
 
@@ -1572,6 +1600,7 @@ export const careTeamParticipantSpec: CollectionSpec<
     const wanted = careTeamParticipantTeams(query);
     return {
       ...(wanted === undefined ? {} : { careTeamId: { in: [...wanted] } }),
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.memberUserId === undefined ? {} : { memberUserId: query.memberUserId }),
     };
   },

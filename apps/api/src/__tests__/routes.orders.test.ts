@@ -234,6 +234,7 @@ function makeTaskRow(overrides: Partial<TaskRow> = {}): TaskRow {
     assigneeType: 'USER',
     assigneeUserId: CLINICIAN,
     assigneeTeamKey: null,
+    assignedById: null,
     dueAt: EARLY,
     slaState: 'OK',
     expiresAt: null,

@@ -16,6 +16,21 @@
 export const PERMISSIONS = [
   'patient.read',
   'patient.write',
+  /**
+   * Taking deliberate access to a chart you have no relationship with.
+   *
+   * Separate from `patient.read` on purpose, and the separation is the control.
+   * Gating break-glass on the permission it defeats makes it self-service: every
+   * role that may read a chart could grant itself every chart, and the only
+   * thing standing in the way would be the audit record, which is detection
+   * rather than prevention.
+   *
+   * Note it does not end in `.read`, so the `read-only` bundle below - which is
+   * computed as every `.read` permission - does not pick it up. That is
+   * deliberate: an account that may only look at things must not be able to
+   * decide what it may look at.
+   */
+  'patient.breakGlass',
   'appointment.read',
   'appointment.write',
   'encounter.read',
@@ -97,6 +112,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
   clinician: [
     'patient.read',
     'patient.write',
+    /* The role that meets the patient nobody has a record for. Break-glass is
+       for the emergency in front of you, so it belongs to the people who are in
+       front of it. */
+    'patient.breakGlass',
     'appointment.read',
     'appointment.write',
     'encounter.read',
@@ -127,6 +146,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
   'front-desk': [
     'patient.read',
     'patient.write',
+    /* Reception meets the collapse in the waiting room before any clinician
+       does, and is the one registering the patient nobody has a record for. */
+    'patient.breakGlass',
     'appointment.read',
     'appointment.write',
     'encounter.read',

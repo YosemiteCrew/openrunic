@@ -1,4 +1,5 @@
 import type {
+  BreakGlassGrantInput,
   AppointmentCreateInput,
   PatientCreateInput,
   PatientUpdateInput,
@@ -12,6 +13,7 @@ import {
   equalsIfSet,
   inWindow,
   jsonColumn,
+  statusFilter,
   likeContains,
   likeStartsWith,
   matchesIfSet,
@@ -256,6 +258,15 @@ export interface AppointmentListQuery extends BaseQuery {
   providerId?: string;
   patientId?: string;
   status?: AppointmentStatus;
+  /**
+   * States to leave out, rather than the one state to keep.
+   *
+   * Same reason as the encounter query: the care-relationship check needs "any
+   * booking that still counts", and a cancelled or entered-in-error slot is a
+   * row that says the opposite. Granting chart access on a booking somebody
+   * withdrew is granting it on a mistake.
+   */
+  excludeStatuses?: readonly AppointmentStatus[];
   /** Inclusive lower bound on `start`. */
   from?: Date;
   /** Exclusive upper bound on `start`. */
@@ -335,6 +346,7 @@ export const appointmentSpec: CollectionSpec<
     if (query.providerId !== undefined && row.providerId !== query.providerId) return false;
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (query.excludeStatuses?.includes(row.status) === true) return false;
     if (query.from !== undefined && row.start.getTime() < query.from.getTime()) return false;
     return query.to === undefined || row.start.getTime() < query.to.getTime();
   },
@@ -346,7 +358,11 @@ export const appointmentSpec: CollectionSpec<
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.providerId === undefined ? {} : { providerId: query.providerId }),
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      /* One `status` key, not two spreads. Written as two, the second silently
+         overwrote the first and a query naming both a status and an exclusion
+         lost the status entirely - which the port-agreement suite caught,
+         because `matches` still honoured both. */
+      ...statusFilter(query.status, query.excludeStatuses),
       ...(start === undefined ? {} : { start }),
     };
   },
@@ -571,9 +587,123 @@ export const relatedPersonSpec: CollectionSpec<
   },
 };
 
+export interface BreakGlassGrantListQuery extends BaseQuery {
+  userId?: string;
+  patientId?: string;
+  /** Grants still in force at this instant. */
+  unexpiredAt?: Date;
+  /**
+   * Grants declared since this instant, whatever became of them.
+   *
+   * Deliberately not `unexpiredAt`. The caller chooses the expiry, so a count
+   * of what is still in force is a count the caller can drain at will; this one
+   * asks how many declarations were made, which is the number a reviewer means
+   * and the one a short window cannot reduce.
+   */
+  grantedSince?: Date;
+  sort: 'grantedAt' | 'createdAt';
+}
+
+/**
+ * Break-glass grants: deliberate access to a chart the reader has no
+ * relationship with.
+ *
+ * Compartment-open, and that needs saying. A patient-scoped principal reading
+ * this table sees only their own tenant's rows and only through a query
+ * somebody wrote; there is no route that exposes it to the portal, and the
+ * authorisation check that reads it runs for staff principals. Marking it
+ * closed would refuse the check itself for a portal principal, which is the
+ * wrong failure: a patient reading their own chart has a relationship the
+ * compartment already expresses and never needs a grant.
+ *
+ * There is no patch: a grant is a statement about a moment, and editing the
+ * reason afterwards is exactly what the record exists to prevent. It expires on
+ * its own.
+ */
+export const breakGlassGrantSpec: CollectionSpec<
+  'BreakGlassGrant',
+  BreakGlassGrantInput,
+  never,
+  BreakGlassGrantListQuery
+> = {
+  model: 'BreakGlassGrant',
+  targetType: 'BreakGlassGrant',
+  action: 'breakGlass',
+  /* Audit metadata, not narrowing. Without it the `breakGlass.created` event
+     names no patient, so "who broke glass on this chart" - the question the
+     `(tenantId, patientId, grantedAt)` index was added for - finds nothing in
+     the audit trail. The compartment below is what decides who may read the
+     table. */
+  patientColumn: 'patientId',
+  compartment: 'open',
+
+  newRow(input: BreakGlassGrantInput, context): Writable<'BreakGlassGrant'> {
+    return {
+      userId: input.userId,
+      patientId: input.patientId,
+      reason: input.reason,
+      grantedAt: context.now,
+      expiresAt: input.expiresAt,
+    };
+  },
+
+  patchData(): Partial<Writable<'BreakGlassGrant'>> {
+    return {};
+  },
+
+  /**
+   * The stated reason, on the audit event as well as on the row.
+   *
+   * Without this the generic writer records only which columns were written,
+   * and the reason lives on a table with no read route at all - so the review
+   * surface that is supposed to make emergency access answerable could tell you
+   * that somebody broke glass and not why. The reason is the whole control; it
+   * belongs where the reviewer is looking.
+   *
+   * The window goes with it, because "for four hours" and "for four minutes"
+   * are different declarations and the event should say which was made.
+   */
+  writeMetadata(row: ScopedRow<'BreakGlassGrant'>): Record<string, unknown> {
+    return {
+      reason: row.reason,
+      grantedAt: row.grantedAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+    };
+  },
+
+  matches(row: ScopedRow<'BreakGlassGrant'>, query: BreakGlassGrantListQuery): boolean {
+    if (query.userId !== undefined && row.userId !== query.userId) return false;
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    /* Strictly after: a grant that expires at this instant has expired. The
+       alternative rounds a window open by however coarse the clock is. */
+    if (query.unexpiredAt !== undefined && row.expiresAt <= query.unexpiredAt) return false;
+    return query.grantedSince === undefined || row.grantedAt > query.grantedSince;
+  },
+
+  where(query: BreakGlassGrantListQuery) {
+    return {
+      ...(query.userId === undefined ? {} : { userId: query.userId }),
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.unexpiredAt === undefined ? {} : { expiresAt: { gt: query.unexpiredAt } }),
+      ...(query.grantedSince === undefined ? {} : { grantedAt: { gt: query.grantedSince } }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'BreakGlassGrant'>, sort: BreakGlassGrantListQuery['sort']): number {
+    return sort === 'createdAt' ? row.createdAt.getTime() : row.grantedAt.getTime();
+  },
+
+  orderBy(query: BreakGlassGrantListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ grantedAt: order }, { id: 'asc' as const }];
+  },
+};
+
 export const coreSpecs = {
   patients: patientSpec,
   relatedPersons: relatedPersonSpec,
   appointments: appointmentSpec,
   telehealthVisits: telehealthVisitSpec,
+  breakGlassGrants: breakGlassGrantSpec,
 } as const;

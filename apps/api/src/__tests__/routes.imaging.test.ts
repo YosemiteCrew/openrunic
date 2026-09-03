@@ -9,6 +9,8 @@ import {
   jsonBearer,
   makePatientRow,
   seed,
+  seedCareRelationship,
+  SUBJECTS,
   storageColumns,
   testId,
   TOKENS,
@@ -51,6 +53,14 @@ function studyRow(overrides: Record<string, unknown> = {}) {
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+  /* The addressed FHIR read is gated by a care relationship, like every other
+     resource that names a chart. These tests are about the study, so it is a
+     fixture; `fhir.chart-gate.test.ts` is where the rule itself is asserted. */
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: SUBJECTS.clinicianA,
+    as: 'appointment',
+  });
   seed(created.dataset, 'ImagingStudy', studyRow());
   return created;
 }

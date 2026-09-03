@@ -98,7 +98,7 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { idParamSchema, repositories, required } from './helpers.js';
+import { attributedTo, idParamSchema, repositories, required } from './helpers.js';
 
 /**
  * Orders, results, documents, the typed inbox and messaging.
@@ -404,8 +404,19 @@ function crudModules(): CrudModule[] {
         'One work engine; the streams are `type` filters rather than separate systems. A personal inbox is `assigneeUserId` plus `status=OPEN`, sorted by `dueAt` ascending, so a task with no due date sorts last rather than first.',
       createSchema: taskInput,
       toCreate: (body) => body,
+      /* Who handed the work out, from the token rather than the body. The
+         care-relationship check reads this column, so a caller that could name
+         itself here could file a task about any patient in the tenant, assign
+         it to itself, and open the chart. */
+      stampCreate: (input, c) => ({ ...input, assignedById: attributedTo(c) }),
       patchSchema: taskPatchSchema,
       toPatch: toTaskPatchInput,
+      /* A reassignment is a fresh statement of who handed the work out. Without
+         re-stamping it, pointing somebody else's task at yourself would inherit
+         their provenance along with the task. Only a move restamps: an
+         amendment that leaves the assignee alone leaves the assigner alone. */
+      stampPatch: (patch, c) =>
+        patch.assigneeUserId === undefined ? patch : { ...patch, assignedById: attributedTo(c) },
       dtoSchema: taskDtoSchema,
       toDto: toTaskDto,
       writeResponses: [

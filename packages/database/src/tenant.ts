@@ -58,6 +58,7 @@ export const TENANT_SCOPED_MODELS = [
   'CarePlan',
   'Goal',
   'Device',
+  'BreakGlassGrant',
   'CareTeamParticipant',
   'MedicationStatement',
   'MedicationRequest',

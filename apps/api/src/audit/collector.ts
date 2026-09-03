@@ -114,7 +114,13 @@ export class AuditCollector {
       ...(this.context.purposeOfUse === undefined
         ? {}
         : { purposeOfUse: this.context.purposeOfUse }),
-      ...(this.context.breakglass === undefined ? {} : { breakglass: this.context.breakglass }),
+      /* The entry wins over the request context. A request is not usually
+         break-glass as a whole; one read inside it is, and the flag is what the
+         compliance query filters on, so the event that was the emergency has to
+         be the event that carries it. */
+      ...((entry.breakglass ?? this.context.breakglass) === undefined
+        ? {}
+        : { breakglass: entry.breakglass ?? this.context.breakglass }),
       outcome: entry.outcome ?? 'success',
       metadata: { requestId, method, path, ...entry.metadata },
     };

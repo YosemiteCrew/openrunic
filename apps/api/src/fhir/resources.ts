@@ -208,6 +208,10 @@ function patientFilter(raw: string | undefined): { patientId?: string } {
 
 const patientModule = defineFhirResource({
   type: 'Patient',
+  /* The chart is the patient. Every other resource that names one has its own
+     id, and gating those is the same question with a different mapping; this is
+     the one where knowing the id is knowing the chart. */
+  chartFrom: 'patients',
   interactions: ['read', 'search-type', 'create'],
   params: ['_id', 'identifier', 'name', 'family', 'given', 'birthdate', 'gender'],
   permission: 'patient.read',
@@ -546,6 +550,7 @@ const locationModule = defineFhirResource({
 
 const coverageModule = defineFhirResource({
   type: 'Coverage',
+  chartFrom: 'coverages',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'coverage.read',
@@ -582,6 +587,7 @@ const coverageModule = defineFhirResource({
  */
 const medicationDispenseModule = defineFhirResource({
   type: 'MedicationDispense',
+  chartFrom: 'stockPostings',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'order.read',
@@ -696,6 +702,7 @@ const questionnaireModule = defineFhirResource({
  */
 const questionnaireResponseModule = defineFhirResource({
   type: 'QuestionnaireResponse',
+  chartFrom: 'formSubmissions',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'form.read',
@@ -731,6 +738,7 @@ const questionnaireResponseModule = defineFhirResource({
  */
 const procedureModule = defineFhirResource({
   type: 'Procedure',
+  chartFrom: 'procedures',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'encounter.read',
@@ -824,6 +832,7 @@ async function prepareCareTeams(
  */
 const goalModule = defineFhirResource({
   type: 'Goal',
+  chartFrom: 'goals',
   interactions: ['read', 'search-type'],
   params: ['patient', 'target-date', ...goalLifecycleParam()],
   permission: 'encounter.read',
@@ -873,6 +882,7 @@ function goalLifecycleParam(): string[] {
  */
 const deviceModule = defineFhirResource({
   type: 'Device',
+  chartFrom: 'devices',
   /*
    * Read and search only. A device is recorded where it was implanted, and one
    * written through an API is an implant nobody performed.
@@ -896,6 +906,7 @@ const deviceModule = defineFhirResource({
 
 const carePlanModule = defineFhirResource({
   type: 'CarePlan',
+  chartFrom: 'carePlans',
   /*
    * Read and search only. The assessment is a clinician's conclusion about a
    * patient, and a plan written through an API is words the chart would then
@@ -945,6 +956,7 @@ function assessPlanOnly(raw: string | undefined): { ids?: readonly string[] } {
 
 const careTeamModule = defineFhirResource({
   type: 'CareTeam',
+  chartFrom: 'careTeams',
   /*
    * Read and search only. Membership is decided in the practice, by the people
    * who take responsibility for a patient, and a client adding itself to a team
@@ -970,6 +982,7 @@ const careTeamModule = defineFhirResource({
 
 const relatedPersonModule = defineFhirResource({
   type: 'RelatedPerson',
+  chartFrom: 'relatedPersons',
   /*
    * Read and search only. These rows are created during registration, and a
    * guardian written by any client holding a token is a consent decision made
@@ -998,6 +1011,7 @@ const relatedPersonModule = defineFhirResource({
 
 const appointmentModule = defineFhirResource({
   type: 'Appointment',
+  chartFrom: 'appointments',
   interactions: ['read', 'search-type'],
   params: ['_id', 'patient', 'date', 'practitioner', 'location'],
   permission: 'appointment.read',
@@ -1021,6 +1035,7 @@ const appointmentModule = defineFhirResource({
 
 const encounterModule = defineFhirResource({
   type: 'Encounter',
+  chartFrom: 'encounters',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'encounter.read',
@@ -1037,6 +1052,7 @@ const encounterModule = defineFhirResource({
 
 const conditionModule = defineFhirResource({
   type: 'Condition',
+  chartFrom: 'problems',
   interactions: ['read', 'search-type'],
   params: ['patient', 'code'],
   permission: 'encounter.read',
@@ -1053,6 +1069,7 @@ const conditionModule = defineFhirResource({
 
 const medicationRequestModule = defineFhirResource({
   type: 'MedicationRequest',
+  chartFrom: 'prescriptions',
   interactions: ['read', 'search-type'],
   params: ['patient', 'encounter', ...losslessStatus(MEDICATION_REQUEST_STATUS)],
   permission: 'encounter.read',
@@ -1074,6 +1091,7 @@ const medicationRequestModule = defineFhirResource({
 
 const medicationStatementModule = defineFhirResource({
   type: 'MedicationStatement',
+  chartFrom: 'medicationStatements',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'encounter.read',
@@ -1089,6 +1107,7 @@ const medicationStatementModule = defineFhirResource({
 
 const allergyModule = defineFhirResource({
   type: 'AllergyIntolerance',
+  chartFrom: 'allergies',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'encounter.read',
@@ -1104,6 +1123,7 @@ const allergyModule = defineFhirResource({
 
 const immunizationModule = defineFhirResource({
   type: 'Immunization',
+  chartFrom: 'immunisations',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'encounter.read',
@@ -1120,6 +1140,7 @@ const immunizationModule = defineFhirResource({
 
 const observationModule = defineFhirResource({
   type: 'Observation',
+  chartFrom: 'observations',
   interactions: ['read', 'search-type'],
   params: ['patient', 'code', 'date', ...losslessStatus(OBSERVATION_STATUS)],
   permission: 'encounter.read',
@@ -1140,6 +1161,7 @@ const observationModule = defineFhirResource({
 
 const diagnosticReportModule = defineFhirResource({
   type: 'DiagnosticReport',
+  chartFrom: 'reports',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'result.read',
@@ -1172,6 +1194,7 @@ const diagnosticReportModule = defineFhirResource({
 
 const serviceRequestModule = defineFhirResource({
   type: 'ServiceRequest',
+  chartFrom: 'orders',
   interactions: ['read', 'search-type'],
   params: ['patient', 'authored', ...losslessStatus(SERVICE_REQUEST_STATUS)],
   permission: 'order.read',
@@ -1191,6 +1214,7 @@ const serviceRequestModule = defineFhirResource({
 
 const specimenModule = defineFhirResource({
   type: 'Specimen',
+  chartFrom: 'specimens',
   interactions: ['read', 'search-type'],
   params: ['patient', 'accession'],
   permission: 'order.read',
@@ -1214,6 +1238,7 @@ const specimenModule = defineFhirResource({
  */
 const imagingStudyModule = defineFhirResource({
   type: 'ImagingStudy',
+  chartFrom: 'imagingStudies',
   interactions: ['read', 'search-type'],
   params: ['patient', 'accession', 'date'],
   permission: 'result.read',
@@ -1231,6 +1256,7 @@ const imagingStudyModule = defineFhirResource({
 
 const documentReferenceModule = defineFhirResource({
   type: 'DocumentReference',
+  chartFrom: 'documents',
   interactions: ['read', 'search-type'],
   params: ['patient', 'category', 'date', ...losslessStatus(DOCUMENT_STATUS)],
   permission: 'document.read',
@@ -1251,6 +1277,7 @@ const documentReferenceModule = defineFhirResource({
 
 const taskModule = defineFhirResource({
   type: 'Task',
+  chartFrom: 'tasks',
   interactions: ['read', 'search-type'],
   params: ['patient', ...losslessStatus(TASK_STATUS)],
   permission: 'task.read',
@@ -1380,6 +1407,7 @@ function billerFor(
 
 const claimModule = defineFhirResource({
   type: 'Claim',
+  chartFrom: 'claims',
   interactions: ['read', 'search-type'],
   params: ['patient', 'status', 'created'],
   permission: 'claim.read',

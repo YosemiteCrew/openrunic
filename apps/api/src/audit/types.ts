@@ -33,6 +33,16 @@ export interface AuditWriteEntry {
   facilityId?: string;
   encounterId?: string;
   outcome?: 'success' | 'failure';
+  /**
+   * Whether this particular access was taken under break-glass.
+   *
+   * The request context carries the same flag, and that is the usual source:
+   * the whole request was declared emergency access. This is for the case the
+   * context cannot express, where one event inside an ordinary request is the
+   * emergency one - a chart opened on the strength of a grant while everything
+   * else the request did was routine. Set here, it wins over the context.
+   */
+  breakglass?: boolean;
   metadata?: Record<string, unknown>;
 }
 

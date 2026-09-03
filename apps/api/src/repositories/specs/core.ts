@@ -257,6 +257,15 @@ export interface AppointmentListQuery extends BaseQuery {
   providerId?: string;
   patientId?: string;
   status?: AppointmentStatus;
+  /**
+   * States to leave out, rather than the one state to keep.
+   *
+   * Same reason as the encounter query: the care-relationship check needs "any
+   * booking that still counts", and a cancelled or entered-in-error slot is a
+   * row that says the opposite. Granting chart access on a booking somebody
+   * withdrew is granting it on a mistake.
+   */
+  excludeStatuses?: readonly AppointmentStatus[];
   /** Inclusive lower bound on `start`. */
   from?: Date;
   /** Exclusive upper bound on `start`. */
@@ -276,6 +285,28 @@ export interface AppointmentUpdateInput {
   providerId?: string;
   typeCode?: string;
   typeDisplay?: string;
+}
+
+/**
+ * A `status` filter built from a scalar, an exclusion, or both.
+ *
+ * One key, because Prisma takes one condition object per column and two object
+ * spreads naming `status` do not merge - the second replaces the first. Written
+ * that way the exclusion silently dropped the scalar, so a query for "booked,
+ * and not withdrawn" answered "not withdrawn", while `matches` honoured both
+ * and the two implementations disagreed.
+ */
+function statusFilter<T extends string>(
+  status: T | undefined,
+  excluded: readonly T[] | undefined
+): { status?: { equals?: T; notIn?: T[] } } {
+  if (status === undefined && excluded === undefined) return {};
+  return {
+    status: {
+      ...(status === undefined ? {} : { equals: status }),
+      ...(excluded === undefined ? {} : { notIn: [...excluded] }),
+    },
+  };
 }
 
 export const appointmentSpec: CollectionSpec<
@@ -336,6 +367,7 @@ export const appointmentSpec: CollectionSpec<
     if (query.providerId !== undefined && row.providerId !== query.providerId) return false;
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (query.excludeStatuses?.includes(row.status) === true) return false;
     if (query.from !== undefined && row.start.getTime() < query.from.getTime()) return false;
     return query.to === undefined || row.start.getTime() < query.to.getTime();
   },
@@ -347,7 +379,11 @@ export const appointmentSpec: CollectionSpec<
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.providerId === undefined ? {} : { providerId: query.providerId }),
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      /* One `status` key, not two spreads. Written as two, the second silently
+         overwrote the first and a query naming both a status and an exclusion
+         lost the status entirely - which the port-agreement suite caught,
+         because `matches` still honoured both. */
+      ...statusFilter(query.status, query.excludeStatuses),
       ...(start === undefined ? {} : { start }),
     };
   },
@@ -625,6 +661,26 @@ export const breakGlassGrantSpec: CollectionSpec<
 
   patchData(): Partial<Writable<'BreakGlassGrant'>> {
     return {};
+  },
+
+  /**
+   * The stated reason, on the audit event as well as on the row.
+   *
+   * Without this the generic writer records only which columns were written,
+   * and the reason lives on a table with no read route at all - so the review
+   * surface that is supposed to make emergency access answerable could tell you
+   * that somebody broke glass and not why. The reason is the whole control; it
+   * belongs where the reviewer is looking.
+   *
+   * The window goes with it, because "for four hours" and "for four minutes"
+   * are different declarations and the event should say which was made.
+   */
+  writeMetadata(row: ScopedRow<'BreakGlassGrant'>): Record<string, unknown> {
+    return {
+      reason: row.reason,
+      grantedAt: row.grantedAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+    };
   },
 
   matches(row: ScopedRow<'BreakGlassGrant'>, query: BreakGlassGrantListQuery): boolean {

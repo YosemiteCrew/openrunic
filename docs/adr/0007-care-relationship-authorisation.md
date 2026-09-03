@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted, with the amendments recorded under "What was built" below.
 
 ## Date
 
@@ -156,6 +156,86 @@ two drifting apart on this question.
 - **It is not portable to every deployment.** A single-site clinic where everybody sees everybody
   gains friction and no safety. The facility grant covers most of it; the rest is configuration,
   and a deployment that turns it off should have to say so.
+
+## What was built
+
+Implemented in #247, which closes #169. Three of the five decisions above landed as written. Two
+did not, and this section says so rather than leaving the ADR describing a system that does not
+exist.
+
+### Kept as decided
+
+**Registration and duplicate-search are exempt by shape.** An addressed read is gated; a search
+that describes a patient is not. `_id`, `identifier` and `patient` name one chart and are gated with
+the read, because `Condition?patient=Patient/{id}` is the chart's problem list however it is
+spelled. Searching by name and birth date is untouched.
+
+What decision 3 also asked for and did not land: the duplicate-search projection is still the full
+resource rather than a match result of name, birth date and MRN. The exemption is therefore wider
+than the ADR intended, and narrowing it is outstanding.
+
+**Break-glass is the only way past a refusal, and it costs something.** A reason, recorded on both
+the row and the audit event; a window that expires; a ceiling of ten charts held open at once,
+enforced by a database trigger under a per-user advisory lock rather than by the handler alone,
+because the handler's check-and-write is defeated by two requests arriving together.
+
+It costs more than the ADR said it would. It needs its own permission, `patient.breakGlass`, which
+the read-only bundle does not hold: gating a privilege-granting route on the privilege it grants
+makes it self-service, and the seeded `read-only` role could otherwise have taken every chart in the
+tenant one request at a time.
+
+**One function, both surfaces.** `findCareRelationship` is the only answer, and
+`policy.care-relationship.test.ts` runs every case against the BFF and the FHIR boundary from one
+table, because #139 is the recorded instance of those two drifting apart on this question.
+
+### Amended
+
+**The relationship is derived on every read, not written to a `CareRelationship` table.**
+Decision 1 called for a row written by the events that create one. The implementation computes the
+answer from those same rows instead.
+
+The reason is the failure mode, not the cost. A materialised relationship is only as good as every
+write path that maintains it, and a path that forgets does not fail loudly: it locks a clinician
+out of a chart they are treating, at the moment they need it. Derivation cannot go stale. The price
+is a handful of indexed lookups on a chart open, which is not a hot loop, and the expiry the ADR
+wanted becomes a property of the evidence rather than a configured interval - a membership with a
+closed period stops counting, a withdrawn encounter never counted.
+
+**The check is called by the seam, not inherited from the repository layer.**
+Decision 5 said the rule should live beside the compartment, where a new route cannot forget it,
+and gave the reason plainly: "not in middleware that a new route can forget to apply".
+
+It landed as a call the handler makes, and the ADR was right. Inside the pull request that
+introduced it, two routes forgot: `/patients/:id/ccd` and `/patients/:id/growth` both took the same
+id and returned more of the chart than the gated read. Both were found in review rather than by
+anything failing.
+
+What stands in for the ADR's property, for now, is enumeration rather than inheritance.
+`bff.chart-routes.test.ts` walks the route files and requires every `/patients/:id/...` path to
+call the check or name itself in an exemption list with a reason. `fhir.chart-gate.test.ts` does
+the same for the FHIR surface, requiring every module whose collection declares a patient column to
+declare where its chart comes from.
+
+That gets the property - a new route cannot quietly skip the check - without the move. It does not
+get the ADR's stronger version, where the check is structurally impossible to skip because it lives
+under the data access rather than above it. Moving it there remains the better answer and is not
+done.
+
+### The evidence table, as implemented
+
+| Source              | Evidence                                                    |
+| ------------------- | ----------------------------------------------------------- |
+| `own-record`        | the token's own compartment                                 |
+| `break-glass`       | an unexpired grant this reader took                         |
+| `care-team`         | membership in force, on an active team                      |
+| `encounter`         | `Encounter.providerId`, excluding withdrawn visits          |
+| `appointment`       | `Appointment.providerId`, excluding cancelled and withdrawn |
+| `assigned-task`     | `Task.assigneeUserId`                                       |
+| `facility-activity` | any encounter or appointment the reader can already see     |
+
+`Referral.referredById`, `ConsentGrant.recordedById` and `MessageThread` participation are in the
+ADR's table and are not implemented. Each is a real relationship and none is covered by another
+source in every case, so they are a gap rather than a decision.
 
 ## Alternatives considered
 

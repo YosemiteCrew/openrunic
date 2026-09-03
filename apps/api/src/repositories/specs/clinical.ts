@@ -168,6 +168,17 @@ export interface EncounterListQuery extends BaseQuery {
   facilityId?: string;
   providerId?: string;
   status?: EncounterStatus;
+  /**
+   * States to leave out, rather than the one state to keep.
+   *
+   * Added for the care-relationship check, which needs "any encounter that
+   * still counts" and cannot say that with a scalar. This schema retains a
+   * correction as `ENTERED_IN_ERROR` instead of deleting the row, so a visit
+   * explicitly declared never to have happened is still a row, and a source
+   * that counted it would grant access on the strength of a mistake somebody
+   * already withdrew.
+   */
+  excludeStatuses?: readonly EncounterStatus[];
   /** Inclusive lower bound on `startedAt`. */
   from?: Date;
   /** Exclusive upper bound on `startedAt`. */
@@ -192,6 +203,28 @@ export interface EncounterPatchInput {
   endedAt?: Date;
   /** Set only by `POST /encounters/{id}/sign`. */
   signedById?: string;
+}
+
+/**
+ * A `status` filter built from a scalar, an exclusion, or both.
+ *
+ * One key, because Prisma takes one condition object per column and two object
+ * spreads naming `status` do not merge - the second replaces the first. Written
+ * that way the exclusion silently dropped the scalar, so a query for "booked,
+ * and not withdrawn" answered "not withdrawn", while `matches` honoured both
+ * and the two implementations disagreed.
+ */
+function statusFilter<T extends string>(
+  status: T | undefined,
+  excluded: readonly T[] | undefined
+): { status?: { equals?: T; notIn?: T[] } } {
+  if (status === undefined && excluded === undefined) return {};
+  return {
+    status: {
+      ...(status === undefined ? {} : { equals: status }),
+      ...(excluded === undefined ? {} : { notIn: [...excluded] }),
+    },
+  };
 }
 
 export const encounterSpec: CollectionSpec<
@@ -256,6 +289,7 @@ export const encounterSpec: CollectionSpec<
     if (query.facilityId !== undefined && row.facilityId !== query.facilityId) return false;
     if (query.providerId !== undefined && row.providerId !== query.providerId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (query.excludeStatuses?.includes(row.status) === true) return false;
     return inWindow(row.startedAt, query.from, query.to);
   },
 
@@ -265,7 +299,11 @@ export const encounterSpec: CollectionSpec<
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.providerId === undefined ? {} : { providerId: query.providerId }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      /* One `status` key, not two spreads. Written as two, the second silently
+         overwrote the first and a query naming both a status and an exclusion
+         lost the status entirely - which the port-agreement suite caught,
+         because `matches` still honoured both. */
+      ...statusFilter(query.status, query.excludeStatuses),
       ...(startedAt === undefined ? {} : { startedAt }),
     };
   },

@@ -126,6 +126,37 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
     },
   },
   {
+    why: 'they hold a task about this patient',
+    seedIt: (dataset) => {
+      /* ADR-0007 lists `Task.assigneeUserId` in the evidence table. Without it a
+         clinician sent a result to sign can open the task and not the chart the
+         task is about, which makes the work impossible and teaches people that
+         break-glass is a normal step. */
+      seed(dataset, 'Task', {
+        ...storageColumns(testId(3_016)),
+        type: 'RESULT',
+        status: 'OPEN',
+        priority: 'NORMAL',
+        patientId: PATIENT,
+        encounterId: null,
+        subjectType: null,
+        subjectId: null,
+        title: 'Sign the lab result',
+        description: null,
+        assigneeType: 'USER',
+        assigneeUserId: SUBJECTS.clinicianA,
+        assigneeTeamKey: null,
+        dueAt: null,
+        slaState: 'OK',
+        expiresAt: null,
+        sourceEventId: null,
+        completedAt: null,
+        completedById: null,
+        outcome: null,
+      });
+    },
+  },
+  {
     why: 'somebody else is due to see them at a site the clinician works at',
     seedIt: (dataset) => {
       /* Reception's commonest case, and the one that showed the encounter half
@@ -195,6 +226,116 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
     },
   },
   {
+    why: 'the only task about them is assigned to somebody else',
+    seedIt: (dataset) => {
+      /* The half that says the task source is a narrowing. Without the
+         assignee filter it would authorise on the existence of any task about
+         the patient, which is every patient anyone has ever worked. */
+      seed(dataset, 'Task', {
+        ...storageColumns(testId(3_027)),
+        type: 'RESULT',
+        status: 'OPEN',
+        priority: 'NORMAL',
+        patientId: PATIENT,
+        encounterId: null,
+        subjectType: null,
+        subjectId: null,
+        title: 'Sign the lab result',
+        description: null,
+        assigneeType: 'USER',
+        assigneeUserId: OTHER_PROVIDER,
+        assigneeTeamKey: null,
+        dueAt: null,
+        slaState: 'OK',
+        expiresAt: null,
+        sourceEventId: null,
+        completedAt: null,
+        completedById: null,
+        outcome: null,
+      });
+    },
+  },
+  {
+    why: 'the only encounter was declared never to have happened',
+    seedIt: (dataset) => {
+      /* This schema keeps a correction as ENTERED_IN_ERROR rather than deleting
+         the row, which is right for the trail and wrong for authorisation: a
+         visit somebody already withdrew would otherwise grant every clinician
+         at that site permanent access to the chart. */
+      seed(dataset, 'Encounter', {
+        ...storageColumns(testId(3_022)),
+        facilityId: DEMO_FACILITY_A,
+        patientId: PATIENT,
+        providerId: SUBJECTS.clinicianA,
+        appointmentId: null,
+        class: 'AMBULATORY',
+        status: 'ENTERED_IN_ERROR',
+        reasonCode: 'R51',
+        reasonText: 'Wrong patient',
+        startedAt: FIXED_NOW,
+        endedAt: null,
+        signedAt: null,
+        signedById: null,
+      });
+    },
+  },
+  {
+    why: 'the only care-team membership has ended',
+    seedIt: (dataset) => {
+      /* A participant row outlives the membership on purpose, because deleting
+         it would rewrite who was responsible at the time. So the row staying is
+         right and reading it as current is wrong: a clinician taken off a team
+         keeps their row and loses the chart. */
+      seed(dataset, 'CareTeam', {
+        ...storageColumns(testId(3_023)),
+        patientId: PATIENT,
+        status: 'ACTIVE',
+        name: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(3_024)),
+        careTeamId: testId(3_023),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: SUBJECTS.clinicianA,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: new Date(FIXED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000),
+        periodEnd: new Date(FIXED_NOW.getTime() - 24 * 60 * 60 * 1000),
+      });
+    },
+  },
+  {
+    why: 'the team they are on is no longer active',
+    seedIt: (dataset) => {
+      seed(dataset, 'CareTeam', {
+        ...storageColumns(testId(3_025)),
+        patientId: PATIENT,
+        status: 'INACTIVE',
+        name: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(3_026)),
+        careTeamId: testId(3_025),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: SUBJECTS.clinicianA,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    },
+  },
+  {
     why: 'the break-glass window has expired',
     seedIt: (dataset) => {
       seed(dataset, 'BreakGlassGrant', {
@@ -249,7 +390,8 @@ describe('both boundaries answer the chart question identically', () => {
      * separately: a staff token cannot exercise it, and the portal compartment
      * tests are where it lives.
      */
-    const asserted = GRANTED.length + 1 - 1;
+    const facilityActivityHalves = 2;
+    const asserted = GRANTED.length - facilityActivityHalves + 1 + 1;
 
     expect(
       asserted,
@@ -521,6 +663,28 @@ describe('the audit trail answers the questions it was built to answer', () => {
     const access = sink.writes().find((entry) => entry.event.action === 'chart.access.breakGlass');
     expect(access?.event.breakglass).toBe(true);
     expect(access?.event.patientId).toBe(PATIENT);
+  });
+
+  it('records the stated reason, which is the whole control', async () => {
+    /*
+     * The reason lives on a table with no read route, so without it on the
+     * event the review surface could say that somebody broke glass and not why.
+     * A reviewer looking at "emergency access, no reason given" has nothing to
+     * act on.
+     */
+    const { app, dataset, sink } = createTestApp();
+    baseChart(dataset);
+
+    await app.request(`/bff/v0/patients/${PATIENT}/break-glass`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Collapsed in reception, no record at this site.' }),
+    });
+
+    const created = sink.writes().find((entry) => entry.event.action === 'breakGlass.created');
+    expect(created?.event.metadata).toMatchObject({
+      reason: 'Collapsed in reception, no record at this site.',
+    });
   });
 
   it('names the patient on the declaration event too', async () => {

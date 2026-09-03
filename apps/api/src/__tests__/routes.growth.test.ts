@@ -8,6 +8,8 @@ import {
   createTestApp,
   makePatientRow,
   seed,
+  seedCareRelationship,
+  SUBJECTS,
   storageColumns,
   testId,
   TOKENS,
@@ -51,6 +53,14 @@ function harness(
     'Patient',
     makePatientRow({ id: PATIENT, birthDate: BIRTH, sexAtBirth: sexAtBirth as never })
   );
+  /* The growth route reads a chart by id, so it is gated like every other
+     patient-addressed route. These tests are about the charts, so the
+     relationship is a fixture; `bff.chart-routes.test.ts` asserts the rule. */
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: SUBJECTS.clinicianA,
+    as: 'appointment',
+  });
   return created;
 }
 

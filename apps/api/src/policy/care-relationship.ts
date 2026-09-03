@@ -1,4 +1,5 @@
 import type { Principal } from '../auth/principal.js';
+import type { ScopedRow } from '../repositories/rows.js';
 import type { Repositories } from '../repositories/types.js';
 
 import type { PolicyContext } from './policy.js';
@@ -50,6 +51,33 @@ interface RelationshipSource {
 /** A page of one: these ask whether anything matches, never what. */
 const ONE = { page: 1, pageSize: 1 } as const;
 
+/**
+ * Workflow states that are a withdrawal rather than a record.
+ *
+ * This schema retains a correction as `ENTERED_IN_ERROR` instead of deleting
+ * the row, which is right for the audit trail and wrong for authorisation: a
+ * visit explicitly declared never to have happened would otherwise grant every
+ * clinician at that site permanent access to the chart, on the strength of a
+ * mistake somebody had already withdrawn. A cancelled appointment says the same
+ * thing about the future.
+ *
+ * `NOSHOW` is deliberately not here. A patient who did not turn up was still
+ * booked, and ringing them is the next thing that happens; refusing the chart
+ * to the clinician doing the ringing would be refusing the follow-up.
+ */
+const WITHDRAWN_ENCOUNTERS = ['ENTERED_IN_ERROR'] as const;
+const WITHDRAWN_APPOINTMENTS = ['ENTERED_IN_ERROR', 'CANCELLED'] as const;
+
+/**
+ * How many of a patient's teams the membership check considers.
+ *
+ * A patient on more than this many active care teams at once is not a clinical
+ * arrangement, and the bound keeps a per-read query from growing with the
+ * sickest patients. Past it the reader falls through to the other sources, and
+ * to break-glass, rather than being told something untrue about their team.
+ */
+const MAX_TEAMS_PER_PATIENT = 20;
+
 export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
   {
     /*
@@ -85,23 +113,51 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
     /* On the patient's care team. The most direct statement the practice makes
        about who is responsible for somebody. */
     name: 'care-team',
-    holds: async (repositories, query) =>
-      (
-        await repositories.careTeamParticipants.list({
-          ...ONE,
-          sort: 'createdAt',
-          order: 'desc',
-          memberUserId: query.principal.subject,
-          /*
-           * Narrowed in the query, not filtered afterwards. This asked for one
-           * row and compared it in memory, so it saw only the reader's newest
-           * membership: a clinician added to a second patient's team stopped
-           * being able to open the first one's chart, and the read fell through
-           * to `facility-activity`, which also mislabelled the audit reason.
-           */
-          patientId: query.patientId,
-        })
-      ).total > 0,
+    holds: async (repositories, query) => {
+      /*
+       * Narrowed in the query, not filtered afterwards. An earlier version
+       * asked for one row and compared it in memory, so it saw only the
+       * reader's newest membership: a clinician added to a second patient's
+       * team stopped being able to open the first one's chart.
+       *
+       * The membership must also still be in force. A participant row outlives
+       * the membership on purpose, because deleting it would rewrite who was
+       * responsible at the time, so the row staying is right and reading it as
+       * current is wrong. A clinician taken off a team keeps their row and
+       * loses the chart.
+       */
+      const active = await repositories.careTeams.list({
+        page: 1,
+        pageSize: MAX_TEAMS_PER_PATIENT,
+        sort: 'createdAt',
+        order: 'desc',
+        patientId: query.patientId,
+        status: 'ACTIVE',
+      });
+      if (active.rows.length === 0) return false;
+
+      /*
+       * The period is checked here rather than pushed into the query, and that
+       * is deliberate. A membership window is a temporal predicate over two
+       * nullable columns, not a column filter, and expressing it as one made
+       * the two repository implementations disagree about a row neither would
+       * ever hold - the memory side reading a Date and the Prisma side coercing
+       * whatever the port-agreement probe substituted. The narrowing above
+       * leaves at most a few rows, so reading them is cheap and the rule stays
+       * in one place.
+       */
+      const memberships = await repositories.careTeamParticipants.list({
+        page: 1,
+        pageSize: MAX_TEAMS_PER_PATIENT,
+        sort: 'createdAt',
+        order: 'desc',
+        memberUserId: query.principal.subject,
+        patientId: query.patientId,
+        careTeamIds: active.rows.map((row) => row.id),
+      });
+
+      return memberships.rows.some((row) => inForce(row, query.at));
+    },
   },
   {
     /*
@@ -127,6 +183,7 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
           order: 'desc',
           patientId: query.patientId,
           providerId: query.principal.subject,
+          excludeStatuses: WITHDRAWN_ENCOUNTERS,
         })
       ).total > 0,
   },
@@ -142,6 +199,34 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
           order: 'desc',
           patientId: query.patientId,
           providerId: query.principal.subject,
+          excludeStatuses: WITHDRAWN_APPOINTMENTS,
+        })
+      ).total > 0,
+  },
+  {
+    /*
+     * They hold work about this patient.
+     *
+     * `Task.assigneeUserId` is the personal-inbox ownership field, and
+     * ADR-0007 lists it in the evidence table alongside the appointment and the
+     * encounter. Without it a clinician sent a result to sign, a refill to
+     * approve or a prior authorisation to chase can open the task and not the
+     * chart the task is about, which makes the work impossible and teaches
+     * people that break-glass is a normal step.
+     *
+     * Any status, including a closed one. A task completed last week is still
+     * evidence that this person was given the patient's work, and the chart
+     * they may need to check afterwards is the same chart.
+     */
+    name: 'assigned-task',
+    holds: async (repositories, query) =>
+      (
+        await repositories.tasks.list({
+          ...ONE,
+          sort: 'createdAt',
+          order: 'desc',
+          patientId: query.patientId,
+          assigneeUserId: query.principal.subject,
         })
       ).total > 0,
   },
@@ -178,6 +263,7 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
         sort: 'startedAt',
         order: 'desc',
         patientId: query.patientId,
+        excludeStatuses: WITHDRAWN_ENCOUNTERS,
       });
       if (encounters.total > 0) return true;
 
@@ -186,11 +272,24 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
         sort: 'start',
         order: 'desc',
         patientId: query.patientId,
+        excludeStatuses: WITHDRAWN_APPOINTMENTS,
       });
       return appointments.total > 0;
     },
   },
 ];
+
+/**
+ * Whether a care-team membership is in force at an instant.
+ *
+ * Both bounds are optional and an absent one is open: a membership with no
+ * recorded start has always held, and one with no recorded end still does. The
+ * end is exclusive, so a membership that ended at this instant has ended.
+ */
+function inForce(row: ScopedRow<'CareTeamParticipant'>, at: Date): boolean {
+  if (row.periodStart !== null && row.periodStart.getTime() > at.getTime()) return false;
+  return row.periodEnd === null || row.periodEnd.getTime() > at.getTime();
+}
 
 /** The source that authorised this read, or nothing when none did. */
 export async function findCareRelationship(

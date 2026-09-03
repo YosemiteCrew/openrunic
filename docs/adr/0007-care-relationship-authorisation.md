@@ -241,6 +241,27 @@ statement of the rule is narrower than it could be: a reader cannot hand themsel
 colleague can hand them one. That is the delegation an inbox is for, and it is recorded against a
 name.
 
+**Facility activity expires; a named provider's does not.**
+The `facility-activity` source authorises every current member of a facility on the strength of any
+activity there. Unbounded, "any activity" means any activity ever: a single visit years ago let
+today's entire front desk read the chart with no break-glass and no reason, which is the "knowing of
+them is enough" this whole change removes, one step out. Codex found it after the withdrawn-status
+fix, which had only stopped withdrawn rows counting and left every valid historical row timeless.
+
+The evidence now goes stale after a year. A visit inside the window is current enough that opening
+the chart is routine; past it the reader falls to break-glass. It does not lock out a returning
+patient, because returning is itself fresh activity - the booking made at the desk and the encounter
+opened at check-in are both inside the window. The appointment half is bounded only on the past
+side: a booking still to come is a live commitment however far ahead it sits, while a no-show last
+year is not.
+
+The two provider-named sources, `encounter` and `appointment`, are deliberately left unbounded. A
+clinician on the record for a visit keeps the chart after the site's general access to it has gone
+stale, because "I treated them" does not lapse the way "someone here saw them once" does, and it is
+one named person carrying it rather than a building full of staff. That means those sources are no
+longer subsumed by `facility-activity` for stale rows, which is correct: the provider keeps access,
+the crowd does not.
+
 **Break-glass has two bounds, not one.**
 The ceiling on concurrent grants was the only bound when this was first written, and it counts
 grants that have not expired while the caller chooses the expiry. Asking for a one-minute window
@@ -255,15 +276,15 @@ would both pass it.
 
 ### The evidence table, as implemented
 
-| Source              | Evidence                                                    |
-| ------------------- | ----------------------------------------------------------- |
-| `own-record`        | the token's own compartment                                 |
-| `break-glass`       | an unexpired grant this reader took                         |
-| `care-team`         | membership in force, on an active team                      |
-| `encounter`         | `Encounter.providerId`, excluding withdrawn visits          |
-| `appointment`       | `Appointment.providerId`, excluding cancelled and withdrawn |
-| `assigned-task`     | `Task.assigneeUserId`, assigned by somebody else            |
-| `facility-activity` | any encounter or appointment the reader can already see     |
+| Source              | Evidence                                                               |
+| ------------------- | ---------------------------------------------------------------------- |
+| `own-record`        | the token's own compartment                                            |
+| `break-glass`       | an unexpired grant this reader took                                    |
+| `care-team`         | membership in force, on an active team                                 |
+| `encounter`         | `Encounter.providerId`, excluding withdrawn visits                     |
+| `appointment`       | `Appointment.providerId`, excluding cancelled and withdrawn            |
+| `assigned-task`     | `Task.assigneeUserId`, assigned by somebody else                       |
+| `facility-activity` | any encounter or appointment within the last year at the reader's site |
 
 `Referral.referredById`, `ConsentGrant.recordedById` and `MessageThread` participation are in the
 ADR's table and are not implemented. Each is a real relationship and none is covered by another

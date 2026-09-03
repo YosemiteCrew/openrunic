@@ -37,6 +37,13 @@ const PATIENT = testId(3_001);
 const OTHER_PROVIDER = testId(3_002);
 const CARE_TEAM = testId(3_003);
 
+/**
+ * Older than the facility-activity window (365 days), computed against the real
+ * clock because the boundary reads `new Date()` and cannot be handed a fixed
+ * one. Relative rather than a literal so it stays stale whenever the suite runs.
+ */
+const STALE_AGO_MS = 400 * 24 * 60 * 60 * 1000;
+
 /** Both addressed reads of the same chart. A rule has to answer them alike. */
 const BOUNDARIES = [
   { name: 'bff', path: (id: string) => `/bff/v0/patients/${id}` },
@@ -273,6 +280,20 @@ const GRANTED: readonly GrantedCase[] = [
     },
   },
   {
+    why: 'the clinician personally saw them, over a year ago',
+    source: 'encounter',
+    seedIt: (dataset) => {
+      /* The provider source has no recency bound, unlike facility-activity: a
+         clinician named on a visit keeps the chart after the site's general
+         access to it has gone stale. This is what makes the two distinct. */
+      anEncounter(dataset, {
+        id: testId(3_030),
+        providerId: SUBJECTS.clinicianA,
+        startedAt: new Date(Date.now() - STALE_AGO_MS),
+      });
+    },
+  },
+  {
     why: 'somebody else saw them at a site the clinician works at',
     source: 'facility-activity',
     seedIt: (dataset) => {
@@ -315,6 +336,39 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
          one about any patient id it could guess and have manufactured its own
          relationship: no reason, no expiry, no ceiling. */
       aTask(dataset, testId(3_028), SUBJECTS.clinicianA, SUBJECTS.clinicianA);
+    },
+  },
+  {
+    why: 'the only facility activity is a visit over a year ago',
+    seedIt: (dataset) => {
+      /* facility-activity expires. A completed visit by somebody else, older
+         than the window, is history - not a live reason for the whole site to
+         hold the chart open, which unbounded it would be forever. */
+      anEncounter(dataset, {
+        id: testId(3_031),
+        providerId: OTHER_PROVIDER,
+        startedAt: new Date(Date.now() - STALE_AGO_MS),
+      });
+    },
+  },
+  {
+    why: 'the only facility activity is a booking over a year ago',
+    seedIt: (dataset) => {
+      /* The appointment half of the same expiry: a no-show or a passed booking
+         from last year is not current, and the future side stays open only
+         because a booking still to come is a live commitment. */
+      seed(
+        dataset,
+        'Appointment',
+        makeAppointmentRow({
+          id: testId(3_032),
+          patientId: PATIENT,
+          providerId: OTHER_PROVIDER,
+          facilityId: DEMO_FACILITY_A,
+          start: new Date(Date.now() - STALE_AGO_MS),
+          end: new Date(Date.now() - STALE_AGO_MS + 30 * 60 * 1000),
+        })
+      );
     },
   },
   {

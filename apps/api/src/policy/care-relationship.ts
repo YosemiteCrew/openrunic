@@ -88,6 +88,28 @@ const MAX_TEAMS_PER_PATIENT = 20;
  */
 const MAX_TASKS_PER_PATIENT = 20;
 
+/**
+ * How long facility activity keeps a chart open to the whole site.
+ *
+ * `facility-activity` authorises every current member of a facility on the
+ * strength of any activity there, and without a bound "any activity" means any
+ * activity ever: a single visit years ago would let today's entire front desk
+ * read the chart, with no break-glass and no reason. That is the same "knowing
+ * of them is enough" this whole change exists to remove, one step removed.
+ *
+ * So the evidence goes stale. A visit inside this window is current enough that
+ * opening the chart is routine; past it, the reader falls to break-glass. It
+ * does not lock out a returning patient, because returning is itself fresh
+ * activity - the booking made at the desk and the encounter opened at check-in
+ * are both inside the window. It is the chart nobody has touched in a year that
+ * stops being readable without a reason.
+ *
+ * ponytail: one flat window. A long inpatient admission whose encounter opened
+ * before it and is still in progress would fall out; give open encounters their
+ * own unbounded arm if that case turns out to matter.
+ */
+const FACILITY_ACTIVITY_STALE_MS = 365 * 24 * 60 * 60 * 1000;
+
 export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
   {
     /*
@@ -178,16 +200,18 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
     /*
      * Saw them. An encounter is the record of care actually given.
      *
-     * Subsumed by `facility-activity` for authorisation, and kept anyway. Both
-     * lists are facility-scoped, so an encounter this reader is named on is
-     * also one they can see, and removing the `providerId` filter changes no
-     * answer - a mutation that does exactly that survives, and that is expected
-     * rather than a gap.
+     * No recency bound, and that is the point of keeping it distinct from
+     * `facility-activity`. A clinician who personally treated this patient has
+     * a relationship that does not lapse the way the whole site's does: the
+     * facility net goes stale after a year because "someone here saw them once"
+     * stops being a current reason, but "I treated them" does not, and it is one
+     * named person carrying it rather than a building full of staff. So a
+     * provider stays able to open a chart they are on the record for, while the
+     * general source under them expires.
      *
-     * What it is not subsumed for is the audit record. "You saw this patient"
-     * and "somebody at your site did" are different justifications for opening
-     * a chart, and the trail should say which. That is why the specific sources
-     * are ordered before the general one.
+     * The audit record is the other reason. "You saw this patient" and
+     * "somebody at your site did" are different justifications, and ordering the
+     * specific source first is what makes the trail say which one applied.
      */
     name: 'encounter',
     holds: async (repositories, query) =>
@@ -203,8 +227,10 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
       ).total > 0,
   },
   {
-    /* Due to see them. Same relationship to `facility-activity` as the
-       encounter source above: subsumed for the answer, kept for the reason. */
+    /* Due to see them, or did. Unbounded for the same reason as the encounter
+       source above: a provider named on the booking keeps the chart after the
+       facility net has let it go stale, and the audit trail should say it was
+       the named clinician who opened it. */
     name: 'appointment',
     holds: async (repositories, query) =>
       (
@@ -298,12 +324,17 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
      */
     name: 'facility-activity',
     holds: async (repositories, query) => {
+      const since = new Date(query.at.getTime() - FACILITY_ACTIVITY_STALE_MS);
+
       const encounters = await repositories.encounters.list({
         ...ONE,
         sort: 'startedAt',
         order: 'desc',
         patientId: query.patientId,
         excludeStatuses: WITHDRAWN_ENCOUNTERS,
+        /* Recent, not ever. A completed visit older than the window is history,
+           not a current reason for the whole site to hold the chart open. */
+        from: since,
       });
       if (encounters.total > 0) return true;
 
@@ -313,6 +344,11 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
         order: 'desc',
         patientId: query.patientId,
         excludeStatuses: WITHDRAWN_APPOINTMENTS,
+        /* Lower bound only. A booking still to come is a live commitment
+           however far ahead it sits, so the future is deliberately open; the
+           bound is on the past, where a no-show years ago would otherwise be
+           timeless evidence. */
+        from: since,
       });
       return appointments.total > 0;
     },

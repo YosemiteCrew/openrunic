@@ -115,11 +115,11 @@ export type Permission = (typeof PERMISSIONS)[number];
  * rather than inform joins this list, and does not quietly join every read-only
  * token in the tenant.
  */
-const SUPERVISORY_READS: readonly Permission[] = ['audit.read'];
+const SUPERVISORY_READS: ReadonlySet<Permission> = new Set<Permission>(['audit.read']);
 
 const READ_EVERYTHING: readonly Permission[] = PERMISSIONS.filter(
   (permission): permission is Permission =>
-    permission.endsWith('.read') && !SUPERVISORY_READS.includes(permission)
+    permission.endsWith('.read') && !SUPERVISORY_READS.has(permission)
 );
 
 /**

@@ -40,6 +40,12 @@ overrides:
   # connection. Re-check when Prisma updates; prisma 8 is still a release
   # candidate.
   mysql2: 3.24.2
+  # GHSA-f65p-4m7j-42xc / GHSA-fph4-wmhf-6fwf / GHSA-5jgf-p345-68v8: fast-uri
+  # < 3.1.6 normalises a malformed IPv6 authority in a way that enables SSRF.
+  # It arrives through ajv 8, which pins 3.1.5, so it is a build- and
+  # validation-time dependency rather than a request-path one here; the bump is
+  # a patch within the same minor. Re-check when ajv updates its pin.
+  fast-uri: 3.1.6
 
 # pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
 onlyBuiltDependencies:

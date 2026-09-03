@@ -152,7 +152,12 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
         sort: 'createdAt',
         order: 'desc',
         memberUserId: query.principal.subject,
-        patientId: query.patientId,
+        /* The team ids already scope this to the patient - they came from a
+           query for this patient's teams, and the composite foreign key makes a
+           participant whose patient disagrees with its team unrepresentable. A
+           `patientId` filter here would be a second statement of the same fact,
+           and it survived a mutation that deleted it, which is how a filter
+           that looks load-bearing and is not gets left in. */
         careTeamIds: active.rows.map((row) => row.id),
       });
 

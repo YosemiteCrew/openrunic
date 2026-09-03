@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { RELATIONSHIP_SOURCES } from '../policy/care-relationship.js';
+import type { ScopedRow } from '../repositories/rows.js';
 
 import {
   bearer,
@@ -50,25 +51,126 @@ function baseChart(dataset: Dataset): void {
   seed(dataset, 'Patient', makePatientRow({ id: PATIENT, mrn: 'OR-103001' }));
 }
 
+/**
+ * Seeders for the rows these cases are made of.
+ *
+ * Written once rather than inline per case, because the same fifteen-line
+ * literal repeated seven times is what a duplication gate is for, and because
+ * a case reads better as "an encounter, entered in error" than as the columns
+ * that spell it.
+ */
+function anEncounter(
+  dataset: Dataset,
+  overrides: Partial<ScopedRow<'Encounter'>> & { id: string }
+): void {
+  seed(dataset, 'Encounter', {
+    ...storageColumns(overrides.id),
+    facilityId: DEMO_FACILITY_A,
+    patientId: PATIENT,
+    providerId: OTHER_PROVIDER,
+    appointmentId: null,
+    class: 'AMBULATORY',
+    status: 'COMPLETED',
+    reasonCode: 'R51',
+    reasonText: 'Headache',
+    startedAt: FIXED_NOW,
+    endedAt: null,
+    signedAt: null,
+    signedById: null,
+    ...overrides,
+  });
+}
+
+function aTeamWithMember(
+  dataset: Dataset,
+  options: {
+    teamId: string;
+    memberId: string;
+    patientId?: string;
+    status?: ScopedRow<'CareTeam'>['status'];
+    periodStart?: Date | null;
+    periodEnd?: Date | null;
+  }
+): void {
+  const patientId = options.patientId ?? PATIENT;
+  seed(dataset, 'CareTeam', {
+    ...storageColumns(options.teamId),
+    patientId,
+    status: options.status ?? 'ACTIVE',
+    name: null,
+    periodStart: null,
+    periodEnd: null,
+  });
+  seed(dataset, 'CareTeamParticipant', {
+    ...storageColumns(options.memberId),
+    careTeamId: options.teamId,
+    patientId,
+    memberType: 'USER',
+    memberUserId: SUBJECTS.clinicianA,
+    memberRelatedPersonId: null,
+    roleCode: '207Q00000X',
+    roleSystem: 'http://nucc.org/provider-taxonomy',
+    roleText: null,
+    periodStart: options.periodStart ?? null,
+    periodEnd: options.periodEnd ?? null,
+  });
+}
+
+function aTask(dataset: Dataset, id: string, assigneeUserId: string): void {
+  seed(dataset, 'Task', {
+    ...storageColumns(id),
+    type: 'RESULT',
+    status: 'OPEN',
+    priority: 'NORMAL',
+    patientId: PATIENT,
+    encounterId: null,
+    subjectType: null,
+    subjectId: null,
+    title: 'Sign the lab result',
+    description: null,
+    assigneeType: 'USER',
+    assigneeUserId,
+    assigneeTeamKey: null,
+    dueAt: null,
+    slaState: 'OK',
+    expiresAt: null,
+    sourceEventId: null,
+    completedAt: null,
+    completedById: null,
+    outcome: null,
+  });
+}
+
+function aClaim(dataset: Dataset, id: string, patientId: string, encounterId: string): void {
+  seed(dataset, 'Claim', {
+    ...storageColumns(id),
+    patientId,
+    encounterId,
+    coverageId: testId(3_411),
+    payerId: testId(3_412),
+    status: 'DRAFT',
+    frequency: 'ORIGINAL',
+    diagnosisCodes: ['E11.9'],
+    totalChargedCents: 12_000,
+    totalPaidCents: 0,
+    totalAdjustedCents: 0,
+    patientResponsibilityCents: 0,
+    secondaryOfId: null,
+    priorClaimId: null,
+    controlNumbers: {},
+    snapshot: {},
+    statusReason: null,
+    submittedAt: null,
+    acknowledgedAt: null,
+    adjudicatedAt: null,
+  });
+}
+
 const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
   {
     why: 'the clinician saw them',
     seedIt: (dataset) => {
-      seed(dataset, 'Encounter', {
-        ...storageColumns(testId(3_010)),
-        facilityId: DEMO_FACILITY_A,
-        patientId: PATIENT,
-        providerId: SUBJECTS.clinicianA,
-        appointmentId: null,
-        class: 'AMBULATORY',
-        status: 'COMPLETED',
-        reasonCode: 'R51',
-        reasonText: 'Headache',
-        startedAt: FIXED_NOW,
-        endedAt: null,
-        signedAt: null,
-        signedById: null,
-      });
+      anEncounter(dataset, { id: testId(3_010), providerId: SUBJECTS.clinicianA });
     },
   },
   {
@@ -89,27 +191,7 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
   {
     why: 'the clinician is on their care team',
     seedIt: (dataset) => {
-      seed(dataset, 'CareTeam', {
-        ...storageColumns(CARE_TEAM),
-        patientId: PATIENT,
-        status: 'ACTIVE',
-        name: null,
-        periodStart: null,
-        periodEnd: null,
-      });
-      seed(dataset, 'CareTeamParticipant', {
-        ...storageColumns(testId(3_012)),
-        careTeamId: CARE_TEAM,
-        patientId: PATIENT,
-        memberType: 'USER',
-        memberUserId: SUBJECTS.clinicianA,
-        memberRelatedPersonId: null,
-        roleCode: '207Q00000X',
-        roleSystem: 'http://nucc.org/provider-taxonomy',
-        roleText: null,
-        periodStart: null,
-        periodEnd: null,
-      });
+      aTeamWithMember(dataset, { teamId: CARE_TEAM, memberId: testId(3_012) });
     },
   },
   {
@@ -132,28 +214,7 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
          clinician sent a result to sign can open the task and not the chart the
          task is about, which makes the work impossible and teaches people that
          break-glass is a normal step. */
-      seed(dataset, 'Task', {
-        ...storageColumns(testId(3_016)),
-        type: 'RESULT',
-        status: 'OPEN',
-        priority: 'NORMAL',
-        patientId: PATIENT,
-        encounterId: null,
-        subjectType: null,
-        subjectId: null,
-        title: 'Sign the lab result',
-        description: null,
-        assigneeType: 'USER',
-        assigneeUserId: SUBJECTS.clinicianA,
-        assigneeTeamKey: null,
-        dueAt: null,
-        slaState: 'OK',
-        expiresAt: null,
-        sourceEventId: null,
-        completedAt: null,
-        completedById: null,
-        outcome: null,
-      });
+      aTask(dataset, testId(3_016), SUBJECTS.clinicianA);
     },
   },
   {
@@ -178,21 +239,7 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
     seedIt: (dataset) => {
       /* The receptionist and the covering nurse. Neither is named on anything,
          and both legitimately open the chart. */
-      seed(dataset, 'Encounter', {
-        ...storageColumns(testId(3_013)),
-        facilityId: DEMO_FACILITY_A,
-        patientId: PATIENT,
-        providerId: OTHER_PROVIDER,
-        appointmentId: null,
-        class: 'AMBULATORY',
-        status: 'COMPLETED',
-        reasonCode: 'R51',
-        reasonText: 'Headache',
-        startedAt: FIXED_NOW,
-        endedAt: null,
-        signedAt: null,
-        signedById: null,
-      });
+      anEncounter(dataset, { id: testId(3_013) });
     },
   },
 ];
@@ -208,21 +255,7 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
   {
     why: 'the only activity is at a site the clinician does not work at',
     seedIt: (dataset) => {
-      seed(dataset, 'Encounter', {
-        ...storageColumns(testId(3_020)),
-        facilityId: DEMO_FACILITY_B,
-        patientId: PATIENT,
-        providerId: OTHER_PROVIDER,
-        appointmentId: null,
-        class: 'AMBULATORY',
-        status: 'COMPLETED',
-        reasonCode: 'R51',
-        reasonText: 'Headache',
-        startedAt: FIXED_NOW,
-        endedAt: null,
-        signedAt: null,
-        signedById: null,
-      });
+      anEncounter(dataset, { id: testId(3_020), facilityId: DEMO_FACILITY_B });
     },
   },
   {
@@ -231,28 +264,7 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
       /* The half that says the task source is a narrowing. Without the
          assignee filter it would authorise on the existence of any task about
          the patient, which is every patient anyone has ever worked. */
-      seed(dataset, 'Task', {
-        ...storageColumns(testId(3_027)),
-        type: 'RESULT',
-        status: 'OPEN',
-        priority: 'NORMAL',
-        patientId: PATIENT,
-        encounterId: null,
-        subjectType: null,
-        subjectId: null,
-        title: 'Sign the lab result',
-        description: null,
-        assigneeType: 'USER',
-        assigneeUserId: OTHER_PROVIDER,
-        assigneeTeamKey: null,
-        dueAt: null,
-        slaState: 'OK',
-        expiresAt: null,
-        sourceEventId: null,
-        completedAt: null,
-        completedById: null,
-        outcome: null,
-      });
+      aTask(dataset, testId(3_027), OTHER_PROVIDER);
     },
   },
   {
@@ -262,20 +274,10 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
          the row, which is right for the trail and wrong for authorisation: a
          visit somebody already withdrew would otherwise grant every clinician
          at that site permanent access to the chart. */
-      seed(dataset, 'Encounter', {
-        ...storageColumns(testId(3_022)),
-        facilityId: DEMO_FACILITY_A,
-        patientId: PATIENT,
+      anEncounter(dataset, {
+        id: testId(3_022),
         providerId: SUBJECTS.clinicianA,
-        appointmentId: null,
-        class: 'AMBULATORY',
         status: 'ENTERED_IN_ERROR',
-        reasonCode: 'R51',
-        reasonText: 'Wrong patient',
-        startedAt: FIXED_NOW,
-        endedAt: null,
-        signedAt: null,
-        signedById: null,
       });
     },
   },
@@ -286,24 +288,9 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
          it would rewrite who was responsible at the time. So the row staying is
          right and reading it as current is wrong: a clinician taken off a team
          keeps their row and loses the chart. */
-      seed(dataset, 'CareTeam', {
-        ...storageColumns(testId(3_023)),
-        patientId: PATIENT,
-        status: 'ACTIVE',
-        name: null,
-        periodStart: null,
-        periodEnd: null,
-      });
-      seed(dataset, 'CareTeamParticipant', {
-        ...storageColumns(testId(3_024)),
-        careTeamId: testId(3_023),
-        patientId: PATIENT,
-        memberType: 'USER',
-        memberUserId: SUBJECTS.clinicianA,
-        memberRelatedPersonId: null,
-        roleCode: '207Q00000X',
-        roleSystem: 'http://nucc.org/provider-taxonomy',
-        roleText: null,
+      aTeamWithMember(dataset, {
+        teamId: testId(3_023),
+        memberId: testId(3_024),
         periodStart: new Date(FIXED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000),
         periodEnd: new Date(FIXED_NOW.getTime() - 24 * 60 * 60 * 1000),
       });
@@ -312,26 +299,10 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
   {
     why: 'the team they are on is no longer active',
     seedIt: (dataset) => {
-      seed(dataset, 'CareTeam', {
-        ...storageColumns(testId(3_025)),
-        patientId: PATIENT,
+      aTeamWithMember(dataset, {
+        teamId: testId(3_025),
+        memberId: testId(3_026),
         status: 'INACTIVE',
-        name: null,
-        periodStart: null,
-        periodEnd: null,
-      });
-      seed(dataset, 'CareTeamParticipant', {
-        ...storageColumns(testId(3_026)),
-        careTeamId: testId(3_025),
-        patientId: PATIENT,
-        memberType: 'USER',
-        memberUserId: SUBJECTS.clinicianA,
-        memberRelatedPersonId: null,
-        roleCode: '207Q00000X',
-        roleSystem: 'http://nucc.org/provider-taxonomy',
-        roleText: null,
-        periodStart: null,
-        periodEnd: null,
       });
     },
   },
@@ -621,21 +592,7 @@ describe('the audit trail answers the questions it was built to answer', () => {
        does not appear in it is one nobody investigating that chart can see. */
     const { app, dataset, sink } = createTestApp();
     baseChart(dataset);
-    seed(dataset, 'Encounter', {
-      ...storageColumns(testId(3_200)),
-      facilityId: DEMO_FACILITY_A,
-      patientId: PATIENT,
-      providerId: SUBJECTS.clinicianA,
-      appointmentId: null,
-      class: 'AMBULATORY',
-      status: 'COMPLETED',
-      reasonCode: 'R51',
-      reasonText: 'Headache',
-      startedAt: FIXED_NOW,
-      endedAt: null,
-      signedAt: null,
-      signedById: null,
-    });
+    anEncounter(dataset, { id: testId(3_200), providerId: SUBJECTS.clinicianA });
 
     await app.request(`/bff/v0/patients/${PATIENT}`, { headers: bearer(TOKENS.clinicianA) });
 
@@ -720,27 +677,10 @@ describe('a clinician on more than one care team', () => {
     seed(dataset, 'Patient', makePatientRow({ id: other, mrn: 'OR-103301' }));
 
     for (const [index, patientId] of [PATIENT, other].entries()) {
-      const teamId = testId(3_310 + index);
-      seed(dataset, 'CareTeam', {
-        ...storageColumns(teamId),
+      aTeamWithMember(dataset, {
+        teamId: testId(3_310 + index),
+        memberId: testId(3_320 + index),
         patientId,
-        status: 'ACTIVE',
-        name: null,
-        periodStart: null,
-        periodEnd: null,
-      });
-      seed(dataset, 'CareTeamParticipant', {
-        ...storageColumns(testId(3_320 + index)),
-        careTeamId: teamId,
-        patientId,
-        memberType: 'USER',
-        memberUserId: SUBJECTS.clinicianA,
-        memberRelatedPersonId: null,
-        roleCode: '207Q00000X',
-        roleSystem: 'http://nucc.org/provider-taxonomy',
-        roleText: null,
-        periodStart: null,
-        periodEnd: null,
       });
     }
 
@@ -765,27 +705,7 @@ describe('a clinician on more than one care team', () => {
     baseChart(dataset);
     seed(dataset, 'Patient', makePatientRow({ id: stranger, mrn: 'OR-103302' }));
 
-    seed(dataset, 'CareTeam', {
-      ...storageColumns(testId(3_330)),
-      patientId: PATIENT,
-      status: 'ACTIVE',
-      name: null,
-      periodStart: null,
-      periodEnd: null,
-    });
-    seed(dataset, 'CareTeamParticipant', {
-      ...storageColumns(testId(3_331)),
-      careTeamId: testId(3_330),
-      patientId: PATIENT,
-      memberType: 'USER',
-      memberUserId: SUBJECTS.clinicianA,
-      memberRelatedPersonId: null,
-      roleCode: '207Q00000X',
-      roleSystem: 'http://nucc.org/provider-taxonomy',
-      roleText: null,
-      periodStart: null,
-      periodEnd: null,
-    });
+    aTeamWithMember(dataset, { teamId: testId(3_330), memberId: testId(3_331) });
 
     const own = await app.request(`/bff/v0/patients/${PATIENT}`, {
       headers: bearer(TOKENS.clinicianA),
@@ -812,21 +732,7 @@ describe('the roles that are not at the bedside', () => {
 
   function billedChart(dataset: Dataset): void {
     seed(dataset, 'Patient', makePatientRow({ id: BILLED, mrn: 'OR-103400' }));
-    seed(dataset, 'Encounter', {
-      ...storageColumns(testId(3_401)),
-      facilityId: DEMO_FACILITY_A,
-      patientId: BILLED,
-      providerId: testId(3_402),
-      appointmentId: null,
-      class: 'AMBULATORY',
-      status: 'COMPLETED',
-      reasonCode: 'R51',
-      reasonText: 'Headache',
-      startedAt: FIXED_NOW,
-      endedAt: null,
-      signedAt: null,
-      signedById: null,
-    });
+    anEncounter(dataset, { id: testId(3_401), patientId: BILLED, providerId: testId(3_402) });
   }
 
   it('lets a biller open a claim for a chart they are named on nowhere', async () => {
@@ -840,28 +746,7 @@ describe('the roles that are not at the bedside', () => {
      */
     const { app, dataset } = createTestApp();
     billedChart(dataset);
-    seed(dataset, 'Claim', {
-      ...storageColumns(testId(3_410)),
-      patientId: BILLED,
-      encounterId: testId(3_401),
-      coverageId: testId(3_411),
-      payerId: testId(3_412),
-      status: 'DRAFT',
-      frequency: 'ORIGINAL',
-      diagnosisCodes: ['E11.9'],
-      totalChargedCents: 12_000,
-      totalPaidCents: 0,
-      totalAdjustedCents: 0,
-      patientResponsibilityCents: 0,
-      secondaryOfId: null,
-      priorClaimId: null,
-      controlNumbers: {},
-      snapshot: {},
-      statusReason: null,
-      submittedAt: null,
-      acknowledgedAt: null,
-      adjudicatedAt: null,
-    });
+    aClaim(dataset, testId(3_410), BILLED, testId(3_401));
 
     const res = await app.request(`/fhir/Claim/${testId(3_410)}`, {
       headers: bearer(TOKENS.billerA),
@@ -875,43 +760,13 @@ describe('the roles that are not at the bedside', () => {
        doing anything and the source would authorise every claim in the tenant. */
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: BILLED, mrn: 'OR-103400' }));
-    seed(dataset, 'Encounter', {
-      ...storageColumns(testId(3_401)),
+    anEncounter(dataset, {
+      id: testId(3_401),
       facilityId: DEMO_FACILITY_B,
       patientId: BILLED,
       providerId: testId(3_402),
-      appointmentId: null,
-      class: 'AMBULATORY',
-      status: 'COMPLETED',
-      reasonCode: 'R51',
-      reasonText: 'Headache',
-      startedAt: FIXED_NOW,
-      endedAt: null,
-      signedAt: null,
-      signedById: null,
     });
-    seed(dataset, 'Claim', {
-      ...storageColumns(testId(3_410)),
-      patientId: BILLED,
-      encounterId: testId(3_401),
-      coverageId: testId(3_411),
-      payerId: testId(3_412),
-      status: 'DRAFT',
-      frequency: 'ORIGINAL',
-      diagnosisCodes: ['E11.9'],
-      totalChargedCents: 12_000,
-      totalPaidCents: 0,
-      totalAdjustedCents: 0,
-      patientResponsibilityCents: 0,
-      secondaryOfId: null,
-      priorClaimId: null,
-      controlNumbers: {},
-      snapshot: {},
-      statusReason: null,
-      submittedAt: null,
-      acknowledgedAt: null,
-      adjudicatedAt: null,
-    });
+    aClaim(dataset, testId(3_410), BILLED, testId(3_401));
 
     const res = await app.request(`/fhir/Claim/${testId(3_410)}`, {
       headers: bearer(TOKENS.billerA),

@@ -411,6 +411,30 @@ export function windowFilter(from?: Date, to?: Date): { gte?: Date; lt?: Date } 
 }
 
 /**
+ * A `status` filter built from a scalar, an exclusion, or both.
+ *
+ * Shared rather than written per spec, and the reason is the bug it replaced.
+ * Prisma takes one condition object per column, so two object spreads naming
+ * `status` do not merge - the second replaces the first. Written that way in
+ * two specs, the exclusion silently dropped the scalar, and a query for
+ * "booked, and not withdrawn" answered "not withdrawn" while `matches`
+ * honoured both. Once is a bug; copied is the same bug waiting in the next
+ * spec that needs it.
+ */
+export function statusFilter<T extends string>(
+  status: T | undefined,
+  excluded: readonly T[] | undefined
+): { status?: { equals?: T; notIn?: T[] } } {
+  if (status === undefined && excluded === undefined) return {};
+  return {
+    status: {
+      ...(status === undefined ? {} : { equals: status }),
+      ...(excluded === undefined ? {} : { notIn: [...excluded] }),
+    },
+  };
+}
+
+/**
  * Comparable form of a value that may be an instant, a number, a string or
  * absent. Absent sorts last ascending, which is what a worklist wants: a task
  * with no due date is not the most urgent one.

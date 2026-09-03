@@ -20,6 +20,7 @@ import type {
 import {
   inWindow,
   jsonColumn,
+  statusFilter,
   windowFilter,
   type BaseQuery,
   type CollectionSpec,
@@ -203,28 +204,6 @@ export interface EncounterPatchInput {
   endedAt?: Date;
   /** Set only by `POST /encounters/{id}/sign`. */
   signedById?: string;
-}
-
-/**
- * A `status` filter built from a scalar, an exclusion, or both.
- *
- * One key, because Prisma takes one condition object per column and two object
- * spreads naming `status` do not merge - the second replaces the first. Written
- * that way the exclusion silently dropped the scalar, so a query for "booked,
- * and not withdrawn" answered "not withdrawn", while `matches` honoured both
- * and the two implementations disagreed.
- */
-function statusFilter<T extends string>(
-  status: T | undefined,
-  excluded: readonly T[] | undefined
-): { status?: { equals?: T; notIn?: T[] } } {
-  if (status === undefined && excluded === undefined) return {};
-  return {
-    status: {
-      ...(status === undefined ? {} : { equals: status }),
-      ...(excluded === undefined ? {} : { notIn: [...excluded] }),
-    },
-  };
 }
 
 export const encounterSpec: CollectionSpec<

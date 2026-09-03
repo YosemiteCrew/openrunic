@@ -426,6 +426,37 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     expect(res.status).toBe(404);
   });
 
+  it('returns the declaration already held rather than filing a second one', async () => {
+    /*
+     * Re-declaring is ordinary: the window is short and an emergency outlasts
+     * it. A row per attempt would turn one clinician's afternoon into a wall of
+     * records that buries the sweep this table exists to make visible.
+     *
+     * It is also what keeps the trail unambiguous. A read taken under
+     * break-glass is audited as break-glass, and if one reader could hold two
+     * overlapping grants on one chart the record would not say which of them
+     * the read was taken under. Two grants for the same pair are unreachable
+     * through this route, so the question does not arise.
+     */
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+    const declare = async (): Promise<Response> =>
+      app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+        method: 'POST',
+        headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+      });
+
+    const first = await declare();
+    const second = await declare();
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { id: string }).id).toBe(
+      ((await first.json()) as { id: string }).id
+    );
+  });
+
   it('refuses a break-glass declaration with no reason', async () => {
     const { app, dataset } = createTestApp();
     seedElsewhere(dataset);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProblemDocument } from '../http/problem.js';
 import type { PatientDto } from '../schemas/patients.js';
@@ -8,6 +8,7 @@ import {
   bearer,
   createTestApp,
   DEMO_FACILITY_B,
+  FIXED_NOW,
   makeAppointmentRow,
   jsonBearer,
   makePatientRow,
@@ -436,6 +437,131 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     });
 
     expect(res.status).toBe(422);
+  });
+
+  /**
+   * The two bounds on break-glass, and why one of them is not enough.
+   *
+   * These are the only things standing between "an emergency door with a name
+   * on it" and "a way to read the whole practice one request at a time", so
+   * both are asserted here rather than left to the database trigger that also
+   * enforces them. The trigger is the thing that is true under concurrency; the
+   * handler is the thing that gives a person a sentence they can act on, and a
+   * refusal nobody tested is a refusal nobody has seen.
+   */
+  describe('the bounds on how much glass one reader may break', () => {
+    const CEILING = 10;
+    const PER_WINDOW = 20;
+
+    /* Only `Date` is faked. The bounds are questions about wall-clock instants
+       and the handler reads the clock directly, but faking timers as well would
+       stall the awaits these tests are made of. */
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(FIXED_NOW);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function aChart(dataset: ReturnType<typeof createTestApp>['dataset'], n: number): string {
+      const id = testId(4300 + n);
+      seed(
+        dataset,
+        'Patient',
+        makePatientRow({
+          id,
+          mrn: `OR-2009${String(n).padStart(2, '0')}`,
+          familyName: `Elsewhere${String(n)}`,
+          primaryFacilityId: DEMO_FACILITY_B,
+        })
+      );
+      return id;
+    }
+
+    async function declare(
+      app: ReturnType<typeof createTestApp>['app'],
+      patientId: string,
+      minutes?: number
+    ): Promise<Response> {
+      return app.request(`/bff/v0/patients/${patientId}/break-glass`, {
+        method: 'POST',
+        headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          reason: 'Collapsed in reception.',
+          ...(minutes === undefined ? {} : { minutes }),
+        }),
+      });
+    }
+
+    it('refuses the chart past the ceiling, and says which bound was reached', async () => {
+      const { app, dataset, sink } = createTestApp();
+      const charts = Array.from({ length: CEILING + 1 }, (_, n) => aChart(dataset, n));
+
+      const statuses: number[] = [];
+      for (const id of charts) statuses.push((await declare(app, id)).status);
+
+      expect(statuses.slice(0, CEILING)).toEqual(Array.from({ length: CEILING }, () => 201));
+      expect(statuses[CEILING]).toBe(403);
+      const refusals = sink
+        .writes()
+        .filter((entry) => entry.event.action === 'breakGlass.denied')
+        .map((entry) => entry.event.metadata?.['reason']);
+      expect(refusals).toEqual(['ceiling']);
+    });
+
+    /**
+     * The bound the ceiling cannot be.
+     *
+     * The ceiling counts what is still in force and the caller picks the
+     * expiry, so a one-minute window empties every slot a minute later: ten
+     * charts, wait, ten more, all afternoon, and nothing is ever over the
+     * ceiling. That loop is exactly what `spend` does below, and the point of
+     * the test is that the ceiling waves all of it through.
+     */
+    async function spend(
+      app: ReturnType<typeof createTestApp>['app'],
+      dataset: ReturnType<typeof createTestApp>['dataset'],
+      count: number
+    ): Promise<void> {
+      for (let n = 0; n < count; n += 1) {
+        if (n > 0 && n % CEILING === 0) {
+          /* Past the ceiling only because the last batch has expired, which is
+             the whole trick: nothing here is ever concurrent. */
+          vi.setSystemTime(new Date(Date.now() + 2 * 60_000));
+        }
+        expect((await declare(app, aChart(dataset, n), 1)).status).toBe(201);
+      }
+    }
+
+    it('refuses a reader whose earlier declarations have all expired', async () => {
+      const { app, dataset, sink } = createTestApp();
+      await spend(app, dataset, PER_WINDOW);
+      vi.setSystemTime(new Date(Date.now() + 2 * 60_000));
+
+      const next = await declare(app, aChart(dataset, PER_WINDOW));
+
+      expect(next.status).toBe(403);
+      /* The number in the sentence, because a refusal that does not say which
+         bound was reached leaves the reader with nothing to do about it. */
+      expect(((await next.json()) as ProblemDocument).detail).toContain(String(PER_WINDOW));
+      const reasons = sink
+        .writes()
+        .filter((entry) => entry.event.action === 'breakGlass.denied')
+        .map((entry) => entry.event.metadata?.['reason']);
+      expect(reasons).toEqual(['rolling-limit']);
+    });
+
+    it('lets the window pass and the reader carry on', async () => {
+      /* The other half: a bound that never released would be a lockout dressed
+         as a limit, and the refusal above says "ask an administrator" only
+         because the alternative is a clinician stuck out of every chart. */
+      const { app, dataset } = createTestApp();
+      await spend(app, dataset, PER_WINDOW);
+      vi.setSystemTime(new Date(FIXED_NOW.getTime() + 25 * 60 * 60_000));
+
+      expect((await declare(app, aChart(dataset, PER_WINDOW))).status).toBe(201);
+    });
   });
 
   it('does not record a grant against an id that names nobody', async () => {

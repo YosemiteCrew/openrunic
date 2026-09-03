@@ -221,6 +221,38 @@ get the ADR's stronger version, where the check is structurally impossible to sk
 under the data access rather than above it. Moving it there remains the better answer and is not
 done.
 
+**A task is evidence only when somebody else produced it.**
+The ADR's table lists `Task.assigneeUserId` and says nothing about who wrote the row, which reads
+as an oversight only once you notice that the row is the evidence. Every role that can read a chart
+can also write a task, and a task names its own patient and its own assignee: the biller role holds
+`task.write` and `patient.read` and nothing else it would need to file a task about any patient id
+it could guess, put itself in `assigneeUserId`, and have manufactured its own relationship. No
+reason recorded, no expiry, no ceiling, none of the things break-glass exists to impose.
+
+`Task.assignedById` is therefore stamped from the authenticated writer, on the create and again on
+any reassignment, and is not on the wire schema. The source counts a task only when its assigner is
+somebody other than the reader. A null assigner still counts: it means no person assigned the task,
+which is what the routing engine's own tasks look like, and one raised from a domain event is
+trusted for the same reason the event is.
+
+What this does not do is check that the assigner could have opened the chart themselves. That needs
+their roles and their facility grants, which the reading request does not have, so the honest
+statement of the rule is narrower than it could be: a reader cannot hand themselves a chart, and a
+colleague can hand them one. That is the delegation an inbox is for, and it is recorded against a
+name.
+
+**Break-glass has two bounds, not one.**
+The ceiling on concurrent grants was the only bound when this was first written, and it counts
+grants that have not expired while the caller chooses the expiry. Asking for a one-minute window
+empties every slot a minute later, so the ceiling bounds how many charts are open at an instant and
+not how many charts a reader can walk through in an afternoon.
+
+A rolling bound counts declarations made in a trailing window whatever became of them, which is the
+number a reviewer means and the one a short window cannot reduce. Both are enforced in the handler,
+for a refusal a person can act on, and in a database trigger under an advisory lock on
+`(tenant, user)`, because the handler's version is check-then-write and two requests sent together
+would both pass it.
+
 ### The evidence table, as implemented
 
 | Source              | Evidence                                                    |
@@ -230,7 +262,7 @@ done.
 | `care-team`         | membership in force, on an active team                      |
 | `encounter`         | `Encounter.providerId`, excluding withdrawn visits          |
 | `appointment`       | `Appointment.providerId`, excluding cancelled and withdrawn |
-| `assigned-task`     | `Task.assigneeUserId`                                       |
+| `assigned-task`     | `Task.assigneeUserId`, assigned by somebody else            |
 | `facility-activity` | any encounter or appointment the reader can already see     |
 
 `Referral.referredById`, `ConsentGrant.recordedById` and `MessageThread` participation are in the

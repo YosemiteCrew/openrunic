@@ -352,6 +352,7 @@ const FILTERS: {
     userId: 'id-userId',
     patientId: 'id-patientId',
     unexpiredAt: new Date('2026-01-01T00:00:00.000Z'),
+    grantedSince: new Date('2025-12-31T00:00:00.000Z'),
   },
   goals: {
     page: 1,

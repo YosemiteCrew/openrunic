@@ -156,6 +156,24 @@ export const patientRouteContracts: RouteContract[] = [
  */
 const MAX_CONCURRENT_GRANTS = 10;
 
+/**
+ * How many declarations one reader may make in a rolling window, and how long
+ * that window is.
+ *
+ * The ceiling above counts what is still in force, and the caller picks the
+ * expiry. Asking for a one-minute window empties all ten slots a minute later,
+ * so on its own the ceiling limits how many charts are open at an instant and
+ * not how many charts a person can walk through in an afternoon. This one
+ * counts declarations rather than live grants, so shortening the window makes
+ * no difference to it.
+ *
+ * It is deliberately looser than the ceiling. A bad night in an emergency
+ * department is several declarations; twenty in a day by one person is a sweep,
+ * and the refusal names an administrator because by then somebody should look.
+ */
+const MAX_GRANTS_PER_WINDOW = 20;
+const GRANT_WINDOW_HOURS = 24;
+
 export function patientRoutes(): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
   documentRoutes(router);
@@ -289,6 +307,39 @@ export function patientRoutes(): Hono<AppEnv> {
       throw ApiError.forbidden(
         `Break-glass is limited to ${String(MAX_CONCURRENT_GRANTS)} charts at once. ` +
           'Wait for one to expire, or ask an administrator.'
+      );
+    }
+
+    /*
+     * And a bound the caller cannot shorten their way out of.
+     *
+     * The ceiling counts what is still in force, which is a number a one-minute
+     * expiry resets. This counts declarations made in the trailing window
+     * whatever became of them, so ten charts, wait a minute, ten more is the
+     * pattern it stops. Refusing here is a lockout that needs an administrator,
+     * which is the point: at twenty declarations in a day somebody should be
+     * looking at this account rather than waiting for it to drain.
+     */
+    const madeSince = new Date(now.getTime() - GRANT_WINDOW_HOURS * 60 * 60_000);
+    const made = await repos.breakGlassGrants.list({
+      page: 1,
+      pageSize: 1,
+      sort: 'grantedAt',
+      order: 'desc',
+      userId: principal.subject,
+      grantedSince: madeSince,
+    });
+    if (made.total >= MAX_GRANTS_PER_WINDOW) {
+      await c.get('audit')?.denial({
+        action: 'breakGlass.denied',
+        targetType: 'Patient',
+        targetId: id,
+        patientId: id,
+        metadata: { reason: 'rolling-limit', made: made.total, roles: [...principal.roles] },
+      });
+      throw ApiError.forbidden(
+        `Break-glass is limited to ${String(MAX_GRANTS_PER_WINDOW)} declarations in ` +
+          `${String(GRANT_WINDOW_HOURS)} hours. Ask an administrator.`
       );
     }
 

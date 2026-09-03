@@ -749,6 +749,7 @@ function seedChart(dataset: MemoryDataset): void {
     assigneeType: 'USER',
     assigneeUserId: PROVIDER,
     assigneeTeamKey: null,
+    assignedById: null,
     dueAt: FIXED_NOW,
     slaState: 'OK',
     expiresAt: null,

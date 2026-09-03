@@ -787,6 +787,18 @@ export interface TaskListQuery extends BaseQuery {
   sort: 'dueAt' | 'priority' | 'createdAt';
 }
 
+/**
+ * A task as the repository stores it: the wire body plus the one column the
+ * writer owns.
+ *
+ * `assignedById` is not on `taskInput`, and that is the whole control. Chart
+ * authorisation reads this column, so a caller able to name themselves in it
+ * could hand themselves a relationship with any patient in the tenant. It is
+ * stamped from the authenticated writer in `stampCreate`, where the request
+ * body cannot reach it.
+ */
+export type TaskCreateInput = TaskInput & { assignedById?: string };
+
 /** Fields a task amendment may change. `/complete` and `/cancel` own the rest. */
 export interface TaskPatchInput {
   status?: TaskStatus;
@@ -796,6 +808,13 @@ export interface TaskPatchInput {
   assigneeType?: TaskAssigneeType;
   assigneeUserId?: string;
   assigneeTeamKey?: string;
+  /**
+   * Stamped by `stampPatch` when the amendment moves the task, never taken from
+   * the body. A reassignment is a fresh statement of who handed the work out,
+   * and without re-stamping it an account could point somebody else's task at
+   * itself and inherit that person's provenance.
+   */
+  assignedById?: string;
   dueAt?: Date;
   slaState?: TaskSlaState;
   expiresAt?: Date;
@@ -804,7 +823,7 @@ export interface TaskPatchInput {
   outcome?: string;
 }
 
-export const taskSpec: CollectionSpec<'Task', TaskInput, TaskPatchInput, TaskListQuery> = {
+export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, TaskListQuery> = {
   model: 'Task',
   targetType: 'Task',
   action: 'task',
@@ -812,7 +831,7 @@ export const taskSpec: CollectionSpec<'Task', TaskInput, TaskPatchInput, TaskLis
   encounterColumn: 'encounterId',
   compartment: { column: 'patientId' },
 
-  newRow(input: TaskInput): Writable<'Task'> {
+  newRow(input: TaskCreateInput): Writable<'Task'> {
     return {
       type: input.type,
       status: input.status ?? ORDER_DEFAULTS.task.status,
@@ -826,6 +845,7 @@ export const taskSpec: CollectionSpec<'Task', TaskInput, TaskPatchInput, TaskLis
       assigneeType: input.assigneeType,
       assigneeUserId: input.assigneeUserId ?? null,
       assigneeTeamKey: input.assigneeTeamKey ?? null,
+      assignedById: input.assignedById ?? null,
       dueAt: input.dueAt ?? null,
       slaState: input.slaState ?? ORDER_DEFAULTS.task.slaState,
       expiresAt: input.expiresAt ?? null,
@@ -904,15 +924,15 @@ export const taskSpec: CollectionSpec<'Task', TaskInput, TaskPatchInput, TaskLis
    * to close.
    */
   uniqueBy: {
-    where: (input: TaskInput) =>
+    where: (input: TaskCreateInput) =>
       input.sourceEventId === undefined
         ? { sourceEventId: matchesNothing() }
         : { sourceEventId: input.sourceEventId, type: input.type },
-    matches: (row: TaskRow, input: TaskInput) =>
+    matches: (row: TaskRow, input: TaskCreateInput) =>
       input.sourceEventId !== undefined &&
       row.sourceEventId === input.sourceEventId &&
       row.type === input.type,
-    message: (input: TaskInput) =>
+    message: (input: TaskCreateInput) =>
       `A ${input.type} task already exists for source event ${input.sourceEventId ?? ''}.`,
   },
 };

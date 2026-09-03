@@ -888,7 +888,10 @@ model User {
   medicationRequests MedicationRequest[]
   serviceRequests    ServiceRequest[]
   referralsMade      Referral[]
-  assignedTasks      Task[]
+  assignedTasks      Task[]                @relation("TaskAssignee")
+  /// Tasks this person handed to somebody else. Read by chart authorisation:
+  /// see the note on `Task.assignedById`.
+  handedOutTasks     Task[]                @relation("TaskAssigner")
   sentMessages       Message[]
   renderedCharges    ChargeItem[]
   careTeamRoles      CareTeamParticipant[]
@@ -1883,6 +1886,12 @@ model Task {
   description     String?
   assigneeType    TaskAssigneeType @default(USER)
   assigneeUserId  String?          @db.Uuid
+  /// Who handed this work out. Server-set from the writer on every create and
+  /// on every reassignment, never from the request body, because chart
+  /// authorisation reads it: a task you gave yourself is not evidence that
+  /// anyone involved you in this patient's care. Null means no person assigned
+  /// it, which is how the routing engine's own tasks look.
+  assignedById    String?          @db.Uuid
   /// Team pools are configuration keys, not rows, until team management ships.
   assigneeTeamKey String?
   dueAt           DateTime?
@@ -1901,10 +1910,12 @@ model Task {
   organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
-  assigneeUser User?        @relation(fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  assigneeUser User?        @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  assignedBy   User?        @relation("TaskAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, sourceEventId, type])
   @@index([tenantId, assigneeType, assigneeUserId, status])
+  @@index([tenantId, patientId, assigneeUserId, assignedById])
   @@index([tenantId, assigneeTeamKey, status])
   @@index([tenantId, type, status, dueAt])
   @@index([tenantId, status, slaState, dueAt])
@@ -3477,4 +3488,7 @@ model BreakGlassGrant {
   @@index([tenantId, userId, patientId, expiresAt])
   /// The review query: who broke glass on this patient, and when.
   @@index([tenantId, patientId, grantedAt])
+  /// The rolling count, which the first index cannot serve: it leads with
+  /// `patientId`, and how many declarations this reader has made names none.
+  @@index([tenantId, userId, grantedAt])
 }

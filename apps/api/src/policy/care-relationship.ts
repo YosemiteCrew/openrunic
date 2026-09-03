@@ -78,6 +78,16 @@ const WITHDRAWN_APPOINTMENTS = ['ENTERED_IN_ERROR', 'CANCELLED'] as const;
  */
 const MAX_TEAMS_PER_PATIENT = 20;
 
+/**
+ * How many of this reader's tasks about one patient the provenance check reads.
+ *
+ * Same shape of bound as the one above, and the same fallback: past it the
+ * reader drops through to `facility-activity` and to break-glass rather than
+ * being told something untrue. A clinician holding this many tasks about a
+ * single patient is also a clinician that facility-activity will answer for.
+ */
+const MAX_TASKS_PER_PATIENT = 20;
+
 export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
   {
     /*
@@ -222,18 +232,43 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
      * Any status, including a closed one. A task completed last week is still
      * evidence that this person was given the patient's work, and the chart
      * they may need to check afterwards is the same chart.
+     *
+     * ## Somebody else has to have handed it over
+     *
+     * The row is the evidence, so who wrote the row is part of it. Every role
+     * that can read a chart at all can also write a task, and a task names its
+     * own patient and its own assignee: without this an account holding
+     * `task.write` would file a task about any patient id it could guess, put
+     * itself in `assigneeUserId`, and have manufactured its own relationship -
+     * no reason recorded, no expiry, no ceiling, none of the things break-glass
+     * exists to impose. The reported route was the biller role, which holds
+     * `task.write` and `patient.read` and nothing else it would need.
+     *
+     * `assignedById` is stamped from the authenticated writer at the boundary
+     * and is not on the wire schema, so the value cannot be chosen. A null one
+     * is not a gap: it means no person assigned the task, which is what the
+     * routing engine's own tasks look like, and a task the system raised from a
+     * domain event is trusted for the same reason the event is.
+     *
+     * What this does not do is check that the assigner could open the chart
+     * themselves. Establishing that needs their roles and their facility
+     * grants, which this request does not have, and the honest description of
+     * the rule is therefore narrower than the finding asked for: a reader
+     * cannot hand themselves a chart, and a colleague can hand them one. That
+     * is the delegation the inbox is for, and it is recorded against a name.
      */
     name: 'assigned-task',
-    holds: async (repositories, query) =>
-      (
-        await repositories.tasks.list({
-          ...ONE,
-          sort: 'createdAt',
-          order: 'desc',
-          patientId: query.patientId,
-          assigneeUserId: query.principal.subject,
-        })
-      ).total > 0,
+    holds: async (repositories, query) => {
+      const held = await repositories.tasks.list({
+        page: 1,
+        pageSize: MAX_TASKS_PER_PATIENT,
+        sort: 'createdAt',
+        order: 'desc',
+        patientId: query.patientId,
+        assigneeUserId: query.principal.subject,
+      });
+      return held.rows.some((row) => row.assignedById !== query.principal.subject);
+    },
   },
   {
     /*

@@ -118,6 +118,20 @@ export interface CrudResource<
    * whether these exact bytes have arrived before is the case that drove it.
    */
   beforeCreate?(c: Context<AppEnv>, input: TCreate): Promise<void>;
+  /**
+   * Columns the writer owns rather than the request, filled in from the
+   * authenticated caller after the body has been parsed.
+   *
+   * The difference from `toCreate` is where the value can come from. `toCreate`
+   * sees only the body, so anything it sets is something the caller could have
+   * set; this sees the request, so what it sets is a fact about who is asking.
+   * Authorisation reads some of those columns - a task's assigner decides
+   * whether that task lets its assignee open the chart - and a column
+   * authorisation reads must never be one the body can name.
+   */
+  stampCreate?(input: TCreate, c: Context<AppEnv>): TCreate;
+  /** The same, for an amendment. See {@link CrudResource.stampCreate}. */
+  stampPatch?(patch: TPatch, c: Context<AppEnv>): TPatch;
   /** Extra statuses this aggregate's writes can produce, for the spec. */
   readonly writeResponses?: readonly { status: number; description: string }[];
 }
@@ -296,7 +310,8 @@ function crudRoutes<
   });
 
   router.post(base, requirePermission(resource.writePermission), async (c) => {
-    const input = resource.toCreate(await parseJsonBody(c, resource.createSchema));
+    const parsed = resource.toCreate(await parseJsonBody(c, resource.createSchema));
+    const input = resource.stampCreate?.(parsed, c) ?? parsed;
     const facilityId = resource.facilityOfInput?.(input) ?? null;
     // Asked before the write rather than after, so a refused create never
     // reaches the database.
@@ -314,7 +329,11 @@ function crudRoutes<
     const collection = resource.collection(repositories(c));
     const existing = required(await collection.findById(id), missing);
     guardRow(c, existing);
-    const row = required(await collection.update(id, resource.toPatch(body, existing)), missing);
+    const patch = resource.toPatch(body, existing);
+    const row = required(
+      await collection.update(id, resource.stampPatch?.(patch, c) ?? patch),
+      missing
+    );
     return c.json(resource.toDto(row));
   });
 

@@ -158,6 +158,7 @@ export function makePatientRow(overrides: Partial<PatientRow> = {}): PatientRow 
 export const SUBJECTS = {
   clinicianA: '01890000-0000-7000-8000-000000000101',
   frontDeskA: '01890000-0000-7000-8000-000000000102',
+  billerA: '01890000-0000-7000-8000-000000000103',
 } as const;
 
 /**

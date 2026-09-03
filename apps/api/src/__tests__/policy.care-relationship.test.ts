@@ -116,7 +116,12 @@ function aTeamWithMember(
   });
 }
 
-function aTask(dataset: Dataset, id: string, assigneeUserId: string): void {
+function aTask(
+  dataset: Dataset,
+  id: string,
+  assigneeUserId: string,
+  assignedById: string | null = OTHER_PROVIDER
+): void {
   seed(dataset, 'Task', {
     ...storageColumns(id),
     type: 'RESULT',
@@ -131,6 +136,7 @@ function aTask(dataset: Dataset, id: string, assigneeUserId: string): void {
     assigneeType: 'USER',
     assigneeUserId,
     assigneeTeamKey: null,
+    assignedById,
     dueAt: null,
     slaState: 'OK',
     expiresAt: null,
@@ -166,15 +172,31 @@ function aClaim(dataset: Dataset, id: string, patientId: string, encounterId: st
   });
 }
 
-const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
+/**
+ * A case, and which entry in `RELATIONSHIP_SOURCES` it is there to exercise.
+ *
+ * Naming the source rather than counting the cases is what lets a source have
+ * two of them - `facility-activity` has an encounter half and an appointment
+ * half, and `assigned-task` has a colleague's task and the system's own - while
+ * still failing when a source has none.
+ */
+interface GrantedCase {
+  readonly why: string;
+  readonly source: string;
+  readonly seedIt: Seeder;
+}
+
+const GRANTED: readonly GrantedCase[] = [
   {
     why: 'the clinician saw them',
+    source: 'encounter',
     seedIt: (dataset) => {
       anEncounter(dataset, { id: testId(3_010), providerId: SUBJECTS.clinicianA });
     },
   },
   {
     why: 'the clinician is due to see them',
+    source: 'appointment',
     seedIt: (dataset) => {
       seed(
         dataset,
@@ -190,12 +212,14 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
   },
   {
     why: 'the clinician is on their care team',
+    source: 'care-team',
     seedIt: (dataset) => {
       aTeamWithMember(dataset, { teamId: CARE_TEAM, memberId: testId(3_012) });
     },
   },
   {
     why: 'they took break-glass and it has not expired',
+    source: 'break-glass',
     seedIt: (dataset) => {
       seed(dataset, 'BreakGlassGrant', {
         ...storageColumns(testId(3_014)),
@@ -208,17 +232,31 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
     },
   },
   {
-    why: 'they hold a task about this patient',
+    why: 'somebody else handed them a task about this patient',
+    source: 'assigned-task',
     seedIt: (dataset) => {
       /* ADR-0007 lists `Task.assigneeUserId` in the evidence table. Without it a
          clinician sent a result to sign can open the task and not the chart the
          task is about, which makes the work impossible and teaches people that
          break-glass is a normal step. */
-      aTask(dataset, testId(3_016), SUBJECTS.clinicianA);
+      aTask(dataset, testId(3_016), SUBJECTS.clinicianA, OTHER_PROVIDER);
+    },
+  },
+  {
+    why: 'the routing engine raised a task about this patient for them',
+    source: 'assigned-task',
+    seedIt: (dataset) => {
+      /* A null assigner is the system's own task, raised from a domain event
+         rather than by a person, and it is trusted for the same reason the
+         event is. Written out because "nobody assigned it" and "they assigned
+         it to themselves" are one column apart and only one of them is
+         evidence. */
+      aTask(dataset, testId(3_017), SUBJECTS.clinicianA, null);
     },
   },
   {
     why: 'somebody else is due to see them at a site the clinician works at',
+    source: 'facility-activity',
     seedIt: (dataset) => {
       /* Reception's commonest case, and the one that showed the encounter half
          of `facility-activity` was carrying the appointment half's test too. */
@@ -236,6 +274,7 @@ const GRANTED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
   },
   {
     why: 'somebody else saw them at a site the clinician works at',
+    source: 'facility-activity',
     seedIt: (dataset) => {
       /* The receptionist and the covering nurse. Neither is named on anything,
          and both legitimately open the chart. */
@@ -265,6 +304,17 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
          assignee filter it would authorise on the existence of any task about
          the patient, which is every patient anyone has ever worked. */
       aTask(dataset, testId(3_027), OTHER_PROVIDER);
+    },
+  },
+  {
+    why: 'the only task about them is one they assigned to themselves',
+    seedIt: (dataset) => {
+      /* The reported escalation. Every role that can read a chart can also
+         write a task, and a task names its own patient and its own assignee, so
+         without the provenance check an account holding `task.write` would file
+         one about any patient id it could guess and have manufactured its own
+         relationship: no reason, no expiry, no ceiling. */
+      aTask(dataset, testId(3_028), SUBJECTS.clinicianA, SUBJECTS.clinicianA);
     },
   },
   {
@@ -351,23 +401,31 @@ describe('both boundaries answer the chart question identically', () => {
     /*
      * The guard on the guard. A source added to `RELATIONSHIP_SOURCES` without
      * a case here would be an unasserted way into a chart, and this suite would
-     * pass without noticing. `own-record` is the exception and is covered by
-     * the portal compartment tests, because a staff token cannot exercise it.
+     * pass without noticing.
+     *
+     * It compares names rather than counts. An earlier version subtracted the
+     * halves of `facility-activity` from `GRANTED.length` and added one back
+     * for `own-record`, which meant a case added for a source that already had
+     * one broke the arithmetic and said "a source has no case" about a suite
+     * that had just grown a test. Names do not have that failure mode, and they
+     * say which source is missing rather than that one is.
+     *
+     * `own-record` is excluded deliberately: a staff token cannot exercise it,
+     * and the portal compartment tests are where it lives.
      */
-    /*
-     * `GRANTED` has one more case than there are sources, because
-     * `facility-activity` has two halves - an encounter and an appointment -
-     * and each needs its own. `own-record` has none here and is counted
-     * separately: a staff token cannot exercise it, and the portal compartment
-     * tests are where it lives.
-     */
-    const facilityActivityHalves = 2;
-    const asserted = GRANTED.length - facilityActivityHalves + 1 + 1;
+    const covered = new Set(GRANTED.map((one) => one.source));
+    const staffReachable = RELATIONSHIP_SOURCES.map((source) => source.name).filter(
+      (name) => name !== 'own-record'
+    );
 
     expect(
-      asserted,
+      staffReachable.filter((name) => !covered.has(name)),
       'a relationship source has no case: adding one is adding a way into a chart'
-    ).toBe(RELATIONSHIP_SOURCES.length);
+    ).toEqual([]);
+    expect(
+      [...covered].filter((name) => !staffReachable.includes(name)),
+      'a case names a source the policy does not list'
+    ).toEqual([]);
   });
 });
 
@@ -773,5 +831,126 @@ describe('the roles that are not at the bedside', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * The task source, exercised the way it would actually be attacked.
+ *
+ * The cases above seed rows straight into the store, which is the right shape
+ * for asking what the policy does with a row and the wrong one for asking
+ * whether a caller can produce that row. These go through the write routes,
+ * because the whole finding was that a task is evidence a reader can write for
+ * themselves: every role that can read a chart can also write a task, and a
+ * task names its own patient and its own assignee.
+ */
+describe('a task is evidence only when somebody else produced it', () => {
+  const CHART = testId(3_500);
+
+  function aChartNobodyIsInvolvedWith(dataset: Dataset): void {
+    seed(dataset, 'Patient', makePatientRow({ id: CHART, mrn: 'OR-103500' }));
+  }
+
+  async function fileTask(
+    app: ReturnType<typeof createTestApp>['app'],
+    token: string,
+    assigneeUserId: string
+  ): Promise<string> {
+    const res = await app.request('/bff/v0/tasks', {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'RESULT',
+        title: 'Sign the lab result',
+        patientId: CHART,
+        assigneeType: 'USER',
+        assigneeUserId,
+      }),
+    });
+    expect(res.status).toBe(201);
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  const chart = (patientId: string): string => `/bff/v0/patients/${patientId}`;
+
+  it('refuses the chart to the reader who filed the task themselves', async () => {
+    /*
+     * The reported escalation, end to end. The biller role holds `task.write`
+     * and `patient.read` and nothing else it would need: without provenance it
+     * could file a task naming any patient id it could guess, put itself in
+     * `assigneeUserId`, and read the chart - no reason recorded, no expiry, no
+     * ceiling, none of the things break-glass exists to impose.
+     */
+    const { app, dataset } = createTestApp();
+    aChartNobodyIsInvolvedWith(dataset);
+
+    await fileTask(app, TOKENS.billerA, SUBJECTS.billerA);
+    const res = await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('opens the chart once a colleague hands the task over', async () => {
+    /* And the other half, because a rule that refused this would refuse the
+       inbox: a result sent to somebody to sign is exactly the case the source
+       is in the list for. */
+    const { app, dataset } = createTestApp();
+    aChartNobodyIsInvolvedWith(dataset);
+
+    await fileTask(app, TOKENS.clinicianA, SUBJECTS.billerA);
+    const res = await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses the chart to a reader who points somebody else task at themselves', async () => {
+    /*
+     * A reassignment is a fresh statement of who handed the work out. Stamping
+     * only on create would leave the walk-round intact and one verb further
+     * away: file nothing, find any task about the chart, PATCH it onto
+     * yourself, and inherit the assigner along with the task.
+     */
+    const { app, dataset } = createTestApp();
+    aChartNobodyIsInvolvedWith(dataset);
+    const id = await fileTask(app, TOKENS.clinicianA, SUBJECTS.frontDeskA);
+
+    const moved = await app.request(`/bff/v0/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({ assigneeType: 'USER', assigneeUserId: SUBJECTS.billerA }),
+    });
+    expect(moved.status).toBe(200);
+    const res = await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses an assigner named in the request body', async () => {
+    /*
+     * The column is server-owned, and a body key that reached it would undo
+     * every case above in one line. Two things stop it and this asserts the
+     * outer one: the create schema does not have the key, so the request is
+     * rejected rather than quietly stripped. If that schema is ever relaxed to
+     * strip unknown keys instead, the stamp is still last in the spread and
+     * still wins, and the second half of this test is what would notice.
+     */
+    const { app, dataset } = createTestApp();
+    aChartNobodyIsInvolvedWith(dataset);
+
+    const res = await app.request('/bff/v0/tasks', {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'RESULT',
+        title: 'Sign the lab result',
+        patientId: CHART,
+        assigneeType: 'USER',
+        assigneeUserId: SUBJECTS.billerA,
+        assignedById: SUBJECTS.clinicianA,
+      }),
+    });
+    expect(res.status).toBe(422);
+
+    expect((await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) })).status).toBe(404);
   });
 });

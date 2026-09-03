@@ -592,6 +592,15 @@ export interface BreakGlassGrantListQuery extends BaseQuery {
   patientId?: string;
   /** Grants still in force at this instant. */
   unexpiredAt?: Date;
+  /**
+   * Grants declared since this instant, whatever became of them.
+   *
+   * Deliberately not `unexpiredAt`. The caller chooses the expiry, so a count
+   * of what is still in force is a count the caller can drain at will; this one
+   * asks how many declarations were made, which is the number a reviewer means
+   * and the one a short window cannot reduce.
+   */
+  grantedSince?: Date;
   sort: 'grantedAt' | 'createdAt';
 }
 
@@ -667,7 +676,8 @@ export const breakGlassGrantSpec: CollectionSpec<
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     /* Strictly after: a grant that expires at this instant has expired. The
        alternative rounds a window open by however coarse the clock is. */
-    return query.unexpiredAt === undefined || row.expiresAt > query.unexpiredAt;
+    if (query.unexpiredAt !== undefined && row.expiresAt <= query.unexpiredAt) return false;
+    return query.grantedSince === undefined || row.grantedAt > query.grantedSince;
   },
 
   where(query: BreakGlassGrantListQuery) {
@@ -675,6 +685,7 @@ export const breakGlassGrantSpec: CollectionSpec<
       ...(query.userId === undefined ? {} : { userId: query.userId }),
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.unexpiredAt === undefined ? {} : { expiresAt: { gt: query.unexpiredAt } }),
+      ...(query.grantedSince === undefined ? {} : { grantedAt: { gt: query.grantedSince } }),
     };
   },
 

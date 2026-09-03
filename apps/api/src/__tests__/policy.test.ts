@@ -70,6 +70,29 @@ describe('the permission catalogue', () => {
     expect(ROLE_PERMISSIONS['stock-keeper']).not.toContain('encounter.read');
   });
 
+  /**
+   * The audit trail doubles as a patient index and a who-saw-whom log, so
+   * reading it is supervisory, not clinical. It must not ride into the general
+   * read bundle on its `.read` suffix.
+   */
+  it('keeps the audit trail out of the read-only bundle', () => {
+    expect(ROLE_PERMISSIONS['read-only']).not.toContain('audit.read');
+  });
+
+  /**
+   * And it lands somewhere: the auditor role holds it, organisation-wide,
+   * without being an administrator - the same shape as `stock-keeper`.
+   */
+  it('gives the auditor the trail and nothing that treats a patient', () => {
+    expect(ROLE_PERMISSIONS.auditor).toContain('audit.read');
+    expect(ROLE_PERMISSIONS.auditor).not.toContain('patient.read');
+    expect(ROLE_PERMISSIONS.auditor?.some((perm) => perm.endsWith('.write'))).toBe(false);
+    /* Scoped by grant, not by role: facility.all is what makes an auditor
+       organisation-wide, and leaving it out of the role is what lets a
+       single-site reviewer exist. */
+    expect(ROLE_PERMISSIONS.auditor).not.toContain('facility.all');
+  });
+
   it('lets the front desk see the shelf without booking anything in', () => {
     expect(ROLE_PERMISSIONS['front-desk']).toContain('inventory.read');
     expect(ROLE_PERMISSIONS['front-desk']).not.toContain('inventory.write');

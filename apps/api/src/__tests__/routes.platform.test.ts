@@ -1872,15 +1872,15 @@ describe('the audit log and the caller\u2019s facilities', () => {
     seedSitedEvents(auditStore);
 
     const page = await body<ListResponse<AuditEventDto>>(
-      await get(app, '/bff/v0/audit?pageSize=50', TOKENS.siteReaderA)
+      await get(app, '/bff/v0/audit?pageSize=50', TOKENS.auditorA)
     );
 
     const targets = page.data.map((event) => event.targetId);
     expect(targets).toContain(testId(1));
     expect(targets).toContain(testId(3));
-    // The other site's event is the one that must not be there. `read-only`
-    // holds audit.read and not facility.all, so before this narrowing a site
-    // auditor read the whole organisation's log.
+    // The other site's event is the one that must not be there. The auditor role
+    // holds audit.read and not facility.all, so its facility grant is what
+    // narrows the log to one site's events plus the unsited ones.
     expect(targets).not.toContain(testId(2));
   });
 
@@ -1909,7 +1909,7 @@ describe('the audit log and the caller\u2019s facilities', () => {
     const other = all.data.find((event) => event.targetId === testId(2));
     expect(other, 'the facility-B event should exist for an admin').toBeDefined();
 
-    const res = await get(app, `/bff/v0/audit/${other?.id ?? ''}`, TOKENS.siteReaderA);
+    const res = await get(app, `/bff/v0/audit/${other?.id ?? ''}`, TOKENS.auditorA);
 
     // 404 rather than 403: a distinguishable refusal would confirm the event
     // exists, which on an audit log tells the caller an act happened at a site
@@ -1982,13 +1982,27 @@ describe('GET /bff/v0/audit', () => {
     );
   });
 
-  it('401s without a token and 403s every role but the administrator', async () => {
+  it('401s without a token, and 403s a clinician', async () => {
     const { app } = createTestApp();
 
     expect((await anonymous(app, '/bff/v0/audit')).status).toBe(401);
     const denied = await get(app, '/bff/v0/audit', TOKENS.clinicianA);
     expect(denied.status).toBe(403);
     expect((await body<ProblemDocument>(denied)).detail).toContain('audit.read');
+  });
+
+  /**
+   * The point of #248. The audit trail is a patient index and a who-saw-whom
+   * log, so it is supervisory rather than something a general read-only account
+   * should hold. `read-only` used to be admitted here, on the strength of
+   * `audit.read` ending in `.read` and being swept into the bundle. It is
+   * refused now, and the auditor role is what carries the capability instead.
+   */
+  it('refuses a read-only account and admits an auditor', async () => {
+    const { app } = createTestApp();
+
+    expect((await get(app, '/bff/v0/audit', TOKENS.siteReaderA)).status).toBe(403);
+    expect((await get(app, '/bff/v0/audit', TOKENS.auditorA)).status).toBe(200);
   });
 });
 

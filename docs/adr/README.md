@@ -35,7 +35,8 @@ understand not just what was decided, but why, and what alternatives were reject
 | [0004](0004-no-ml-runtime-in-core.md)             | No ML runtime in the core deployment                                         | Accepted |
 | [0005](0005-agentic-layer.md)                     | An optional agentic layer over a deployer-configured inference endpoint      | Accepted |
 | [0006](0006-patient-agent-surface.md)             | A patient-facing assistant surface, bound to one chart and to retrieval only | Accepted |
-| [0007](0007-care-relationship-authorisation.md)   | A patient read is authorised by a care relationship, not by knowing the id   | Proposed |
+| [0007](0007-care-relationship-authorisation.md)   | A patient read is authorised by a care relationship, not by knowing the id   | Accepted |
+| [0008](0008-audit-read-is-supervisory.md)         | Reading the audit trail is a supervisory capability, not a general read      | Accepted |
 
 ADR-0005 supplements ADR-0004 and amends one clause of it. An amendment is not a supersession: both
 are Accepted, and ADR-0004 carries a note at the top naming the clause that moved.

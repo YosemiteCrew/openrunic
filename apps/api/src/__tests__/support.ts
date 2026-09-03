@@ -68,6 +68,15 @@ export const TOKENS = {
    * something this code cannot keep.
    */
   siteReaderA: 'test-site-reader-a',
+  /**
+   * An `auditor` confined to facility A.
+   *
+   * The supervisory capability, `audit.read`, no longer rides in the `read-only`
+   * bundle, so an auditor is its own role and a site auditor is that role plus a
+   * single facility grant. This token is how the facility narrowing on the audit
+   * log is exercised without also holding `facility.all`.
+   */
+  auditorA: 'test-auditor-a',
 } as const;
 
 /** A valid, stable UUIDv7-shaped id. */
@@ -340,6 +349,14 @@ export const SITE_READER_PRINCIPAL: Principal = {
   facilityIds: [DEMO_FACILITY_A],
 };
 
+/** A site-confined auditor: `audit.read` through the `auditor` role, one site. */
+export const AUDITOR_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(78),
+  roles: ['auditor'],
+  facilityIds: [DEMO_FACILITY_A],
+};
+
 export const ADMIN_B_PRINCIPAL: Principal = {
   ...ADMIN_PRINCIPAL,
   subject: testId(955),
@@ -386,6 +403,7 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.noScopeA, NO_SCOPE_PRINCIPAL],
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
       [TOKENS.siteReaderA, SITE_READER_PRINCIPAL],
+      [TOKENS.auditorA, AUDITOR_PRINCIPAL],
     ])
   );
 }

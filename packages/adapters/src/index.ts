@@ -73,6 +73,7 @@ export type {
   AnyCapabilityAdapter,
   CapabilityAdapterMap,
   ConfigOf,
+  EntitlementOf,
   FeatureOf,
 } from './contracts/index.js';
 

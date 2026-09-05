@@ -9,7 +9,7 @@ import type {
   AnyCapabilityAdapter,
   CapabilityAdapterMap,
   ConfigOf,
-  FeatureOf,
+  EntitlementOf,
 } from './contracts/index.js';
 import { CONTRACTS } from './contracts/index.js';
 
@@ -287,6 +287,15 @@ export class AdapterRegistry {
    * and the practice must be able to say so". Both have to be true, and a caller
    * gating a regulated operation must ask both.
    *
+   * ## Only entitlements, not every feature
+   *
+   * The parameter is {@link EntitlementOf}, not `FeatureOf`. The lookup is a
+   * configuration key, so a feature that is not one - `cancel`, `formulary`, and
+   * 23 others across the eight contracts - could only ever come back `false`,
+   * and "not entitled" and "not an entitlement" would be the same value with no
+   * way for a caller or a reviewer to tell them apart at the call site. Asking
+   * about one is now TS2345 rather than a well-formed permanent refusal.
+   *
    * ## It fails closed, and that is the point
    *
    * `false` is returned when no configuration was recorded, when the feature is
@@ -297,7 +306,7 @@ export class AdapterRegistry {
    *
    * Never widen this to treat a missing configuration as permission.
    */
-  entitledTo<C extends Capability>(capability: C, feature: FeatureOf<C>): boolean {
+  entitledTo<C extends Capability>(capability: C, feature: EntitlementOf<C>): boolean {
     return this.installations.get(capability)?.[feature] === true;
   }
 

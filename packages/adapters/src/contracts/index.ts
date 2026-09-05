@@ -74,3 +74,20 @@ export type ConfigOf<C extends Capability> = z.infer<(typeof CONTRACTS)[C]['conf
  * call site instead of a check that is quietly always false.
  */
 export type FeatureOf<C extends Capability> = (typeof CONTRACTS)[C]['features'][number];
+
+/**
+ * The features of a capability that an installation records an ENTITLEMENT for:
+ * the ones its contract also carries as a configuration key.
+ *
+ * A feature is what a vendor may offer. An entitlement is what this practice
+ * holds. `epcs` is the only feature that is both today, which is why the eRx
+ * contract states the two-facts rule for it in as many words. Every other
+ * feature is something a vendor offers and nothing a practice holds separately,
+ * so asking the registry about it is a question with no answer rather than a
+ * question answered `false`.
+ *
+ * A capability that records no entitlements resolves to `never`, so asking at
+ * all stops compiling. That is the right answer for a registry that has nothing
+ * to say about that seam - see {@link AdapterRegistry.entitledTo}.
+ */
+export type EntitlementOf<C extends Capability> = Extract<FeatureOf<C>, keyof ConfigOf<C>>;

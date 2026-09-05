@@ -428,6 +428,33 @@ describe('installation entitlements', () => {
     expect(new AdapterRegistry().entitledTo('erx', 'epcs')).toBe(false);
   });
 
+  it('does not accept a vendor feature that is not an entitlement', () => {
+    /*
+     * A type-level case, and it is the only shape that can hold this one: the
+     * defect is a call that compiles and returns a well-formed `false` forever.
+     *
+     * `@ts-expect-error` is the assertion. If `entitledTo` widens back to
+     * `FeatureOf`, these calls compile, the directives become unused, and
+     * `run type-check` fails with TS2578 - so the mutation is red on the gate
+     * rather than green in the suite. `run type-check` is the command that sees
+     * this file; the package's default tsconfig excludes tests.
+     *
+     * `cancel` is not misspelt. It is spelled correctly, the vendor declares it,
+     * and the registry has nothing to say about it.
+     */
+    const registry = new AdapterRegistry();
+    expectOk(registry.register('erx', new MockErxAdapter(), { config: MOCK_CONFIGS.erx }));
+
+    // @ts-expect-error 'cancel' is a feature the vendor offers, not an entitlement this practice holds.
+    registry.entitledTo('erx', 'cancel');
+    // @ts-expect-error 'formulary' is likewise a vendor feature and not a configuration key.
+    registry.entitledTo('erx', 'formulary');
+    // @ts-expect-error labs records no entitlements at all, so EntitlementOf<'labs'> is never.
+    registry.entitledTo('labs', 'cancel');
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(true);
+  });
+
   it('records nothing when the registration is refused', () => {
     // Otherwise a rejected adapter leaves an entitlement behind for a
     // capability the registry cannot perform at all.

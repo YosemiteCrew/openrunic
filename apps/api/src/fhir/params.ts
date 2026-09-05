@@ -25,6 +25,15 @@ export function rejectUnsupportedParams(
   query: SearchParams,
   accepted: ReadonlySet<string>
 ): void {
+  rejectUnknown(resourceType, query, accepted);
+  rejectEmpty(resourceType, query);
+}
+
+function rejectUnknown(
+  resourceType: string,
+  query: SearchParams,
+  accepted: ReadonlySet<string>
+): void {
   const unsupported = Object.keys(query).filter((name) => !accepted.has(name));
   if (unsupported.length === 0) return;
 
@@ -36,6 +45,58 @@ export function rejectUnsupportedParams(
         path: name,
         message: 'not a supported search parameter',
       })),
+    }
+  );
+}
+
+/**
+ * A parameter that is present and empty is refused, not answered.
+ *
+ * `SearchParams` is `Record<string, string>`, so `?family=` arrives as
+ * present-and-empty rather than absent, and every parameter on this boundary
+ * therefore has a degenerate case. Before this, they answered it three
+ * different ways: thirteen date parameters and seven closed-value-set tokens
+ * refused it, because an empty string is not a date and is not a member of a
+ * value set; forty-one selected nothing, because an equality against an empty
+ * string matches no row; and seven answered with EVERY row - `Patient?name=`,
+ * `?family=`, `?given=`, `Practitioner?identifier=`, `Practitioner?name=`,
+ * `Organization?name=` and `Location?name=`, because a contains-filter on an
+ * empty needle is a tautology and a bare token with no value admits any.
+ *
+ * That last group is the reason this exists, and it is the failure the header
+ * of this file describes: a client that filtered and received the whole
+ * practice believes it received a slice.
+ *
+ * Refusing rather than selecting nothing, for three reasons.
+ *
+ * The forty-one decide nothing. They fall out of `{ mrn: '' }` matching no row,
+ * not out of anybody choosing an answer, so "most of them already select
+ * nothing" is a description of equality semantics rather than a precedent. The
+ * twenty that refuse are the ones where a decision was actually taken.
+ *
+ * Selecting nothing is not expressible here for the string parameters without
+ * changing `containsFold`, which is shared with the internal search where a
+ * cleared search box sending an empty needle and getting everything back is
+ * correct. One helper, two contracts; fixing FHIR there would break the other.
+ *
+ * And an empty bundle is itself a guess. `Patient?family=` answered with no
+ * entries is indistinguishable from "no such patient", so a client sending a
+ * blank form field is told nothing about the blank field. A refusal costs them
+ * one round trip and names the parameter.
+ *
+ * `_count` and `_offset` need no exception: `Number('')` is 0, which is outside
+ * both bounds, so they already refuse.
+ */
+function rejectEmpty(resourceType: string, query: SearchParams): void {
+  const empty = Object.entries(query)
+    .filter(([, value]) => value === '')
+    .map(([name]) => name);
+  if (empty.length === 0) return;
+
+  throw ApiError.malformed(
+    `Empty search ${empty.length === 1 ? 'parameter' : 'parameters'} for ${resourceType}: ${empty.join(', ')}. Omit a parameter rather than sending it with no value.`,
+    {
+      issues: empty.map((name) => ({ path: name, message: 'present but empty' })),
     }
   );
 }

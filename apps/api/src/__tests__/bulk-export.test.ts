@@ -486,6 +486,24 @@ describe('_since', () => {
     expect(res.status).toBe(400);
   });
 
+  it('refuses a _since that is present and empty', async () => {
+    /*
+     * The export shares the search boundary's parameter guard, and this is the
+     * request that most needs it: an empty `_since` read as absent produces a
+     * COMPLETE export that the client believes is the delta since their last
+     * one, and nothing in the manifest says otherwise. That is the failure the
+     * comment at the `$export` call site names, arriving through a blank value
+     * rather than through a misspelled name.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/$export?_since=', { headers: asyncHeaders });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as { issue?: { expression?: string[] }[] };
+    expect(outcome.issue?.[0]?.expression).toEqual(['_since']);
+  });
+
   /**
    * The dangerous one. `new Date` accepts this and reads it in the server's
    * local timezone, so a client in another zone would receive an export missing

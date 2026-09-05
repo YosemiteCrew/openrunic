@@ -326,6 +326,40 @@ describe('search parameter handling', () => {
     expect(() => rejectUnsupportedParams('Patient', { family: 'x' }, accepted)).not.toThrow();
   });
 
+  it('refuses a supported parameter that is present and empty', () => {
+    /*
+     * `?family=` is present-and-empty, not absent, and the three answers this
+     * boundary used to give it were an empty bundle, the whole practice, and a
+     * 400 - depending on which parameter it was. The whole-practice answer is
+     * what this exists for: a contains-filter on an empty needle matches every
+     * row, so a client that filtered received everything and could not tell.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { family: '' }, accepted)).toThrow(
+      /Empty search parameter/u
+    );
+  });
+
+  it('reports an unknown empty parameter as unknown rather than as empty', () => {
+    /* Both rules match; only one of them tells the client what to fix. */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: '' }, accepted)).toThrow(
+      /Unsupported search parameter/u
+    );
+  });
+
+  it('leaves a value that is only whitespace alone', () => {
+    /*
+     * Deliberate, and the boundary between this rule and a different one. The
+     * rule is about a parameter carrying no value at all, which is what a blank
+     * form field produces; trimming would make this guard decide what counts as
+     * a meaningful search term, which is the value set's job and not the query
+     * parser's. A space is a legal character in a name.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { family: ' ' }, accepted)).not.toThrow();
+  });
+
   it('reads the value half of a token, and a bare value whole', () => {
     expect(tokenValue('https://openrunic.org/fhir/sid/mrn|OR-100482')).toBe('OR-100482');
     expect(tokenValue('OR-100482')).toBe('OR-100482');

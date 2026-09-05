@@ -472,6 +472,15 @@ export interface ExportTruncation {
   readonly type: string;
   readonly exported: number;
   readonly total: number;
+  /**
+   * Rows this export matched and could not project, one diagnostic each.
+   *
+   * Separate from the ceiling because the two are different facts with
+   * different remedies: a ceiling truncation is answered by narrowing the
+   * export, and this is not answered by anything the client can do. Telling
+   * them to narrow it would be advice the surface cannot honour.
+   */
+  readonly withheld?: readonly string[];
 }
 
 export interface ExportResult {
@@ -510,9 +519,16 @@ export async function runExport(
   for (const module of modules) {
     if (!types.includes(module.type)) continue;
 
-    const { kept, total } = await collectType(c, module, limit);
+    const { kept, total, withheld } = await collectType(c, module, limit);
     if (total > kept.length) {
-      truncations.push({ type: module.type, exported: kept.length, total });
+      // The key is omitted rather than set empty when nothing was withheld, so
+      // a ceiling truncation is exactly the record it has always been.
+      truncations.push({
+        type: module.type,
+        exported: kept.length,
+        total,
+        ...(withheld.length === 0 ? {} : { withheld }),
+      });
     }
 
     const rows = since === undefined ? kept : kept.filter((row) => isAfter(row, since));
@@ -540,8 +556,9 @@ async function collectType(
   c: Context<AppEnv>,
   module: FhirResourceModule,
   limit: number
-): Promise<{ kept: readonly FhirResource[]; total: number }> {
+): Promise<{ kept: readonly FhirResource[]; total: number; withheld: readonly string[] }> {
   const collected: FhirResource[] = [];
+  const withheld: string[] = [];
   let total = 0;
 
   for (let offset = 0; offset < limit; offset += EXPORT_PAGE_SIZE) {
@@ -555,40 +572,33 @@ async function collectType(
       { authorizedExport: true }
     );
     total = page.total;
-    /*
-     * An export refuses what a search reports.
-     *
-     * A search that cannot project a row returns the rest and an `outcome`
-     * entry naming what it left out. NDJSON has nowhere to put that: the file
-     * would be one record short and read as complete, which is the
-     * silently-incomplete export this codebase treats as a defect in its own
-     * right - and an export is the read most likely to be reconciled against
-     * by a system that will never see a warning.
-     *
-     * So it stops. Before the page-size check below, too, because a page
-     * shortened by a withheld row would otherwise be read as the last one and
-     * truncate the whole export rather than this one type.
-     */
-    if (page.withheld.length > 0) {
-      throw ApiError.notImplemented(
-        `The ${module.type} export cannot be produced: ${page.withheld[0] ?? ''}`,
-        { title: 'Export contains a record this server cannot project' }
-      );
-    }
     collected.push(...page.rows);
-    // All three conditions are needed. A page shorter than the one asked for is
-    // the last one; a repository reporting a total it cannot deliver would
-    // otherwise spin until the ceiling; and a page may carry the export past the
-    // ceiling in one step.
-    if (page.rows.length < EXPORT_PAGE_SIZE) break;
-    if (collected.length >= total) break;
+    withheld.push(...page.withheld);
+    /*
+     * All three conditions are needed. A page shorter than the one asked for is
+     * the last one; a repository reporting a total it cannot deliver would
+     * otherwise spin until the ceiling; and a page may carry the export past the
+     * ceiling in one step.
+     *
+     * The first counts what the page HELD, not what survived projection. A row
+     * the module withheld still filled a slot in that page, and reading a page
+     * shortened by one as the last page would end the export early and lose
+     * every record after it - a truncation caused by a diagnostic, which is the
+     * worst way to find out about one.
+     */
+    if (page.rows.length + page.withheld.length < EXPORT_PAGE_SIZE) break;
+    if (collected.length + withheld.length >= total) break;
     if (collected.length >= limit) break;
   }
 
   // Trimmed rather than left as fetched, so the ceiling means the same thing
   // whatever the page size divides into: a page is allowed to overshoot it, the
   // export is not.
-  return { kept: collected.length > limit ? collected.slice(0, limit) : collected, total };
+  return {
+    kept: collected.length > limit ? collected.slice(0, limit) : collected,
+    total,
+    withheld,
+  };
 }
 
 /**
@@ -622,17 +632,40 @@ export function truncationOutcomes(
 ): readonly ExportFile[] {
   if (truncations.length === 0) return [];
 
-  const outcomes = truncations.map((truncation) => ({
-    resourceType: 'OperationOutcome',
-    issue: [
-      {
-        severity: 'warning',
-        code: 'too-costly',
-        diagnostics: `Exported ${truncation.exported} of ${truncation.total} ${truncation.type} resources: this server exports at most ${limit} of a type in one job. Narrow the export with _since or _type.`,
-        expression: [truncation.type],
-      },
-    ],
-  }));
+  const outcomes = truncations.map((truncation) => {
+    const withheld = truncation.withheld ?? [];
+    return {
+      resourceType: 'OperationOutcome',
+      /*
+       * One issue per reason, and the ceiling is only one of them.
+       *
+       * A file short by a withheld row is short for a reason the client cannot
+       * act on, so it must not be reported as a ceiling and must not carry the
+       * "narrow the export" advice. The ceiling issue is emitted only when the
+       * shortfall is larger than what was withheld - which is the arithmetic
+       * that says the ceiling actually bit, rather than inferring it from a
+       * count that two different causes can produce.
+       */
+      issue: [
+        ...(truncation.exported + withheld.length < truncation.total
+          ? [
+              {
+                severity: 'warning',
+                code: 'too-costly',
+                diagnostics: `Exported ${truncation.exported} of ${truncation.total} ${truncation.type} resources: this server exports at most ${limit} of a type in one job. Narrow the export with _since or _type.`,
+                expression: [truncation.type],
+              },
+            ]
+          : []),
+        ...withheld.map((diagnostics) => ({
+          severity: 'warning',
+          code: 'incomplete',
+          diagnostics,
+          expression: [truncation.type],
+        })),
+      ],
+    };
+  });
 
   return [
     {

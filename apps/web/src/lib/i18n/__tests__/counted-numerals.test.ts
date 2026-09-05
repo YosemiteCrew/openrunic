@@ -71,10 +71,29 @@ describe('the digits in a counted message', () => {
  */
 describe('the type of an interpolation', () => {
   it('rejects a raw number, which is what stops the class coming back', () => {
-    // `@ts-expect-error` inverts on its own. Widen `Interpolations` back to
-    // `string | number` and these stop being errors, the directives become
-    // unused, and `pnpm --filter web run type-check` fails with TS2578 - red on
-    // the gate rather than green in a suite that only makes legal calls.
+    /*
+     * `@ts-expect-error` inverts on its own. Widen `Interpolations` back to
+     * `string | number` and these stop being errors, the directives become
+     * unused, and TS2578 is red on the gate rather than green in a suite that
+     * only makes legal calls.
+     *
+     * THE COMMAND IS `pnpm run type-check` FROM THE ROOT, AND NOT
+     * `pnpm --filter web run type-check`.
+     *
+     * Measured with the type widened and nothing else touched: the filtered
+     * command is exit 0 with no TS2578, and the root command is exit 2 with
+     * two. `apps/web` has no `paths` entry for a workspace package, so it
+     * resolves `@openrunic/i18n` through that package's exports map to a built
+     * `dist/index.d.ts` - the filtered run checks this file against whatever
+     * was built last and cannot see the change. The root task is turbo's, and
+     * turbo's `type-check` declares `dependsOn: ["^build"]`, which is the whole
+     * of why the rebuild happens first.
+     *
+     * Naming the shorter command here would be worse than naming none: somebody
+     * checking whether these directives still do anything would get exit 0, and
+     * the honest reading of exit 0 is that they report nothing and are dead
+     * weight to delete.
+     */
     const values: Interpolations = {
       // @ts-expect-error a count belongs in formatCount, not in the message
       count: 24,

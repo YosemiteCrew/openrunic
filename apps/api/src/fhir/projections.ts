@@ -288,6 +288,16 @@ export interface DispensePageData {
   readonly movementsByPosting: ReadonlyMap<string, readonly ScopedRow<'StockMovement'>[]>;
   readonly itemsById: ReadonlyMap<string, ScopedRow<'StockItem'>>;
   readonly lotsById: ReadonlyMap<string, ScopedRow<'StockLot'>>;
+  /**
+   * Postings whose movements did not fit one page, and which therefore cannot
+   * be given a quantity.
+   *
+   * Recorded rather than thrown on, so the module can withhold exactly these
+   * rows and serve the rest. Their movements are deliberately absent from
+   * `movementsByPosting`: everything in that map is a complete set, so nothing
+   * downstream can sum a partial one by accident.
+   */
+  readonly unsummable: ReadonlySet<string>;
 }
 
 /**

@@ -700,7 +700,8 @@ const medicationDispenseModule = defineFhirResource({
     const movementsByPosting = new Map<string, ScopedRow<'StockMovement'>[]>();
     const itemsById = new Map<string, ScopedRow<'StockItem'>>();
     const lotsById = new Map<string, ScopedRow<'StockLot'>>();
-    if (rows.length === 0) return { movementsByPosting, itemsById, lotsById };
+    const unsummable = new Set<string>();
+    if (rows.length === 0) return { movementsByPosting, itemsById, lotsById, unsummable };
 
     const pages = await Promise.all(
       rows.map(async (row) =>
@@ -715,7 +716,7 @@ const medicationDispenseModule = defineFhirResource({
     );
     for (const [index, page] of pages.entries()) {
       /*
-       * A dispense whose lines did not fit is refused, not summed.
+       * A dispense whose lines did not fit is withheld, not summed.
        *
        * `medicationDispenseResource` adds up the movements it is given and
        * publishes the total as `quantity`, which a receiving system reads as
@@ -726,46 +727,25 @@ const medicationDispenseModule = defineFhirResource({
        *
        * There is no such thing as an approximately correct dispensed quantity.
        * An understated one reconciles against nothing, hides a recall, and
-       * would be read by a clinician as the dose that was actually supplied. So
-       * this answers "this server cannot represent that record" rather than
-       * answering with a number it knows is short.
+       * would be read by a clinician as the dose that was actually supplied.
        *
-       * 501 rather than a 4xx: the client asked for something reasonable and it
-       * is this server's projection that cannot carry it. The bound is not a
-       * page size a caller can raise, which is why it is not reported as one.
-       *
-       * THE POSTING IS NAMED, and that is not a nicety. `prepare` runs for the
-       * search as well as the read, so one pathological record makes a whole
-       * chart's dispense history answer 501 - after the portal gained this
+       * This used to throw from here, which was right about the record and
+       * wrong about everything else on the page: `prepare` runs for the search
+       * as well as the read, so one pathological record made a whole chart's
+       * dispense history answer 501 - and since the portal gained this
        * resource, that is a patient unable to read any of their medicines
-       * because of one of them. An outcome that names the id is what lets a
-       * client say which record is at fault and ask for the rest without it.
-       * The page is already compartment-narrowed by the time this runs, so the
-       * id discloses nothing the bundle would not have carried anyway.
+       * because of one of them.
        *
-       * It does NOT tell the caller to exclude the record, because they cannot:
-       * this module declares `params: ['patient']` and nothing else, so there
-       * is no `_id`, no `:not`, and no way to select a subset of one chart's
-       * dispenses. An OperationOutcome is read by a machine that will attempt
-       * what it is told, and advice the surface does not offer is worse than
-       * none. The id and the pointer at the ledger are the actionable half.
-       *
-       * The chart-wide blast radius is still wrong and is not fixed here. The
-       * right shape is a read that refuses and a search that returns the
-       * entries it can alongside an `OperationOutcome` entry saying what it
-       * withheld - and dropping the entry WITHOUT saying so would be the same
-       * silent understatement one level up, a medication list short by one with
-       * nothing to show for it. `searchsetBundle` cannot carry an outcome entry
-       * today, so that is its own change; see the follow-up issue.
+       * So the posting is recorded and `withheld` below decides per
+       * interaction: the search serves the other dispenses and names this one
+       * in an outcome entry, the read still answers 501. Its movements are
+       * deliberately not collected, so nothing downstream can sum a partial set
+       * even if it tried.
        */
       if (page.total > page.rows.length) {
         const posting = rows[index];
-        throw ApiError.notImplemented(
-          `MedicationDispense/${posting?.id ?? 'unknown'} was drawn from more than ` +
-            `${String(MAX_DISPENSE_MOVEMENTS)} lots, which this server cannot summarise as a ` +
-            'single quantity. Read the stock ledger for the individual movements.',
-          { title: 'Dispense too large to project' }
-        );
+        if (posting !== undefined) unsummable.add(posting.id);
+        continue;
       }
       for (const movement of page.rows) {
         const bucket = movementsByPosting.get(movement.postingId);
@@ -782,8 +762,31 @@ const medicationDispenseModule = defineFhirResource({
     for (const item of items) itemsById.set(item.id, item);
     for (const lot of lots) lotsById.set(lot.id, lot);
 
-    return { movementsByPosting, itemsById, lotsById };
+    return { movementsByPosting, itemsById, lotsById, unsummable };
   },
+  /*
+   * Named rather than merely absent, and that is the whole point.
+   *
+   * Dropping the entry silently would be the same understatement one level up:
+   * a medication list one dispense short, with nothing to say so, is
+   * indistinguishable from a patient who was dispensed one fewer medicine.
+   *
+   * It does NOT tell the caller to exclude the record, because they cannot:
+   * this module declares `params: ['patient']` and nothing else, so there is no
+   * `_id`, no `:not`, and no way to select a subset of one chart's dispenses.
+   * An OperationOutcome is read by a machine that will attempt what it is told,
+   * and advice the surface does not offer is worse than none.
+   *
+   * The id is safe to name here. The page is compartment-narrowed before
+   * `prepare` runs, so it discloses nothing the bundle would not have carried -
+   * and an outcome carries the reason and the record, never its contents.
+   */
+  withheld: (row, context) =>
+    context.prepared.unsummable.has(row.id)
+      ? `MedicationDispense/${row.id} was drawn from more than ` +
+        `${String(MAX_DISPENSE_MOVEMENTS)} lots, which this server cannot summarise as a ` +
+        'single quantity. Read the stock ledger for the individual movements.'
+      : undefined,
   toResource: (row, context) => medicationDispenseResource(row, context.prepared),
 });
 

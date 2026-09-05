@@ -1299,25 +1299,29 @@ describe('a care plan carries the goals it is working towards', () => {
 });
 
 describe('a dispense too large to summarise is refused rather than understated', () => {
-  it('answers 501 instead of a quantity short by the lots it did not load', async () => {
-    /*
-     * The projection sums the movements it is handed and publishes the total as
-     * `quantity`, which a receiving system reads as how much medicine this
-     * person was given. The loader takes one page per posting, so a dispense
-     * drawn from more lots than that page holds was summed from part of itself:
-     * a number too low, entirely plausible, and indistinguishable from a
-     * smaller dispense.
-     *
-     * There is no approximately correct dispensed quantity. An understated one
-     * reconciles against nothing, hides a recall, and would be read as the dose
-     * actually supplied. Refusing says what is true - this server cannot
-     * represent that record - and points at the ledger, which can.
-     */
-    const { app, dataset } = createTestApp();
-    const patient = testId(7001);
-    const posting = testId(7002);
+  const patient = testId(7001);
+  const posting = testId(7002);
+  const fitting = testId(7004);
+
+  /**
+   * A chart holding one dispense this server cannot summarise, and optionally
+   * one it can.
+   *
+   * The second is what makes the search assertions mean anything: a bundle
+   * carrying an outcome and no matches would also satisfy "the client was
+   * told", and it is the wrong answer. The interesting claim is that the
+   * dispense that was fine is still served.
+   */
+  function world(alsoFitting: boolean, inCare = true): ReturnType<typeof createTestApp> {
+    const made = createTestApp();
+    const { dataset } = made;
     seed(dataset, 'Patient', makePatientRow({ id: patient, mrn: 'OR-700100' }));
-    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    /* The appointment is what gives a staff principal a care relationship with
+       this chart. `inCare: false` withholds it, which is the only way to reach
+       the gate below with an otherwise ordinary token. */
+    if (inCare) {
+      seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    }
     seed(dataset, 'StockItem', {
       ...storageColumns(testId(7010)),
       sku: 'MET-500',
@@ -1380,6 +1384,59 @@ describe('a dispense too large to summarise is refused rather than understated',
       });
     }
 
+    if (alsoFitting) {
+      seed(dataset, 'StockPosting', {
+        ...storageColumns(fitting),
+        kind: 'DISPENSE',
+        facilityId: DEMO_FACILITY_A,
+        patientId: patient,
+        encounterId: null,
+        prescriptionId: null,
+        immunizationId: null,
+        occurredOn: FIXED_NOW,
+        postedById: PROVIDER,
+        witnessedById: null,
+        reference: null,
+        note: null,
+      });
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(7300)),
+        postingId: fitting,
+        lotId: testId(7100),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 2,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: 1,
+      });
+    }
+    return made;
+  }
+
+  it('answers 501 instead of a quantity short by the lots it did not load', async () => {
+    /*
+     * The projection sums the movements it is handed and publishes the total as
+     * `quantity`, which a receiving system reads as how much medicine this
+     * person was given. The loader takes one page per posting, so a dispense
+     * drawn from more lots than that page holds was summed from part of itself:
+     * a number too low, entirely plausible, and indistinguishable from a
+     * smaller dispense.
+     *
+     * There is no approximately correct dispensed quantity. An understated one
+     * reconciles against nothing, hides a recall, and would be read as the dose
+     * actually supplied. Refusing says what is true - this server cannot
+     * represent that record - and points at the ledger, which can.
+     *
+     * The read refuses where the search below does not, and that asymmetry is
+     * the point: "give me exactly that record" has no honest partial answer,
+     * and "give me this chart's dispenses" does.
+     */
+    const { app } = world(false);
+
     const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
       headers: bearer(TOKENS.adminA),
     });
@@ -1392,15 +1449,102 @@ describe('a dispense too large to summarise is refused rather than understated',
 
     // And specifically not a resource carrying 50 where 51 were handed over.
     expect(outcome.resourceType).toBe('OperationOutcome');
-    /*
-     * The posting is named. `prepare` runs for the search as well as the read,
-     * so one pathological record makes a whole chart's dispense history answer
-     * 501 - and after the portal gained this resource that is a patient unable
-     * to read any of their medicines because of one of them. Naming the id is
-     * what lets a client say which record is at fault rather than being told
-     * only that something on this chart cannot be served.
-     */
+    // The posting is named, so a client is told which record is at fault rather
+    // than only that something on this chart cannot be served.
     expect(outcome.issue?.[0]?.diagnostics).toContain(posting);
+  });
+
+  it('refuses a reader with no care relationship before it says the record is unprojectable', async () => {
+    /*
+     * The order of the two checks in `read`, asserted rather than left to the
+     * comment that states it.
+     *
+     * `withheld` runs after `assertCareRelationship` on purpose. Run first, it
+     * answers 501 to a principal the policy layer is about to refuse - and this
+     * 501 is not an empty refusal: it names the posting and says the dispense
+     * was drawn from more than fifty lots. That is the record's id and a fact
+     * about its size, handed to a reader who is not allowed to know it exists.
+     *
+     * Nothing but the ordering stands between those two answers, `withheld` is
+     * a framework hook other modules will implement, and swapping the lines
+     * leaves the rest of the suite green. So the refusal is pinned here: 404,
+     * the same answer this chart gives for any record, with no diagnostics.
+     */
+    const { app } = world(false, false);
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(404);
+    // And specifically not the 501, which would name the record while refusing it.
+    expect(JSON.stringify(await res.json())).not.toContain(posting);
+  });
+
+  it('serves the rest of the chart and names the one it withheld', async () => {
+    /*
+     * The whole reason this bundle machinery exists.
+     *
+     * `prepare` runs for the search as well as the read, so refusing from
+     * inside it made one pathological record answer 501 for a whole chart's
+     * dispense history - and since the portal gained this resource, that is a
+     * patient unable to read any of their medicines because of one of them.
+     *
+     * Dropping the entry silently would have been the same understatement one
+     * level up: a medication list one dispense short, with nothing to say so,
+     * is indistinguishable from a patient dispensed one fewer medicine. So the
+     * search returns what it can AND says what it could not, which is what an
+     * `outcome` entry is for.
+     */
+    const { app } = world(true);
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${patient}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    const entries = bundle.entry ?? [];
+
+    // The dispense that was fine is served. Without this the bundle could carry
+    // an outcome and nothing else and still look like it passed.
+    expect(
+      entries
+        .filter((entry) => entry.search?.mode === 'match')
+        .map((entry) => (entry.resource as { id?: string }).id)
+    ).toEqual([fitting]);
+
+    // And the one that was not is named, as an outcome rather than as a match.
+    const outcomes = entries.filter((entry) => entry.search?.mode === 'outcome');
+    expect(outcomes).toHaveLength(1);
+    const issues = (outcomes[0]?.resource as { issue?: { diagnostics?: string }[] }).issue ?? [];
+    expect(issues.map((issue) => issue.diagnostics).join(' ')).toContain(posting);
+
+    /*
+     * `total` is unchanged at two. The withheld row matched - it is a dispense
+     * on this chart - and the outcome is not a match, so counting either
+     * differently would put a new wrong number in place of the old one. The gap
+     * between the total and the matches returned is exactly what the outcome
+     * explains.
+     */
+    expect(bundle.total).toBe(2);
+  });
+
+  it('emits no outcome entry when it withheld nothing', async () => {
+    /*
+     * The control that matters most, because every searchset this server
+     * produces goes through the same builder. The interesting question is not
+     * whether the new entry appears, it is whether anything else moved.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.every((entry) => entry.search?.mode === 'match')).toBe(true);
   });
 
   it('still serves a dispense that fits', async () => {

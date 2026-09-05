@@ -2,6 +2,7 @@ import type { FhirResource, Interaction, SupportedResourceType } from '@openruni
 import type { Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
+import { ApiError } from '../errors.js';
 import { assertCareRelationship } from '../middleware/policy.js';
 import { chartIdOf } from '../policy/chart.js';
 import type { Permission } from '../policy/permissions.js';
@@ -99,7 +100,43 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
    * stays true for every resource that has such a column.
    */
   chartFrom?: CollectionKey;
+  /**
+   * Why this row cannot be projected, when it cannot be.
+   *
+   * A module reaches for this instead of throwing when the row is
+   * unrepresentable rather than the request being wrong. Throwing from the
+   * mapper or the loader fails the whole page, which for a search means one
+   * pathological record making a chart's entire history unreadable; returning a
+   * partial resource is worse still, because nothing in it says it is partial.
+   *
+   * Answering here lets the two interactions differ, which is the point:
+   *
+   * - a search returns the rows it can and an `outcome` entry carrying this
+   *   string, so the client is told exactly what is missing;
+   * - a read of that row answers 501 with this string, because "give me
+   *   exactly that record" has no honest partial answer.
+   *
+   * The string is diagnostics on an `OperationOutcome` and outcomes are widely
+   * logged, so it names the record and the reason and never its contents.
+   *
+   * Modules that can always project their rows omit it and pay nothing.
+   */
+  withheld?(row: TRow, context: ResourceContext<TPrepared>): string | undefined;
   toResource(row: TRow, context: ResourceContext<TPrepared>): FhirResource | Promise<FhirResource>;
+}
+
+/**
+ * A page of projected resources, and what was left out of it.
+ *
+ * `withheld` is empty for every resource that does not declare
+ * {@link FhirResourceDescriptor.withheld}, which is all but one of them. It is
+ * carried on the page rather than thrown so the caller decides: the search
+ * route turns it into `outcome` entries, and the bulk export refuses, because
+ * an export that quietly omits a record is the silent-omission failure this
+ * whole mechanism exists to prevent, in a format that has nowhere to say so.
+ */
+export interface FhirSearchPage extends Page<FhirResource> {
+  readonly withheld: readonly string[];
 }
 
 /** A resource module with its row and query types erased, ready to mount. */
@@ -122,7 +159,7 @@ export interface FhirResourceModule {
     params: SearchParams,
     paging: FhirPaging,
     options?: SearchOptions
-  ): Promise<Page<FhirResource>>;
+  ): Promise<FhirSearchPage>;
   read(c: Context<AppEnv>, id: string): Promise<FhirResource | null>;
 }
 
@@ -160,7 +197,7 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
     permission: descriptor.permission,
     ...(descriptor.chartFrom === undefined ? {} : { chartFrom: descriptor.chartFrom }),
 
-    async search(c, params, paging, options): Promise<Page<FhirResource>> {
+    async search(c, params, paging, options): Promise<FhirSearchPage> {
       const repositories = repositoriesOf(c);
       const page = await descriptor
         .collection(repositories)
@@ -212,12 +249,28 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       // for the ones that resolve a child list, so the map is wrapped rather
       // than assumed to produce promises.
       const prepared = await prepareFor(page.rows, repositories);
+      /*
+       * A row the module cannot project leaves the page and takes its reason
+       * with it, rather than failing the search for the rows that were fine.
+       *
+       * `total` is deliberately untouched: it is how many rows matched, and one
+       * of them matching and being unrepresentable does not make it not a
+       * match. The gap between `total` and what came back is exactly what the
+       * outcome entry explains.
+       */
+      const withheld: string[] = [];
+      const projectable = page.rows.filter((row) => {
+        const reason = descriptor.withheld?.(row, { repositories, prepared });
+        if (reason === undefined) return true;
+        withheld.push(reason);
+        return false;
+      });
       const rows = await Promise.all(
-        page.rows.map(async (row) =>
+        projectable.map(async (row) =>
           stampLastUpdated(row, await descriptor.toResource(row, { repositories, prepared }))
         )
       );
-      return { ...page, rows };
+      return { ...page, rows, withheld };
     },
 
     async read(c, id): Promise<FhirResource | null> {
@@ -231,6 +284,18 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       // that only worked on search would be the kind of gap nobody notices
       // until a client fetches by id.
       const prepared = await prepareFor([row], repositories);
+      /*
+       * The other half of the split. A search drops this row and says so; an
+       * addressed read cannot, because the client asked for this record and
+       * nothing else, and there is no honest partial answer to that.
+       *
+       * 501 rather than a 4xx: the request is reasonable and it is this
+       * server's projection that cannot carry the record.
+       */
+      const reason = descriptor.withheld?.(row, { repositories, prepared });
+      if (reason !== undefined) {
+        throw ApiError.notImplemented(reason, { title: `${descriptor.type} cannot be projected` });
+      }
       return stampLastUpdated(row, await descriptor.toResource(row, { repositories, prepared }));
     },
   };

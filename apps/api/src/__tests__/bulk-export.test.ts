@@ -603,6 +603,157 @@ describe('the bounds, which are reported rather than silent', () => {
     expect(captured?.files[0]?.count).toBe(5);
   });
 
+  /**
+   * A record the projection cannot represent, in the one format that has
+   * nowhere to say so.
+   *
+   * A search answers this with an `outcome` entry. NDJSON has no entries, so
+   * the manifest's `error` array is where it has to land - and it must not
+   * arrive dressed as a ceiling, because a ceiling is answered by narrowing the
+   * export and this is answered by nothing the client can do.
+   */
+  /**
+   * The page after the one that held the unprojectable record.
+   *
+   * A withheld row leaves the page, so a page of five hundred comes back with
+   * four hundred and ninety-nine - and the loop reads a short page as the last
+   * page. Everything after it is then dropped from the export, silently, with a
+   * manifest reporting one withheld record and a file missing far more than
+   * one. A truncation caused by a diagnostic is the worst way to learn of one.
+   *
+   * Five hundred and one dispenses, with the unprojectable one sorted first so
+   * it is certainly on the first page rather than probably.
+   */
+  it('does not read a page shortened by a withheld row as the last page', async () => {
+    const { app, dataset } = createTestApp();
+    const chart = testId(8000);
+    const provider = testId(900);
+    const item = testId(8001);
+    const lot = testId(8002);
+    seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: 'OR-800100' }));
+    seed(dataset, 'StockItem', {
+      ...storageColumns(item),
+      sku: 'MET-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockLot', {
+      ...storageColumns(lot),
+      itemId: item,
+      facilityId: DEMO_FACILITY_A,
+      lotNumber: 'LOT-8000',
+      status: 'AVAILABLE',
+      expiresOn: null,
+      openedOn: null,
+      beyondUseDays: null,
+      manufacturer: null,
+      ndcCode: null,
+      receivedOn: FIXED_NOW,
+    });
+
+    const posting = (id: string, occurredOn: Date): void => {
+      seed(dataset, 'StockPosting', {
+        ...storageColumns(id),
+        kind: 'DISPENSE',
+        facilityId: DEMO_FACILITY_A,
+        patientId: chart,
+        encounterId: null,
+        prescriptionId: null,
+        immunizationId: null,
+        occurredOn,
+        postedById: provider,
+        witnessedById: null,
+        reference: null,
+        note: null,
+      });
+    };
+    const movement = (id: string, postingId: string, lotSeq: number): void => {
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(id),
+        postingId,
+        lotId: lot,
+        itemId: item,
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 1,
+        occurredOn: FIXED_NOW,
+        actorId: provider,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq,
+      });
+    };
+
+    // Sorted first by `occurredOn desc`, so it is on the first page by
+    // construction rather than by luck - a test that happened to put it on the
+    // second page would pass against the bug it exists to catch.
+    const unprojectable = testId(8100);
+    posting(unprojectable, new Date(FIXED_NOW.getTime() + 60_000));
+    for (let index = 0; index < 51; index += 1) {
+      movement(testId(8200 + index), unprojectable, index + 1);
+    }
+    for (let index = 0; index < 500; index += 1) {
+      const id = testId(9000 + index);
+      posting(id, new Date(FIXED_NOW.getTime() - (index + 1) * 1000));
+      movement(testId(20_000 + index), id, 1);
+    }
+
+    let captured: Awaited<ReturnType<typeof runExport>> | undefined;
+    app.get('/probe', async (c) => {
+      captured = await runExport(c, SERVED_MODULES, ['MedicationDispense'], undefined);
+      return c.body(null, 204);
+    });
+    await app.request('/probe', { headers: bearer(TOKENS.adminA) });
+
+    // Every dispense that could be projected, including the five hundredth,
+    // which lives on the page the old signal never asked for.
+    expect(captured?.files[0]?.count).toBe(500);
+    expect(captured?.truncations[0]?.withheld).toHaveLength(1);
+    expect(captured?.truncations[0]?.withheld?.[0]).toContain(unprojectable);
+  });
+
+  it('reports a withheld record as its own reason, not as a ceiling', () => {
+    const files = truncationOutcomes([
+      {
+        type: 'MedicationDispense',
+        exported: 4,
+        total: 5,
+        withheld: ['MedicationDispense/x was drawn from more than 50 lots.'],
+      },
+    ]);
+
+    const outcome = JSON.parse(files[0]?.ndjson ?? '{}') as {
+      issue?: { code?: string; diagnostics?: string }[];
+    };
+
+    expect(outcome.issue?.map((issue) => issue.code)).toEqual(['incomplete']);
+    // The ceiling did not bite, so its advice must not appear. Telling a client
+    // to narrow an export that is short for another reason sends them round a
+    // loop that cannot end.
+    expect(JSON.stringify(outcome)).not.toContain('Narrow the export');
+  });
+
+  it('reports both reasons when the ceiling bit as well', () => {
+    /* The pair is what says the two are distinguished rather than one of them
+       being reported for both causes. */
+    const files = truncationOutcomes(
+      [{ type: 'Observation', exported: 50, total: 200, withheld: ['Observation/y is unusable.'] }],
+      50
+    );
+
+    const outcome = JSON.parse(files[0]?.ndjson ?? '{}') as { issue?: { code?: string }[] };
+
+    expect(outcome.issue?.map((issue) => issue.code)).toEqual(['too-costly', 'incomplete']);
+  });
+
   it('reports a truncated type as an OperationOutcome rather than a short file', () => {
     const files = truncationOutcomes([{ type: 'Observation', exported: 50_000, total: 61_000 }]);
 

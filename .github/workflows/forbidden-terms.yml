@@ -35,6 +35,35 @@ name: Forbidden Terms
 # If you are adding a step here, that is the rule you are working against.
 #
 # ---------------------------------------------------------------------------
+# THE ONE EXECUTION SINK THAT IS NOT A STEP, AND ITS PRECONDITION
+# ---------------------------------------------------------------------------
+#
+# The rule above reads as being about ADDING A STEP. It is not only that. A
+# `git diff` is itself an execution sink if an external diff or `textconv`
+# driver is attached to a path, and this job's whole body is `git diff` and
+# `git log`.
+#
+# It needs BOTH of these, and a fork can write neither:
+#
+#   * a `diff=`/`textconv` attribute on some path in `.gitattributes`, AND
+#   * a `diff.<driver>.command` in git CONFIG
+#
+# A fork cannot reach either, and the reason is worth stating rather than
+# assuming: git resolves attributes from the WORKING TREE, not from the commits
+# being diffed. A `.gitattributes` that exists only in the pull request's head
+# commit is `unspecified` for this diff and its driver never runs - measured,
+# both directions, with the positive control asserted. And git never reads
+# config out of a repository tree at all, so the second lock has no key in a
+# commit under any circumstances.
+#
+# So this is a precondition on the BASE, not a property of the trigger:
+# adding a `diff=`/`textconv` attribute to this repository's own
+# `.gitattributes` and configuring the driver turns these `git diff` lines into
+# an execution sink WITHOUT ANYONE TOUCHING THIS FILE. As of this commit the
+# tracked `.gitattributes` carries only `text=auto eol=lf` and `linguist-*`,
+# and no tracked config defines a driver.
+#
+# ---------------------------------------------------------------------------
 # MASKING
 # ---------------------------------------------------------------------------
 #
@@ -158,9 +187,17 @@ jobs:
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/surfaces"
           MERGE_BASE=$(git merge-base refs/remotes/origin/gate-base refs/remotes/origin/gate-head)
-          git diff --unified=0 --diff-filter=ACMR "${MERGE_BASE}" refs/remotes/origin/gate-head \
+          # ACMRT, and the T is load-bearing. A commit that replaces a regular
+          # file with a SYMLINK is a type change: without T the path is not new
+          # so it never reaches `names`, its content never reaches `diff`, and
+          # the scanner is handed nothing to be silent about - so the run is
+          # green and writes its `scanned` receipt having looked at neither
+          # surface. That is the exact state the last step exists to refuse,
+          # arriving through the filter rather than through a skipped step. The
+          # symlink TARGET is the term, and with T it is an added line.
+          git diff --unified=0 --diff-filter=ACMRT "${MERGE_BASE}" refs/remotes/origin/gate-head \
             > "${RUNNER_TEMP}/surfaces/diff"
-          git diff --name-only --diff-filter=ACMR "${MERGE_BASE}" refs/remotes/origin/gate-head \
+          git diff --name-only --diff-filter=ACMRT "${MERGE_BASE}" refs/remotes/origin/gate-head \
             > "${RUNNER_TEMP}/surfaces/names"
           git log --format=%B "${MERGE_BASE}..refs/remotes/origin/gate-head" \
             > "${RUNNER_TEMP}/surfaces/messages"

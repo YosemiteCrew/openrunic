@@ -12,7 +12,7 @@
 
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -208,7 +208,7 @@ test('the parse agrees with real git diff output, not just with fixtures', () =>
 
   const diff = execFileSync(
     'git',
-    ['diff', '--unified=0', '--diff-filter=ACMR', 'HEAD~1', 'HEAD'],
+    ['diff', '--unified=0', '--diff-filter=ACMRT', 'HEAD~1', 'HEAD'],
     {
       cwd: repo,
       encoding: 'utf8',
@@ -219,6 +219,75 @@ test('the parse agrees with real git diff output, not just with fixtures', () =>
     { surface: 'diff', file: 'a.md', line: 3 },
     { surface: 'diff', file: 'a.md', line: 4 },
     { surface: 'diff', file: 'b.md', line: 2 },
+  ]);
+});
+
+test('a file REPLACED BY A SYMLINK is a type change, and T is what sees it', () => {
+  // The filter the workflow passes is the guard's real reach, so it is pinned
+  // against real git rather than against a fixture that agrees with it.
+  //
+  // Replacing a regular file with a symlink is `T`. Without T in the filter the
+  // path is not new so it never reaches `names`, its content never reaches
+  // `diff`, and the scanner is handed nothing to be silent about - a green run
+  // that wrote its `scanned` receipt having looked at neither surface. The
+  // symlink TARGET carries the term.
+  //
+  // Both halves are asserted: ACMR sees NOTHING, which is the defect, and
+  // ACMRT sees the path and the target. An assertion on ACMRT alone cannot
+  // tell this fix from not making it.
+  const repo = mkdtempSync(path.join(os.tmpdir(), 'forbidden-terms-symlink-'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  git('init', '-q', '-b', 'main', '.');
+  git('config', 'user.email', 'guard@example.invalid');
+  git('config', 'user.name', 'Guard Test');
+  writeFileSync(path.join(repo, 'note.md'), 'harmless\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  rmSync(path.join(repo, 'note.md'));
+  symlinkSync('acmehealth-prior-art.md', path.join(repo, 'note.md'));
+  git('add', '-A');
+  git('commit', '-q', '-m', 'type change');
+
+  const surfaces = (filter) => ({
+    diff: execFileSync(
+      'git',
+      ['diff', '--unified=0', `--diff-filter=${filter}`, 'HEAD~1', 'HEAD'],
+      { cwd: repo, encoding: 'utf8' }
+    ),
+    names: execFileSync(
+      'git',
+      ['diff', '--name-only', `--diff-filter=${filter}`, 'HEAD~1', 'HEAD'],
+      { cwd: repo, encoding: 'utf8' }
+    ),
+  });
+
+  // git agrees this is a type change and not something else.
+  assert.equal(
+    execFileSync('git', ['diff', '--name-status', 'HEAD~1', 'HEAD'], {
+      cwd: repo,
+      encoding: 'utf8',
+    }).trim(),
+    'T\tnote.md'
+  );
+
+  // The defect: the old filter hands the scanner two empty surfaces.
+  const before = surfaces('ACMR');
+  assert.equal(before.diff, '');
+  assert.equal(before.names, '');
+  assert.deepEqual(scanSurface(pattern, 'diff', before.diff), []);
+  assert.deepEqual(scanSurface(pattern, 'names', before.names), []);
+
+  // The fix. Note WHICH surface catches it: the path `note.md` is innocent, so
+  // `names` correctly finds nothing even with T - it is the symlink TARGET that
+  // names the term, and that reaches the scanner only as an added line on the
+  // diff surface. Asserting a `names` finding here would have been asserting
+  // the wrong mechanism and would pass for the wrong reason on any path that
+  // happened to be named badly.
+  const after = surfaces('ACMRT');
+  assert.equal(after.names.trim(), 'note.md');
+  assert.deepEqual(scanSurface(pattern, 'names', after.names), []);
+  assert.deepEqual(scanSurface(pattern, 'diff', after.diff), [
+    { surface: 'diff', file: 'note.md', line: 1 },
   ]);
 });
 
@@ -492,6 +561,43 @@ test('the pull_request_target job runs nothing the head can choose', () => {
     /^\s*persist-credentials:\s*false$/mu,
     'the checkout leaves a credential in the tree for later steps to reach'
   );
+});
+
+test('every diff the job collects passes a filter that includes type changes', () => {
+  // The symlink case above proves what `T` buys, against real git - but it
+  // hardcodes the filter, so reverting the workflow to `ACMR` leaves it green.
+  // That is the same shape as a guard that enumerates only the doors it already
+  // knows about: the behaviour is pinned and the USE of it is not.
+  //
+  // So this reads the filter the job actually passes. Keyed on `--diff-filter=`
+  // rather than on the exact string, because the set may legitimately grow -
+  // what may not happen is `T` leaving it.
+  const workflow = readFileSync(WORKFLOW, 'utf8');
+  const body = workflow
+    .split('\n')
+    .filter((line) => !/^\s*#/u.test(line))
+    .join('\n');
+
+  const filters = [...body.matchAll(/--diff-filter=([A-Za-z]+)/gu)].map((match) => match[1]);
+
+  // Zero rather than a threshold, and it is the canary that matters most here:
+  // a rename of the step, a move to a script, or a filter dropped entirely all
+  // land as an empty list, and an empty list satisfies a `for` loop silently.
+  assert.notEqual(
+    filters.length,
+    0,
+    'no --diff-filter found in the job: this test is reading nothing, and a diff with no filter ' +
+      'at all is a different defect than the one below'
+  );
+
+  for (const filter of filters) {
+    assert.ok(
+      filter.includes('T'),
+      `--diff-filter=${filter} omits T: a file replaced by a symlink is a type change, so its ` +
+        'path never reaches `names` and its target never reaches `diff`, and the run is green ' +
+        'having looked at neither'
+    );
+  }
 });
 
 test('the step that refuses a run which scanned nothing is not itself skippable', () => {

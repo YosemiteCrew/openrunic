@@ -52,6 +52,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+import { readBlobs, trackedFiles } from './git-blobs.mjs';
 import { resolveWithin } from './safe-path.mjs';
 
 /**
@@ -257,17 +258,104 @@ function readSource(root, file) {
   return readFileSync(resolved, 'utf8');
 }
 
+/**
+ * The suppression marker, and why it cannot be a {@link SOURCES} entry.
+ *
+ * Every source above is a named file. A scanner suppression written in code is
+ * not: it can be on any line of any module, and the file it lands in is chosen
+ * by wherever the finding was. A list of files would have to be edited by
+ * whoever adds the next marker, and they are the same person who would have to
+ * notice that the list exists - which is the coupling #295 removed from the
+ * other direction and is not worth reintroducing here.
+ *
+ * So this half is a walk, and the walk reads the index through
+ * `git-blobs.mjs`. That is not a preference: a guard that resolves a path from
+ * `git ls-files` and reads it follows tracked symlinks, and reading blobs closes
+ * that by construction. See the header of that module.
+ *
+ * Scoped to the extensions a marker means anything in. A fenced code block in a
+ * document showing the syntax is not a suppression, and would otherwise be a
+ * red build over correct documentation - the failure that gets a gate deleted.
+ */
+export const SUPPRESSION_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs)$/u;
+
+/**
+ * A marker, matched by its SHAPE rather than by the word.
+ *
+ * Anchored to a comment opener immediately before it, so prose that mentions
+ * the marker - including every sentence in this file - is not one. That
+ * distinction is the whole reason this pattern is written the way it is: the
+ * advisory guard shipped a defect three hours ago where explaining a thing in a
+ * header made the header an instance of it.
+ */
+export const SUPPRESSION = {
+  file: '(source)',
+  what: 'scanner suppression',
+  entry: /(?:\/\/|\/\*)\s*(?<id>nosec)\b/u,
+  // Line comments only, and the narrowness is the design rather than an
+  // omission. The walk reads upward from the marker and stops at the first line
+  // that is not a comment, so a `/* */` block further up - separated by code -
+  // is not reachable and never will be. Accepting `*` lines would put a pattern
+  // in the file for a case the walk cannot deliver, which is the shape this
+  // repository has deleted three times today. The date goes on a `//` line
+  // immediately above the marker run, which is also where a reader deleting a
+  // marker would look.
+  //
+  // It FAILS CLOSED, which is what makes the narrowness safe rather than a gap:
+  // a marker documented in a block comment is still found by `entry`, the walk
+  // finds no `//` line above it, and the marker is refused for carrying no
+  // date. Measured. So the cost is a false red on a shape somebody has to
+  // rewrite, never a marker that slips through undated.
+  comment: /^\s*\/\//u,
+};
+
+/**
+ * Every suppression marker in the tree, with the date its comment carries.
+ *
+ * Written before the first marker that would have satisfied it, which is the
+ * opposite of the usual order and is deliberate: with zero sites this check
+ * would be vacuously green, and a canary added later cannot prove it was ever
+ * red. It is red on `dev` as written - both markers in `rls-port.ts` carry a
+ * `Revisit:` CONDITION and no date, and this file's own header explains why a
+ * condition nobody is told about is how a temporary suppression becomes
+ * permanent.
+ */
+export function findSuppressions(root) {
+  const entries = trackedFiles(root).filter((entry) => SUPPRESSION_FILE.test(entry.file));
+  const blobs = readBlobs(root, entries);
+  const found = [];
+
+  for (const { file, sha } of entries) {
+    // `null` only. `readBlobs` guarantees a key for every sha it was given, so
+    // an absent one cannot be skipped quietly here.
+    const text = blobs.get(sha);
+    if (text === null) continue;
+    for (const marker of findExceptions(text, SUPPRESSION)) found.push({ ...marker, file });
+  }
+
+  return found;
+}
+
 /** Every exception in a given set of sources, and the ones that fail the build. */
-export function checkWith(root, today, sources) {
+export function checkWith(root, today, sources, suppressions = []) {
   const exceptions = [];
   for (const source of sources) {
     exceptions.push(...findExceptions(readSource(root, source.file), source));
   }
+  exceptions.push(...suppressions);
   return { exceptions, problems: expired(exceptions, today) };
 }
 
+/**
+ * The whole gate: the named files, and the markers written in the code.
+ *
+ * `root` must be a git repository, which `checkWith` does not require. That is
+ * the walk's doing and it is the right way round - a guard over tracked content
+ * that cannot read the tree has not passed, it has not run - but it is why the
+ * synthetic-root tests drive `checkWith` directly.
+ */
 export function check(root, today) {
-  return checkWith(root, today, SOURCES);
+  return checkWith(root, today, SOURCES, findSuppressions(root));
 }
 
 function main(argv) {

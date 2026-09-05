@@ -10,17 +10,18 @@ import {
   EXCLUDED_PATHS,
   findCitations,
   main,
-  parseBatch,
-  parseIndexRecords,
   PLACEHOLDERS,
   resolveAll,
-  readBlobs,
   resolveOne,
   scan,
   scanProblems,
   SCHEMES,
-  trackedFiles,
 } from './advisory-ids.mjs';
+// The tree reader moved to its own module when `exception-expiry.mjs` needed
+// it. Its tests stayed here, under the heading they were written under: they
+// need this file's `gitRepo` fixture, and two of them assert what `scan` does
+// with what the reader returns, which is the pair rather than either half.
+import { parseBatch, parseIndexRecords, readBlobs, trackedFiles } from './git-blobs.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 

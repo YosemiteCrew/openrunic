@@ -64,6 +64,7 @@ import {
   type CompiledForm,
   type FormDefinition,
 } from '@openrunic/forms-engine';
+import { toStockPrecision } from '@openrunic/inventory';
 
 import { fhirBaseUrl } from '../env.js';
 import type { Row, ScopedRow } from '../repositories/rows.js';
@@ -325,10 +326,16 @@ export function medicationDispenseResource(
          records a movement per lot; reporting only the first understates what
          the patient was handed - a 30-tablet fill split 20/10 would read as 20,
          and medication reconciliation downstream would be wrong by the rest. */
+      /* Summed on the ledger's six-decimal grid, not in raw floating point. Two
+         fractional movements like 0.1 mL and 0.2 mL add to 0.30000000000000004
+         in JavaScript; the FHIR Quantity must read 0.3, the value the column
+         actually holds, or downstream reconciliation disagrees with the ledger. */
       quantityValue:
         movements.length === 0
           ? undefined
-          : movements.reduce((sum, movement) => sum + Number(movement.quantity), 0),
+          : toStockPrecision(
+              movements.reduce((sum, movement) => sum + Number(movement.quantity), 0)
+            ),
       quantityUnit: absent(item?.unit ?? null),
       whenHandedOver: row.occurredOn.toISOString(),
       performerId: row.postedById,

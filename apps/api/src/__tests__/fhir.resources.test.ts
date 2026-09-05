@@ -2638,7 +2638,7 @@ describe('the practice organisation', () => {
 });
 
 describe('a MedicationDispense filled from more than one lot', () => {
-  it('reports the quantity summed across every lot, not the first', async () => {
+  it('reports the quantity summed across every lot, on the ledger grid', async () => {
     const { app, dataset } = createTestApp();
     const patient = testId(6001);
     const posting = testId(6002);
@@ -2691,10 +2691,12 @@ describe('a MedicationDispense filled from more than one lot', () => {
       reference: null,
       note: null,
     });
-    // A 30-tablet dispense split 20/10 across two lots: two movements, one posting.
+    // A dispense split across two lots. Fractional on purpose: 0.1 + 0.2 is
+    // 0.30000000000000004 in floating point, so this exercises both the sum
+    // across lots and its rounding back to the ledger's six-decimal grid.
     for (const [n, lotN, qty, seq] of [
-      [6020, 6011, 20, 1],
-      [6021, 6012, 10, 2],
+      [6020, 6011, 0.1, 1],
+      [6021, 6012, 0.2, 2],
     ] as const) {
       seed(dataset, 'StockMovement', {
         ...storageColumns(testId(n)),
@@ -2717,6 +2719,6 @@ describe('a MedicationDispense filled from more than one lot', () => {
     });
     expect(res.status).toBe(200);
     const dispense = (await res.json()) as { quantity?: { value?: number } };
-    expect(dispense.quantity?.value).toBe(30);
+    expect(dispense.quantity?.value).toBe(0.3);
   });
 });

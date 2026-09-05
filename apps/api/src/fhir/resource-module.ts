@@ -186,12 +186,15 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
        * patient's care, which turns a broad clinical search into a chart-scoped
        * one and leaves an inbox of unclaimed documents working.
        *
-       * `Patient` is the exception, and only for a search that does not address
-       * one: looking somebody up by name and birth date is how registration and
+       * Two exceptions. `Patient`, for a search that does not address one:
+       * looking somebody up by name and birth date is how registration and
        * duplicate-checking find a chart there is no relationship with yet, and
-       * #169 requires that to keep working. A `Patient` search that DOES name a
-       * chart (`_id`, `identifier`) is still the addressed read wearing a
-       * search's clothes, and is gated.
+       * #169 requires that to keep working (a `Patient` search that DOES name a
+       * chart by `_id` or `identifier` is still the addressed read wearing a
+       * search's clothes, and is gated). And an authorised organisation-wide
+       * export, which sets `authorizedExport` and is gated differently - see
+       * SearchOptions - so it is not held to a per-chart relationship it could
+       * never have. Every other search of chart data is gated on the page.
        */
       const isPatientResource = descriptor.type === 'Patient';
       const gateThisSearch =

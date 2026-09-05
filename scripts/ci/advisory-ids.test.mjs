@@ -329,3 +329,41 @@ test('having no path exemptions at all is not a failure', () => {
     EXCLUDED_PATHS.push(...previous);
   }
 });
+
+/**
+ * The guard run over its own documentation.
+ *
+ * The header of advisory-ids.mjs and of advisory-ids.yml both NAME
+ * `GHSA-r8f6-24hv-cj3g` as the worked example of a fabricated identifier, so
+ * without an exemption the guard reports itself. That was invisible until the
+ * guard was committed: `git ls-files` does not list an untracked file, so the
+ * first green run was over a tree that did not yet contain the thing being
+ * tested. This is the assertion that would have said so.
+ */
+test('the guard does not report its own worked example as a finding', () => {
+  const example = 'GHSA-r8f6-24hv-cj3g';
+  const scanned = scan(REPO_ROOT, trackedFiles(REPO_ROOT));
+
+  // Present, so this test is reading something. If the worked example is ever
+  // rewritten out of the headers, this fails rather than passing vacuously -
+  // and the PLACEHOLDERS entry covering it is then dead weight, which
+  // scanProblems fails on separately.
+  assert.equal(
+    scanned.placeheld.some((citation) => citation.id === example),
+    true,
+    `${example} is no longer named anywhere: drop its PLACEHOLDERS entry`
+  );
+
+  // Exempt, so it is never sent to a registry that would correctly 404 it.
+  assert.equal(
+    scanned.cited.some((citation) => citation.id === example),
+    false
+  );
+
+  // And the real identifiers in the same headers are still resolved, so the
+  // exemption is one id and not "the guard stops reading its own files".
+  assert.equal(
+    scanned.cited.some((citation) => /advisory-ids\.(mjs|yml)$/u.test(citation.file)),
+    true
+  );
+});

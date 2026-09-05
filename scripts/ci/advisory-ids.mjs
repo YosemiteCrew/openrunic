@@ -106,16 +106,31 @@ export const SCHEMES = [
 export const EXCLUDED_PATHS = [/(^|\/)[^/]+\.test\.mjs$/u];
 
 /**
- * Identifiers that appear in documentation as an example of the SHAPE of an
- * identifier, and are not claims that an advisory exists.
+ * Identifiers a document NAMES without claiming they exist.
+ *
+ * Two kinds, and the second one is this guard failing on itself.
  *
  * `.grype.yaml` shows the required form of an exception entry in its header.
  * The placeholder it uses is, by the alphabet above, a syntactically valid GHSA
  * id, so nothing about its spelling distinguishes it from a real one - which is
- * this guard's whole premise applied to itself.
+ * this guard's premise applied to its own documentation.
+ *
+ * `GHSA-r8f6-24hv-cj3g` is the identifier this guard exists because of, named
+ * in the header above and in advisory-ids.yml as the worked example of a
+ * fabrication. It is deliberately unreal, and naming it is the clearest way to
+ * explain what is being checked. It was invisible until the guard's own files
+ * were committed - `git ls-files` did not list them while they were untracked,
+ * so the first green run was over a tree that did not yet contain the guard.
+ *
+ * Both entries are asserted to still appear somewhere in the tree, so an
+ * exemption cannot outlive the document that needed it.
  */
 export const PLACEHOLDERS = new Map([
   ['GHSA-xxxx-xxxx-xxxx', '.grype.yaml documents the shape of an exception entry'],
+  [
+    'GHSA-r8f6-24hv-cj3g',
+    "this guard's own header and workflow name it as the fabrication they exist to catch",
+  ],
 ]);
 
 /** Every tracked file, as repo-relative paths. */

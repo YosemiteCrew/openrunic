@@ -199,11 +199,26 @@ describe('the declaration is answerable by the spec it names', () => {
       'utf8'
     );
 
+    /* An assertion derived from a file is only as good as the assertion that it
+       read the right file. `resources.ts` is 1,600 lines and will be split one
+       day; a smaller `resources.ts` still parses, still has no match, and this
+       guard silently covers nothing. Equality rather than a floor, because the
+       file being read is the file `SERVED_MODULES` is exported from - a partial
+       split shows up as a mismatch instead of as a still-passing subset. */
+    expect(
+      (source.match(/defineFhirResource\(/g) ?? []).length,
+      'fhir.narrowing.test.ts is not reading the file the served modules are ' +
+        'declared in, so the rule below checks nothing'
+    ).toBe(SERVED_MODULES.length);
+
     /* The property, not the word: `prepare` legitimately CALLS `findById` on a
        repository, and the comments above discuss it by name. Only a module
-       DECLARING one is the wrapper this forbids. */
+       DECLARING one is the wrapper this forbids - and a declaration is a
+       property assignment OR a method shorthand, which are the same structural
+       type. The lookbehind is what keeps `repository.findById(` out: matching
+       the word alone would fire on every legitimate call. */
     expect(
-      /\bfindById\s*:/.exec(source),
+      /(?<![.\w])findById\s*[:(]/.exec(source),
       'a module in resources.ts declares its own findById: narrowing a read ' +
         'without narrowing the search is what #265 was. Declare `narrow` instead'
     ).toBeNull();

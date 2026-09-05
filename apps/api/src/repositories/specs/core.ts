@@ -644,12 +644,64 @@ export const breakGlassGrantSpec: CollectionSpec<
   patientColumn: 'patientId',
   compartment: 'open',
 
-  newRow(input: BreakGlassGrantInput, context): Writable<'BreakGlassGrant'> {
+  /**
+   * At most one unexpired grant per reader per chart.
+   *
+   * The route documents a repeat declaration as returning the grant already
+   * held, and it implemented that by reading the caller's grants and then
+   * creating a row - two round trips with nothing held between them. Two
+   * declarations for one chart arriving together both read no grant and both
+   * created one, so "at most one" was true only of requests that happened not
+   * to overlap.
+   *
+   * Stated here so both ports say it. The in-memory store checks its arrays and
+   * the Prisma store issues the same question as a `findFirst` inside the
+   * create's transaction, and each raises the same conflict, so the handler has
+   * one behaviour to recover from rather than one per implementation.
+   *
+   * It is not the whole guarantee, and cannot be. The Prisma path is still
+   * check-then-write against a live server, so two connections can pass it at
+   * once; `break_glass_ceiling` refuses the loser under the advisory lock it
+   * already takes, which is the half no application-side check can provide.
+   * This is what makes the invariant hold in the store the tests run against
+   * and what gives the race a name in both.
+   *
+   * "Unexpired" is measured against the declaration's own `grantedAt` rather
+   * than against a clock read here, so the natural key, the route's bounds
+   * check and the trigger are all asking about the same instant. It is also why
+   * this cannot be a unique index: a partial index predicate has to be
+   * immutable, and "still in force" is a comparison against the row's own time.
+   */
+  uniqueBy: {
+    where(input: BreakGlassGrantInput) {
+      return {
+        userId: input.userId,
+        patientId: input.patientId,
+        expiresAt: { gt: input.grantedAt },
+      };
+    },
+    matches(row: ScopedRow<'BreakGlassGrant'>, input: BreakGlassGrantInput): boolean {
+      return (
+        row.userId === input.userId &&
+        row.patientId === input.patientId &&
+        row.expiresAt > input.grantedAt
+      );
+    },
+    message(): string {
+      return 'This reader already holds an unexpired break-glass grant on this chart.';
+    },
+  },
+
+  newRow(input: BreakGlassGrantInput): Writable<'BreakGlassGrant'> {
     return {
       userId: input.userId,
       patientId: input.patientId,
       reason: input.reason,
-      grantedAt: context.now,
+      /* The caller's instant, not the repository clock's. `expiresAt` was
+         already derived from it, and a window that began a few milliseconds
+         after the moment it was measured from is a window nothing else in this
+         file can reason about. */
+      grantedAt: input.grantedAt,
       expiresAt: input.expiresAt,
     };
   },

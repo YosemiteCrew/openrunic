@@ -343,12 +343,57 @@ export function patientRoutes(): Hono<AppEnv> {
       );
     }
 
-    const grant = await repos.breakGlassGrants.create({
-      userId: principal.subject,
-      patientId: id,
-      reason: body.reason,
-      expiresAt: new Date(now.getTime() + body.minutes * 60_000),
-    });
+    /*
+     * The create, and the recovery from losing a race to it.
+     *
+     * The existing-grant check above and this call are two round trips with
+     * nothing held between them, so two declarations for the same chart
+     * arriving together both read no grant and both arrive here. The database
+     * refuses the second - `break_glass_ceiling` takes an advisory lock on
+     * (tenant, user) and, under it, refuses an insert for a chart this reader
+     * already holds open - which is what makes "at most one unexpired grant per
+     * chart" true rather than merely usual.
+     *
+     * A refusal is not the answer this route documents, though. Losing the race
+     * is indistinguishable from re-declaring a moment later, and re-declaring
+     * returns the grant already held. So the loser reads again and returns the
+     * winner's grant, and the caller sees the documented 200 either way.
+     *
+     * It recovers on any failed create rather than on a matched error code. A
+     * grant that was absent when this handler looked and present a moment later
+     * can only be the race, because every other path returns before reaching
+     * this call: an unknown patient, a chart already held, the ceiling and the
+     * rolling bound all answer above. Matching a code would have meant
+     * depending on how one client library spells one database's SQLSTATE, and
+     * getting that wrong fails in the direction of a 500 on the request the
+     * route promises to answer.
+     */
+    let grant;
+    try {
+      grant = await repos.breakGlassGrants.create({
+        userId: principal.subject,
+        patientId: id,
+        reason: body.reason,
+        /* The same `now` the checks above were taken against, and the same one
+           the window is measured from. Three readings of the clock would give
+           three answers to "is that grant still in force" near a boundary. */
+        grantedAt: now,
+        expiresAt: new Date(now.getTime() + body.minutes * 60_000),
+      });
+    } catch (error) {
+      const raced = await repos.breakGlassGrants.list({
+        page: 1,
+        pageSize: 1,
+        sort: 'grantedAt',
+        order: 'desc',
+        userId: principal.subject,
+        patientId: id,
+        unexpiredAt: new Date(),
+      });
+      const won = raced.rows[0];
+      if (won === undefined) throw error;
+      return c.json(toBreakGlassGrantDto(won), 200);
+    }
 
     return c.json(toBreakGlassGrantDto(grant), 201);
   });

@@ -11,6 +11,7 @@ import {
   clinicalNoteInput,
   conditionInput,
   procedureInput,
+  breakGlassGrantInput,
   consentGrantInput,
   coverageInput,
   diagnosticReportInput,
@@ -294,6 +295,54 @@ describe('consentGrantInput', () => {
       status: 'REVOKED',
       revokedAt: '2026-08-13T09:00:00.000Z',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('breakGlassGrantInput', () => {
+  const declaration = {
+    userId: ID.provider,
+    patientId: ID.patient,
+    reason: 'Collapsed in reception, no record found.',
+    grantedAt: '2026-08-17T15:00:00.000Z',
+    expiresAt: '2026-08-17T16:00:00.000Z',
+  };
+
+  it('accepts a declaration with a reason and an ordered window', () => {
+    accepts(breakGlassGrantInput, declaration);
+  });
+
+  it('rejects a reason that is only whitespace', () => {
+    // A reason nobody wrote is not a reason, and the whole control here is that
+    // a person stated why and their name is on it.
+    rejects(breakGlassGrantInput, { ...declaration, reason: '   ' });
+  });
+
+  it('rejects a window that ends before it begins', () => {
+    /*
+     * The same statement the table makes as a CHECK, made here so it fails
+     * before a round trip. A grant that expired before it was granted is either
+     * a typo or an attempt to leave no window at all, and the second is worse:
+     * the row would look like access was taken when none was.
+     */
+    rejects(breakGlassGrantInput, {
+      ...declaration,
+      expiresAt: '2026-08-17T14:00:00.000Z',
+    });
+  });
+
+  it('rejects a window with no width', () => {
+    /* Strictly after, not "at or after". A zero-width window is a declaration
+       that was never in force, which is not a thing this route can mean. */
+    rejects(breakGlassGrantInput, { ...declaration, expiresAt: declaration.grantedAt });
+  });
+
+  it('rejects a declaration that names no moment it was made', () => {
+    const withoutGrantedAt: Record<string, unknown> = { ...declaration };
+    delete withoutGrantedAt['grantedAt'];
+
+    rejects(breakGlassGrantInput, withoutGrantedAt);
   });
 });
 

@@ -25,7 +25,11 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
-import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
+import {
+  assertCareRelationship,
+  assertFacilityAccess,
+  requirePermission,
+} from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 
 import { growthRouteContracts, growthRoutes } from './growth.js';
@@ -491,7 +495,16 @@ export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   router.post('/encounters/:id/sign', requirePermission('encounter.write'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const { encounters } = repositories(c);
-    const row = required(await encounters.findById(id), MISSING_ENCOUNTER);
+    // A signature is an attestation, so this is the door where reading the row
+    // is least sufficient: `findById` narrows by tenant, compartment and
+    // facility and never by care relationship, and the caller's id is about to
+    // be stamped on the visit as the person answering for it (#315).
+    const row = await requiredParentChart(
+      c,
+      'encounters',
+      await encounters.findById(id),
+      MISSING_ENCOUNTER
+    );
     assertFacilityAccess(policyOf(c), row.facilityId);
     assertTransition(ENCOUNTER_SIGNING_TRANSITIONS, 'visit', row.status, 'COMPLETED');
     assertTransition(
@@ -508,7 +521,7 @@ export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   router.post('/notes/:id/sign', requirePermission('encounter.write'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const { notes } = repositories(c);
-    const row = required(await notes.findById(id), MISSING_NOTE);
+    const row = await requiredParentChart(c, 'notes', await notes.findById(id), MISSING_NOTE);
     assertTransition(NOTE_SIGN_TRANSITIONS, 'clinical note', row.state, 'SIGNED');
 
     const signed = await notes.update(id, { signedById: attributedTo(c) });
@@ -534,7 +547,10 @@ export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, noteAddendumBodySchema);
     const { notes, noteAddenda } = repositories(c);
-    const note = required(await notes.findById(id), MISSING_NOTE);
+    // The same read and the same guard as the GET above. An amendment is a
+    // write against someone's chart and was the louder half of the pair: the
+    // list was gated by #306 while the route that ADDS to it was not.
+    const note = await requiredParentChart(c, 'notes', await notes.findById(id), MISSING_NOTE);
     assertTransition(NOTE_ADDENDUM_TRANSITIONS, 'clinical note', note.state, 'AMENDED');
 
     // The author comes from the token for the same reason the signer does:
@@ -673,6 +689,13 @@ function registerMedicationSafety(router: Hono<AppEnv>): void {
     const body = await parseJsonBody(c, medicationScreenInput);
     const repos = repositories(c);
 
+    // The chart arrives in the BODY here rather than as a parent row, so there
+    // is nothing for `requiredParentChart` to read - but the answer is chart
+    // data all the same: a finding says this patient is allergic to the drug
+    // you named, and an empty one says they are not. Asked before either list
+    // is read (#315).
+    await assertCareRelationship(c, body.patientId);
+
     // ACTIVE only, and filtered in the query rather than in memory: a resolved
     // or refuted allergy is not a reason to warn, and re-warning on one someone
     // has already disproved is how a prescriber learns to dismiss the panel.
@@ -735,7 +758,12 @@ async function movePrescription(
   to: MedicationRequestStatus
 ): Promise<MedicationRequestRow> {
   const { prescriptions } = repositories(c);
-  const row = required(await prescriptions.findById(id), MISSING_PRESCRIPTION);
+  const row = await requiredParentChart(
+    c,
+    'prescriptions',
+    await prescriptions.findById(id),
+    MISSING_PRESCRIPTION
+  );
   assertTransition(PRESCRIPTION_TRANSITIONS, 'prescription', row.status, to);
 
   const moved = await prescriptions.update(id, { status: to });
@@ -992,7 +1020,12 @@ async function transmit(
   id: string
 ): Promise<MedicationRequestRow> {
   const { prescriptions } = repositories(c);
-  const row = required(await prescriptions.findById(id), MISSING_PRESCRIPTION);
+  const row = await requiredParentChart(
+    c,
+    'prescriptions',
+    await prescriptions.findById(id),
+    MISSING_PRESCRIPTION
+  );
   const adapter = erxAdapter(registry);
 
   if (row.erxRef !== null) {
@@ -1053,7 +1086,12 @@ async function cancel(
   id: string
 ): Promise<MedicationRequestRow> {
   const { prescriptions } = repositories(c);
-  const row = required(await prescriptions.findById(id), MISSING_PRESCRIPTION);
+  const row = await requiredParentChart(
+    c,
+    'prescriptions',
+    await prescriptions.findById(id),
+    MISSING_PRESCRIPTION
+  );
   assertTransition(PRESCRIPTION_TRANSITIONS, 'prescription', row.status, 'CANCELLED');
 
   if (row.erxRef !== null) {

@@ -1250,6 +1250,245 @@ describe('a collection inside a chart is not a way round the gate', () => {
 });
 
 /**
+ * The WRITES, which are the half #306 did not reach.
+ *
+ * Every route here is hand-registered with `router.post`, reads its parent with
+ * `findById`, and never enters the CRUD seam where the gate lives. Measured on
+ * Postgres before the fix: the same clinician who got 404 reading the chart
+ * could sign the note, amend it, sign the visit, and sign and cancel a
+ * controlled prescription on it - and `encounters/{id}/sign` stamped
+ * `signedById` with the id the gate had just refused. A visit signature is an
+ * attestation, so that is the one that matters most: it was being made by
+ * somebody who could not open the chart it attests to.
+ *
+ * Driven end to end rather than asserted structurally, and each door gets its
+ * OWN case so that un-gating one lands on that one rather than on a neighbour.
+ * The reachable control beside it is what separates "the gate refuses this
+ * reader" from "the route refuses everyone", which would take signing out of
+ * the product while reading as the gate working.
+ */
+describe('a write on a chart is not a way round the gate', () => {
+  const W_ENCOUNTER = testId(3_800);
+  const W_NOTE = testId(3_810);
+  const W_RX = testId(3_820);
+
+  function aChart(reachable: boolean): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    baseChart(created.dataset);
+    anEncounter(
+      created.dataset,
+      reachable
+        ? { id: W_ENCOUNTER, providerId: SUBJECTS.clinicianA }
+        : { id: W_ENCOUNTER, facilityId: DEMO_FACILITY_B }
+    );
+    return created;
+  }
+
+  function aNote(dataset: Dataset, state: 'DRAFT' | 'SIGNED'): void {
+    seed(dataset, 'ClinicalNote', {
+      ...storageColumns(W_NOTE),
+      patientId: PATIENT,
+      encounterId: W_ENCOUNTER,
+      authorId: OTHER_PROVIDER,
+      title: 'Progress note',
+      blocks: [],
+      state,
+      cosignerId: null,
+      cosignedAt: null,
+      signedAt: state === 'SIGNED' ? FIXED_NOW : null,
+      signedById: state === 'SIGNED' ? OTHER_PROVIDER : null,
+      lockedAt: null,
+    } as unknown as ScopedRow<'ClinicalNote'>);
+  }
+
+  function aPrescription(dataset: Dataset, status: 'DRAFT' | 'SIGNED'): void {
+    seed(dataset, 'MedicationRequest', {
+      ...storageColumns(W_RX),
+      patientId: PATIENT,
+      encounterId: W_ENCOUNTER,
+      prescriberId: OTHER_PROVIDER,
+      rxnormCode: null,
+      ndcCode: null,
+      display: 'Amoxicillin 500 mg oral capsule',
+      sig: {},
+      sigText: 'One capsule by mouth three times daily',
+      quantity: 21,
+      quantityUnit: 'capsule',
+      refills: 0,
+      daysSupply: 7,
+      dispenseAsWritten: false,
+      controlledSchedule: null,
+      pharmacyName: null,
+      pharmacyNcpdpId: null,
+      status,
+      intent: 'ORDER',
+      erxRef: null,
+      writtenAt: FIXED_NOW,
+      transmittedAt: null,
+    } as unknown as ScopedRow<'MedicationRequest'>);
+  }
+
+  interface WriteDoor {
+    readonly door: string;
+    readonly seedIt: (dataset: Dataset) => void;
+    readonly path: string;
+    readonly body?: unknown;
+    /**
+     * What the SAME request answers for a reader who is in this patient's care.
+     *
+     * Not always 200: `transmit` reaches the prescribing-network seam and this
+     * build registers no eRx adapter, so its control is the 501 that says so
+     * (#311). A control that expected 200 there would have to be deleted or
+     * weakened the day someone read it, and the point of the control is that
+     * the gate is not what refused.
+     */
+    readonly reachable: number;
+  }
+
+  const DOORS: readonly WriteDoor[] = [
+    {
+      door: 'POST /encounters/:id/sign',
+      seedIt: () => undefined,
+      path: `/bff/v0/encounters/${W_ENCOUNTER}/sign`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /notes/:id/sign',
+      seedIt: (dataset) => aNote(dataset, 'DRAFT'),
+      path: `/bff/v0/notes/${W_NOTE}/sign`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /notes/:id/addenda',
+      seedIt: (dataset) => aNote(dataset, 'SIGNED'),
+      path: `/bff/v0/notes/${W_NOTE}/addenda`,
+      body: { blocks: [], reason: 'Corrected the laterality' },
+      reachable: 201,
+    },
+    {
+      door: 'POST /medications/prescriptions/:id/sign',
+      seedIt: (dataset) => aPrescription(dataset, 'DRAFT'),
+      path: `/bff/v0/medications/prescriptions/${W_RX}/sign`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /medications/prescriptions/:id/transmit',
+      seedIt: (dataset) => aPrescription(dataset, 'SIGNED'),
+      path: `/bff/v0/medications/prescriptions/${W_RX}/transmit`,
+      reachable: 501,
+    },
+    {
+      door: 'POST /medications/prescriptions/:id/cancel',
+      seedIt: (dataset) => aPrescription(dataset, 'SIGNED'),
+      path: `/bff/v0/medications/prescriptions/${W_RX}/cancel`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /medications/screen',
+      seedIt: () => undefined,
+      path: '/bff/v0/medications/screen',
+      body: { patientId: PATIENT, display: 'Amoxicillin 500 mg oral capsule' },
+      reachable: 200,
+    },
+  ];
+
+  async function ask(
+    app: ReturnType<typeof createTestApp>['app'],
+    door: WriteDoor
+  ): Promise<number> {
+    const res = await app.request(door.path, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify(door.body ?? {}),
+    });
+    return res.status;
+  }
+
+  it.each(DOORS.map((d) => [d.door, d] as const))(
+    '%s is refused on a chart nothing connects the writer to',
+    async (_label, door) => {
+      const { app, dataset } = aChart(false);
+      door.seedIt(dataset);
+
+      // 404 and not 403, the same as every read: a 403 confirms the row exists
+      // to somebody who may not see it.
+      expect(await ask(app, door)).toBe(404);
+    }
+  );
+
+  it.each(DOORS.map((d) => [d.door, d] as const))(
+    '%s still answers a writer who is in that patient’s care',
+    async (_label, door) => {
+      const { app, dataset } = aChart(true);
+      door.seedIt(dataset);
+
+      expect(await ask(app, door)).toBe(door.reachable);
+    }
+  );
+
+  it('the refusal is the chart gate, not the transition or the body', async () => {
+    /*
+     * Every refusal above is a 404, and three different things in these routes
+     * answer 404 - a missing row, a parent read, and the gate. The control is
+     * the same request on the SAME seeded rows with only the relationship
+     * changed, which is what the pair of tables above is; this pins the one
+     * case where the two tables could agree for the wrong reason. Signing a
+     * visit that is already signed is a 409, so if the gate were absent this
+     * would be 409 rather than 404, and if the row were missing it would be 404
+     * for a reason that has nothing to do with a relationship.
+     */
+    const { app, dataset } = aChart(false);
+    seed(dataset, 'Encounter', {
+      ...storageColumns(testId(3_801)),
+      facilityId: DEMO_FACILITY_B,
+      patientId: PATIENT,
+      providerId: OTHER_PROVIDER,
+      appointmentId: null,
+      class: 'AMBULATORY',
+      status: 'COMPLETED',
+      reasonCode: 'R51',
+      reasonText: 'Headache',
+      startedAt: FIXED_NOW,
+      endedAt: null,
+      signedAt: FIXED_NOW,
+      signedById: OTHER_PROVIDER,
+    } as unknown as ScopedRow<'Encounter'>);
+
+    const refused = await app.request(`/bff/v0/encounters/${testId(3_801)}/sign`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(refused.status, 'the gate answers before the signature transition does').toBe(404);
+  });
+
+  it('a refused write leaves a denial in the trail, and no domain event', async () => {
+    /*
+     * The accountability half, and it inverts what #308 found. There, a refused
+     * READ left nothing in the trail on Postgres. Here the ungated WRITES left
+     * no access decision at all - not a denial and not a success - so the trail
+     * said a note was signed without saying whether the signer was allowed in
+     * the chart. `docs/adr/0008` makes the trail the supervisory control over
+     * exactly this.
+     */
+    const { app, dataset, sink } = aChart(false);
+    aNote(dataset, 'DRAFT');
+
+    await app.request(`/bff/v0/notes/${W_NOTE}/sign`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: '{}',
+    });
+
+    const actions = sink.writes().map((entry) => entry.event.action);
+    expect(actions).toContain('chart.access.denied');
+    expect(actions, 'a refused signature must not also be recorded as one').not.toContain(
+      'note.updated'
+    );
+  });
+});
+
+/**
  * The work queues, which are the same bypass with no id in the request at all.
  *
  * A queue names no chart, so nothing about the request looks like a chart read

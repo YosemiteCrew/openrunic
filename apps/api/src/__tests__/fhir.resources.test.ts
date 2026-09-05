@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { SERVED_MODULES } from '../fhir/resources.js';
+import { ROLE_PERMISSIONS } from '../policy/permissions.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -15,6 +16,7 @@ import type { ClaimStatus } from '../repositories/specs/financial.js';
 import {
   DEMO_TENANT_A,
   DEMO_TENANT_B,
+  DEMO_PORTAL_PATIENT,
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
@@ -2720,5 +2722,250 @@ describe('a MedicationDispense filled from more than one lot', () => {
     expect(res.status).toBe(200);
     const dispense = (await res.json()) as { quantity?: { value?: number } };
     expect(dispense.quantity?.value).toBe(0.3);
+  });
+});
+
+/**
+ * A patient reading the record of their own medicines being handed over.
+ *
+ * `MedicationDispense` was served under `order.read`, which `patient-portal`
+ * does not hold, so a portal token was refused at the permission gate before
+ * the compartment narrowing it depends on was ever consulted. The chart was
+ * readable and the prescription was readable; only the record of collecting it
+ * was not.
+ *
+ * The gate is now `encounter.read`, the permission `MedicationRequest` and
+ * `MedicationStatement` are already served under. These assertions are what
+ * makes that safe rather than merely open, and they are deliberately taken at
+ * every read shape rather than at the one the change was made for: the
+ * promotion review found a chart search leaking tenant-wide because only
+ * read-by-id had been guarded, and a permission is not a boundary until every
+ * door through it has been tried.
+ */
+describe('a patient reading their own MedicationDispense', () => {
+  const OTHER_PATIENT = testId(6100);
+  const OWN_POSTING = testId(6101);
+  const OTHER_POSTING = testId(6102);
+  const RECEIPT_POSTING = testId(6103);
+  const ITEM = testId(6110);
+  const LOT = testId(6111);
+
+  /** One dispensing posting and the movement under it, on a named chart. */
+  function seedDispense(
+    dataset: MemoryDataset,
+    posting: string,
+    patientId: string | null,
+    kind: 'DISPENSE' | 'RECEIPT' = 'DISPENSE'
+  ): void {
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind,
+      facilityId: DEMO_FACILITY_A,
+      patientId,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+    seed(dataset, 'StockMovement', {
+      ...storageColumns(testId(Number(posting.slice(-4)) + 100)),
+      postingId: posting,
+      lotId: LOT,
+      itemId: ITEM,
+      facilityId: DEMO_FACILITY_A,
+      kind: kind === 'DISPENSE' ? 'DISPENSE' : 'RECEIPT',
+      quantity: 1,
+      occurredOn: FIXED_NOW,
+      actorId: PROVIDER,
+      reason: null,
+      correctsMovementId: null,
+      lotSeq: 1,
+    });
+  }
+
+  function world(): ReturnType<typeof createTestApp> {
+    const made = createTestApp();
+    const { dataset } = made;
+    seed(dataset, 'Patient', makePatientRow({ id: DEMO_PORTAL_PATIENT, mrn: 'OR-610001' }));
+    seed(dataset, 'Patient', makePatientRow({ id: OTHER_PATIENT, mrn: 'OR-610002' }));
+    /*
+     * An appointment on each chart, which is what gives a staff principal a
+     * care relationship with it. Without them the staff control below reads
+     * 404 for the reason `assertCareRelationship` exists rather than for the
+     * permission this suite is about - a premise failing quietly and looking
+     * like the conclusion.
+     */
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(6104), patientId: DEMO_PORTAL_PATIENT })
+    );
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(6105), patientId: OTHER_PATIENT })
+    );
+    seed(dataset, 'StockItem', {
+      ...storageColumns(ITEM),
+      sku: 'AMX-250',
+      name: 'Amoxicillin 250 mg capsule',
+      unit: 'capsule',
+      rxnormCode: '308182',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockLot', {
+      ...storageColumns(LOT),
+      itemId: ITEM,
+      facilityId: DEMO_FACILITY_A,
+      lotNumber: 'LOT-610',
+      status: 'AVAILABLE',
+      expiresOn: null,
+      openedOn: null,
+      beyondUseDays: null,
+      manufacturer: null,
+      ndcCode: null,
+      receivedOn: FIXED_NOW,
+    });
+    seedDispense(dataset, OWN_POSTING, DEMO_PORTAL_PATIENT);
+    seedDispense(dataset, OTHER_POSTING, OTHER_PATIENT);
+    // A delivery booked in. It belongs to no chart, and it is what a patient
+    // must never reach through this route: it says what the practice stocks.
+    seedDispense(dataset, RECEIPT_POSTING, null, 'RECEIPT');
+    return made;
+  }
+
+  it('reads its own dispense by id', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense/${OWN_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { id?: string }).toMatchObject({
+      resourceType: 'MedicationDispense',
+      id: OWN_POSTING,
+    });
+  });
+
+  it('finds its own dispense through a patient search', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${DEMO_PORTAL_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      OWN_POSTING,
+    ]);
+  });
+
+  it('is given only its own chart by a search that names no patient at all', async () => {
+    /*
+     * The broad-list shape, and the one the promotion review found unguarded
+     * elsewhere. A search with no `patient` parameter is the request that asks
+     * for everything, and the compartment - not the query - is what has to
+     * answer it.
+     */
+    const { app } = world();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      OWN_POSTING,
+    ]);
+  });
+
+  it('cannot read another patient dispense by id', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense/${OTHER_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    // Absent rather than forbidden, for the reason the patient routes give:
+    // a 403 would confirm the id names something.
+    expect(res.status).toBe(404);
+  });
+
+  it('cannot widen its own compartment by naming another chart in the query', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${OTHER_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bundle).entry ?? []).toEqual([]);
+  });
+
+  it('reaches no posting that belongs to no chart, and neither does staff', async () => {
+    /*
+     * A receipt, a count and a wastage carry a null chart. They are in the same
+     * table as the dispense this change opened up and they say what a practice
+     * stocks and how much of it, so they are the thing a widening here would
+     * leak.
+     *
+     * Both tokens are asserted because only the pair says which control did the
+     * work. This one is the module's own narrowing - `findById` keeps anything
+     * that is not a DISPENSE on a chart out of a clinical route for every
+     * caller - and it would still hold if the compartment did nothing. The
+     * compartment is proved by the other-patient assertions above, where staff
+     * are served the row and the portal is not.
+     */
+    const { app } = world();
+
+    for (const token of [TOKENS.portalA, TOKENS.adminA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${RECEIPT_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading a receipt`).toBe(404);
+    }
+  });
+
+  it('is gated on a permission the portal bundle actually holds', () => {
+    /*
+     * The regression this suite exists to prevent, asserted at its source
+     * rather than through a request.
+     *
+     * Every assertion above goes through the router, so all of them would break
+     * together and for the same reason if the module's permission were changed
+     * back - which is a real answer but a slow one to read. This says the thing
+     * directly: whatever `MedicationDispense` is served under has to be
+     * something a patient's own token carries, or a patient cannot read their
+     * own record however well the compartment works.
+     */
+    const module = SERVED_MODULES.find((served) => served.type === 'MedicationDispense');
+
+    expect(module).toBeDefined();
+    expect(ROLE_PERMISSIONS['patient-portal']).toContain(module?.permission);
+  });
+
+  it('still serves the staff who could already read it', async () => {
+    /* The control. Every assertion above passes for a route nobody can reach. */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.clinicianA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${OTHER_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading a dispense`).toBe(200);
+    }
   });
 });

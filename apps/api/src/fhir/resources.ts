@@ -725,6 +725,13 @@ const medicationDispenseModule = defineFhirResource({
        * The page is already compartment-narrowed by the time this runs, so the
        * id discloses nothing the bundle would not have carried anyway.
        *
+       * It does NOT tell the caller to exclude the record, because they cannot:
+       * this module declares `params: ['patient']` and nothing else, so there
+       * is no `_id`, no `:not`, and no way to select a subset of one chart's
+       * dispenses. An OperationOutcome is read by a machine that will attempt
+       * what it is told, and advice the surface does not offer is worse than
+       * none. The id and the pointer at the ledger are the actionable half.
+       *
        * The chart-wide blast radius is still wrong and is not fixed here. The
        * right shape is a read that refuses and a search that returns the
        * entries it can alongside an `OperationOutcome` entry saying what it
@@ -738,8 +745,7 @@ const medicationDispenseModule = defineFhirResource({
         throw ApiError.notImplemented(
           `MedicationDispense/${posting?.id ?? 'unknown'} was drawn from more than ` +
             `${String(MAX_DISPENSE_MOVEMENTS)} lots, which this server cannot summarise as a ` +
-            'single quantity. Read the stock ledger for the individual movements, or exclude ' +
-            'this record from the search.',
+            'single quantity. Read the stock ledger for the individual movements.',
           { title: 'Dispense too large to project' }
         );
       }

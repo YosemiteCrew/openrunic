@@ -85,7 +85,14 @@ function decodeRequired(name) {
   return decoded.trim();
 }
 
-/** The pattern, compiled case-insensitively because the terms are words. */
+/**
+ * The pattern, compiled case-insensitively because the terms are words.
+ *
+ * Deliberately NOT global. `RegExp.prototype.test` on a `g` regex carries
+ * `lastIndex` between calls, so adding `g` here would make every other entry in
+ * `scanSurface`'s filter invisible - a guard that checks half its input and says
+ * nothing about the half it skipped.
+ */
 export function compilePattern(source) {
   try {
     return new RegExp(source, 'i');
@@ -112,35 +119,70 @@ export function corpusLines(text) {
  * Added lines of a unified diff, carrying the file and line they land on.
  *
  * Only added lines, because a term being REMOVED is the fix, not the offence.
- * `+++ b/path` is the header rather than an addition, so it is skipped by
- * position rather than by content - a real added line can legitimately start
- * with `++`.
+ *
+ * `+++ b/path` is the header rather than an addition, and it is told apart from
+ * an addition BY POSITION, not by content: git writes an added line whose text
+ * begins `++ ` as `+++ `, which `startsWith('+++ ')` cannot distinguish from a
+ * header. The first version of this function did exactly that, and it failed in
+ * both directions at once - the line carrying the term was never scanned, and
+ * `file` became a line of the pull request's own diff, which the report then
+ * PRINTED. A guard that publishes diff content into a public log on an unusual
+ * input is worse than one that misses, because the miss is at least silent.
+ *
+ * Position is taken from the hunk header's own declared counts rather than from
+ * `diff --git`, which needs no assumption about which optional lines git chose
+ * to emit: `@@ -a,b +c,d @@` says how many lines the hunk owns, so a `+++ `
+ * inside that debt is an addition and one after it is discharged is a header.
+ *
+ * Found in review by Claude L2, against real `git diff --unified=0` output
+ * rather than a fixture - which is also why the fixtures here are approximations
+ * that the naive positional fix appears to fail.
  */
 export function addedLines(diff) {
   const out = [];
   let file = '';
   let lineNumber = 0;
+  // How many old-side and new-side lines the current hunk still owes. Zero on
+  // both means we are between hunks, which is the only place a header can be.
+  let owedOld = 0;
+  let owedNew = 0;
+
   for (const line of diff.split('\n')) {
-    if (line.startsWith('+++ ')) {
-      const target = line.slice(4).trim();
-      file = target === '/dev/null' ? '' : target.replace(/^b\//, '');
-      continue;
-    }
-    if (line.startsWith('---') || line.startsWith('diff ')) continue;
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
     if (hunk) {
-      lineNumber = Number(hunk[1]);
+      // A count omitted from the header means one line, not none.
+      owedOld = hunk[1] === undefined ? 1 : Number(hunk[1]);
+      lineNumber = Number(hunk[2]);
+      owedNew = hunk[3] === undefined ? 1 : Number(hunk[3]);
       continue;
     }
+
+    if (owedOld <= 0 && owedNew <= 0) {
+      // Between hunks: `diff --git`, `index`, `--- a/path`, `+++ b/path`.
+      if (line.startsWith('+++ ')) {
+        const target = line.slice(4).trim();
+        file = target === '/dev/null' ? '' : target.replace(/^b\//, '');
+      }
+      continue;
+    }
+
     if (line.startsWith('+')) {
       out.push({ file: file || '(unknown file)', line: lineNumber, text: line.slice(1) });
       lineNumber += 1;
+      owedNew -= 1;
       continue;
     }
-    // A context or removed line: context advances the new-file counter,
-    // removal does not.
-    if (line.startsWith('-')) continue;
+    // A removed line does not advance the new-file counter.
+    if (line.startsWith('-')) {
+      owedOld -= 1;
+      continue;
+    }
+    // `\ No newline at end of file` belongs to neither side.
+    if (line.startsWith('\\')) continue;
+    // Context: it advances both sides.
     lineNumber += 1;
+    if (owedNew > 0) owedNew -= 1;
+    if (owedOld > 0) owedOld -= 1;
   }
   return out;
 }

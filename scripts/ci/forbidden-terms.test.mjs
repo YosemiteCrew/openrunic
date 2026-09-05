@@ -113,6 +113,83 @@ test('the +++ header is not itself an added line', () => {
   assert.deepEqual(found, []);
 });
 
+test('an added line whose own content starts with ++ is an addition, not a header', () => {
+  // The case that separates the two readings. `the +++ header is not itself an
+  // added line` above is satisfied by BOTH a parser that skips headers and one
+  // that skips anything shaped like one, because it only ever presents a real
+  // header. This one presents an addition git wrote as `+++ `.
+  //
+  // The broken reading failed in both directions at once: the line carrying the
+  // term went unscanned, AND `file` became that line of the diff, which the
+  // report prints - publishing pull-request content into a public log.
+  const diff = [
+    'diff --git a/a.md b/a.md',
+    '--- a/a.md',
+    '+++ b/a.md',
+    '@@ -2,0 +3,2 @@ two',
+    // git writes an added line as `+` plus its content, so a line whose text
+    // begins `++ ` reaches the parser as `+++ ` - indistinguishable from the
+    // header by content, which is the whole defect.
+    '+++ this line names acmehealth',
+    '+plain acme health line',
+    '',
+  ].join('\n');
+
+  assert.deepEqual(addedLines(diff), [
+    { file: 'a.md', line: 3, text: '++ this line names acmehealth' },
+    { file: 'a.md', line: 4, text: 'plain acme health line' },
+  ]);
+
+  // Both lines are found, and no finding carries diff content as its file.
+  const found = scanSurface(pattern, 'diff', diff);
+  assert.deepEqual(found, [
+    { surface: 'diff', file: 'a.md', line: 3 },
+    { surface: 'diff', file: 'a.md', line: 4 },
+  ]);
+});
+
+test('a hunk header with an omitted count owns one line', () => {
+  // git writes `@@ -1,0 +2 @@` rather than `+2,1`. Reading the absent count as
+  // zero ends the hunk before its only addition, and the addition is then
+  // header territory.
+  const diff = ['+++ b/b.md', '@@ -1,0 +2 @@ b one', '+acmehealth in b', ''].join('\n');
+  assert.deepEqual(addedLines(diff), [{ file: 'b.md', line: 2, text: 'acmehealth in b' }]);
+});
+
+test('the parse agrees with real git diff output, not just with fixtures', () => {
+  // Every other case here is a hand-written approximation of git, and the
+  // defect this file now pins was found against real output and hidden by a
+  // fixture. So one case pays for a repository.
+  const repo = mkdtempSync(path.join(os.tmpdir(), 'forbidden-terms-git-'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  git('init', '-q', '-b', 'main', '.');
+  git('config', 'user.email', 'guard@example.invalid');
+  git('config', 'user.name', 'Guard Test');
+  writeFileSync(path.join(repo, 'a.md'), 'one\ntwo\n');
+  writeFileSync(path.join(repo, 'b.md'), 'b one\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  writeFileSync(path.join(repo, 'a.md'), 'one\ntwo\n++ names acmehealth\nplain acme health\n');
+  writeFileSync(path.join(repo, 'b.md'), 'b one\nacme-health in b\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'change');
+
+  const diff = execFileSync(
+    'git',
+    ['diff', '--unified=0', '--diff-filter=ACMR', 'HEAD~1', 'HEAD'],
+    {
+      cwd: repo,
+      encoding: 'utf8',
+    }
+  );
+
+  assert.deepEqual(scanSurface(pattern, 'diff', diff), [
+    { surface: 'diff', file: 'a.md', line: 3 },
+    { surface: 'diff', file: 'a.md', line: 4 },
+    { surface: 'diff', file: 'b.md', line: 2 },
+  ]);
+});
+
 test('a file NAMED after a forbidden term is caught by the names surface', () => {
   // Which is why `names` exists: the diff surface deliberately ignores the
   // header that carries the path, so the path is checked as its own surface.

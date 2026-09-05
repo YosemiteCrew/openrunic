@@ -25,6 +25,29 @@ import { matchesWhere } from './fake-port.js';
  *
  * The oracle is `matchesWhere`, the same interpreter the fake port answers
  * queries with, so the two sides here are the two sides in production.
+ *
+ * ## Everything this file exercises is derived from something the code under
+ * ## test cannot delete
+ *
+ * The rule that shapes the rest of the file, and the one that was broken twice
+ * before it was written down: **a mutation can remove its own detection.**
+ *
+ * A dropped `where` clause takes its own column out of `constrained(where)`, so
+ * a mutation pass driven by the emitted filter cannot mutate the column whose
+ * clause has gone - the change deletes the check that would have caught it. The
+ * same holds for a filter that is redundant under a query sending every
+ * parameter at once: it can be removed without changing a single row, because a
+ * neighbouring parameter already implies it.
+ *
+ * So the sets this file iterates come from outside the thing being tested. The
+ * spec list comes from `COLLECTION_SPECS` and is size-floored. The query
+ * parameters come from `FILTERS`, which `Required` makes the compiler enforce.
+ * The mutated columns and their types come from `schema.prisma`, and that table
+ * has a guard of its own, because a parse that silently found nothing would
+ * disarm every mutant depending on it while leaving the suite green.
+ *
+ * A new assertion here should be asked the same question: if the code it checks
+ * were deleted, would this still run?
  */
 
 /**
@@ -826,6 +849,33 @@ function nullableColumns(): ReadonlyMap<string, ReadonlyMap<string, string>> {
 }
 
 const NULLABLE_COLUMNS = nullableColumns();
+
+/**
+ * The table has to have found something, and the right something.
+ *
+ * Found in review, and it is this file's own subject one level up. An empty
+ * `NULLABLE_COLUMNS` - a moved schema, a Prisma syntax change, a regex that
+ * stops matching - silently disarms every mutant that depends on it: two of the
+ * three reproductions this change added go green again, and the third survives
+ * by accident rather than by design, because with no table the row simply omits
+ * the column and `matches` disagrees for an unrelated reason. A pass that
+ * happens for the wrong reason reads as coverage.
+ *
+ * Both halves earn their place. A size floor survives a regex that matched the
+ * wrong thing and found plenty of it; a named canary survives a parse that found
+ * two models and stopped. `StockPosting.patientId` is the canary because it is
+ * the column the reported case turns on.
+ */
+describe('the nullable-column table', () => {
+  it('found the schema, and found the column the reported case turns on', () => {
+    expect(NULLABLE_COLUMNS.size).toBeGreaterThan(40);
+    expect(NULLABLE_COLUMNS.get('StockPosting')?.get('patientId')).toBe('String');
+    expect(NULLABLE_COLUMNS.get('MessageThread')?.get('closedAt')).toBe('DateTime');
+    // And it is a table of nullable columns, not of every column: a `NOT NULL`
+    // one must not be in it, or the null mutants become rows the schema forbids.
+    expect(NULLABLE_COLUMNS.get('StockPosting')?.has('facilityId')).toBe(false);
+  });
+});
 
 /**
  * A non-null value of the column's own type, for the mutant that null cannot be.

@@ -1298,7 +1298,12 @@ describe('a write on a chart is not a way round the gate', () => {
       signedAt: state === 'SIGNED' ? FIXED_NOW : null,
       signedById: state === 'SIGNED' ? OTHER_PROVIDER : null,
       lockedAt: null,
-    } as unknown as ScopedRow<'ClinicalNote'>);
+      // No cast: `state` is a literal union rather than a widened string, so
+      // this row satisfies `ScopedRow<'ClinicalNote'>` on its own and a field
+      // going wrong here is a type error rather than a green test seeding a
+      // shape the repository never returns. Same reasoning as the remittance
+      // fixture above.
+    });
   }
 
   function aPrescription(dataset: Dataset, status: 'DRAFT' | 'SIGNED'): void {

@@ -142,12 +142,20 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
      * The marker carries no rule id because Aikido's syntax has none to give,
      * so it silences every SAST rule on its line rather than just this one.
      * That is the cost, recorded so it is not mistaken for a narrow exemption.
-     * Revisit: if a caller ever writes through the port outside a transaction.
+     *
+     * The re-review date sits on the two lines below rather than here, because
+     * that is where `exception-expiry.mjs` reads it and where a reader deleting
+     * a marker would look. This block is the reasoning it is a date for.
      */
     const model = <M extends PrismaModelName>(name: M): ModelDelegate<M> => ({
       findMany: (args) => inSession((tx) => tx.model(name).findMany(args)),
       count: (args) => inSession((tx) => tx.model(name).count(args)),
       findFirst: (args) => inSession((tx) => tx.model(name).findFirst(args)),
+      // The accepted finding the block above records, and its expiry. A
+      // condition on its own was what this exception used to carry, and nothing
+      // is told when a condition comes true.
+      // Owner: ankit-yc. Re-review by: 2026-12-05. Revisit condition: sooner, if
+      // a caller ever writes through this port outside a transaction.
       create: (args) => inSession((tx) => tx.model(name).create(args)), // nosec
       updateMany: (args) => inSession((tx) => tx.model(name).updateMany(args)), // nosec
     });

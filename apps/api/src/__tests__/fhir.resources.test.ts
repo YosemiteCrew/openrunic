@@ -1385,10 +1385,22 @@ describe('a dispense too large to summarise is refused rather than understated',
     });
 
     expect(res.status).toBe(501);
+    const outcome = (await res.json()) as {
+      resourceType?: string;
+      issue?: { diagnostics?: string }[];
+    };
+
     // And specifically not a resource carrying 50 where 51 were handed over.
-    expect((await res.json()) as { resourceType?: string }).toMatchObject({
-      resourceType: 'OperationOutcome',
-    });
+    expect(outcome.resourceType).toBe('OperationOutcome');
+    /*
+     * The posting is named. `prepare` runs for the search as well as the read,
+     * so one pathological record makes a whole chart's dispense history answer
+     * 501 - and after the portal gained this resource that is a patient unable
+     * to read any of their medicines because of one of them. Naming the id is
+     * what lets a client say which record is at fault rather than being told
+     * only that something on this chart cannot be served.
+     */
+    expect(outcome.issue?.[0]?.diagnostics).toContain(posting);
   });
 
   it('still serves a dispense that fits', async () => {

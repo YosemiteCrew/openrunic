@@ -695,7 +695,7 @@ const medicationDispenseModule = defineFhirResource({
         })
       )
     );
-    for (const page of pages) {
+    for (const [index, page] of pages.entries()) {
       /*
        * A dispense whose lines did not fit is refused, not summed.
        *
@@ -715,12 +715,31 @@ const medicationDispenseModule = defineFhirResource({
        * 501 rather than a 4xx: the client asked for something reasonable and it
        * is this server's projection that cannot carry it. The bound is not a
        * page size a caller can raise, which is why it is not reported as one.
+       *
+       * THE POSTING IS NAMED, and that is not a nicety. `prepare` runs for the
+       * search as well as the read, so one pathological record makes a whole
+       * chart's dispense history answer 501 - after the portal gained this
+       * resource, that is a patient unable to read any of their medicines
+       * because of one of them. An outcome that names the id is what lets a
+       * client say which record is at fault and ask for the rest without it.
+       * The page is already compartment-narrowed by the time this runs, so the
+       * id discloses nothing the bundle would not have carried anyway.
+       *
+       * The chart-wide blast radius is still wrong and is not fixed here. The
+       * right shape is a read that refuses and a search that returns the
+       * entries it can alongside an `OperationOutcome` entry saying what it
+       * withheld - and dropping the entry WITHOUT saying so would be the same
+       * silent understatement one level up, a medication list short by one with
+       * nothing to show for it. `searchsetBundle` cannot carry an outcome entry
+       * today, so that is its own change; see the follow-up issue.
        */
       if (page.total > page.rows.length) {
+        const posting = rows[index];
         throw ApiError.notImplemented(
-          `This dispense was drawn from more than ${String(MAX_DISPENSE_MOVEMENTS)} lots, ` +
-            'which this server cannot summarise as a single quantity. ' +
-            'Read the stock ledger for the individual movements.',
+          `MedicationDispense/${posting?.id ?? 'unknown'} was drawn from more than ` +
+            `${String(MAX_DISPENSE_MOVEMENTS)} lots, which this server cannot summarise as a ` +
+            'single quantity. Read the stock ledger for the individual movements, or exclude ' +
+            'this record from the search.',
           { title: 'Dispense too large to project' }
         );
       }
@@ -876,6 +895,21 @@ const MAX_TEAM_MEMBERS = 20;
  * stop being copied.
  */
 const MAX_PLAN_GOALS = 20;
+
+/*
+ * WHY TWO OF THESE THREE BOUNDS TRIM AND THE THIRD REFUSES.
+ *
+ * `MAX_TEAM_MEMBERS` and `MAX_PLAN_GOALS` publish a LIST. A list one entry
+ * short is still a true statement about the entries it contains, and FHIR
+ * clients read a bounded collection as a page rather than as a census.
+ *
+ * `MAX_DISPENSE_MOVEMENTS` feeds a DERIVED TOTAL. A quantity summed from part
+ * of its inputs is not a shorter answer to the question, it is a wrong one, and
+ * nothing in the resource lets a client tell. That is the whole of the
+ * difference, and it is why making the three consistent would be the wrong
+ * move: the next bound should trim if it publishes members and refuse if it
+ * publishes an arithmetic result.
+ */
 
 /**
  * The goals each plan on the page is working towards.

@@ -20,6 +20,7 @@ import {
   parseDateOnly,
   referenceId,
   tokenMatches,
+  tokenSystem,
   tokenValue,
   type DateWindow,
   type FhirPaging,
@@ -244,14 +245,50 @@ const patientModule = defineFhirResource({
   toResource: patientRowToFhir,
 });
 
+/**
+ * Which stored identifier a `Practitioner?identifier=` token is asking about.
+ *
+ * A bare token names no system, so it may match either column - that is what
+ * FHIR says a bare token means, and it is what a client that does not care
+ * about the vocabulary sends. A qualified token has to agree about the system:
+ * an NPI and a DEA number are different identifiers in different namespaces,
+ * and answering `{dea-system}|1234567893` with the practitioner whose NPI is
+ * 1234567893 is a wrong answer about a different person, not a near miss.
+ *
+ * A system this server does not publish admits no column at all, which selects
+ * nothing. Falling back to the value alone would be the same wrong answer with
+ * an extra step - and unlike a refusal it would look like a result.
+ *
+ * `|value`, meaning "an identifier with no system", also admits nothing: every
+ * identifier this server emits carries one.
+ */
+function practitionerIdentifierColumns(token: string): readonly ('npi' | 'dea')[] {
+  const system = tokenSystem(token);
+  if (system === undefined) return ['npi', 'dea'];
+  if (system === SYSTEMS.npi) return ['npi'];
+  if (system === SYSTEMS.dea) return ['dea'];
+  return [];
+}
+
 const practitionerModule = defineFhirResource({
   type: 'Practitioner',
   interactions: ['read', 'search-type'],
-  params: ['name'],
+  params: ['identifier', 'name'],
   permission: 'user.read',
   collection: (repositories) => repositories.users,
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
+    /* Resolved to columns here rather than passed down as a token: the systems
+       are this boundary's vocabulary, and a repository that had to know them
+       would be the wrong place to decide what an unrecognised one means. */
+    ...(query.identifier === undefined
+      ? {}
+      : {
+          identifier: {
+            value: tokenValue(query.identifier),
+            columns: practitionerIdentifierColumns(query.identifier),
+          },
+        }),
     ...(query.name === undefined ? {} : { q: query.name }),
     sort: 'familyName' as const,
     order: 'asc' as const,

@@ -20,12 +20,16 @@ import { z } from 'zod';
  * documented way to decline a setting is a startup failure naming the variable
  * the operator deliberately left alone.
  *
- * Applied to every field rather than to the one that reached a container first,
- * because the difference is not a property of any field: it is what an empty
- * `.env` line means, and it means the same thing on all of them. On a coerced
- * number it matters more quietly - `Number('')` is 0, so a blank
- * `OIDC_CLOCK_SKEW_SECONDS` would have become no tolerance at all rather than
- * the documented sixty seconds, with nothing to read in a log.
+ * Applied to every field an operator can decline rather than to the one that
+ * reached a container first, because the difference is not a property of those
+ * fields: it is what an empty `.env` line means, and it means the same thing on
+ * all of them. On a coerced number it matters more quietly - `Number('')` is 0,
+ * so a blank `OIDC_CLOCK_SKEW_SECONDS` would have become no tolerance at all
+ * rather than the documented sixty seconds, with nothing to read in a log.
+ *
+ * `NODE_ENV` is the exception and says why at its own declaration: it is not a
+ * setting a practice declines, and blank there would mean the demo-token mode
+ * rather than a refusal.
  *
  * Only whitespace is read as absence. A value that is present and malformed
  * still fails, which is the whole point of parsing the environment at startup.
@@ -40,7 +44,24 @@ function blankAsUnset<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
 const envSchema = z
   .object({
     PORT: blankAsUnset(z.coerce.number().int().min(1).max(65535).default(4000)),
-    NODE_ENV: blankAsUnset(z.enum(['development', 'test', 'production']).default('development')),
+    /**
+     * Deliberately NOT wrapped in {@link blankAsUnset}, and it is the one field
+     * in this object where that matters.
+     *
+     * Everywhere else, blank and absent have the same consequence: a setting
+     * the operator declined. Here they do not. Blank would default to
+     * `development`, which is the mode that accepts the table of public demo
+     * tokens printed in this repository's own source - so the rule that makes
+     * every other field forgiving would turn one empty line into a deployment
+     * serving charts to anyone holding a token anybody can read.
+     *
+     * It is also not a setting a practice declines. `.env.example` ships no
+     * `NODE_ENV` line at all and Compose sets it on both services, so the only
+     * way to reach a blank one is to have written it, and a refusal to start is
+     * the right answer to that. Fail closed on the one field where "not set"
+     * and "set wrong" differ in what they cost.
+     */
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     /**
      * Canonical base for the FHIR resources this deployment publishes.
      *

@@ -220,7 +220,22 @@ describe('a variable that is present and blank', () => {
       60
     );
     expect(parseEnv({ PORT: '' }).PORT).toBe(4000);
-    expect(parseEnv({ NODE_ENV: '' }).NODE_ENV).toBe('development');
+  });
+
+  it('refuses a blank NODE_ENV rather than quietly defaulting it', () => {
+    /*
+     * The deliberate exception, and the one field where blank and absent differ
+     * in what they cost. Defaulting a blank `NODE_ENV` gives `development`,
+     * which is the mode that accepts the table of public demo tokens printed in
+     * this repository's own source - so the rule that makes every other field
+     * forgiving would turn one empty line into a deployment serving charts to
+     * anyone holding a token anybody can read.
+     *
+     * Absent still defaults, because that is how the process is ordinarily run
+     * and is asserted at the top of this file. Only written-and-blank refuses.
+     */
+    expect(() => parseEnv({ NODE_ENV: '' })).toThrow(/NODE_ENV/);
+    expect(parseEnv({}).NODE_ENV).toBe('development');
   });
 
   it('does not turn a half-configured provider into a whole one', () => {

@@ -361,12 +361,27 @@ export function patientRoutes(): Hono<AppEnv> {
      *
      * It recovers on any failed create rather than on a matched error code. A
      * grant that was absent when this handler looked and present a moment later
-     * can only be the race, because every other path returns before reaching
+     * can only be this race, because every other path returns before reaching
      * this call: an unknown patient, a chart already held, the ceiling and the
      * rolling bound all answer above. Matching a code would have meant
      * depending on how one client library spells one database's SQLSTATE, and
      * getting that wrong fails in the direction of a 500 on the request the
      * route promises to answer.
+     *
+     * WHAT THIS DOES NOT COVER, because the shape of the block suggests
+     * otherwise: it recovers the repeat-declaration race and only that one. The
+     * two bounds have a race of their own - the same reader declaring on two
+     * DIFFERENT charts at ceiling minus one, where both pass the check above,
+     * the trigger refuses the second, and the re-read below finds nothing
+     * because it is scoped to this chart. That rethrows, so a caller who would
+     * have been given a readable 403 and an audit denial gets a 500 instead.
+     *
+     * Left alone deliberately. It is unchanged from before this catch existed -
+     * there the same request was a 500 with no catch at all - and answering it
+     * properly means mapping the ceiling refusal to the refusal the handler
+     * already knows how to write, which is a different change with its own
+     * audit event to get right. Named here so the next reader does not assume
+     * a failed create is handled in general.
      */
     let grant;
     try {

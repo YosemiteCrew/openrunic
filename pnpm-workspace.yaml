@@ -33,7 +33,7 @@ overrides:
   # range; 8.0.1 is the current latest of that line. Re-check when Prisma
   # updates.
   deepmerge-ts: 8.0.1
-  # GHSA-r8f6-24hv-cj3g: mysql2 < 3.22.0 can be downgraded by a hostile server
+  # GHSA-3f6p-5ww8-9rcr: mysql2 < 3.22.0 can be downgraded by a hostile server
   # to mysql_clear_password and leak credentials in plaintext. It arrives
   # through the prisma CLI, which pins 3.15.3 on 7.9.1 and 7.10.0 alike, and
   # this product talks to Postgres, so no runtime here ever opens a MySQL

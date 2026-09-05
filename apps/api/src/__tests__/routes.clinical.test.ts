@@ -919,6 +919,7 @@ describe.each(CRUD_CASES)('$name', (testCase) => {
   it('sorts on either key it advertises, in either direction', async () => {
     const harness = createTestApp();
     const ascending = testCase.seedPair(harness.dataset);
+    authorise(harness.dataset, PATIENT_ID, OTHER_PATIENT_ID);
 
     const asc = await listOf(harness.app, testCase.path);
     expect(asc.data.map((row) => row.id)).toEqual([...ascending]);

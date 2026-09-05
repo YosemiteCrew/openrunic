@@ -329,16 +329,21 @@ function crudRoutes<
     // what stops an omitted filter returning the whole tenant.
     const named = resource.facilityOfQuery?.(query) ?? null;
     if (named !== null) assertFacilityAccess(policyOf(c), named);
-    // A list that names one chart is a read of that chart, and is refused the
-    // same way the read is when no relationship exists. A list that names none
-    // is narrowed by the repository (tenant, compartment, facility) and not
-    // gated here, so registration and cross-patient inboxes keep working - the
-    // same line the FHIR search draws with `addressesOneChart`.
-    if (resource.chartFrom !== undefined) {
-      const chart = (query as { patientId?: unknown }).patientId;
-      if (typeof chart === 'string') await assertCareRelationship(c, chart);
-    }
     const page = await resource.collection(repositories(c)).list(query);
+    // A list of chart data is a read of every chart it returns, so it needs a
+    // relationship with each - the same rule as the read, applied to whatever
+    // came back. A row that names no chart (an unfiled document) has none to
+    // check; a broad clinical list of other patients' rows is refused, which is
+    // the FHIR search's rule on this boundary. Only the DTOs form after the
+    // gate, so a refused list never serialises the rows it read to decide.
+    if (resource.chartFrom !== undefined) {
+      const chartFrom = resource.chartFrom;
+      for (const chart of new Set(
+        page.rows.map((row) => chartIdOf(chartFrom, row)).filter((id) => id !== undefined)
+      )) {
+        await assertCareRelationship(c, chart);
+      }
+    }
     return c.json(toListResponse(page, (row) => resource.toDto(row)));
   });
 

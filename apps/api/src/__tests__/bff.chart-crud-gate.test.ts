@@ -193,6 +193,16 @@ describe('a BFF clinical read, driven through the app', () => {
     expect(res.status).toBe(404);
   });
 
+  it('refuses a broad list that spans a chart the reader is not on', async () => {
+    // The residue the addressed gate left: `?patientId=` was gated, a bare list
+    // was not, and a condition carries no facility to fall back on, so it
+    // returned the tenant. The list is now gated on every chart it returns.
+    const { app, dataset } = createTestApp();
+    seedStrangerProblem(dataset, DEMO_FACILITY_A);
+    const res = await app.request(`/bff/v0/problems`, { headers: bearer(TOKENS.clinicianA) });
+    expect(res.status).toBe(404);
+  });
+
   it('does not audit the relationship check as reads by the reader', async () => {
     // The check consults an appointment to authorise the read; that is the
     // system deciding, not the clinician accessing the appointment. The read

@@ -182,6 +182,12 @@ describe('finding a study again', () => {
   it('narrows to the unread list', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      as: 'appointment',
+      id: testId(8501),
+    });
     seed(
       dataset,
       'ImagingStudy',
@@ -205,6 +211,12 @@ describe('every filter the list advertises', () => {
   it('narrows by encounter, by order and by a date window', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      as: 'appointment',
+      id: testId(8502),
+    });
     seed(
       dataset,
       'ImagingStudy',
@@ -236,6 +248,12 @@ describe('every filter the list advertises', () => {
   it('sorts by when the row was created as well as when the study started', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      as: 'appointment',
+      id: testId(8503),
+    });
     seed(dataset, 'ImagingStudy', studyRow());
 
     const res = await app.request('/bff/v0/imaging/studies?sort=createdAt&order=desc', {

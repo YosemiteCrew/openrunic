@@ -3,6 +3,7 @@ import {
   MockErxAdapter,
   type AdapterCallRecord,
   type AdapterResult,
+  type ErxConfig,
   type TransmissionReceipt,
   type TransmitPrescriptionInput,
 } from '@openrunic/adapters';
@@ -125,30 +126,43 @@ interface Harness {
  * success one, and every assertion about what the chart records would be
  * vacuously about a request that never reached the network.
  */
-async function initialised(adapter: MockErxAdapter): Promise<MockErxAdapter> {
-  const started = await adapter.init(
-    {
-      vendorId: adapter.descriptor.vendorId,
-      environment: 'sandbox',
-      credentialRef: 'test',
-      timeoutMs: 10_000,
-      networkAccountId: 'test-account',
-      epcs: false,
-    },
-    {
-      now: () => NETWORK_NOW,
-      resolveSecret: () => Promise.resolve('test'),
-      emit: () => undefined,
-      log: () => undefined,
-    }
-  );
+async function initialised(adapter: MockErxAdapter, config: ErxConfig): Promise<MockErxAdapter> {
+  const started = await adapter.init(config, {
+    now: () => NETWORK_NOW,
+    resolveSecret: () => Promise.resolve('test'),
+    emit: () => undefined,
+    log: () => undefined,
+  });
   expect(started.ok, 'the mock initialises').toBe(true);
   return adapter;
 }
 
+/**
+ * How this deployment is configured for prescribing.
+ *
+ * `epcs` is the practice's enrolment for controlled substances, which the
+ * contract keeps separate from the vendor's `supports` on purpose. `'unrecorded'
+ * is a registration that passed no configuration at all - the state a caller
+ * reaches by forgetting rather than by deciding, and the one the entitlement
+ * check has to treat as a refusal.
+ */
+type Installation = { readonly epcs: boolean } | 'unrecorded';
+
+function erxConfigFor(adapter: MockErxAdapter, epcs: boolean): ErxConfig {
+  return {
+    vendorId: adapter.descriptor.vendorId,
+    environment: 'sandbox',
+    credentialRef: 'test',
+    timeoutMs: 10_000,
+    networkAccountId: 'test-account',
+    epcs,
+  };
+}
+
 async function harness(
   adapter: MockErxAdapter | null,
-  row: MedicationRequestRow = readyPrescription()
+  row: MedicationRequestRow = readyPrescription(),
+  installation: Installation = { epcs: false }
 ): Promise<Harness> {
   const calls: AdapterCallRecord[] = [];
   const registry = new AdapterRegistry({
@@ -157,7 +171,14 @@ async function harness(
     },
   });
   if (adapter !== null) {
-    const registered = registry.register('erx', await initialised(adapter));
+    // The same object reaches `init` and `register`, which is the point of the
+    // registry taking one: the enrolment has a single source, so there is
+    // nowhere for the two to disagree.
+    const config = erxConfigFor(adapter, installation !== 'unrecorded' && installation.epcs);
+    const registered =
+      installation === 'unrecorded'
+        ? registry.register('erx', await initialised(adapter, config))
+        : registry.register('erx', await initialised(adapter, config), { config });
     expect(registered.ok, 'the mock satisfies the erx contract').toBe(true);
   }
   const { app, dataset } = createTestApp({ adapters: registry });
@@ -294,7 +315,12 @@ describe('what reaches the prescribing network', () => {
      * require it would accept it.
      */
     const adapter = new RecordingErxAdapter();
-    const h = await harness(adapter, readyPrescription({ controlledSchedule: '2' }));
+    // On an enrolled deployment, because since #281 an unenrolled one refuses a
+    // controlled prescription before the payload is built - so asking what the
+    // seam received requires a deployment allowed to send it.
+    const h = await harness(adapter, readyPrescription({ controlledSchedule: '2' }), {
+      epcs: true,
+    });
 
     await post(h, 'transmit');
 
@@ -310,6 +336,140 @@ describe('what reaches the prescribing network', () => {
     await post(h, 'transmit');
 
     expect(adapter.sent[0]).not.toHaveProperty('controlledSchedule');
+  });
+});
+
+describe('a controlled substance, and what this deployment may send', () => {
+  /*
+   * Electronic prescribing of controlled substances is separately regulated,
+   * and it takes two facts that the contract keeps apart on purpose: the vendor
+   * declares `epcs` among its features, and the practice records the enrolment
+   * it holds. Before this the route asked neither on the way out, while asking
+   * `supportsFeature` before a recall one function down.
+   *
+   * Each case below removes exactly one of the two, so neither check can be
+   * deleted without something going red, and each asserts on the registry's own
+   * call log rather than on the status: a 409 raised after the call would
+   * satisfy the status and hand the prescription to the network anyway.
+   */
+
+  const controlled = (): MedicationRequestRow => readyPrescription({ controlledSchedule: '2' });
+
+  it('refuses one where the practice is not enrolled, and sends nothing', async () => {
+    const h = await harness(new MockErxAdapter(), controlled(), { epcs: false });
+
+    const res = await post(h, 'transmit');
+
+    expect(res.status).toBe(409);
+    expect(operations(h, 'transmitPrescription'), 'nothing reached the network').toHaveLength(0);
+
+    const after = await dto(
+      await h.app.request(`/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}`, {
+        headers: bearer(TOKENS.clinicianA),
+      })
+    );
+    expect(after.status).toBe('SIGNED');
+    expect(after.erxRef).toBeNull();
+    expect(after.transmittedAt).toBeNull();
+  });
+
+  it('says the enrolment is missing rather than reporting a network error', async () => {
+    // The refusal has to name the next action. A vendor rejection arrives
+    // minutes later, in the vendor's words, on a record the chart may have
+    // moved - and it arrives after the prescription was sent.
+    const h = await harness(new MockErxAdapter(), controlled(), { epcs: false });
+
+    const problem = (await (await post(h, 'transmit')).json()) as { detail?: string };
+
+    expect(problem.detail).toContain('not enrolled');
+    expect(problem.detail).toContain('telephone');
+  });
+
+  it('refuses one where the network does not carry them, and says so instead', async () => {
+    /*
+     * The other signal, alone. This deployment IS enrolled; the vendor does not
+     * offer the feature. Both refusals are 409 and they must not share a
+     * message, because one is an enrolment to obtain and the other is a
+     * conversation with a vendor.
+     */
+    const h = await harness(new MockErxAdapter({ supports: ['cancel'] }), controlled(), {
+      epcs: true,
+    });
+
+    const res = await post(h, 'transmit');
+    const problem = (await res.json()) as { detail?: string };
+
+    expect(res.status).toBe(409);
+    expect(operations(h, 'transmitPrescription')).toHaveLength(0);
+    expect(problem.detail).toContain('does not carry controlled substances');
+  });
+
+  it('refuses one where the deployment recorded no configuration at all', async () => {
+    /*
+     * The state a caller reaches by forgetting rather than by deciding: the
+     * registry's `config` is optional, so an installation wired before it
+     * existed passes none. That has to be a refusal - an entitlement nobody
+     * recorded is one nobody holds.
+     */
+    const h = await harness(new MockErxAdapter(), controlled(), 'unrecorded');
+
+    const res = await post(h, 'transmit');
+
+    expect(res.status).toBe(409);
+    expect(operations(h, 'transmitPrescription')).toHaveLength(0);
+  });
+
+  it('sends one where the vendor carries them and the practice is enrolled', async () => {
+    // The control. Without it every case above is satisfied by a route that
+    // refuses every controlled prescription, which is not the rule.
+    const h = await harness(new MockErxAdapter(), controlled(), { epcs: true });
+
+    const res = await post(h, 'transmit');
+
+    expect(res.status).toBe(200);
+    expect(operations(h, 'transmitPrescription')).toHaveLength(1);
+    // The reference is what says the network has it. The chart stays SIGNED on
+    // `queued`, which is #260's whole point and not this change's business.
+    expect((await dto(res)).erxRef).not.toBeNull();
+  });
+
+  it('leaves an ordinary prescription alone on the same unenrolled deployment', async () => {
+    /*
+     * The scope of the refusal, and the reason it is per-prescription. A
+     * practice that has not enrolled for controlled substances still prescribes
+     * everything else, and a gate that stopped it would be worse than the one
+     * it replaced.
+     */
+    const h = await harness(new MockErxAdapter(), readyPrescription(), { epcs: false });
+
+    const res = await post(h, 'transmit');
+
+    expect(res.status).toBe(200);
+    expect(operations(h, 'transmitPrescription')).toHaveLength(1);
+  });
+
+  it('still asks what became of one already sent, enrolment or not', async () => {
+    /*
+     * The poll branch is deliberately not gated. A prescription with a stored
+     * reference already reached the network - asking about it is not sending
+     * it, and refusing here would strand a controlled prescription in flight
+     * with no way to learn its state. The enrolment could also have lapsed
+     * since, which is exactly when the answer matters most.
+     */
+    const h = await harness(
+      new MockErxAdapter(),
+      readyPrescription({ controlledSchedule: '2', status: 'TRANSMITTED', erxRef: 'rx-existing' }),
+      { epcs: false }
+    );
+
+    await post(h, 'transmit');
+
+    // The operations are the assertion and the status is not: this reference
+    // names no transmission the mock minted, so what the poll ANSWERS is about
+    // the mock. That it was asked at all, and that nothing was sent, is the
+    // property - a gate on this branch would have shown as zero polls.
+    expect(operations(h, 'getTransmissionStatus')).toHaveLength(1);
+    expect(operations(h, 'transmitPrescription')).toHaveLength(0);
   });
 });
 

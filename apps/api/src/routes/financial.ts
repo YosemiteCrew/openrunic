@@ -534,7 +534,16 @@ function claimStamps(move: ClaimStatus, at: Date): ClaimPatchInput {
  */
 async function moveClaim(c: Context<AppEnv>, id: string, move: ClaimMove): Promise<ClaimDto> {
   const repos = repositories(c);
-  const before = required(await repos.claims.findById(id), MISSING_CLAIM);
+  // Every claim transition comes through here, so the gate does too. A claim
+  // names a chart; the generated read of one is gated by `chartFrom: 'claims'`
+  // and these were not, so a biller refused the chart could still scrub, submit
+  // and re-status the claim on it (#322).
+  const before = await requiredParentChart(
+    c,
+    'claims',
+    await repos.claims.findById(id),
+    MISSING_CLAIM
+  );
   assertTransition(CLAIM_TRANSITIONS, 'claim', before.status, move.to);
 
   const occurredAt = move.occurredAt ?? new Date();
@@ -586,7 +595,15 @@ async function movePayment(
   note: string | undefined
 ): Promise<PaymentDto> {
   const repos = repositories(c);
-  const before = required(await repos.payments.findById(id), MISSING_PAYMENT);
+  // The same for `post`, `refund` and `void`. Posting is the moment the money
+  // became the practice's, and voiding it unmakes that on a named patient's
+  // account.
+  const before = await requiredParentChart(
+    c,
+    'payments',
+    await repos.payments.findById(id),
+    MISSING_PAYMENT
+  );
   assertTransition(PAYMENT_TRANSITIONS, 'payment', before.status, to);
 
   const patch: PaymentPatchInput = {
@@ -704,7 +721,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, chargeVoidSchema);
     const charges = repositories(c).charges;
-    const before = required(await charges.findById(id), MISSING_CHARGE);
+    const before = await requiredParentChart(
+      c,
+      'charges',
+      await charges.findById(id),
+      MISSING_CHARGE
+    );
     assertFacilityAccess(policyOf(c), before.facilityId);
     assertTransition(CHARGE_TRANSITIONS, 'charge', before.status, 'VOIDED');
 
@@ -890,7 +912,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementGenerateSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
     assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'GENERATED');
 
     const row = required(
@@ -909,7 +936,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementSendSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
     assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'SENT');
 
     const row = required(
@@ -1019,7 +1051,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementNoticeSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
 
     // GENERATED is where the first notice comes from, and SENT is where every
     // later one does. Anything else has left the schedule.
@@ -1059,7 +1096,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementHoldSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
 
     if (before.status === 'PAID' || before.status === 'VOID' || before.status === 'WRITTEN_OFF') {
       throw ApiError.conflict(`A statement in ${before.status} is not being chased.`);
@@ -1086,7 +1128,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementWriteOffSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
     assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'WRITTEN_OFF');
 
     const row = required(

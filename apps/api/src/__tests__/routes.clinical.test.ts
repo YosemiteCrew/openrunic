@@ -1777,6 +1777,29 @@ describe('a patient-scoped token', () => {
 
 /* ------------------------------------------------------------------ audit */
 
+/**
+ * The write event this route produced, chosen by action rather than by
+ * position.
+ *
+ * The hand-registered sign and amend routes now ask the care-relationship gate
+ * (#315), and asking it records a `chart.access` - so the domain event is no
+ * longer the FIRST write on those routes. Indexing would make these assertions
+ * depend on how many decisions were recorded before the one they are about,
+ * which is not what any of them is testing. That the access decision is
+ * recorded at all is asserted on its own, below.
+ */
+function writeNamed(sink: ReturnType<typeof createTestApp>['sink'], action: string) {
+  const found = sink.writes().filter((entry) => entry.event.action === action);
+  expect(
+    found,
+    `no audit write named ${action}; saw ${sink
+      .writes()
+      .map((e) => e.event.action)
+      .join(', ')}`
+  ).toHaveLength(1);
+  return found[0];
+}
+
 describe('the audit trail', () => {
   it('records a create as a transactional write naming the chart it touched', async () => {
     const { app, sink } = createTestApp();
@@ -1806,7 +1829,7 @@ describe('the audit trail', () => {
 
     await move(app, `/bff/v0/encounters/${ENCOUNTER_ID}/sign`);
 
-    expect(sink.writes()[0]?.event).toMatchObject({
+    expect(writeNamed(sink, 'encounter.updated')?.event).toMatchObject({
       action: 'encounter.updated',
       facilityId: DEMO_FACILITY_A,
       patientId: PATIENT_ID,
@@ -1821,7 +1844,7 @@ describe('the audit trail', () => {
 
     await move(app, `/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}/sign`);
 
-    expect(sink.writes()[0]?.event.metadata).toMatchObject({
+    expect(writeNamed(sink, 'medication.request.updated')?.event.metadata).toMatchObject({
       statusFrom: 'DRAFT',
       statusTo: 'SIGNED',
     });
@@ -1844,7 +1867,7 @@ describe('the audit trail', () => {
 
     await move(app, `/bff/v0/notes/${NOTE_ID}/sign`);
 
-    expect(sink.writes()[0]?.event).toMatchObject({
+    expect(writeNamed(sink, 'note.updated')?.event).toMatchObject({
       action: 'note.updated',
       encounterId: ENCOUNTER_ID,
       metadata: { stateFrom: 'DRAFT', stateTo: 'SIGNED' },

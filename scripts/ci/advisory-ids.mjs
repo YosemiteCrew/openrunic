@@ -106,7 +106,21 @@ export const SCHEMES = [
 export const EXCLUDED_PATHS = [/(^|\/)[^/]+\.test\.mjs$/u];
 
 /**
- * Identifiers a document NAMES without claiming they exist.
+ * Assembles a GHSA key so that declaring one is not a citation of it.
+ *
+ * Written whole, a key is an advisory identifier sitting in a tracked file this
+ * guard walks - so every declared placeholder keeps its own exemption alive,
+ * and the "appears nowhere" check below can never fire for any of them.
+ * Measured rather than reasoned about: with the keys written whole, deleting
+ * every prose mention of the worked example from both headers left the suite
+ * green and the dead exemption in place. `GHSA-` is not adjacent to the
+ * segments in this source, so the pattern above does not match here.
+ */
+const ghsa = (segments) => `GHSA-${segments}`;
+
+/**
+ * Identifiers a document NAMES without claiming they exist, and the documents
+ * that are allowed to name them.
  *
  * Two kinds, and the second one is this guard failing on itself.
  *
@@ -115,21 +129,38 @@ export const EXCLUDED_PATHS = [/(^|\/)[^/]+\.test\.mjs$/u];
  * id, so nothing about its spelling distinguishes it from a real one - which is
  * this guard's premise applied to its own documentation.
  *
- * `GHSA-r8f6-24hv-cj3g` is the identifier this guard exists because of, named
- * in the header above and in advisory-ids.yml as the worked example of a
- * fabrication. It is deliberately unreal, and naming it is the clearest way to
- * explain what is being checked. It was invisible until the guard's own files
- * were committed - `git ls-files` did not list them while they were untracked,
- * so the first green run was over a tree that did not yet contain the guard.
+ * The second is the identifier this guard exists because of, named in the
+ * header above and in advisory-ids.yml as the worked example of a fabrication.
+ * It is deliberately unreal, and naming it is the clearest way to explain what
+ * is being checked. It was invisible until the guard's own files were committed
+ * - `git ls-files` did not list them while they were untracked, so the first
+ * green run was over a tree that did not yet contain the guard.
  *
- * Both entries are asserted to still appear somewhere in the tree, so an
- * exemption cannot outlive the document that needed it.
+ * `where` is what keeps the exemption an exemption rather than a hole. An
+ * identifier exempted everywhere is exempted in `pnpm-workspace.yaml` too, so
+ * re-citing the worked example as the mysql2 justification - the exact defect
+ * this guard was written for, spelt exactly as it was spelt - would scan clean.
+ * Naming a fabricated id in the prose that explains it is the whole reason for
+ * the entry; using one to justify an exception is the thing being caught, and
+ * only the path separates the two.
+ *
+ * Both entries are asserted to still appear in a document that is allowed to
+ * name them, so an exemption cannot outlive the document that needed it.
  */
 export const PLACEHOLDERS = new Map([
-  ['GHSA-xxxx-xxxx-xxxx', '.grype.yaml documents the shape of an exception entry'],
   [
-    'GHSA-r8f6-24hv-cj3g',
-    "this guard's own header and workflow name it as the fabrication they exist to catch",
+    ghsa('xxxx-xxxx-xxxx'),
+    {
+      where: /^\.grype\.yaml$/u,
+      why: '.grype.yaml documents the shape of an exception entry',
+    },
+  ],
+  [
+    ghsa('r8f6-24hv-cj3g'),
+    {
+      where: /^(?:scripts\/ci\/advisory-ids\.mjs|\.github\/workflows\/advisory-ids\.yml)$/u,
+      why: "this guard's own header and workflow name it as the fabrication they exist to catch",
+    },
   ],
 ]);
 
@@ -227,8 +258,12 @@ export function scan(root, files) {
       continue;
     }
     for (const citation of citations) {
-      if (PLACEHOLDERS.has(citation.id)) placeheld.push(citation);
-      else cited.push(citation);
+      // Both halves, because the exemption is the pair. A declared id in a file
+      // that was not declared for it is an ordinary citation and gets resolved.
+      const placeholder = PLACEHOLDERS.get(citation.id);
+      if (placeholder !== undefined && placeholder.where.test(citation.file)) {
+        placeheld.push(citation);
+      } else cited.push(citation);
     }
   }
 
@@ -268,7 +303,7 @@ export function scanProblems({ cited, excludedByPath, placeheld }) {
         'EXCLUDED_PATHS matched no citation: delete the entry rather than leaving an unused exemption',
     });
   }
-  for (const [id, why] of PLACEHOLDERS) {
+  for (const [id, { why }] of PLACEHOLDERS) {
     if (!placeheld.some((citation) => citation.id === id)) {
       problems.push({
         reason: `PLACEHOLDERS declares ${id} (${why}) but it appears nowhere: delete the entry`,

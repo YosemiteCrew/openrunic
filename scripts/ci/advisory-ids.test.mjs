@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,10 +89,69 @@ test('a GHSA id using characters GitHub does not issue is not a citation', () =>
 
 // ---------------------------------------------------------------- scanning
 
+/**
+ * A real tracked file, and both halves asserted.
+ *
+ * The first version of this named a path that does not exist. `readText`
+ * returns null for it, `scan` skips it, and `cited.length === 0` then held for
+ * a reason with nothing to do with EXCLUDED_PATHS - it passed with the list
+ * emptied. Asserting what went INTO the exemption is what reads the rail; the
+ * count coming back out only says the file was never opened.
+ */
 test('a citation in a guard test fixture is exempt by path, not resolved', () => {
-  const scanned = scan(REPO_ROOT, ['scripts/ci/made-up.test.mjs']);
+  const fixture = 'scripts/ci/advisory-ids.test.mjs';
+  const scanned = scan(REPO_ROOT, [fixture]);
 
+  assert.equal(scanned.excludedByPath.length > 0, true, `${fixture} cites no identifier`);
+  assert.equal(
+    scanned.excludedByPath.every((citation) => citation.file === fixture),
+    true
+  );
   assert.equal(scanned.cited.length, 0);
+});
+
+/**
+ * The exemption is the pair, not the identifier.
+ *
+ * The worked example is exempt because the guard's own prose NAMES it as a
+ * fabrication. Exempting it everywhere exempts it in `pnpm-workspace.yaml`,
+ * where citing it to justify the mysql2 override is the exact defect - same id,
+ * same spelling - this guard was written for. Measured before this assertion
+ * existed: putting that line back gave `8 identifier(s) across 15 citation(s),
+ * all resolve.` and exit 0.
+ */
+test('a declared placeholder is not exempt in a file it was not declared for', () => {
+  const example = [...PLACEHOLDERS.keys()][1];
+  // A tree written for this test rather than the repository's own, so the
+  // citation under test is one this test put there. Asserting it is absent from
+  // the real `pnpm-workspace.yaml` would pass for the reason it is absent -
+  // which is the whole state this is trying to distinguish from.
+  const root = mkdtempSync(path.join(tmpdir(), 'advisory-ids-'));
+  try {
+    mkdirSync(path.join(root, 'scripts', 'ci'), { recursive: true });
+    writeFileSync(path.join(root, 'pnpm-workspace.yaml'), `  # ${example}: mysql2 override\n`);
+    writeFileSync(
+      path.join(root, 'scripts', 'ci', 'advisory-ids.mjs'),
+      `// ${example} is unreal\n`
+    );
+
+    const declared = scan(root, ['scripts/ci/advisory-ids.mjs']);
+    const elsewhere = scan(root, ['pnpm-workspace.yaml']);
+
+    assert.deepEqual(
+      declared.placeheld.map((citation) => citation.id),
+      [example]
+    );
+    assert.deepEqual(declared.cited, []);
+
+    assert.deepEqual(elsewhere.placeheld, []);
+    assert.deepEqual(
+      elsewhere.cited.map((citation) => [citation.id, citation.file]),
+      [[example, 'pnpm-workspace.yaml']]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('the documented placeholder is exempt by identifier', () => {
@@ -151,6 +210,16 @@ test('the real tree scans without any structural problem', () => {
   assert.deepEqual(scanProblems(scanned), []);
   assert.equal(scanned.cited.length > 0, true);
   assert.equal(EXCLUDED_PATHS.length > 0, true);
+
+  // No declared-unreal identifier is on the resolve list at all. A `where` too
+  // narrow to cover a document that legitimately names its id would otherwise
+  // only surface as a 404 on the networked gate, minutes away and against a
+  // registry - this says it offline, inside `verify`, and it is what caught the
+  // declaration block citing its own key on the first run.
+  assert.deepEqual(
+    scanned.cited.filter((citation) => PLACEHOLDERS.has(citation.id)),
+    []
+  );
 });
 
 // ---------------------------------------------------------------- resolving

@@ -58,4 +58,9 @@ export const common: Messages = {
   'common.error.unknown.message': 'openrunic no pudo cargar {subject}. Vuelva a intentarlo.',
 
   'common.dismiss': 'Descartar',
+
+  'common.tone.info': 'Información',
+  'common.tone.caution': 'Precaución',
+  'common.tone.danger': 'Error',
+  'common.tone.success': 'Correcto',
 };

@@ -18,6 +18,20 @@ export interface SearchsetOptions {
   previousLink?: string;
   /** Resources pulled in by `_include`; they are marked `include`, not `match`. */
   includes?: readonly fhir4.FhirResource[];
+  /**
+   * What the search matched and could not represent.
+   *
+   * A row the server cannot project is not a row it may quietly leave out. A
+   * result one entry short, with nothing saying so, is indistinguishable from a
+   * result that genuinely had one fewer - which is the same defect as a total
+   * summed from part of its inputs, one level up.
+   *
+   * FHIR's answer is an entry whose `search.mode` is `outcome`, and these are
+   * it: they carry no `fullUrl`, because a diagnostic is not retrievable at a
+   * URL, and they do not count towards `total`, because a bundle whose total
+   * included its own diagnostics would be a new wrong number.
+   */
+  outcomes?: readonly fhir4.OperationOutcome[];
   /** ISO 8601 instant the search was executed. */
   timestamp?: string;
   /** Bundle id, when the server assigns one. */
@@ -34,11 +48,14 @@ function fullUrl(resource: fhir4.FhirResource, baseUrl: string | undefined): str
 
 function entryFor(
   resource: fhir4.FhirResource,
-  mode: 'match' | 'include',
+  mode: 'match' | 'include' | 'outcome',
   baseUrl: string | undefined
 ): fhir4.BundleEntry<fhir4.FhirResource> {
   return compact<fhir4.BundleEntry<fhir4.FhirResource>>({
-    fullUrl: fullUrl(resource, baseUrl),
+    // An outcome entry gets none, even if the resource were given an id. A
+    // `fullUrl` says the entry is retrievable there, and a diagnostic about
+    // this search is not a resource on this server.
+    fullUrl: mode === 'outcome' ? undefined : fullUrl(resource, baseUrl),
     resource,
     search: { mode },
   });
@@ -54,6 +71,10 @@ function link(relation: string, url: string | undefined): fhir4.BundleLink | und
  * `total` is always present, including when it is zero: an empty search result
  * is a bundle with a total of 0 and no `entry` array at all, because FHIR JSON
  * has no empty arrays.
+ *
+ * `total` counts matches only. Includes and outcomes are in the bundle and not
+ * in the count, which is what a client's pager needs and what R4 means by the
+ * number of resources matching the search.
  */
 export function searchsetBundle(
   matches: readonly fhir4.FhirResource[],
@@ -62,6 +83,9 @@ export function searchsetBundle(
   const entries = [
     ...matches.map((resource) => entryFor(resource, 'match', options.baseUrl)),
     ...(options.includes ?? []).map((resource) => entryFor(resource, 'include', options.baseUrl)),
+    // Last, so a client reading entries in order has the matches before the
+    // note about what is missing from them.
+    ...(options.outcomes ?? []).map((resource) => entryFor(resource, 'outcome', options.baseUrl)),
   ];
 
   return compact<fhir4.Bundle<fhir4.FhirResource>>({

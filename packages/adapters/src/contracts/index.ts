@@ -1,3 +1,5 @@
+import type { z } from 'zod';
+
 import { ADDRESS_VERIFY_CONTRACT } from './address-verify.js';
 import type { AddressVerifyAdapter } from './address-verify.js';
 import { CLEARINGHOUSE_CONTRACT } from './clearinghouse.js';
@@ -55,3 +57,20 @@ export interface CapabilityAdapterMap {
 
 /** Any seam adapter, for the places that hold one without knowing which. */
 export type AnyCapabilityAdapter = CapabilityAdapterMap[Capability];
+
+/**
+ * The configuration a capability's contract accepts, read off the contract.
+ *
+ * Derived rather than listed beside `CapabilityAdapterMap`, so a seam whose
+ * config schema changes cannot leave a hand-kept map saying otherwise. It works
+ * because every contract is declared `as const satisfies CapabilityContract`,
+ * which keeps the schema's own type rather than widening it to `z.ZodType`.
+ */
+export type ConfigOf<C extends Capability> = z.infer<(typeof CONTRACTS)[C]['config']>;
+
+/**
+ * The optional features a capability's contract defines, as a union of its own
+ * literals rather than `string`, so a misspelt feature is a compile error at the
+ * call site instead of a check that is quietly always false.
+ */
+export type FeatureOf<C extends Capability> = (typeof CONTRACTS)[C]['features'][number];

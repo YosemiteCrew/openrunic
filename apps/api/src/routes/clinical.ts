@@ -833,6 +833,49 @@ function codedDrug(
   return undefined;
 }
 
+/**
+ * Refuses a controlled-substance transmission this deployment may not make.
+ *
+ * Electronic prescribing of controlled substances is separately regulated, and
+ * the contract models it as two facts rather than one on purpose: a vendor
+ * declares `epcs` among the features it offers, and an installation records the
+ * enrolment it holds. `ErxConfig`'s own comment says why - "a network may
+ * support controlled substances while a given installation is not enrolled, and
+ * the practice must be able to say so". Both have to be true, so both are asked
+ * here, and each refusal names which one failed because the remedies differ:
+ * one is a conversation with a vendor and the other is an enrolment.
+ *
+ * Before the call rather than after it. A network that rejects the prescription
+ * would answer minutes later, in the vendor's words, on a record the chart may
+ * already have moved - and it would have received the prescription.
+ *
+ * Uncontrolled prescriptions are untouched. A practice that has not enrolled
+ * for controlled substances must still be able to transmit ordinary ones, so
+ * this is a refusal about a prescription and never about a deployment.
+ *
+ * 409 rather than 501, matching the two refusals `toTransmitInput` raises: the
+ * request is well formed, the deployment works, and this particular record
+ * cannot go this way. The message says what to do instead, because a prescriber
+ * reading it needs the next action rather than a diagnosis.
+ */
+function assertMayTransmitControlled(
+  registry: AdapterRegistry,
+  adapter: ErxAdapter,
+  row: MedicationRequestRow
+): void {
+  if (row.controlledSchedule === null) return;
+  if (!supportsFeature(adapter.descriptor, 'epcs')) {
+    throw ApiError.conflict(
+      'This prescribing network does not carry controlled substances, so this prescription cannot be sent electronically. Print it or telephone the pharmacy.'
+    );
+  }
+  if (!registry.entitledTo('erx', 'epcs')) {
+    throw ApiError.conflict(
+      'This practice is not enrolled for electronic prescribing of controlled substances, so this prescription cannot be sent electronically. Print it or telephone the pharmacy.'
+    );
+  }
+}
+
 /** The prescription as the seam wants it, or a refusal naming what is missing. */
 function toTransmitInput(row: MedicationRequestRow): TransmitPrescriptionInput {
   /*
@@ -956,6 +999,11 @@ async function transmit(
   // Only now, because a poll of a prescription already sent is legal from
   // TRANSMITTED and this is not.
   assertTransition(PRESCRIPTION_TRANSITIONS, 'prescription', row.status, 'TRANSMITTED');
+  // After the transition and before the payload is built, so a prescription
+  // this deployment may not send never reaches the seam and the row is
+  // unchanged. The poll branch above is deliberately not gated: asking what
+  // became of a prescription already sent is not sending one.
+  assertMayTransmitControlled(registry, adapter, row);
 
   const sent = await adapter.transmitPrescription(toTransmitInput(row));
   if (!sent.ok) throw fromErx(sent.error);

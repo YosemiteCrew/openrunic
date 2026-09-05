@@ -597,6 +597,11 @@ const FILTERS: {
     status: 'ACTIVE',
     isProvider: true,
     taxonomyCode: 'id-taxonomyCode',
+    // Both columns admitted, which is what a bare token resolves to and the
+    // only shape with a disjunction in it. The single-column and no-column
+    // shapes are exercised in `specs.user-identifier.test.ts`, where the row
+    // that must NOT be selected can be stated.
+    identifier: { value: 'id-npi', columns: ['npi', 'dea'] },
     q: 'needle',
   },
   valueSets: { page: 1, pageSize: 25, sort: 'url', order: 'asc', url: 'id-url' },

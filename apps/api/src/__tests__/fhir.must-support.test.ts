@@ -50,7 +50,6 @@ import { SERVED_MODULES } from '../fhir/resources.js';
  */
 const KNOWN_GAPS: Readonly<Record<string, readonly string[]>> = {
   // Not built yet.
-  Practitioner: ['identifier'],
   Location: ['address'],
   Observation: ['category'],
   Condition: ['category', 'clinical-status'],

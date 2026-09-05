@@ -69,16 +69,26 @@ scripts, and that is precisely the change these catch.
 pnpm run format:check           # Prettier, whole tree
 pnpm run lint:css               # stylelint, every .css file
 pnpm run check:secrets          # secretlint, working tree
+pnpm run check:ci-scripts:test  # node --test over scripts/ci and scripts/roadmap
+pnpm run roadmap:check          # docs/roadmap.md still matches what it is generated from
 pnpm run lint:workflows         # actionlint, .github/workflows (also shellchecks inline run: blocks)
 pnpm run lint:shell             # shellcheck, tracked .sh files
 pnpm run lint:docker            # hadolint, tracked Dockerfiles
 ```
 
-`pnpm verify` runs the first three; they need nothing beyond `pnpm install`. The last three need
+`pnpm verify` runs the first five; they need nothing beyond `pnpm install`. The last three need
 native binaries (`brew install actionlint shellcheck hadolint`, or the distribution equivalent), so
-they stay out of `verify` rather than failing on a machine that has not installed them. CI installs
-its own pinned, checksum-verified copies, so a passing local run and a passing CI run mean the same
-thing.
+they stay out of `verify` rather than failing on a machine that has not installed them - a `verify`
+that skipped a gate when its binary is missing would report clean because it could not run. CI
+installs its own pinned, checksum-verified copies.
+
+`roadmap:check` catches the one most people meet first: `docs/roadmap.md` is generated from
+`docs/emr-capabilities.md`, the served FHIR module list and the message catalogues, so adding,
+removing or splitting a catalogue key makes the committed page stale.
+
+Which side of `verify` a gate is on is not a convention. `scripts/ci/verify-covers-gates.test.mjs`
+asserts that every root script is either in the chain or excluded with a written reason, so a new
+gate cannot be added to CI and forgotten here.
 
 `pnpm run lint:css:fix` applies the stylelint fixes that are safe to automate. Read the diff: a fix
 that changes the cascade is not safe to automate, and stylelint does not know the difference.

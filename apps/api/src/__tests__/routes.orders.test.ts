@@ -328,6 +328,11 @@ async function problem(res: Response): Promise<ProblemDocument> {
 function seededApp(): Harness {
   const harness = createTestApp();
   const { dataset } = harness;
+  // Every one of these rows names PATIENT, and the transition routes ask the
+  // care-relationship gate now (#322). Without this the fixture describes a
+  // clinician with no business in the chart, which is not the caller any of
+  // these cases is about.
+  authorise(dataset, PATIENT);
   seed(dataset, 'ServiceRequest', makeOrderRow());
   seed(dataset, 'Specimen', makeSpecimenRow());
   seed(dataset, 'DiagnosticReport', makeReportRow());
@@ -694,8 +699,20 @@ describe('PATCH /bff/v0/orders/:id', () => {
 });
 
 describe('the order state machine', () => {
+  /**
+   * This harness seeded an order and nothing else, and every success case below
+   * asserted a 2xx through `sign`, `transmit` and `cancel` - which is the
+   * missing chart gate written down as a requirement. Sixteen of them went red
+   * the moment the gate was added (#322).
+   *
+   * The relationship is what these cases assume and never stated: they are
+   * about the state machine, and a caller with no business in the chart never
+   * reaches it. The refusal has its own driven case in
+   * `policy.care-relationship.test.ts`.
+   */
   function orderApp(status: ServiceRequestRow['status']): Harness {
     const harness = createTestApp();
+    authorise(harness.dataset, PATIENT);
     seed(harness.dataset, 'ServiceRequest', makeOrderRow({ status }));
     return harness;
   }
@@ -2117,7 +2134,15 @@ describe('audit', () => {
     const { app, sink } = seededApp();
     await call(app, 'post', `/bff/v0/orders/${ORDER_A}/sign`, { body: {} });
 
-    expect(sink.writes()[0]?.event).toMatchObject({
+    // Chosen by action rather than by position. The transition asks the
+    // care-relationship gate now, and asking it records a `chart.access`, so
+    // the domain event is no longer the first write on this route. Indexing
+    // would make this assertion depend on how many decisions were recorded
+    // before the one it is about. Same repair as #320 made in
+    // `routes.clinical.test.ts`.
+    const moves = sink.writes().filter((entry) => entry.event.action === 'order.updated');
+    expect(moves, 'no audit write named order.updated').toHaveLength(1);
+    expect(moves[0]?.event).toMatchObject({
       action: 'order.updated',
       metadata: { statusFrom: 'DRAFT', statusTo: 'SIGNED' },
     });
@@ -2508,6 +2533,150 @@ describe('the analyte spec', () => {
   });
 });
 
+/* ------------------------------------- the chart gate on the hand-registered
+   ------------------------------------- writes (#322) */
+
+/**
+ * Every route in this file that reads a parent row by id and then writes to it.
+ *
+ * These are registered by hand rather than generated, so the CRUD seam's chart
+ * gate does not run on them - which is how a clinician refused the chart could
+ * still sign, transmit and cancel an order on it, receive and reject its
+ * specimens, review its results, file and reject its documents, complete its
+ * tasks and post into its threads. Driven on `dev` before the fix:
+ * `GET /orders/{id}` 404 and `POST /orders/{id}/sign` 200, same row, same
+ * reader.
+ *
+ * The cases live here rather than in `policy.care-relationship.test.ts`, where
+ * the equivalents for `clinical.ts` live, for one reason: the eight row
+ * builders they need are in this file. A second copy of eight fixtures is a
+ * second place for one of them to stop matching the shape the repository
+ * returns, which is the cost this repository already refuses elsewhere.
+ *
+ * Each door is its own case, so un-gating one lands on that one rather than on
+ * a neighbour. The reachable control beside it is what separates "the gate
+ * refused this reader" from "the route refuses everyone", which would take the
+ * whole state machine out of the product while reading as the gate working.
+ */
+describe('a write on a chart is not a way round the gate', () => {
+  /** Every parent row seeded, and NO care relationship to the chart they name. */
+  function strangerApp(): Harness {
+    const harness = createTestApp();
+    const { dataset } = harness;
+    seed(dataset, 'ServiceRequest', makeOrderRow({ status: 'SIGNED' }));
+    seed(dataset, 'Specimen', makeSpecimenRow());
+    seed(dataset, 'DiagnosticReport', makeReportRow());
+    seed(dataset, 'Document', makeDocumentRow());
+    seed(dataset, 'Document', makeDocumentRow({ id: DOCUMENT_B }));
+    // Assigned to somebody else on purpose. `makeTaskRow` hands the task to
+    // CLINICIAN with a different assigner, which is the `assigned-task`
+    // relationship source - so the default fixture authorises the reader and
+    // this whole describe would measure a caller who IS in the chart. Caught by
+    // the first run: every refusal row came back 409 or 200 rather than 404,
+    // and a 409 from the state machine is what a passing gate looks like.
+    seed(dataset, 'Task', makeTaskRow({ assigneeUserId: OTHER_USER }));
+    seed(dataset, 'MessageThread', makeThreadRow());
+    seed(dataset, 'Message', makeMessageRow());
+    return harness;
+  }
+
+  const DOORS = [
+    ['POST /orders/:id/sign', `/bff/v0/orders/${ORDER_A}/sign`, {}],
+    ['POST /orders/:id/transmit', `/bff/v0/orders/${ORDER_A}/transmit`, {}],
+    ['POST /orders/:id/cancel', `/bff/v0/orders/${ORDER_A}/cancel`, {}],
+    ['POST /specimens/:id/receive', `/bff/v0/specimens/${SPECIMEN_A}/receive`, {}],
+    [
+      'POST /specimens/:id/reject',
+      `/bff/v0/specimens/${SPECIMEN_A}/reject`,
+      { rejectionReason: 'Haemolysed' },
+    ],
+    ['POST /results/:id/review', `/bff/v0/results/${REPORT_A}/review`, {}],
+    ['POST /documents/:id/file', `/bff/v0/documents/${DOCUMENT_A}/file`, {}],
+    [
+      'POST /documents/:id/reject',
+      `/bff/v0/documents/${DOCUMENT_A}/reject`,
+      { reason: 'Unreadable' },
+    ],
+    ['POST /tasks/:id/complete', `/bff/v0/tasks/${TASK_A}/complete`, {}],
+    ['POST /tasks/:id/cancel', `/bff/v0/tasks/${TASK_A}/cancel`, {}],
+    ['POST /messages/threads/:id/close', `/bff/v0/messages/threads/${THREAD_A}/close`, {}],
+    [
+      'POST /messages/threads/:id/messages',
+      `/bff/v0/messages/threads/${THREAD_A}/messages`,
+      { body: 'A reply.' },
+    ],
+    ['POST /messages/:id/read', `/bff/v0/messages/${MESSAGE_A}/read`, {}],
+  ] as const;
+
+  it.each(DOORS)(
+    '%s is refused on a chart nothing connects the writer to',
+    async (_l, path, body) => {
+      const { app } = strangerApp();
+
+      // 404 and not 403, the same as every read: a 403 confirms the row exists to
+      // somebody who may not see it.
+      expect((await call(app, 'post', path, { body })).status).toBe(404);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s still answers a writer who is in that patient care',
+    async (_l, path, body) => {
+      const harness = strangerApp();
+      authorise(harness.dataset, PATIENT);
+
+      expect((await call(harness.app, 'post', path, { body })).status).not.toBe(404);
+    }
+  );
+
+  /**
+   * `supersede` reads a SECOND document named in the body, and that row names
+   * its own chart. Naming it is reaching into that chart, so it is gated
+   * separately - and only this case can see it: the document in the path is one
+   * the reader may open, so every other assertion here passes with the second
+   * read ungated.
+   */
+  it('POST /documents/:id/supersede gates the document named in the body too', async () => {
+    const harness = strangerApp();
+    seed(
+      harness.dataset,
+      'Document',
+      makeDocumentRow({ id: DOCUMENT_A, patientId: OTHER_PATIENT })
+    );
+    authorise(harness.dataset, OTHER_PATIENT);
+
+    const res = await call(harness.app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: DOCUMENT_B },
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  /**
+   * A message reaches a chart only through its thread, which `messageSpec`
+   * declines to join, so the gate is asked about the thread.
+   *
+   * The refusal is `No such patient.` and not the route's own `NO_MESSAGE`,
+   * because `assertCareRelationship` raises its own before the parent read's
+   * message is ever used. That is true of every gated door in this file and in
+   * `clinical.ts`, so it is consistent rather than particular - and the
+   * `NO_MESSAGE` argument still decides the OTHER refusal, the one where the
+   * thread row is genuinely absent.
+   *
+   * Asserted rather than described: my first version of this case claimed the
+   * refusal kept the message's subject, on the strength of the argument I had
+   * passed rather than on what came back.
+   */
+  it('POST /messages/:id/read is refused through the thread it hangs off', async () => {
+    const { app } = strangerApp();
+
+    const res = await call(app, 'post', `/bff/v0/messages/${MESSAGE_A}/read`, { body: {} });
+
+    expect(res.status).toBe(404);
+    expect((await problem(res)).detail).toBe('No such patient.');
+  });
+});
+
 /* ------------------------------------------------------- a service principal */
 
 const SERVICE_TOKEN = 'test-service-a';
@@ -2528,10 +2697,28 @@ const SERVICE_PRINCIPAL: Principal = {
   purposeOfUse: 'HOPERAT',
 };
 
+/**
+ * The relationship is seeded for the SERVICE subject rather than the clinician,
+ * because the service account is the caller here.
+ *
+ * Measured rather than assumed: on `dev` this principal already gets 404 from
+ * `GET /bff/v0/messages/threads/{id}`, which the generated read gates through
+ * `chartFrom`. So a service account posting into a thread it cannot read was
+ * the inconsistency, and gating the nested write removes it rather than raising
+ * a new question about machine accounts. What this case is about is that the
+ * message is attributed to the SYSTEM, which is orthogonal.
+ */
 function serviceApp(): Harness {
-  return createTestApp({
+  const harness = createTestApp({
     principalResolver: createStaticPrincipalResolver(
       new Map([...DEMO_PRINCIPALS, [SERVICE_TOKEN, SERVICE_PRINCIPAL]])
     ),
   });
+  seedCareRelationship(harness.dataset, {
+    patientId: PATIENT,
+    providerId: SERVICE_PRINCIPAL.subject,
+    as: 'appointment',
+    id: testId(8_960),
+  });
+  return harness;
 }

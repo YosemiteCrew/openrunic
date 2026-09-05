@@ -641,6 +641,27 @@ test('the step that refuses a run which scanned nothing is not itself skippable'
   // that names the cause.
   assert.notEqual(steps.length, 0, 'no steps parsed out of the job: this test is reading nothing');
 
+  // The same defect one scope out, and the one this file could not previously
+  // see. Everything below reasons about STEPS; a job-level `if:` skips all of
+  // them at once, and a SKIPPED job SATISFIES a required status check - only a
+  // context that never reports blocks. So the check goes green having run
+  // nothing, which is strictly worse than the step-level version below because
+  // there is not even a red step to notice.
+  //
+  // It is also the likeliest edit for a good reason rather than a contrived
+  // one: this gate is red on every fork pull request by design, and
+  // `if: github.event.pull_request.head.repo.fork == false` is what somebody
+  // reaches for to make that stop. It will look like tidying up.
+  //
+  // Job keys sit at four spaces here; a step's own `if:` is at eight, so this
+  // cannot fire on the three that legitimately carry one.
+  assert.doesNotMatch(
+    body,
+    /^ {4}if:/mu,
+    'the job carries a job-level `if:`: a skipped job satisfies a required check, so the ' +
+      'gate would report green having scanned nothing'
+  );
+
   const MARKER = '"${RUNNER_TEMP}/scanned"';
   const writes = steps.filter((step) => step.includes(`touch ${MARKER}`));
   const reads = steps.filter((step) => step.includes(`-f ${MARKER}`));

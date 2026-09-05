@@ -818,6 +818,21 @@ export interface MedicationRequestPatchInput {
   pharmacyNcpdpId?: string;
   /** Set only by the sign, transmit and cancel routes. */
   status?: MedicationRequestStatus;
+  /**
+   * The network's handle for this transmission, and the instant it accepted it.
+   *
+   * Both come from the eRx adapter's receipt and neither is reachable from the
+   * public patch body - `prescriptionPatchSchema` is a strict object naming
+   * neither, so only the transmit route can write them. That matters: they are
+   * the evidence that a prescription left this system, and a field a client can
+   * set is not evidence of anything.
+   *
+   * `transmittedAt` is the network's own instant rather than a local clock
+   * reading. The question the column answers is when the prescription left, and
+   * only one end of that call knows.
+   */
+  erxRef?: string;
+  transmittedAt?: Date;
 }
 
 export const medicationRequestSpec: CollectionSpec<
@@ -863,8 +878,7 @@ export const medicationRequestSpec: CollectionSpec<
 
   patchData(
     patch: MedicationRequestPatchInput,
-    before: ScopedRow<'MedicationRequest'>,
-    context: RowContext
+    before: ScopedRow<'MedicationRequest'>
   ): Partial<Writable<'MedicationRequest'>> {
     const data: Partial<Writable<'MedicationRequest'>> = {
       ...(patch.display === undefined ? {} : { display: patch.display }),
@@ -881,10 +895,29 @@ export const medicationRequestSpec: CollectionSpec<
       ...(patch.status === undefined ? {} : { status: patch.status }),
     };
 
-    // Stamped where the status is set rather than by a later job, so "when did
-    // this leave for the pharmacy" is answerable from the row that says it did.
-    if (patch.status === 'TRANSMITTED' && before.transmittedAt === null) {
-      data.transmittedAt = context.now;
+    /*
+     * The transmission evidence, written only when the caller has it.
+     *
+     * This used to stamp `transmittedAt` from the repository clock whenever the
+     * status reached TRANSMITTED, which made the timestamp a restatement of the
+     * enum rather than a fact about the network - and the row then asserted that
+     * a prescription had left the practice on the strength of a local write,
+     * with `erxRef` still null. The transmit route supplies both from the
+     * adapter's receipt now.
+     *
+     * There is deliberately no fallback. A status set to TRANSMITTED without a
+     * stamp leaves the column null, which reads as "we do not know when", and
+     * that is the honest answer to a state this code can no longer produce. The
+     * alternative is the defect this replaces: an absent value written as a
+     * positive one.
+     *
+     * `erxRef` is write-once. A second reference on one prescription would mean
+     * it had been sent twice, which is what the transmit route refuses to do, so
+     * overwriting one silently would hide that rather than record it.
+     */
+    if (patch.erxRef !== undefined && before.erxRef === null) data.erxRef = patch.erxRef;
+    if (patch.transmittedAt !== undefined && before.transmittedAt === null) {
+      data.transmittedAt = patch.transmittedAt;
     }
     return data;
   },

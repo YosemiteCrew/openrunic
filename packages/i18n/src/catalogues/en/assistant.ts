@@ -98,9 +98,9 @@ export const assistant: Messages = {
   'assistant.announce.stoppedNoAnswer': 'Stopped. No answer is shown.',
   'assistant.announce.unsourced': 'No answer is shown, because it arrived without its sources.',
   'assistant.announce.ready': 'Answer ready, drawn from {count} records.',
-  'assistant.announce.readyOne': 'Answer ready, drawn from 1 record.',
+  'assistant.announce.readyOne': 'Answer ready, drawn from {count} record.',
   'assistant.announce.stoppedPartial': 'Stopped. Partial answer, drawn from {count} records.',
-  'assistant.announce.stoppedPartialOne': 'Stopped. Partial answer, drawn from 1 record.',
+  'assistant.announce.stoppedPartialOne': 'Stopped. Partial answer, drawn from {count} record.',
 
   /* -------------------------------------------------------------- failures */
   /* Every line says what happened, what to do, and what is unaffected.

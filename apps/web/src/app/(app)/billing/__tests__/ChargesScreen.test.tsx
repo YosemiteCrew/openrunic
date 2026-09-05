@@ -105,6 +105,25 @@ describe('ChargesScreen', () => {
     expect(screen.getByText('Ready for billing')).toBeInTheDocument();
   });
 
+  it('says "1 charge locks" and not "1 charges lock" when one charge is left', async () => {
+    // The form and not the formatting: the two messages carried a single form
+    // each, so the confirmation for the one-line visit read "1 charges lock"
+    // to the biller being asked to approve it. Reached the way a biller
+    // reaches it, by striking lines off the sheet until one is left.
+    render(<ChargesScreen />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove 36415' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove 93000' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark ready for billing' }));
+
+    const dialog = screen.getByRole('alertdialog', { name: 'Mark ready for billing' });
+    expect(within(dialog).getByText(/^1 charge locks and a claim is created/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark ready' }));
+
+    expect(await screen.findByText('A claim was created from 1 charge.')).toBeInTheDocument();
+  });
+
   it('is operable from the keyboard: every justify control is a real focusable button', async () => {
     render(<ChargesScreen />);
 

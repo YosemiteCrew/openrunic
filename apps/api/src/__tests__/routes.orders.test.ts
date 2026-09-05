@@ -2559,6 +2559,9 @@ describe('the analyte spec', () => {
  * whole state machine out of the product while reading as the gate working.
  */
 describe('a write on a chart is not a way round the gate', () => {
+  /** A document received into the inbox and filed to no chart at all. */
+  const CHARTLESS_DOCUMENT = testId(9_240);
+
   /** Every parent row seeded, and NO care relationship to the chart they name. */
   function strangerApp(): Harness {
     const harness = createTestApp();
@@ -2568,6 +2571,15 @@ describe('a write on a chart is not a way round the gate', () => {
     seed(dataset, 'DiagnosticReport', makeReportRow());
     seed(dataset, 'Document', makeDocumentRow());
     seed(dataset, 'Document', makeDocumentRow({ id: DOCUMENT_B }));
+    // An inbox fax: received, filed to nobody yet. `Document.patientId` is
+    // nullable and this is the state it is nullable FOR. It is what the
+    // supersede door row names in its body, so that row's second gate is
+    // vacuous - `chartIdOf` is undefined, `gateCharts` iterates an empty set -
+    // and the only thing that can refuse the request is the gate on the
+    // document in the PATH. With a chartable body document there, the second
+    // gate answers for the first and the row measures neither. Raised in
+    // review, twice.
+    seed(dataset, 'Document', makeDocumentRow({ id: CHARTLESS_DOCUMENT, patientId: null }));
     // Assigned to somebody else on purpose. `makeTaskRow` hands the task to
     // CLINICIAN with a different assigner, which is the `assigned-task`
     // relationship source - so the default fixture authorises the reader and
@@ -2600,7 +2612,7 @@ describe('a write on a chart is not a way round the gate', () => {
     [
       'POST /documents/:id/supersede',
       `/bff/v0/documents/${DOCUMENT_A}/supersede`,
-      { supersededById: DOCUMENT_B },
+      { supersededById: CHARTLESS_DOCUMENT },
     ],
     ['POST /tasks/:id/complete', `/bff/v0/tasks/${TASK_A}/complete`, {}],
     ['POST /tasks/:id/cancel', `/bff/v0/tasks/${TASK_A}/cancel`, {}],

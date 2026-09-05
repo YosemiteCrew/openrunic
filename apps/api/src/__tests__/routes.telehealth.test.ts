@@ -5,6 +5,8 @@ import type { JoinTokenResponse, TelehealthVisitDto } from '../schemas/telehealt
 
 import {
   bearer,
+  DEMO_TENANT_A,
+  FIXED_NOW,
   createTestApp,
   jsonBearer,
   DEMO_FACILITY_A,
@@ -333,5 +335,69 @@ describe('reading visits back', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('a portal token and the telehealth table', () => {
+  it("does not let a chart-bound patient list another patient's visit", async () => {
+    // TelehealthVisit is compartment:'closed', so a portal token bound to one
+    // chart is refused the table rather than handed every OPEN visit's join URL.
+    // The patient reaches their own visit by the link they are sent.
+    const { app, dataset } = createTestApp({ adapters: new AdapterRegistry() });
+    const stranger = testId(74101);
+    const appt = testId(74102);
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: appt, patientId: stranger }));
+    seed(dataset, 'TelehealthVisit', {
+      id: testId(74103),
+      tenantId: DEMO_TENANT_A,
+      appointmentId: appt,
+      vendorId: 'vendor',
+      roomRef: 'room',
+      joinUrl: 'https://vendor.invalid/join/secret',
+      status: 'OPEN',
+      scheduledStart: FIXED_NOW,
+      expiresAt: new Date(FIXED_NOW.getTime() + 3_600_000),
+      endedAt: null,
+      endedReason: null,
+      durationSeconds: null,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    } as never);
+
+    const list = await app.request('/bff/v0/telehealth?status=OPEN', {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(((await list.json()) as { data: unknown[] }).data).toEqual([]);
+
+    const read = await app.request(`/bff/v0/telehealth/${testId(74103)}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(read.status).toBe(404);
+  });
+
+  it('still lets staff see the whole table', async () => {
+    const { app, dataset } = createTestApp({ adapters: new AdapterRegistry() });
+    const appt = testId(74112);
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: appt, patientId: testId(74111) }));
+    seed(dataset, 'TelehealthVisit', {
+      id: testId(74113),
+      tenantId: DEMO_TENANT_A,
+      appointmentId: appt,
+      vendorId: 'vendor',
+      roomRef: 'room',
+      joinUrl: 'https://vendor.invalid/join/x',
+      status: 'OPEN',
+      scheduledStart: FIXED_NOW,
+      expiresAt: new Date(FIXED_NOW.getTime() + 3_600_000),
+      endedAt: null,
+      endedReason: null,
+      durationSeconds: null,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    } as never);
+    const list = await app.request('/bff/v0/telehealth?status=OPEN', {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(((await list.json()) as { data: unknown[] }).data).toHaveLength(1);
   });
 });

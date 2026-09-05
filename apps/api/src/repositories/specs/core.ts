@@ -430,11 +430,16 @@ export const telehealthVisitSpec: CollectionSpec<
   model: 'TelehealthVisit',
   targetType: 'TelehealthVisit',
   action: 'appointment',
-  // No patient column and no compartment. A visit points at an appointment,
-  // which is where the chart is; duplicating the patient here would give one
-  // visit two answers to whose it is, and the two would drift the first time an
-  // appointment was moved to a different chart.
-  compartment: 'open',
+  // No patient column, and closed rather than open. A visit points at an
+  // appointment, which is where the chart is; duplicating the patient here would
+  // give one visit two answers to whose it is, and the two would drift the first
+  // time an appointment was moved to a different chart. But `open` let a
+  // compartment-bound principal read the table, and a portal token bound to one
+  // chart could list every patient's OPEN visit and lift the join URL for a
+  // consultation that is not theirs. The patient reaches their own visit by the
+  // passwordless link they are sent, not by listing this table, so a
+  // compartment-restricted principal is refused it wholesale.
+  compartment: 'closed',
 
   newRow(input: TelehealthVisitCreateInput): Writable<'TelehealthVisit'> {
     return {

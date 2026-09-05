@@ -550,6 +550,38 @@ test('prose that mentions the marker is not one', () => {
 });
 
 /**
+ * The narrowing to line comments is FAIL-CLOSED, and this is what says so.
+ *
+ * The paragraph beside `comment` claims a block-comment marker is still found
+ * and then refused for carrying no date. Raised in review: widening `comment`
+ * to accept `*` lines left the suite at 35 / 0 while turning that refused
+ * marker into an accepted one, so the narrowing was held by the paragraph
+ * describing it and by nothing else - in a change whose whole subject is that a
+ * written-down decision with no clock is not a decision.
+ *
+ * Both halves are asserted, and they are independent. `found.length` is what
+ * separates REFUSED from NEVER SEEN, which is the claim the paragraph makes;
+ * without it, `entry` losing its `/*` alternative reads as a pass. `date` is
+ * what says the block above was not read as documentation for it.
+ */
+test('a marker documented in a block comment is found and then refused', () => {
+  const blockDocumented = [
+    'const a = 1;',
+    '/*',
+    ' * Owner: someone. Re-review by: 2026-11-18.',
+    ' */',
+    `const b = read(args); /* ${'no'}${'sec'} */`,
+    '',
+  ].join('\n');
+
+  const found = findExceptions(blockDocumented, SUPPRESSION);
+
+  assert.equal(found.length, 1, 'a block-comment marker was not matched at all');
+  assert.equal(found[0].date, null, 'the block above was read as this marker documentation');
+  assert.equal(expired(found, '2026-09-05').length, 1);
+});
+
+/**
  * The walk over this repository, and it has to find the markers that are here.
  *
  * Every assertion above would hold against a walk that read nothing - the

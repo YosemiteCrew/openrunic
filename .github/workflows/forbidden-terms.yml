@@ -197,6 +197,12 @@ jobs:
         env:
           FORBIDDEN_TERMS_PATTERN_B64: ${{ secrets.FORBIDDEN_TERMS_PATTERN_B64 }}
           FORBIDDEN_TERMS_CORPUS_B64: ${{ secrets.FORBIDDEN_TERMS_CORPUS_B64 }}
+          # An empty secret has two causes and they need two different actions.
+          # The first version of this step named the fork one as though it were
+          # the only one, and the very first run it met was a same-repo branch
+          # where the secret simply did not exist yet - so the message asserted
+          # a cause it had not checked. This is the field that tells them apart.
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
           # The script cannot tell an empty secret from a fork; this job can.
@@ -204,15 +210,23 @@ jobs:
           # contributor does not read a withheld secret as a broken guard.
           if [ -z "${FORBIDDEN_TERMS_PATTERN_B64:-}" ]; then
             echo "forbidden-terms: no pattern available to this run." >&2
-            echo "GitHub withholds secrets from a fork's pull_request run, so this gate" >&2
-            echo "cannot run on a fork. It reports red rather than clean, because a check" >&2
-            echo "that did not run is not a check that passed." >&2
+            echo "Exit 2 is a guard that could not run, and it is red rather than clean" >&2
+            echo "because a check that did not run is not a check that passed." >&2
             echo "" >&2
-            echo "THIS IS NOT A PROBLEM WITH YOUR BRANCH and there is nothing you can" >&2
-            echo "change to turn it green. A maintainer has to review the named-product" >&2
-            echo "rule by hand before merging. The other red this job produces - a term" >&2
-            echo "actually found - names the surface, the file and the line, so if you" >&2
-            echo "are reading this message instead, do not go looking for a word." >&2
+            if [ "${IS_FORK:-}" = "true" ]; then
+              echo "CAUSE: this pull request comes from a fork, and GitHub withholds" >&2
+              echo "secrets from a fork's pull_request run. Nothing you change on your" >&2
+              echo "branch will turn this green - a maintainer has to review the" >&2
+              echo "named-product rule by hand before merging. In particular, do not go" >&2
+              echo "looking for a word: the other red this job produces names the" >&2
+              echo "surface, the file and the line." >&2
+            else
+              echo "CAUSE: this is not a fork, so the secret is missing from the" >&2
+              echo "repository itself. A maintainer has to create both" >&2
+              echo "FORBIDDEN_TERMS_* repository secrets; until then this gate has" >&2
+              echo "never run, on any pull request. Do not work around it by making" >&2
+              echo "this job skip - see the header." >&2
+            fi
             exit 2
           fi
           node scripts/ci/forbidden-terms.mjs selftest --min-corpus 6

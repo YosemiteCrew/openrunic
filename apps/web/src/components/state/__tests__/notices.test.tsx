@@ -28,6 +28,14 @@ vi.mock('@/lib/i18n/messages', async () => {
   return { ...actual, useTranslator: () => translator };
 });
 
+/** The word each tone is spelt with in the language these cases render in. */
+const IN_SPANISH = {
+  info: 'Información',
+  caution: 'Precaución',
+  danger: 'Error',
+  success: 'Correcto',
+} as const;
+
 describe('the notices this application raises speak the reader language', () => {
   it.each([
     ['info', 'Información'],
@@ -46,11 +54,34 @@ describe('the notices this application raises speak the reader language', () => 
     expect(container.querySelector('.or-toast__tone')).toHaveTextContent(expected);
   });
 
-  /* `info` is the component's default tone, so a wrapper that read `props.tone`
-     without one would hand it `undefined` and fall back to English. */
-  it('says the info tone when the call site names none', () => {
+  /**
+   * A call site that names no tone gets the word for the tone it actually
+   * renders, whichever that is.
+   *
+   * The wrapper writes `props.tone ?? 'info'` and `Alert.tsx` separately
+   * declares `tone = 'info'`. Nothing pins those to each other, and the first
+   * version of this test asserted the word for `info` on the strength of a
+   * comment saying so - an assertion about a value in another package that it
+   * did not check. Move the component's default to `caution` and update the
+   * design system's own test with it, which is what anyone would do in one
+   * commit, and both suites are green while a bare notice renders the caution
+   * icon and caution styling and announces "Información". The word contradicts
+   * the colour, which is the one thing the tone word exists to prevent.
+   *
+   * So the assertion is on the PAIR, read off the element that was rendered
+   * rather than from either constant. Raised in review.
+   */
+  it('says the word for the tone it actually rendered when none is named', () => {
     const { container } = render(<Alert title="Registro actualizado" />);
-    expect(container.querySelector('.or-alert__tone')).toHaveTextContent('Información');
+    const notice = container.querySelector('.or-alert');
+    const rendered = [...(notice?.classList ?? [])]
+      .map((name) => /^or-alert--(?<tone>\w+)$/u.exec(name)?.groups?.['tone'])
+      .find((tone) => tone !== undefined);
+
+    expect(rendered, 'the notice rendered no tone class at all').toBeDefined();
+    expect(container.querySelector('.or-alert__tone')).toHaveTextContent(
+      IN_SPANISH[rendered as keyof typeof IN_SPANISH]
+    );
   });
 
   it('still says the dismiss label, which arrived by the same route first', () => {

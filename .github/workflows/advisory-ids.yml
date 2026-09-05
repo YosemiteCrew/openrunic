@@ -1,0 +1,132 @@
+name: Advisory Identifiers
+
+# Every security advisory identifier cited in this repository must resolve to a
+# real advisory.
+#
+# A dependency override, a scanner suppression and a pinned base image are all
+# exceptions: they accept a finding, or force a resolution, on the strength of a
+# comment. The comment names an advisory so a later reader can check the
+# reasoning against the source - that is the entire point of writing the id
+# down. An id that resolves to nothing sends that reader looking for a finding
+# which is not there, and it reads exactly as authoritative as a correct one.
+# `pnpm-workspace.yaml` justified the mysql2 override with `GHSA-r8f6-24hv-cj3g`
+# until this gate existed. The prose was accurate to the word; the identifier
+# was invented.
+#
+# WHY THIS IS A SEPARATE WORKFLOW AND NOT A LINE IN `verify`
+#
+# The check is a resolution, because a fabricated id passes every pattern a
+# local check could apply - `GHSA-r8f6-24hv-cj3g` has the right prefix, the
+# right segment lengths and every character inside the alphabet GitHub issues
+# from. So it needs three registries, and `pnpm verify` has to keep working
+# without a network.
+#
+# The half that CAN run offline already does. scripts/ci/advisory-ids.test.mjs
+# scans the real tree and fails if the walk, the patterns or either exemption
+# stops working, and it runs inside `verify` through the
+# `scripts/ci/*.test.mjs` glob. What is left for this workflow is the one
+# question that needs the network: does each id exist.
+#
+# THE SCHEDULE IS NOT DECORATION
+#
+# An id is not only wrong when it is written. An advisory can be withdrawn after
+# it is cited, and a scheduled run is the only thing that would notice. Both
+# long-lived branches are checked for the reason exception-expiry.yml gives:
+# a scheduled workflow is dispatched from the default branch, so a bare checkout
+# reads `main` and never sees what is sitting on `dev`.
+#
+# UNREACHABLE IS RED, AND THAT IS A DELIBERATE DISAGREEMENT
+#
+# The guard exits 2 when a registry cannot be reached, and 2 fails this job. The
+# opposite convention exists in this organisation - Yosemite Crew's override
+# checker returns 0 on unavailable data, on the argument that a flaky security
+# check gets routed around, which is worse than one that says it could not run.
+# That argument is right for a check with other gates behind it. This one is the
+# only thing standing between a fabricated justification and `main`, and a
+# silent pass would let one merge in exactly the window nobody could check it.
+# The retry in the guard, and three registries rather than one general-purpose
+# database, are what keep that exit rare enough to mean something.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  merge_group:
+  push:
+    branches:
+      - dev
+      - main
+  schedule:
+    # 07:20 UTC on Mondays, twenty minutes after exception-expiry.yml so the two
+    # weekly security nudges arrive as separate notifications rather than one.
+    - cron: '20 7 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: advisory-ids-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # The pull-request and merge-group path: check the tree as proposed.
+  proposed:
+    name: Cited advisories exist
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the tree; this job writes nothing back
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The guard walks tracked files with `git ls-files`, so it needs the
+          # working tree and nothing more. No history is read.
+          persist-credentials: false
+
+      - name: Test the guard itself
+        # A guard whose own tests are broken has no business reporting on a pull
+        # request. The runner's system Node is enough: the guard imports only
+        # node: builtins and one local module, so there is nothing to install -
+        # which also means no lockfile from the head is executed here.
+        run: node --test scripts/ci/advisory-ids.test.mjs
+
+      - name: Resolve every cited advisory identifier
+        env:
+          # Raises the anonymous 60-requests-an-hour limit on the GitHub
+          # advisories API. Read-only, and the guard never prints it.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/advisory-ids.mjs
+
+  # The scheduled path: one run per long-lived branch, because a scheduled
+  # workflow is dispatched from the default branch and would otherwise only ever
+  # see `main`.
+  scheduled:
+    name: Cited advisories exist (${{ matrix.branch }})
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the tree; this job writes nothing back
+    strategy:
+      # Both branches are reported even when one fails: "dev is fine and main is
+      # not" is the interesting answer, and fail-fast would hide it.
+      fail-fast: false
+      matrix:
+        branch: [dev, main]
+    steps:
+      - name: Checkout ${{ matrix.branch }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.branch }}
+          persist-credentials: false
+
+      - name: Test the guard itself
+        run: node --test scripts/ci/advisory-ids.test.mjs
+
+      - name: Resolve every cited advisory identifier
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/advisory-ids.mjs

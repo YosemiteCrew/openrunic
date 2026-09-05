@@ -138,7 +138,7 @@ const EVENT_COUNT_BREAKGLASS = {
  * messages rather than one with a clause appended, because the clause is not
  * appendable in every language.
  */
-function filterSummary(t: Translator, total: number, breakglassCount: number) {
+export function filterSummary(t: Translator, total: number, breakglassCount: number) {
   // The locale comes off the translator rather than beside it. This took both
   // because the local `Translate` type it used to be given had dropped the
   // locale, so the caller passed `t.locale` back in as a second argument.

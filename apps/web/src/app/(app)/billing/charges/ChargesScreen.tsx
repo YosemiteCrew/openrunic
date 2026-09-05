@@ -1,7 +1,6 @@
 'use client';
 
-import { formatCount } from '@openrunic/i18n';
-import type { Translator } from '@openrunic/i18n';
+import type { CountedMessage, Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Modal, Select, Tag } from '@openrunic/ui';
 import { useCallback, useId, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -27,7 +26,7 @@ import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_PROCEDURE_PANELS, useFeeSheets } from '@/lib/api';
 import type { BillingClient, ChargeLine, FeeSheet, ProcedureCode } from '@/lib/api';
 import { formatDate, formatMoney, formatMrn, formatName, formatTime } from '@/lib/format';
-import { searchWords } from '@/lib/i18n/counted';
+import { counted, searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 /**
@@ -58,6 +57,29 @@ export interface ChargesScreenProps {
 }
 
 /**
+ * The three counted messages on this screen.
+ *
+ * Through `counted` rather than a `=== 1` test and a `formatCount` call, for
+ * the reason `ScrubPanel` records beside its own: one is not the only special
+ * case in every language, and the form and the digits are two separate locale
+ * decisions that a hand-rolled call site gets right one at a time.
+ */
+const BLOCKING_HINT: CountedMessage = {
+  oneKey: 'billing.charges.hint.blocking.one',
+  otherKey: 'billing.charges.hint.blocking.other',
+};
+
+const MARKED_READY: CountedMessage = {
+  oneKey: 'billing.charges.toast.markedReadyMessage.one',
+  otherKey: 'billing.charges.toast.markedReadyMessage.other',
+};
+
+const CONFIRM_LOCK: CountedMessage = {
+  oneKey: 'billing.charges.confirm.description.one',
+  otherKey: 'billing.charges.confirm.description.other',
+};
+
+/**
  * The line under the "Mark ready" button: why the button is disabled, or that
  * the work is done. It always says something, because a disabled control with
  * no reason beside it is the thing this screen exists to stop.
@@ -65,12 +87,7 @@ export interface ChargesScreenProps {
 function readyHint(isReady: boolean, blockingCount: number, translate: Translator): string {
   if (isReady) return translate('billing.charges.hint.ready');
   if (blockingCount === 0) return translate('billing.charges.hint.clean');
-  return translate(
-    blockingCount === 1
-      ? 'billing.charges.hint.blocking.one'
-      : 'billing.charges.hint.blocking.other',
-    { count: formatCount(blockingCount, translate.locale) }
-  );
+  return counted(translate, BLOCKING_HINT, blockingCount);
 }
 
 /**
@@ -212,6 +229,11 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
   );
   const isReady = sheet ? (marked[sheet.id] ?? sheet.status !== 'OPEN') : false;
 
+  // What both "mark ready" messages count. A removed line is struck through
+  // rather than gone, so the number the biller is being asked to confirm is the
+  // lines that survive, and it is one fact rather than two spellings of it.
+  const keptLineCount = useMemo(() => lines.filter((line) => !line.deleted).length, [lines]);
+
   const findings = useMemo(() => (sheet ? scrubFeeSheet(t, sheet, lines) : []), [t, sheet, lines]);
   const blocking = blockingFindings(findings);
   const totals = useMemo(() => (sheet ? feeSheetTotals(sheet, lines) : null), [sheet, lines]);
@@ -304,11 +326,9 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
     toasts.push({
       tone: 'success',
       title: t('billing.charges.toast.markedReady'),
-      message: t('billing.charges.toast.markedReadyMessage', {
-        count: lines.filter((line) => !line.deleted).length,
-      }),
+      message: counted(t, MARKED_READY, keptLineCount),
     });
-  }, [sheet, lines, toasts, t]);
+  }, [sheet, keptLineCount, toasts, t]);
 
   const openNextVisit = useCallback(() => {
     if (sheets.length === 0) return;
@@ -442,8 +462,7 @@ export function ChargesScreen({ client }: Readonly<ChargesScreenProps>): ReactEl
         title={t('billing.charges.markReady')}
         description={
           sheet
-            ? t('billing.charges.confirm.description', {
-                count: lines.filter((line) => !line.deleted).length,
+            ? counted(t, CONFIRM_LOCK, keptLineCount, {
                 name: formatName(sheet.patient.name),
               })
             : undefined

@@ -104,14 +104,14 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1775 of 2498 messages (71%).
+**es**: 1777 of 2500 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
 | admin     | 444 | 444 | `██████████████████` |
 | assistant |  55 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | auth      |  21 |  21 | `██████████████████` |
-| billing   | 461 | 461 | `██████████████████` |
+| billing   | 463 | 463 | `██████████████████` |
 | chart     | 175 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | clinical  |  10 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | common    |  29 |  29 | `██████████████████` |

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RELATIONSHIP_SOURCES } from '../policy/care-relationship.js';
 import type { ScopedRow } from '../repositories/rows.js';
+import type { RemittanceStatus } from '../repositories/specs/financial.js';
 
 import {
   bearer,
@@ -982,11 +983,18 @@ describe('a collection inside a chart is not a way round the gate', () => {
    */
   const REMITTANCE = testId(3_660);
 
-  function aRemittanceOverThatClaim(dataset: Dataset): void {
+  /*
+   * `status` is a parameter because POSTING is only reachable from `PARSED`,
+   * and `assertTransition` runs BEFORE the gate - a remittance left at
+   * `RECEIVED` answers 409 and never reaches the guard the post cases are
+   * written for. Re-seeding the same id does NOT move it: the first seed wins
+   * silently, so this has to be right at the one call.
+   */
+  function aRemittanceOverThatClaim(dataset: Dataset, status: RemittanceStatus = 'RECEIVED'): void {
     seed(dataset, 'Remittance', {
       ...storageColumns(REMITTANCE),
       payerId: testId(3_661),
-      status: 'RECEIVED',
+      status,
       checkOrEftNumber: null,
       totalPaidCents: 9_000,
       receivedAt: FIXED_NOW,
@@ -996,7 +1004,10 @@ describe('a collection inside a chart is not a way round the gate', () => {
       exceptionCount: 0,
       postedAt: null,
       postedById: null,
-    } as unknown as ScopedRow<'Remittance'>);
+      // No cast: with `status` typed the row satisfies `ScopedRow<'Remittance'>`
+      // on its own, so a field going wrong here is a type error rather than a
+      // green test seeding a shape the repository never returns.
+    });
     seed(dataset, 'RemittanceLine', {
       ...storageColumns(testId(3_662)),
       remittanceId: REMITTANCE,
@@ -1106,6 +1117,49 @@ describe('a collection inside a chart is not a way round the gate', () => {
     aRemittanceOverThatClaim(dataset);
 
     const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/parse`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses to POST a remittance whose lines name a chart out of reach', async () => {
+    /*
+     * The third door on the shared reader, and the one nothing observed: at
+     * `33d76c8` un-sharing ONLY `post` left the whole 3600-test package green,
+     * so the guard covered three routes and was pinned on two. Posting is the
+     * route where the miss costs money - it turns these lines into
+     * `PaymentAllocation` rows ON the charts the reader is refused.
+     *
+     * `PARSED` because `assertTransition` runs first and a `RECEIVED`
+     * remittance answers 409 without ever reaching the guard.
+     */
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset, 'PARSED');
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/post`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('still posts a remittance whose claims the reader may open', async () => {
+    /* Without this the case above is satisfied by a 409 or by refusing every
+       biller every post, either of which takes payment posting out entirely
+       while reading as the gate working. */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    aRemittanceOverThatClaim(dataset, 'PARSED');
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/post`, {
       method: 'POST',
       headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
       body: JSON.stringify({}),

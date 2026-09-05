@@ -520,8 +520,20 @@ export function deviceResource(row: ScopedRow<'Device'>): Device {
   );
 }
 
-/** The assessment and plan, from its own row. */
-export function carePlanResource(row: ScopedRow<'CarePlan'>): CarePlan {
+/**
+ * The assessment and plan, with the goals it is working towards.
+ *
+ * The goals are handed in rather than fetched, for the reason the care team's
+ * participants are: a lookup inside the mapper would be one round trip per row,
+ * invisible against three fixtures and quadratic on a real page.
+ *
+ * An empty list is the ordinary case. A plan is an assessment first, and most
+ * carry no goals at all.
+ */
+export function carePlanResource(
+  row: ScopedRow<'CarePlan'>,
+  goalIds: readonly string[] = []
+): CarePlan {
   return toFhirCarePlan(
     compactDomain({
       id: row.id,
@@ -534,6 +546,7 @@ export function carePlanResource(row: ScopedRow<'CarePlan'>): CarePlan {
       periodStart: row.periodStart?.toISOString(),
       periodEnd: row.periodEnd?.toISOString(),
       authorId: absent(row.authorId),
+      ...(goalIds.length === 0 ? {} : { goalIds }),
     })
   );
 }

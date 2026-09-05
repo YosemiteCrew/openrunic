@@ -1177,6 +1177,243 @@ describe('one crowded care team does not empty the others', () => {
     /* The assertion that fails without the per-team trim. */
     expect(byId.get(testId(1100))).toBe(1);
   });
+
+  it('leaves the rest of the page intact when one team is bigger than the whole old allowance', async () => {
+    /*
+     * The case the assertion above cannot reach, and the reason this issue was
+     * filed with the one above already passing.
+     *
+     * The old loader took one page of `MAX_TEAM_MEMBERS * rows.length + 1` and
+     * trimmed per team afterwards. With twenty-five members and two teams the
+     * allowance was forty-one, so everything fit and the trim did the rest -
+     * which is a real property, and not the one that was broken. The trim only
+     * comes too late once a single team is larger than the WHOLE allowance:
+     * then it consumes the page before any other team is reached, and the trim
+     * has nothing left to trim.
+     *
+     * Forty-five on the first team against an allowance of forty-one is that
+     * case. What a client saw was a care team with nobody on it, because a
+     * different patient's team was large - no error, no truncation flag,
+     * nothing to distinguish it from a team that really has no members.
+     */
+    const { app, dataset } = harness();
+
+    for (let index = 0; index < 45; index += 1) {
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(2000 + index)),
+        careTeamId: testId(41),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: PROVIDER,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    }
+
+    seed(dataset, 'CareTeam', {
+      ...storageColumns(testId(2100)),
+      patientId: PATIENT,
+      status: 'ACTIVE',
+      name: 'Starved team',
+      periodStart: null,
+      periodEnd: null,
+    });
+    seed(dataset, 'CareTeamParticipant', {
+      ...storageColumns(testId(2101)),
+      careTeamId: testId(2100),
+      patientId: PATIENT,
+      memberType: 'PATIENT',
+      memberUserId: null,
+      memberRelatedPersonId: null,
+      roleCode: '116154003',
+      roleSystem: 'http://snomed.info/sct',
+      roleText: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+
+    const bundle = (await (
+      await app.request('/fhir/CareTeam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const byId = new Map(
+      (bundle.entry ?? []).map((entry) => {
+        const resource = entry.resource as { id?: string; participant?: unknown[] };
+        return [resource.id, resource.participant?.length ?? 0];
+      })
+    );
+
+    // The crowded team still loses its own tail, which is the bound doing its
+    // job rather than a second bug.
+    expect(byId.get(testId(41))).toBe(20);
+    // And the team that has nothing to do with it keeps its member.
+    expect(byId.get(testId(2100))).toBe(1);
+  });
+});
+
+/**
+ * The plan-goal link, end to end.
+ *
+ * `Goal.addresses` used to carry it, which R4 forbids - its targets are the
+ * clinical concerns a goal is about, not the plan it belongs to - so the invalid
+ * reference was dropped to make the Goal conformant. That left the association
+ * in the database and nowhere a client could see it: `CarePlan.goal` is the
+ * conformant home and was not projected.
+ */
+describe('a care plan carries the goals it is working towards', () => {
+  it('names its own goals and only its own', async () => {
+    /*
+     * The harness seeds two goals on this chart: one pointing at this plan and
+     * one with no plan at all. A loader that filtered on nothing would emit
+     * both, and the resource would claim the practice is working towards a goal
+     * that belongs to no plan - which reads as a plan commitment nobody made.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const plan = (bundle.entry ?? [])
+      .map((entry) => entry.resource as { id?: string; goal?: { reference?: string }[] })
+      .find((resource) => resource.id === testId(44));
+
+    expect(plan?.goal?.map((one) => one.reference)).toEqual([`Goal/${testId(45)}`]);
+  });
+
+  it('reads the same link back through the single-resource route', async () => {
+    /* Read-by-id builds its own single-row page, so a `prepare` wired only into
+       the search would leave this one empty and nothing would say so. */
+    const { app } = harness();
+
+    const plan = (await (
+      await app.request(`/fhir/CarePlan/${testId(44)}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { goal?: { reference?: string }[] };
+
+    expect(plan.goal?.map((one) => one.reference)).toEqual([`Goal/${testId(45)}`]);
+  });
+});
+
+describe('a dispense too large to summarise is refused rather than understated', () => {
+  it('answers 501 instead of a quantity short by the lots it did not load', async () => {
+    /*
+     * The projection sums the movements it is handed and publishes the total as
+     * `quantity`, which a receiving system reads as how much medicine this
+     * person was given. The loader takes one page per posting, so a dispense
+     * drawn from more lots than that page holds was summed from part of itself:
+     * a number too low, entirely plausible, and indistinguishable from a
+     * smaller dispense.
+     *
+     * There is no approximately correct dispensed quantity. An understated one
+     * reconciles against nothing, hides a recall, and would be read as the dose
+     * actually supplied. Refusing says what is true - this server cannot
+     * represent that record - and points at the ledger, which can.
+     */
+    const { app, dataset } = createTestApp();
+    const patient = testId(7001);
+    const posting = testId(7002);
+    seed(dataset, 'Patient', makePatientRow({ id: patient, mrn: 'OR-700100' }));
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    seed(dataset, 'StockItem', {
+      ...storageColumns(testId(7010)),
+      sku: 'MET-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind: 'DISPENSE',
+      facilityId: DEMO_FACILITY_A,
+      patientId: patient,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+
+    // Fifty-one lots against a per-posting page of fifty. Clinically absurd and
+    // structurally permitted, which is the combination that produces a silent
+    // wrong number rather than an error.
+    for (let index = 0; index < 51; index += 1) {
+      seed(dataset, 'StockLot', {
+        ...storageColumns(testId(7100 + index)),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        lotNumber: `LOT-${String(index)}`,
+        status: 'AVAILABLE',
+        expiresOn: null,
+        openedOn: null,
+        beyondUseDays: null,
+        manufacturer: null,
+        ndcCode: null,
+        receivedOn: FIXED_NOW,
+      });
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(7200 + index)),
+        postingId: posting,
+        lotId: testId(7100 + index),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 1,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: index + 1,
+      });
+    }
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(501);
+    const outcome = (await res.json()) as {
+      resourceType?: string;
+      issue?: { diagnostics?: string }[];
+    };
+
+    // And specifically not a resource carrying 50 where 51 were handed over.
+    expect(outcome.resourceType).toBe('OperationOutcome');
+    /*
+     * The posting is named. `prepare` runs for the search as well as the read,
+     * so one pathological record makes a whole chart's dispense history answer
+     * 501 - and after the portal gained this resource that is a patient unable
+     * to read any of their medicines because of one of them. Naming the id is
+     * what lets a client say which record is at fault rather than being told
+     * only that something on this chart cannot be served.
+     */
+    expect(outcome.issue?.[0]?.diagnostics).toContain(posting);
+  });
+
+  it('still serves a dispense that fits', async () => {
+    /* The control. The assertion above passes for a route that refuses
+       everything. */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('the CarePlan category filter is honoured, not merely advertised', () => {

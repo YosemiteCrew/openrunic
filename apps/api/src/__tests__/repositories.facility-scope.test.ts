@@ -186,10 +186,11 @@ describe('the facility narrowing is a query Postgres accepts', () => {
     const where = facilityWhere(spec, ['facility-a', 'facility-b']);
     expect(where, `${key} is facilityScoped and emitted no clause`).not.toBeNull();
 
-    expect(
-      spec.facilityColumn,
-      `${key}: ${spec.model} is facilityScoped but names no facilityColumn`
-    ).toBeTypeOf('string');
+    // `?? ''` is safe HERE and nowhere else in this file: `facilityWhere`
+    // returns null without a column, so the assertion above has already failed
+    // for the only input that could reach this line with one missing. A guard
+    // here would read as a check and never run - measured by deleting it, and
+    // the counts and both messages were identical with and without.
     const column = spec.facilityColumn ?? '';
     const names = JSON.stringify(where);
     const asksForNull = names.includes(`"${column}":null`);

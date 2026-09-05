@@ -696,6 +696,34 @@ const medicationDispenseModule = defineFhirResource({
       )
     );
     for (const page of pages) {
+      /*
+       * A dispense whose lines did not fit is refused, not summed.
+       *
+       * `medicationDispenseResource` adds up the movements it is given and
+       * publishes the total as `quantity`, which a receiving system reads as
+       * how much medicine this person was handed. Loading one page per posting
+       * and summing whatever came back makes that number quietly wrong for a
+       * dispense drawn from more than `MAX_DISPENSE_MOVEMENTS` lots: too low,
+       * plausible, and indistinguishable from a smaller dispense.
+       *
+       * There is no such thing as an approximately correct dispensed quantity.
+       * An understated one reconciles against nothing, hides a recall, and
+       * would be read by a clinician as the dose that was actually supplied. So
+       * this answers "this server cannot represent that record" rather than
+       * answering with a number it knows is short.
+       *
+       * 501 rather than a 4xx: the client asked for something reasonable and it
+       * is this server's projection that cannot carry it. The bound is not a
+       * page size a caller can raise, which is why it is not reported as one.
+       */
+      if (page.total > page.rows.length) {
+        throw ApiError.notImplemented(
+          `This dispense was drawn from more than ${String(MAX_DISPENSE_MOVEMENTS)} lots, ` +
+            'which this server cannot summarise as a single quantity. ' +
+            'Read the stock ledger for the individual movements.',
+          { title: 'Dispense too large to project' }
+        );
+      }
       for (const movement of page.rows) {
         const bucket = movementsByPosting.get(movement.postingId);
         if (bucket) bucket.push(movement);
@@ -838,6 +866,54 @@ const procedureModule = defineFhirResource({
  */
 const MAX_TEAM_MEMBERS = 20;
 
+/**
+ * The most goals one plan contributes to a page.
+ *
+ * Same shape and same reasoning as {@link MAX_TEAM_MEMBERS}: a ceiling nobody
+ * reaches rather than a limit, applied per plan so a plan past it loses its own
+ * tail and no other plan loses anything. Deliberately NOT the global page the
+ * care team loader used to take - that shape is the bug this issue is here to
+ * stop being copied.
+ */
+const MAX_PLAN_GOALS = 20;
+
+/**
+ * The goals each plan on the page is working towards.
+ *
+ * The link lives on the goal - a `Goal` row carries the `carePlanId` it belongs
+ * to - so this reads it in the direction FHIR asks for it, once per plan, and
+ * hands the ids to the projection.
+ */
+async function prepareCarePlans(
+  rows: readonly ScopedRow<'CarePlan'>[],
+  repositories: Repositories
+): Promise<Map<string, string[]>> {
+  const byPlan = new Map<string, string[]>();
+  if (rows.length === 0) return byPlan;
+
+  const pages = await Promise.all(
+    rows.map(async (row) =>
+      repositories.goals.list({
+        page: 1,
+        pageSize: MAX_PLAN_GOALS,
+        sort: 'createdAt',
+        order: 'asc',
+        carePlanId: row.id,
+      })
+    )
+  );
+  for (const [index, page] of pages.entries()) {
+    const plan = rows[index];
+    if (plan !== undefined && page.rows.length > 0) {
+      byPlan.set(
+        plan.id,
+        page.rows.map((goal) => goal.id)
+      );
+    }
+  }
+  return byPlan;
+}
+
 async function prepareCareTeams(
   rows: readonly ScopedRow<'CareTeam'>[],
   repositories: Repositories
@@ -845,30 +921,41 @@ async function prepareCareTeams(
   const byTeam = new Map<string, ScopedRow<'CareTeamParticipant'>[]>();
   if (rows.length === 0) return byTeam;
 
-  const participants = await repositories.careTeamParticipants.list({
-    page: 1,
-    /*
-     * A global ceiling, and it is only safe because of the per-team trim below.
-     *
-     * On its own it is not a limit of twenty per team: rows come back ordered
-     * by creation across every team on the page, so one team with a thousand
-     * members would consume the whole allowance and every team after it would
-     * be served with no participants at all. Not an error, not a truncation a
-     * client can detect - a care team that appears to have nobody on it,
-     * because a different patient's team was malformed.
-     *
-     * The extra room past the per-team cap is what makes the overflow visible
-     * rather than indistinguishable from a team that is merely large.
-     */
-    pageSize: MAX_TEAM_MEMBERS * rows.length + 1,
-    sort: 'createdAt',
-    order: 'asc',
-    careTeamIds: rows.map((row) => row.id),
-  });
-  for (const participant of participants.rows) {
-    const existing = byTeam.get(participant.careTeamId);
-    if (existing === undefined) byTeam.set(participant.careTeamId, [participant]);
-    else if (existing.length < MAX_TEAM_MEMBERS) existing.push(participant);
+  /*
+   * One bounded query per team, rather than one page shared by all of them.
+   *
+   * The shared page was a global ceiling of `MAX_TEAM_MEMBERS * rows.length`
+   * trimmed per team afterwards, and the trim came too late: rows arrive
+   * ordered by creation across every team on the page, so one team with more
+   * members than the whole allowance consumed it, and every team after it was
+   * served with no participants at all. That is not a truncation a client can
+   * detect. It is a care team that appears to have nobody on it, because a
+   * different patient's team was large.
+   *
+   * Asking per team makes the bound mean what its name says. A team past the
+   * cap loses its own tail and no other team loses anything, which is what the
+   * old comment claimed and the old query could not deliver.
+   *
+   * The cost is one round trip per team on the page instead of one for the
+   * page. That is the same shape the dispense loader already uses, and it is
+   * the right trade here: the alternative is a correct answer for some teams
+   * and an empty one for the rest, decided by which patient's team happened to
+   * sort first.
+   */
+  const pages = await Promise.all(
+    rows.map(async (row) =>
+      repositories.careTeamParticipants.list({
+        page: 1,
+        pageSize: MAX_TEAM_MEMBERS,
+        sort: 'createdAt',
+        order: 'asc',
+        careTeamId: row.id,
+      })
+    )
+  );
+  for (const [index, page] of pages.entries()) {
+    const team = rows[index];
+    if (team !== undefined && page.rows.length > 0) byTeam.set(team.id, [...page.rows]);
   }
   return byTeam;
 }
@@ -996,7 +1083,9 @@ const carePlanModule = defineFhirResource({
     sort: 'createdAt' as const,
     order: 'desc' as const,
   }),
-  toResource: carePlanResource,
+  prepare: prepareCarePlans,
+  toResource: (row: ScopedRow<'CarePlan'>, context) =>
+    carePlanResource(row, context.prepared.get(row.id) ?? []),
 });
 
 /**

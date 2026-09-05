@@ -52,6 +52,7 @@ import {
   createTestApp,
   jsonBearer,
   seed,
+  seedCareRelationship,
   storageColumns,
   testId,
 } from './support.js';
@@ -66,6 +67,22 @@ import {
 
 const PATIENT_ID = testId(1);
 const OTHER_PATIENT_ID = testId(2);
+
+let relSeq = 9000;
+function authorise(
+  dataset: Parameters<typeof seedCareRelationship>[0],
+  ...patientIds: readonly string[]
+): void {
+  for (const patientId of patientIds) {
+    relSeq += 1;
+    seedCareRelationship(dataset, {
+      patientId,
+      providerId: '01890000-0000-7000-8000-000000000101',
+      as: 'appointment',
+      id: testId(relSeq),
+    });
+  }
+}
 const PAYER_ID = testId(300);
 const OTHER_PAYER_ID = testId(301);
 const ENCOUNTER_ID = testId(200);
@@ -364,6 +381,7 @@ function patch(path: string, token: string, body: unknown): [string, RequestInit
 describe('GET /bff/v0/coverage', () => {
   it('pages, and reports the whole-set total', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     for (let index = 0; index < 3; index += 1) {
       seed(dataset, 'Coverage', makeCoverageRow({ id: testId(10 + index) }));
     }
@@ -380,6 +398,7 @@ describe('GET /bff/v0/coverage', () => {
 
   it('filters by patient, payer, rank and status', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Coverage',
@@ -407,6 +426,7 @@ describe('GET /bff/v0/coverage', () => {
 
   it('sorts by rank, effective date and creation, in both directions', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Coverage',
@@ -454,6 +474,7 @@ describe('GET /bff/v0/coverage', () => {
 describe('coverage reads, writes and amendments', () => {
   it('reads one record and serialises its dates as calendar days', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow());
 
     const body = await json<CoverageDto>(
@@ -509,6 +530,7 @@ describe('coverage reads, writes and amendments', () => {
 
   it('amends the fields it was given', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow());
 
     const res = await app.request(
@@ -542,6 +564,7 @@ describe('coverage reads, writes and amendments', () => {
 
   it('422s a patch that changes nothing and one whose window runs backwards', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow());
 
     expect(
@@ -571,6 +594,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 
   it('answers locally, and says so', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow());
 
     const body = await json<EligibilityResult>(
@@ -592,6 +616,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 
   it('gives a reason for a cancelled policy, a draft one, and a date outside the window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Coverage',
@@ -616,6 +641,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 
   it('answers for an open-ended policy, which has no window to fall outside', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow({ effectiveFrom: null, effectiveTo: null }));
 
     const body = await json<EligibilityResult>(
@@ -627,6 +653,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 
   it('refuses a record entered in error rather than answering about it', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow({ status: 'ENTERED_IN_ERROR' }));
 
     const res = await app.request(...check(testId(10), '2026-06-15'));
@@ -637,6 +664,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 
   it('404s an unknown record and 422s a body with no service date', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow());
 
     expect((await app.request(...check(testId(999), '2026-06-15'))).status).toBe(404);
@@ -661,6 +689,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
 describe('charges', () => {
   it('filters by patient, encounter, status and a service-date window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     // Both at facility A, which is the only site this principal is granted. A
     // row at another site is not a filtering question at all - it is invisible,
     // which the test below is about - and seeding one here would have made
@@ -695,6 +724,7 @@ describe('charges', () => {
 
   it('keeps an ungranted facility out of the list, and refuses a filter naming one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'ChargeItem',
@@ -729,6 +759,7 @@ describe('charges', () => {
 
   it('reads one charge, records one, and amends one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow());
 
     const read = await json<ChargeDto>(
@@ -791,6 +822,7 @@ describe('charges', () => {
 
   it('403s a charge in a facility the principal has no grant for', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow({ facilityId: DEMO_FACILITY_B }));
 
     const res = await app.request(`/bff/v0/charges/${testId(20)}`, {
@@ -804,6 +836,7 @@ describe('charges', () => {
 describe('POST /bff/v0/charges/:id/void', () => {
   it('voids an open charge, recording the reason and the author', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow());
 
     const res = await app.request(
@@ -822,6 +855,7 @@ describe('POST /bff/v0/charges/:id/void', () => {
 
   it('voids a billed charge too', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow({ status: 'BILLED' }));
 
     const res = await app.request(
@@ -833,6 +867,7 @@ describe('POST /bff/v0/charges/:id/void', () => {
 
   it('refuses a void with no reason', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow());
 
     const res = await app.request(...post(`/bff/v0/charges/${testId(20)}/void`, TOKENS.billerA));
@@ -844,6 +879,7 @@ describe('POST /bff/v0/charges/:id/void', () => {
 
   it('refuses to void an already voided charge, with the typed 409', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow({ status: 'VOIDED', voidReason: 'Already gone.' }));
 
     const res = await app.request(
@@ -858,6 +894,7 @@ describe('POST /bff/v0/charges/:id/void', () => {
 
   it('404s an unknown charge and 403s a facility with no grant', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow({ id: testId(22), facilityId: DEMO_FACILITY_B }));
 
     expect(
@@ -882,6 +919,7 @@ describe('POST /bff/v0/charges/:id/void', () => {
 describe('claims', () => {
   it('writes the lines in the same call and derives the total from them', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
 
     const res = await app.request(...post('/bff/v0/claims', TOKENS.billerA, CLAIM_BODY));
 
@@ -907,6 +945,7 @@ describe('claims', () => {
 
   it('filters the accounts-receivable queue by patient, payer, encounter, status and window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Claim',
@@ -942,6 +981,7 @@ describe('claims', () => {
 
   it('reads, amends and 404s', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
 
     const read = await json<ClaimDto>(
@@ -1009,6 +1049,7 @@ describe('claims', () => {
 describe('claim transitions', () => {
   it('scrubs a draft and refuses to scrub a scrubbed claim', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Claim',
@@ -1029,6 +1070,7 @@ describe('claim transitions', () => {
 
   it('submits a scrubbed claim, stamping the submission time', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow({ status: 'SCRUBBED' }));
 
     const res = await app.request(
@@ -1046,6 +1088,7 @@ describe('claim transitions', () => {
 
   it('refuses to submit a claim that has not been scrubbed', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
 
     const res = await app.request(...post(`/bff/v0/claims/${testId(30)}/submit`, TOKENS.billerA));
@@ -1057,6 +1100,7 @@ describe('claim transitions', () => {
 
   it('records an acknowledgement, then an adjudication, stamping each', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow({ status: 'SUBMITTED' }));
     const status = (body: unknown): [string, RequestInit] =>
       post(`/bff/v0/claims/${testId(30)}/status`, TOKENS.billerA, body);
@@ -1078,6 +1122,7 @@ describe('claim transitions', () => {
 
   it('honours an occurredAt the payer stated', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow({ status: 'SUBMITTED' }));
 
     const body = await json<ClaimDto>(
@@ -1101,6 +1146,7 @@ describe('claim transitions', () => {
 
   it('refuses a move the table does not allow', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow({ status: 'SUBMITTED' }));
 
     const res = await app.request(
@@ -1118,6 +1164,7 @@ describe('claim transitions', () => {
 
   it('404s a transition on an unknown claim and 422s one with no status', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
 
     expect(
@@ -1130,6 +1177,7 @@ describe('claim transitions', () => {
 
   it('appends a history row for every move, and serves it oldest first', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
     seed(dataset, 'ClaimStatusHistory', makeClaimHistoryRow());
 
@@ -1149,6 +1197,7 @@ describe('claim transitions', () => {
 describe('GET /bff/v0/claims/:id/lines', () => {
   it('resolves as a literal sub-path, not as a claim id, and orders by sequence', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
     seed(
       dataset,
@@ -1196,6 +1245,7 @@ describe('GET /bff/v0/claims/:id/lines', () => {
 describe('payments', () => {
   it('filters by patient, payer, remittance, status, source and a received window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Payment',
@@ -1232,6 +1282,7 @@ describe('payments', () => {
 
   it('records a payment with its allocations in one call', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
 
     const res = await app.request(
       ...post('/bff/v0/payments', TOKENS.billerA, {
@@ -1256,6 +1307,7 @@ describe('payments', () => {
 
   it('records a payment with nothing allocated yet', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
 
     const res = await app.request(...post('/bff/v0/payments', TOKENS.billerA, PAYMENT_BODY));
 
@@ -1274,6 +1326,7 @@ describe('payments', () => {
 
   it('reads, amends, 404s, 401s, 403s and 422s', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Payment', makePaymentRow());
 
     expect(
@@ -1324,6 +1377,7 @@ describe('payments', () => {
 describe('payment transitions', () => {
   it('posts a pending payment, stamping the time and the author', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Payment', makePaymentRow());
 
     const res = await app.request(
@@ -1342,6 +1396,7 @@ describe('payment transitions', () => {
 
   it('voids a pending payment and a posted one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Payment',
@@ -1358,6 +1413,7 @@ describe('payment transitions', () => {
 
   it('refunds a posted payment', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Payment', makePaymentRow({ status: 'POSTED' }));
 
     const res = await app.request(...post(`/bff/v0/payments/${testId(50)}/refund`, TOKENS.billerA));
@@ -1372,6 +1428,7 @@ describe('payment transitions', () => {
     ['void', 'VOIDED' as const],
   ])('refuses %s on a terminal payment', async (verb, status) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Payment', makePaymentRow({ status: 'FAILED' }));
 
     const res = await app.request(
@@ -1386,6 +1443,7 @@ describe('payment transitions', () => {
 
   it('refuses to refund a payment that was never posted', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Payment', makePaymentRow());
 
     const res = await app.request(...post(`/bff/v0/payments/${testId(50)}/refund`, TOKENS.billerA));
@@ -1403,6 +1461,7 @@ describe('payment transitions', () => {
 
   it('serves what a payment was applied to', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Payment', makePaymentRow());
     seed(
       dataset,
@@ -1437,6 +1496,7 @@ describe('payment transitions', () => {
 describe('remittances', () => {
   it('filters by payer, status and a received window, and sorts three ways', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Remittance',
@@ -1467,6 +1527,7 @@ describe('remittances', () => {
 
   it('writes the service lines in the same call and sums what was paid', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
 
     const res = await app.request(
       ...post('/bff/v0/remittances', TOKENS.billerA, {
@@ -1553,6 +1614,7 @@ describe('remittances', () => {
 
   it('reads, amends, 404s, 401s, 403s and 422s', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Remittance', makeRemittanceRow());
 
     const amended = await app.request(
@@ -1589,6 +1651,7 @@ describe('remittances', () => {
 
   it('serves the service lines in sequence, and 404s an unknown advice', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Remittance', makeRemittanceRow());
     seed(
       dataset,
@@ -1630,6 +1693,7 @@ describe('remittances', () => {
 describe('remittance parse and post', () => {
   it('parses a received advice and counts the lines it could not match', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Remittance', makeRemittanceRow());
     seed(
       dataset,
@@ -1650,6 +1714,7 @@ describe('remittance parse and post', () => {
 
   it('refuses to parse an advice that was already parsed', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Remittance', makeRemittanceRow({ status: 'PARSED' }));
 
     const res = await app.request(
@@ -1662,6 +1727,7 @@ describe('remittance parse and post', () => {
 
   it('posts a parsed advice, creating one payment and an allocation per matched line', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow({ status: 'SUBMITTED' }));
     seed(dataset, 'Remittance', makeRemittanceRow({ status: 'PARSED', totalPaidCents: 10_000 }));
     seed(dataset, 'RemittanceLine', makeRemittanceLineRow({ id: testId(65), sequence: 1 }));
@@ -1695,6 +1761,7 @@ describe('remittance parse and post', () => {
 
   it('reports the lines it skipped rather than hiding them', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
     seed(dataset, 'Remittance', makeRemittanceRow({ status: 'EXCEPTIONS', totalPaidCents: 0 }));
     seed(
@@ -1742,6 +1809,7 @@ describe('remittance parse and post', () => {
 
   it('posts an advice that arrived with no cheque or trace number', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow());
     seed(
       dataset,
@@ -1760,6 +1828,7 @@ describe('remittance parse and post', () => {
 
   it('refuses to post an advice nothing has parsed, leaving no payment behind', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Remittance', makeRemittanceRow());
 
     const res = await app.request(
@@ -1789,6 +1858,7 @@ describe('remittance parse and post', () => {
 describe('statements', () => {
   it('filters by patient, status, dunning cycle and a generated window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -1821,6 +1891,7 @@ describe('statements', () => {
 
   it('records, reads and amends a statement without ever emitting the pay-link token', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -1869,6 +1940,7 @@ describe('statements', () => {
 
   it('404s, 401s, 403s and 422s', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow());
 
     expect(
@@ -1895,6 +1967,7 @@ describe('statements', () => {
 describe('statement transitions', () => {
   it('generates a draft, stamping the time and taking a refreshed balance', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow());
 
     const res = await app.request(
@@ -1916,6 +1989,7 @@ describe('statement transitions', () => {
 
   it('sends a generated statement, recording the channel and the time', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow({ status: 'GENERATED' }));
 
     const res = await app.request(
@@ -1940,6 +2014,7 @@ describe('statement transitions', () => {
 
   it('generates and sends with nothing but the move itself', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow());
 
     const generated = await app.request(
@@ -1966,6 +2041,7 @@ describe('statement transitions', () => {
 
   it('refuses a pay link with no expiry', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow({ status: 'GENERATED' }));
 
     const res = await app.request(
@@ -1981,6 +2057,7 @@ describe('statement transitions', () => {
 
   it('refuses to regenerate a sent statement and to send a draft one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -2003,6 +2080,7 @@ describe('statement transitions', () => {
 
   it('404s a transition on an unknown statement and 422s a send with no channel', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow({ status: 'GENERATED' }));
 
     expect(
@@ -2031,6 +2109,7 @@ describe('a patch mentions only what it changes', () => {
     ['statements', 'Statement', makeStatementRow(), testId(70), { balanceCents: 4_000 }],
   ] as const)('leaves the rest of a %s alone (case %#)', async (segment, model, row, id, body) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, model, row);
 
     const res = await app.request(...patch(`/bff/v0/${segment}/${id}`, TOKENS.billerA, body));
@@ -2062,6 +2141,7 @@ describe('audit', () => {
 
   it('records a transition as a status move plus the history row it wrote', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Claim', makeClaimRow({ status: 'SCRUBBED' }));
 
     await app.request(...post(`/bff/v0/claims/${testId(30)}/submit`, TOKENS.billerA));
@@ -2078,6 +2158,7 @@ describe('audit', () => {
 
   it('records a charge void with its facility and its status move', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ChargeItem', makeChargeRow());
 
     await app.request(
@@ -2095,6 +2176,7 @@ describe('audit', () => {
 
   it('emits one batched read event per request, naming the right target type', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -2114,13 +2196,17 @@ describe('audit', () => {
 
   it('records an amendment that moves nothing as an update with no status change', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Coverage', makeCoverageRow());
 
     await app.request(
       ...patch(`/bff/v0/coverage/${testId(10)}`, TOKENS.billerA, { copayCents: 1 })
     );
 
-    const metadata = sink.writes()[0]?.event.metadata ?? {};
+    // The gate records a `chart.access` on the amendment before the update
+    // event; the amendment is the one carrying the changed fields.
+    const amendment = sink.writes().find((entry) => entry.event.action !== 'chart.access');
+    const metadata = amendment?.event.metadata ?? {};
     expect(metadata).toMatchObject({ fields: ['copayCents'] });
     expect(metadata).not.toHaveProperty('statusFrom');
   });
@@ -2846,6 +2932,7 @@ describe('collections and dunning', () => {
 
   it('sends the first notice, advancing the cycle and stamping the date', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow({ status: 'GENERATED' }));
 
     const res = await app.request(
@@ -2861,6 +2948,7 @@ describe('collections and dunning', () => {
 
   it('refuses a second notice before the interval has passed', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement({ lastNoticeAt: daysAgo(3) })));
 
     const res = await app.request(
@@ -2875,6 +2963,7 @@ describe('collections and dunning', () => {
 
   it('sends the next notice once the interval has passed', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement()));
 
     const res = await app.request(
@@ -2887,6 +2976,7 @@ describe('collections and dunning', () => {
 
   it('will not let the caller choose which notice this is', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement()));
 
     // A caller who can name the cycle can put a patient anywhere on the
@@ -2903,6 +2993,7 @@ describe('collections and dunning', () => {
 
   it('refuses a notice on a balance the practice agreed not to chase', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -2919,6 +3010,7 @@ describe('collections and dunning', () => {
 
   it('refuses a notice once every notice in the policy has been sent', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement({ dunningCycle: 3 })));
 
     const res = await app.request(
@@ -2931,6 +3023,7 @@ describe('collections and dunning', () => {
 
   it('refuses a notice on a balance that is no longer owed', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement({ balanceCents: 0 })));
 
     const res = await app.request(
@@ -2945,6 +3038,7 @@ describe('collections and dunning', () => {
     'refuses a notice on a statement in %s, which is not on a schedule',
     async (status) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
       seed(dataset, 'Statement', makeStatementRow({ status }));
 
       const res = await app.request(
@@ -2957,6 +3051,7 @@ describe('collections and dunning', () => {
 
   it('holds a balance without taking it out of the ageing report', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement()));
     const until = new Date(Date.now() + 60 * DAY_MS).toISOString();
 
@@ -2977,6 +3072,7 @@ describe('collections and dunning', () => {
 
   it('refuses a hold with no reason', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement()));
 
     const res = await app.request(
@@ -2992,6 +3088,7 @@ describe('collections and dunning', () => {
 
   it.each(['PAID', 'VOID'] as const)('refuses a hold on a statement in %s', async (status) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow({ status }));
 
     const res = await app.request(
@@ -3006,6 +3103,7 @@ describe('collections and dunning', () => {
 
   it('writes off a real debt, keeping it apart from a voided one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement()));
 
     const res = await app.request(
@@ -3022,6 +3120,7 @@ describe('collections and dunning', () => {
 
   it('refuses to write off a statement nobody has sent', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow({ status: 'DRAFT' }));
 
     // Nothing has been asked for yet, so there is no debt to abandon. A draft
@@ -3035,6 +3134,7 @@ describe('collections and dunning', () => {
 
   it('leaves a written-off statement terminal', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Statement', makeStatementRow(sentStatement()));
     await app.request(
       ...post(`/bff/v0/statements/${testId(70)}/write-off`, TOKENS.billerA, { reason: 'Bad debt' })
@@ -3058,6 +3158,7 @@ describe('collections and dunning', () => {
 
   it('lists what needs chasing, oldest debt first, with the ageing bucket', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -3081,6 +3182,7 @@ describe('collections and dunning', () => {
     'leaves a statement in %s off the worklist',
     async (status) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
       seed(dataset, 'Statement', makeStatementRow({ status }));
 
       const body = await json<{ items: CollectionsWorklistEntry[] }>(
@@ -3094,6 +3196,7 @@ describe('collections and dunning', () => {
 
   it('narrows to one kind of work', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',
@@ -3113,6 +3216,7 @@ describe('collections and dunning', () => {
 
   it('recomputes the action, so a paid balance never reads as work', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     // The row still says SENT and still carries three notices. What changed is
     // the money, and a stored decision would not have noticed.
     seed(
@@ -3130,6 +3234,7 @@ describe('collections and dunning', () => {
 
   it('marks a small exhausted balance for write-off rather than another letter', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Statement',

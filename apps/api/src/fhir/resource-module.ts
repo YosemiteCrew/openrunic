@@ -3,11 +3,9 @@ import type { Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
 import { assertCareRelationship } from '../middleware/policy.js';
+import { chartIdOf } from '../policy/chart.js';
 import type { Permission } from '../policy/permissions.js';
-import type { BaseQuery, CollectionSpec, Page } from '../repositories/collection.js';
-import { patientOf } from '../repositories/memory.js';
-import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
-import { COLLECTION_SPECS } from '../repositories/specs/index.js';
+import type { BaseQuery, Page } from '../repositories/collection.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 
 import type { FhirPaging, SearchParams } from './params.js';
@@ -280,14 +278,7 @@ function isPresent(value: string | undefined): value is string {
  * than a column, and a per-module accessor would have had to remember that.
  */
 function chartOf(key: CollectionKey | undefined, row: unknown): string | undefined {
-  if (key === undefined) return undefined;
-  const spec = COLLECTION_SPECS[key] as CollectionSpec<
-    PrismaModelName,
-    unknown,
-    unknown,
-    BaseQuery
-  >;
-  return patientOf(spec, row as ScopedRow<PrismaModelName>).patientId;
+  return key === undefined ? undefined : chartIdOf(key, row);
 }
 
 function repositoriesOf(c: Context<AppEnv>): Repositories {

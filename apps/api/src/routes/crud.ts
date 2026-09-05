@@ -5,10 +5,16 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
-import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
+import {
+  assertCareRelationship,
+  assertFacilityAccess,
+  requirePermission,
+} from '../middleware/policy.js';
+import { chartIdOf } from '../policy/chart.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Collection } from '../repositories/collection.js';
+import type { CollectionKey } from '../repositories/types.js';
 import type { Repositories } from '../repositories/types.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
@@ -82,6 +88,20 @@ export interface CrudResource<
   readonly operation: string;
   readonly readPermission: Permission;
   readonly writePermission: Permission;
+  /**
+   * The collection whose spec says which patient a row of this aggregate is
+   * about, when the aggregate is chart data.
+   *
+   * Its presence is the whole gate: a resource that sets it has its reads and
+   * amendments refused unless the caller has a care relationship with the row's
+   * patient, exactly as the FHIR boundary and `/patients/:id` are. It is the
+   * collection's own key - `chartFrom: 'problems'` on the problems resource -
+   * because the patient column lives on the spec, and `bff.chart-crud-gate`
+   * fails the build if a chart-bearing aggregate (one whose spec declares a
+   * `patientColumn`) omits it. A non-chart aggregate leaves it unset and is
+   * gated by permission, tenant and facility alone.
+   */
+  readonly chartFrom?: CollectionKey;
   /** How to reach this aggregate's repository. */
   collection(repos: Repositories): Collection<TRow, TCreate, TPatch, TQuery>;
   readonly listQuerySchema: z.ZodType<TQueryInput>;
@@ -291,6 +311,17 @@ function crudRoutes<
     if (facilityId !== null) assertFacilityAccess(policyOf(c), facilityId);
   };
 
+  // The care-relationship half of the read guard, for a resource that is chart
+  // data. Refuses the row - as 404, like every other chart refusal - unless the
+  // caller is involved in its patient's care. Runs after `guardRow` so a
+  // refusal reveals nothing the facility check would already have hidden, and
+  // before the row is serialised, so the body never forms for a refused read.
+  const guardChart = async (c: Context<AppEnv>, res: typeof resource, row: TRow): Promise<void> => {
+    if (res.chartFrom === undefined) return;
+    const chart = chartIdOf(res.chartFrom, row);
+    if (chart !== undefined) await assertCareRelationship(c, chart);
+  };
+
   router.get(base, requirePermission(resource.readPermission), async (c) => {
     const query = resource.toQuery(parseQuery(c, resource.listQuerySchema));
     // Only when the caller named one. The rows themselves are narrowed to the
@@ -298,6 +329,15 @@ function crudRoutes<
     // what stops an omitted filter returning the whole tenant.
     const named = resource.facilityOfQuery?.(query) ?? null;
     if (named !== null) assertFacilityAccess(policyOf(c), named);
+    // A list that names one chart is a read of that chart, and is refused the
+    // same way the read is when no relationship exists. A list that names none
+    // is narrowed by the repository (tenant, compartment, facility) and not
+    // gated here, so registration and cross-patient inboxes keep working - the
+    // same line the FHIR search draws with `addressesOneChart`.
+    if (resource.chartFrom !== undefined) {
+      const chart = (query as { patientId?: unknown }).patientId;
+      if (typeof chart === 'string') await assertCareRelationship(c, chart);
+    }
     const page = await resource.collection(repositories(c)).list(query);
     return c.json(toListResponse(page, (row) => resource.toDto(row)));
   });
@@ -306,6 +346,7 @@ function crudRoutes<
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const row = required(await resource.collection(repositories(c)).findById(id), missing);
     guardRow(c, row);
+    await guardChart(c, resource, row);
     return c.json(resource.toDto(row));
   });
 
@@ -329,6 +370,7 @@ function crudRoutes<
     const collection = resource.collection(repositories(c));
     const existing = required(await collection.findById(id), missing);
     guardRow(c, existing);
+    await guardChart(c, resource, existing);
     const patch = resource.toPatch(body, existing);
     const row = required(
       await collection.update(id, resource.stampPatch?.(patch, c) ?? patch),

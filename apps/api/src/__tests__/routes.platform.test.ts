@@ -31,6 +31,7 @@ import type {
 import {
   bearer,
   createTestApp,
+  seedCareRelationship,
   jsonBearer,
   seed,
   storageColumns,
@@ -60,6 +61,25 @@ import {
 type App = TestApp['app'];
 
 const PATIENT_ID = testId(1);
+
+/**
+ * Gives adminA a care relationship with a chart, for the form-submission tests.
+ *
+ * A form submission is chart data now, so reading or amending one needs a
+ * relationship. adminA holds `facility.all`, so any appointment for the patient
+ * satisfies `facility-activity`; an appointment, not an encounter, so it shows
+ * up in none of the lists these tests assert on.
+ */
+let relSeq = 9000;
+function authorise(dataset: Parameters<typeof seedCareRelationship>[0], patientId: string): void {
+  relSeq += 1;
+  seedCareRelationship(dataset, {
+    patientId,
+    providerId: testId(900),
+    as: 'appointment',
+    id: testId(relSeq),
+  });
+}
 const DEFINITION_ID = testId(10);
 const SUBMISSION_ID = testId(20);
 const USER_ID = testId(30);
@@ -232,6 +252,7 @@ function formsApp(): TestApp {
     })
   );
   seed(harness.dataset, 'FormSubmission', makeFormSubmissionRow());
+  authorise(harness.dataset, PATIENT_ID);
   return harness;
 }
 
@@ -747,6 +768,7 @@ describe('POST /bff/v0/forms/submissions', () => {
 describe('GET /bff/v0/forms/submissions', () => {
   it('narrows by patient, encounter, definition, status and window at once', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     // One row matches; each of the others differs in exactly one column, so
     // every filter is the sole reason something is missing from the answer.
     seed(
@@ -783,6 +805,7 @@ describe('GET /bff/v0/forms/submissions', () => {
 
   it('excludes a submission outside the half-open window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(dataset, 'FormSubmission', makeFormSubmissionRow());
 
     const page = await body<ListResponse<FormSubmissionDto>>(
@@ -794,6 +817,7 @@ describe('GET /bff/v0/forms/submissions', () => {
 
   it('sorts by effective instant and by creation', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(
       dataset,
       'FormSubmission',
@@ -857,6 +881,7 @@ describe('PATCH /bff/v0/forms/submissions/:id', () => {
 
   it('refuses to edit the answers of a completed submission in place', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(
       dataset,
       'FormSubmission',
@@ -885,6 +910,7 @@ describe('PATCH /bff/v0/forms/submissions/:id', () => {
 
   it('409s a second correction, because entered-in-error is terminal', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(dataset, 'FormSubmission', makeFormSubmissionRow({ status: 'ENTERED_IN_ERROR' }));
 
     const res = await send(app, 'PATCH', `/bff/v0/forms/submissions/${SUBMISSION_ID}`, {

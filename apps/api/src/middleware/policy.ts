@@ -94,12 +94,13 @@ export async function assertCareRelationship(c: Context<AppEnv>, patientId: stri
     throw ApiError.notFound('No such patient.');
   }
 
-  const source = await findCareRelationship(repositories, {
-    principal,
-    policy,
-    patientId,
-    at: new Date(),
-  });
+  // The queries this makes are the system deciding whether the read is allowed,
+  // not the reader accessing rows, so they are kept out of the request's read
+  // audit. The decision below is what gets recorded.
+  const audit = c.get('audit');
+  const decide = (): Promise<string | undefined> =>
+    findCareRelationship(repositories, { principal, policy, patientId, at: new Date() });
+  const source = audit === undefined ? await decide() : await audit.suppressReads(decide);
 
   if (source === undefined) {
     await c.get('audit')?.denial({

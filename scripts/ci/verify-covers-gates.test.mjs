@@ -103,6 +103,15 @@ const NOT_IN_VERIFY = {
   'ops:upgrade': 'upgrades a running deployment',
   'ops:lint-migrations': 'reads a deployment’s migration history',
 
+  // Needs the network, because the question it asks cannot be answered without
+  // one: a fabricated advisory id passes every pattern a local check could
+  // apply, so the guard resolves each id against the registry that issued it.
+  // Putting that in `verify` would make the chain fail on a train. The half
+  // that CAN run offline is not excluded - the walk, the patterns and both
+  // exemptions are asserted against the real tree in advisory-ids.test.mjs,
+  // which check:ci-scripts:test globs.
+  'check:advisories': 'resolves advisory ids against three registries; has its own workflow',
+
   // Advisory, and slow enough to belong in its own workflow.
   doctor: 'react-doctor, advisory, has its own workflow',
   'doctor:json': 'the machine-readable form of doctor',

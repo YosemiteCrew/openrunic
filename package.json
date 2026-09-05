@@ -31,6 +31,7 @@
     "check:phi": "node scripts/ci/phi-guard.mjs",
     "check:phi:test": "node --test scripts/ci/phi-guard.test.mjs",
     "check:compose:test": "node --test scripts/ci/compose-guard.test.mjs",
+    "check:advisories": "node scripts/ci/advisory-ids.mjs",
     "check:ci-scripts:test": "node --test scripts/ci/*.test.mjs scripts/roadmap/*.test.mjs",
     "verify": "pnpm run format:check && pnpm run lint:css && pnpm run lint && pnpm run type-check && pnpm run check:secrets && pnpm run check:phi && pnpm run check:exceptions && pnpm run check:ci-scripts:test && pnpm run roadmap:check && pnpm run test && pnpm run build",
     "setup:selfhost": "pnpm --filter @openrunic/ops run ops setup",

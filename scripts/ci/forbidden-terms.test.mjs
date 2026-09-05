@@ -502,15 +502,14 @@ test("this repository's own prose passes every surface", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The pull_request_target acceptance
+// The trigger, and the guard coming from the reviewed tree
 // ---------------------------------------------------------------------------
 
-test('the pull_request_target job runs nothing the head can choose', () => {
-  // The workflow header argues that this trigger is safe because the job runs
-  // no install, no build, no head-provided script and no action pinned by the
-  // head. That argument IS the control, and until this case existed it was a
-  // paragraph: the next person adding a step reads it, agrees, and is still the
-  // only thing enforcing it.
+test('the job is unprivileged and runs nothing the head can choose', () => {
+  // The workflow header argues that this job runs no install, no build, no
+  // head-provided script and no action pinned by the head. That argument IS the
+  // control, and until this case existed it was a paragraph: the next person
+  // adding a step reads it, agrees, and is still the only thing enforcing it.
   //
   // An exemption is the cheapest place to put an unchecked claim, because the
   // claim is the reason you are allowed to skip the check. Half of this one is
@@ -532,8 +531,19 @@ test('the pull_request_target job runs nothing the head can choose', () => {
   // assertion below true of something else.
   assert.match(
     body,
-    /^\s*pull_request_target:$/mu,
-    'the job body does not declare pull_request_target: this test is reading the wrong thing'
+    /^\s*pull_request:$/mu,
+    'the job body does not declare pull_request: this test is reading the wrong thing'
+  );
+  // The regression this whole change exists to prevent. `pull_request_target`
+  // runs in the base context WITH secrets on a fork, which is why it was here -
+  // and why CodeQL called it `actions/untrusted-checkout/high`. Reinstating it
+  // hands a fork the pattern the moment any step touches head-provided code,
+  // and the assertion above cannot see it: `pull_request_target:` does not match
+  // `pull_request:$`, so without this line a revert is silently green.
+  assert.doesNotMatch(
+    body,
+    /^\s*pull_request_target:/mu,
+    'the job is back on pull_request_target: the secret is reachable from a fork again'
   );
 
   const uses = [...body.matchAll(/^\s*uses:\s*(\S+)/gmu)].map((match) => match[1]);
@@ -547,14 +557,20 @@ test('the pull_request_target job runs nothing the head can choose', () => {
   for (const [token, cost] of VOIDS_THE_ACCEPTANCE) {
     assert.ok(
       !body.includes(token),
-      `the job runs \`${token}\`, which voids the pull_request_target acceptance: ${cost}`
+      `the job runs \`${token}\`, which voids the acceptance for running beside the secret: ${cost}`
     );
   }
 
-  assert.doesNotMatch(
+  // INVERTED by the move off `pull_request_target`, and the inversion is the
+  // point. That trigger checks out the base by default, so a bare checkout was
+  // correct and a `ref:` was the hazard. `pull_request` checks out the MERGE
+  // ref by default - the head's version of this guard and of this very test -
+  // so here the bare checkout is the hazard and the pin is the control.
+  assert.match(
     body,
-    /^\s*ref:/mu,
-    'the checkout takes a ref: the guard would come from the tree it is meant to be checking'
+    /^\s*ref:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\b/mu,
+    'the checkout is not pinned to the base commit: the guard would come from the tree ' +
+      'it is meant to be checking, and a pull request could pass itself'
   );
   assert.match(
     body,

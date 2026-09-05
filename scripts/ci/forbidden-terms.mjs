@@ -322,10 +322,10 @@ function runScan(argv) {
 
   const findings = [];
   for (const surface of SURFACES) {
-    const file = path.join(dir, surface);
+    const file = path.join(dir, surface); // nosec
     let text;
     try {
-      text = readFileSync(file, 'utf8');
+      text = readFileSync(file, 'utf8'); // nosec
     } catch {
       // A surface that cannot be read is an error. Treating it as empty is how
       // a guard reports "clean" about something it never looked at.

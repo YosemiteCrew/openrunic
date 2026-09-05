@@ -138,7 +138,11 @@ const withVerificationGroup = OIDC_VERIFICATION.reduce(
         path: [name],
       }
     ),
-  envObject as unknown as z.ZodType<z.infer<typeof envObject>>
+  // A single assertion rather than one through `unknown`. Asserting through
+  // `unknown` succeeds whatever the two types are, so it would keep compiling
+  // if the accumulator stopped producing this object's own inferred type -
+  // which is the one thing this cast exists to promise. Raised in review.
+  envObject as z.ZodType<z.infer<typeof envObject>>
 );
 
 const envSchema = withVerificationGroup

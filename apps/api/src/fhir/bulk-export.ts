@@ -555,6 +555,26 @@ async function collectType(
       { authorizedExport: true }
     );
     total = page.total;
+    /*
+     * An export refuses what a search reports.
+     *
+     * A search that cannot project a row returns the rest and an `outcome`
+     * entry naming what it left out. NDJSON has nowhere to put that: the file
+     * would be one record short and read as complete, which is the
+     * silently-incomplete export this codebase treats as a defect in its own
+     * right - and an export is the read most likely to be reconciled against
+     * by a system that will never see a warning.
+     *
+     * So it stops. Before the page-size check below, too, because a page
+     * shortened by a withheld row would otherwise be read as the last one and
+     * truncate the whole export rather than this one type.
+     */
+    if (page.withheld.length > 0) {
+      throw ApiError.notImplemented(
+        `The ${module.type} export cannot be produced: ${page.withheld[0] ?? ''}`,
+        { title: 'Export contains a record this server cannot project' }
+      );
+    }
     collected.push(...page.rows);
     // All three conditions are needed. A page shorter than the one asked for is
     // the last one; a repository reporting a total it cannot deliver would

@@ -1,4 +1,4 @@
-import { searchsetBundle, type Bundle, type FhirResource } from '@openrunic/fhir';
+import { operationOutcome, searchsetBundle, type Bundle, type FhirResource } from '@openrunic/fhir';
 
 import type { Page } from '../repositories/types.js';
 
@@ -17,7 +17,11 @@ import type { Page } from '../repositories/types.js';
  * it, so an empty search is valid by construction rather than by remembering.
  *
  * `total` is the size of the whole result set, not of the page, which is what
- * the R4 spec requires and what a client's pager needs.
+ * the R4 spec requires and what a client's pager needs. A row that matched and
+ * could not be projected still counts towards it: it matched. The difference
+ * between `total` and the entries returned is what the `outcome` entry below
+ * exists to explain, and leaving it unexplained is the failure this file's
+ * `withheld` handling exists to prevent.
  */
 
 export interface BundleContext {
@@ -29,7 +33,7 @@ export interface BundleContext {
 }
 
 export function buildSearchsetBundle<TRow, TResource extends FhirResource>(
-  page: Page<TRow>,
+  page: Page<TRow> & { readonly withheld?: readonly string[] },
   toResource: (row: TRow) => TResource,
   context: BundleContext
 ): Bundle {
@@ -37,8 +41,36 @@ export function buildSearchsetBundle<TRow, TResource extends FhirResource>(
   const nextOffset = offset + page.pageSize;
   const previousOffset = offset - page.pageSize;
 
+  /*
+   * One outcome entry, one issue per row that was left out.
+   *
+   * One entry rather than one per row, because they are all the same statement
+   * about this search; `warning` rather than `error`, because the search
+   * succeeded and this is what it could not include; and `incomplete`, which is
+   * R4's own code for exactly this.
+   *
+   * A search with nothing withheld passes no `outcomes` at all, so the bundle
+   * it emits is byte-identical to the one it emitted before this existed. Every
+   * searchset this server produces goes through here, so that is the property
+   * worth asserting.
+   */
+  const withheld = page.withheld ?? [];
+
   return searchsetBundle(page.rows.map(toResource), {
     total: page.total,
+    ...(withheld.length === 0
+      ? {}
+      : {
+          outcomes: [
+            operationOutcome(
+              withheld.map((diagnostics) => ({
+                severity: 'warning' as const,
+                code: 'incomplete' as const,
+                diagnostics,
+              }))
+            ),
+          ],
+        }),
     baseUrl: context.baseUrl,
     selfLink: searchUrl(context, offset, page.pageSize),
     ...(nextOffset < page.total ? { nextLink: searchUrl(context, nextOffset, page.pageSize) } : {}),

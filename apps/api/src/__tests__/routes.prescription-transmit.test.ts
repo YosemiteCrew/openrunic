@@ -1,4 +1,12 @@
-import { AdapterRegistry, MockErxAdapter, type AdapterCallRecord } from '@openrunic/adapters';
+import {
+  AdapterRegistry,
+  MockErxAdapter,
+  type AdapterCallRecord,
+  type AdapterResult,
+  type TransmissionReceipt,
+  type TransmitPrescriptionInput,
+} from '@openrunic/adapters';
+import { SYSTEMS } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
 import type { MedicationRequestRow } from '../repositories/specs/clinical.js';
@@ -163,6 +171,91 @@ async function dto(res: Response): Promise<PrescriptionDto> {
 function operations(harnessed: Harness, operation: string): AdapterCallRecord[] {
   return harnessed.calls.filter((call) => call.operation === operation);
 }
+
+/**
+ * A mock that keeps what it was sent.
+ *
+ * Every case in this file asserts what came back. Nothing asserts what went
+ * out, and the two are different questions: a receipt says the network accepted
+ * something, not that it accepted the right thing. `AdapterCallRecord` carries
+ * the operation and the outcome and deliberately never the input - it is a call
+ * log, not a payload log, and it should stay that way - and the mock discards
+ * its input once it has minted a reference. So the recording is here.
+ */
+class RecordingErxAdapter extends MockErxAdapter {
+  readonly sent: TransmitPrescriptionInput[] = [];
+
+  override transmitPrescription(
+    input: TransmitPrescriptionInput
+  ): Promise<AdapterResult<TransmissionReceipt>> {
+    this.sent.push(input);
+    return super.transmitPrescription(input);
+  }
+}
+
+describe('what reaches the prescribing network', () => {
+  it('sends the RxNorm code in preference to the NDC, and says which system', async () => {
+    /*
+     * The precedence `codedDrug` argues for, pinned rather than asserted in a
+     * comment. RxNorm names the medicine and an NDC names a package of it, so
+     * where a prescription carries both the one describing what was prescribed
+     * is what a network should be handed.
+     *
+     * Nothing pinned it before: `readyPrescription` leaves `ndcCode` null, so no
+     * fixture had ever carried both, and swapping the two branches left the
+     * whole suite green. A decision with no test is a comment.
+     */
+    const adapter = new RecordingErxAdapter();
+    const h = await harness(adapter, readyPrescription({ ndcCode: '0093-4155-73' }));
+
+    await post(h, 'transmit');
+
+    expect(adapter.sent).toHaveLength(1);
+    expect(adapter.sent[0]?.drugCode).toBe('308189');
+    expect(adapter.sent[0]?.drugCodeSystem).toBe(SYSTEMS.rxnorm);
+  });
+
+  it('falls back to the NDC when that is the only code recorded', async () => {
+    // The other half, without which the case above is satisfied by a route that
+    // only ever sends RxNorm and refuses everything else.
+    const adapter = new RecordingErxAdapter();
+    const h = await harness(
+      adapter,
+      readyPrescription({ rxnormCode: null, ndcCode: '0093-4155-73' })
+    );
+
+    await post(h, 'transmit');
+
+    expect(adapter.sent[0]?.drugCode).toBe('0093-4155-73');
+    expect(adapter.sent[0]?.drugCodeSystem).toBe(SYSTEMS.ndc);
+  });
+
+  it('sends the prescription the chart holds, not a summary of it', async () => {
+    /*
+     * The instructions, the quantity and the pharmacy are what the pharmacist
+     * dispenses against. A transmission that succeeded while carrying the wrong
+     * sig would be a receipt for the wrong prescription, and every other case
+     * here would still be green.
+     */
+    const adapter = new RecordingErxAdapter();
+    const h = await harness(adapter);
+
+    await post(h, 'transmit');
+
+    expect(adapter.sent[0]).toMatchObject({
+      prescriptionId: PRESCRIPTION_ID,
+      patientRef: PATIENT_ID,
+      prescriberRef: PROVIDER_ID,
+      pharmacyRef: '1234567',
+      sigText: 'One capsule by mouth three times daily',
+      quantity: 21,
+      quantityUnit: 'capsule',
+      refills: 0,
+      daysSupply: 7,
+      dispenseAsWritten: false,
+    });
+  });
+});
 
 describe('transmitting a prescription', () => {
   it('is refused when the deployment has no prescribing network, and changes nothing', async () => {

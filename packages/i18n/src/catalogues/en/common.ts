@@ -69,4 +69,19 @@ export const common: Messages = {
    * takes it as a prop now and `components/state` supplies it once. See #196.
    */
   'common.dismiss': 'Dismiss',
+
+  /**
+   * The tone word a screen reader hears before a notice's body.
+   *
+   * Same story as `common.dismiss` one line above and the same fix: these were
+   * English literals on `Alert` and `Toast`, so a Spanish page announced an
+   * English word. They matter more than the close button did, because the
+   * comment on the design system's TONE table says the word is what keeps the
+   * tone off colour alone - and because `.or-alert__tone` is clipped, they are
+   * the only words on a notice that a sighted reader never sees. See #312.
+   */
+  'common.tone.info': 'Information',
+  'common.tone.caution': 'Caution',
+  'common.tone.danger': 'Error',
+  'common.tone.success': 'Success',
 };

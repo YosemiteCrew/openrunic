@@ -730,6 +730,9 @@ export const roleAssignmentSpec: CollectionSpec<
   action: 'role.assignment',
   facilityColumn: 'facilityId',
   facilityScoped: true,
+  // `facilityId` is nullable here, and on the seeded practice every row uses
+  // it: a grant with no site is a grant across the whole tenant.
+  facilityColumnOptional: true,
   // Who holds which capability, and where, is the other half of the staff
   // directory and is closed for the same reason.
   compartment: 'closed',

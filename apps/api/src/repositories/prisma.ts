@@ -117,6 +117,42 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+/**
+ * The caller's facility narrowing, or null when there is none to apply.
+ *
+ * Null covers three cases that all mean "do not filter": the spec did not opt
+ * in, the principal holds `facility.all` so `facilityIds` is undefined, or the
+ * spec has no column to filter on.
+ *
+ * Split out of {@link createPrismaCollection} so the clause can be asserted
+ * against `schema.prisma` directly. It is the one part of the `where` that no
+ * spec writes and no port-agreement row can see: the memory port's `matches`
+ * evaluates `facilityId === null` perfectly happily, so a clause Postgres
+ * refuses outright is green in every in-memory test there is.
+ */
+export function facilityWhere(
+  spec: {
+    readonly facilityScoped?: true;
+    readonly facilityColumn?: string;
+    readonly facilityColumnOptional?: true;
+  },
+  facilityIds: readonly string[] | undefined
+): Record<string, unknown> | null {
+  if (spec.facilityScoped !== true) return null;
+  if (facilityIds === undefined) return null;
+  const column = spec.facilityColumn;
+  if (column === undefined) return null;
+
+  const sited = { [column]: { in: [...facilityIds] } };
+  // Null stays visible where null is possible: on those tables it means the row
+  // is not sited at all, and hiding those from everyone fails in the direction
+  // that looks like an empty result rather than like a refusal. Where the column
+  // is required there are no such rows to keep visible, and asking for them is
+  // not a filter Prisma will accept - see `facilityColumnOptional`.
+  if (spec.facilityColumnOptional !== true) return sited;
+  return { OR: [sited, { [column]: null }] };
+}
+
 export function createPrismaCollection<
   M extends PrismaModelName,
   TCreate,
@@ -137,23 +173,8 @@ export function createPrismaCollection<
    */
   const closed = compartment !== undefined && spec.compartment === 'closed';
 
-  /**
-   * The caller's facility narrowing, or null when there is none to apply.
-   *
-   * Null covers three cases that all mean "do not filter": the spec did not opt
-   * in, the principal holds `facility.all` so `scope.facilityIds` is undefined,
-   * or the spec has no column to filter on.
-   */
-  const facilityClause = (): Record<string, unknown> | null => {
-    if (spec.facilityScoped !== true) return null;
-    if (scope.facilityIds === undefined) return null;
-    const column = spec.facilityColumn;
-    if (column === undefined) return null;
-    // Null stays visible: on several tables it means the row is not sited at
-    // all, and hiding those from everyone fails in the direction that looks
-    // like an empty result rather than like a refusal.
-    return { OR: [{ [column]: { in: [...scope.facilityIds] } }, { [column]: null }] };
-  };
+  const facilityClause = (): Record<string, unknown> | null =>
+    facilityWhere(spec, scope.facilityIds);
 
   /**
    * A list is always narrowed; a row addressed by id only when the scope says to

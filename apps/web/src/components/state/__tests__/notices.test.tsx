@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AlertTone } from '@openrunic/ui';
+
 import { Alert, Toast } from '@/components/state/Notices';
 
 /**
@@ -28,8 +30,18 @@ vi.mock('@/lib/i18n/messages', async () => {
   return { ...actual, useTranslator: () => translator };
 });
 
-/** The word each tone is spelt with in the language these cases render in. */
-const IN_SPANISH = {
+/**
+ * The word each tone is spelt with in the language these cases render in.
+ *
+ * Typed against `AlertTone` for the reason `TONE_KEY` is, next door: a fifth
+ * tone added to the union is a compile error here rather than a lookup that
+ * yields `undefined` at run time. Raised in review, measured both ways - a
+ * fifth tone made the default already failed this file, so it was closed
+ * either way, but it failed with `Expected element to have text content:
+ * undefined`, which does not say whether the wrapper drifted or the map is
+ * short a key. Now it says `TS2741: Property 'neutral' is missing`.
+ */
+const IN_SPANISH: Record<AlertTone, string> = {
   info: 'Información',
   caution: 'Precaución',
   danger: 'Error',
@@ -80,7 +92,7 @@ describe('the notices this application raises speak the reader language', () => 
 
     expect(rendered, 'the notice rendered no tone class at all').toBeDefined();
     expect(container.querySelector('.or-alert__tone')).toHaveTextContent(
-      IN_SPANISH[rendered as keyof typeof IN_SPANISH]
+      IN_SPANISH[rendered as AlertTone]
     );
   });
 

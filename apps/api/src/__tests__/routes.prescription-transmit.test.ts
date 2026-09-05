@@ -369,6 +369,54 @@ describe('cancelling a prescription', () => {
     expect((await dto(read)).status).not.toBe('CANCELLED');
   });
 
+  it('does not record a cancellation the network has only asked for', async () => {
+    /*
+     * Found in review, and it is the `queued` decision unapplied to cancel.
+     *
+     * A network answers a recall on a prescription it has already passed on with
+     * `cancel_requested` rather than `cancelled`: it has asked the pharmacy and
+     * does not yet know. The mock does exactly this once the transmission has
+     * advanced past `queued`, which is why the case next door - cancelling
+     * immediately after one transmit - got a genuine `cancelled` and passed.
+     *
+     * One extra poll is the whole difference, and an unconfirmed recall leaves
+     * the pharmacy in the same position as a refused one.
+     */
+    const h = await harness(new MockErxAdapter());
+    await post(h, 'transmit');
+    await post(h, 'transmit');
+
+    const res = await post(h, 'cancel');
+    expect(res.status).toBe(409);
+
+    const read = await h.app.request(`/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect((await dto(read)).status).not.toBe('CANCELLED');
+  });
+
+  it('is not undone by a later status poll', async () => {
+    /*
+     * Also found in review. A network that cannot recall leaves its own state at
+     * `transmitted`, so polling a prescription the clinician had already
+     * cancelled moved the chart back to TRANSMITTED - and nothing in the record
+     * would have shown a cancellation was ever made.
+     *
+     * `applyNetworkState` was the one status write in the route that did not
+     * consult `PRESCRIPTION_TRANSITIONS`, and `CANCELLED` has no outward edges.
+     * The clinician's decision wins: the network is being asked a question, not
+     * given authority over the record.
+     */
+    const h = await harness(new MockErxAdapter({ supports: [] }));
+    await post(h, 'transmit');
+    await post(h, 'transmit');
+    expect((await dto(await post(h, 'cancel'))).status).toBe('CANCELLED');
+
+    const polled = await dto(await post(h, 'transmit'));
+
+    expect(polled.status).toBe('CANCELLED');
+  });
+
   it('still records the decision on a network that cannot recall, and asks nothing of it', async () => {
     /*
      * The degraded path, gated on the declared feature rather than on a vendor

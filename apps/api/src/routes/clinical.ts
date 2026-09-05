@@ -873,10 +873,31 @@ async function applyNetworkState(
   const chart = chartStateFor(result.status);
   const { prescriptions } = repositories(c);
 
+  /*
+   * A status the transition graph does not allow is not written, and this is the
+   * only status write in the file that has to say so.
+   *
+   * The poll path deliberately skips `assertTransition` - asking what became of
+   * a prescription is legal from any state, including TRANSMITTED, where
+   * transmitting again is not. That exemption covers reading the network's
+   * answer. It does not cover writing an arbitrary status from it, and without
+   * this guard it did: `PRESCRIPTION_TRANSITIONS` has `CANCELLED: []`, and a
+   * network that cannot recall leaves its own state at `transmitted`, so
+   * polling a prescription the clinician had already cancelled moved the chart
+   * back to TRANSMITTED with nothing to show a cancellation was ever recorded.
+   *
+   * The clinician's decision wins. The network is being asked a question, not
+   * given authority over the record.
+   */
+  const allowed =
+    chart.moveTo !== undefined &&
+    chart.moveTo !== row.status &&
+    (PRESCRIPTION_TRANSITIONS[row.status] ?? []).includes(chart.moveTo);
+
   const patch: MedicationRequestPatchInput = {
     ...(row.erxRef === null ? { erxRef: result.transmissionRef } : {}),
-    ...(chart.moveTo === undefined || chart.moveTo === row.status ? {} : { status: chart.moveTo }),
-    ...(chart.delivered && row.transmittedAt === null
+    ...(allowed ? { status: chart.moveTo } : {}),
+    ...(allowed && chart.delivered && row.transmittedAt === null
       ? { transmittedAt: new Date(result.at) }
       : {}),
   };
@@ -976,6 +997,27 @@ async function cancel(
       // recorded anyway: a row saying CANCELLED while the pharmacy is still
       // holding a live prescription is the failure this route exists to avoid.
       if (!recalled.ok) throw fromErx(recalled.error);
+
+      /*
+       * And refused just as firmly when the recall was only *requested*.
+       *
+       * `cancelPrescriptionResult` carries a status, and a network answers a
+       * recall on a prescription it has already passed on with
+       * `cancel_requested` rather than `cancelled` - it has asked the pharmacy
+       * and does not yet know. That is the same distinction `queued` makes on
+       * the way out, and `chartStateFor` already classifies it the same way:
+       * accepted, not delivered, recorded, not claimed.
+       *
+       * A refused recall and an unconfirmed one leave the pharmacy in exactly
+       * the same position, so treating one as fatal and the other as success
+       * was the defect. The record stays as it was, and the clinician is told
+       * to check rather than left believing it is done.
+       */
+      if (recalled.value.status !== 'cancelled') {
+        throw ApiError.conflict(
+          'The prescribing network has asked the pharmacy to cancel this prescription and has not confirmed it. The record is unchanged; try again, or telephone the pharmacy.'
+        );
+      }
     }
   }
 

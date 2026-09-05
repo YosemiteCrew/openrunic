@@ -119,7 +119,15 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
+import {
+  gateCharts,
+  idParam,
+  idParamSchema,
+  policyOf,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * The revenue cycle, from eligibility to a paid statement.
@@ -711,8 +719,10 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     // Asked first so an unknown claim is a 404 rather than an empty list, which
-    // would read as "this claim has no lines".
-    required(await repos.claims.findById(id), MISSING_CLAIM);
+    // would read as "this claim has no lines" - and gated, because the read
+    // narrows by tenant, compartment and facility and never by care
+    // relationship (#300).
+    await requiredParentChart(c, 'claims', await repos.claims.findById(id), MISSING_CLAIM);
     const page = await repos.claimLines.list({
       page: 1,
       pageSize: CLAIM_LINE_LIMIT,
@@ -726,7 +736,7 @@ function transitionRoutes(): Hono<AppEnv> {
   router.get('/claims/:id/history', requirePermission('claim.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
-    required(await repos.claims.findById(id), MISSING_CLAIM);
+    await requiredParentChart(c, 'claims', await repos.claims.findById(id), MISSING_CLAIM);
     const page = await repos.claimStatusHistory.list({
       page: 1,
       pageSize: CLAIM_HISTORY_LIMIT,
@@ -752,7 +762,7 @@ function transitionRoutes(): Hono<AppEnv> {
   router.get('/payments/:id/allocations', requirePermission('payment.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
-    required(await repos.payments.findById(id), MISSING_PAYMENT);
+    await requiredParentChart(c, 'payments', await repos.payments.findById(id), MISSING_PAYMENT);
     const page = await repos.paymentAllocations.list({
       page: 1,
       pageSize: PAYMENT_ALLOCATION_LIMIT,
@@ -926,6 +936,22 @@ function transitionRoutes(): Hono<AppEnv> {
           status,
         })
       )
+    );
+
+    /*
+     * The same page gate `GET /bff/v0/statements` runs over the same rows.
+     * This queue names no chart, so nothing about the request looks like a
+     * chart read - which is exactly why it was serving `patientId` and
+     * `balanceCents` for charts whose own statement read answers 404 (#300).
+     *
+     * Refuses the queue rather than dropping the row, because that is what the
+     * crud list and the FHIR search already do on this boundary and a third
+     * answer to the same question is how the two doors drift apart.
+     */
+    await gateCharts(
+      c,
+      'statements',
+      pages.flatMap((page) => page.rows)
     );
 
     const entries = pages

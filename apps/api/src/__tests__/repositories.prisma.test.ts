@@ -1021,6 +1021,38 @@ describe('a create that loses a race to the unique index', () => {
     await expect(collection.create({ ...NEW_PATIENT, mrn: CLASHING_MRN })).rejects.toBe(error);
   });
 
+  it('rethrows when a row exists but this key is free', async () => {
+    /*
+     * The case that tells "map only if THIS key is taken" apart from "map if
+     * any row exists", and the only one of these that does.
+     *
+     * Without it the suite pins that the mapping re-reads and not what it
+     * re-reads for: the free-key case has an empty table, so a filter matching
+     * everything still finds nothing, and the clash case has the winner as its
+     * only row, so any filter finds it. Both pass with the re-read's `where`
+     * replaced by `{}` - and under that filter a create in a tenant that
+     * already holds one row of the model maps every `P2002` to a 409, id
+     * collision included, which is precisely the server fault dressed as a
+     * client fault the re-read exists to prevent.
+     *
+     * So this pushes a row with a DIFFERENT natural key. Present, and not this
+     * one.
+     */
+    const h = harness();
+    const error = uniqueViolation();
+    const collection = createPrismaCollection(
+      patientSpec,
+      racingPort(h, error, () => {
+        h.dataset
+          .table('Patient')
+          .push(makePatientRow({ id: testId(78), mrn: 'OR-900001', tenantId: DEMO_TENANT_A }));
+      }),
+      h.scope
+    );
+
+    await expect(collection.create({ ...NEW_PATIENT, mrn: CLASHING_MRN })).rejects.toBe(error);
+  });
+
   it('rethrows an error that is not a unique violation, clash or no clash', async () => {
     // A deadlock, a dropped connection, a check constraint. The re-read must
     // not turn an unrelated failure into a 409 just because the row exists -

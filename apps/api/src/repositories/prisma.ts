@@ -38,10 +38,19 @@ import type { Repositories, RepositoryRegistry } from './types.js';
  */
 
 /**
- * Opens a tenant-scoped port. In production this is
- * `(tenantId) => createDbPort(createTenantClient(prisma, { tenantId }))`; the
- * indirection is what lets the tests supply a fake without this module
- * importing Prisma's runtime.
+ * Opens a tenant-scoped port. The indirection is what lets the tests supply a
+ * fake without this module importing Prisma's runtime.
+ *
+ * In production it is `createRlsDbPortFactory(prisma)` - see `wiring.ts` - and
+ * not the plain `createDbPort(createTenantClient(...))` this comment used to
+ * name. The difference matters to `create` below: its conflict re-read is the
+ * only query this module issues on `port` outside `$transaction`, so it depends
+ * on the factory opening a session that declares `openrunic.tenant_id`. The RLS
+ * factory does. Against a plain client and a correctly configured non-superuser
+ * role the policies deny by default, the re-read would return nothing however
+ * taken the key was, and the mapping would never fire - silently, with every
+ * other query still working because the tenant extension narrows them on its
+ * own.
  */
 export type DbPortFactory = (tenantId: string) => DbPort;
 

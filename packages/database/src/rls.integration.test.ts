@@ -721,6 +721,115 @@ describe.skipIf(ADMIN_URL === '')('row-level security, against a real database',
   });
 
   /* ---------------------------------------------------------------------- */
+  /* How a unique violation reaches the application.                          */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The premise the API's conflict mapping rests on, asserted where it is true.
+   *
+   * `apps/api` enforces a spec's natural key by reading inside the create's
+   * transaction and then inserting, which under READ COMMITTED is
+   * check-then-write: two connections both find no clash, both pass, and the
+   * table's unique index decides. The loser's error is what the API has to
+   * recognise, and it recognises it by `error.code === 'P2002'` - deliberately
+   * duck-typed, because Prisma's error classes are identities in one copy of
+   * its runtime and a build resolving two makes `instanceof` answer false for
+   * exactly the error being asked about.
+   *
+   * That leaves one fact no unit test can supply: whether Postgres really
+   * raises this for a real unique index and whether Prisma really spells it
+   * that way. A fake port asserting `P2002` would be asserting its own fixture.
+   * So it is asserted here, through the same client the application uses, and
+   * both under contention and without it - a raced duplicate and a sequential
+   * one are the same violation, and the mapping would be wrong if only one of
+   * them carried the code.
+   */
+  describe('a unique violation, as the application client reports it', () => {
+    /** Seeded by the fixture, so this address is already taken in tenant A. */
+    const TAKEN = 'reader.one@clinic.invalid';
+    /** Free at the start of every case here, and contested inside one of them. */
+    const CONTESTED = 'contested.reader@clinic.invalid';
+
+    function newUser(email: string): Record<string, unknown> {
+      return {
+        id: randomUUID(),
+        tenantId: TENANT_A,
+        email,
+        givenName: 'Testy',
+        familyName: 'Readerson',
+      };
+    }
+
+    function create(client: PrismaClient, email: string): Promise<unknown> {
+      return withTenantSession(client, { tenantId: TENANT_A }, (tx) =>
+        tx.user.create({ data: newUser(email) as never })
+      );
+    }
+
+    /*
+     * This block removes the rows it writes rather than leaving them for the
+     * fixture teardown. Nothing else here counts users today, and a row seeded
+     * for everybody is how an unrelated assertion goes red for a reason that
+     * has nothing to do with what it asserts.
+     */
+    afterEach(async () => {
+      await asTenant(db().owner, TENANT_A, 'DELETE FROM "User" WHERE "email" = $1', [CONTESTED]);
+    });
+
+    it('is reported as P2002 when the key is already taken', async () => {
+      await expect(create(db().prisma, TAKEN)).rejects.toMatchObject({ code: 'P2002' });
+    });
+
+    it('is reported as P2002 by the loser of a genuine race, and there is exactly one loser', async () => {
+      /*
+       * Two clients, so two connections, so a real race rather than two awaits
+       * on one. Both transactions insert the same key; the index admits one
+       * and refuses the other, and which one is not decided here.
+       *
+       * The assertion that matters is the shape: one fulfilled, one rejected,
+       * and the rejection carrying the code the API keys on. Asserting only
+       * that one of them failed would pass just as well if Postgres had
+       * reported a deadlock or a serialization failure, which the API does
+       * not map and must not.
+       */
+      const contender = createPrismaClient({ datasourceUrl: appUrl });
+      try {
+        const results = await Promise.allSettled([
+          create(db().prisma, CONTESTED),
+          create(contender, CONTESTED),
+        ]);
+
+        expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+        const loser = results.find((result) => result.status === 'rejected');
+        expect(loser?.reason).toMatchObject({ code: 'P2002' });
+      } finally {
+        await contender.$disconnect();
+      }
+    });
+
+    it('leaves exactly one row behind, which is the point of the index', async () => {
+      const contender = createPrismaClient({ datasourceUrl: appUrl });
+      try {
+        await Promise.allSettled([create(db().prisma, CONTESTED), create(contender, CONTESTED)]);
+
+        const { rows } = await asTenant<{ count: string }>(
+          db().app,
+          TENANT_A,
+          'SELECT count(*)::text AS count FROM "User" WHERE "email" = $1',
+          [CONTESTED]
+        );
+
+        // The half a "one of them failed" assertion cannot see: a race that
+        // refused both, or admitted both, would still have produced one
+        // rejection somewhere in a longer run.
+        expect(rows[0]?.count).toBe('1');
+      } finally {
+        await contender.$disconnect();
+      }
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
   /* The break-glass write door.                                             */
   /* ---------------------------------------------------------------------- */
 

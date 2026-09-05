@@ -91,6 +91,23 @@ const byIds = (ids: readonly string[]): Record<string, unknown> => ({
   id: { in: [...new Set(ids)] },
 });
 
+/**
+ * Postgres' "this violates a unique constraint", as Prisma reports it.
+ *
+ * Duck-typed rather than `instanceof PrismaClientKnownRequestError`. Prisma's
+ * error classes are identities belonging to one copy of its runtime, and a
+ * build that resolves two copies makes `instanceof` answer false for precisely
+ * the error being asked about. That failure is invisible in a repository with
+ * one copy and appears later, in a deployment that has two - which is the worst
+ * possible place to learn that a 409 has been a 500 all along. The code is a
+ * documented string and does not depend on object identity.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
 export function createPrismaCollection<
   M extends PrismaModelName,
   TCreate,
@@ -184,6 +201,44 @@ export function createPrismaCollection<
     metadata: { fields: [...fields], ...spec.writeMetadata?.(row, before) },
   });
 
+  const unique = spec.uniqueBy;
+
+  /** The create itself, in its transaction. Wrapped by `create` below. */
+  const write = (input: TCreate): Promise<ScopedRow<M>> =>
+    port.$transaction(async (tx) => {
+      if (unique !== undefined) {
+        // `NoInfer` keeps the spec's `where` from re-deriving the model, so
+        // its result reads back as the union of every model's filter. It is
+        // this model's filter; the assertion says so.
+        const clash = await tx.model(spec.model).findFirst({
+          where: unique.where(input),
+        } as FindFirstArgs<M>);
+        if (clash !== null) throw ApiError.conflict(unique.message(input));
+      }
+
+      const now = new Date();
+      const context: RowContext = { tenantId: scope.tenantId, now, nextId: uuidv7 };
+      const columns = spec.newRow(input, context);
+      const record = await tx.model(spec.model).create({
+        data: {
+          ...omitNulls(columns),
+          id: uuidv7(),
+          tenantId: TENANT_STAMPED_BY_CLIENT,
+        },
+      } as CreateArgs<M>);
+      const row = toPlainRow<M>(record) as ScopedRow<M>;
+
+      for (const batch of spec.childRows?.(input, row, context) ?? []) {
+        await writeChildren(tx, batch);
+      }
+      for (const patch of spec.childPatches?.(input, row, context) ?? []) {
+        await patchChild(tx, patch);
+      }
+
+      await audit.write(writeEvent(row, null, Object.keys(columns)), tx);
+      return row;
+    });
+
   return {
     async list(query: TQuery): Promise<Page<ScopedRow<M>>> {
       if (closed) return { rows: [], total: 0, page: query.page, pageSize: query.pageSize };
@@ -225,41 +280,41 @@ export function createPrismaCollection<
       return rows;
     },
 
-    create(input: TCreate): Promise<ScopedRow<M>> {
-      return port.$transaction(async (tx) => {
-        const unique = spec.uniqueBy;
-        if (unique !== undefined) {
-          // `NoInfer` keeps the spec's `where` from re-deriving the model, so
-          // its result reads back as the union of every model's filter. It is
-          // this model's filter; the assertion says so.
-          const clash = await tx.model(spec.model).findFirst({
-            where: unique.where(input),
-          } as FindFirstArgs<M>);
-          if (clash !== null) throw ApiError.conflict(unique.message(input));
-        }
-
-        const now = new Date();
-        const context: RowContext = { tenantId: scope.tenantId, now, nextId: uuidv7 };
-        const columns = spec.newRow(input, context);
-        const record = await tx.model(spec.model).create({
-          data: {
-            ...omitNulls(columns),
-            id: uuidv7(),
-            tenantId: TENANT_STAMPED_BY_CLIENT,
-          },
-        } as CreateArgs<M>);
-        const row = toPlainRow<M>(record) as ScopedRow<M>;
-
-        for (const batch of spec.childRows?.(input, row, context) ?? []) {
-          await writeChildren(tx, batch);
-        }
-        for (const patch of spec.childPatches?.(input, row, context) ?? []) {
-          await patchChild(tx, patch);
-        }
-
-        await audit.write(writeEvent(row, null, Object.keys(columns)), tx);
-        return row;
-      });
+    async create(input: TCreate): Promise<ScopedRow<M>> {
+      /*
+       * A natural key is refused twice, and only the second refusal is true.
+       *
+       * `write` checks the key inside its transaction and then inserts. Under
+       * READ COMMITTED two transactions creating the same key both see no
+       * clash, both pass, and the table's unique index decides between them -
+       * so that check produces the readable 409 in the ordinary case, and the
+       * index is what makes the rule true. The loser of the race arrives here
+       * holding a raw Prisma error, which nothing above translates, so a route
+       * that means 409 answered 500.
+       *
+       * Every spec carrying a `uniqueBy` has that race and none of them can win
+       * it in the application, so it is mapped here rather than at each of the
+       * thirteen call sites.
+       *
+       * The re-read is what makes the mapping precise rather than merely
+       * plausible. `P2002` is raised for a violation of any unique constraint
+       * on the table, the primary key included, and reporting an id collision
+       * to a client as "that already exists" would be a server fault dressed up
+       * as their mistake. So the claim is checked before it is made: this
+       * transaction has rolled back and the winner's has not, so if the key
+       * really is taken the row is there to find. If it is not, the original
+       * error goes up untouched.
+       */
+      try {
+        return await write(input);
+      } catch (error) {
+        if (unique === undefined || !isUniqueViolation(error)) throw error;
+        const clash = await port.model(spec.model).findFirst({
+          where: unique.where(input),
+        } as FindFirstArgs<M>);
+        if (clash === null) throw error;
+        throw ApiError.conflict(unique.message(input));
+      }
     },
 
     update(id: string, patch: TPatch): Promise<ScopedRow<M> | null> {

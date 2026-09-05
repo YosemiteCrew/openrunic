@@ -741,7 +741,7 @@ function satisfy(where: Readonly<Record<string, unknown>>): Record<string, unkno
  */
 function complete(spec: Loose, row: Record<string, unknown>): Record<string, unknown> {
   const filled = { ...row };
-  for (const column of NULLABLE_COLUMNS.get(spec.model) ?? []) {
+  for (const column of (NULLABLE_COLUMNS.get(spec.model) ?? new Map<string, string>()).keys()) {
     if (!(column in filled)) filled[column] = null;
   }
   return filled;
@@ -763,7 +763,8 @@ function constrained(where: Readonly<Record<string, unknown>>): string[] {
 }
 
 /**
- * Which columns of each model may hold null, read out of the schema.
+ * Which columns of each model may hold null, and what type each one is, read
+ * out of the schema.
  *
  * The one-column-away pass below needs this, and needs it to be true rather
  * than approximately true. Its mutants have to be rows the database could
@@ -784,7 +785,7 @@ function constrained(where: Readonly<Record<string, unknown>>): string[] {
  * are not columns a `where` can constrain, so admitting them would let a
  * meaningless mutant through.
  */
-function nullableColumns(): ReadonlyMap<string, ReadonlySet<string>> {
+function nullableColumns(): ReadonlyMap<string, ReadonlyMap<string, string>> {
   const schema = readFileSync(
     fileURLToPath(new URL('../../../../packages/database/prisma/schema.prisma', import.meta.url)),
     'utf8'
@@ -808,16 +809,16 @@ function nullableColumns(): ReadonlyMap<string, ReadonlySet<string>> {
   }
 
   const modelNames = new Set(blocks.keys());
-  const nullable = new Map<string, ReadonlySet<string>>();
+  const nullable = new Map<string, ReadonlyMap<string, string>>();
   for (const [model, lines] of blocks) {
-    const columns = new Set<string>();
+    const columns = new Map<string, string>();
     for (const line of lines) {
       // `///` documentation, `@@` block attributes and blank lines carry no field.
       if (line === '' || line.startsWith('//') || line.startsWith('@@')) continue;
       const field = /^(\w+)\s+([A-Za-z_]\w*)(\[\])?(\?)?/u.exec(line);
       if (field?.[1] === undefined || field[4] !== '?') continue;
       if (modelNames.has(field[2] ?? '')) continue;
-      columns.add(field[1]);
+      columns.set(field[1], field[2] ?? 'String');
     }
     nullable.set(model, columns);
   }
@@ -825,6 +826,27 @@ function nullableColumns(): ReadonlyMap<string, ReadonlySet<string>> {
 }
 
 const NULLABLE_COLUMNS = nullableColumns();
+
+/**
+ * A non-null value of the column's own type, for the mutant that null cannot be.
+ *
+ * A filter can be satisfied BY null - `open: true` asks for a thread with no
+ * `closedAt` - and for those the separating row is a non-null one. Building it
+ * needs the column's type, which is the same reason the null mutant needs the
+ * column's nullability, and the schema carries both.
+ *
+ * A type this does not name falls back to a foreign string. That is right for
+ * an enum, which is a string column whose members this file has no business
+ * enumerating, and safe for anything else: a comparison against it is false,
+ * which is what a mutant is for.
+ */
+function nonNullOfType(prismaType: string): unknown {
+  if (prismaType === 'DateTime') return new Date('2031-07-04T00:00:00.000Z');
+  if (['Int', 'Float', 'Decimal', 'BigInt'].includes(prismaType)) return 4_070_909;
+  if (prismaType === 'Boolean') return true;
+  if (prismaType === 'Json') return {};
+  return FOREIGN;
+}
 
 /** A value no fixture uses, for building a row or a query that should not match. */
 const FOREIGN = 'a-value-nothing-asked-for';
@@ -1022,9 +1044,25 @@ describe('every spec answers the same question through both ports', () => {
           continue;
         }
         const row = complete(spec, satisfy(where));
-        const nullable = NULLABLE_COLUMNS.get(spec.model) ?? new Set<string>();
+        const nullable = NULLABLE_COLUMNS.get(spec.model) ?? new Map<string, string>();
 
         const rows: [string, Record<string, unknown>][] = [['selected', row]];
+        /*
+         * Every nullable column, not only the ones this `where` constrains.
+         *
+         * A dropped clause takes its own column out of `constrained(where)`, so
+         * a pass driven by the emitted filter cannot mutate the column whose
+         * clause has gone - the mutation removes its own detection. Driving it
+         * from the schema instead is independent of the thing under test, which
+         * is the property the rest of this file already relies on for `matches`.
+         */
+        for (const [column, prismaType] of nullable) {
+          const held = row[column];
+          rows.push([
+            `${column}=${held === null ? 'non-null' : 'null'}`,
+            { ...row, [column]: held === null ? nonNullOfType(prismaType) : null },
+          ]);
+        }
         for (const column of constrained(where)) {
           const held = row[column];
           rows.push([
@@ -1066,7 +1104,7 @@ describe('every spec answers the same question through both ports', () => {
     it('agrees on every row one column away from selected', () => {
       const where = spec.where(query);
       const row = complete(spec, satisfy(where));
-      const nullable = NULLABLE_COLUMNS.get(spec.model) ?? new Set<string>();
+      const nullable = NULLABLE_COLUMNS.get(spec.model) ?? new Map<string, string>();
 
       const disagreements: string[] = [];
       for (const column of constrained(where)) {

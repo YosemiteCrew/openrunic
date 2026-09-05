@@ -14,8 +14,7 @@ import { chartIdOf } from '../policy/chart.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Collection } from '../repositories/collection.js';
-import type { CollectionKey } from '../repositories/types.js';
-import type { Repositories } from '../repositories/types.js';
+import type { CollectionKey, Repositories } from '../repositories/types.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
 import { idParamSchema, policyOf, repositories, required } from './helpers.js';

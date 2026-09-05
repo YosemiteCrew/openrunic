@@ -12,6 +12,7 @@ import {
   staleKeys,
   verbatim,
   type Catalogue,
+  type Interpolations,
 } from './index.js';
 
 const CATALOGUE: Catalogue = {
@@ -146,7 +147,7 @@ describe('verbatim', () => {
 
 describe('filling in the values', () => {
   it('puts the value where the placeholder was', () => {
-    expect(format('Give {dose} mg', { dose: 500 }, 'dose.instruction')).toBe('Give 500 mg');
+    expect(format('Give {dose} mg', { dose: '500' }, 'dose.instruction')).toBe('Give 500 mg');
   });
 
   /**
@@ -161,11 +162,20 @@ describe('filling in the values', () => {
     );
   });
 
-  it('refuses a count that is not a number rather than writing the word NaN', () => {
-    expect(String(Number.NaN), 'what would otherwise be rendered').toBe('NaN');
-    expect(() => format('Give {dose} mg', { dose: Number.NaN }, 'dose.instruction')).toThrow(
-      /not a number/u
-    );
+  /**
+   * The type says string, so a TypeScript caller cannot reach either of these.
+   * The cast is the point: this package is published, and a JavaScript consumer
+   * is exactly the caller the type cannot reach. A raw number renders in the
+   * runtime's digits rather than the reader's, and `String(NaN)` renders the
+   * word "NaN" mid-sentence, where it reads as a value rather than as an error.
+   */
+  it.each([
+    ['a raw number', 500],
+    ['NaN', Number.NaN],
+  ])('refuses %s rather than rendering it', (_name, dose) => {
+    expect(() =>
+      format('Give {dose} mg', { dose } as unknown as Interpolations, 'dose.instruction')
+    ).toThrow(/not a string/u);
   });
 
   /**
@@ -173,7 +183,7 @@ describe('filling in the values', () => {
    * is missing one and silently dropping the other, and the pair is the signal.
    */
   it('reports a value the message does not use', () => {
-    expect(formatProblems('Give {dose} mg', { dose: 5, route: 'oral' }, 'k')).toContain(
+    expect(formatProblems('Give {dose} mg', { dose: '5', route: 'oral' }, 'k')).toContain(
       'k was given a value for {route}, which the message does not use.'
     );
   });

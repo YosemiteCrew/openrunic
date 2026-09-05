@@ -31,8 +31,22 @@ import type { Locale, MessageKey } from './catalogue.js';
  * checked in a language nobody here reads.
  */
 
-/** Values a placeholder may take. Deliberately narrow; see `format`. */
-export type Interpolations = Readonly<Record<string, string | number>>;
+/**
+ * Values a placeholder may take: strings, and only strings.
+ *
+ * A `number` used to be allowed and `format` rendered it with `String(value)`,
+ * which is the reader's grammar with the runtime's digits - `1234` where a
+ * locale writes `1.234`, Latin numerals for a reader whose language does not
+ * use them. Thirty call sites did it. A source-scanning guard existed and
+ * reported none of them, because it was written around the one placeholder name
+ * the bug was first found under; the type finds all of them in one pass and
+ * cannot be green for the wrong reason. #285.
+ *
+ * The cost is that every caller now says which kind of number it has, which is
+ * the point rather than the price: see {@link formatCount} and
+ * {@link verbatim}.
+ */
+export type Interpolations = Readonly<Record<string, string>>;
 
 /** `{name}` - a single brace pair around a name, and nothing cleverer. */
 const PLACEHOLDER = /\{(?<name>[a-zA-Z][a-zA-Z0-9_]*)\}/gu;
@@ -61,10 +75,17 @@ export function formatProblems(
       problems.push(
         `${key} has a placeholder {${name}} and no value for it, so the message would render with a gap where the value belongs.`
       );
-    } else if (typeof value === 'number' && !Number.isFinite(value)) {
-      // `String(NaN)` is "NaN", which renders as a word in the middle of a
-      // sentence and reads to a user as a value rather than as an error.
-      problems.push(`${key} was given ${String(value)} for {${name}}, which is not a number.`);
+    } else if (typeof value !== 'string') {
+      // The type says string, and this is the same rule for a caller the type
+      // cannot reach - a JavaScript consumer of this package. It replaces a
+      // narrower check for NaN, whose reason was that `String(NaN)` renders the
+      // word "NaN" mid-sentence and reads as a value rather than as an error.
+      // A raw number is the same failure one step quieter: it renders, and it
+      // renders in the runtime's digits rather than the reader's. #285.
+      problems.push(
+        `${key} was given ${String(value)} for {${name}}, which is not a string. ` +
+          'Put a count through formatCount and an identifier through verbatim.'
+      );
     }
   }
 

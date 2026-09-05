@@ -658,22 +658,15 @@ const medicationDispenseModule = defineFhirResource({
    * loses this read.
    */
   permission: 'encounter.read',
-  collection: (repositories) => {
-    const postings = repositories.stockPostings;
-    return {
-      list: postings.list.bind(postings),
-      /* A read is narrowed the same way the search is. Without this, any
-         posting could be fetched by id through this route, including the
-         receipts and counts that belong to no patient at all. */
-      findById: async (id: string) => {
-        const row = await postings.findById(id);
-        return row?.kind === 'DISPENSE' && row.patientId !== null ? row : null;
-      },
-    };
-  },
+  collection: (repositories) => repositories.stockPostings,
   /*
-   * `charted: true` is the search half of the narrowing `findById` above
-   * applies, and it is here because the two doors disagreed.
+   * Dispenses that belong to a chart, and nothing else in the ledger.
+   *
+   * The receipts, counts and wastages sharing this table are not clinical
+   * records, and `kind: 'DISPENSE'` alone does not exclude a dose drawn against
+   * ward stock rather than against a person. Both halves are stated once here
+   * and applied to the read and the search together; they used to be a
+   * `findById` wrapper and a `toQuery` term, which is how they came to disagree.
    *
    * `kind: 'DISPENSE'` does not imply a chart. `StockPosting.patientId` is
    * nullable and a dispense drawn against ward stock rather than against a
@@ -688,11 +681,10 @@ const medicationDispenseModule = defineFhirResource({
    * equality on `patientId` and null equals nothing. This closes the door for
    * the staff bundles, which have no compartment to fall back on.
    */
+  narrow: { spec: 'stockPostings', terms: { kind: 'DISPENSE', charted: true } },
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...patientFilter(query.patient),
-    kind: 'DISPENSE' as const,
-    charted: true as const,
     sort: 'occurredOn' as const,
     order: 'desc' as const,
   }),
@@ -806,27 +798,20 @@ const questionnaireModule = defineFhirResource({
    */
   params: ['name'],
   permission: 'form.read',
+  collection: (repositories) => repositories.formDefinitions,
   /*
-   * `findById` is narrowed as well as the search, and it has to be narrowed
-   * here rather than in `toQuery`: a read goes straight to the collection and
-   * never builds a query, so filtering only there left every draft readable at
-   * `/fhir/Questionnaire/{id}` by anyone who could guess an id. Answering null
-   * makes that a 404, which is what an unpublished form should look like.
+   * A draft is not served through either door.
+   *
+   * The read needs saying as much as the search does: a read goes straight to
+   * the collection and never builds a query, so narrowing only `toQuery` left
+   * every draft readable at `/fhir/Questionnaire/{id}` by anyone who could
+   * guess an id. It used to be said twice, once here and once as a `findById`
+   * wrapper, which is the drift #276 removes.
    */
-  collection: (repositories) => {
-    const definitions = repositories.formDefinitions;
-    return {
-      list: definitions.list.bind(definitions),
-      findById: async (id: string) => {
-        const row = await definitions.findById(id);
-        return row?.status === 'PUBLISHED' ? row : null;
-      },
-    };
-  },
+  narrow: { spec: 'formDefinitions', terms: { status: 'PUBLISHED' } },
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...(query.name === undefined ? {} : { key: query.name }),
-    status: 'PUBLISHED' as const,
     sort: 'version' as const,
     order: 'desc' as const,
   }),

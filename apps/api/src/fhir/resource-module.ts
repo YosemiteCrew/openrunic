@@ -7,6 +7,7 @@ import { assertCareRelationship } from '../middleware/policy.js';
 import { chartIdOf } from '../policy/chart.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Page } from '../repositories/collection.js';
+import { COLLECTION_SPECS } from '../repositories/specs/index.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 
 import type { FhirPaging, SearchParams } from './params.js';
@@ -38,7 +39,67 @@ export interface ResourceContext<TPrepared = undefined> {
   prepared: TPrepared;
 }
 
-export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepared = undefined> {
+/**
+ * The rows a module serves, when it serves fewer than its collection holds.
+ *
+ * Stated once, as query terms, and applied to both doors by the framework: the
+ * search merges them into the query, and the addressed read re-checks them on
+ * the row it loaded. A module cannot narrow one and not the other, because
+ * there is only one thing to write.
+ *
+ * That is the whole point of it existing. Before this, a narrowing lived in an
+ * ad-hoc `findById` wrapper inside `collection` AND in `toQuery` - one rule in
+ * two languages, a predicate over a loaded row and a filter the repository
+ * turns into SQL, with nothing relating them. It drifted twice: #265, where a
+ * dispense belonging to no chart answered 404 by id and appeared in the search,
+ * and the promotion review behind #257, which found the same shape on a
+ * resource where only the read had been guarded.
+ *
+ * The read side is answered by the collection spec's own `matches`, which is
+ * the row-shaped reading of the same query the search sends. That the two agree
+ * is not assumed here - `repositories.port-agreement.test.ts` asserts it for
+ * every spec, which is what makes deriving one door from the other honest.
+ */
+export interface FhirNarrowing<K extends CollectionKey> {
+  /**
+   * The spec whose `matches` reads the terms.
+   *
+   * A key rather than the spec itself, for the reason `chartFrom` is a key: it
+   * is the same registry the compartment and the audit trail resolve against.
+   * It is also what types `terms`, so a misspelt term is a compile error naming
+   * the correction rather than a narrowing that silently selects everything -
+   * which is the failure this whole mechanism would otherwise be able to have.
+   * Naming the wrong spec is caught the same way, as long as the two specs'
+   * queries differ in the terms used; nothing relates this key to the
+   * collection `collection` actually loads from, so a spec whose query happens
+   * to accept the same terms would compile. `fhir.narrowing.test.ts` covers the
+   * rest of what is checkable without that link.
+   */
+  readonly spec: K;
+  /** The terms, which win over anything `toQuery` puts in the same key. */
+  readonly terms: Readonly<Partial<QueryOf<K>>>;
+}
+
+/**
+ * The list query a collection spec accepts, resolved from its key.
+ *
+ * Read off `where`'s parameter rather than off `CollectionSpec`'s type
+ * arguments: a spec is `CollectionSpec<M, TCreate, TPatch, TQuery>` and matching
+ * that shape means naming three parameters this has no use for, which is three
+ * chances to widen one and quietly resolve to `never`.
+ */
+export type QueryOf<K extends CollectionKey> = (typeof COLLECTION_SPECS)[K] extends {
+  where(query: infer TQuery): unknown;
+}
+  ? TQuery
+  : never;
+
+export interface FhirResourceDescriptor<
+  TRow,
+  TQuery extends BaseQuery,
+  TPrepared = undefined,
+  TNarrow extends CollectionKey = CollectionKey,
+> {
   readonly type: SupportedResourceType;
   readonly interactions: readonly Interaction[];
   /** Search parameters implemented, named exactly as the catalogue names them. */
@@ -101,6 +162,13 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
    */
   chartFrom?: CollectionKey;
   /**
+   * Rows of the collection this module does not serve. See {@link FhirNarrowing}.
+   *
+   * Modules that serve everything their collection holds - most of them - omit
+   * it and pay nothing.
+   */
+  narrow?: FhirNarrowing<TNarrow>;
+  /**
    * Why this row cannot be projected, when it cannot be.
    *
    * A module reaches for this instead of throwing when the row is
@@ -118,6 +186,13 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
    *
    * The string is diagnostics on an `OperationOutcome` and outcomes are widely
    * logged, so it names the record and the reason and never its contents.
+   *
+   * NOT for a row the module does not serve, which is {@link FhirNarrowing} and
+   * says nothing. The two are one step apart and the step is the wrong way: a
+   * search that narrowed owes the client no account of what it excluded, or
+   * every search would carry one, and an outcome entry per excluded row turns a
+   * narrowing into a count of the rows behind it. This answers for a row that
+   * matched and could not be represented, which is a fact about this server.
    *
    * Modules that can always project their rows omit it and pay nothing.
    */
@@ -154,6 +229,12 @@ export interface FhirResourceModule {
    * checked by reading the file is a rule somebody adds a resource past.
    */
   readonly chartFrom?: CollectionKey;
+  /**
+   * The rows this module does not serve, carried onto the mounted module for
+   * the same reason `chartFrom` is: a rule that can only be checked by reading
+   * the file is a rule somebody adds a resource past.
+   */
+  readonly narrow?: FhirNarrowing<CollectionKey>;
   search(
     c: Context<AppEnv>,
     params: SearchParams,
@@ -178,9 +259,52 @@ export interface SearchOptions {
   readonly authorizedExport?: boolean;
 }
 
-export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = undefined>(
-  descriptor: FhirResourceDescriptor<TRow, TQuery, TPrepared>
-): FhirResourceModule {
+/**
+ * The query a search actually sends: what the module built, narrowed.
+ *
+ * The terms go last on purpose. A module that also wrote one of them into
+ * `toQuery` gets the same answer, and one that wrote a conflicting one does not
+ * get to widen what it declared it serves.
+ */
+export function narrowedQuery<TRow, TQuery extends BaseQuery, TPrepared>(
+  descriptor: FhirResourceDescriptor<TRow, TQuery, TPrepared, CollectionKey>,
+  query: TQuery
+): TQuery {
+  // The terms are typed against the spec's query and merged into the module's,
+  // which are the same object at runtime and unrelated in the types. See the
+  // agreement test named on `FhirNarrowing.spec`.
+  return descriptor.narrow === undefined
+    ? query
+    : { ...query, ...(descriptor.narrow.terms as Partial<TQuery>) };
+}
+
+/**
+ * Whether an addressed read may serve this row.
+ *
+ * `matches` is typed for a whole query and the terms are a fragment of one, so
+ * the cast is the shape of the call rather than a claim about the row. It holds
+ * because no spec's `matches` reads the paging or sort members - checked across
+ * every spec in `repositories/specs` - and a spec that did could not answer for
+ * a single row anyway.
+ */
+export function servesRow<TRow, TQuery extends BaseQuery, TPrepared>(
+  descriptor: FhirResourceDescriptor<TRow, TQuery, TPrepared, CollectionKey>,
+  row: TRow
+): boolean {
+  const narrow = descriptor.narrow;
+  if (narrow === undefined) return true;
+  const spec = COLLECTION_SPECS[narrow.spec] as {
+    matches(row: unknown, query: unknown): boolean;
+  };
+  return spec.matches(row, narrow.terms);
+}
+
+export function defineFhirResource<
+  TRow,
+  TQuery extends BaseQuery,
+  TPrepared = undefined,
+  TNarrow extends CollectionKey = CollectionKey,
+>(descriptor: FhirResourceDescriptor<TRow, TQuery, TPrepared, TNarrow>): FhirResourceModule {
   /** One call per page, or none at all when the resource declared no loader. */
   const prepareFor = async (
     rows: readonly TRow[],
@@ -196,12 +320,13 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
     params: descriptor.params,
     permission: descriptor.permission,
     ...(descriptor.chartFrom === undefined ? {} : { chartFrom: descriptor.chartFrom }),
+    ...(descriptor.narrow === undefined ? {} : { narrow: descriptor.narrow }),
 
     async search(c, params, paging, options): Promise<FhirSearchPage> {
       const repositories = repositoriesOf(c);
       const page = await descriptor
         .collection(repositories)
-        .list(await descriptor.toQuery(params, paging, repositories));
+        .list(narrowedQuery(descriptor, await descriptor.toQuery(params, paging, repositories)));
 
       /*
        * A search of chart data is a read of every chart it returns, so it needs
@@ -276,7 +401,10 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
     async read(c, id): Promise<FhirResource | null> {
       const repositories = repositoriesOf(c);
       const row = await descriptor.collection(repositories).findById(id);
-      if (row === null) return null;
+      /* The other half of the narrowing, and it answers null rather than
+         refusing: a row this module does not serve is a row that does not exist
+         at this address, which is what the search says about it too. */
+      if (row === null || !servesRow(descriptor, row)) return null;
       const chartId = chartOf(descriptor.chartFrom, row);
       // Before the row is mapped, so a refusal reveals nothing about it.
       if (chartId !== undefined) await assertCareRelationship(c, chartId);

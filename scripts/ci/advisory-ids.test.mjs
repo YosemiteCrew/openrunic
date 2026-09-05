@@ -12,6 +12,7 @@ import {
   resolveOne,
   scan,
   scanProblems,
+  SCHEMES,
   trackedFiles,
 } from './advisory-ids.mjs';
 
@@ -366,4 +367,39 @@ test('the guard does not report its own worked example as a finding', () => {
     scanned.cited.some((citation) => /advisory-ids\.(mjs|yml)$/u.test(citation.file)),
     true
   );
+});
+
+/**
+ * `resolveOne` is exported, so it is reachable by a caller that did not come
+ * through the scan. The identifier arrives from a file in the repository and
+ * leaves as a URL, and a function that is safe because of who calls it is safe
+ * until somebody else calls it.
+ */
+test('an identifier that does not match its scheme is never requested', async () => {
+  const impl = stubFetch(status(200));
+  const result = await resolveOne('GHSA-3f6p-5ww8-9rcr/../../users', 'ghsa', impl);
+
+  assert.equal(result.state, 'unavailable');
+  assert.match(result.detail, /not a well-formed ghsa identifier/u);
+  assert.equal(impl.calls.length, 0, 'the registry was asked about a malformed identifier');
+});
+
+/** Anchored, so containing a valid id is not the same as being one. */
+test('a string that merely contains a valid identifier is refused', async () => {
+  const impl = stubFetch(status(200));
+  const result = await resolveOne('see GHSA-3f6p-5ww8-9rcr for detail', 'ghsa', impl);
+
+  assert.equal(result.state, 'unavailable');
+  assert.equal(impl.calls.length, 0);
+});
+
+/** Defence in depth behind the anchor: nothing unencoded reaches the path. */
+test('the identifier is percent-encoded into the registry URL', () => {
+  const [ghsa] = SCHEMES;
+
+  assert.equal(
+    ghsa.url('GHSA-3f6p-5ww8-9rcr'),
+    'https://api.github.com/advisories/GHSA-3f6p-5ww8-9rcr'
+  );
+  assert.equal(ghsa.url('a/b').endsWith('a%2Fb'), true);
 });

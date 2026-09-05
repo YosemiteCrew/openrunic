@@ -76,19 +76,19 @@ export const SCHEMES = [
   {
     kind: 'ghsa',
     pattern: /GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}/gu,
-    url: (id) => `https://api.github.com/advisories/${id}`,
+    url: (id) => `https://api.github.com/advisories/${encodeURIComponent(id)}`,
     registry: 'the GitHub advisory database',
   },
   {
     kind: 'cve',
     pattern: /CVE-\d{4}-\d{4,}/gu,
-    url: (id) => `https://cveawg.mitre.org/api/cve/${id}`,
+    url: (id) => `https://cveawg.mitre.org/api/cve/${encodeURIComponent(id)}`,
     registry: 'the CVE Program record service',
   },
   {
     kind: 'go',
     pattern: /GO-\d{4}-\d+/gu,
-    url: (id) => `https://vuln.go.dev/ID/${id}.json`,
+    url: (id) => `https://vuln.go.dev/ID/${encodeURIComponent(id)}.json`,
     registry: 'the Go vulnerability database',
   },
 ];
@@ -270,6 +270,22 @@ export function scanProblems({ cited, excludedByPath, placeheld }) {
 export async function resolveOne(id, kind, fetchImpl = fetch) {
   const scheme = SCHEMES.find((candidate) => candidate.kind === kind);
   if (scheme === undefined) return { id, state: 'unavailable', detail: `unknown scheme ${kind}` };
+
+  // The identifier reaches here from the contents of a file in the repository,
+  // and from here it goes into a URL. {@link findCitations} can only ever
+  // produce one that matches the scheme, so this is not reachable today - and
+  // that is exactly why it is written down rather than assumed. `resolveOne` is
+  // exported; the next caller is not obliged to have come through the scan, and
+  // a function that is safe because of who calls it is safe until somebody else
+  // calls it.
+  //
+  // Anchored, so a match is the WHOLE identifier: an unanchored test passes on
+  // a string that merely contains one, which is the interesting input rather
+  // than the boring one.
+  const whole = new RegExp(`^(?:${scheme.pattern.source})$`, 'u');
+  if (!whole.test(id)) {
+    return { id, state: 'unavailable', detail: `not a well-formed ${kind} identifier` };
+  }
 
   const headers = { accept: 'application/json', 'user-agent': 'openrunic-advisory-ids' };
   // Anonymous api.github.com allows 60 requests an hour, which a busy day of

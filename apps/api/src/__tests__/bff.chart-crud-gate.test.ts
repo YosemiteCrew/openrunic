@@ -115,10 +115,13 @@ describe('every chart-bearing BFF aggregate declares its chart', () => {
  * green, and how three more in `financial.ts` did the same for reads (#300).
  *
  * The independent input is Hono's OWN route table, taken from a mounted app.
- * It is not a regex over source, so it cannot be blind to a syntax - a
- * multi-line registration, a template-literal path and a route mounted under a
- * prefix all appear in it identically - and it cannot report a route that is
- * not actually served.
+ * It is not a regex over source, so it cannot be blind to a REGISTRATION
+ * syntax - a multi-line registration, a template-literal path and a route
+ * mounted under a prefix all appear in it identically - and it cannot report a
+ * route that is not actually served. It can still be blind to a PATH, which is
+ * a different claim and a narrower one: see `isSubResource`, which is keyed on
+ * the shape `/:<param>/` rather than on the literal `:id/` that every one of
+ * these routes happens to use today.
  *
  * SCOPE, stated because a guard that implies more than it checks is the thing
  * this file keeps getting wrong: this covers routes with a path segment AFTER
@@ -213,27 +216,73 @@ describe('every hand-registered sub-resource route is accounted for', () => {
     { route: 'POST /bff/v0/users/:id/roles', parent: 'users' },
   ];
 
-  function liveRoutes(): string[] {
+  /**
+   * A route with ANY named parameter followed by a further segment.
+   *
+   * `:id` by name would be the same mistake one level in. Every one of these 64
+   * routes happens to spell it `:id` today, and nothing enforces that -
+   * `router.post('/notes/:noteId/escalate', ...)` is the identical handler with
+   * the identical missing gate, and a filter keyed on the literal `:id/` leaves
+   * this file green through it. Keyed on the SHAPE instead, which is what the
+   * bypass has actually been: a parent row addressed by a parameter, with an
+   * action or a sub-collection hanging off it.
+   *
+   * Exported as its own function so it can be asked about a route the app does
+   * not serve - a live table cannot demonstrate that a `:noteId` route would be
+   * caught, because there is no such route to add from a test.
+   */
+  function isSubResource(route: string): boolean {
+    return route.includes(' /bff/v0/') && /\/:[A-Za-z0-9_]+\//u.test(route);
+  }
+
+  function bffRoutes(): string[] {
     const { app } = createTestApp();
     const rows = (app as unknown as { routes: readonly { method: string; path: string }[] }).routes;
     return [
       ...new Set(
-        rows
-          .map((row) => `${row.method} ${row.path}`)
-          .filter((row) => row.includes(' /bff/v0/') && row.includes(':id/'))
+        rows.map((row) => `${row.method} ${row.path}`).filter((row) => row.includes(' /bff/v0/'))
       ),
     ].sort();
   }
 
+  function liveRoutes(): string[] {
+    return bffRoutes().filter(isSubResource);
+  }
+
   it('found the route table, and it is the app’s own', () => {
-    // Zero is the only threshold that answers its own question here: a table
-    // read from an app that failed to mount would be empty, which is a
-    // different defect from an inventory that has drifted, and it would
-    // otherwise be reported as the drift below.
-    const live = liveRoutes();
-    expect(live.length, 'the mounted app reported no sub-resource routes at all').toBeGreaterThan(
-      0
-    );
+    /*
+     * Counted BEFORE the sub-resource filter, on purpose. `liveRoutes().length`
+     * would be the output of the same filter this file's whole subject is, so
+     * it could only confirm that the filter found what the filter looks for -
+     * which is the exact sentence written above about `decls.length > 15`, and
+     * getting it wrong here would be that mistake committed inside its own
+     * correction. An app that failed to mount reports no BFF routes at all,
+     * which is a different defect from an inventory that has drifted.
+     *
+     * The filter itself is pinned by the set equality below rather than by a
+     * count: the inventory is 64 literal rows, so a filter that stopped
+     * matching would report all 64 as stale.
+     */
+    expect(bffRoutes().length, 'the mounted app reported no BFF routes at all').toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['POST /bff/v0/notes/:id/escalate', true],
+    ['POST /bff/v0/notes/:noteId/escalate', true],
+    ['POST /bff/v0/notes/:id', false],
+    ['POST /bff/v0/medications/screen', false],
+    ['GET /fhir/Patient/:id/$everything', false],
+  ] as const)('classifies %s as a sub-resource: %s', (route, expected) => {
+    /*
+     * Asked of strings rather than of the app, because the case that matters is
+     * a route the app does not serve: every parameter in the table today is
+     * spelled `:id`, so a live-table assertion cannot tell a filter keyed on
+     * the shape from one keyed on that literal. The `:noteId` row is the whole
+     * point of this test; the rest are the boundaries it must not cross - a
+     * bare `:id` at the end of a path is CRUD and is the other guard's subject,
+     * and `/fhir` is a different boundary with its own gate.
+     */
+    expect(isSubResource(route)).toBe(expected);
   });
 
   it('the inventory names exactly the routes the app serves', () => {

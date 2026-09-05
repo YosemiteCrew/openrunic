@@ -265,6 +265,25 @@ describe('AuditScreen, one event in full', () => {
     expect(screen.getByRole('table', { name: 'Audit events, newest first' })).toBeInTheDocument();
   });
 
+  it('writes the sequence number as it is stored, not as a grouped quantity', async () => {
+    /*
+     * The two helpers only differ above a thousand, and audit sequences pass a
+     * thousand within a day - which is why this is the site that can hold the
+     * rule. `verbatim(48211)` is "48211" and `formatCount(48211, 'en')` is
+     * "48,211", and the second is a different string from the one in the URL,
+     * in the search box and in the ticket somebody pastes it into.
+     *
+     * Localise what is measured, render verbatim what is matched. Every other
+     * call site in this application is below a thousand in every fixture, so
+     * swapping the two helpers there is invisible to the whole suite.
+     */
+    render(<AuditScreen />);
+    await screen.findByRole('table', { name: 'Audit events, newest first' });
+
+    expect(screen.getByRole('button', { name: 'Open event 48211' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open event 48,211' })).not.toBeInTheDocument();
+  });
+
   it('says "no chart context" rather than leaving the patient rows blank', async () => {
     render(<AuditScreen />);
     await screen.findByRole('table', { name: 'Audit events, newest first' });

@@ -132,6 +132,11 @@ describe('DeveloperScreen', () => {
 
     expect(within(drawer).getByText('503')).toBeInTheDocument();
     expect(within(drawer).getByText('Timed out')).toBeInTheDocument();
+    // A latency is measured, so it is grouped for the reader: 30012 ms reads as
+    // "30,012 ms" and not as a bare run of digits. This is the only delivery
+    // fixture above a thousand, which makes it the only one where `formatCount`
+    // and `verbatim` produce different strings.
+    expect(within(drawer).getByText('30,012 ms')).toBeInTheDocument();
     expect(
       within(drawer).getByText(/pauses itself after 100 consecutive failures/)
     ).toBeInTheDocument();

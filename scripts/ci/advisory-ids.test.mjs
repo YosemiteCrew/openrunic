@@ -230,6 +230,43 @@ test("this guard's own source cites nothing it would itself reject", () => {
 });
 
 /**
+ * The same question over the whole tree, and it needs no network.
+ *
+ * Well-formedness is decided offline, so the half of this guard that can fail
+ * without a registry can be asserted here rather than only in the workflow.
+ * `pnpm verify` runs these tests and does not run the guard, so until this
+ * existed the first thing to notice a malformed citation anywhere in the
+ * repository was CI.
+ *
+ * This reads the INDEX, because {@link scan} does, and that is the difference
+ * between it and the test above rather than a redundancy: this one sees every
+ * file and only once staged; that one sees one file and sees it as typed.
+ * Neither covers the other's blind spot, which is why both are here.
+ *
+ * It does not replace the workflow either. Nothing offline can tell a
+ * well-formed fabrication from a real advisory - that is the premise this
+ * guard is built on, and it still takes a request.
+ */
+test('no tracked file cites a malformed identifier', () => {
+  const { cited, placeheld } = scan(REPO_ROOT, trackedFiles(REPO_ROOT));
+
+  // Zero, not a threshold: this tree cites advisories in its override block,
+  // its scanner suppressions and both Dockerfiles, so an empty list means the
+  // walk stopped working rather than that the citations were removed.
+  assert.equal(cited.length > 0, true, 'nothing was scanned: this test is reading nothing');
+
+  const malformed = [...cited, ...placeheld].filter((citation) => {
+    const scheme = SCHEMES.find((candidate) => candidate.kind === citation.kind);
+    return !scheme.wellFormed.test(citation.id);
+  });
+
+  assert.deepEqual(
+    malformed.map((citation) => `${citation.id} at ${citation.file}:${String(citation.line)}`),
+    []
+  );
+});
+
+/**
  * The residual, named rather than discovered.
  *
  * An identifier with every hyphen gone is still not a citation. Recognising it

@@ -50,7 +50,7 @@
 //   2  a registry could not be reached, so the guard did not run
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -169,16 +169,37 @@ export function findCitations(text, file) {
 /**
  * Read a tracked file as text, or null when it is not text this guard can read.
  *
- * Binary blobs and symlinks pointing outside the tree are skipped rather than
- * raised: unlike `exception-expiry.mjs`, which reads a fixed set of files that
- * MUST be readable, this walks whatever is tracked, so an unreadable entry is
- * an ordinary repository fact and not a guard that could not do its job. What
+ * Anything unreadable is skipped rather than raised: unlike
+ * `exception-expiry.mjs`, which reads a fixed set of files that MUST be
+ * readable, this walks whatever is tracked, so an unreadable entry is an
+ * ordinary repository fact and not a guard that could not do its job. What
  * would make it one is reading nothing at all, and {@link scan} fails on that
  * separately.
+ *
+ * REGULAR FILES ONLY, and this is a fix rather than a precaution. The comment
+ * that used to sit here claimed symlinks pointing outside the tree were
+ * skipped, and they were not. `resolveWithin` is documented as reasoning about
+ * path STRINGS and never touching the disk, so it sees a tracked symlink as an
+ * ordinary name inside the root and returns it; `readFileSync` then follows the
+ * link and reads whatever it points at. `git ls-files` lists tracked symlinks,
+ * and a pull request may add one - so a fork could have added a link to a file
+ * on the runner and had this guard read it.
+ *
+ * `lstat` is what tells them apart, because it does not follow the link. It is
+ * the same call `exception-expiry.mjs` reaches for, in the same file, for the
+ * neighbouring half of this hazard.
  */
 function readText(root, file) {
   const resolved = resolveWithin(root, file);
   if (resolved === null) return null;
+  let stats;
+  try {
+    stats = lstatSync(resolved);
+  } catch {
+    return null;
+  }
+  if (!stats.isFile()) return null;
+
   let raw;
   try {
     raw = readFileSync(resolved);

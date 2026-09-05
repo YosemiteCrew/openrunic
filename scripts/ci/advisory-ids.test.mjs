@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -402,4 +404,35 @@ test('the identifier is percent-encoded into the registry URL', () => {
     'https://api.github.com/advisories/GHSA-3f6p-5ww8-9rcr'
   );
   assert.equal(ghsa.url('a/b').endsWith('a%2Fb'), true);
+});
+
+/**
+ * A tracked symlink is listed by `git ls-files` and would be FOLLOWED by
+ * `readFileSync`, so a pull request could add a link pointing at a file on the
+ * runner and have this guard read it. `resolveWithin` cannot see that - it is
+ * documented as reasoning about path strings and never touching the disk - so
+ * the link resolves to an ordinary name inside the root and is allowed through.
+ *
+ * The control matters as much as the case: the same bytes in a REGULAR file in
+ * the same root are still read, so this is "does not follow links" and not
+ * "stopped reading that directory".
+ */
+test('a tracked symlink is not followed out of the tree', () => {
+  const outside = mkdtempSync(path.join(tmpdir(), 'advisory-outside-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'advisory-root-'));
+  try {
+    const outsideFile = path.join(outside, 'outside.txt');
+    writeFileSync(outsideFile, 'GHSA-3f6p-5ww8-9rcr\n');
+    symlinkSync(outsideFile, path.join(root, 'link.txt'));
+    writeFileSync(path.join(root, 'plain.txt'), 'GHSA-3f6p-5ww8-9rcr\n');
+
+    const viaLink = scan(root, ['link.txt']);
+    const viaFile = scan(root, ['plain.txt']);
+
+    assert.deepEqual(viaLink.cited, [], 'the guard followed a symlink out of the tree');
+    assert.equal(viaFile.cited.length, 1);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });

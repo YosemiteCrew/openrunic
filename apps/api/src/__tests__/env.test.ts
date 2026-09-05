@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
-import { oidcSettings, parseEnv, smartLaunchSettings, type Env } from '../env.js';
+import { ENV_VARIABLES, oidcSettings, parseEnv, smartLaunchSettings, type Env } from '../env.js';
 
 describe('parseEnv', () => {
   it('applies defaults when variables are absent', () => {
@@ -252,5 +255,91 @@ describe('a variable that is present and blank', () => {
         OIDC_AUDIENCE: '',
       })
     ).toThrow(/OIDC_ISSUER/);
+  });
+});
+
+describe('every setting this process reads is passed in by the deployment', () => {
+  /*
+   * The defect this repository has now shipped twice.
+   *
+   * `OPENRUNIC_FHIR_BASE_URL` was read here and never named in
+   * `docker-compose.yml`, so a self-hoster who set it got a Questionnaire
+   * claiming a canonical URL on a domain they do not run. The whole
+   * identity-provider group was the same omission with a much worse
+   * consequence: a deployment that had configured its provider went on
+   * accepting the demo tokens printed in this repository's public source, while
+   * `docs/self-hosting.md` said it would not.
+   *
+   * Both times the code was right, the documentation was right, and the two
+   * were joined by a file nobody thought to change. Neither was findable from
+   * inside this process: a variable that never arrives is indistinguishable
+   * from one the operator declined.
+   *
+   * So the join is asserted. `ENV_VARIABLES` comes off the schema itself rather
+   * than a list beside it, which is what stops this test passing while the
+   * thing it checks drifts.
+   */
+  const composePath = fileURLToPath(new URL('../../../../docker-compose.yml', import.meta.url));
+  const compose = readFileSync(composePath, 'utf8');
+
+  /** The `environment:` block of one service, as text. */
+  function environmentBlock(service: string): string {
+    const start = compose.indexOf(`\n  ${service}:\n`);
+    expect(start, `${service} is a service in docker-compose.yml`).toBeGreaterThan(-1);
+    const envStart = compose.indexOf('\n    environment:\n', start);
+    expect(envStart, `${service} declares an environment block`).toBeGreaterThan(-1);
+    // Up to the next key at the service's own indentation, which ends the block.
+    const rest = compose.slice(envStart + 1);
+    const end = rest.search(/\n {4}[a-z_]+:/u);
+    return end === -1 ? rest : rest.slice(0, end);
+  }
+
+  it.each(ENV_VARIABLES)('the api service passes %s', (name) => {
+    expect(environmentBlock('api')).toContain(`${name}:`);
+  });
+
+  it('checks something, so an empty schema cannot make this vacuous', () => {
+    expect(ENV_VARIABLES.length).toBeGreaterThan(5);
+    expect(ENV_VARIABLES).toContain('OIDC_ISSUER');
+  });
+
+  /*
+   * The web application has no schema to derive from - it reads its settings
+   * where it uses them - so this half is a hand-kept list and says so. It is
+   * still worth having: these five are the sign-in flow, and `oidcWebConfig`
+   * answers a missing one by returning null, which means "stay on the demo
+   * path" and is indistinguishable from a deployment that chose to.
+   */
+  const WEB_RUNTIME_SETTINGS = [
+    'OIDC_ISSUER',
+    'OIDC_CLIENT_ID',
+    'OIDC_REDIRECT_URI',
+    'OIDC_CLIENT_SECRET',
+    'OIDC_SCOPES',
+    'SESSION_COOKIE_SECRET',
+    'OPENRUNIC_API_INTERNAL_URL',
+  ];
+
+  it.each(WEB_RUNTIME_SETTINGS)('the web service passes %s', (name) => {
+    expect(environmentBlock('web')).toContain(`${name}:`);
+  });
+
+  it('passes every optional setting with a default rather than a requirement', () => {
+    /*
+     * `:?` would make an unset variable stop the stack. Two rules in this file
+     * need "absent" to stay expressible - the verification group is refused
+     * half-set, and the launch pair is optional but requires the group - so a
+     * required-form OIDC variable would turn "I have no identity provider" into
+     * a deployment that will not boot.
+     *
+     * `SESSION_COOKIE_SECRET` is deliberately the other way and is excluded by
+     * name, not by accident: there is no safe default for it.
+     */
+    const block = `${environmentBlock('api')}\n${environmentBlock('web')}`;
+    for (const line of block.split('\n')) {
+      if (!line.includes('OIDC_')) continue;
+      if (line.trimStart().startsWith('#')) continue;
+      expect(line, `${line.trim()} must use the :- form`).not.toContain(':?');
+    }
   });
 });

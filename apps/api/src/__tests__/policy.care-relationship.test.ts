@@ -970,6 +970,214 @@ describe('a collection inside a chart is not a way round the gate', () => {
     expect(history.status).toBe(404);
   });
 
+  /*
+   * The ninth route, and the one where the shape of the fix above does not fit.
+   *
+   * A remittance is a payer document, so unlike every other parent here there
+   * is no chart ON it to guard - `remittances.findById` narrows by tenant and
+   * by nothing else. The chart data is on the CHILDREN: a `RemittanceLine`
+   * names a claim and publishes its procedure code, its service date and what
+   * the patient owes. Refusing `claims/{id}/lines` and serving the same line
+   * one hop sideways is the gate working and the window open.
+   */
+  const REMITTANCE = testId(3_660);
+
+  function aRemittanceOverThatClaim(dataset: Dataset): void {
+    seed(dataset, 'Remittance', {
+      ...storageColumns(REMITTANCE),
+      payerId: testId(3_661),
+      status: 'RECEIVED',
+      checkOrEftNumber: null,
+      totalPaidCents: 9_000,
+      receivedAt: FIXED_NOW,
+      paidAt: null,
+      rawStorageKey: null,
+      parsed: null,
+      exceptionCount: 0,
+      postedAt: null,
+      postedById: null,
+    } as unknown as ScopedRow<'Remittance'>);
+    seed(dataset, 'RemittanceLine', {
+      ...storageColumns(testId(3_662)),
+      remittanceId: REMITTANCE,
+      claimId: BILLED_CLAIM,
+      claimLineId: testId(3_653),
+      sequence: 1,
+      payerControlNumber: null,
+      code: '99213',
+      chargedCents: 12_000,
+      allowedCents: 9_000,
+      paidCents: 9_000,
+      patientResponsibilityCents: 3_000,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      remarkCodes: [],
+      serviceDateFrom: FIXED_NOW,
+      matched: true,
+    });
+  }
+
+  it('refuses a remittance line naming a claim the reader may not open', async () => {
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset);
+
+    const claimLines = await app.request(`/bff/v0/claims/${BILLED_CLAIM}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+    const remittanceLines = await app.request(`/bff/v0/remittances/${REMITTANCE}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(claimLines.status, 'the claim route is the half already fixed').toBe(404);
+    expect(remittanceLines.status).toBe(404);
+  });
+
+  it('refuses the remittance when only its LAST line is out of reach', async () => {
+    /*
+     * One claim-bearing line cannot tell "every claim on the page" from "the
+     * first one" - the mutation that gates only `rows[0]` is green against the
+     * case above. So there are two lines here in sequence order, the REACHABLE
+     * chart first, and the row that must refuse is the one a first-only gate
+     * never looks at. Same correction the collections worklist needed.
+     */
+    const REACHABLE = testId(3_670);
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset);
+    seed(dataset, 'Patient', makePatientRow({ id: REACHABLE, mrn: 'OR-103670' }));
+    anEncounter(dataset, { id: testId(3_671), patientId: REACHABLE });
+    aClaim(dataset, testId(3_672), REACHABLE, testId(3_671));
+    seed(dataset, 'RemittanceLine', {
+      ...storageColumns(testId(3_673)),
+      remittanceId: REMITTANCE,
+      claimId: testId(3_672),
+      claimLineId: null,
+      sequence: 0,
+      payerControlNumber: null,
+      code: '99214',
+      chargedCents: 15_000,
+      allowedCents: 11_000,
+      paidCents: 11_000,
+      patientResponsibilityCents: 4_000,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      remarkCodes: [],
+      serviceDateFrom: FIXED_NOW,
+      matched: true,
+    });
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses to PARSE a remittance whose lines name a chart out of reach', async () => {
+    /*
+     * The write half, and it had no test at all: removing the guard from the
+     * shared reader was red on exactly one case in the whole 3597-test package,
+     * which is a guard covering three routes and pinned on one.
+     *
+     * Parsing is where a remittance's lines are counted and its status moves,
+     * and posting turns those same lines into payment allocations ON those
+     * charts. Both read through the same function, so both are gated - and now
+     * one of them says so.
+     */
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset);
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/parse`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('still parses a remittance whose claims the reader may open', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    aRemittanceOverThatClaim(dataset);
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/parse`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('still serves a remittance line whose claim the reader may open', async () => {
+    /* Facility A, so `facility-activity` answers. Without this the case above
+       is satisfied by refusing every biller every remittance, which would take
+       the payment-posting workflow out entirely. */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    aRemittanceOverThatClaim(dataset);
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('serves an unmatched line, which names no claim and so has no chart', async () => {
+    /* The other direction the guard must not break: an exception line nobody
+       has matched yet is the biller's actual work queue, and it carries no
+       chart to ask about. */
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    aRemittanceOverThatClaim(dataset);
+    seed(dataset, 'RemittanceLine', {
+      ...storageColumns(testId(3_663)),
+      remittanceId: testId(3_664),
+      claimId: null,
+      claimLineId: null,
+      sequence: 1,
+      payerControlNumber: 'UNMATCHED-1',
+      code: '99213',
+      chargedCents: 12_000,
+      allowedCents: 0,
+      paidCents: 0,
+      patientResponsibilityCents: 0,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      remarkCodes: [],
+      serviceDateFrom: FIXED_NOW,
+      matched: false,
+    });
+    seed(dataset, 'Remittance', {
+      ...storageColumns(testId(3_664)),
+      payerId: testId(3_661),
+      status: 'RECEIVED',
+      checkOrEftNumber: null,
+      totalPaidCents: 0,
+      receivedAt: FIXED_NOW,
+      paidAt: null,
+      rawStorageKey: null,
+      parsed: null,
+      exceptionCount: 1,
+      postedAt: null,
+      postedById: null,
+    } as unknown as ScopedRow<'Remittance'>);
+
+    const res = await app.request(`/bff/v0/remittances/${testId(3_664)}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
   it('still serves the lines for a claim the biller may open', async () => {
     /* Facility A this time, so `facility-activity` answers and the biller does
        their daily job. Without this the case above is satisfied by refusing

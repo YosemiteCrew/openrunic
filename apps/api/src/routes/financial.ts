@@ -33,6 +33,7 @@ import type {
   RemittanceStatus,
   StatementStatus,
 } from '../repositories/specs/financial.js';
+import type { Page } from '../repositories/collection.js';
 import type { Repositories } from '../repositories/types.js';
 import {
   chargeDtoSchema,
@@ -601,10 +602,37 @@ async function movePayment(
 
 /* -------------------------------------------------------- remittance posting */
 
+/**
+ * A remittance's service lines, with the charts behind them gated.
+ *
+ * A remittance is a payer document: `remittances.findById` narrows by tenant
+ * and by nothing else, so unlike every other parent in #300 there is no chart
+ * ON the parent to guard - and the chart data is on the children. A
+ * `RemittanceLine` names a claim and publishes that claim's procedure code, its
+ * service date and four money fields including what the patient owes. So the
+ * guard resolves the claims this page names and asks the chart question about
+ * those, which is the move the collections worklist already makes over its own
+ * rows.
+ *
+ * A line naming NO claim is an unmatched line: there is no chart behind it and
+ * nothing to check.
+ *
+ * There is deliberately no branch for a line whose claim does not resolve.
+ * `Claim` is compartment-scoped but not facility-scoped, and a compartment
+ * principal cannot reach a remittance at all, so for every caller that gets
+ * here the claims resolve - a refusal there could not fire, and a guard that
+ * cannot fail is not a guard. `allocationForLine` already documents the
+ * unresolvable claim as a legitimate skip on the posting path rather than an
+ * error, and this does not contradict it.
+ *
+ * Every caller reads through here rather than listing the rows itself, so the
+ * read route and the two write routes over the same rows cannot drift apart.
+ */
 async function allRemittanceLines(
+  c: Context<AppEnv>,
   repos: Repositories,
   remittanceId: string
-): Promise<RemittanceLineRow[]> {
+): Promise<Page<RemittanceLineRow>> {
   const page = await repos.remittanceLines.list({
     page: 1,
     pageSize: REMITTANCE_LINE_LIMIT,
@@ -612,7 +640,9 @@ async function allRemittanceLines(
     order: 'asc',
     remittanceId,
   });
-  return page.rows;
+  const claimIds = [...new Set(page.rows.map((line) => line.claimId).filter((id) => id !== null))];
+  await gateCharts(c, 'claims', await repos.claims.findByIds(claimIds));
+  return page;
 }
 
 /**
@@ -780,7 +810,7 @@ function transitionRoutes(): Hono<AppEnv> {
     const before = required(await repos.remittances.findById(id), MISSING_REMITTANCE);
     assertTransition(REMITTANCE_TRANSITIONS, 'remittance', before.status, 'PARSED');
 
-    const lines = await allRemittanceLines(repos, id);
+    const lines = (await allRemittanceLines(c, repos, id)).rows;
     const matchedCount = lines.filter((line) => line.matched).length;
     const exceptionCount = lines.length - matchedCount;
     const row = required(
@@ -805,7 +835,7 @@ function transitionRoutes(): Hono<AppEnv> {
     // payment behind for a remittance that did not move.
     assertTransition(REMITTANCE_TRANSITIONS, 'remittance', before.status, 'POSTED');
 
-    const lines = await allRemittanceLines(repos, id);
+    const lines = (await allRemittanceLines(c, repos, id)).rows;
     const allocations: PaymentAllocationInput[] = [];
     for (const line of lines) {
       const allocation = await allocationForLine(repos, line);
@@ -852,13 +882,7 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     required(await repos.remittances.findById(id), MISSING_REMITTANCE);
-    const page = await repos.remittanceLines.list({
-      page: 1,
-      pageSize: REMITTANCE_LINE_LIMIT,
-      sort: 'sequence',
-      order: 'asc',
-      remittanceId: id,
-    });
+    const page = await allRemittanceLines(c, repos, id);
     return c.json(toListResponse(page, toRemittanceLineDto));
   });
 

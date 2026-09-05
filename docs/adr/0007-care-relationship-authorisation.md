@@ -268,9 +268,12 @@ reason recorded, no expiry, no ceiling, none of the things break-glass exists to
 
 `Task.assignedById` is therefore stamped from the authenticated writer, on the create and again on
 any reassignment, and is not on the wire schema. The source counts a task only when its assigner is
-somebody other than the reader. A null assigner still counts: it means no person assigned the task,
-which is what the routing engine's own tasks look like, and one raised from a domain event is
-trusted for the same reason the event is.
+somebody other than the reader, and only when that assigner is recorded. A null assigner does NOT
+count: null is not "the system raised it" but every task from before the column existed (the
+migration back-fills nothing), every task an old instance writes during a rolling deploy, and a task
+self-assigned through the pre-change handler. An absence is not provenance. A routing engine that
+wants its domain-event tasks to authorise their assignee must stamp a real system principal id, so
+that the evidence is an id rather than the lack of one.
 
 What this does not do is check that the assigner could have opened the chart themselves. That needs
 their roles and their facility grants, which the reading request does not have, so the honest

@@ -1,5 +1,4 @@
 import type { Principal } from '../auth/principal.js';
-import type { ScopedRow } from '../repositories/rows.js';
 import type { Repositories } from '../repositories/types.js';
 
 import type { PolicyContext } from './policy.js';
@@ -166,7 +165,13 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
         patientId: query.patientId,
         status: 'ACTIVE',
       });
-      if (active.rows.length === 0) return false;
+      /* `status: 'ACTIVE'` is not the whole of "in force". A team can be marked
+         active with a period that has not started or has already ended, and its
+         own window is checked here for the same reason the participant's is
+         below: a temporal predicate over two nullable columns is not a column
+         filter. A team out of its period confers nothing, whoever is on it. */
+      const inForceTeams = active.rows.filter((team) => inForce(team, query.at));
+      if (inForceTeams.length === 0) return false;
 
       /*
        * The period is checked here rather than pushed into the query, and that
@@ -190,7 +195,7 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
            `patientId` filter here would be a second statement of the same fact,
            and it survived a mutation that deleted it, which is how a filter
            that looks load-bearing and is not gets left in. */
-        careTeamIds: active.rows.map((row) => row.id),
+        careTeamIds: inForceTeams.map((row) => row.id),
       });
 
       return memberships.rows.some((row) => inForce(row, query.at));
@@ -271,10 +276,16 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
      * `task.write` and `patient.read` and nothing else it would need.
      *
      * `assignedById` is stamped from the authenticated writer at the boundary
-     * and is not on the wire schema, so the value cannot be chosen. A null one
-     * is not a gap: it means no person assigned the task, which is what the
-     * routing engine's own tasks look like, and a task the system raised from a
-     * domain event is trusted for the same reason the event is.
+     * and is not on the wire schema, so the value cannot be chosen. A NULL one
+     * does not authorise, and that is deliberate. Null is not "the system raised
+     * it": it is every task written before this column existed (the migration
+     * back-fills nothing), every task an old API instance writes during a
+     * rolling deploy, and a task self-assigned through the pre-change handler.
+     * None of those is verifiable provenance, and trusting the absence would
+     * reopen the exact hole this closes for any legacy or in-flight row. When a
+     * routing engine raises tasks from domain events, it must stamp a real
+     * system principal id for its tasks to authorise their assignee; an id is
+     * evidence and an absence is not.
      *
      * What this does not do is check that the assigner could open the chart
      * themselves. Establishing that needs their roles and their facility
@@ -293,7 +304,9 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
         patientId: query.patientId,
         assigneeUserId: query.principal.subject,
       });
-      return held.rows.some((row) => row.assignedById !== query.principal.subject);
+      return held.rows.some(
+        (row) => row.assignedById !== null && row.assignedById !== query.principal.subject
+      );
     },
   },
   {
@@ -356,13 +369,16 @@ export const RELATIONSHIP_SOURCES: readonly RelationshipSource[] = [
 ];
 
 /**
- * Whether a care-team membership is in force at an instant.
+ * Whether a period is in force at an instant - a care team's or a membership's.
  *
- * Both bounds are optional and an absent one is open: a membership with no
- * recorded start has always held, and one with no recorded end still does. The
- * end is exclusive, so a membership that ended at this instant has ended.
+ * Both bounds are optional and an absent one is open: a period with no recorded
+ * start has always held, and one with no recorded end still does. The end is
+ * exclusive, so a period that ended at this instant has ended. A team and a
+ * participant both carry `periodStart`/`periodEnd`, and both have to be in force
+ * for a membership to authorise: an active team with a future start does not yet
+ * confer access, and one with a recorded end has stood down.
  */
-function inForce(row: ScopedRow<'CareTeamParticipant'>, at: Date): boolean {
+function inForce(row: { periodStart: Date | null; periodEnd: Date | null }, at: Date): boolean {
   if (row.periodStart !== null && row.periodStart.getTime() > at.getTime()) return false;
   return row.periodEnd === null || row.periodEnd.getTime() > at.getTime();
 }

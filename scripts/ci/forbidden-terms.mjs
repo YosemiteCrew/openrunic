@@ -107,7 +107,13 @@ export function compilePattern(source) {
   }
 }
 
-/** Non-comment, non-blank lines. Shared by both corpora. */
+/**
+ * Non-comment, non-blank lines. Shared by both corpora.
+ *
+ * CONTROL COMMIT - this comment is the only change from the branch head. It
+ * exists to re-scan unchanged code now, so that a severity or count that moves
+ * on a probe commit can be told apart from the scanner rescoring under us.
+ */
 export function corpusLines(text) {
   return text
     .split('\n')

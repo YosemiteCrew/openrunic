@@ -48,8 +48,14 @@
 // a segment-counting pattern does not see it at all: the report says sixteen
 // citations, all resolve, exit 0, over an override justified by an identifier
 // nobody can look up. Measured that way before this changed, for a dropped
-// character, an added one, a dropped hyphen, `CVE-202-60876` and `GO-206-4337`
-// alike - five silences, one per lengths `pattern` was restating.
+// character, an added one, a dropped hyphen, a CVE with a three-digit year and
+// a Go id with one - five silences, one per length `pattern` was restating.
+//
+// Those five are spelt out in the tests rather than here, and that is not
+// tidiness. Spelling a malformed identifier in this header makes it a citation
+// of exactly the kind being described, and the first version of this paragraph
+// did: two of them, and the live guard failed on its own documentation. The
+// test file is exempt by path; this file is not.
 //
 // So `pattern` is the prefix followed by at least two hyphen-separated groups,
 // uniformly across all three schemes, and nothing about the group LENGTHS is

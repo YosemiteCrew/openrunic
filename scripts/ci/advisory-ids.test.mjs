@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -181,6 +181,52 @@ test('prose about the identifier format is not a citation', () => {
   assert.deepEqual(findCitations('ids carry the GHSA- prefix', 'notes.md'), []);
   assert.deepEqual(findCitations('a GHSA-style identifier, or a CVE-numbered one', 'notes.md'), []);
   assert.deepEqual(findCitations('written GHSA-<segment>-<segment>', 'notes.md'), []);
+});
+
+/**
+ * This guard's own prose, read from DISK rather than from the index.
+ *
+ * The header explains the defect by describing it, and describing a malformed
+ * identifier is one keystroke from spelling one - which makes the sentence a
+ * citation of exactly the thing it is warning about. That is not hypothetical:
+ * the commit that widened `pattern` put two of them in the header, and the
+ * live job failed on this file at `advisory-ids.mjs:51`.
+ *
+ * `pnpm verify` runs these tests and does NOT run the guard, so without this
+ * the first thing to notice is CI. Worse, the obvious local check cannot see it
+ * either: {@link scan} reads the git index, so an unstaged edit to this header
+ * is invisible to it and the run that is supposed to be the control reports on
+ * the previous content. `readFileSync` here is the point rather than a
+ * shortcut - it reads what was just typed.
+ *
+ * Scoped to this one file, and the scope is the claim: it is where prose about
+ * identifiers lives. Every other file is covered by the live job, which is a
+ * gate rather than a test and answers a different question.
+ */
+test("this guard's own source cites nothing it would itself reject", () => {
+  const source = fileURLToPath(new URL('./advisory-ids.mjs', import.meta.url));
+  const citations = findCitations(readFileSync(source, 'utf8'), 'scripts/ci/advisory-ids.mjs');
+
+  // Zero, not a threshold. This header names the worked example and quotes the
+  // real mysql2 advisory, so finding none means `pattern` stopped matching and
+  // the rest of this test is reading an empty list.
+  assert.equal(citations.length > 0, true, 'this file cites nothing: the test is reading nothing');
+
+  // Well-formedness alone, and PLACEHOLDERS is deliberately not consulted. Both
+  // declared placeholders are well-formed - they have to be, since the point of
+  // one is an identifier whose spelling does not give it away - so a clause
+  // exempting them could never run. An unreachable branch in a test is the
+  // shape this guard has already deleted twice.
+  const rejected = citations.filter((citation) => {
+    const scheme = SCHEMES.find((candidate) => candidate.kind === citation.kind);
+    return !scheme.wellFormed.test(citation.id);
+  });
+
+  assert.deepEqual(
+    rejected.map((citation) => `${citation.id} at line ${String(citation.line)}`),
+    [],
+    'the header spells an identifier this guard would refuse'
+  );
 });
 
 /**

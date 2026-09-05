@@ -1,6 +1,8 @@
 import type { AdapterError, AdapterRegistry } from '@openrunic/adapters';
 import { Hono } from 'hono';
 
+import type { Context } from 'hono';
+
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
@@ -84,6 +86,24 @@ function videoAdapter(registry: AdapterRegistry) {
   return resolved.value;
 }
 
+/**
+ * Telehealth room management is staff work, and this refuses everyone else.
+ *
+ * Every route here reads or writes the shared `TelehealthVisit` table, which
+ * carries no patient column and so cannot be narrowed to one chart at the data
+ * layer. A patient-portal token holds `appointment.read` and `appointment.write`
+ * and would otherwise reach all of it: list every patient's OPEN visit and lift
+ * the join URL, or drive the open-room route into a second vendor room the
+ * preflight cannot see. A patient joins their own visit by the passwordless link
+ * they are sent; they never open, end, or list a room. Every handler here calls this
+ * first, before it reads the appointment or the visit table.
+ */
+function assertStaff(c: Context<AppEnv>): void {
+  if (c.get('principal')?.compartmentPatientId !== undefined) {
+    throw ApiError.forbidden('Telehealth rooms are managed by staff.');
+  }
+}
+
 export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
 
@@ -99,6 +119,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * participants end up in the one nobody is watching.
    */
   router.post('/appointments/:id/telehealth', requirePermission('appointment.write'), async (c) => {
+    assertStaff(c);
     const appointmentId = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     const appointment = required(await repos.appointments.findById(appointmentId), NO_APPOINTMENT);
@@ -159,6 +180,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * vendor is lenient about it, and lenient is what vendors are.
    */
   router.post('/telehealth/:id/join', requirePermission('appointment.read'), async (c) => {
+    assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, telehealthJoinSchema);
     const repos = repositories(c);
@@ -193,6 +215,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * it is not a claim about how long anybody was in the room.
    */
   router.post('/telehealth/:id/end', requirePermission('appointment.write'), async (c) => {
+    assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, telehealthEndSchema);
     const repos = repositories(c);
@@ -221,12 +244,14 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   });
 
   router.get('/telehealth/:id', requirePermission('appointment.read'), async (c) => {
+    assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const visit = required(await repositories(c).telehealthVisits.findById(id), NO_VISIT);
     return c.json<TelehealthVisitDto>(toTelehealthVisitDto(visit));
   });
 
   router.get('/telehealth', requirePermission('appointment.read'), async (c) => {
+    assertStaff(c);
     const query = toTelehealthListQuery(parseQuery(c, telehealthListQuerySchema));
     const page = await repositories(c).telehealthVisits.list(query);
     return c.json(toListResponse(page, toTelehealthVisitDto));

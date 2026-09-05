@@ -8,6 +8,7 @@ import {
   DEMO_TENANT_A,
   FIXED_NOW,
   createTestApp,
+  DEMO_PORTAL_PATIENT,
   jsonBearer,
   DEMO_FACILITY_A,
   DEMO_FACILITY_B,
@@ -338,11 +339,12 @@ describe('reading visits back', () => {
   });
 });
 
-describe('a portal token and the telehealth table', () => {
-  it("does not let a chart-bound patient list another patient's visit", async () => {
-    // TelehealthVisit is compartment:'closed', so a portal token bound to one
-    // chart is refused the table rather than handed every OPEN visit's join URL.
-    // The patient reaches their own visit by the link they are sent.
+describe('a portal token and the telehealth routes', () => {
+  it('refuses a chart-bound patient the room-management routes', async () => {
+    // Telehealth is staff-only. Otherwise a portal token, which holds
+    // appointment.read/write, could list every patient's OPEN visit and lift its
+    // join URL, or drive the open-room route into a duplicate vendor room the
+    // preflight cannot see. The patient joins by the link they are sent.
     const { app, dataset } = createTestApp({ adapters: new AdapterRegistry() });
     const stranger = testId(74101);
     const appt = testId(74102);
@@ -367,12 +369,26 @@ describe('a portal token and the telehealth table', () => {
     const list = await app.request('/bff/v0/telehealth?status=OPEN', {
       headers: bearer(TOKENS.portalA),
     });
-    expect(((await list.json()) as { data: unknown[] }).data).toEqual([]);
+    expect(list.status).toBe(403);
 
     const read = await app.request(`/bff/v0/telehealth/${testId(74103)}`, {
       headers: bearer(TOKENS.portalA),
     });
-    expect(read.status).toBe(404);
+    expect(read.status).toBe(403);
+  });
+
+  it('refuses a chart-bound patient the open-room route before any vendor call', async () => {
+    // The duplicate-room path: the preflight list() cannot see a compartment
+    // caller's rooms, so without this a portal could make the vendor open room
+    // after room until the unique constraint 500s. Refused before the vendor.
+    const { app, dataset } = createTestApp({ adapters: new AdapterRegistry() });
+    const appt = testId(74121);
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: appt, patientId: DEMO_PORTAL_PATIENT }));
+    const res = await app.request(`/bff/v0/appointments/${appt}/telehealth`, {
+      method: 'POST',
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(res.status).toBe(403);
   });
 
   it('still lets staff see the whole table', async () => {

@@ -185,17 +185,53 @@ test('finds the exceptions this repository actually carries', () => {
 });
 
 /**
- * A missing file is fine. `.trivyignore` may legitimately not exist, and a file
- * that is not there has no exceptions to expire.
+ * A source that names a file which is not there is a failure, not an empty read.
+ *
+ * This used to pass, and passing was the hole: rename `.grant.yaml` without
+ * touching `SOURCES` and the guard reported "2 accepted finding(s), all
+ * current", exit 0, with seven dated licence exceptions no longer re-reviewed.
+ * `.trivyignore` was the quiet version - it carries no live entries today, so
+ * renaming it did not even move the count.
+ *
+ * The message has to name the file, because the two ways to reach this state
+ * have opposite fixes: a rename wants the list updated, a dropped scanner wants
+ * the entry deleted.
  */
-test('a missing exception file is not an error', () => {
+test('a source naming a file that is not there is a failure', () => {
   const empty = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
   try {
-    const { exceptions, problems } = check(empty, '2026-08-24');
-    assert.deepEqual(exceptions, []);
-    assert.deepEqual(problems, []);
+    // Deliberately not naming a file. Which source is reported first is a fact
+    // about the order of a list this test is not about - asserting `.grype.yaml`
+    // here went red when the list was reordered, a legal edit. WHICH files are
+    // covered is the next test's job, and it does not care about order either.
+    assert.throws(() => check(empty, '2026-08-24'), /is named in SOURCES but is not in/u);
   } finally {
     rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+/**
+ * And every file in the list is checked for, not just the first one. Asserting
+ * only the first would pass against a loop that stopped after it - which is the
+ * shape of the defect this test exists for, one level in.
+ */
+test('every source in the list must name a file that exists', () => {
+  assert.notEqual(SOURCES.length, 0, 'no sources: this test is reading nothing');
+
+  const directory = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+  try {
+    for (const source of SOURCES) {
+      const missing = SOURCES.filter((other) => other !== source);
+      for (const other of missing) writeFileSync(path.join(directory, other.file), '');
+      assert.throws(
+        () => check(directory, '2026-08-24'),
+        new RegExp(`${source.file.replaceAll('.', '\\.')} is named in SOURCES but is not in`, 'u'),
+        `${source.file} going missing was not reported`
+      );
+      for (const other of missing) rmSync(path.join(directory, other.file));
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -207,6 +243,16 @@ test('a missing exception file is not an error', () => {
  * exact failure this script exists to stop happening to a re-review date.
  *
  * Raised by review rather than by me, and it was right.
+ */
+/*
+ * The synthetic-root tests below drive `checkWith` with one source rather than
+ * `check` with all of them, now that a source naming nothing is a failure. Two
+ * reasons, and the second is the one that matters: a temp directory holding
+ * only `.grype.yaml` would otherwise fail on the two files it was never meant
+ * to have, and `check` passed here before only because `.grype.yaml` happens to
+ * be first in `SOURCES` - a result that depended on the iteration order of a
+ * list these tests are not about. `checkWith` takes its sources for exactly
+ * this.
  */
 test('an unreadable exception file is a hard failure, not an empty scan', (t) => {
   if (process.getuid?.() === 0) {
@@ -220,7 +266,7 @@ test('an unreadable exception file is a hard failure, not an empty scan', (t) =>
   chmodSync(file, 0o000);
 
   try {
-    assert.throws(() => check(directory, '2026-08-24'), /EACCES|permission denied/iu);
+    assert.throws(() => checkWith(directory, '2026-08-24', [GRYPE]), /EACCES|permission denied/iu);
   } finally {
     chmodSync(file, 0o600);
     rmSync(directory, { recursive: true, force: true });
@@ -257,7 +303,7 @@ test('a dangling symlink is a read failure, not an absent file', () => {
   symlinkSync(path.join(directory, 'nowhere.yaml'), path.join(directory, '.grype.yaml'));
 
   try {
-    assert.throws(() => check(directory, '2026-08-24'), /ENOENT|no such file/iu);
+    assert.throws(() => checkWith(directory, '2026-08-24', [GRYPE]), /ENOENT|no such file/iu);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -273,7 +319,7 @@ test('a symlink that resolves is read normally', () => {
   symlinkSync(path.join(directory, 'real.yaml'), path.join(directory, '.grype.yaml'));
 
   try {
-    const { exceptions, problems } = check(directory, '2026-08-24');
+    const { exceptions, problems } = checkWith(directory, '2026-08-24', [GRYPE]);
     assert.deepEqual(
       exceptions.map((exception) => exception.id),
       ['CVE-2025-00001']

@@ -815,6 +815,24 @@ function chartStateFor(status: PrescriptionTransmissionStatus): {
   }
 }
 
+/**
+ * The drug, as a code and the system that code belongs to.
+ *
+ * RxNorm first because it names the medicine, and an NDC names a package of it -
+ * a network can dispense either, and the one that says what was prescribed is
+ * the better thing to send. Undefined when neither is recorded, which the caller
+ * turns into a refusal.
+ */
+function codedDrug(
+  row: MedicationRequestRow
+): { drugCode: string; drugCodeSystem: string } | undefined {
+  if (row.rxnormCode !== null) {
+    return { drugCode: row.rxnormCode, drugCodeSystem: SYSTEMS.rxnorm };
+  }
+  if (row.ndcCode !== null) return { drugCode: row.ndcCode, drugCodeSystem: SYSTEMS.ndc };
+  return undefined;
+}
+
 /** The prescription as the seam wants it, or a refusal naming what is missing. */
 function toTransmitInput(row: MedicationRequestRow): TransmitPrescriptionInput {
   /*
@@ -823,12 +841,7 @@ function toTransmitInput(row: MedicationRequestRow): TransmitPrescriptionInput {
    * chosen is one the prescriber has not finished, and the network would reject
    * it - later, and less clearly.
    */
-  const drug =
-    row.rxnormCode !== null
-      ? { drugCode: row.rxnormCode, drugCodeSystem: SYSTEMS.rxnorm }
-      : row.ndcCode !== null
-        ? { drugCode: row.ndcCode, drugCodeSystem: SYSTEMS.ndc }
-        : undefined;
+  const drug = codedDrug(row);
   if (drug === undefined) {
     throw ApiError.conflict(
       'This prescription carries no coded drug, so it cannot be transmitted. Choose a medicine from the catalogue.'

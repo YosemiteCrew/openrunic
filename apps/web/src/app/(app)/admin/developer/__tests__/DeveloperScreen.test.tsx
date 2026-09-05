@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { formatCount, verbatim } from '@openrunic/i18n';
+
 import { DeveloperScreen } from '@/app/(app)/admin/developer/DeveloperScreen';
-import { adminMockFailure, createAdminMockClient } from '@/lib/api';
+import { adminMockFailure, createAdminMockClient, MOCK_WEBHOOKS } from '@/lib/api';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -132,11 +134,24 @@ describe('DeveloperScreen', () => {
 
     expect(within(drawer).getByText('503')).toBeInTheDocument();
     expect(within(drawer).getByText('Timed out')).toBeInTheDocument();
-    // A latency is measured, so it is grouped for the reader: 30012 ms reads as
-    // "30,012 ms" and not as a bare run of digits. This is the only delivery
-    // fixture above a thousand, which makes it the only one where `formatCount`
-    // and `verbatim` produce different strings.
-    expect(within(drawer).getByText('30,012 ms')).toBeInTheDocument();
+    /*
+     * A latency is measured, so it is grouped for the reader. Read off the
+     * fixture for the reason the audit-sequence test gives: lowering this
+     * latency below the grouping threshold is an ordinary edit, it would fail
+     * the assertion below, and retuning the expected string passes while
+     * removing the only coverage the measured half of the rule has.
+     */
+    const slowest = Math.max(
+      ...(MOCK_WEBHOOKS.find((hook) => hook.event === 'Observation')?.deliveries ?? []).map(
+        (delivery) => delivery.latencyMs ?? 0
+      )
+    );
+    expect(
+      formatCount(slowest, 'en'),
+      'this fixture can no longer tell formatCount from verbatim: raise the latency back above the grouping threshold rather than retuning the assertion below'
+    ).not.toBe(verbatim(slowest));
+
+    expect(within(drawer).getByText(`${formatCount(slowest, 'en')} ms`)).toBeInTheDocument();
     expect(
       within(drawer).getByText(/pauses itself after 100 consecutive failures/)
     ).toBeInTheDocument();

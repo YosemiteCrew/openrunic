@@ -55,6 +55,26 @@ describe('the digits in a counted message', () => {
  * one shape - a `count` property whose value is a bare identifier or member
  * expression, with no call in it - and nothing cleverer. `count: formatCount(n,
  * locale)` passes because it is a call; `count: rows.length` fails.
+ *
+ * ## WHAT IT DOES NOT SEE, MEASURED - #285
+ *
+ * It reported zero while raw counts were live in two files, and there are three
+ * separate reasons rather than one bug:
+ *
+ * 1. The call exemption above is "the value contains a call", and the intent was
+ *    "the value calls `formatCount`". `count: lines.filter(...).length` is a
+ *    call, so it walked past.
+ * 2. Property shorthand has no colon. `{ count }` is invisible to `\bcount:`.
+ * 3. The pattern knows one placeholder name. Twenty-six live sites interpolate a
+ *    raw number under `minutes`, `version`, `total`, `paid`, `percent`, `ms`,
+ *    `days`, `sequence`, `low`, `high` and others, and no widening of a name
+ *    this pattern was given can reach a name nobody has invented yet.
+ *
+ * #285 replaces this half with the type: `Interpolations` narrowed to `string`
+ * makes the compiler enumerate the class instead of a regex guessing at it. The
+ * behavioural test above is not affected and stays either way. Widening this
+ * pattern in the meantime is not worth it - a guard named for the instance
+ * rather than for the class covers the instance.
  */
 const SOURCE_ROOT = join(import.meta.dirname, '../../..');
 

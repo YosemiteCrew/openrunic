@@ -117,8 +117,28 @@ export interface FhirResourceModule {
    * checked by reading the file is a rule somebody adds a resource past.
    */
   readonly chartFrom?: CollectionKey;
-  search(c: Context<AppEnv>, params: SearchParams, paging: FhirPaging): Promise<Page<FhirResource>>;
+  search(
+    c: Context<AppEnv>,
+    params: SearchParams,
+    paging: FhirPaging,
+    options?: SearchOptions
+  ): Promise<Page<FhirResource>>;
   read(c: Context<AppEnv>, id: string): Promise<FhirResource | null>;
+}
+
+/**
+ * Options a caller passes to {@link FhirResourceModule.search}.
+ *
+ * `authorizedExport` skips the per-chart care-relationship gate. It is set by
+ * the bulk-export path alone, which is authorised organisation-wide - the route
+ * requires `facility.all`, an organisation-scoped token, and each module's
+ * permission - so gating it per chart would demand the exporter have a care
+ * relationship with every patient in the tenant, which no legitimate exporter
+ * has and no interactive reader is ever granted. The interactive search sets
+ * nothing and stays gated.
+ */
+export interface SearchOptions {
+  readonly authorizedExport?: boolean;
 }
 
 export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = undefined>(
@@ -140,7 +160,7 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
     permission: descriptor.permission,
     ...(descriptor.chartFrom === undefined ? {} : { chartFrom: descriptor.chartFrom }),
 
-    async search(c, params, paging): Promise<Page<FhirResource>> {
+    async search(c, params, paging, options): Promise<Page<FhirResource>> {
       const repositories = repositoriesOf(c);
       const page = await descriptor
         .collection(repositories)
@@ -175,7 +195,9 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
        */
       const isPatientResource = descriptor.type === 'Patient';
       const gateThisSearch =
-        descriptor.chartFrom !== undefined && (!isPatientResource || addressesOneChart(params));
+        descriptor.chartFrom !== undefined &&
+        options?.authorizedExport !== true &&
+        (!isPatientResource || addressesOneChart(params));
       if (gateThisSearch) {
         for (const chartId of new Set(
           page.rows.map((row) => chartOf(descriptor.chartFrom, row)).filter(isPresent)

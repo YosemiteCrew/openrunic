@@ -251,7 +251,9 @@ function makeTaskRow(overrides: Partial<TaskRow> = {}): TaskRow {
     assigneeType: 'USER',
     assigneeUserId: CLINICIAN,
     assigneeTeamKey: null,
-    assignedById: null,
+    // Delegated by someone else, so the assigned-task source authorises the
+    // assignee: a task with no recorded assigner no longer grants chart access.
+    assignedById: OTHER_USER,
     dueAt: EARLY,
     slaState: 'OK',
     expiresAt: null,

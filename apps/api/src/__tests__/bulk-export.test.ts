@@ -780,3 +780,42 @@ function makeEncounterSeed(): ScopedRow<'Encounter'> {
     signedById: null,
   };
 }
+
+describe('an authorised organisation-wide export is exempt from the per-chart care gate', () => {
+  it('exports a chart the exporter has no care relationship with', async () => {
+    // The regression the care-relationship gate introduced: $export walks every
+    // chart-bearing resource through module.search, and the gate would 404 the
+    // whole export on the first patient the exporter is not treating. An
+    // organisation-wide export is authorised differently - facility.all, an
+    // org-scoped token, each module's permission - and must not require a
+    // relationship with every patient. This patient has clinical data but NO
+    // encounter or appointment, so nothing gives adminA a care relationship.
+    const { app, dataset } = harness();
+    seed(dataset, 'Condition', {
+      id: testId(9401),
+      tenantId: DEMO_TENANT_A,
+      patientId: PATIENT,
+      encounterId: null,
+      category: 'PROBLEM_LIST_ITEM',
+      code: 'E11.9',
+      codeSystem: 'http://hl7.org/fhir/sid/icd-10-cm',
+      display: 'Type 2 diabetes mellitus',
+      snomedCode: null,
+      clinicalStatus: 'ACTIVE',
+      verificationStatus: 'CONFIRMED',
+      onsetDate: null,
+      abatementDate: null,
+      severityCode: null,
+      bodySiteCode: null,
+      note: null,
+      recordedAt: FIXED_NOW,
+      recordedById: null,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    } as never);
+
+    const { manifest } = await exportAndPoll(app, '/fhir/$export?_type=Condition');
+
+    expect(manifest.output.map((file) => file.type)).toContain('Condition');
+  });
+});

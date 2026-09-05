@@ -545,7 +545,15 @@ async function collectType(
   let total = 0;
 
   for (let offset = 0; offset < limit; offset += EXPORT_PAGE_SIZE) {
-    const page = await module.search(c, {}, { offset, count: EXPORT_PAGE_SIZE });
+    // Authorised organisation-wide, so exempt from the per-chart care gate: the
+    // route already required facility.all, an org-scoped token, and this
+    // module's permission. See SearchOptions in resource-module.ts.
+    const page = await module.search(
+      c,
+      {},
+      { offset, count: EXPORT_PAGE_SIZE },
+      { authorizedExport: true }
+    );
     total = page.total;
     collected.push(...page.rows);
     // All three conditions are needed. A page shorter than the one asked for is

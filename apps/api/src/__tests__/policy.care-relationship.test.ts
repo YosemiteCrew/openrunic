@@ -97,6 +97,8 @@ function aTeamWithMember(
     status?: ScopedRow<'CareTeam'>['status'];
     periodStart?: Date | null;
     periodEnd?: Date | null;
+    teamPeriodStart?: Date | null;
+    teamPeriodEnd?: Date | null;
   }
 ): void {
   const patientId = options.patientId ?? PATIENT;
@@ -105,8 +107,8 @@ function aTeamWithMember(
     patientId,
     status: options.status ?? 'ACTIVE',
     name: null,
-    periodStart: null,
-    periodEnd: null,
+    periodStart: options.teamPeriodStart ?? null,
+    periodEnd: options.teamPeriodEnd ?? null,
   });
   seed(dataset, 'CareTeamParticipant', {
     ...storageColumns(options.memberId),
@@ -250,18 +252,6 @@ const GRANTED: readonly GrantedCase[] = [
     },
   },
   {
-    why: 'the routing engine raised a task about this patient for them',
-    source: 'assigned-task',
-    seedIt: (dataset) => {
-      /* A null assigner is the system's own task, raised from a domain event
-         rather than by a person, and it is trusted for the same reason the
-         event is. Written out because "nobody assigned it" and "they assigned
-         it to themselves" are one column apart and only one of them is
-         evidence. */
-      aTask(dataset, testId(3_017), SUBJECTS.clinicianA, null);
-    },
-  },
-  {
     why: 'somebody else is due to see them at a site the clinician works at',
     source: 'facility-activity',
     seedIt: (dataset) => {
@@ -325,6 +315,16 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
          assignee filter it would authorise on the existence of any task about
          the patient, which is every patient anyone has ever worked. */
       aTask(dataset, testId(3_027), OTHER_PROVIDER);
+    },
+  },
+  {
+    why: 'the only task about them has no recorded assigner',
+    seedIt: (dataset) => {
+      /* Null is not trusted-because-system: it is every task from before the
+         column existed, every task an old instance writes mid-rolling-deploy,
+         and a task self-assigned through the pre-change handler. An absence is
+         not provenance, so it does not authorise. */
+      aTask(dataset, testId(3_029), SUBJECTS.clinicianA, null);
     },
   },
   {
@@ -397,6 +397,30 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
         memberId: testId(3_024),
         periodStart: new Date(FIXED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000),
         periodEnd: new Date(FIXED_NOW.getTime() - 24 * 60 * 60 * 1000),
+      });
+    },
+  },
+  {
+    why: 'the team they are on has not started yet',
+    seedIt: (dataset) => {
+      /* A team can be marked ACTIVE with a period that has not begun. Status is
+         not the whole of "in force". */
+      /* Future relative to the real clock the check reads (`new Date()`), not to
+         FIXED_NOW: a start a day past FIXED_NOW is already behind us. */
+      aTeamWithMember(dataset, {
+        teamId: testId(3_033),
+        memberId: testId(3_034),
+        teamPeriodStart: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+    },
+  },
+  {
+    why: 'the team they are on has stood down',
+    seedIt: (dataset) => {
+      aTeamWithMember(dataset, {
+        teamId: testId(3_035),
+        memberId: testId(3_036),
+        teamPeriodEnd: new Date(FIXED_NOW.getTime() - 24 * 60 * 60 * 1000),
       });
     },
   },

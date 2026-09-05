@@ -160,6 +160,18 @@ services:
       # demo tokens to demo users and prints a warning saying so on every boot.
       # See docs/self-hosting.md before pointing anything real at this.
       OPENRUNIC_AUTH_MODE: ${OPENRUNIC_AUTH_MODE:-demo-tokens}
+      # The canonical base the Questionnaires this deployment publishes claim.
+      # Passed through rather than left out: unset in the container, a published
+      # form claims a canonical URL on the openrunic project's own domain, which
+      # this practice does not run and nobody can resolve to its forms - the
+      # exact outcome the setting exists to prevent, and it was unreachable from
+      # a self-hosted stack while this line was missing.
+      #
+      # `:-` and not `:?`: most deployments serve no Questionnaires and need
+      # nothing here. It resolves to an empty string when .env leaves the key
+      # blank, which is what .env.example ships, and the API reads a blank
+      # setting as unset rather than as a malformed URL.
+      OPENRUNIC_FHIR_BASE_URL: ${OPENRUNIC_FHIR_BASE_URL:-}
     ports:
       - '${API_PORT:-4000}:4000'
     deploy:

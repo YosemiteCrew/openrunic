@@ -16,7 +16,6 @@ import {
   bearer,
   createTestApp,
   DEMO_TENANT_A,
-  FIXED_NOW,
   seed,
   seedCareRelationship,
   testId,
@@ -55,6 +54,24 @@ const PRESCRIPTION_ID = testId(341);
  */
 const NETWORK_NOW = new Date('2026-04-01T09:15:00.000Z');
 
+/**
+ * Three distinguishable instants on the fixture, and the reason they have to be.
+ *
+ * `writtenAt` was previously `FIXED_NOW`, and so were `createdAt` and
+ * `updatedAt` - so an assertion naming `writtenAt` was satisfied by any of the
+ * three and could not say which column the route had read. Review found that
+ * sending `updatedAt` instead passed with the assertion in place, which is the
+ * same defect as the drug-code precedence one file over: a fixture where two
+ * fields are equal cannot separate two readings of them.
+ *
+ * `updatedAt` is the one that matters. It moves on the write this very route
+ * performs, so a prescription written on Monday and transmitted on Wednesday
+ * would reach the pharmacy dated Wednesday, with a receipt that looks correct.
+ */
+const WRITTEN_AT = new Date('2026-03-02T08:00:00.000Z');
+const CREATED_AT = new Date('2026-03-02T08:00:01.000Z');
+const ROW_UPDATED_AT = new Date('2026-03-04T16:30:00.000Z');
+
 /** A prescription with everything a network needs, so a refusal means what it says. */
 function readyPrescription(overrides: Partial<MedicationRequestRow> = {}): MedicationRequestRow {
   return {
@@ -79,10 +96,10 @@ function readyPrescription(overrides: Partial<MedicationRequestRow> = {}): Medic
     status: 'SIGNED',
     intent: 'ORDER',
     erxRef: null,
-    writtenAt: FIXED_NOW,
+    writtenAt: WRITTEN_AT,
     transmittedAt: null,
-    createdAt: FIXED_NOW,
-    updatedAt: FIXED_NOW,
+    createdAt: CREATED_AT,
+    updatedAt: ROW_UPDATED_AT,
     ...overrides,
   };
 }
@@ -253,7 +270,46 @@ describe('what reaches the prescribing network', () => {
       refills: 0,
       daysSupply: 7,
       dispenseAsWritten: false,
+      /*
+       * The date the prescriber wrote it, and not the row's own `updatedAt` -
+       * which this route moves as it writes the reference. A prescription
+       * written on Monday and transmitted on Wednesday must not reach the
+       * pharmacy dated Wednesday.
+       *
+       * Only separable because the fixture now carries three distinguishable
+       * instants: with all three equal, this assertion passed while the route
+       * sent the wrong one.
+       */
+      writtenAt: WRITTEN_AT.toISOString(),
     });
+  });
+
+  it('sends the controlled-substance schedule when the prescription carries one', async () => {
+    /*
+     * The branch with no execution anywhere. `controlledSchedule` is optional on
+     * the seam and spread conditionally, every case in this file leaves it null,
+     * and this file is the only exercise of `toTransmitInput` - so deleting the
+     * line left all nineteen green. A Schedule II prescription would have
+     * transmitted with the schedule silently absent, and a network that does not
+     * require it would accept it.
+     */
+    const adapter = new RecordingErxAdapter();
+    const h = await harness(adapter, readyPrescription({ controlledSchedule: '2' }));
+
+    await post(h, 'transmit');
+
+    expect(adapter.sent[0]?.controlledSchedule).toBe('2');
+  });
+
+  it('omits the schedule for a prescription that is not controlled', async () => {
+    // The other half: the field is optional, and sending it as null or as an
+    // empty string would be a different assertion about the same prescription.
+    const adapter = new RecordingErxAdapter();
+    const h = await harness(adapter);
+
+    await post(h, 'transmit');
+
+    expect(adapter.sent[0]).not.toHaveProperty('controlledSchedule');
   });
 });
 

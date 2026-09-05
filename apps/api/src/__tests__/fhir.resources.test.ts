@@ -1312,11 +1312,16 @@ describe('a dispense too large to summarise is refused rather than understated',
    * told", and it is the wrong answer. The interesting claim is that the
    * dispense that was fine is still served.
    */
-  function world(alsoFitting: boolean): ReturnType<typeof createTestApp> {
+  function world(alsoFitting: boolean, inCare = true): ReturnType<typeof createTestApp> {
     const made = createTestApp();
     const { dataset } = made;
     seed(dataset, 'Patient', makePatientRow({ id: patient, mrn: 'OR-700100' }));
-    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    /* The appointment is what gives a staff principal a care relationship with
+       this chart. `inCare: false` withholds it, which is the only way to reach
+       the gate below with an otherwise ordinary token. */
+    if (inCare) {
+      seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    }
     seed(dataset, 'StockItem', {
       ...storageColumns(testId(7010)),
       sku: 'MET-500',
@@ -1447,6 +1452,33 @@ describe('a dispense too large to summarise is refused rather than understated',
     // The posting is named, so a client is told which record is at fault rather
     // than only that something on this chart cannot be served.
     expect(outcome.issue?.[0]?.diagnostics).toContain(posting);
+  });
+
+  it('refuses a reader with no care relationship before it says the record is unprojectable', async () => {
+    /*
+     * The order of the two checks in `read`, asserted rather than left to the
+     * comment that states it.
+     *
+     * `withheld` runs after `assertCareRelationship` on purpose. Run first, it
+     * answers 501 to a principal the policy layer is about to refuse - and this
+     * 501 is not an empty refusal: it names the posting and says the dispense
+     * was drawn from more than fifty lots. That is the record's id and a fact
+     * about its size, handed to a reader who is not allowed to know it exists.
+     *
+     * Nothing but the ordering stands between those two answers, `withheld` is
+     * a framework hook other modules will implement, and swapping the lines
+     * leaves the rest of the suite green. So the refusal is pinned here: 404,
+     * the same answer this chart gives for any record, with no diagnostics.
+     */
+    const { app } = world(false, false);
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(404);
+    // And specifically not the 501, which would name the record while refusing it.
+    expect(JSON.stringify(await res.json())).not.toContain(posting);
   });
 
   it('serves the rest of the chart and names the one it withheld', async () => {

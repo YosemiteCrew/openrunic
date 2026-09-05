@@ -127,6 +127,7 @@ on:
     branches:
       - dev
       - main
+      - feat/forbidden-terms-gate
   workflow_dispatch:
 
 concurrency:

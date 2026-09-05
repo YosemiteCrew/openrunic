@@ -58,3 +58,5 @@ bug and open an issue.
 # docs/traffic.md
 history, it starts from the day the secret was first set, not from the day the repository opened.
 many times has this been cloned since we opened it", and neither can the API: by the time the
+
+Probe: this line exists only to give the gate a diff to read.

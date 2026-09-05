@@ -957,12 +957,12 @@ describe('a task is evidence only when somebody else produced it', () => {
     expect(res.status).toBe(200);
   });
 
-  it('refuses the chart to a reader who points somebody else task at themselves', async () => {
+  it('refuses even the reassignment to a reader with no relationship to the chart', async () => {
     /*
-     * A reassignment is a fresh statement of who handed the work out. Stamping
-     * only on create would leave the walk-round intact and one verb further
-     * away: file nothing, find any task about the chart, PATCH it onto
-     * yourself, and inherit the assigner along with the task.
+     * The chart gate now stops the walk-round at the PATCH itself. Reassigning a
+     * task about a chart you are not on is a chart amendment, refused the same
+     * way the read is, so the attack never reaches the point where the
+     * provenance stamp would decide it.
      */
     const { app, dataset } = createTestApp();
     aChartNobodyIsInvolvedWith(dataset);
@@ -973,10 +973,40 @@ describe('a task is evidence only when somebody else produced it', () => {
       headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
       body: JSON.stringify({ assigneeType: 'USER', assigneeUserId: SUBJECTS.billerA }),
     });
-    expect(moved.status).toBe(200);
+    expect(moved.status).toBe(404);
     const res = await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) });
-
     expect(res.status).toBe(404);
+  });
+
+  it('reassigning a delegated task to yourself stops it authorising the chart', async () => {
+    /*
+     * The case the stamp exists for, now that the gate lets a reassignment
+     * through only when the reader already has a relationship. billerA is handed
+     * a task about the chart by clinicianA, which authorises billerA through
+     * `assigned-task` - somebody else produced the row. billerA then reassigns
+     * it to themselves. The stamp rewrites who handed it out, so the task is now
+     * theirs-assigned-by-themselves and is no longer evidence: the very read
+     * that worked a moment ago is refused. Stamping only on create would leave
+     * `assignedById` as clinicianA and keep the chart open forever on the
+     * strength of a delegation the reader has since erased.
+     */
+    const { app, dataset } = createTestApp();
+    aChartNobodyIsInvolvedWith(dataset);
+    const id = await fileTask(app, TOKENS.clinicianA, SUBJECTS.billerA);
+
+    // Authorised by the delegated task while clinicianA is still its assigner.
+    expect((await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) })).status).toBe(200);
+
+    const moved = await app.request(`/bff/v0/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({ assigneeType: 'USER', assigneeUserId: SUBJECTS.billerA }),
+    });
+    expect(moved.status).toBe(200);
+
+    // Now theirs-assigned-by-themselves: the task no longer counts, and nothing
+    // else connects billerA to this chart.
+    expect((await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) })).status).toBe(404);
   });
 
   it('refuses an assigner named in the request body', async () => {

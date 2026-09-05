@@ -3,11 +3,9 @@ import type { Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
 import { assertCareRelationship } from '../middleware/policy.js';
+import { chartIdOf } from '../policy/chart.js';
 import type { Permission } from '../policy/permissions.js';
-import type { BaseQuery, CollectionSpec, Page } from '../repositories/collection.js';
-import { patientOf } from '../repositories/memory.js';
-import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
-import { COLLECTION_SPECS } from '../repositories/specs/index.js';
+import type { BaseQuery, Page } from '../repositories/collection.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 
 import type { FhirPaging, SearchParams } from './params.js';
@@ -149,21 +147,36 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
         .list(await descriptor.toQuery(params, paging, repositories));
 
       /*
-       * A search that names one chart is a read wearing a search's clothes.
+       * A search of chart data is a read of every chart it returns, so it needs
+       * a relationship with every one - the same rule as the addressed read,
+       * applied to whatever the query brought back.
        *
-       * Gating only the addressed read left `?_id=` and `?identifier=` as a way
-       * straight past it: `GET /fhir/Patient/{id}` answered 404 and
-       * `GET /fhir/Patient?_id={id}` answered 200 with the whole resource. The
-       * two are the same question, so they get the same answer.
+       * The gate used to fire only when the search named a chart (`patient`,
+       * `_id`, `identifier`). That closed `?patient=` and `?_id=` and left the
+       * widest hole of all open behind them: `GET /fhir/Condition?code=E11.9`,
+       * or a bare `GET /fhir/Condition`, named no chart, skipped the gate, and -
+       * because a clinical resource carries a patient compartment but no facility
+       * of its own - returned every matching row in the tenant to a reader with
+       * no relationship to any of them. The addressed read was refused and the
+       * set-search was not, for the same row.
        *
-       * Only these two parameters, and only for a resource that declares a
-       * chart. Narrowing an ordinary search this way would break registration
-       * and duplicate-checking, which look somebody up by name and birth date
-       * precisely because there is no relationship yet - and #169 requires those
-       * to keep working. `_id` and `identifier` are different: both address a
-       * specific known record rather than looking for one.
+       * So the gate now runs on the returned page for every chart resource. A
+       * row that names no chart (an unfiled fax) has none to check and is
+       * returned; a row that does is refused unless the reader is in that
+       * patient's care, which turns a broad clinical search into a chart-scoped
+       * one and leaves an inbox of unclaimed documents working.
+       *
+       * `Patient` is the exception, and only for a search that does not address
+       * one: looking somebody up by name and birth date is how registration and
+       * duplicate-checking find a chart there is no relationship with yet, and
+       * #169 requires that to keep working. A `Patient` search that DOES name a
+       * chart (`_id`, `identifier`) is still the addressed read wearing a
+       * search's clothes, and is gated.
        */
-      if (descriptor.chartFrom !== undefined && addressesOneChart(params)) {
+      const isPatientResource = descriptor.type === 'Patient';
+      const gateThisSearch =
+        descriptor.chartFrom !== undefined && (!isPatientResource || addressesOneChart(params));
+      if (gateThisSearch) {
         for (const chartId of new Set(
           page.rows.map((row) => chartOf(descriptor.chartFrom, row)).filter(isPresent)
         )) {
@@ -280,14 +293,7 @@ function isPresent(value: string | undefined): value is string {
  * than a column, and a per-module accessor would have had to remember that.
  */
 function chartOf(key: CollectionKey | undefined, row: unknown): string | undefined {
-  if (key === undefined) return undefined;
-  const spec = COLLECTION_SPECS[key] as CollectionSpec<
-    PrismaModelName,
-    unknown,
-    unknown,
-    BaseQuery
-  >;
-  return patientOf(spec, row as ScopedRow<PrismaModelName>).patientId;
+  return key === undefined ? undefined : chartIdOf(key, row);
 }
 
 function repositoriesOf(c: Context<AppEnv>): Repositories {

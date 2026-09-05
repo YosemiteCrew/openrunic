@@ -221,6 +221,43 @@ get the ADR's stronger version, where the check is structurally impossible to sk
 under the data access rather than above it. Moving it there remains the better answer and is not
 done.
 
+**The gate reaches the generic BFF CRUD resources, not only `/patients/:id`.**
+The check first landed on the FHIR boundary, on `/patients/:id`, and on the two patient sub-routes.
+It did not reach the aggregates the BFF serves through `defineCrud` - problems, observations,
+medications, results, claims, coverage, tasks, and the rest - so `GET /bff/v0/problems/:id` returned
+a chart the matching `GET /fhir/Condition/{id}` refused, to any reader holding the plain read
+permission, a different facility's chart included, because a condition carries no facility of its
+own. This was the same id-knowledge access the whole ADR is against, left open on the surface the
+practice's own UI uses.
+
+It is now closed where the ADR wanted it: in the seam. `crud.ts` gates every read, list, and
+amendment on the care relationship, keyed off a `chartFrom` each chart-bearing aggregate declares. `bff.chart-crud-gate.test.ts` fails the build if an aggregate whose spec has a
+`patientColumn` omits it, so the gate cannot be forgotten for a new resource. This is closer to the
+ADR's "under the data access" than the per-handler call the patient routes still use, though the
+repository layer itself is still unaware of the relationship.
+
+**A set-search of chart data is gated on every chart it returns.**
+The gate first fired only when a search named a chart - `patient`, `_id`, `identifier`. That closed
+`?patient=` and left the widest hole behind it: a clinical resource carries a patient compartment but
+no facility of its own, so `GET /fhir/Condition?code=E11.9`, or a bare `GET /fhir/Condition`, named
+no chart, skipped the gate, and returned every matching row in the tenant to a reader with no
+relationship to any of them - the addressed read refused, the set-search not, for the same row. The
+same residue sat behind the BFF list. Both boundaries now run the gate on the rows the search
+returned: a row that names no chart (an unfiled fax) has none to check and comes back; a row that
+does is refused unless the reader is in that patient's care, which turns a broad clinical search into
+a chart-scoped one. `Patient` is the one exception, and only for a search that names no chart, because
+finding a patient by name and birth date is how registration reaches a chart there is no relationship
+with yet.
+
+**The relationship check is not audited as the reader's access.**
+Deciding whether a read is allowed means querying the rows that would authorise it - an encounter, an
+appointment, a task. Those queries go through the same audited repositories as the read itself, so
+without care they landed in the reader's `phi.read` event, listing the appointment that authorised a
+report among the things the reader read and inflating the per-patient disclosure report with rows
+nobody asked for. The check now runs with read-recording suppressed; the access is recorded by its
+own `chart.access` event instead. This corrected the FHIR boundary too, where the same pollution had
+shipped untested.
+
 **A task is evidence only when somebody else produced it.**
 The ADR's table lists `Task.assigneeUserId` and says nothing about who wrote the row, which reads
 as an oversight only once you notice that the row is the evidence. Every role that can read a chart

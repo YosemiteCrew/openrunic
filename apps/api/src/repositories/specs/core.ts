@@ -139,6 +139,9 @@ export const patientSpec: CollectionSpec<
    */
   facilityColumn: 'primaryFacilityId',
   facilityScoped: true,
+  // `primaryFacilityId` is nullable: somebody registered before a site was
+  // recorded is not sited, and stays visible to the whole tenant.
+  facilityColumnOptional: true,
   facilityHidesAddressed: false,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.

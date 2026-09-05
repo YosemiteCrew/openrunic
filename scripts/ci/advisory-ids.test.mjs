@@ -312,3 +312,20 @@ test('a missing identifier alongside an unreachable one still reports both', asy
   assert.match(output, /could not check CVE-/u);
   assert.match(output, /do not exist/u);
 });
+
+/**
+ * The guard's own false red, refused. Having no path exemption at all is a
+ * legitimate configuration, and failing on it would be exactly what this guard
+ * declines to do to an unreachable registry - condemn a correct state for
+ * producing no evidence.
+ */
+test('having no path exemptions at all is not a failure', () => {
+  const previous = EXCLUDED_PATHS.splice(0, EXCLUDED_PATHS.length);
+  try {
+    const problems = scanProblems({ cited: [{}], excludedByPath: [], placeheld: allPlaceheld });
+
+    assert.deepEqual(problems, []);
+  } finally {
+    EXCLUDED_PATHS.push(...previous);
+  }
+});

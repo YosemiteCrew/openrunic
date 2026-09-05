@@ -221,7 +221,12 @@ export function scanProblems({ cited, excludedByPath, placeheld }) {
   // An exclusion that matches nothing is an exemption nobody is using and
   // nobody is checking, and the next file it silently covers will be one that
   // matters.
-  if (excludedByPath.length === 0) {
+  //
+  // Guarded on the list being non-empty rather than asserted unconditionally,
+  // because having no path exemptions at all is a legitimate state and failing
+  // on it would be this guard's own false red - the thing it refuses to do to
+  // an unreachable registry, done to a correct configuration instead.
+  if (EXCLUDED_PATHS.length > 0 && excludedByPath.length === 0) {
     problems.push({
       reason:
         'EXCLUDED_PATHS matched no citation: delete the entry rather than leaving an unused exemption',

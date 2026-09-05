@@ -198,32 +198,42 @@ export function todayUtc(now = new Date()) {
 }
 
 /**
- * One exception file's text, or null when it genuinely is not there.
+ * One exception file's text. A file named here and not on disk is a failure.
  *
- * The two cases are kept apart on purpose, and that distinction is the whole
- * point of this function.
+ * It used to return null instead, because `.trivyignore` "can legitimately be
+ * absent" and a file that is not there has no exceptions to expire. That
+ * sentence was speculative - all three files exist - and it bought a hole:
+ * an entry in {@link SOURCES} that has stopped naming a real file is
+ * INDISTINGUISHABLE from a file that legitimately has none. Rename
+ * `.grant.yaml` and leave the list alone and this script reports
+ * "2 accepted finding(s), all current" and exits 0, with seven dated licence
+ * exceptions no longer re-reviewed and the success line counting the survivors
+ * as though they were all of them.
  *
- * `.trivyignore` can legitimately be absent, and a file that is not there has
- * no exceptions to expire. But a file that EXISTS and cannot be read is a
- * different thing entirely. Swallowing that would make this script report
- * "0 accepted findings, all current" and exit zero having checked nothing: a
- * security gate passing because it could not do its job, which is exactly the
- * failure this script was written to stop happening to a re-review date. So
- * anything other than "not found" is raised.
+ * `.trivyignore` is the quiet version: it carries no live entries today, so
+ * renaming it does not move the count at all, and the exception somebody adds
+ * to the new name next month is never checked.
  *
- * "Not found" is decided by `lstat` rather than by the read's error code,
- * because a dangling symlink fails the read with ENOENT too. The path exists,
- * somebody put it there deliberately, and whatever it was meant to point at is
- * gone - which is exactly the unreadable case, wearing the missing case's error
- * code. `lstat` sees the link itself and does not follow it, so the two are
- * told apart.
+ * So the optionality is gone rather than made configurable. A scanner that is
+ * genuinely dropped loses its {@link SOURCES} entry in the same commit that
+ * removes its config, which is the coupling that was missing. A per-entry
+ * "expected" flag would have restored the hole for whichever entry carried the
+ * flag, and the caller deciding the coverage is the defect this repository has
+ * spent the day removing from other guards.
+ *
+ * A file that EXISTS and cannot be read stays a different thing, and the
+ * distinction is still worth its `lstat`: a dangling symlink fails the read
+ * with ENOENT too, so an error-code check alone would report it with the
+ * missing file's message. The path is there, somebody put it there, and what
+ * it pointed at is gone. `lstat` sees the link rather than its target, so the
+ * two keep their own messages.
  *
  * The path goes through `resolveWithin` for the reason the other CI scripts do.
  * It is not reachable input today, {@link SOURCES} being a constant in this
  * file, but a guard that reads paths is a guard somebody will later hand a path
  * to.
  */
-function readIfPresent(root, file) {
+function readSource(root, file) {
   const resolved = resolveWithin(root, file);
   if (resolved === null) {
     throw new Error(`exception-expiry: refusing to read ${file}, which escapes ${root}`);
@@ -231,7 +241,14 @@ function readIfPresent(root, file) {
   try {
     lstatSync(resolved);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      throw new Error(
+        `exception-expiry: ${file} is named in SOURCES but is not in ${root}. ` +
+          'Either the file was renamed and the list was not, or the scanner was ' +
+          'dropped and its entry should go with it. A source that names nothing ' +
+          'is not a source with no exceptions.'
+      );
+    }
     throw error;
   }
 
@@ -244,8 +261,7 @@ function readIfPresent(root, file) {
 export function checkWith(root, today, sources) {
   const exceptions = [];
   for (const source of sources) {
-    const text = readIfPresent(root, source.file);
-    if (text !== null) exceptions.push(...findExceptions(text, source));
+    exceptions.push(...findExceptions(readSource(root, source.file), source));
   }
   return { exceptions, problems: expired(exceptions, today) };
 }

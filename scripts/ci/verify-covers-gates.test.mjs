@@ -31,11 +31,30 @@
 // how a gate leaves `verify` quietly; one that has to be written down is a
 // decision somebody can disagree with in review.
 //
+// ## But a reason that never has to stay true is the same silence with prose
+//
+// Most of those reasons are judgements - `restores over a running deployment`
+// is a claim only a human can settle, and prose is the right medium for it.
+// Two are not. `globbed by check:ci-scripts:test` is a fact about the
+// filesystem, and it stops being true the moment somebody moves a file: repoint
+// `check:phi:test` at `scripts/phi/` and 37 assertions stop running in `verify`
+// and in CI - `check:ci-scripts:test` goes from 127 to 90 - while the exclusion
+// still reads as coverage. `_repo.yaml` runs the glob and not the individual
+// script, so nothing picks them up.
+//
+// So the factual exclusions are checked as facts, keyed on the shape of the
+// command rather than on the sentence beside it. A reworded reason cannot
+// switch it off, and a third `node --test` script excluded tomorrow is covered
+// without anyone remembering to add it to a list. An exemption is the cheapest
+// place to put an unchecked claim, because the claim is the reason you are
+// allowed to skip the check.
+//
 // Run with `node --test scripts/ci/verify-covers-gates.test.mjs`, or
 // `pnpm run check:ci-scripts:test`.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
@@ -96,6 +115,39 @@ const NOT_IN_VERIFY = {
   'agent:conform': 'generates and checks the agent conformance surface in its own workflow',
 };
 
+/**
+ * The test files a `node --test <paths and globs>` script actually runs.
+ *
+ * Keyed on the shape of the command rather than on the prose beside it. Two of
+ * the exclusions below - `check:phi:test` and `check:compose:test` - are the
+ * only entries in that table asserting a fact about the filesystem rather than
+ * a judgement, and `globbed by check:ci-scripts:test` is a claim that stops
+ * being true the moment somebody moves a file. A reworded reason must not be
+ * able to switch the check off, and a third `node --test` script excluded
+ * tomorrow is covered without anyone remembering to add it anywhere.
+ */
+function testFilesRunBy(script) {
+  const args = script
+    .split(/\s+/u)
+    .slice(2)
+    .filter((arg) => !arg.startsWith('-'));
+  const files = new Set();
+  for (const arg of args) {
+    if (!arg.includes('*')) {
+      files.add(arg);
+      continue;
+    }
+    const directory = path.posix.dirname(arg);
+    const suffix = path.posix.basename(arg).replace(/^\*/u, '');
+    for (const entry of readdirSync(fileURLToPath(new URL(directory, root)))) {
+      if (entry.endsWith(suffix)) files.add(path.posix.join(directory, entry));
+    }
+  }
+  return files;
+}
+
+const isNodeTest = (name) => (scripts[name] ?? '').startsWith('node --test ');
+
 /** The scripts `verify` runs, in the order it runs them. */
 const chained = [...(scripts.verify ?? '').matchAll(/pnpm run ([a-z0-9:._-]+)/gu)].map(
   (match) => match[1]
@@ -141,6 +193,53 @@ describe('pnpm verify', () => {
       `NOT_IN_VERIFY names scripts that no longer exist: ${gone.join(', ')}. ` +
         'A stale exclusion is an exemption nobody asked for, waiting for the name to come back.'
     );
+  });
+
+  it('still runs the test files it excludes as already covered', () => {
+    // The reason is prose and this is the fact under it. `check:phi:test` and
+    // `check:compose:test` are out of the chain because `check:ci-scripts:test`
+    // globs the same files - move `phi-guard.test.mjs` one directory and
+    // repoint its own script, an ordinary tidy-up, and 37 assertions stop
+    // running in `verify` and in CI while the exclusion still says they are
+    // covered. Measured: `check:ci-scripts:test` goes from 127 to 90.
+    const covered = new Set(
+      chained.filter(isNodeTest).flatMap((name) => [...testFilesRunBy(scripts[name])])
+    );
+    /*
+     * The canary, and it is here for the naming rather than for the silence.
+     * With nothing read, the loop below fails anyway - saying every excluded
+     * gate runs nowhere, which sends the next reader to move files around
+     * instead of to the chain that stopped being readable.
+     *
+     * It asks whether the chain is READABLE and deliberately not whether it is
+     * BIG. A threshold here answers the wrong question: narrowing
+     * `check:ci-scripts:test` from its glob to one file leaves two files
+     * covered and is a real defect, but it is the coverage loop's defect, and a
+     * `>= 5` canary reports it as `read 2 test files out of the verify chain` -
+     * the symptom of a different cause, one line before the assertion that
+     * would have named the uncovered file.
+     */
+    assert.ok(
+      chained.some(isNodeTest),
+      'no step in the verify chain runs node --test: this assertion is reading nothing'
+    );
+    assert.ok(covered.size > 0, 'the verify chain runs node --test over no files at all');
+
+    const excludedTestScripts = Object.keys(NOT_IN_VERIFY).filter(isNodeTest);
+    assert.ok(
+      excludedTestScripts.length > 0,
+      'no excluded script runs node --test: this assertion is reading nothing'
+    );
+
+    for (const name of excludedTestScripts) {
+      const missing = [...testFilesRunBy(scripts[name])].filter((file) => !covered.has(file));
+      assert.deepEqual(
+        missing,
+        [],
+        `${name} is excluded from verify as already covered, but ${missing.join(', ')} is run by ` +
+          'nothing in the chain. The exclusion is false and the gate now runs nowhere.'
+      );
+    }
   });
 
   it('gives every exclusion a reason somebody wrote', () => {

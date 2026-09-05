@@ -6,7 +6,7 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseParam, parseQuery } from '../http/validate.js';
-import { requirePermission } from '../middleware/policy.js';
+import { assertCareRelationship, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import { idParamSchema, repositories, required } from './helpers.js';
 
@@ -122,6 +122,10 @@ export function growthRoutes(router: Hono<AppEnv>): void {
     requirePermission('patient.read'),
     async (c) => {
       const patientId = parseParam(c.req.param('id'), idParamSchema, 'id');
+      /* The same gate the addressed read has. This route takes the same id and
+         answers with a child's growth history, so leaving it open would refuse
+         the chart header and serve the measurements. */
+      await assertCareRelationship(c, patientId);
       const query = parseQuery(c, growthQuerySchema);
       const patient = required(
         await repositories(c).patients.findById(patientId),

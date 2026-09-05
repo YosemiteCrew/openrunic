@@ -5,6 +5,13 @@ import {
   toFhirClaim,
   toFhirCondition,
   toFhirCoverage,
+  toFhirMedicationDispense,
+  toFhirCarePlan,
+  toFhirDevice,
+  toFhirGoal,
+  toFhirCareTeam,
+  toFhirProcedure,
+  toFhirRelatedPerson,
   toFhirDiagnosticReport,
   toFhirDocumentReference,
   toFhirEncounter,
@@ -25,6 +32,15 @@ import {
   type Claim,
   type Condition,
   type Coverage,
+  type MedicationDispense,
+  type CarePlan,
+  type Device,
+  type Goal,
+  type CareTeam,
+  type Procedure,
+  type RelatedPerson,
+  type Questionnaire,
+  type QuestionnaireResponse,
   type DiagnosticReport,
   type DocumentReference,
   type Encounter,
@@ -42,6 +58,15 @@ import {
   type Task,
 } from '@openrunic/fhir';
 
+import {
+  compileDefinition,
+  toQuestionnaireResponse,
+  type CompiledForm,
+  type FormDefinition,
+} from '@openrunic/forms-engine';
+import { sumQuantities } from '@openrunic/inventory';
+
+import { fhirBaseUrl } from '../env.js';
 import type { Row, ScopedRow } from '../repositories/rows.js';
 
 /**
@@ -248,6 +273,349 @@ export function locationResource(row: ScopedRow<'Facility'>): Location {
       state: absent(row.state),
       postalCode: absent(row.postalCode),
       country: row.country,
+      active: row.active,
+    })
+  );
+}
+
+/**
+ * What a dispense needs from beyond its own posting.
+ *
+ * A posting says who and when; the movements hanging off it say which product,
+ * how much and from which lot. Both are loaded per page rather than per row.
+ */
+export interface DispensePageData {
+  readonly movementsByPosting: ReadonlyMap<string, readonly ScopedRow<'StockMovement'>[]>;
+  readonly itemsById: ReadonlyMap<string, ScopedRow<'StockItem'>>;
+  readonly lotsById: ReadonlyMap<string, ScopedRow<'StockLot'>>;
+}
+
+/**
+ * Medicine handed to a patient, from the stock posting that recorded it.
+ *
+ * One resource per posting, using its first movement for the product. A
+ * posting of kind DISPENSE is one hand-over, and the ledger writes one movement
+ * per lot it came from, so a second movement means the same medicine drawn from
+ * two lots rather than a second medicine. The first lot is the one reported; a
+ * split across lots is rare and losing the second lot number is a smaller wrong
+ * answer than inventing a second dispense with an id nothing can address.
+ */
+export function medicationDispenseResource(
+  row: ScopedRow<'StockPosting'>,
+  page: DispensePageData
+): MedicationDispense {
+  const movements = page.movementsByPosting.get(row.id) ?? [];
+  const first = movements[0];
+  const item = first === undefined ? undefined : page.itemsById.get(first.itemId);
+  const lot = first === undefined ? undefined : page.lotsById.get(first.lotId);
+
+  return toFhirMedicationDispense(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId ?? '',
+      encounterId: absent(row.encounterId),
+      prescriptionId: absent(row.prescriptionId),
+      rxnormCode: absent(item?.rxnormCode ?? null),
+      ndcCode: absent(item?.ndcCode ?? null),
+      /* The ledger cannot hold a movement without an item, so an absent name
+         means the item row is gone rather than unnamed. Saying so beats an
+         empty string, which reads as a product with no name. */
+      medicationDisplay: item?.name ?? 'Unknown product',
+      /* The sum across every lot the dispense drew from, not the first. One
+         dispense of one product can be filled from several lots, and the ledger
+         records a movement per lot; reporting only the first understates what
+         the patient was handed - a 30-tablet fill split 20/10 would read as 20,
+         and medication reconciliation downstream would be wrong by the rest. */
+      /* Summed on the ledger's six-decimal grid, not in raw floating point. Two
+         fractional movements like 0.1 mL and 0.2 mL add to 0.30000000000000004
+         in JavaScript; the FHIR Quantity must read 0.3, the value the column
+         actually holds, or downstream reconciliation disagrees with the ledger. */
+      quantityValue:
+        movements.length === 0
+          ? undefined
+          : sumQuantities(movements.map((movement) => Number(movement.quantity))),
+      quantityUnit: absent(item?.unit ?? null),
+      whenHandedOver: row.occurredOn.toISOString(),
+      performerId: row.postedById,
+      lotNumber: absent(lot?.lotNumber ?? null),
+    })
+  );
+}
+
+/**
+ * The row's definition, rebuilt into the shape the compiler takes.
+ *
+ * The columns and the JSON document are two halves of one definition: key,
+ * version, title, description and binding live as columns because they are
+ * queried, and the fields live in `definition` because nothing queries inside
+ * them. The compiler wants them back together.
+ */
+export function compileFormRow(row: ScopedRow<'FormDefinition'>): CompiledForm {
+  const baseUrl = fhirBaseUrl();
+  const document = (row.definition ?? {}) as { fields?: unknown };
+  const result = compileDefinition(
+    {
+      key: row.key,
+      version: row.version,
+      title: row.title,
+      ...(row.description === null ? {} : { description: row.description }),
+      bindTo: row.bindTo,
+      fields: (document.fields ?? []) as FormDefinition['fields'],
+    },
+    /*
+     * The canonical base is the deployment's own. Left unset the compiler
+     * falls back to this project's domain, and a self-hosted practice would
+     * publish Questionnaires claiming a canonical URL on a host it does not
+     * run and nobody can resolve to its forms. `.env.example` says to set it.
+     */
+    baseUrl === undefined ? {} : { baseUrl }
+  );
+  if (!result.ok) {
+    /* Unreachable for a PUBLISHED row: publishing compiles first. Reaching it
+       means the invariant broke, and saying so beats serving a form that
+       appears to ask nothing. */
+    throw new Error(`form definition ${row.key} v${row.version} is PUBLISHED but does not compile`);
+  }
+  return result.value;
+}
+
+/**
+ * A published form, as its FHIR `Questionnaire`.
+ *
+ * Compiled here from the row's own definition rather than read from the stored
+ * `compiled` blob. That blob arrives from whoever called publish, and a
+ * standards resource this server puts its name to should be derived from the
+ * record, not from something a client handed us.
+ *
+ * Compiling cannot fail for a row this module serves, and that is an invariant
+ * rather than an assumption: `publishDefinition` compiles first, so a
+ * definition that will not compile can never reach PUBLISHED, and the module
+ * searches PUBLISHED only. If it does fail, the invariant has broken and the
+ * honest answer is an error rather than a Questionnaire with no items, which a
+ * client would read as a form that asks nothing.
+ */
+export function questionnaireResource(row: ScopedRow<'FormDefinition'>): Questionnaire {
+  const compiled = compileFormRow(row);
+  return { ...compiled.questionnaire, id: row.id } as unknown as Questionnaire;
+}
+
+/**
+ * One submitted form, as its FHIR `QuestionnaireResponse`.
+ *
+ * The item tree comes from `toQuestionnaireResponse` in `packages/forms-engine`,
+ * which already handles repeating groups and the columnar answer layout, so
+ * this only supplies the row's own metadata and the compiled form it was
+ * authored against.
+ */
+export function questionnaireResponseResource(
+  row: ScopedRow<'FormSubmission'>,
+  compiled: CompiledForm
+): QuestionnaireResponse {
+  const response = toQuestionnaireResponse(compiled, {
+    values: (row.values ?? {}) as Record<string, unknown>,
+    status: row.status,
+    authored: (row.completedAt ?? row.effectiveAt).toISOString(),
+    subjectReference: `Patient/${row.patientId}`,
+  });
+  return {
+    ...response,
+    id: row.id,
+    /*
+     * The visit the form was filled in during, when there was one. A response
+     * that drops it reads as free-floating, and an intake answered at a visit
+     * is not the same clinical statement as one answered from home.
+     */
+    ...(row.encounterId === null
+      ? {}
+      : { encounter: { reference: `Encounter/${row.encounterId}` } }),
+    /*
+     * Who filled it in, when a member of staff did. `completedByType` also
+     * allows the patient, and the row records no id for them, so an absent
+     * author here means "not staff" rather than "unknown".
+     */
+    ...(row.completedByUserId === null
+      ? {}
+      : { author: { reference: `Practitioner/${row.completedByUserId}` } }),
+  } as unknown as QuestionnaireResponse;
+}
+
+/** A procedure performed, from its own row. */
+export function procedureResource(row: ScopedRow<'Procedure'>): Procedure {
+  return toFhirProcedure(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      encounterId: absent(row.encounterId),
+      code: row.code,
+      codeSystem: row.codeSystem,
+      display: row.display,
+      snomedCode: absent(row.snomedCode),
+      status: row.status,
+      performedStart: row.performedStart.toISOString(),
+      performedEnd: row.performedEnd?.toISOString(),
+      bodySiteCode: absent(row.bodySiteCode),
+      outcomeCode: absent(row.outcomeCode),
+      notDoneReason: absent(row.notDoneReason),
+      note: absent(row.note),
+      performedById: absent(row.performedById),
+    })
+  );
+}
+
+/**
+ * A goal, from its own row.
+ *
+ * The three target bounds are `Decimal` columns and are read here as plain
+ * numbers, which they already are: `toPlainRow` flattens every decimal once, at
+ * the row boundary, so nothing above it has to know. Converting again here
+ * would be a second answer to a question already settled, and the kind of
+ * duplicate that goes stale when the first one changes.
+ */
+export function goalResource(row: ScopedRow<'Goal'>): Goal {
+  return toFhirGoal(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      carePlanId: absent(row.carePlanId),
+      lifecycleStatus: row.lifecycleStatus,
+      achievementStatus: absent(row.achievementStatus),
+      priority: absent(row.priority),
+      description: row.description,
+      descriptionCode: absent(row.descriptionCode),
+      descriptionSystem: absent(row.descriptionSystem),
+      targetMeasureCode: absent(row.targetMeasureCode),
+      targetMeasureSystem: absent(row.targetMeasureSystem),
+      targetValue: absent(row.targetValue),
+      targetLow: absent(row.targetLow),
+      targetHigh: absent(row.targetHigh),
+      targetUnit: absent(row.targetUnit),
+      startDate: row.startDate?.toISOString().slice(0, 10),
+      dueDate: row.dueDate?.toISOString().slice(0, 10),
+      statusReason: absent(row.statusReason),
+      expressedByUserId: absent(row.expressedByUserId),
+    })
+  );
+}
+
+/** An implanted device, from its own row. */
+export function deviceResource(row: ScopedRow<'Device'>): Device {
+  return toFhirDevice(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      status: row.status,
+      typeCode: absent(row.typeCode),
+      typeSystem: absent(row.typeSystem),
+      typeText: row.typeText,
+      deviceIdentifier: absent(row.deviceIdentifier),
+      udiCarrierHrf: absent(row.udiCarrierHrf),
+      distinctIdentifier: absent(row.distinctIdentifier),
+      lotNumber: absent(row.lotNumber),
+      serialNumber: absent(row.serialNumber),
+      manufacturer: absent(row.manufacturer),
+      modelNumber: absent(row.modelNumber),
+      manufactureDate: row.manufactureDate?.toISOString().slice(0, 10),
+      expirationDate: row.expirationDate?.toISOString().slice(0, 10),
+    })
+  );
+}
+
+/** The assessment and plan, from its own row. */
+export function carePlanResource(row: ScopedRow<'CarePlan'>): CarePlan {
+  return toFhirCarePlan(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      encounterId: absent(row.encounterId),
+      status: row.status,
+      intent: row.intent,
+      title: absent(row.title),
+      narrative: row.narrative,
+      periodStart: row.periodStart?.toISOString(),
+      periodEnd: row.periodEnd?.toISOString(),
+      authorId: absent(row.authorId),
+    })
+  );
+}
+
+/**
+ * A care team, with the members that make it one.
+ *
+ * Takes its participants rather than fetching them, because the loader has
+ * already read every member for the whole page: a lookup here would be one
+ * round trip per team, which looks fine against three fixtures and degrades
+ * with page size.
+ *
+ * `meta.lastUpdated` is the later of the team and its newest member, not the
+ * team's own. Adding or removing a member changes the resource and does not
+ * touch the team row, so the team's stamp would leave an
+ * `$export?_since=` between the two instants excluding a team whose membership
+ * had just changed. The consumer would never learn a clinician left, and
+ * nothing would report an error.
+ */
+export function careTeamResource(
+  row: ScopedRow<'CareTeam'>,
+  participants: readonly ScopedRow<'CareTeamParticipant'>[]
+): CareTeam {
+  const resource = toFhirCareTeam(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      status: row.status,
+      name: absent(row.name),
+      periodStart: row.periodStart?.toISOString(),
+      periodEnd: row.periodEnd?.toISOString(),
+      participants: participants.map((participant) =>
+        compactDomain({
+          id: participant.id,
+          memberType: participant.memberType,
+          memberUserId: absent(participant.memberUserId),
+          memberRelatedPersonId: absent(participant.memberRelatedPersonId),
+          roleCode: participant.roleCode,
+          roleSystem: participant.roleSystem,
+          roleText: absent(participant.roleText),
+          periodStart: participant.periodStart?.toISOString(),
+          periodEnd: participant.periodEnd?.toISOString(),
+        })
+      ),
+    })
+  );
+
+  const newest = participants.reduce<Date | undefined>(
+    (latest, participant) =>
+      latest === undefined || participant.updatedAt > latest ? participant.updatedAt : latest,
+    undefined
+  );
+  if (newest === undefined || newest <= row.updatedAt) return resource;
+  return { ...resource, meta: { ...resource.meta, lastUpdated: newest.toISOString() } };
+}
+
+/**
+ * A guardian, an emergency contact or a portal proxy, as US Core sees them.
+ *
+ * The three booleans on the row become relationship codings and one extension
+ * inside the mapper rather than here, so that the C-CDA and HL7 v2 paths get
+ * the same reading of them if they ever need it.
+ */
+export function relatedPersonResource(row: ScopedRow<'RelatedPerson'>): RelatedPerson {
+  return toFhirRelatedPerson(
+    compactDomain({
+      id: row.id,
+      patientId: row.patientId,
+      relationshipCode: row.relationshipCode,
+      relationshipText: absent(row.relationshipText),
+      givenName: row.givenName,
+      familyName: row.familyName,
+      phone: absent(row.phone),
+      email: absent(row.email),
+      addressLine1: absent(row.addressLine1),
+      city: absent(row.city),
+      state: absent(row.state),
+      postalCode: absent(row.postalCode),
+      country: row.country,
+      isGuardian: row.isGuardian,
+      isEmergencyContact: row.isEmergencyContact,
+      isPortalProxy: row.isPortalProxy,
       active: row.active,
     })
   );

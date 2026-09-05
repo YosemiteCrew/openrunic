@@ -1,7 +1,13 @@
 import type {
   AllergyIntoleranceInput,
+  CarePlanInput,
+  DeviceInput,
+  GoalInput,
+  CareTeamInput,
+  CareTeamParticipantInput,
   ClinicalNoteInput,
   ConditionInput,
+  ProcedureInput,
   EncounterCreateInput,
   ImmunizationInput,
   ReferralInput,
@@ -14,6 +20,7 @@ import type {
 import {
   inWindow,
   jsonColumn,
+  statusFilter,
   windowFilter,
   type BaseQuery,
   type CollectionSpec,
@@ -51,6 +58,7 @@ export type EncounterClass = Row<'Encounter'>['class'];
 export type EncounterStatus = Row<'Encounter'>['status'];
 export type NoteState = Row<'ClinicalNote'>['state'];
 export type ConditionCategory = Row<'Condition'>['category'];
+export type ProcedureStatus = Row<'Procedure'>['status'];
 export type ConditionClinicalStatus = Row<'Condition'>['clinicalStatus'];
 export type ConditionVerificationStatus = Row<'Condition'>['verificationStatus'];
 export type MedicationStatementStatus = Row<'MedicationStatement'>['status'];
@@ -161,6 +169,17 @@ export interface EncounterListQuery extends BaseQuery {
   facilityId?: string;
   providerId?: string;
   status?: EncounterStatus;
+  /**
+   * States to leave out, rather than the one state to keep.
+   *
+   * Added for the care-relationship check, which needs "any encounter that
+   * still counts" and cannot say that with a scalar. This schema retains a
+   * correction as `ENTERED_IN_ERROR` instead of deleting the row, so a visit
+   * explicitly declared never to have happened is still a row, and a source
+   * that counted it would grant access on the strength of a mistake somebody
+   * already withdrew.
+   */
+  excludeStatuses?: readonly EncounterStatus[];
   /** Inclusive lower bound on `startedAt`. */
   from?: Date;
   /** Exclusive upper bound on `startedAt`. */
@@ -249,6 +268,7 @@ export const encounterSpec: CollectionSpec<
     if (query.facilityId !== undefined && row.facilityId !== query.facilityId) return false;
     if (query.providerId !== undefined && row.providerId !== query.providerId) return false;
     if (query.status !== undefined && row.status !== query.status) return false;
+    if (query.excludeStatuses?.includes(row.status) === true) return false;
     return inWindow(row.startedAt, query.from, query.to);
   },
 
@@ -258,7 +278,11 @@ export const encounterSpec: CollectionSpec<
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.providerId === undefined ? {} : { providerId: query.providerId }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      /* One `status` key, not two spreads. Written as two, the second silently
+         overwrote the first and a query naming both a status and an exclusion
+         lost the status entirely - which the port-agreement suite caught,
+         because `matches` still honoured both. */
+      ...statusFilter(query.status, query.excludeStatuses),
       ...(startedAt === undefined ? {} : { startedAt }),
     };
   },
@@ -489,6 +513,113 @@ export interface ConditionPatchInput {
   bodySiteCode?: string;
   note?: string;
 }
+
+/**
+ * Procedures performed, which no other collection records.
+ *
+ * `ServiceRequest` holds what was asked for and `ChargeItem` what is billed, so
+ * a procedure carried out and not billed - most of a clinical day - lives only
+ * here.
+ */
+export interface ProcedureListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: ProcedureStatus;
+  code?: string;
+  /**
+   * Half-open window on `performedStart`: `[from, to)`.
+   *
+   * Declared here because the FHIR boundary supplies it. `Procedure?date=` used
+   * to spread a window onto this query that nothing below read, so the filter
+   * was advertised, accepted, and silently ignored: a client asking for last
+   * month's procedures received the patient's whole history and had no way to
+   * tell. Object spread is not excess-property-checked, so the compiler said
+   * nothing either.
+   */
+  from?: Date;
+  to?: Date;
+  sort: 'performedStart' | 'createdAt';
+}
+
+export type ProcedurePatchInput = Partial<Omit<ProcedureInput, 'patientId'>>;
+
+/**
+ * CPT rather than SNOMED CT, because that is what a US practice codes a
+ * procedure in and what the charge beside it carries. The SNOMED equivalent US
+ * Core prefers has its own column rather than overwriting this one.
+ */
+const PROCEDURE_DEFAULTS: { codeSystem: string; status: ProcedureStatus } = {
+  codeSystem: 'http://www.ama-assn.org/go/cpt',
+  status: 'COMPLETED',
+};
+
+export const procedureSpec: CollectionSpec<
+  'Procedure',
+  ProcedureInput,
+  ProcedurePatchInput,
+  ProcedureListQuery
+> = {
+  model: 'Procedure',
+  targetType: 'Procedure',
+  action: 'procedure',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: ProcedureInput, context): Writable<'Procedure'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      code: input.code,
+      codeSystem: input.codeSystem ?? PROCEDURE_DEFAULTS.codeSystem,
+      display: input.display,
+      snomedCode: input.snomedCode ?? null,
+      status: input.status ?? PROCEDURE_DEFAULTS.status,
+      performedStart: input.performedStart,
+      performedEnd: input.performedEnd ?? null,
+      bodySiteCode: input.bodySiteCode ?? null,
+      outcomeCode: input.outcomeCode ?? null,
+      notDoneReason: input.notDoneReason ?? null,
+      note: input.note ?? null,
+      performedById: input.performedById ?? null,
+      recordedAt: context.now,
+      recordedById: input.recordedById ?? null,
+    };
+  },
+
+  patchData(patch: ProcedurePatchInput): Partial<Writable<'Procedure'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'Procedure'>, query: ProcedureListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.status !== undefined && row.status !== query.status) return false;
+    if (!inWindow(row.performedStart, query.from, query.to)) return false;
+    return query.code === undefined || row.code === query.code;
+  },
+
+  where(query: ProcedureListQuery) {
+    const performedStart = windowFilter(query.from, query.to);
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.code === undefined ? {} : { code: query.code }),
+      ...(performedStart === undefined ? {} : { performedStart }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'Procedure'>, sort: ProcedureListQuery['sort']): number {
+    return sort === 'createdAt' ? row.createdAt.getTime() : row.performedStart.getTime();
+  },
+
+  orderBy(query: ProcedureListQuery) {
+    const { order } = query;
+    if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
+    return [{ performedStart: order }, { id: 'asc' as const }];
+  },
+};
 
 export const conditionSpec: CollectionSpec<
   'Condition',
@@ -1305,11 +1436,463 @@ export const referralSpec: CollectionSpec<
   },
 };
 
+export type CareTeamStatus = Row<'CareTeam'>['status'];
+export type CareTeamMemberType = Row<'CareTeamParticipant'>['memberType'];
+
+export interface CareTeamListQuery extends BaseQuery {
+  patientId?: string;
+  status?: CareTeamStatus;
+  sort: 'createdAt';
+}
+
+export type CareTeamPatchInput = Partial<Omit<CareTeamInput, 'patientId'>>;
+
+export const careTeamSpec: CollectionSpec<
+  'CareTeam',
+  CareTeamInput,
+  CareTeamPatchInput,
+  CareTeamListQuery
+> = {
+  model: 'CareTeam',
+  targetType: 'CareTeam',
+  action: 'careTeam',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: CareTeamInput): Writable<'CareTeam'> {
+    return {
+      patientId: input.patientId,
+      status: input.status ?? 'ACTIVE',
+      name: input.name ?? null,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+    };
+  },
+
+  patchData(patch: CareTeamPatchInput): Partial<Writable<'CareTeam'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'CareTeam'>, query: CareTeamListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    return query.status === undefined || row.status === query.status;
+  },
+
+  where(query: CareTeamListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CareTeam'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CareTeamListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
+export interface CareTeamParticipantListQuery extends BaseQuery {
+  careTeamId?: string;
+  careTeamIds?: readonly string[];
+  memberUserId?: string;
+  /**
+   * The chart, denormalised onto the row for the compartment rule and useful
+   * here for the same reason it exists there.
+   *
+   * Added because the authorisation check needed it and could not have it: with
+   * no filter to narrow on, "is this reader on this patient's team" had to list
+   * the reader's memberships and compare in memory, which examined only the
+   * page it asked for. A clinician on two teams was refused the older one.
+   */
+  patientId?: string;
+  sort: 'createdAt';
+}
+
+/**
+ * What a participant patch may change, which is not who the member is.
+ *
+ * `memberType` and both member columns are excluded together. They are one
+ * fact spread over three columns, held consistent by a check constraint, and a
+ * patch that could move any of them independently could put the row in a state
+ * the database refuses: a 500 naming a constraint, where the caller wanted to
+ * replace a team member. Removing the old member and adding the new one is the
+ * operation they actually meant, and it keeps the period on the row that ended.
+ */
+
+export type CareTeamParticipantPatchInput = Partial<
+  Omit<
+    CareTeamParticipantInput,
+    'careTeamId' | 'patientId' | 'memberType' | 'memberUserId' | 'memberRelatedPersonId'
+  >
+>;
+
+/**
+ * The membership rows behind a team.
+ *
+ * Narrowed on the participant's own `patientId`, not closed. Closed was the
+ * first answer and it was wrong in a way that produced no error: the compartment
+ * rule is one column equality and this layer performs no join, so a patient
+ * reading their own care team was served the team and none of its members. A
+ * team that appears to have nobody on it, shown to the one person the portal
+ * exists for.
+ *
+ * The column is denormalised from the team and cannot drift, because the
+ * foreign key is composite. See the schema comment on `CareTeamParticipant`.
+ */
+export const careTeamParticipantSpec: CollectionSpec<
+  'CareTeamParticipant',
+  CareTeamParticipantInput,
+  CareTeamParticipantPatchInput,
+  CareTeamParticipantListQuery
+> = {
+  model: 'CareTeamParticipant',
+  targetType: 'CareTeamParticipant',
+  action: 'careTeamParticipant',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: CareTeamParticipantInput): Writable<'CareTeamParticipant'> {
+    return {
+      careTeamId: input.careTeamId,
+      patientId: input.patientId,
+      memberType: input.memberType,
+      memberUserId: input.memberUserId ?? null,
+      memberRelatedPersonId: input.memberRelatedPersonId ?? null,
+      roleCode: input.roleCode,
+      roleSystem: input.roleSystem,
+      roleText: input.roleText ?? null,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+    };
+  },
+
+  /**
+   * Named columns rather than whatever the patch carries.
+   *
+   * The type already excludes the member columns, and a type is documentation:
+   * `Object.entries` copies every key it is handed, so a caller reaching this
+   * with an unvalidated body could still move `memberUserId` and leave the row
+   * disagreeing with its `memberType`. The database refuses that, which turns a
+   * replaced team member into a 500 naming a constraint. Listing what may
+   * change is the only version of this that is true at run time.
+   */
+  patchData(patch: CareTeamParticipantPatchInput): Partial<Writable<'CareTeamParticipant'>> {
+    return {
+      ...(patch.roleCode === undefined ? {} : { roleCode: patch.roleCode }),
+      ...(patch.roleSystem === undefined ? {} : { roleSystem: patch.roleSystem }),
+      ...(patch.roleText === undefined ? {} : { roleText: patch.roleText }),
+      ...(patch.periodStart === undefined ? {} : { periodStart: patch.periodStart }),
+      ...(patch.periodEnd === undefined ? {} : { periodEnd: patch.periodEnd }),
+    };
+  },
+
+  matches(row: ScopedRow<'CareTeamParticipant'>, query: CareTeamParticipantListQuery): boolean {
+    const wanted = careTeamParticipantTeams(query);
+    if (wanted !== undefined && !wanted.includes(row.careTeamId)) return false;
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    return query.memberUserId === undefined || row.memberUserId === query.memberUserId;
+  },
+
+  where(query: CareTeamParticipantListQuery) {
+    const wanted = careTeamParticipantTeams(query);
+    return {
+      ...(wanted === undefined ? {} : { careTeamId: { in: [...wanted] } }),
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.memberUserId === undefined ? {} : { memberUserId: query.memberUserId }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CareTeamParticipant'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CareTeamParticipantListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
+/**
+ * The teams a participant query narrows to, whether it named one or many.
+ *
+ * Both filters collapse to the same `in` list so the two shapes cannot disagree
+ * about what the query means. A query naming both is the intersection, which is
+ * what a reader expects of two filters on one column.
+ */
+function careTeamParticipantTeams(
+  query: CareTeamParticipantListQuery
+): readonly string[] | undefined {
+  if (query.careTeamIds === undefined) {
+    return query.careTeamId === undefined ? undefined : [query.careTeamId];
+  }
+  if (query.careTeamId === undefined) return query.careTeamIds;
+  return query.careTeamIds.filter((id) => id === query.careTeamId);
+}
+
+export type CarePlanStatus = Row<'CarePlan'>['status'];
+
+export interface CarePlanListQuery extends BaseQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: CarePlanStatus;
+  /**
+   * Narrow to a known set of plans.
+   *
+   * An empty list means no plan matches, and that is a state the FHIR boundary
+   * reaches: `CarePlan?category=` names a category this server does not serve,
+   * which is a legitimate search with no results rather than an error.
+   */
+  ids?: readonly string[];
+  sort: 'createdAt';
+}
+
+export type CarePlanPatchInput = Partial<Omit<CarePlanInput, 'patientId'>>;
+
+export const carePlanSpec: CollectionSpec<
+  'CarePlan',
+  CarePlanInput,
+  CarePlanPatchInput,
+  CarePlanListQuery
+> = {
+  model: 'CarePlan',
+  targetType: 'CarePlan',
+  action: 'carePlan',
+  patientColumn: 'patientId',
+  encounterColumn: 'encounterId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: CarePlanInput): Writable<'CarePlan'> {
+    return {
+      patientId: input.patientId,
+      encounterId: input.encounterId ?? null,
+      status: input.status ?? 'ACTIVE',
+      intent: input.intent ?? 'PLAN',
+      title: input.title ?? null,
+      narrative: input.narrative,
+      periodStart: input.periodStart ?? null,
+      periodEnd: input.periodEnd ?? null,
+      authorId: input.authorId ?? null,
+    };
+  },
+
+  patchData(patch: CarePlanPatchInput): Partial<Writable<'CarePlan'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'CarePlan'>, query: CarePlanListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.ids !== undefined && !query.ids.includes(row.id)) return false;
+    return query.status === undefined || row.status === query.status;
+  },
+
+  where(query: CarePlanListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.ids === undefined ? {} : { id: { in: [...query.ids] } }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+    };
+  },
+
+  sortValue(row: ScopedRow<'CarePlan'>): number {
+    return row.createdAt.getTime();
+  },
+
+  orderBy(query: CarePlanListQuery) {
+    return [{ createdAt: query.order }, { id: 'asc' as const }];
+  },
+};
+
+export type GoalLifecycleStatus = Row<'Goal'>['lifecycleStatus'];
+
+export interface GoalListQuery extends BaseQuery {
+  patientId?: string;
+  carePlanId?: string;
+  lifecycleStatus?: GoalLifecycleStatus;
+  /**
+   * Half-open window on `dueDate`: `[from, to)`.
+   *
+   * The same fields `Procedure?date=` needed, missed the same way and for the
+   * same reason: the module spread a window onto this query, object spread is
+   * not excess-property-checked, and nothing below declared or read the fields.
+   * Twice in one day, which is why there is now a test that walks every
+   * advertised parameter of every served resource and asks whether it narrows.
+   */
+  from?: Date;
+  to?: Date;
+  sort: 'createdAt' | 'dueDate';
+}
+
+export type GoalPatchInput = Partial<Omit<GoalInput, 'patientId'>>;
+
+export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalListQuery> = {
+  model: 'Goal',
+  targetType: 'Goal',
+  action: 'goal',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(input: GoalInput): Writable<'Goal'> {
+    return {
+      patientId: input.patientId,
+      carePlanId: input.carePlanId ?? null,
+      lifecycleStatus: input.lifecycleStatus ?? 'ACTIVE',
+      achievementStatus: input.achievementStatus ?? null,
+      priority: input.priority ?? null,
+      description: input.description,
+      descriptionCode: input.descriptionCode ?? null,
+      descriptionSystem: input.descriptionSystem ?? null,
+      targetMeasureCode: input.targetMeasureCode ?? null,
+      targetMeasureSystem: input.targetMeasureSystem ?? null,
+      targetValue: input.targetValue ?? null,
+      targetLow: input.targetLow ?? null,
+      targetHigh: input.targetHigh ?? null,
+      targetUnit: input.targetUnit ?? null,
+      startDate: input.startDate ?? null,
+      dueDate: input.dueDate ?? null,
+      statusReason: input.statusReason ?? null,
+      expressedByUserId: input.expressedByUserId ?? null,
+    };
+  },
+
+  patchData(patch: GoalPatchInput): Partial<Writable<'Goal'>> {
+    return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  },
+
+  matches(row: ScopedRow<'Goal'>, query: GoalListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.carePlanId !== undefined && row.carePlanId !== query.carePlanId) return false;
+    if (!inWindow(row.dueDate, query.from, query.to)) return false;
+    return query.lifecycleStatus === undefined || row.lifecycleStatus === query.lifecycleStatus;
+  },
+
+  where(query: GoalListQuery) {
+    const dueDate = windowFilter(query.from, query.to);
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.carePlanId === undefined ? {} : { carePlanId: query.carePlanId }),
+      ...(query.lifecycleStatus === undefined ? {} : { lifecycleStatus: query.lifecycleStatus }),
+      ...(dueDate === undefined ? {} : { dueDate }),
+    };
+  },
+
+  /* A goal with no due date sorts as if it were due at the epoch, which puts it
+     first ascending. That is the honest place for it: an undated goal is one
+     nobody has committed to a date for, and burying it at the end of the list
+     is how it stays undated. */
+  sortValue(row: ScopedRow<'Goal'>, sort: GoalListQuery['sort']): number {
+    /* An absent due date sorts first ascending, last descending, and the
+       sentinel is -Infinity rather than 0 so it beats even a real date before
+       1970 (whose getTime is negative). Zero collided with those, and the two
+       ports then disagreed for a goal dated before the epoch; -Infinity matches
+       the Prisma `nulls: 'first'` placement for every real date. */
+    if (sort !== 'dueDate') return row.createdAt.getTime();
+    return row.dueDate?.getTime() ?? Number.NEGATIVE_INFINITY;
+  },
+
+  orderBy(query: GoalListQuery) {
+    const { order } = query;
+    if (query.sort === 'dueDate') {
+      /* Null placement, made explicit. The memory port sorts an absent due date
+         with a -Infinity sentinel, so an undated goal comes first ascending and last
+         descending. Postgres does the opposite by default (nulls last on asc,
+         first on desc), so the two ports disagreed the moment a dated and an
+         undated goal shared a page. `nulls` pins Prisma to the memory port's
+         answer, which is the declared one: no due date is the most urgent thing
+         on the list ascending, and drops to the bottom descending. */
+      return [
+        { dueDate: { sort: order, nulls: order === 'asc' ? 'first' : ('last' as const) } },
+        { id: 'asc' as const },
+      ];
+    }
+    return [{ createdAt: order }, { id: 'asc' as const }];
+  },
+};
+
+export type DeviceStatus = Row<'Device'>['status'];
+
+export interface DeviceListQuery extends BaseQuery {
+  patientId?: string;
+  status?: DeviceStatus;
+  /** The recall query: every patient carrying this device identifier. */
+  deviceIdentifier?: string;
+  sort: 'createdAt';
+}
+
+export type DevicePatchInput = Partial<Omit<DeviceInput, 'patientId'>>;
+
+export const deviceSpec: CollectionSpec<'Device', DeviceInput, DevicePatchInput, DeviceListQuery> =
+  {
+    model: 'Device',
+    targetType: 'Device',
+    action: 'device',
+    patientColumn: 'patientId',
+    compartment: { column: 'patientId' },
+
+    newRow(input: DeviceInput): Writable<'Device'> {
+      return {
+        patientId: input.patientId,
+        status: input.status ?? 'ACTIVE',
+        typeCode: input.typeCode ?? null,
+        typeSystem: input.typeSystem ?? null,
+        typeText: input.typeText,
+        deviceIdentifier: input.deviceIdentifier ?? null,
+        udiCarrierHrf: input.udiCarrierHrf ?? null,
+        distinctIdentifier: input.distinctIdentifier ?? null,
+        lotNumber: input.lotNumber ?? null,
+        serialNumber: input.serialNumber ?? null,
+        manufacturer: input.manufacturer ?? null,
+        modelNumber: input.modelNumber ?? null,
+        manufactureDate: input.manufactureDate ?? null,
+        expirationDate: input.expirationDate ?? null,
+      };
+    },
+
+    patchData(patch: DevicePatchInput): Partial<Writable<'Device'>> {
+      return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    },
+
+    matches(row: ScopedRow<'Device'>, query: DeviceListQuery): boolean {
+      if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+      if (query.status !== undefined && row.status !== query.status) return false;
+      return (
+        query.deviceIdentifier === undefined || row.deviceIdentifier === query.deviceIdentifier
+      );
+    },
+
+    where(query: DeviceListQuery) {
+      return {
+        ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+        ...(query.status === undefined ? {} : { status: query.status }),
+        ...(query.deviceIdentifier === undefined
+          ? {}
+          : { deviceIdentifier: query.deviceIdentifier }),
+      };
+    },
+
+    sortValue(row: ScopedRow<'Device'>): number {
+      return row.createdAt.getTime();
+    },
+
+    orderBy(query: DeviceListQuery) {
+      return [{ createdAt: query.order }, { id: 'asc' as const }];
+    },
+  };
+
 export const clinicalSpecs = {
   encounters: encounterSpec,
   notes: clinicalNoteSpec,
   noteAddenda: noteAddendumSpec,
   problems: conditionSpec,
+  procedures: procedureSpec,
+  carePlans: carePlanSpec,
+  goals: goalSpec,
+  devices: deviceSpec,
+  careTeams: careTeamSpec,
+  careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,
   prescriptions: medicationRequestSpec,
   allergies: allergySpec,

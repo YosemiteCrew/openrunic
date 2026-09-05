@@ -25,6 +25,7 @@ export class AuditCollector {
   private readonly reads: AuditReadTarget[] = [];
   private truncated = 0;
   private flushed = false;
+  private suppressDepth = 0;
 
   constructor(sink: AuditSink, context: AuditRequestContext) {
     this.sink = sink;
@@ -36,6 +37,13 @@ export class AuditCollector {
    * {@link flush}, which the middleware calls after the response is on the wire.
    */
   read(target: AuditReadTarget): void {
+    // A read made while authorisation is being decided is the system consulting
+    // rows to answer "may this reader see this chart", not the reader accessing
+    // them. Recording it would list the encounter or task that authorised a
+    // read among the things the reader read, inflating the per-patient
+    // disclosure report with rows they never asked for. The decision is audited
+    // by its own `chart.access` event instead.
+    if (this.suppressDepth > 0) return;
     if (this.reads.length >= MAX_BATCHED_TARGETS) {
       // A chart-wide export can touch thousands of rows. Keeping the head and
       // counting the tail preserves a bounded, honest event rather than an
@@ -44,6 +52,21 @@ export class AuditCollector {
       return;
     }
     this.reads.push(target);
+  }
+
+  /**
+   * Runs `fn` with read-recording paused, for a system read that is not the
+   * reader's access - the queries a care-relationship check makes to decide
+   * whether the read is allowed at all. Reentrant, and restored even if `fn`
+   * throws, so a refused check leaves recording exactly as it found it.
+   */
+  async suppressReads<T>(fn: () => Promise<T>): Promise<T> {
+    this.suppressDepth += 1;
+    try {
+      return await fn();
+    } finally {
+      this.suppressDepth -= 1;
+    }
   }
 
   /**
@@ -114,7 +137,13 @@ export class AuditCollector {
       ...(this.context.purposeOfUse === undefined
         ? {}
         : { purposeOfUse: this.context.purposeOfUse }),
-      ...(this.context.breakglass === undefined ? {} : { breakglass: this.context.breakglass }),
+      /* The entry wins over the request context. A request is not usually
+         break-glass as a whole; one read inside it is, and the flag is what the
+         compliance query filters on, so the event that was the emergency has to
+         be the event that carries it. */
+      ...((entry.breakglass ?? this.context.breakglass) === undefined
+        ? {}
+        : { breakglass: entry.breakglass ?? this.context.breakglass }),
       outcome: entry.outcome ?? 'success',
       metadata: { requestId, method, path, ...entry.metadata },
     };

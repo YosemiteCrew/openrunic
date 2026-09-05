@@ -31,6 +31,7 @@ import type {
 import {
   bearer,
   createTestApp,
+  seedCareRelationship,
   jsonBearer,
   seed,
   storageColumns,
@@ -60,6 +61,25 @@ import {
 type App = TestApp['app'];
 
 const PATIENT_ID = testId(1);
+
+/**
+ * Gives adminA a care relationship with a chart, for the form-submission tests.
+ *
+ * A form submission is chart data now, so reading or amending one needs a
+ * relationship. adminA holds `facility.all`, so any appointment for the patient
+ * satisfies `facility-activity`; an appointment, not an encounter, so it shows
+ * up in none of the lists these tests assert on.
+ */
+let relSeq = 9000;
+function authorise(dataset: Parameters<typeof seedCareRelationship>[0], patientId: string): void {
+  relSeq += 1;
+  seedCareRelationship(dataset, {
+    patientId,
+    providerId: testId(900),
+    as: 'appointment',
+    id: testId(relSeq),
+  });
+}
 const DEFINITION_ID = testId(10);
 const SUBMISSION_ID = testId(20);
 const USER_ID = testId(30);
@@ -232,6 +252,7 @@ function formsApp(): TestApp {
     })
   );
   seed(harness.dataset, 'FormSubmission', makeFormSubmissionRow());
+  authorise(harness.dataset, PATIENT_ID);
   return harness;
 }
 
@@ -747,6 +768,7 @@ describe('POST /bff/v0/forms/submissions', () => {
 describe('GET /bff/v0/forms/submissions', () => {
   it('narrows by patient, encounter, definition, status and window at once', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     // One row matches; each of the others differs in exactly one column, so
     // every filter is the sole reason something is missing from the answer.
     seed(
@@ -783,6 +805,7 @@ describe('GET /bff/v0/forms/submissions', () => {
 
   it('excludes a submission outside the half-open window', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(dataset, 'FormSubmission', makeFormSubmissionRow());
 
     const page = await body<ListResponse<FormSubmissionDto>>(
@@ -794,6 +817,7 @@ describe('GET /bff/v0/forms/submissions', () => {
 
   it('sorts by effective instant and by creation', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(
       dataset,
       'FormSubmission',
@@ -857,6 +881,7 @@ describe('PATCH /bff/v0/forms/submissions/:id', () => {
 
   it('refuses to edit the answers of a completed submission in place', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(
       dataset,
       'FormSubmission',
@@ -885,6 +910,7 @@ describe('PATCH /bff/v0/forms/submissions/:id', () => {
 
   it('409s a second correction, because entered-in-error is terminal', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
     seed(dataset, 'FormSubmission', makeFormSubmissionRow({ status: 'ENTERED_IN_ERROR' }));
 
     const res = await send(app, 'PATCH', `/bff/v0/forms/submissions/${SUBMISSION_ID}`, {
@@ -1872,15 +1898,15 @@ describe('the audit log and the caller\u2019s facilities', () => {
     seedSitedEvents(auditStore);
 
     const page = await body<ListResponse<AuditEventDto>>(
-      await get(app, '/bff/v0/audit?pageSize=50', TOKENS.siteReaderA)
+      await get(app, '/bff/v0/audit?pageSize=50', TOKENS.auditorA)
     );
 
     const targets = page.data.map((event) => event.targetId);
     expect(targets).toContain(testId(1));
     expect(targets).toContain(testId(3));
-    // The other site's event is the one that must not be there. `read-only`
-    // holds audit.read and not facility.all, so before this narrowing a site
-    // auditor read the whole organisation's log.
+    // The other site's event is the one that must not be there. The auditor role
+    // holds audit.read and not facility.all, so its facility grant is what
+    // narrows the log to one site's events plus the unsited ones.
     expect(targets).not.toContain(testId(2));
   });
 
@@ -1909,7 +1935,7 @@ describe('the audit log and the caller\u2019s facilities', () => {
     const other = all.data.find((event) => event.targetId === testId(2));
     expect(other, 'the facility-B event should exist for an admin').toBeDefined();
 
-    const res = await get(app, `/bff/v0/audit/${other?.id ?? ''}`, TOKENS.siteReaderA);
+    const res = await get(app, `/bff/v0/audit/${other?.id ?? ''}`, TOKENS.auditorA);
 
     // 404 rather than 403: a distinguishable refusal would confirm the event
     // exists, which on an audit log tells the caller an act happened at a site
@@ -1982,13 +2008,27 @@ describe('GET /bff/v0/audit', () => {
     );
   });
 
-  it('401s without a token and 403s every role but the administrator', async () => {
+  it('401s without a token, and 403s a clinician', async () => {
     const { app } = createTestApp();
 
     expect((await anonymous(app, '/bff/v0/audit')).status).toBe(401);
     const denied = await get(app, '/bff/v0/audit', TOKENS.clinicianA);
     expect(denied.status).toBe(403);
     expect((await body<ProblemDocument>(denied)).detail).toContain('audit.read');
+  });
+
+  /**
+   * The point of #248. The audit trail is a patient index and a who-saw-whom
+   * log, so it is supervisory rather than something a general read-only account
+   * should hold. `read-only` used to be admitted here, on the strength of
+   * `audit.read` ending in `.read` and being swept into the bundle. It is
+   * refused now, and the auditor role is what carries the capability instead.
+   */
+  it('refuses a read-only account and admits an auditor', async () => {
+    const { app } = createTestApp();
+
+    expect((await get(app, '/bff/v0/audit', TOKENS.siteReaderA)).status).toBe(403);
+    expect((await get(app, '/bff/v0/audit', TOKENS.auditorA)).status).toBe(200);
   });
 });
 

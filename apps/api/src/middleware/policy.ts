@@ -3,6 +3,7 @@ import { createMiddleware } from 'hono/factory';
 
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
+import { findCareRelationship } from '../policy/care-relationship.js';
 import { buildPolicyContext } from '../policy/policy.js';
 import type { Permission } from '../policy/permissions.js';
 
@@ -58,6 +59,80 @@ export function requirePermission(permission: Permission) {
  */
 export function assertPermission(c: Context<AppEnv>, permission: Permission): Promise<void> {
   return enforce(c, permission);
+}
+
+/**
+ * The chart guard: this reader must be involved in this patient's care.
+ *
+ * The single place both boundaries ask the question, because they have drifted
+ * apart on exactly this once already (#139). The BFF route and the FHIR
+ * resource module both call this, and `policy.care-relationship.test.ts`
+ * asserts that neither can answer differently.
+ *
+ * Reported as absent, not as forbidden. A 403 here would confirm the id names a
+ * real patient, which is the enumeration oracle the addressed read already
+ * avoids across tenants; there is no reason to open one inside a tenant. The
+ * denial is still audited, so the attempt is visible to whoever reads the trail
+ * even though the caller cannot tell it from a typo.
+ *
+ * The audit record carries which source authorised a permitted read. A chart
+ * opened under break-glass and one opened by a treating clinician are different
+ * events, and a trail that recorded them identically would make the loud thing
+ * quiet.
+ */
+export async function assertCareRelationship(c: Context<AppEnv>, patientId: string): Promise<void> {
+  const principal = c.get('principal');
+  if (principal === undefined) {
+    throw ApiError.unauthenticated('A bearer token is required.');
+  }
+
+  const policy = c.get('policy');
+  const repositories = c.get('repositories');
+  if (policy === undefined || repositories === undefined) {
+    /* Mounted outside the chain. Refuse rather than expose, the same way a
+       missing policy context is a 403 above. */
+    throw ApiError.notFound('No such patient.');
+  }
+
+  // The queries this makes are the system deciding whether the read is allowed,
+  // not the reader accessing rows, so they are kept out of the request's read
+  // audit. The decision below is what gets recorded.
+  const audit = c.get('audit');
+  const decide = (): Promise<string | undefined> =>
+    findCareRelationship(repositories, { principal, policy, patientId, at: new Date() });
+  const source = audit === undefined ? await decide() : await audit.suppressReads(decide);
+
+  if (source === undefined) {
+    await c.get('audit')?.denial({
+      action: 'chart.access.denied',
+      targetType: 'Patient',
+      targetId: patientId,
+      /* The chart, not only the target. `targetId` is not what the per-patient
+         disclosure report filters on; `patientId` is, and a refusal that does
+         not appear in it is a refusal nobody investigating that chart can see. */
+      patientId,
+      metadata: { roles: [...principal.roles] },
+    });
+    throw ApiError.notFound('No such patient.');
+  }
+
+  await c.get('audit')?.write({
+    action: source === 'break-glass' ? 'chart.access.breakGlass' : 'chart.access',
+    targetType: 'Patient',
+    targetId: patientId,
+    patientId,
+    /*
+     * The column the compliance query filters on, not only the action name.
+     *
+     * `AuditEvent` carries a `breakglass` boolean and the audit search exposes
+     * it, so "list every emergency access this quarter" is one query - and it
+     * returned nothing while this wrote the distinction into the action string
+     * alone. A control that is only legible to somebody who already knows to
+     * grep for it is not conspicuous.
+     */
+    breakglass: source === 'break-glass',
+    metadata: { relationship: source },
+  });
 }
 
 async function enforce(c: Context<AppEnv>, permission: Permission): Promise<void> {

@@ -24,6 +24,7 @@
     "@openrunic/collections": "workspace:*",
     "@openrunic/database": "workspace:*",
     "@openrunic/fhir": "workspace:*",
+    "@openrunic/forms-engine": "workspace:*",
     "@openrunic/growth": "workspace:*",
     "@openrunic/hl7v2": "workspace:*",
     "@openrunic/inventory": "workspace:*",

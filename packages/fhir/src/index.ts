@@ -16,6 +16,12 @@ export type PractitionerRole = fhir4.PractitionerRole;
 export type Organization = fhir4.Organization;
 export type Location = fhir4.Location;
 export type Coverage = fhir4.Coverage;
+export type RelatedPerson = fhir4.RelatedPerson;
+export type Procedure = fhir4.Procedure;
+export type CareTeam = fhir4.CareTeam;
+export type Questionnaire = fhir4.Questionnaire;
+export type QuestionnaireResponse = fhir4.QuestionnaireResponse;
+export type MedicationDispense = fhir4.MedicationDispense;
 export type Appointment = fhir4.Appointment;
 export type Encounter = fhir4.Encounter;
 export type Condition = fhir4.Condition;
@@ -196,6 +202,20 @@ export {
 } from './organization.js';
 export type { DomainLocation, DomainOrganization } from './organization.js';
 
+export {
+  fromFhirRelatedPerson,
+  PORTAL_PROXY_EXTENSION,
+  toFhirRelatedPerson,
+} from './related-person.js';
+export type { DomainRelatedPerson } from './related-person.js';
+export {
+  DISPENSE_LOT_EXTENSION,
+  fromFhirMedicationDispense,
+  toFhirMedicationDispense,
+} from './medication-dispense.js';
+export type { DomainMedicationDispense } from './medication-dispense.js';
+export { fromFhirProcedure, toFhirProcedure } from './procedure.js';
+export type { DomainProcedure, DomainProcedureStatus } from './procedure.js';
 export { COVERAGE_DROPPED_FIELDS, fromFhirCoverage, toFhirCoverage } from './coverage.js';
 export type { DomainCoverage, DomainCoverageRank, DomainCoverageStatus } from './coverage.js';
 
@@ -399,3 +419,29 @@ export {
   type DomainImagingStudy,
   type DomainImagingStudyStatus,
 } from './imaging-study.js';
+export { CARE_TEAM_STATUS, fromFhirCareTeam, toFhirCareTeam } from './care-team.js';
+export type {
+  DomainCareTeam,
+  DomainCareTeamMemberType,
+  DomainCareTeamParticipant,
+  DomainCareTeamStatus,
+} from './care-team.js';
+export type CarePlan = fhir4.CarePlan;
+export {
+  CARE_PLAN_INTENT,
+  CARE_PLAN_STATUS,
+  fromFhirCarePlan,
+  toFhirCarePlan,
+} from './care-plan.js';
+export type { DomainCarePlan, DomainCarePlanIntent, DomainCarePlanStatus } from './care-plan.js';
+export type Goal = fhir4.Goal;
+export { GOAL_LIFECYCLE_STATUS, fromFhirGoal, toFhirGoal } from './goal.js';
+export type {
+  DomainGoal,
+  DomainGoalAchievementStatus,
+  DomainGoalLifecycleStatus,
+  DomainGoalPriority,
+} from './goal.js';
+export type Device = fhir4.Device;
+export { DEVICE_STATUS, fromFhirDevice, toFhirDevice } from './device.js';
+export type { DomainDevice, DomainDeviceStatus } from './device.js';

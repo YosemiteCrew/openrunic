@@ -41,6 +41,10 @@ export const TOKENS = {
   clinicianB: 'dev-clinician-b',
   /** A portal login, pinned to one chart by its launch context. */
   portalA: 'dev-portal-a',
+  /** A patient principal with no launch context, so no compartment is pinned. */
+  portalNoCompartmentA: 'test-portal-no-compartment',
+  /** A portal role whose actor_type defaulted to user, and carries no compartment. */
+  portalUserActorA: 'test-portal-user-actor',
   adminA: 'test-admin-a',
   /** A second administrator in the same organisation as `adminA`. */
   secondAdminA: 'test-second-admin-a',
@@ -68,6 +72,15 @@ export const TOKENS = {
    * something this code cannot keep.
    */
   siteReaderA: 'test-site-reader-a',
+  /**
+   * An `auditor` confined to facility A.
+   *
+   * The supervisory capability, `audit.read`, no longer rides in the `read-only`
+   * bundle, so an auditor is its own role and a site auditor is that role plus a
+   * single facility grant. This token is how the facility narrowing on the audit
+   * log is exercised without also holding `facility.all`.
+   */
+  auditorA: 'test-auditor-a',
 } as const;
 
 /** A valid, stable UUIDv7-shaped id. */
@@ -144,6 +157,80 @@ export function makePatientRow(overrides: Partial<PatientRow> = {}): PatientRow 
     updatedAt: FIXED_NOW,
     ...overrides,
   };
+}
+
+/**
+ * The subjects of the static dev principals, so a fixture can name one.
+ *
+ * A care relationship is between a person and a patient, so a test that needs
+ * one has to seed a row naming the same user the token resolves to. Restating
+ * the uuid at each call site is how a fixture drifts from the token it is meant
+ * to match, and drift here does not fail loudly: the relationship simply is not
+ * found and the read is a 404 that looks like a missing row.
+ */
+export const SUBJECTS = {
+  clinicianA: '01890000-0000-7000-8000-000000000101',
+  frontDeskA: '01890000-0000-7000-8000-000000000102',
+  billerA: '01890000-0000-7000-8000-000000000103',
+} as const;
+
+/**
+ * Gives a principal a reason to be allowed to open a chart.
+ *
+ * Seeds the cheapest relationship there is: an encounter naming this provider
+ * and this patient. Most tests that read a chart are about something else -
+ * a date format, a DTO shape, an audit record - and were written when holding
+ * `patient.read` was enough. They now need a relationship, and this says so in
+ * one line rather than restating an encounter row in each of them.
+ */
+export function seedCareRelationship(
+  dataset: MemoryDataset,
+  options: {
+    patientId: string;
+    providerId: string;
+    facilityId?: string;
+    id?: string;
+    /**
+     * Seed the relationship as a booked appointment rather than an encounter.
+     *
+     * For a test whose subject is a document or a summary that has an
+     * encounters section: an encounter seeded only to authorise the read would
+     * show up in the thing under test and change what it asserts. An
+     * appointment satisfies the same relationship source and appears in
+     * nothing.
+     */
+    as?: 'encounter' | 'appointment';
+  }
+): void {
+  if (options.as === 'appointment') {
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        id: options.id ?? testId(8_001),
+        patientId: options.patientId,
+        providerId: options.providerId,
+        facilityId: options.facilityId ?? DEMO_FACILITY_A,
+      })
+    );
+    return;
+  }
+
+  seed(dataset, 'Encounter', {
+    ...storageColumns(options.id ?? testId(8_000)),
+    facilityId: options.facilityId ?? DEMO_FACILITY_A,
+    patientId: options.patientId,
+    providerId: options.providerId,
+    appointmentId: null,
+    class: 'AMBULATORY',
+    status: 'COMPLETED',
+    reasonCode: 'Z00.00',
+    reasonText: 'Established relationship',
+    startedAt: FIXED_NOW,
+    endedAt: null,
+    signedAt: null,
+    signedById: null,
+  });
 }
 
 export function makeAppointmentRow(overrides: Partial<AppointmentRow> = {}): AppointmentRow {
@@ -238,6 +325,35 @@ export const DANGLING_PATIENT_SCOPE_PRINCIPAL: Principal = {
 };
 
 /**
+ * A patient principal with no launch context, so no chart is pinned and no
+ * `compartmentPatientId` is set - the shape an OIDC patient carries when its
+ * `actor_type` claim is present but its scope is a user one. A staff-only route
+ * must refuse it on the actor type and the role, not on a compartment it does
+ * not have. Test-only, because a denial fixture does not ship in the resolver.
+ */
+export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
+  subject: DEMO_PORTAL_PATIENT,
+  tenantId: DEMO_TENANT_A,
+  actorType: 'patient',
+  displayName: 'Testina Patientsson',
+  roles: ['patient-portal'],
+  facilityIds: [DEMO_FACILITY_A],
+  scopes: ['user/*.read'],
+  purposeOfUse: 'TREAT',
+};
+
+/**
+ * The same portal identity again, but with `actor_type` absent so the resolver
+ * defaults it to `user`. The compartment and actor-type signals both read as
+ * staff here; only the `patient-portal` role gives it away. This is the token
+ * shape that made the role a necessary backstop rather than a belt.
+ */
+export const PORTAL_USER_ACTOR_PRINCIPAL: Principal = {
+  ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
+  actorType: 'user',
+};
+
+/**
  * A second administrator in the same organisation.
  *
  * Exists so a test can ask what one privileged principal may do with something
@@ -263,6 +379,14 @@ export const SITE_READER_PRINCIPAL: Principal = {
   ...ADMIN_PRINCIPAL,
   subject: testId(77),
   roles: ['read-only'],
+  facilityIds: [DEMO_FACILITY_A],
+};
+
+/** A site-confined auditor: `audit.read` through the `auditor` role, one site. */
+export const AUDITOR_PRINCIPAL: Principal = {
+  ...ADMIN_PRINCIPAL,
+  subject: testId(78),
+  roles: ['auditor'],
   facilityIds: [DEMO_FACILITY_A],
 };
 
@@ -311,7 +435,10 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.patientScopeAdminA, PATIENT_SCOPE_ADMIN_PRINCIPAL],
       [TOKENS.noScopeA, NO_SCOPE_PRINCIPAL],
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
+      [TOKENS.portalNoCompartmentA, PORTAL_NO_COMPARTMENT_PRINCIPAL],
+      [TOKENS.portalUserActorA, PORTAL_USER_ACTOR_PRINCIPAL],
       [TOKENS.siteReaderA, SITE_READER_PRINCIPAL],
+      [TOKENS.auditorA, AUDITOR_PRINCIPAL],
     ])
   );
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted, with the amendments recorded under "What was built" below.
 
 ## Date
 
@@ -156,6 +156,179 @@ two drifting apart on this question.
 - **It is not portable to every deployment.** A single-site clinic where everybody sees everybody
   gains friction and no safety. The facility grant covers most of it; the rest is configuration,
   and a deployment that turns it off should have to say so.
+
+## What was built
+
+Implemented in #247, which closes #169. Three of the five decisions above landed as written. Two
+did not, and this section says so rather than leaving the ADR describing a system that does not
+exist.
+
+### Kept as decided
+
+**Registration and duplicate-search are exempt by shape.** An addressed read is gated; a search
+that describes a patient is not. `_id`, `identifier` and `patient` name one chart and are gated with
+the read, because `Condition?patient=Patient/{id}` is the chart's problem list however it is
+spelled. Searching by name and birth date is untouched.
+
+What decision 3 also asked for and did not land: the duplicate-search projection is still the full
+resource rather than a match result of name, birth date and MRN. The exemption is therefore wider
+than the ADR intended, and narrowing it is outstanding.
+
+**Break-glass is the only way past a refusal, and it costs something.** A reason, recorded on both
+the row and the audit event; a window that expires; a ceiling of ten charts held open at once,
+enforced by a database trigger under a per-user advisory lock rather than by the handler alone,
+because the handler's check-and-write is defeated by two requests arriving together.
+
+It costs more than the ADR said it would. It needs its own permission, `patient.breakGlass`, which
+the read-only bundle does not hold: gating a privilege-granting route on the privilege it grants
+makes it self-service, and the seeded `read-only` role could otherwise have taken every chart in the
+tenant one request at a time.
+
+**One function, both surfaces.** `findCareRelationship` is the only answer, and
+`policy.care-relationship.test.ts` runs every case against the BFF and the FHIR boundary from one
+table, because #139 is the recorded instance of those two drifting apart on this question.
+
+### Amended
+
+**The relationship is derived on every read, not written to a `CareRelationship` table.**
+Decision 1 called for a row written by the events that create one. The implementation computes the
+answer from those same rows instead.
+
+The reason is the failure mode, not the cost. A materialised relationship is only as good as every
+write path that maintains it, and a path that forgets does not fail loudly: it locks a clinician
+out of a chart they are treating, at the moment they need it. Derivation cannot go stale. The price
+is a handful of indexed lookups on a chart open, which is not a hot loop, and the expiry the ADR
+wanted becomes a property of the evidence rather than a configured interval - a membership with a
+closed period stops counting, a withdrawn encounter never counted.
+
+**The check is called by the seam, not inherited from the repository layer.**
+Decision 5 said the rule should live beside the compartment, where a new route cannot forget it,
+and gave the reason plainly: "not in middleware that a new route can forget to apply".
+
+It landed as a call the handler makes, and the ADR was right. Inside the pull request that
+introduced it, two routes forgot: `/patients/:id/ccd` and `/patients/:id/growth` both took the same
+id and returned more of the chart than the gated read. Both were found in review rather than by
+anything failing.
+
+What stands in for the ADR's property, for now, is enumeration rather than inheritance.
+`bff.chart-routes.test.ts` walks the route files and requires every `/patients/:id/...` path to
+call the check or name itself in an exemption list with a reason. `fhir.chart-gate.test.ts` does
+the same for the FHIR surface, requiring every module whose collection declares a patient column to
+declare where its chart comes from.
+
+That gets the property - a new route cannot quietly skip the check - without the move. It does not
+get the ADR's stronger version, where the check is structurally impossible to skip because it lives
+under the data access rather than above it. Moving it there remains the better answer and is not
+done.
+
+**The gate reaches the generic BFF CRUD resources, not only `/patients/:id`.**
+The check first landed on the FHIR boundary, on `/patients/:id`, and on the two patient sub-routes.
+It did not reach the aggregates the BFF serves through `defineCrud` - problems, observations,
+medications, results, claims, coverage, tasks, and the rest - so `GET /bff/v0/problems/:id` returned
+a chart the matching `GET /fhir/Condition/{id}` refused, to any reader holding the plain read
+permission, a different facility's chart included, because a condition carries no facility of its
+own. This was the same id-knowledge access the whole ADR is against, left open on the surface the
+practice's own UI uses.
+
+It is now closed where the ADR wanted it: in the seam. `crud.ts` gates every read, list, and
+amendment on the care relationship, keyed off a `chartFrom` each chart-bearing aggregate declares. `bff.chart-crud-gate.test.ts` fails the build if an aggregate whose spec has a
+`patientColumn` omits it, so the gate cannot be forgotten for a new resource. This is closer to the
+ADR's "under the data access" than the per-handler call the patient routes still use, though the
+repository layer itself is still unaware of the relationship.
+
+**A set-search of chart data is gated on every chart it returns.**
+The gate first fired only when a search named a chart - `patient`, `_id`, `identifier`. That closed
+`?patient=` and left the widest hole behind it: a clinical resource carries a patient compartment but
+no facility of its own, so `GET /fhir/Condition?code=E11.9`, or a bare `GET /fhir/Condition`, named
+no chart, skipped the gate, and returned every matching row in the tenant to a reader with no
+relationship to any of them - the addressed read refused, the set-search not, for the same row. The
+same residue sat behind the BFF list. Both boundaries now run the gate on the rows the search
+returned: a row that names no chart (an unfiled fax) has none to check and comes back; a row that
+does is refused unless the reader is in that patient's care, which turns a broad clinical search into
+a chart-scoped one. `Patient` is the one exception, and only for a search that names no chart, because
+finding a patient by name and birth date is how registration reaches a chart there is no relationship
+with yet.
+
+**The relationship check is not audited as the reader's access.**
+Deciding whether a read is allowed means querying the rows that would authorise it - an encounter, an
+appointment, a task. Those queries go through the same audited repositories as the read itself, so
+without care they landed in the reader's `phi.read` event, listing the appointment that authorised a
+report among the things the reader read and inflating the per-patient disclosure report with rows
+nobody asked for. The check now runs with read-recording suppressed; the access is recorded by its
+own `chart.access` event instead. This corrected the FHIR boundary too, where the same pollution had
+shipped untested.
+
+**A task is evidence only when somebody else produced it.**
+The ADR's table lists `Task.assigneeUserId` and says nothing about who wrote the row, which reads
+as an oversight only once you notice that the row is the evidence. Every role that can read a chart
+can also write a task, and a task names its own patient and its own assignee: the biller role holds
+`task.write` and `patient.read` and nothing else it would need to file a task about any patient id
+it could guess, put itself in `assigneeUserId`, and have manufactured its own relationship. No
+reason recorded, no expiry, no ceiling, none of the things break-glass exists to impose.
+
+`Task.assignedById` is therefore stamped from the authenticated writer, on the create and again on
+any reassignment, and is not on the wire schema. The source counts a task only when its assigner is
+somebody other than the reader, and only when that assigner is recorded. A null assigner does NOT
+count: null is not "the system raised it" but every task from before the column existed (the
+migration back-fills nothing), every task an old instance writes during a rolling deploy, and a task
+self-assigned through the pre-change handler. An absence is not provenance. A routing engine that
+wants its domain-event tasks to authorise their assignee must stamp a real system principal id, so
+that the evidence is an id rather than the lack of one.
+
+What this does not do is check that the assigner could have opened the chart themselves. That needs
+their roles and their facility grants, which the reading request does not have, so the honest
+statement of the rule is narrower than it could be: a reader cannot hand themselves a chart, and a
+colleague can hand them one. That is the delegation an inbox is for, and it is recorded against a
+name.
+
+**Facility activity expires; a named provider's does not.**
+The `facility-activity` source authorises every current member of a facility on the strength of any
+activity there. Unbounded, "any activity" means any activity ever: a single visit years ago let
+today's entire front desk read the chart with no break-glass and no reason, which is the "knowing of
+them is enough" this whole change removes, one step out. Codex found it after the withdrawn-status
+fix, which had only stopped withdrawn rows counting and left every valid historical row timeless.
+
+The evidence now goes stale after a year. A visit inside the window is current enough that opening
+the chart is routine; past it the reader falls to break-glass. It does not lock out a returning
+patient, because returning is itself fresh activity - the booking made at the desk and the encounter
+opened at check-in are both inside the window. The appointment half is bounded only on the past
+side: a booking still to come is a live commitment however far ahead it sits, while a no-show last
+year is not.
+
+The two provider-named sources, `encounter` and `appointment`, are deliberately left unbounded. A
+clinician on the record for a visit keeps the chart after the site's general access to it has gone
+stale, because "I treated them" does not lapse the way "someone here saw them once" does, and it is
+one named person carrying it rather than a building full of staff. That means those sources are no
+longer subsumed by `facility-activity` for stale rows, which is correct: the provider keeps access,
+the crowd does not.
+
+**Break-glass has two bounds, not one.**
+The ceiling on concurrent grants was the only bound when this was first written, and it counts
+grants that have not expired while the caller chooses the expiry. Asking for a one-minute window
+empties every slot a minute later, so the ceiling bounds how many charts are open at an instant and
+not how many charts a reader can walk through in an afternoon.
+
+A rolling bound counts declarations made in a trailing window whatever became of them, which is the
+number a reviewer means and the one a short window cannot reduce. Both are enforced in the handler,
+for a refusal a person can act on, and in a database trigger under an advisory lock on
+`(tenant, user)`, because the handler's version is check-then-write and two requests sent together
+would both pass it.
+
+### The evidence table, as implemented
+
+| Source              | Evidence                                                               |
+| ------------------- | ---------------------------------------------------------------------- |
+| `own-record`        | the token's own compartment                                            |
+| `break-glass`       | an unexpired grant this reader took                                    |
+| `care-team`         | membership in force, on an active team                                 |
+| `encounter`         | `Encounter.providerId`, excluding withdrawn visits                     |
+| `appointment`       | `Appointment.providerId`, excluding cancelled and withdrawn            |
+| `assigned-task`     | `Task.assigneeUserId`, assigned by somebody else                       |
+| `facility-activity` | any encounter or appointment within the last year at the reader's site |
+
+`Referral.referredById`, `ConsentGrant.recordedById` and `MessageThread` participation are in the
+ADR's table and are not implemented. Each is a real relationship and none is covered by another
+source in every case, so they are a gap rather than a decision.
 
 ## Alternatives considered
 

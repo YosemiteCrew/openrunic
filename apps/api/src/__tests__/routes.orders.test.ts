@@ -45,6 +45,7 @@ import {
   FIXED_NOW,
   jsonBearer,
   seed,
+  seedCareRelationship,
   storageColumns,
   testId,
   TOKENS,
@@ -76,6 +77,22 @@ const ENCOUNTER = testId(50);
 const OTHER_ENCOUNTER = testId(51);
 /** The demo clinician's subject, which is what a sign-off should record. */
 const CLINICIAN = '01890000-0000-7000-8000-000000000101';
+
+let relSeq = 9000;
+function authorise(
+  dataset: Parameters<typeof seedCareRelationship>[0],
+  ...patientIds: readonly string[]
+): void {
+  for (const patientId of patientIds) {
+    relSeq += 1;
+    seedCareRelationship(dataset, {
+      patientId,
+      providerId: CLINICIAN,
+      as: 'appointment',
+      id: testId(relSeq),
+    });
+  }
+}
 const OTHER_USER = testId(902);
 
 const ORDER_A = testId(200);
@@ -234,6 +251,9 @@ function makeTaskRow(overrides: Partial<TaskRow> = {}): TaskRow {
     assigneeType: 'USER',
     assigneeUserId: CLINICIAN,
     assigneeTeamKey: null,
+    // Delegated by someone else, so the assigned-task source authorises the
+    // assignee: a task with no recorded assigner no longer grants chart access.
+    assignedById: OTHER_USER,
     dueAt: EARLY,
     slaState: 'OK',
     expiresAt: null,
@@ -462,6 +482,7 @@ const FULL_TASK = {
 describe('GET /bff/v0/orders', () => {
   it('returns one page and the whole-set total', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     for (let index = 0; index < 30; index += 1) {
       seed(dataset, 'ServiceRequest', makeOrderRow({ id: testId(300 + index) }));
     }
@@ -476,6 +497,7 @@ describe('GET /bff/v0/orders', () => {
 
   it('narrows by every filter it advertises', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'ServiceRequest',
@@ -547,6 +569,7 @@ describe('GET /bff/v0/orders/:id', () => {
 describe('POST /bff/v0/orders', () => {
   it('records a minimal order on the schema defaults and points at it', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     const res = await call(app, 'post', '/bff/v0/orders', { body: VALID_ORDER });
 
     expect(res.status).toBe(201);
@@ -751,6 +774,7 @@ describe('the order state machine', () => {
 describe('specimens', () => {
   it('narrows by every filter it advertises', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Specimen',
@@ -878,6 +902,7 @@ describe('specimens', () => {
 
   it('receives a collected specimen and refuses an uncollected one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Specimen',
@@ -938,6 +963,7 @@ describe('specimens', () => {
 describe('results', () => {
   it('narrows by every filter it advertises', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'DiagnosticReport',
@@ -1001,6 +1027,7 @@ describe('results', () => {
 
   it('writes the analytes in the same call and reads them back from the nested route', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     const created = await body<DiagnosticReportDto>(
       await call(app, 'post', '/bff/v0/results', { body: FULL_REPORT })
     );
@@ -1037,6 +1064,7 @@ describe('results', () => {
 
   it('writes no analytes when the report carries none', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     await call(app, 'post', '/bff/v0/results', { body: VALID_REPORT });
 
     expect(dataset.table('ResultObservation')).toHaveLength(0);
@@ -1137,6 +1165,7 @@ describe('results', () => {
 describe('documents', () => {
   it('narrows by every filter it advertises', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Document',
@@ -1215,7 +1244,10 @@ describe('documents', () => {
   });
 
   it('attaches an unfiled fax to a chart through the patch contract', async () => {
-    const { app } = seededApp();
+    const { app, dataset } = seededApp();
+    // Re-filing touches two charts in turn, and amending a filed document needs
+    // standing on the chart it is filed under at that moment.
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     const dto = await body<DocumentDto>(
       await call(app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
         body: {
@@ -1274,6 +1306,7 @@ describe('documents', () => {
 
   it('refuses to file a document that belongs to no chart', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'Document', makeDocumentRow({ patientId: null }));
 
     const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/file`, { body: {} });
@@ -1287,6 +1320,7 @@ describe('documents', () => {
 
   it('files an unclaimed document into the chart the filer names', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'Document', makeDocumentRow({ patientId: null }));
 
     const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/file`, {
@@ -1306,6 +1340,7 @@ describe('documents', () => {
 
   it('records which document replaced a superseded one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Document',
@@ -1328,6 +1363,7 @@ describe('documents', () => {
 
   it('refuses to point a superseded document at nothing', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'Document', makeDocumentRow());
 
     const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
@@ -1340,6 +1376,7 @@ describe('documents', () => {
 
   it('refuses to let a document supersede itself', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'Document', makeDocumentRow());
 
     const res = await call(app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
@@ -1390,6 +1427,7 @@ describe('documents', () => {
     'allows the same bytes again once the earlier copy is %s',
     async (status) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT, OTHER_PATIENT);
       seed(dataset, 'Document', makeDocumentRow({ status }));
 
       const res = await call(app, 'post', '/bff/v0/documents', {
@@ -1417,6 +1455,7 @@ describe('documents', () => {
 describe('tasks', () => {
   it('narrows by every filter the typed inbox advertises', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Task',
@@ -1457,6 +1496,7 @@ describe('tasks', () => {
 
   it('sorts a task with no due date last rather than first', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Task',
@@ -1569,6 +1609,7 @@ describe('tasks', () => {
 
   it('reassigns to a user and clears the team column', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'Task',
@@ -1630,6 +1671,7 @@ describe('tasks', () => {
     ['ON_HOLD', 'cancel', 'CANCELLED'],
   ] as const)('moves a %s task through /%s to %s', async (from, action, to) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'Task', makeTaskRow({ status: from }));
 
     const res = await call(app, 'post', `/bff/v0/tasks/${TASK_A}/${action}`, { body: {} });
@@ -1651,6 +1693,7 @@ describe('tasks', () => {
     ['EXPIRED', 'cancel'],
   ] as const)('refuses /%2$s on a %1$s task with a typed 409', async (from, action) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'Task', makeTaskRow({ status: from }));
 
     const res = await call(app, 'post', `/bff/v0/tasks/${TASK_A}/${action}`, { body: {} });
@@ -1680,6 +1723,7 @@ describe('tasks', () => {
 describe('message threads', () => {
   it('narrows by every filter it advertises', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(
       dataset,
       'MessageThread',
@@ -1795,6 +1839,7 @@ describe('message threads', () => {
 describe('the messages inside a thread', () => {
   it('lists them oldest first and pages them', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'MessageThread', makeThreadRow());
     seed(dataset, 'MessageThread', makeThreadRow({ id: THREAD_B }));
     seed(
@@ -1888,6 +1933,7 @@ describe('the messages inside a thread', () => {
 
   it('refuses a message posted to a closed thread', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
     seed(dataset, 'MessageThread', makeThreadRow({ closedAt: EARLY }));
 
     const res = await call(app, 'post', `/bff/v0/messages/threads/${THREAD_A}/messages`, {
@@ -2081,7 +2127,10 @@ describe('audit', () => {
     const { app, sink } = seededApp();
     await call(app, 'patch', `/bff/v0/orders/${ORDER_A}`, { body: { priority: 'STAT' } });
 
-    const metadata = sink.writes()[0]?.event.metadata;
+    // The gate records a `chart.access` on the amendment before the update
+    // event; the amendment is the one carrying the changed fields.
+    const amendment = sink.writes().find((entry) => entry.event.action !== 'chart.access');
+    const metadata = amendment?.event.metadata;
     expect(metadata).toMatchObject({ fields: ['priority'] });
     expect(metadata).not.toHaveProperty('statusFrom');
   });

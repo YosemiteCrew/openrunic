@@ -1,4 +1,8 @@
 import {
+  CARE_PLAN_STATUS,
+  DEVICE_STATUS,
+  GOAL_LIFECYCLE_STATUS,
+  CARE_TEAM_STATUS,
   CLAIM_STATUS,
   DOCUMENT_STATUS,
   MEDICATION_REQUEST_STATUS,
@@ -15,6 +19,7 @@ import {
   dateWindow,
   parseDateOnly,
   referenceId,
+  tokenMatches,
   tokenValue,
   type DateWindow,
   type FhirPaging,
@@ -41,6 +46,17 @@ import {
   practitionerResource,
   practitionerRoleResource,
   provenanceResource,
+  medicationDispenseResource,
+  type DispensePageData,
+  carePlanResource,
+  deviceResource,
+  goalResource,
+  careTeamResource,
+  procedureResource,
+  relatedPersonResource,
+  compileFormRow,
+  questionnaireResource,
+  questionnaireResponseResource,
   serviceRequestResource,
   imagingStudyResource,
   specimenResource,
@@ -94,6 +110,10 @@ const CHART_SORT = { order: 'desc' } as const;
  * bad data, and the resource showing the first two hundred of it is a better
  * failure than a page that will not load.
  */
+/** Lots one dispense can be drawn from. A hand-over split across more than
+    a handful of lots is a data problem rather than a page to widen. */
+const MAX_DISPENSE_MOVEMENTS = 50;
+
 const MAX_FACILITY_GRANTS = 200;
 
 /**
@@ -188,6 +208,10 @@ function patientFilter(raw: string | undefined): { patientId?: string } {
 
 const patientModule = defineFhirResource({
   type: 'Patient',
+  /* The chart is the patient. Every other resource that names one has its own
+     id, and gating those is the same question with a different mapping; this is
+     the one where knowing the id is knowing the chart. */
+  chartFrom: 'patients',
   interactions: ['read', 'search-type', 'create'],
   params: ['_id', 'identifier', 'name', 'family', 'given', 'birthdate', 'gender'],
   permission: 'patient.read',
@@ -526,6 +550,7 @@ const locationModule = defineFhirResource({
 
 const coverageModule = defineFhirResource({
   type: 'Coverage',
+  chartFrom: 'coverages',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'coverage.read',
@@ -539,8 +564,454 @@ const coverageModule = defineFhirResource({
   toResource: coverageResource,
 });
 
+/**
+ * The forms a practice publishes, as Questionnaires.
+ *
+ * PUBLISHED only. A draft is a form somebody is still editing, and a canonical
+ * URL whose content can change underneath whoever resolved it is worse than an
+ * absent one. Publishing is also what proves the definition compiles, which is
+ * the invariant `questionnaireResource` relies on.
+ */
+/**
+ * Medicine actually handed to a patient.
+ *
+ * Read from the stock ledger, because that is where the fact lives: a
+ * prescription records what was intended and only a posting records what left
+ * the shelf, in what quantity and from which lot. Filtered to DISPENSE, so the
+ * receipts, counts and wastages in the same table stay out of a clinical
+ * search.
+ *
+ * `prepare` loads the movements for the page and then the items and lots those
+ * movements name, three reads for any number of dispenses rather than three
+ * per dispense.
+ */
+const medicationDispenseModule = defineFhirResource({
+  type: 'MedicationDispense',
+  chartFrom: 'stockPostings',
+  interactions: ['read', 'search-type'],
+  params: ['patient'],
+  permission: 'order.read',
+  collection: (repositories) => {
+    const postings = repositories.stockPostings;
+    return {
+      list: postings.list.bind(postings),
+      /* A read is narrowed the same way the search is. Without this, any
+         posting could be fetched by id through this route, including the
+         receipts and counts that belong to no patient at all. */
+      findById: async (id: string) => {
+        const row = await postings.findById(id);
+        return row?.kind === 'DISPENSE' && row.patientId !== null ? row : null;
+      },
+    };
+  },
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    kind: 'DISPENSE' as const,
+    sort: 'occurredOn' as const,
+    order: 'desc' as const,
+  }),
+  prepare: async (rows, repositories): Promise<DispensePageData> => {
+    const movementsByPosting = new Map<string, ScopedRow<'StockMovement'>[]>();
+    const itemsById = new Map<string, ScopedRow<'StockItem'>>();
+    const lotsById = new Map<string, ScopedRow<'StockLot'>>();
+    if (rows.length === 0) return { movementsByPosting, itemsById, lotsById };
+
+    const pages = await Promise.all(
+      rows.map(async (row) =>
+        repositories.stockMovements.list({
+          postingId: row.id,
+          page: 1,
+          pageSize: MAX_DISPENSE_MOVEMENTS,
+          sort: 'occurredOn',
+          order: 'asc',
+        })
+      )
+    );
+    for (const page of pages) {
+      for (const movement of page.rows) {
+        const bucket = movementsByPosting.get(movement.postingId);
+        if (bucket) bucket.push(movement);
+        else movementsByPosting.set(movement.postingId, [movement]);
+      }
+    }
+
+    const movements = [...movementsByPosting.values()].flat();
+    const [items, lots] = await Promise.all([
+      repositories.stockItems.findByIds([...new Set(movements.map((one) => one.itemId))]),
+      repositories.stockLots.findByIds([...new Set(movements.map((one) => one.lotId))]),
+    ]);
+    for (const item of items) itemsById.set(item.id, item);
+    for (const lot of lots) lotsById.set(lot.id, lot);
+
+    return { movementsByPosting, itemsById, lotsById };
+  },
+  toResource: (row, context) => medicationDispenseResource(row, context.prepared),
+});
+
+const questionnaireModule = defineFhirResource({
+  type: 'Questionnaire',
+  interactions: ['read', 'search-type'],
+  /*
+   * `name`, not `status`. `status` was advertised and then ignored, which is
+   * the exact failure this arrangement exists to make impossible: the router
+   * accepted `?status=draft` and answered with the published list. Only
+   * published forms are served, so a status filter has one legal value and
+   * nothing to select between.
+   *
+   * `name` is the FHIR spelling of the row's `key`, which is the stable
+   * identifier a client integrating against a named form actually has, and it
+   * is honoured below rather than declared.
+   */
+  params: ['name'],
+  permission: 'form.read',
+  /*
+   * `findById` is narrowed as well as the search, and it has to be narrowed
+   * here rather than in `toQuery`: a read goes straight to the collection and
+   * never builds a query, so filtering only there left every draft readable at
+   * `/fhir/Questionnaire/{id}` by anyone who could guess an id. Answering null
+   * makes that a 404, which is what an unpublished form should look like.
+   */
+  collection: (repositories) => {
+    const definitions = repositories.formDefinitions;
+    return {
+      list: definitions.list.bind(definitions),
+      findById: async (id: string) => {
+        const row = await definitions.findById(id);
+        return row?.status === 'PUBLISHED' ? row : null;
+      },
+    };
+  },
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...(query.name === undefined ? {} : { key: query.name }),
+    status: 'PUBLISHED' as const,
+    sort: 'version' as const,
+    order: 'desc' as const,
+  }),
+  toResource: questionnaireResource,
+});
+
+/**
+ * Submitted forms, as QuestionnaireResponses.
+ *
+ * `prepare` reads AND compiles the definitions for a page, once each. An intake
+ * list is overwhelmingly the same form many times over, so compiling inside
+ * `toResource` would recompile one definition per submission. The first version
+ * of this deduplicated only the read and its comment claimed otherwise.
+ */
+const questionnaireResponseModule = defineFhirResource({
+  type: 'QuestionnaireResponse',
+  chartFrom: 'formSubmissions',
+  interactions: ['read', 'search-type'],
+  params: ['patient'],
+  permission: 'form.read',
+  collection: (repositories) => repositories.formSubmissions,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    sort: 'effectiveAt' as const,
+    order: 'desc' as const,
+  }),
+  prepare: async (rows, repositories) => {
+    const ids = [...new Set(rows.map((row) => row.formDefinitionId))];
+    const definitions = ids.length === 0 ? [] : await repositories.formDefinitions.findByIds(ids);
+    return new Map(definitions.map((definition) => [definition.id, compileFormRow(definition)]));
+  },
+  toResource: (row, context) => {
+    const definition = context.prepared.get(row.formDefinitionId);
+    if (definition === undefined) {
+      /* The row has a required foreign key to its definition, so this is a
+         deleted or cross-tenant definition rather than an ordinary miss. */
+      throw new Error(`form submission ${row.id} has no readable definition`);
+    }
+    return questionnaireResponseResource(row, definition);
+  },
+});
+
+/**
+ * Procedures performed, which neither the order nor the claim records.
+ *
+ * `ServiceRequest` says what was asked for and may never have happened;
+ * `Claim` says what is billed and exists only when somebody bills. A procedure
+ * carried out and not billed, which is most of a clinical day, is here alone.
+ */
+const procedureModule = defineFhirResource({
+  type: 'Procedure',
+  chartFrom: 'procedures',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'date'],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.procedures,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...window(query.date, 'date'),
+    sort: 'performedStart' as const,
+    order: 'desc' as const,
+  }),
+  toResource: procedureResource,
+});
+
+/**
+ * Who is looking after this patient, and in what capacity.
+ *
+ * The members come from a second table, so the page loads them once for every
+ * team on it rather than once per team: a lookup inside the mapper would be one
+ * round trip per row, invisible against three fixtures and quadratic on a real
+ * page.
+ */
+/**
+ * The most members one team contributes to a page.
+ *
+ * A team of twenty is a large multidisciplinary one, so this is a ceiling
+ * rather than a limit anybody reaches. It is applied per team rather than to
+ * the page, so a team past it loses its own tail and no other team loses
+ * anything.
+ */
+const MAX_TEAM_MEMBERS = 20;
+
+async function prepareCareTeams(
+  rows: readonly ScopedRow<'CareTeam'>[],
+  repositories: Repositories
+): Promise<Map<string, ScopedRow<'CareTeamParticipant'>[]>> {
+  const byTeam = new Map<string, ScopedRow<'CareTeamParticipant'>[]>();
+  if (rows.length === 0) return byTeam;
+
+  const participants = await repositories.careTeamParticipants.list({
+    page: 1,
+    /*
+     * A global ceiling, and it is only safe because of the per-team trim below.
+     *
+     * On its own it is not a limit of twenty per team: rows come back ordered
+     * by creation across every team on the page, so one team with a thousand
+     * members would consume the whole allowance and every team after it would
+     * be served with no participants at all. Not an error, not a truncation a
+     * client can detect - a care team that appears to have nobody on it,
+     * because a different patient's team was malformed.
+     *
+     * The extra room past the per-team cap is what makes the overflow visible
+     * rather than indistinguishable from a team that is merely large.
+     */
+    pageSize: MAX_TEAM_MEMBERS * rows.length + 1,
+    sort: 'createdAt',
+    order: 'asc',
+    careTeamIds: rows.map((row) => row.id),
+  });
+  for (const participant of participants.rows) {
+    const existing = byTeam.get(participant.careTeamId);
+    if (existing === undefined) byTeam.set(participant.careTeamId, [participant]);
+    else if (existing.length < MAX_TEAM_MEMBERS) existing.push(participant);
+  }
+  return byTeam;
+}
+
+/**
+ * The assessment and plan.
+ *
+ * `category` is advertised and answered, unusually for a parameter with one
+ * legal value. US Core requires every conforming CarePlan to carry
+ * `assess-plan`, so a client that filters on it is asking a question this
+ * server can answer exactly; leaving it out would make a conforming client's
+ * ordinary search fail, and accepting it without answering would be the failure
+ * this boundary exists to prevent.
+ */
+/**
+ * What the patient and the clinician agreed to aim at.
+ *
+ * The status parameter is `lifecycle-status`, not `status`. R4 gives Goal no
+ * `status` parameter at all, so `losslessStatus` is not used here: it names the
+ * parameter it advertises, and the name would be one no conforming client sends
+ * and no other server answers. The losslessness argument still applies and is
+ * asserted rather than assumed, because a lossy mapping behind an advertised
+ * filter is the failure this boundary exists to prevent.
+ *
+ * `target-date` is the due date, which is the one target element US Core
+ * requires support for. It sorts on the same column it filters, so a client
+ * paging through goals by when they are due gets a stable order.
+ */
+const goalModule = defineFhirResource({
+  type: 'Goal',
+  chartFrom: 'goals',
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'target-date', ...goalLifecycleParam()],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.goals,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query['lifecycle-status'] === undefined
+      ? {}
+      : {
+          lifecycleStatus: statusToken(
+            GOAL_LIFECYCLE_STATUS,
+            query['lifecycle-status'],
+            'lifecycle-status'
+          ),
+        }),
+    ...window(query['target-date'], 'target-date'),
+    sort: 'dueDate' as const,
+    order: 'asc' as const,
+  }),
+  toResource: goalResource,
+});
+
+/**
+ * Advertises `lifecycle-status` only when the FHIR value set covers every
+ * domain state, which is what {@link losslessStatus} does for the parameter
+ * that is actually called `status`.
+ */
+function goalLifecycleParam(): string[] {
+  return GOAL_LIFECYCLE_STATUS.lossyValues.length === 0 ? ['lifecycle-status'] : [];
+}
+
+/**
+ * A device implanted in a patient.
+ *
+ * `identifier` is why this is served. A manufacturer recalls a batch and names
+ * a device identifier; the practice has to turn that into a list of patients,
+ * and no other resource here can answer it. Inventory knows what was bought and
+ * what left the shelf, and neither knows what is still inside somebody twenty
+ * years later.
+ *
+ * The parameter is answered against the stored device identifier and never
+ * against the carrier string. Matching a recall's identifier as a substring of
+ * a scanned barcode would find devices whose lot or serial happened to contain
+ * those digits, and a recall list with strangers on it is as unusable as one
+ * with people missing.
+ */
+const deviceModule = defineFhirResource({
+  type: 'Device',
+  chartFrom: 'devices',
+  /*
+   * Read and search only. A device is recorded where it was implanted, and one
+   * written through an API is an implant nobody performed.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'identifier', ...losslessStatus(DEVICE_STATUS)],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.devices,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.identifier === undefined ? {} : { deviceIdentifier: tokenValue(query.identifier) }),
+    ...(query.status === undefined
+      ? {}
+      : { status: statusToken(DEVICE_STATUS, query.status, 'status') }),
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  toResource: deviceResource,
+});
+
+const carePlanModule = defineFhirResource({
+  type: 'CarePlan',
+  chartFrom: 'carePlans',
+  /*
+   * Read and search only. The assessment is a clinician's conclusion about a
+   * patient, and a plan written through an API is words the chart would then
+   * attribute to whoever it names as author.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient', 'category', ...losslessStatus(CARE_PLAN_STATUS)],
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.carePlans,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.status === undefined
+      ? {}
+      : { status: statusTokens(CARE_PLAN_STATUS, query.status, 'status')[0] }),
+    /* The one legal value, checked rather than ignored. Every plan served here
+       is an assessment and plan, so any other category matches nothing, and
+       answering it with the whole list would be the lie this rejects. */
+    ...assessPlanOnly(query.category),
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  toResource: carePlanResource,
+});
+
+/**
+ * Narrows a `category` search to the one category this server serves.
+ *
+ * A token naming `assess-plan` is a no-op, because every row already is one.
+ * Anything else has to answer with nothing, expressed as an empty id set rather
+ * than as a sentinel value: an id no row can have is a claim about ids, and the
+ * empty set is the actual statement, which is that this search matches nothing.
+ *
+ * The alternative - reading the parameter and dropping it - is the failure this
+ * boundary exists to prevent, and it is unusually well hidden here. Every
+ * conforming client sends `assess-plan`, for which the filter is a no-op, so a
+ * dropped filter looks correct in every ordinary request and answers a query
+ * for some other category with the whole list.
+ */
+function assessPlanOnly(raw: string | undefined): { ids?: readonly string[] } {
+  if (raw === undefined) return {};
+  /* The system is checked, not only the code. `urn:elsewhere|assess-plan` is a
+     different concept that happens to share a code, and answering it with this
+     server's plans is the same wrong answer as ignoring the parameter. */
+  return tokenMatches(raw, SYSTEMS.usCoreCategory, 'assess-plan') ? {} : { ids: [] };
+}
+
+const careTeamModule = defineFhirResource({
+  type: 'CareTeam',
+  chartFrom: 'careTeams',
+  /*
+   * Read and search only. Membership is decided in the practice, by the people
+   * who take responsibility for a patient, and a client adding itself to a team
+   * would be granting itself a clinical relationship nobody agreed to.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient', ...losslessStatus(CARE_TEAM_STATUS)],
+  permission: 'patient.read',
+  collection: (repositories) => repositories.careTeams,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    ...(query.status === undefined
+      ? {}
+      : { status: statusTokens(CARE_TEAM_STATUS, query.status, 'status')[0] }),
+    sort: 'createdAt' as const,
+    order: 'desc' as const,
+  }),
+  prepare: prepareCareTeams,
+  toResource: (row: ScopedRow<'CareTeam'>, context) =>
+    careTeamResource(row, context.prepared.get(row.id) ?? []),
+});
+
+const relatedPersonModule = defineFhirResource({
+  type: 'RelatedPerson',
+  chartFrom: 'relatedPersons',
+  /*
+   * Read and search only. These rows are created during registration, and a
+   * guardian written by any client holding a token is a consent decision made
+   * in the wrong place. The search catalogue says the same thing, and
+   * `fhir.test.ts` asserts the two agree.
+   */
+  interactions: ['read', 'search-type'],
+  params: ['patient'],
+  /*
+   * `patient.read` rather than a permission of its own. Who a patient's
+   * guardian and emergency contact are is demographics: a role that can open
+   * the chart and cannot see who to ring in an emergency is a worse answer than
+   * either, and a new permission would silently deny every existing role until
+   * each grant was edited.
+   */
+  permission: 'patient.read',
+  collection: (repositories) => repositories.relatedPersons,
+  toQuery: (query: SearchParams, paging: FhirPaging) => ({
+    ...pageOf(paging),
+    ...patientFilter(query.patient),
+    sort: 'familyName' as const,
+    order: 'asc' as const,
+  }),
+  toResource: relatedPersonResource,
+});
+
 const appointmentModule = defineFhirResource({
   type: 'Appointment',
+  chartFrom: 'appointments',
   interactions: ['read', 'search-type'],
   params: ['_id', 'patient', 'date', 'practitioner', 'location'],
   permission: 'appointment.read',
@@ -564,6 +1035,7 @@ const appointmentModule = defineFhirResource({
 
 const encounterModule = defineFhirResource({
   type: 'Encounter',
+  chartFrom: 'encounters',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'encounter.read',
@@ -580,6 +1052,7 @@ const encounterModule = defineFhirResource({
 
 const conditionModule = defineFhirResource({
   type: 'Condition',
+  chartFrom: 'problems',
   interactions: ['read', 'search-type'],
   params: ['patient', 'code'],
   permission: 'encounter.read',
@@ -596,6 +1069,7 @@ const conditionModule = defineFhirResource({
 
 const medicationRequestModule = defineFhirResource({
   type: 'MedicationRequest',
+  chartFrom: 'prescriptions',
   interactions: ['read', 'search-type'],
   params: ['patient', 'encounter', ...losslessStatus(MEDICATION_REQUEST_STATUS)],
   permission: 'encounter.read',
@@ -617,6 +1091,7 @@ const medicationRequestModule = defineFhirResource({
 
 const medicationStatementModule = defineFhirResource({
   type: 'MedicationStatement',
+  chartFrom: 'medicationStatements',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'encounter.read',
@@ -632,6 +1107,7 @@ const medicationStatementModule = defineFhirResource({
 
 const allergyModule = defineFhirResource({
   type: 'AllergyIntolerance',
+  chartFrom: 'allergies',
   interactions: ['read', 'search-type'],
   params: ['patient'],
   permission: 'encounter.read',
@@ -647,6 +1123,7 @@ const allergyModule = defineFhirResource({
 
 const immunizationModule = defineFhirResource({
   type: 'Immunization',
+  chartFrom: 'immunisations',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'encounter.read',
@@ -663,6 +1140,7 @@ const immunizationModule = defineFhirResource({
 
 const observationModule = defineFhirResource({
   type: 'Observation',
+  chartFrom: 'observations',
   interactions: ['read', 'search-type'],
   params: ['patient', 'code', 'date', ...losslessStatus(OBSERVATION_STATUS)],
   permission: 'encounter.read',
@@ -683,6 +1161,7 @@ const observationModule = defineFhirResource({
 
 const diagnosticReportModule = defineFhirResource({
   type: 'DiagnosticReport',
+  chartFrom: 'reports',
   interactions: ['read', 'search-type'],
   params: ['patient', 'date'],
   permission: 'result.read',
@@ -715,6 +1194,7 @@ const diagnosticReportModule = defineFhirResource({
 
 const serviceRequestModule = defineFhirResource({
   type: 'ServiceRequest',
+  chartFrom: 'orders',
   interactions: ['read', 'search-type'],
   params: ['patient', 'authored', ...losslessStatus(SERVICE_REQUEST_STATUS)],
   permission: 'order.read',
@@ -734,6 +1214,7 @@ const serviceRequestModule = defineFhirResource({
 
 const specimenModule = defineFhirResource({
   type: 'Specimen',
+  chartFrom: 'specimens',
   interactions: ['read', 'search-type'],
   params: ['patient', 'accession'],
   permission: 'order.read',
@@ -757,6 +1238,7 @@ const specimenModule = defineFhirResource({
  */
 const imagingStudyModule = defineFhirResource({
   type: 'ImagingStudy',
+  chartFrom: 'imagingStudies',
   interactions: ['read', 'search-type'],
   params: ['patient', 'accession', 'date'],
   permission: 'result.read',
@@ -774,6 +1256,7 @@ const imagingStudyModule = defineFhirResource({
 
 const documentReferenceModule = defineFhirResource({
   type: 'DocumentReference',
+  chartFrom: 'documents',
   interactions: ['read', 'search-type'],
   params: ['patient', 'category', 'date', ...losslessStatus(DOCUMENT_STATUS)],
   permission: 'document.read',
@@ -794,6 +1277,7 @@ const documentReferenceModule = defineFhirResource({
 
 const taskModule = defineFhirResource({
   type: 'Task',
+  chartFrom: 'tasks',
   interactions: ['read', 'search-type'],
   params: ['patient', ...losslessStatus(TASK_STATUS)],
   permission: 'task.read',
@@ -923,6 +1407,7 @@ function billerFor(
 
 const claimModule = defineFhirResource({
   type: 'Claim',
+  chartFrom: 'claims',
   interactions: ['read', 'search-type'],
   params: ['patient', 'status', 'created'],
   permission: 'claim.read',
@@ -967,6 +1452,15 @@ export const SERVED_MODULES: readonly FhirResourceModule[] = [
   organizationModule,
   locationModule,
   coverageModule,
+  relatedPersonModule,
+  medicationDispenseModule,
+  procedureModule,
+  carePlanModule,
+  goalModule,
+  deviceModule,
+  careTeamModule,
+  questionnaireModule,
+  questionnaireResponseModule,
   appointmentModule,
   encounterModule,
   conditionModule,

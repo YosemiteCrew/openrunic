@@ -11,8 +11,8 @@
  * ## What this is not
  *
  * It is NOT a drug interaction database. Drug-drug interaction content is
- * licensed (First Databank, Medi-Span and similar) and cannot ship in an
- * AGPL repository, so nothing here pretends to know that ibuprofen interacts
+ * commercially licensed and cannot ship in an AGPL repository, so nothing
+ * here pretends to know that ibuprofen interacts
  * with warfarin. `MedicationSafetyPort` in `port.ts` is the seam a deployer
  * plugs a licensed service into; this module is what works with no licence at
  * all, because it only compares the patient's own record against the order in

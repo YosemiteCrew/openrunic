@@ -150,3 +150,52 @@ export function toPatientDto(row: PatientRow): PatientDto {
 export function toDateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
+
+/**
+ * Declaring break-glass. The reason is the whole control, so it is required and
+ * it is refused when blank.
+ */
+export const breakGlassRequestSchema = z.strictObject({
+  reason: z
+    .string()
+    .min(1)
+    .max(256)
+    .refine((value) => value.trim().length > 0, {
+      message: 'reason must say why',
+    }),
+  /**
+   * How long the window lasts, in minutes.
+   *
+   * Bounded at four hours because break-glass is for the emergency in front of
+   * you. A window that outlived the emergency would be an ordinary grant with a
+   * dramatic name, and the person who took it would stop thinking about it.
+   */
+  minutes: z.int().min(1).max(240).default(60),
+});
+
+export const breakGlassGrantDtoSchema = z.strictObject({
+  id: z.uuid(),
+  patientId: z.uuid(),
+  reason: z.string(),
+  grantedAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+});
+
+export type BreakGlassRequest = z.infer<typeof breakGlassRequestSchema>;
+export type BreakGlassGrantDto = z.infer<typeof breakGlassGrantDtoSchema>;
+
+export function toBreakGlassGrantDto(row: {
+  id: string;
+  patientId: string;
+  reason: string;
+  grantedAt: Date;
+  expiresAt: Date;
+}): BreakGlassGrantDto {
+  return {
+    id: row.id,
+    patientId: row.patientId,
+    reason: row.reason,
+    grantedAt: row.grantedAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+  };
+}

@@ -56,6 +56,106 @@ export const NOTE_STATES = [
   'ENTERED_IN_ERROR',
 ] as const;
 
+/**
+ * FHIR's event-status value set, as this schema spells it.
+ *
+ * `NOT_DONE` earns its place: a procedure declined or abandoned is a clinical
+ * statement, and a list without it pushes that fact into free text.
+ */
+export const PROCEDURE_STATUSES = [
+  'PREPARATION',
+  'IN_PROGRESS',
+  'NOT_DONE',
+  'ON_HOLD',
+  'STOPPED',
+  'COMPLETED',
+  'ENTERED_IN_ERROR',
+  'UNKNOWN',
+] as const;
+export type ProcedureStatus = (typeof PROCEDURE_STATUSES)[number];
+
+export const CARE_TEAM_STATUSES = [
+  'PROPOSED',
+  'ACTIVE',
+  'SUSPENDED',
+  'INACTIVE',
+  'ENTERED_IN_ERROR',
+] as const;
+export type CareTeamStatus = (typeof CARE_TEAM_STATUSES)[number];
+
+/**
+ * Which kind of person a care team participant is, and so which member column
+ * carries their id.
+ *
+ * Three, not four. FHIR also allows an Organization, but this deployment has
+ * exactly one Organisation row and it is the practice itself, so a member
+ * pointing at it says nothing. `PATIENT` needs no column: the team already
+ * names its subject.
+ */
+export const CARE_TEAM_MEMBER_TYPES = ['USER', 'RELATED_PERSON', 'PATIENT'] as const;
+export type CareTeamMemberType = (typeof CARE_TEAM_MEMBER_TYPES)[number];
+
+export const CARE_PLAN_STATUSES = [
+  'DRAFT',
+  'ACTIVE',
+  'ON_HOLD',
+  'REVOKED',
+  'COMPLETED',
+  'ENTERED_IN_ERROR',
+  'UNKNOWN',
+] as const;
+export type CarePlanStatus = (typeof CARE_PLAN_STATUSES)[number];
+
+/**
+ * How binding a plan is.
+ *
+ * Not decoration. A receiving system treats `ORDER` as work somebody is obliged
+ * to carry out and `PROPOSAL` as a suggestion, so a plan recorded at the wrong
+ * intent is either ignored or acted on, and both are wrong in a way nobody sees
+ * until afterwards.
+ */
+export const CARE_PLAN_INTENTS = ['PROPOSAL', 'PLAN', 'ORDER', 'OPTION'] as const;
+export type CarePlanIntent = (typeof CARE_PLAN_INTENTS)[number];
+
+export const GOAL_LIFECYCLE_STATUSES = [
+  'PROPOSED',
+  'PLANNED',
+  'ACCEPTED',
+  'ACTIVE',
+  'ON_HOLD',
+  'COMPLETED',
+  'CANCELLED',
+  'ENTERED_IN_ERROR',
+  'REJECTED',
+] as const;
+export type GoalLifecycleStatus = (typeof GOAL_LIFECYCLE_STATUSES)[number];
+
+/**
+ * How a goal is going, kept separate from where it is in its life.
+ *
+ * Collapsing the two loses whichever the other was set from: a goal recorded as
+ * WORSENING would stop being ACTIVE, and a worklist of active goals would
+ * quietly shed the patients who most need to be on it.
+ */
+export const GOAL_ACHIEVEMENT_STATUSES = [
+  'IN_PROGRESS',
+  'IMPROVING',
+  'WORSENING',
+  'NO_CHANGE',
+  'ACHIEVED',
+  'SUSTAINING',
+  'NOT_ACHIEVED',
+  'NO_PROGRESS',
+  'NOT_ATTAINABLE',
+] as const;
+export type GoalAchievementStatus = (typeof GOAL_ACHIEVEMENT_STATUSES)[number];
+
+export const GOAL_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
+export type GoalPriority = (typeof GOAL_PRIORITIES)[number];
+
+export const DEVICE_STATUSES = ['ACTIVE', 'INACTIVE', 'ENTERED_IN_ERROR', 'UNKNOWN'] as const;
+export type DeviceStatus = (typeof DEVICE_STATUSES)[number];
+
 export const CONDITION_CATEGORIES = [
   'PROBLEM_LIST_ITEM',
   'ENCOUNTER_DIAGNOSIS',
@@ -404,6 +504,15 @@ export type EnumParityProof = [
   AssertOk<AssertMirrors<Prisma.RemittanceStatus, typeof REMITTANCE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.StatementStatus, typeof STATEMENT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.StatementDelivery, typeof STATEMENT_DELIVERIES>>,
+  AssertOk<AssertMirrors<Prisma.ProcedureStatus, typeof PROCEDURE_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.CareTeamStatus, typeof CARE_TEAM_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.CareTeamMemberType, typeof CARE_TEAM_MEMBER_TYPES>>,
+  AssertOk<AssertMirrors<Prisma.CarePlanStatus, typeof CARE_PLAN_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.CarePlanIntent, typeof CARE_PLAN_INTENTS>>,
+  AssertOk<AssertMirrors<Prisma.GoalLifecycleStatus, typeof GOAL_LIFECYCLE_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.GoalAchievementStatus, typeof GOAL_ACHIEVEMENT_STATUSES>>,
+  AssertOk<AssertMirrors<Prisma.GoalPriority, typeof GOAL_PRIORITIES>>,
+  AssertOk<AssertMirrors<Prisma.DeviceStatus, typeof DEVICE_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.ImagingStudyStatus, typeof IMAGING_STUDY_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.TelehealthVisitStatus, typeof TELEHEALTH_VISIT_STATUSES>>,
   AssertOk<AssertMirrors<Prisma.FormStatus, typeof FORM_STATUSES>>,

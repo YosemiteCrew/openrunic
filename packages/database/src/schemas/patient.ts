@@ -2,6 +2,14 @@ import { z } from 'zod';
 
 import {
   ADMINISTRATIVE_GENDERS,
+  GOAL_ACHIEVEMENT_STATUSES,
+  GOAL_LIFECYCLE_STATUSES,
+  GOAL_PRIORITIES,
+  DEVICE_STATUSES,
+  CARE_PLAN_INTENTS,
+  CARE_PLAN_STATUSES,
+  CARE_TEAM_MEMBER_TYPES,
+  CARE_TEAM_STATUSES,
   CONSENT_SCOPES,
   CONSENT_STATUSES,
   COVERAGE_RANKS,
@@ -83,6 +91,193 @@ export const relatedPersonInput = z.strictObject({
   active: z.boolean().optional(),
 });
 
+export const careTeamInput = z
+  .strictObject({
+    patientId: uuid,
+    status: z.enum(CARE_TEAM_STATUSES).optional(),
+    name: shortText.optional(),
+    periodStart: timestamp.optional(),
+    periodEnd: timestamp.optional(),
+  })
+  .refine(
+    (value) => !value.periodEnd || !value.periodStart || value.periodEnd >= value.periodStart,
+    {
+      message: 'periodEnd must not precede periodStart',
+      path: ['periodEnd'],
+    }
+  );
+
+/**
+ * One member of a team, with the invariant the database also holds.
+ *
+ * `memberType` picks which member column is set, and the two have to agree.
+ * The check constraint in the migration is the enforcement that matters, since
+ * the API is not the only writer, but refusing it here turns a constraint
+ * violation into a 400 naming the field rather than a 500 naming a constraint.
+ */
+export const careTeamParticipantInput = z
+  .strictObject({
+    careTeamId: uuid,
+    /* Copied from the team, and the composite foreign key refuses a value that
+       disagrees with it. Required here so the caller cannot omit it and leave a
+       member invisible to the patient it belongs to. */
+    patientId: uuid,
+    memberType: z.enum(CARE_TEAM_MEMBER_TYPES),
+    memberUserId: uuid.optional(),
+    memberRelatedPersonId: uuid.optional(),
+    roleCode: code,
+    roleSystem: codeSystem,
+    roleText: shortText.optional(),
+    periodStart: timestamp.optional(),
+    periodEnd: timestamp.optional(),
+  })
+  .refine((value) => (value.memberType === 'USER') === (value.memberUserId !== undefined), {
+    message: 'memberUserId is required for a USER member and forbidden otherwise',
+    path: ['memberUserId'],
+  })
+  .refine(
+    (value) =>
+      (value.memberType === 'RELATED_PERSON') === (value.memberRelatedPersonId !== undefined),
+    {
+      message:
+        'memberRelatedPersonId is required for a RELATED_PERSON member and forbidden otherwise',
+      path: ['memberRelatedPersonId'],
+    }
+  )
+  .refine(
+    (value) => !value.periodEnd || !value.periodStart || value.periodEnd >= value.periodStart,
+    {
+      message: 'periodEnd must not precede periodStart',
+      path: ['periodEnd'],
+    }
+  );
+
+export const carePlanInput = z
+  .strictObject({
+    patientId: uuid,
+    encounterId: uuid.optional(),
+    status: z.enum(CARE_PLAN_STATUSES).optional(),
+    intent: z.enum(CARE_PLAN_INTENTS).optional(),
+    title: shortText.optional(),
+    /* Required, and required to say something. US Core's must-support list for
+       this resource is barely more than the text, so a plan with an empty
+       narrative is a resource whose only content-bearing element is blank:
+       structurally valid, and empty exactly where the content belongs. */
+    narrative: longText,
+    periodStart: timestamp.optional(),
+    periodEnd: timestamp.optional(),
+    authorId: uuid.optional(),
+  })
+  .refine((value) => value.narrative.trim().length > 0, {
+    message: 'narrative must say something',
+    path: ['narrative'],
+  })
+  .refine(
+    (value) => !value.periodEnd || !value.periodStart || value.periodEnd >= value.periodStart,
+    { message: 'periodEnd must not precede periodStart', path: ['periodEnd'] }
+  );
+
+export const goalInput = z
+  .strictObject({
+    patientId: uuid,
+    carePlanId: uuid.optional(),
+    lifecycleStatus: z.enum(GOAL_LIFECYCLE_STATUSES).optional(),
+    achievementStatus: z.enum(GOAL_ACHIEVEMENT_STATUSES).optional(),
+    priority: z.enum(GOAL_PRIORITIES).optional(),
+    description: shortText,
+    descriptionCode: code.optional(),
+    descriptionSystem: codeSystem.optional(),
+    targetMeasureCode: code.optional(),
+    targetMeasureSystem: codeSystem.optional(),
+    targetValue: z.number().optional(),
+    targetLow: z.number().optional(),
+    targetHigh: z.number().optional(),
+    targetUnit: code.optional(),
+    startDate: localDate.optional(),
+    dueDate: localDate.optional(),
+    statusReason: shortText.optional(),
+    expressedByUserId: uuid.optional(),
+  })
+  .refine((value) => value.description.trim().length > 0, {
+    message: 'description must say something',
+    path: ['description'],
+  })
+  /* `Goal.target.detail[x]` is a choice in FHIR, so both set is malformed
+     rather than generous: a client reading whichever element it prefers would
+     get a different answer from one reading the other. */
+  .refine(
+    (value) =>
+      value.targetValue === undefined ||
+      (value.targetLow === undefined && value.targetHigh === undefined),
+    { message: 'a target is a single value or a range, never both', path: ['targetValue'] }
+  )
+  .refine(
+    (value) =>
+      value.targetLow === undefined ||
+      value.targetHigh === undefined ||
+      value.targetHigh >= value.targetLow,
+    { message: 'targetHigh must not be below targetLow', path: ['targetHigh'] }
+  )
+  /* A number with no unit is not a measurement. "Below 7" is meaningless
+     without knowing 7 of what, and a client comparing it against an observation
+     would silently compare the wrong things. */
+  .refine(
+    (value) =>
+      (value.targetValue === undefined &&
+        value.targetLow === undefined &&
+        value.targetHigh === undefined) ||
+      value.targetUnit !== undefined,
+    { message: 'a numeric target needs a unit', path: ['targetUnit'] }
+  );
+
+export const deviceInput = z
+  .strictObject({
+    patientId: uuid,
+    status: z.enum(DEVICE_STATUSES).optional(),
+    typeCode: code.optional(),
+    typeSystem: codeSystem.optional(),
+    typeText: shortText,
+    deviceIdentifier: z.string().min(1).max(128).optional(),
+    /* Up to 512 because a UDI carrier is long: a GS1 form with every production
+       identifier runs past 100 characters and HIBCC concatenates more. */
+    udiCarrierHrf: z.string().min(1).max(512).optional(),
+    distinctIdentifier: z.string().min(1).max(128).optional(),
+    lotNumber: z.string().min(1).max(64).optional(),
+    serialNumber: z.string().min(1).max(64).optional(),
+    manufacturer: shortText.optional(),
+    modelNumber: z.string().min(1).max(128).optional(),
+    manufactureDate: localDate.optional(),
+    expirationDate: localDate.optional(),
+  })
+  .refine((value) => value.typeText.trim().length > 0, {
+    message: 'typeText must name the device',
+    path: ['typeText'],
+  })
+  /* Both or neither. A code with no system is a string nobody can look up, and
+     a system with no code names a vocabulary and no term in it. */
+  .refine((value) => (value.typeCode === undefined) === (value.typeSystem === undefined), {
+    message: 'typeCode and typeSystem are set together or not at all',
+    path: ['typeSystem'],
+  })
+  .refine(
+    (value) =>
+      !value.expirationDate ||
+      !value.manufactureDate ||
+      value.expirationDate >= value.manufactureDate,
+    { message: 'expirationDate must not precede manufactureDate', path: ['expirationDate'] }
+  );
+export const breakGlassGrantInput = z
+  .strictObject({
+    userId: uuid,
+    patientId: uuid,
+    reason: shortText,
+    expiresAt: timestamp,
+  })
+  .refine((value) => value.reason.trim().length > 0, {
+    message: 'reason must say why',
+    path: ['reason'],
+  });
+
 export const payerInput = z.strictObject({
   name: z.string().min(1).max(256),
   /** Trading-partner id used in the 837 NM109. */
@@ -142,6 +337,12 @@ export type PatientCreateInput = z.infer<typeof patientCreateInput>;
 export type PatientUpdateInput = z.infer<typeof patientUpdateInput>;
 export type PatientIdentifierInput = z.infer<typeof patientIdentifierInput>;
 export type RelatedPersonInput = z.infer<typeof relatedPersonInput>;
+export type CareTeamInput = z.infer<typeof careTeamInput>;
+export type CareTeamParticipantInput = z.infer<typeof careTeamParticipantInput>;
+export type CarePlanInput = z.infer<typeof carePlanInput>;
+export type GoalInput = z.infer<typeof goalInput>;
+export type DeviceInput = z.infer<typeof deviceInput>;
+export type BreakGlassGrantInput = z.infer<typeof breakGlassGrantInput>;
 export type PayerInput = z.infer<typeof payerInput>;
 export type CoverageInput = z.infer<typeof coverageInput>;
 export type ConsentGrantInput = z.infer<typeof consentGrantInput>;

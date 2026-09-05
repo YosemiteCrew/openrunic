@@ -10,6 +10,7 @@ import {
   claimStatusChangeInput,
   clinicalNoteInput,
   conditionInput,
+  procedureInput,
   consentGrantInput,
   coverageInput,
   diagnosticReportInput,
@@ -31,6 +32,11 @@ import {
   payerInput,
   paymentCreateInput,
   promotionManifestInput,
+  carePlanInput,
+  deviceInput,
+  goalInput,
+  careTeamInput,
+  careTeamParticipantInput,
   relatedPersonInput,
   remittanceInput,
   serviceRequestInput,
@@ -404,6 +410,301 @@ describe('noteAddendumInput', () => {
 
   it('rejects an addendum with no author', () => {
     rejects(noteAddendumInput, { noteId: ID.note, blocks: [] });
+  });
+});
+
+describe('goalInput', () => {
+  const validGoal = { patientId: ID.patient, description: 'HbA1c below 7%' };
+
+  it('accepts a goal with nothing but a description', () => {
+    /* Most goals are agreed in words and never measured against a number. */
+    accepts(goalInput, validGoal);
+  });
+
+  it('accepts a single-value target with a unit', () => {
+    accepts(goalInput, { ...validGoal, targetValue: 7, targetUnit: '%' });
+  });
+
+  it('accepts a range target with a unit', () => {
+    accepts(goalInput, {
+      ...validGoal,
+      targetLow: 110,
+      targetHigh: 130,
+      targetUnit: 'mm[Hg]',
+    });
+  });
+
+  it('rejects a target that is both a value and a range', () => {
+    /* `Goal.target.detail[x]` is a choice. A resource carrying both is
+       malformed, and a client reading whichever element it prefers gets a
+       different answer from one reading the other. */
+    rejects(goalInput, {
+      ...validGoal,
+      targetValue: 7,
+      targetLow: 6,
+      targetHigh: 8,
+      targetUnit: '%',
+    });
+  });
+
+  it('rejects a range that is the wrong way round', () => {
+    rejects(goalInput, {
+      ...validGoal,
+      targetLow: 130,
+      targetHigh: 110,
+      targetUnit: 'mm[Hg]',
+    });
+  });
+
+  it('accepts a range whose bounds are equal, which is a target of exactly that', () => {
+    accepts(goalInput, { ...validGoal, targetLow: 7, targetHigh: 7, targetUnit: '%' });
+  });
+
+  it('rejects a number with no unit', () => {
+    /* "Below 7" is meaningless without knowing 7 of what, and a client
+       comparing it against an observation would compare the wrong things. */
+    rejects(goalInput, { ...validGoal, targetValue: 7 });
+    rejects(goalInput, { ...validGoal, targetLow: 110, targetHigh: 130 });
+  });
+
+  it('rejects a description that is only whitespace', () => {
+    rejects(goalInput, { ...validGoal, description: '   ' });
+  });
+
+  it('rejects a lifecycle status, achievement status and priority outside their sets', () => {
+    rejects(goalInput, { ...validGoal, lifecycleStatus: 'ABANDONED' });
+    rejects(goalInput, { ...validGoal, achievementStatus: 'GOING_WELL' });
+    rejects(goalInput, { ...validGoal, priority: 'URGENT' });
+  });
+});
+
+describe('deviceInput', () => {
+  const validDevice = { patientId: ID.patient, typeText: 'Cardiac pacemaker' };
+
+  it('accepts a device recorded from a letter, with no UDI at all', () => {
+    /* Most older implants are. A schema that required the barcode would refuse
+       the devices most likely to be recalled. */
+    accepts(deviceInput, validDevice);
+  });
+
+  it('accepts a scanned device with its carrier and identifier', () => {
+    accepts(deviceInput, {
+      ...validDevice,
+      deviceIdentifier: '08717648200274',
+      udiCarrierHrf: '(01)08717648200274(17)141120(10)7654321D',
+      lotNumber: '7654321D',
+    });
+  });
+
+  it('rejects a type name that is only whitespace', () => {
+    rejects(deviceInput, { ...validDevice, typeText: '   ' });
+  });
+
+  it('rejects a code without its system, and a system without its code', () => {
+    rejects(deviceInput, { ...validDevice, typeCode: '14106009' });
+    rejects(deviceInput, { ...validDevice, typeSystem: 'http://snomed.info/sct' });
+  });
+
+  it('accepts both together', () => {
+    accepts(deviceInput, {
+      ...validDevice,
+      typeCode: '14106009',
+      typeSystem: 'http://snomed.info/sct',
+    });
+  });
+
+  it('rejects an expiry before manufacture', () => {
+    rejects(deviceInput, {
+      ...validDevice,
+      manufactureDate: '2026-01-05',
+      expirationDate: '2025-01-05',
+    });
+  });
+
+  it('accepts a carrier longer than a short text field would hold', () => {
+    /* A GS1 form with every production identifier runs past 100 characters and
+       HIBCC concatenates more, so the ordinary 256 limit is not the right one
+       here and a scanned device would be refused at the door. */
+    accepts(deviceInput, { ...validDevice, udiCarrierHrf: '+'.repeat(300) });
+  });
+});
+
+describe('carePlanInput', () => {
+  const validPlan = {
+    patientId: ID.patient,
+    narrative: 'Continue metformin. Recheck HbA1c in three months.',
+  };
+
+  it('accepts a plan with a narrative and nothing else', () => {
+    accepts(carePlanInput, validPlan);
+  });
+
+  it('rejects a plan with no narrative', () => {
+    rejects(carePlanInput, { patientId: ID.patient });
+  });
+
+  it('rejects a narrative that is only whitespace', () => {
+    /* The failure this resource exists to prevent. `narrative` being NOT NULL
+       is satisfied by a space, and the plan then serves a `text.div` with
+       nothing in it: valid FHIR, and empty where the content belongs. */
+    rejects(carePlanInput, { ...validPlan, narrative: '   \n  ' });
+  });
+
+  it('rejects a plan that ended before it started', () => {
+    rejects(carePlanInput, {
+      ...validPlan,
+      periodStart: '2026-03-01T00:00:00.000Z',
+      periodEnd: '2026-02-01T00:00:00.000Z',
+    });
+  });
+
+  it('rejects a status and an intent outside their closed sets', () => {
+    rejects(carePlanInput, { ...validPlan, status: 'PENDING' });
+    rejects(carePlanInput, { ...validPlan, intent: 'SUGGESTION' });
+  });
+});
+
+describe('careTeamInput', () => {
+  const validTeam = { patientId: ID.patient };
+
+  it('accepts the ordinary standing team, which records no period at all', () => {
+    accepts(careTeamInput, validTeam);
+  });
+
+  it('rejects a team that stood down before it started', () => {
+    rejects(careTeamInput, {
+      ...validTeam,
+      periodStart: '2026-03-01T00:00:00.000Z',
+      periodEnd: '2026-02-01T00:00:00.000Z',
+    });
+  });
+
+  it('rejects a status outside the closed set', () => {
+    rejects(careTeamInput, { ...validTeam, status: 'DISBANDED' });
+  });
+});
+
+describe('careTeamParticipantInput', () => {
+  const base = {
+    careTeamId: ID.patient,
+    patientId: ID.patient,
+    roleCode: '207Q00000X',
+    roleSystem: 'http://nucc.org/provider-taxonomy',
+  };
+
+  it('accepts a clinician member carrying a user id', () => {
+    accepts(careTeamParticipantInput, { ...base, memberType: 'USER', memberUserId: ID.provider });
+  });
+
+  it('accepts a related-person member carrying a related-person id', () => {
+    accepts(careTeamParticipantInput, {
+      ...base,
+      memberType: 'RELATED_PERSON',
+      memberRelatedPersonId: ID.provider,
+    });
+  });
+
+  it('accepts a patient member carrying neither, because the team names the subject', () => {
+    accepts(careTeamParticipantInput, { ...base, memberType: 'PATIENT' });
+  });
+
+  it('rejects a clinician member with no user id', () => {
+    /* The pairing is the whole design. Stored, this row projects as a member
+       reference with nothing behind it. */
+    rejects(careTeamParticipantInput, { ...base, memberType: 'USER' });
+  });
+
+  it('rejects a related-person member with no related-person id', () => {
+    rejects(careTeamParticipantInput, { ...base, memberType: 'RELATED_PERSON' });
+  });
+
+  it('rejects a clinician member carrying a related-person id as well', () => {
+    /* Both set is ambiguous rather than generous: the projection would have to
+       pick one, and either choice serves somebody as the wrong resource type. */
+    rejects(careTeamParticipantInput, {
+      ...base,
+      memberType: 'USER',
+      memberUserId: ID.provider,
+      memberRelatedPersonId: ID.patient,
+    });
+  });
+
+  it('rejects a patient member carrying a member id', () => {
+    rejects(careTeamParticipantInput, {
+      ...base,
+      memberType: 'PATIENT',
+      memberUserId: ID.provider,
+    });
+  });
+
+  it('rejects a member whose period ends before it starts', () => {
+    rejects(careTeamParticipantInput, {
+      ...base,
+      memberType: 'PATIENT',
+      periodStart: '2026-03-01T00:00:00.000Z',
+      periodEnd: '2026-02-01T00:00:00.000Z',
+    });
+  });
+});
+
+describe('procedureInput', () => {
+  const validProcedure = {
+    patientId: ID.patient,
+    code: '45378',
+    display: 'Diagnostic colonoscopy',
+    performedStart: '2026-08-12T09:00:00.000Z',
+  };
+
+  it('accepts a procedure that happened at a moment', () => {
+    accepts(procedureInput, validProcedure);
+  });
+
+  it('accepts one that took a span', () => {
+    accepts(procedureInput, {
+      ...validProcedure,
+      performedEnd: '2026-08-12T09:45:00.000Z',
+    });
+  });
+
+  it('rejects an end before the start', () => {
+    /* A procedure that finished before it began is a typo, and stored it turns
+       into a negative duration in every report that measures one. */
+    rejects(procedureInput, {
+      ...validProcedure,
+      performedEnd: '2026-08-12T08:00:00.000Z',
+    });
+  });
+
+  it('accepts an end equal to the start, which a zero-length record can be', () => {
+    accepts(procedureInput, {
+      ...validProcedure,
+      performedEnd: validProcedure.performedStart,
+    });
+  });
+
+  it('rejects a not-done reason on a procedure that was done', () => {
+    /*
+     * The reason belongs to the status that needs one. Attached to a COMPLETED
+     * procedure it reads as a reason it was carried out, which is a different
+     * clinical claim and a field FHIR spells differently.
+     */
+    rejects(procedureInput, {
+      ...validProcedure,
+      status: 'COMPLETED',
+      notDoneReason: 'Declined by the patient',
+    });
+  });
+
+  it('accepts the reason when the status is the one that takes it', () => {
+    accepts(procedureInput, {
+      ...validProcedure,
+      status: 'NOT_DONE',
+      notDoneReason: 'Declined by the patient',
+    });
+  });
+
+  it('rejects a status outside the closed set', () => {
+    rejects(procedureInput, { ...validProcedure, status: 'FINISHED' });
   });
 });
 

@@ -48,6 +48,7 @@ import {
   FIXED_NOW,
   jsonBearer,
   seed,
+  seedCareRelationship,
   TOKENS,
   testId,
   UNPRIVILEGED_TOKEN,
@@ -85,6 +86,32 @@ const OBSERVATION_ID = testId(371);
 
 /** The subject on the `dev-clinician-a` token. A public fixture, not a credential. */
 const CLINICIAN_A = '01890000-0000-7000-8000-000000000101';
+
+/**
+ * Gives clinicianA a reason to open these charts.
+ *
+ * Every chart read and amendment now needs a care relationship, and these
+ * suites are about DTO shapes and state machines, not about who may look. One
+ * appointment per patient at clinicianA's facility satisfies the relationship
+ * through `facility-activity` and, unlike an encounter, shows up in none of the
+ * lists under test. The withdrawn-status transition tests need it because the
+ * row they seed is explicitly not evidence of a relationship.
+ */
+let relSeq = 9000;
+function authorise(
+  dataset: Parameters<typeof seedCareRelationship>[0],
+  ...patientIds: readonly string[]
+): void {
+  for (const patientId of patientIds) {
+    relSeq += 1;
+    seedCareRelationship(dataset, {
+      patientId,
+      providerId: CLINICIAN_A,
+      as: 'appointment',
+      id: testId(relSeq),
+    });
+  }
+}
 
 const EARLIER = new Date('2026-08-12T08:00:00.000Z');
 const LATER = new Date('2026-08-13T08:00:00.000Z');
@@ -873,6 +900,7 @@ describe.each(CRUD_CASES)('$name', (testCase) => {
   const app = (): ReturnType<typeof createTestApp> => {
     const harness = createTestApp();
     testCase.seedRow(harness.dataset);
+    authorise(harness.dataset, PATIENT_ID, OTHER_PATIENT_ID);
     return harness;
   };
 
@@ -891,6 +919,7 @@ describe.each(CRUD_CASES)('$name', (testCase) => {
   it('sorts on either key it advertises, in either direction', async () => {
     const harness = createTestApp();
     const ascending = testCase.seedPair(harness.dataset);
+    authorise(harness.dataset, PATIENT_ID, OTHER_PATIENT_ID);
 
     const asc = await listOf(harness.app, testCase.path);
     expect(asc.data.map((row) => row.id)).toEqual([...ascending]);
@@ -1100,6 +1129,7 @@ describe('GET /bff/v0/encounters, and the facilities a clinician was granted', (
 describe('PATCH /bff/v0/encounters/:id, the status table', () => {
   it.each(ENCOUNTER_MOVES)('%s to %s answers %i', async (from, to, expected) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ status: from }));
 
     const res = await patch(app, `/bff/v0/encounters/${ENCOUNTER_ID}`, { status: to });
@@ -1114,6 +1144,7 @@ describe('PATCH /bff/v0/encounters/:id, the status table', () => {
 
   it('leaves a status alone when the patch sets it to what it already was', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ status: 'COMPLETED' }));
 
     const res = await patch(app, `/bff/v0/encounters/${ENCOUNTER_ID}`, {
@@ -1130,6 +1161,7 @@ describe('PATCH /bff/v0/encounters/:id, the status table', () => {
 
   it('changes only what it was given', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ reasonCode: 'R05' }));
 
     const body = (await (
@@ -1143,6 +1175,7 @@ describe('PATCH /bff/v0/encounters/:id, the status table', () => {
 describe('POST /bff/v0/encounters/:id/sign', () => {
   it('signs a completed visit for the acting principal', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ status: 'COMPLETED' }));
 
     const res = await move(app, `/bff/v0/encounters/${ENCOUNTER_ID}/sign`);
@@ -1155,6 +1188,7 @@ describe('POST /bff/v0/encounters/:id/sign', () => {
 
   it('refuses to sign a visit that is not over', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ status: 'IN_PROGRESS' }));
 
     const res = await move(app, `/bff/v0/encounters/${ENCOUNTER_ID}/sign`);
@@ -1165,6 +1199,7 @@ describe('POST /bff/v0/encounters/:id/sign', () => {
 
   it('refuses a second signature rather than overwriting the first', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Encounter',
@@ -1180,6 +1215,7 @@ describe('POST /bff/v0/encounters/:id/sign', () => {
 
   it('refuses a visit at a facility this principal has no grant for', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Encounter',
@@ -1206,6 +1242,7 @@ describe('POST /bff/v0/encounters/:id/sign', () => {
 
   it('403s a role that may read but not write', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ status: 'COMPLETED' }));
 
     expect(
@@ -1228,6 +1265,7 @@ describe('POST /bff/v0/notes/:id/sign', () => {
     'signs a note in %s, stamping the signature and the lock together',
     async (state) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
       seed(dataset, 'ClinicalNote', makeNoteRow({ state }));
 
       const res = await move(app, `/bff/v0/notes/${NOTE_ID}/sign`);
@@ -1244,6 +1282,7 @@ describe('POST /bff/v0/notes/:id/sign', () => {
     'refuses to sign a note in %s',
     async (state) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
       seed(dataset, 'ClinicalNote', makeNoteRow({ state }));
 
       const res = await move(app, `/bff/v0/notes/${NOTE_ID}/sign`);
@@ -1265,6 +1304,7 @@ describe('PATCH /bff/v0/notes/:id, once a note is signed', () => {
     'refuses to rewrite the text of a %s note',
     async (state) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
       seed(dataset, 'ClinicalNote', makeNoteRow({ state }));
 
       const res = await patch(app, `/bff/v0/notes/${NOTE_ID}`, { title: 'Rewritten' });
@@ -1279,6 +1319,7 @@ describe('PATCH /bff/v0/notes/:id, once a note is signed', () => {
 
   it('refuses to rewrite the blocks of a signed note', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
     const res = await patch(app, `/bff/v0/notes/${NOTE_ID}`, {
@@ -1290,6 +1331,7 @@ describe('PATCH /bff/v0/notes/:id, once a note is signed', () => {
 
   it('is not a transition when the patch names the state it is already in', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'DRAFT' }));
 
     const res = await patch(app, `/bff/v0/notes/${NOTE_ID}`, {
@@ -1306,6 +1348,7 @@ describe('PATCH /bff/v0/notes/:id, once a note is signed', () => {
 
   it('still accepts the correction that marks it recorded in error', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
     const res = await patch(app, `/bff/v0/notes/${NOTE_ID}`, { state: 'ENTERED_IN_ERROR' });
@@ -1324,6 +1367,7 @@ describe('PATCH /bff/v0/notes/:id, once a note is signed', () => {
     ['ENTERED_IN_ERROR', 'DRAFT', 409],
   ] as const)('moves a %s note to %s with %i', async (from, to, expected) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: from }));
 
     const res = await patch(app, `/bff/v0/notes/${NOTE_ID}`, { state: to });
@@ -1341,6 +1385,7 @@ describe('PATCH /bff/v0/notes/:id, once a note is signed', () => {
 describe('JSON columns this version cannot make sense of', () => {
   it('reads a block list that is not a list as an empty document', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ id: NOTE_ID, blocks: 'not a list' }));
     seed(
       dataset,
@@ -1361,6 +1406,7 @@ describe('JSON columns this version cannot make sense of', () => {
 
   it('reads a structured sig that is not an object as an empty one', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'MedicationRequest', makePrescriptionRow({ sig: 'one capsule' }));
 
     const body = (await (
@@ -1401,6 +1447,7 @@ describe('POST /bff/v0/observations', () => {
 describe('GET /bff/v0/notes, the signing debt board', () => {
   it('sorts a note with no signature last, which is where the work is', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'ClinicalNote',
@@ -1424,6 +1471,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('records an addendum against a signed note and moves the note to AMENDED', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
     const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, ADDENDUM_BODY);
@@ -1439,6 +1487,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('accepts a second addendum, with no stated reason, on an amended note', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'AMENDED' }));
 
     const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, {
@@ -1453,6 +1502,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
     'refuses an addendum to a note in %s, which would just be an edit',
     async (state) => {
       const { app, dataset } = createTestApp();
+      authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
       seed(dataset, 'ClinicalNote', makeNoteRow({ state }));
 
       const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, ADDENDUM_BODY);
@@ -1465,6 +1515,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('lists a note addenda oldest first', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'AMENDED' }));
     seed(
       dataset,
@@ -1482,6 +1533,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('reverses the trail on request, and pages it', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'AMENDED' }));
     seed(
       dataset,
@@ -1518,6 +1570,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('attributes an addendum to the acting principal, never to the note it corrects', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     // The note was written and signed by someone else. A correction filed
     // against it must carry the corrector's name, not the original author's.
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED', authorId: PROVIDER_ID }));
@@ -1532,6 +1585,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('refuses an addendum that tries to name its own author', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
     // Authorship is a claim about a person on an amendment to a locked record.
@@ -1547,6 +1601,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('422s an addendum that names its own note, which the path already did', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
     const res = await post(app, `/bff/v0/notes/${NOTE_ID}/addenda`, {
@@ -1559,6 +1614,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('403s an addendum from a role that may only read', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'SIGNED' }));
 
     expect(
@@ -1568,6 +1624,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('400s a paging parameter the list does not have', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow());
 
     const res = await app.request(`/bff/v0/notes/${NOTE_ID}/addenda?noteId=${NOTE_ID}`, {
@@ -1579,6 +1636,7 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
   it('resolves the note itself and its addenda from the same prefix', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow({ state: 'AMENDED' }));
     seed(dataset, 'NoteAddendum', makeAddendumRow());
 
@@ -1621,6 +1679,7 @@ describe('the prescription state machine', () => {
     ['ERROR', 'cancel', 409],
   ] as const)('%s + %s answers %i', async (status, action, expected) => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'MedicationRequest', makePrescriptionRow({ status }));
 
     const res = await move(app, url(action));
@@ -1633,6 +1692,7 @@ describe('the prescription state machine', () => {
 
   it('stamps the moment a prescription left for the pharmacy', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'MedicationRequest', makePrescriptionRow({ status: 'SIGNED' }));
 
     const body = (await (await move(app, url('transmit'))).json()) as PrescriptionDto;
@@ -1643,6 +1703,7 @@ describe('the prescription state machine', () => {
 
   it('leaves the transmission stamp alone once it is set', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'MedicationRequest',
@@ -1664,6 +1725,7 @@ describe('the prescription state machine', () => {
 
   it('403s a move from a role that may only read', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'MedicationRequest', makePrescriptionRow());
 
     expect((await move(app, url('sign'), TOKENS.billerA)).status).toBe(403);
@@ -1675,6 +1737,7 @@ describe('the prescription state machine', () => {
 describe('a patient-scoped token', () => {
   it('sees its own chart and nobody else in a list', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Observation',
@@ -1689,6 +1752,7 @@ describe('a patient-scoped token', () => {
 
   it("reads another chart's record as absent", async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Observation', makeObservationRow({ patientId: OTHER_PATIENT_ID }));
 
     const res = await app.request(`/bff/v0/observations/${OBSERVATION_ID}`, {
@@ -1700,6 +1764,7 @@ describe('a patient-scoped token', () => {
 
   it('is refused the addendum table outright, since no column narrows it', async () => {
     const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'ClinicalNote',
@@ -1742,6 +1807,7 @@ describe('the audit trail', () => {
 
   it('names the visit and the site on a write that hangs off one', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'Encounter', makeEncounterRow({ status: 'COMPLETED' }));
 
     await move(app, `/bff/v0/encounters/${ENCOUNTER_ID}/sign`);
@@ -1756,6 +1822,7 @@ describe('the audit trail', () => {
 
   it('reports a status move as the pair of states it was', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'MedicationRequest', makePrescriptionRow({ status: 'DRAFT' }));
 
     await move(app, `/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}/sign`);
@@ -1768,6 +1835,7 @@ describe('the audit trail', () => {
 
   it('says nothing about a status that did not move', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'MedicationRequest', makePrescriptionRow());
 
     await patch(app, `/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}`, { refills: 2 });
@@ -1777,6 +1845,7 @@ describe('the audit trail', () => {
 
   it('records a note create and its state, then the state it moved to', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(dataset, 'ClinicalNote', makeNoteRow());
 
     await move(app, `/bff/v0/notes/${NOTE_ID}/sign`);
@@ -1790,6 +1859,7 @@ describe('the audit trail', () => {
 
   it('emits one batched read event per request, naming what was read', async () => {
     const { app, dataset, sink } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
       dataset,
       'Observation',

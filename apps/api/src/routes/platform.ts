@@ -257,6 +257,7 @@ function platformCrudModules(): CrudModule[] {
       operation: 'FormSubmission',
       readPermission: 'form.read',
       writePermission: 'form.write',
+      chartFrom: 'formSubmissions',
       collection: (repos) => repos.formSubmissions,
       listQuerySchema: formSubmissionListQuerySchema,
       toQuery: toFormSubmissionListQuery,

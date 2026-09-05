@@ -2,9 +2,11 @@ import type { FhirResource, Interaction, SupportedResourceType } from '@openruni
 import type { Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
+import { assertCareRelationship } from '../middleware/policy.js';
+import { chartIdOf } from '../policy/chart.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Page } from '../repositories/collection.js';
-import type { Repositories } from '../repositories/types.js';
+import type { CollectionKey, Repositories } from '../repositories/types.js';
 
 import type { FhirPaging, SearchParams } from './params.js';
 
@@ -75,6 +77,28 @@ export interface FhirResourceDescriptor<TRow, TQuery extends BaseQuery, TPrepare
    * pay nothing.
    */
   prepare?(rows: readonly TRow[], repositories: Repositories): Promise<TPrepared>;
+  /**
+   * The collection whose spec says which column names this row's chart.
+   *
+   * Declaring it gates the resource's addressed reads behind a care
+   * relationship: holding `patient.read` says a role may open charts, not which
+   * ones, and until that check existed the answer was "any of them, if you know
+   * the id".
+   *
+   * A collection key rather than a `(row) => id` function, so the chart column
+   * is read from the same `patientColumn` the audit trail and the compartment
+   * rule already use. A hand-written accessor per module would be twenty-five
+   * chances to name the wrong column, and naming the wrong one fails in the
+   * quiet direction: the check runs, passes against somebody else's chart, and
+   * looks like it worked.
+   *
+   * A row whose chart column is null is not gated, because it names no chart to
+   * protect - a held appointment slot with no patient, a stock posting that is a
+   * receipt rather than a dispense. Those rows carry no patient-identifiable
+   * data by construction; `fhir.chart-gate.test.ts` is what checks that claim
+   * stays true for every resource that has such a column.
+   */
+  chartFrom?: CollectionKey;
   toResource(row: TRow, context: ResourceContext<TPrepared>): FhirResource | Promise<FhirResource>;
 }
 
@@ -84,8 +108,37 @@ export interface FhirResourceModule {
   readonly interactions: readonly Interaction[];
   readonly params: readonly string[];
   readonly permission: Permission;
-  search(c: Context<AppEnv>, params: SearchParams, paging: FhirPaging): Promise<Page<FhirResource>>;
+  /**
+   * The collection this resource's chart is read from, when it has one.
+   *
+   * Carried onto the mounted module rather than left on the descriptor so the
+   * surface is inspectable: `fhir.chart-gate.test.ts` walks every served module
+   * and asserts that one naming a patient declares it. A rule that can only be
+   * checked by reading the file is a rule somebody adds a resource past.
+   */
+  readonly chartFrom?: CollectionKey;
+  search(
+    c: Context<AppEnv>,
+    params: SearchParams,
+    paging: FhirPaging,
+    options?: SearchOptions
+  ): Promise<Page<FhirResource>>;
   read(c: Context<AppEnv>, id: string): Promise<FhirResource | null>;
+}
+
+/**
+ * Options a caller passes to {@link FhirResourceModule.search}.
+ *
+ * `authorizedExport` skips the per-chart care-relationship gate. It is set by
+ * the bulk-export path alone, which is authorised organisation-wide - the route
+ * requires `facility.all`, an organisation-scoped token, and each module's
+ * permission - so gating it per chart would demand the exporter have a care
+ * relationship with every patient in the tenant, which no legitimate exporter
+ * has and no interactive reader is ever granted. The interactive search sets
+ * nothing and stays gated.
+ */
+export interface SearchOptions {
+  readonly authorizedExport?: boolean;
 }
 
 export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = undefined>(
@@ -105,12 +158,56 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
     interactions: descriptor.interactions,
     params: descriptor.params,
     permission: descriptor.permission,
+    ...(descriptor.chartFrom === undefined ? {} : { chartFrom: descriptor.chartFrom }),
 
-    async search(c, params, paging): Promise<Page<FhirResource>> {
+    async search(c, params, paging, options): Promise<Page<FhirResource>> {
       const repositories = repositoriesOf(c);
       const page = await descriptor
         .collection(repositories)
         .list(await descriptor.toQuery(params, paging, repositories));
+
+      /*
+       * A search of chart data is a read of every chart it returns, so it needs
+       * a relationship with every one - the same rule as the addressed read,
+       * applied to whatever the query brought back.
+       *
+       * The gate used to fire only when the search named a chart (`patient`,
+       * `_id`, `identifier`). That closed `?patient=` and `?_id=` and left the
+       * widest hole of all open behind them: `GET /fhir/Condition?code=E11.9`,
+       * or a bare `GET /fhir/Condition`, named no chart, skipped the gate, and -
+       * because a clinical resource carries a patient compartment but no facility
+       * of its own - returned every matching row in the tenant to a reader with
+       * no relationship to any of them. The addressed read was refused and the
+       * set-search was not, for the same row.
+       *
+       * So the gate now runs on the returned page for every chart resource. A
+       * row that names no chart (an unfiled fax) has none to check and is
+       * returned; a row that does is refused unless the reader is in that
+       * patient's care, which turns a broad clinical search into a chart-scoped
+       * one and leaves an inbox of unclaimed documents working.
+       *
+       * Two exceptions. `Patient`, for a search that does not address one:
+       * looking somebody up by name and birth date is how registration and
+       * duplicate-checking find a chart there is no relationship with yet, and
+       * #169 requires that to keep working (a `Patient` search that DOES name a
+       * chart by `_id` or `identifier` is still the addressed read wearing a
+       * search's clothes, and is gated). And an authorised organisation-wide
+       * export, which sets `authorizedExport` and is gated differently - see
+       * SearchOptions - so it is not held to a per-chart relationship it could
+       * never have. Every other search of chart data is gated on the page.
+       */
+      const isPatientResource = descriptor.type === 'Patient';
+      const gateThisSearch =
+        descriptor.chartFrom !== undefined &&
+        options?.authorizedExport !== true &&
+        (!isPatientResource || addressesOneChart(params));
+      if (gateThisSearch) {
+        for (const chartId of new Set(
+          page.rows.map((row) => chartOf(descriptor.chartFrom, row)).filter(isPresent)
+        )) {
+          await assertCareRelationship(c, chartId);
+        }
+      }
       // `toResource` may be synchronous for most resources and asynchronous
       // for the ones that resolve a child list, so the map is wrapped rather
       // than assumed to produce promises.
@@ -127,6 +224,9 @@ export function defineFhirResource<TRow, TQuery extends BaseQuery, TPrepared = u
       const repositories = repositoriesOf(c);
       const row = await descriptor.collection(repositories).findById(id);
       if (row === null) return null;
+      const chartId = chartOf(descriptor.chartFrom, row);
+      // Before the row is mapped, so a refusal reveals nothing about it.
+      if (chartId !== undefined) await assertCareRelationship(c, chartId);
       // A read is a page of one, and goes through the same loader: a resource
       // that only worked on search would be the kind of gap nobody notices
       // until a client fetches by id.
@@ -179,6 +279,46 @@ export function stampLastUpdated(row: unknown, resource: FhirResource): FhirReso
       lastUpdated: declared !== undefined && declared > stamped ? declared : stamped,
     },
   };
+}
+
+/**
+ * Whether this search names one chart rather than describing a set.
+ *
+ * `patient` is the one that matters and was the last hole in the gate. Every
+ * clinical resource advertises it, and `Condition?patient=Patient/{id}` is not a
+ * search at all: it is "open this chart's problem list", spelled differently.
+ * Measured before it was closed: with no relationship, `GET /fhir/Patient/{id}`
+ * and `GET /fhir/Condition/{id}` both answered 404 while
+ * `GET /fhir/Condition?patient=Patient/{id}` answered 200 with the ICD-10
+ * diagnosis. Gating the addressed read and not this is gating the door and
+ * leaving the window.
+ *
+ * `_id` is an id and `identifier` is an MRN; both say "this one" as plainly.
+ *
+ * Every other parameter describes a set, and a caller with no relationship to
+ * anybody still has to be able to search by name and birth date - that is how a
+ * duplicate record is avoided at registration, and duplicate records are their
+ * own patient-safety hazard.
+ */
+function addressesOneChart(params: SearchParams): boolean {
+  return (
+    params._id !== undefined || params.identifier !== undefined || params.patient !== undefined
+  );
+}
+
+function isPresent(value: string | undefined): value is string {
+  return value !== undefined;
+}
+
+/**
+ * The chart a row belongs to, read from its collection's own spec.
+ *
+ * `patientOf` is the same derivation the audit trail uses, including the one
+ * special case that matters: for `Patient` the chart is the row's own id rather
+ * than a column, and a per-module accessor would have had to remember that.
+ */
+function chartOf(key: CollectionKey | undefined, row: unknown): string | undefined {
+  return key === undefined ? undefined : chartIdOf(key, row);
 }
 
 function repositoriesOf(c: Context<AppEnv>): Repositories {

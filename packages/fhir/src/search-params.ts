@@ -41,6 +41,15 @@ export type SupportedResourceType =
   | 'Task'
   | 'Claim'
   | 'Consent'
+  | 'RelatedPerson'
+  | 'Procedure'
+  | 'CareTeam'
+  | 'CarePlan'
+  | 'Goal'
+  | 'Device'
+  | 'Questionnaire'
+  | 'QuestionnaireResponse'
+  | 'MedicationDispense'
   | 'Provenance';
 
 /** FHIR search parameter types. */
@@ -276,6 +285,126 @@ export const SEARCH_SUPPORT: Readonly<Record<SupportedResourceType, ResourceSear
     profile: `${US_CORE}us-core-coverage`,
     interactions: WRITABLE,
     searchParams: [patientParam(), statusParam('Coverage status.', false)],
+  },
+  MedicationDispense: {
+    resourceType: 'MedicationDispense',
+    profile: `${US_CORE}us-core-medicationdispense`,
+    /* Read-only. A dispense is recorded by posting to the stock ledger, which
+       decrements a lot and is not something an API client should be able to do
+       by writing a resource. */
+    interactions: READ_ONLY,
+    searchParams: [patientParam()],
+  },
+  Questionnaire: {
+    resourceType: 'Questionnaire',
+    /*
+     * Only published versions are served. A draft is a form somebody is still
+     * editing, and publishing is what freezes a version and proves it compiles,
+     * so a draft Questionnaire would be a canonical URL whose content can still
+     * change underneath whoever resolved it.
+     */
+    interactions: READ_ONLY,
+    /* `name` is the form's stable key. `status` is deliberately absent: only
+       published forms are served, so it would have one legal value and nothing
+       to select between, and advertising a parameter the handler cannot honour
+       is worse than advertising none. */
+    searchParams: [
+      {
+        name: 'name',
+        type: 'string',
+        documentation: "The form's stable key, for example `intake`.",
+        mustSupport: false,
+      },
+    ],
+  },
+  QuestionnaireResponse: {
+    resourceType: 'QuestionnaireResponse',
+    profile: `${US_CORE}us-core-questionnaireresponse`,
+    interactions: READ_ONLY,
+    searchParams: [patientParam()],
+  },
+  Procedure: {
+    resourceType: 'Procedure',
+    profile: `${US_CORE}us-core-procedure`,
+    /* Read-only. A procedure is recorded where it was performed, in a note or
+       an encounter workflow, and a client writing one directly would be
+       asserting care happened with nothing behind it. */
+    interactions: READ_ONLY,
+    searchParams: [patientParam(), dateParam('date', 'When the procedure was performed.')],
+  },
+  Device: {
+    resourceType: 'Device',
+    profile: `${US_CORE}us-core-implantable-device`,
+    /* Read-only. A device is recorded where it was implanted, and one written
+       through an API is an implant nobody performed. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      /* The recall query, and the reason this resource is served at all: a
+         manufacturer names a device identifier and the practice has to turn it
+         into a list of patients. */
+      {
+        name: 'identifier',
+        type: 'token',
+        documentation: 'The UDI device identifier, as a recall names it.',
+        mustSupport: true,
+      },
+      statusParam('Whether the record is in force.'),
+    ],
+  },
+  Goal: {
+    resourceType: 'Goal',
+    profile: `${US_CORE}us-core-goal`,
+    /* Read-only. A goal is something a patient and a clinician agreed to, and a
+       client writing one would be recording an agreement that never happened. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      dateParam('target-date', 'When the goal is meant to be reached.'),
+      /* `lifecycle-status`, not `status`. R4 gives Goal no `status` parameter
+         at all, and advertising one would be a name no conforming client sends
+         and no other server answers. */
+      {
+        name: 'lifecycle-status',
+        type: 'token',
+        documentation: 'Where the goal is in its life.',
+        mustSupport: true,
+      },
+    ],
+  },
+  CarePlan: {
+    resourceType: 'CarePlan',
+    profile: `${US_CORE}us-core-careplan`,
+    /* Read-only. The assessment is the clinician's conclusion about a patient,
+       and a client writing one would be putting words in their mouth that the
+       chart would then attribute to them. */
+    interactions: READ_ONLY,
+    searchParams: [
+      patientParam(),
+      categoryParam('The kind of plan. This server serves only assess-plan.'),
+      statusParam('The state of the plan.'),
+    ],
+  },
+  CareTeam: {
+    resourceType: 'CareTeam',
+    profile: `${US_CORE}us-core-careteam`,
+    /* Read-only. Membership is decided in the practice, by the people who take
+       responsibility for a patient, and a client adding itself to a care team
+       would be granting itself a clinical relationship. */
+    interactions: READ_ONLY,
+    searchParams: [patientParam(), statusParam('The state of the team.')],
+  },
+  RelatedPerson: {
+    resourceType: 'RelatedPerson',
+    profile: `${US_CORE}us-core-relatedperson`,
+    /*
+     * Read-only at this boundary. The people around a patient are recorded
+     * during registration and maintained there, and a guardian created by an
+     * API client with no registration workflow behind it is a consent decision
+     * made by whoever held a token.
+     */
+    interactions: READ_ONLY,
+    searchParams: [patientParam()],
   },
   Appointment: {
     resourceType: 'Appointment',

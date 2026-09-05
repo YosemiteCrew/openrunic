@@ -8,13 +8,13 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 - **Buildable** - needs engineering time and nothing else.
 - **Needs licensed content** - the code is easy, the data is not ours to ship. Drug interaction
-  databases (First Databank, Medi-Span), full SNOMED CT, CPT and ICD-10 code sets are commercial
-  licences. AGPL software cannot bundle them, so the pattern is always the same: build the seam, let
-  the deployer supply the content.
+  databases, full SNOMED CT, and the CPT and ICD-10 code sets are commercial licences. AGPL software
+  cannot bundle them, so the pattern is always the same: build the seam, let the deployer supply the
+  content.
 - **Needs certification** - cannot be switched on by writing code at all. Electronic prescribing of
   controlled substances requires DEA-audited identity proofing and a certified application; routing
-  prescriptions to pharmacies requires Surescripts certification; ONC certification requires a
-  testing body.
+  prescriptions to pharmacies requires certification with a national prescription routing network;
+  ONC certification requires a testing body.
 
 ## Clinical core
 
@@ -38,7 +38,7 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 | Capability                                                   | State            | Note                                                                                                                                                                                                                                                                                                |
 | ------------------------------------------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FHIR R4 boundary                                             | **Done**         | 22 resource types served, 17 of them under US Core profiles, search parameters validated against the CapabilityStatement                                                                                                                                                                            |
+| FHIR R4 boundary                                             | **Done**         | 26 resource types served, 20 of them under US Core profiles, search parameters validated against the CapabilityStatement                                                                                                                                                                            |
 | **SMART on FHIR discovery**                                  | **Done**         | `.well-known/smart-configuration`, unauthenticated, claiming only implemented launch modes                                                                                                                                                                                                          |
 | **SMART app launch and token exchange**                      | **Done**         | Discovery publishes the deployment's own authorisation server (`OIDC_AUTHORIZATION_ENDPOINT`, `OIDC_TOKEN_ENDPOINT`), authorization code with PKCE S256, and standalone launch. A deployment that configures none omits the endpoints and claims no launch rather than naming one it does not serve |
 | X12 eligibility (270/271)                                    | **Done**         | `packages/x12`                                                                                                                                                                                                                                                                                      |
@@ -52,13 +52,13 @@ Three kinds of gap appear below, and they are not the same kind of work:
 
 ## Prescribing
 
-| Capability                           | State             | Note                                                                                      |
-| ------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------- |
-| Prescription authoring, sign, cancel | **Done**          | Status transitions with a legal-transition graph                                          |
-| Safety screening before signing      | **Done**          | See clinical core                                                                         |
-| Transmission to pharmacy             | **Seam only**     | _Needs certification_ - Surescripts. `packages/adapters` holds the eRx seam               |
-| Controlled substances (EPCS)         | **Not startable** | _Needs certification_ - DEA identity proofing, two-factor at signing, audited application |
-| Formulary and benefit check          | **Missing**       | _Needs licensed content_                                                                  |
+| Capability                           | State             | Note                                                                                                                                                |
+| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prescription authoring, sign, cancel | **Done**          | Status transitions with a legal-transition graph                                                                                                    |
+| Safety screening before signing      | **Done**          | See clinical core                                                                                                                                   |
+| Transmission to pharmacy             | **Seam only**     | _Needs certification_ with a national prescription routing network. `packages/adapters` holds the eRx seam                                          |
+| Controlled substances (EPCS)         | **Not startable** | _Needs certification_ - DEA identity proofing, two-factor at signing, audited application                                                           |
+| Formulary and benefit check          | **Seam only**     | _Needs licensed content._ `checkFormulary` on the `ErxAdapter` contract, with a typed result carrying tier, prior-auth flag, copay and alternatives |
 
 ## Revenue cycle
 

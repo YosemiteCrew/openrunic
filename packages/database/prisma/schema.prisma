@@ -282,6 +282,24 @@ enum NoteState {
   ENTERED_IN_ERROR
 }
 
+/// What happened to a procedure, from the FHIR event-status value set.
+///
+/// NOT_DONE is the member worth keeping. A procedure recorded as not done is a
+/// clinical statement in its own right - the colonoscopy was declined, the
+/// biopsy was abandoned - and a schema with no room for it forces that fact
+/// into free text or, worse, into the absence of a row, which reads as nobody
+/// having considered it.
+enum ProcedureStatus {
+  PREPARATION
+  IN_PROGRESS
+  NOT_DONE
+  ON_HOLD
+  STOPPED
+  COMPLETED
+  ENTERED_IN_ERROR
+  UNKNOWN
+}
+
 enum ConditionCategory {
   PROBLEM_LIST_ITEM
   ENCOUNTER_DIAGNOSIS
@@ -752,6 +770,12 @@ model Organisation {
   clinicalNotes         ClinicalNote[]
   noteAddenda           NoteAddendum[]
   conditions            Condition[]
+  procedures            Procedure[]
+  careTeams             CareTeam[]
+  carePlans             CarePlan[]
+  goals                 Goal[]
+  devices               Device[]
+  careTeamParticipants  CareTeamParticipant[]
   medicationStatements  MedicationStatement[]
   medicationRequests    MedicationRequest[]
   allergies             AllergyIntolerance[]
@@ -787,8 +811,9 @@ model Organisation {
   auditEvents           AuditEvent[]
   telehealthVisits      TelehealthVisit[]
 
-  valueSets      ValueSet[]
-  imagingStudies ImagingStudy[]
+  valueSets        ValueSet[]
+  imagingStudies   ImagingStudy[]
+  breakGlassGrants BreakGlassGrant[]
 
   @@index([status])
 }
@@ -863,9 +888,16 @@ model User {
   medicationRequests MedicationRequest[]
   serviceRequests    ServiceRequest[]
   referralsMade      Referral[]
-  assignedTasks      Task[]
+  assignedTasks      Task[]                @relation("TaskAssignee")
+  /// Tasks this person handed to somebody else. Read by chart authorisation:
+  /// see the note on `Task.assignedById`.
+  handedOutTasks     Task[]                @relation("TaskAssigner")
   sentMessages       Message[]
   renderedCharges    ChargeItem[]
+  careTeamRoles      CareTeamParticipant[]
+  carePlans          CarePlan[]
+  goals              Goal[]
+  breakGlassGrants   BreakGlassGrant[]
 
   @@unique([tenantId, email])
   @@index([tenantId, isProvider, status])
@@ -1021,6 +1053,8 @@ model Patient {
   encounters           Encounter[]
   clinicalNotes        ClinicalNote[]
   conditions           Condition[]
+  careTeams            CareTeam[]
+  procedures           Procedure[]
   medicationStatements MedicationStatement[]
   medicationRequests   MedicationRequest[]
   allergies            AllergyIntolerance[]
@@ -1045,8 +1079,12 @@ model Patient {
   /// Patient search: by MRN (exact), by name, by date of birth. The `active`
   /// prefix keeps the default "search living, non-merged patients" path on one
   /// index.
-  stockPostings  StockPosting[]
-  imagingStudies ImagingStudy[]
+  stockPostings    StockPosting[]
+  imagingStudies   ImagingStudy[]
+  carePlans        CarePlan[]
+  goals            Goal[]
+  devices          Device[]
+  breakGlassGrants BreakGlassGrant[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, familyName, givenName])
@@ -1109,6 +1147,7 @@ model RelatedPerson {
   patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   consentGrants ConsentGrant[]
+  careTeamRoles CareTeamParticipant[]
 
   @@index([tenantId, patientId, active])
 }
@@ -1333,6 +1372,7 @@ model Encounter {
   documents            Document[]
   clinicalNotes        ClinicalNote[]
   conditions           Condition[]
+  procedures           Procedure[]
   medicationStatements MedicationStatement[]
   medicationRequests   MedicationRequest[]
   immunizations        Immunization[]
@@ -1347,6 +1387,7 @@ model Encounter {
 
   stockPostings  StockPosting[]
   imagingStudies ImagingStudy[]
+  carePlans      CarePlan[]
 
   @@index([tenantId, patientId, startedAt])
   @@index([tenantId, facilityId, status, startedAt])
@@ -1438,6 +1479,54 @@ model Condition {
 
   @@index([tenantId, patientId, clinicalStatus])
   @@index([tenantId, patientId, category, recordedAt])
+  @@index([tenantId, code])
+}
+
+/// Something done to a patient, as opposed to something ordered or billed.
+///
+/// It is a separate table from `ServiceRequest` and from `ChargeItem` because it
+/// answers a different question from either. The request says what was asked
+/// for and may never have happened; the charge says what is being claimed for
+/// and exists only when somebody bills. A procedure performed and not billed,
+/// which is most of what a practice does, has a row here and nowhere else.
+///
+/// `performedEnd` is nullable because most procedures are a moment rather than
+/// a span, and FHIR splits that into `performedDateTime` and `performedPeriod`.
+/// One nullable column carries both rather than two columns that can disagree.
+model Procedure {
+  id             String          @id @db.Uuid
+  tenantId       String          @db.Uuid
+  patientId      String          @db.Uuid
+  encounterId    String?         @db.Uuid
+  /// Primary code, normally CPT. Coded, so a string plus its system.
+  code           String
+  codeSystem     String          @default("http://www.ama-assn.org/go/cpt")
+  display        String
+  /// Optional SNOMED CT equivalent, which is what US Core prefers.
+  snomedCode     String?
+  status         ProcedureStatus @default(COMPLETED)
+  /// When it was performed. The start of the period when there is one.
+  performedStart DateTime
+  /// The end, for a procedure that took a measurable span.
+  performedEnd   DateTime?
+  bodySiteCode   String?
+  outcomeCode    String?
+  /// Why it was not done, for the status that needs one.
+  notDoneReason  String?
+  note           String?
+  /// Who performed it. Nullable for a procedure recorded from outside records.
+  performedById  String?         @db.Uuid
+  recordedAt     DateTime        @default(now())
+  recordedById   String?         @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, performedStart])
+  @@index([tenantId, patientId, status])
   @@index([tenantId, code])
 }
 
@@ -1797,6 +1886,12 @@ model Task {
   description     String?
   assigneeType    TaskAssigneeType @default(USER)
   assigneeUserId  String?          @db.Uuid
+  /// Who handed this work out. Server-set from the writer on every create and
+  /// on every reassignment, never from the request body, because chart
+  /// authorisation reads it: a task you gave yourself is not evidence that
+  /// anyone involved you in this patient's care. Null means no person assigned
+  /// it, which is how the routing engine's own tasks look.
+  assignedById    String?          @db.Uuid
   /// Team pools are configuration keys, not rows, until team management ships.
   assigneeTeamKey String?
   dueAt           DateTime?
@@ -1815,10 +1910,12 @@ model Task {
   organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
-  assigneeUser User?        @relation(fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  assigneeUser User?        @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  assignedBy   User?        @relation("TaskAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, sourceEventId, type])
   @@index([tenantId, assigneeType, assigneeUserId, status])
+  @@index([tenantId, patientId, assigneeUserId, assignedById])
   @@index([tenantId, assigneeTeamKey, status])
   @@index([tenantId, type, status, dueAt])
   @@index([tenantId, status, slaState, dueAt])
@@ -2982,4 +3079,416 @@ enum TelehealthVisitStatus {
   OPEN
   ENDED
   EXPIRED
+}
+
+/// Who is looking after this patient, and in what capacity.
+///
+/// Not derivable from the rows that already exist, which is why it is a table.
+/// An encounter names the provider who saw the patient once; a referral names
+/// one hand-off. Neither answers "who is on this patient's team right now",
+/// which is the question a receiving system asks and the one a care manager
+/// asks every morning. A team also outlives every encounter in it.
+model CareTeam {
+  id          String         @id @db.Uuid
+  tenantId    String         @db.Uuid
+  patientId   String         @db.Uuid
+  status      CareTeamStatus @default(ACTIVE)
+  /// What the practice calls this team, e.g. "Diabetes care". Optional because
+  /// most practices run one unnamed team per patient and naming it adds nothing.
+  name        String?
+  /// When the team took over and when it stood down. Both null for the ordinary
+  /// standing team, which has no start anybody recorded.
+  periodStart DateTime?
+  periodEnd   DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  participants CareTeamParticipant[]
+
+  /// Not a business key - `id` alone is already unique, so this adds no
+  /// collision. It is the target of CareTeamParticipant's patient-carrying
+  /// foreign key, which is what makes that row's denormalised `patientId`
+  /// unable to disagree with this one.
+  @@unique([id, patientId])
+  @@index([tenantId, patientId, status])
+}
+
+/// One person on one team, with the role they hold on it.
+///
+/// A row per member rather than columns on the team, because the membership is
+/// the part that changes: a physician goes on leave, a care coordinator picks
+/// the patient up, the daughter who manages the appointments is added. Each of
+/// those is one row appearing or its period closing.
+///
+/// `memberType` picks which member column is set, the way `Task.assigneeType`
+/// picks between its two assignees. The alternative, one untyped id beside a
+/// type string, cannot carry a foreign key, and a team member that no longer
+/// exists is exactly the row nobody notices until a clinician calls a number
+/// that belongs to somebody else now.
+model CareTeamParticipant {
+  id                    String             @id @db.Uuid
+  tenantId              String             @db.Uuid
+  careTeamId            String             @db.Uuid
+  /// The patient whose team this is, copied from the team.
+  ///
+  /// Denormalised on purpose. A patient-scoped token is narrowed by one column
+  /// equality and this layer performs no join, so without the column a patient
+  /// reading their own care team was served the team and none of its members:
+  /// no error, no empty-result signal, just a team that appears to have nobody
+  /// on it. That is the portal's own user seeing the wrong answer.
+  ///
+  /// It cannot drift, because the foreign key is composite: `(careTeamId,
+  /// patientId)` references `CareTeam(id, patientId)`, so a participant whose
+  /// patient disagrees with its team's has no row to point at. Same technique
+  /// as StockLot's tenant-carrying key, and for the same reason: referential
+  /// integrity is checked below row-level security, so the shape of the key is
+  /// the only thing that can forbid the mismatch.
+  patientId             String             @db.Uuid
+  memberType            CareTeamMemberType
+  memberUserId          String?            @db.Uuid
+  memberRelatedPersonId String?            @db.Uuid
+  /// The role held on this team, e.g. a NUCC taxonomy code for a clinician or a
+  /// SNOMED role for a caregiver. Coded, so a string.
+  roleCode              String
+  /// Which vocabulary `roleCode` belongs to. Stored rather than inferred from
+  /// the member type, because a nurse care coordinator and a daughter acting as
+  /// one hold the same role from different code systems.
+  roleSystem            String
+  roleText              String?
+  /// When this member joined and when they left. A member who left keeps their
+  /// row: deleting it would rewrite who was responsible at the time, which is
+  /// the question asked after something went wrong.
+  periodStart           DateTime?
+  periodEnd             DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  organisation  Organisation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  careTeam      CareTeam       @relation(fields: [careTeamId, patientId], references: [id, patientId], onDelete: Cascade)
+  memberUser    User?          @relation(fields: [memberUserId], references: [id], onDelete: Restrict)
+  memberRelated RelatedPerson? @relation(fields: [memberRelatedPersonId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, careTeamId])
+  @@index([tenantId, patientId])
+  @@index([tenantId, memberUserId])
+}
+
+enum CareTeamStatus {
+  PROPOSED
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  ENTERED_IN_ERROR
+}
+
+/// Which kind of person a participant is, and so which member column is set.
+///
+/// Three, not four. FHIR also allows an Organization, and an outside agency on
+/// a patient's team is a real arrangement, but this deployment has exactly one
+/// Organisation row and it is the practice itself. A member pointing at it says
+/// nothing. Carrying the agency as free text instead would produce a
+/// `participant.member` with a display and no reference a receiving system can
+/// resolve, which is worse than the absence: a client would list a team member
+/// it can never contact.
+///
+/// PATIENT needs no column. The team already names its subject, so a second id
+/// could only agree with it or be wrong.
+enum CareTeamMemberType {
+  USER
+  RELATED_PERSON
+  PATIENT
+}
+
+/// The assessment and plan: what the clinician concluded and what happens next.
+///
+/// A table because there is nowhere else for it. A `ServiceRequest` is one
+/// order and says nothing about why; a `Condition` is a problem and says
+/// nothing about what is being done. The narrative that ties them together is
+/// the part a clinician actually writes and the part a receiving system reads
+/// first, and this system had no room for it at all: the C-CDA plan-of-treatment
+/// section is assembled empty because nothing anywhere could fill it.
+///
+/// This does not fill that section yet. `packages/ccda` builds it from coded
+/// activities with a scheduled date, and a narrative plan is a different shape,
+/// so wiring the two together is a change to the section rather than a lookup.
+///
+/// Not read out of `ClinicalNote.blocks`. That column is the editor's document
+/// format and this schema deliberately holds no opinion about its shape, so a
+/// projection that dug a plan out of it would be inventing a contract the
+/// editor never made, and would lose content silently the first time the editor
+/// changed. The plan is authored here, as text, by the person answerable for it.
+model CarePlan {
+  id          String         @id @db.Uuid
+  tenantId    String         @db.Uuid
+  patientId   String         @db.Uuid
+  /// The visit it was written at, when there was one. Null for a plan revised
+  /// between visits, which is most of chronic care.
+  encounterId String?        @db.Uuid
+  status      CarePlanStatus @default(ACTIVE)
+  intent      CarePlanIntent @default(PLAN)
+  title       String?
+  /// The assessment and plan, as the clinician wrote it. Plain text: it is
+  /// wrapped as XHTML at the FHIR boundary, and storing markup would mean
+  /// storing whatever a client sent and serving it back to another one.
+  narrative   String
+  periodStart DateTime?
+  periodEnd   DateTime?
+  authorId    String?        @db.Uuid
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  author       User?        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  goals        Goal[]
+
+  @@index([tenantId, patientId, status])
+  @@index([tenantId, encounterId])
+}
+
+/// FHIR's request-status value set, as this schema spells it.
+enum CarePlanStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  REVOKED
+  COMPLETED
+  ENTERED_IN_ERROR
+  UNKNOWN
+}
+
+/// How binding the plan is. `PLAN` is what a clinician writes at a visit;
+/// `ORDER` is a plan somebody is obliged to carry out, and `OPTION` is one of
+/// several offered. The distinction is not decoration: a receiving system
+/// treats an order as work to do.
+enum CarePlanIntent {
+  PROPOSAL
+  PLAN
+  ORDER
+  OPTION
+}
+
+/// What the patient and the clinician agreed to aim at.
+///
+/// A goal is not a plan and not an order. The plan says what will be done, the
+/// order says do it, and the goal says what would count as it having worked.
+/// Nothing else here records that, so a receiving system can see every
+/// medication and every visit and still not know what anybody was trying to
+/// achieve, which is the first thing a clinician taking over asks.
+///
+/// ## The target is a choice, and the columns say so
+///
+/// FHIR's `Goal.target.detail[x]` is a choice: a single value, a range, a code,
+/// or nothing at all. A goal can be "HbA1c below 7%", "systolic between 110 and
+/// 130", or "walk daily", and those are three different shapes rather than one
+/// shape with holes. `targetValue` and the `targetLow`/`targetHigh` pair are
+/// mutually exclusive, enforced by a check constraint, because a row carrying
+/// both would serialise as a resource carrying both and a client reading
+/// whichever it prefers would get a different answer from one reading the other.
+///
+/// The numeric columns mirror `Observation`: same precision, same unit column,
+/// deliberately. A goal is compared against observations, and two different
+/// numeric shapes for the same quantity is how the comparison quietly stops
+/// being apples to apples.
+model Goal {
+  id                  String                 @id @db.Uuid
+  tenantId            String                 @db.Uuid
+  patientId           String                 @db.Uuid
+  /// The plan this goal belongs to, when it belongs to one. Standing goals
+  /// outlive any single plan, so this is nullable rather than the parent.
+  carePlanId          String?                @db.Uuid
+  lifecycleStatus     GoalLifecycleStatus    @default(ACTIVE)
+  /// How it is going. Null while nobody has assessed it, which is different
+  /// from assessing it as no progress.
+  achievementStatus   GoalAchievementStatus?
+  priority            GoalPriority?
+  /// What the goal is, in the words it was agreed in. Required: a goal nobody
+  /// can read is not a goal.
+  description         String
+  /// A code for the goal when there is one, e.g. SNOMED. Most are narrative.
+  descriptionCode     String?
+  descriptionSystem   String?
+  /// What is being measured, e.g. a LOINC code for HbA1c. Null for a goal that
+  /// is not measured against anything.
+  targetMeasureCode   String?
+  targetMeasureSystem String?
+  /// The single value aimed at. Excludes the range columns.
+  targetValue         Decimal?               @db.Decimal(18, 6)
+  /// The range aimed at. Excludes the single value.
+  targetLow           Decimal?               @db.Decimal(18, 6)
+  targetHigh          Decimal?               @db.Decimal(18, 6)
+  /// UCUM unit for whichever of the two is set. Coded.
+  targetUnit          String?
+  startDate           DateTime?              @db.Date
+  /// When the target is meant to be reached. The one target element US Core
+  /// requires support for.
+  dueDate             DateTime?              @db.Date
+  /// Why it was given up on, for a goal that was. Only meaningful when the
+  /// lifecycle status says so.
+  statusReason        String?
+  expressedByUserId   String?                @db.Uuid
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  carePlan     CarePlan?    @relation(fields: [carePlanId], references: [id], onDelete: SetNull)
+  expressedBy  User?        @relation(fields: [expressedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, lifecycleStatus])
+  @@index([tenantId, carePlanId])
+  @@index([tenantId, patientId, dueDate])
+}
+
+/// Where the goal is in its life, from FHIR's goal-status value set.
+enum GoalLifecycleStatus {
+  PROPOSED
+  PLANNED
+  ACCEPTED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+  ENTERED_IN_ERROR
+  REJECTED
+}
+
+/// How it is going. Separate from the lifecycle on purpose: an active goal can
+/// be improving or worsening, and collapsing the two would lose whichever the
+/// other was set from.
+enum GoalAchievementStatus {
+  IN_PROGRESS
+  IMPROVING
+  WORSENING
+  NO_CHANGE
+  ACHIEVED
+  SUSTAINING
+  NOT_ACHIEVED
+  NO_PROGRESS
+  NOT_ATTAINABLE
+}
+
+enum GoalPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// A device implanted in a patient, and the identifier a recall arrives by.
+///
+/// The last of the US Core profiles, and the one with the sharpest reason to
+/// exist. When a manufacturer recalls a batch of pacemaker leads, the question
+/// is "which of our patients has one", and every other table in this schema
+/// answers a different question: `StockLot` knows what the practice bought and
+/// `StockPosting` knows what left the shelf, but neither knows what is still
+/// inside somebody. A device outlives the inventory record of it by twenty
+/// years.
+///
+/// So `deviceIdentifier` is indexed, and that index is the point of the table.
+///
+/// ## The UDI is stored, not parsed
+///
+/// A Unique Device Identifier carries the device identifier and the production
+/// identifiers - lot, serial, expiry, manufacture date - in one string, encoded
+/// by whichever issuing agency the manufacturer uses. Parsing that is a codec:
+/// GS1 application identifiers and HIBCC have different grammars, variable
+/// length fields and no self-description, and a half-parser that mis-splits a
+/// lot number produces a wrong lot with no error, which is worse for a recall
+/// than an unparsed string. The carrier is kept exactly as scanned, and the
+/// fields beside it are what somebody recorded.
+///
+/// ## No implant date, deliberately
+///
+/// FHIR has nowhere to put one on this resource, and the standard's own answer
+/// is a `Procedure` referencing the device. That resource is already served
+/// here, so the date lives where a receiving system will look for it rather
+/// than in an extension only this server understands.
+model Device {
+  id                 String       @id @db.Uuid
+  tenantId           String       @db.Uuid
+  patientId          String       @db.Uuid
+  status             DeviceStatus @default(ACTIVE)
+  /// SNOMED CT code for the kind of device. Coded, so a string.
+  typeCode           String?
+  typeSystem         String?
+  typeText           String
+  /// The device identifier half of the UDI: the part a recall names. Indexed,
+  /// because "which of our patients has one of these" is the question.
+  deviceIdentifier   String?
+  /// The UDI exactly as it was scanned or read off the label, in whichever
+  /// form the issuing agency uses. Never reconstructed from the parts.
+  udiCarrierHrf      String?
+  /// The distinct identifier, for a device that is a single instance of a
+  /// biological product rather than a manufactured lot.
+  distinctIdentifier String?
+  lotNumber          String?
+  serialNumber       String?
+  manufacturer       String?
+  modelNumber        String?
+  manufactureDate    DateTime?    @db.Date
+  expirationDate     DateTime?    @db.Date
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, status])
+  /// The recall query. Tenant-first like every other index here, so one
+  /// practice's search does not scan another's rows.
+  @@index([tenantId, deviceIdentifier])
+}
+
+/// FHIR's device-status value set, which says whether the record is in force
+/// rather than whether the device is working.
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  ENTERED_IN_ERROR
+  UNKNOWN
+}
+
+/// Deliberate access to a chart the reader has no relationship with.
+///
+/// Break-glass is a clinical necessity, not a loophole. The patient in front of
+/// somebody at three in the morning may have no encounter, no appointment and
+/// no care team at that site, and refusing the chart is the dangerous answer.
+/// So the control is not refusal: it is that the access is deliberate, carries
+/// a stated reason, expires, and is conspicuous afterwards.
+///
+/// A row here is itself a care relationship, which is what makes the mechanism
+/// simple: the reader declares one, and every subsequent read inside the window
+/// is authorised the same way any other relationship authorises one, and every
+/// one of them is attributable to this row.
+model BreakGlassGrant {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  patientId String   @db.Uuid
+  /// Why. Free text on purpose: the value is that a person wrote it and their
+  /// name is on it, and a dropdown of four options would be picked at random.
+  reason    String
+  grantedAt DateTime @default(now())
+  /// Break-glass is for the emergency in front of you, not for the week. A
+  /// window that outlived the emergency would be an ordinary grant with a
+  /// dramatic name.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  /// The authorisation lookup: has this reader an unexpired grant on this chart.
+  @@index([tenantId, userId, patientId, expiresAt])
+  /// The review query: who broke glass on this patient, and when.
+  @@index([tenantId, patientId, grantedAt])
+  /// The rolling count, which the first index cannot serve: it leads with
+  /// `patientId`, and how many declarations this reader has made names none.
+  @@index([tenantId, userId, grantedAt])
 }

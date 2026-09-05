@@ -9,6 +9,8 @@ import {
   jsonBearer,
   makePatientRow,
   seed,
+  seedCareRelationship,
+  SUBJECTS,
   storageColumns,
   testId,
   TOKENS,
@@ -51,6 +53,14 @@ function studyRow(overrides: Record<string, unknown> = {}) {
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+  /* The addressed FHIR read is gated by a care relationship, like every other
+     resource that names a chart. These tests are about the study, so it is a
+     fixture; `fhir.chart-gate.test.ts` is where the rule itself is asserted. */
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: SUBJECTS.clinicianA,
+    as: 'appointment',
+  });
   seed(created.dataset, 'ImagingStudy', studyRow());
   return created;
 }
@@ -172,6 +182,12 @@ describe('finding a study again', () => {
   it('narrows to the unread list', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      as: 'appointment',
+      id: testId(8501),
+    });
     seed(
       dataset,
       'ImagingStudy',
@@ -195,6 +211,12 @@ describe('every filter the list advertises', () => {
   it('narrows by encounter, by order and by a date window', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      as: 'appointment',
+      id: testId(8502),
+    });
     seed(
       dataset,
       'ImagingStudy',
@@ -226,6 +248,12 @@ describe('every filter the list advertises', () => {
   it('sorts by when the row was created as well as when the study started', async () => {
     const { app, dataset } = createTestApp();
     seed(dataset, 'Patient', makePatientRow({ id: PATIENT }));
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: SUBJECTS.clinicianA,
+      as: 'appointment',
+      id: testId(8503),
+    });
     seed(dataset, 'ImagingStudy', studyRow());
 
     const res = await app.request('/bff/v0/imaging/studies?sort=createdAt&order=desc', {

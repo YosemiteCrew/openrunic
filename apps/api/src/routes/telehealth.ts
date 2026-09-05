@@ -1,6 +1,8 @@
 import type { AdapterError, AdapterRegistry } from '@openrunic/adapters';
 import { Hono } from 'hono';
 
+import type { Context } from 'hono';
+
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
@@ -45,8 +47,11 @@ import { idParam, idParamSchema, policyOf, repositories, required } from './help
  * A vendor that is down is a 503 the caller may retry. A vendor that refuses is
  * a 502: retrying will not help, and pretending the room exists would send a
  * clinician to a waiting room that is not there. Neither answer carries the
- * vendor's own message, because that message goes to whoever is holding the
- * request and this one is held by a patient.
+ * vendor's own message: a vendor's error text is written for whoever integrated
+ * it, and forwarding it to an API caller leaks the deployment's internals - a
+ * room identifier, a vendor account, the shape of a misconfiguration - to
+ * someone who can do nothing with it and should not see it. The caller here is
+ * staff or a service, never a patient, and the reasoning holds for both.
  */
 
 const NO_VISIT = 'No such telehealth visit.';
@@ -84,6 +89,52 @@ function videoAdapter(registry: AdapterRegistry) {
   return resolved.value;
 }
 
+/**
+ * Telehealth room management is staff work, and this refuses everyone else.
+ *
+ * Every route here reads or writes the shared `TelehealthVisit` table, which
+ * carries no patient column and so cannot be narrowed to one chart at the data
+ * layer. A patient-portal token holds `appointment.read` and `appointment.write`
+ * and would otherwise reach all of it: list every patient's OPEN visit and lift
+ * the join URL, or drive the open-room route into a second vendor room the
+ * preflight cannot see. A patient joins their own visit by the passwordless link
+ * they are sent; they never open, end, or list a room. Every handler here calls this
+ * first, before it reads the appointment or the visit table.
+ */
+async function assertStaff(c: Context<AppEnv>): Promise<void> {
+  const principal = c.get('principal');
+  // Three ways a patient reaches here, and any one of them is refused, because
+  // no single signal is reliable on its own. A portal token bound to a chart
+  // carries `compartmentPatientId`. A patient principal issued without a patient
+  // scope carries none, so the actor type is checked too - but `actor_type` is
+  // an optional OIDC claim that `readActorType` defaults to `user` when it is
+  // absent, so a portal token that omits it would still read as staff. The role
+  // is what the issuer always sets, so `patient-portal` is the backstop.
+  // `service` is left through on all three: a trusted integration is not a
+  // patient, and telehealth rooms are opened by machines as well as people.
+  const isPatient =
+    principal === undefined ||
+    principal.compartmentPatientId !== undefined ||
+    principal.actorType === 'patient' ||
+    principal.roles.includes('patient-portal');
+  if (isPatient) {
+    // Audited like every other authorisation denial. `requirePermission` passed
+    // - the portal role holds the appointment permission - so without this the
+    // only refusal on the request would leave no denial in the trail, and a
+    // sweep of these routes would be invisible.
+    await c.get('audit')?.denial({
+      action: 'authorisation.denied',
+      targetType: 'Route',
+      targetId: c.req.path,
+      metadata: {
+        reason: 'staff-only',
+        roles: principal === undefined ? [] : [...principal.roles],
+      },
+    });
+    throw ApiError.forbidden('Telehealth rooms are managed by staff.');
+  }
+}
+
 export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
 
@@ -99,6 +150,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * participants end up in the one nobody is watching.
    */
   router.post('/appointments/:id/telehealth', requirePermission('appointment.write'), async (c) => {
+    await assertStaff(c);
     const appointmentId = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     const appointment = required(await repos.appointments.findById(appointmentId), NO_APPOINTMENT);
@@ -159,6 +211,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * vendor is lenient about it, and lenient is what vendors are.
    */
   router.post('/telehealth/:id/join', requirePermission('appointment.read'), async (c) => {
+    await assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, telehealthJoinSchema);
     const repos = repositories(c);
@@ -193,6 +246,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * it is not a claim about how long anybody was in the room.
    */
   router.post('/telehealth/:id/end', requirePermission('appointment.write'), async (c) => {
+    await assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, telehealthEndSchema);
     const repos = repositories(c);
@@ -221,12 +275,14 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   });
 
   router.get('/telehealth/:id', requirePermission('appointment.read'), async (c) => {
+    await assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const visit = required(await repositories(c).telehealthVisits.findById(id), NO_VISIT);
     return c.json<TelehealthVisitDto>(toTelehealthVisitDto(visit));
   });
 
   router.get('/telehealth', requirePermission('appointment.read'), async (c) => {
+    await assertStaff(c);
     const query = toTelehealthListQuery(parseQuery(c, telehealthListQuerySchema));
     const page = await repositories(c).telehealthVisits.list(query);
     return c.json(toListResponse(page, toTelehealthVisitDto));
@@ -240,7 +296,11 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
 const VISIT_ERRORS = [
   { status: 400, description: 'The request was malformed.' },
   { status: 401, description: 'No bearer token, or one that is not valid.' },
-  { status: 403, description: 'The principal lacks the permission this route needs.' },
+  {
+    status: 403,
+    description:
+      'The principal lacks the permission this route needs, or is a patient: telehealth rooms are managed by staff, and a patient-portal principal is refused every operation here.',
+  },
   { status: 422, description: 'The body failed validation.' },
 ] as const;
 

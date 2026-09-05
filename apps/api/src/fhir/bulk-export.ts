@@ -116,9 +116,9 @@ export const BULK_EXPORT_OPERATIONS: readonly BulkExportEntry[] = [
  * ones this server serves.
  *
  * Taken from the R4 `CompartmentDefinition/patient`, not invented here. The
- * types this server serves that are NOT in it - Practitioner, PractitionerRole
- * and Location - describe the practice rather than any patient, which is why
- * the patient-level export must leave them out.
+ * types this server serves that are NOT in it - Practitioner, PractitionerRole,
+ * Location, Organization and Questionnaire - describe the practice rather than
+ * any patient, which is why the patient-level export must leave them out.
  *
  * `bulk-export.test.ts` asserts that every served module appears in exactly one
  * of this set and {@link NON_COMPARTMENT_TYPES}, so a resource added later
@@ -126,12 +126,20 @@ export const BULK_EXPORT_OPERATIONS: readonly BulkExportEntry[] = [
  */
 export const PATIENT_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
   'Patient',
+  'RelatedPerson',
+  'QuestionnaireResponse',
   'Coverage',
   'Appointment',
   'Encounter',
   'Condition',
+  'Procedure',
+  'CareTeam',
+  'CarePlan',
+  'Goal',
+  'Device',
   'MedicationRequest',
   'MedicationStatement',
+  'MedicationDispense',
   'AllergyIntolerance',
   'Immunization',
   'Observation',
@@ -151,6 +159,10 @@ export const NON_COMPARTMENT_TYPES: ReadonlySet<string> = new Set([
   'PractitionerRole',
   'Location',
   'Organization',
+  /* A blank form the practice publishes. It belongs to no patient, and a
+     patient-level export that shipped every questionnaire would be sending a
+     form library to whoever asked for one person's record. */
+  'Questionnaire',
 ]);
 
 export interface ExportFile {
@@ -533,7 +545,15 @@ async function collectType(
   let total = 0;
 
   for (let offset = 0; offset < limit; offset += EXPORT_PAGE_SIZE) {
-    const page = await module.search(c, {}, { offset, count: EXPORT_PAGE_SIZE });
+    // Authorised organisation-wide, so exempt from the per-chart care gate: the
+    // route already required facility.all, an org-scoped token, and this
+    // module's permission. See SearchOptions in resource-module.ts.
+    const page = await module.search(
+      c,
+      {},
+      { offset, count: EXPORT_PAGE_SIZE },
+      { authorizedExport: true }
+    );
     total = page.total;
     collected.push(...page.rows);
     // All three conditions are needed. A page shorter than the one asked for is

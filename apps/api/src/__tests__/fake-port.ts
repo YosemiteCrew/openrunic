@@ -133,6 +133,14 @@ function matchesCondition(actual: unknown, condition: unknown): boolean {
     const list = Array.isArray(condition.in) ? condition.in : [];
     checks.push(list.some((candidate) => equal(actual, candidate)));
   }
+  /* `notIn` is a real Prisma operator and the specs now use it to exclude a
+     withdrawn workflow state. A fake that ignored an operator the code emits
+     would answer a filtered query with unfiltered rows, and the port-agreement
+     suite would report the two implementations agreeing on the wrong answer. */
+  if ('notIn' in condition) {
+    const list = Array.isArray(condition.notIn) ? condition.notIn : [];
+    checks.push(!list.some((candidate) => equal(actual, candidate)));
+  }
   if ('has' in condition) {
     checks.push(Array.isArray(actual) && actual.some((item) => equal(item, condition.has)));
   }

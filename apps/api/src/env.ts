@@ -112,20 +112,36 @@ const envObject = z.object({
  */
 export const ENV_VARIABLES: readonly string[] = Object.keys(envObject.shape);
 
-const envSchema = envObject
-  .refine(
-    (value) =>
-      [value.OIDC_ISSUER, value.OIDC_AUDIENCE, value.OIDC_JWKS_URI].every(
-        (entry) => entry === undefined
-      ) ||
-      [value.OIDC_ISSUER, value.OIDC_AUDIENCE, value.OIDC_JWKS_URI].every(
-        (entry) => entry !== undefined
-      ),
-    {
-      message: 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be set together or not at all',
-      path: ['OIDC_ISSUER'],
-    }
-  )
+/**
+ * The three settings that verify a token, which are set together or not at all.
+ *
+ * One refinement per variable rather than one over the group, so the path names
+ * the variable that is MISSING. `parseEnv` reports paths and never messages, on
+ * purpose - a value must not reach a log somebody pastes into a support thread
+ * - so the path is the whole of what the operator is told.
+ *
+ * Written as a group over one refinement, this named `OIDC_ISSUER` whichever of
+ * the three was absent: an operator who set the issuer and the audience and
+ * forgot the JWKS URI was told to fix the issuer, which is the line they got
+ * right. The rule was already written down two lines below and applied to the
+ * endpoint pair; this is it applied to the group it was written above.
+ */
+const OIDC_VERIFICATION = ['OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI'] as const;
+
+const withVerificationGroup = OIDC_VERIFICATION.reduce(
+  (schema, name) =>
+    schema.refine(
+      (value) =>
+        OIDC_VERIFICATION.every((other) => value[other] === undefined) || value[name] !== undefined,
+      {
+        message: `${OIDC_VERIFICATION.join(', ')} must be set together or not at all`,
+        path: [name],
+      }
+    ),
+  envObject as unknown as z.ZodType<z.infer<typeof envObject>>
+);
+
+const envSchema = withVerificationGroup
   // Two refinements rather than one comparing the pair, so the path names the
   // variable that is MISSING. `parseEnv` reports paths, not messages, and an
   // error naming the variable the operator just set tells them nothing they did

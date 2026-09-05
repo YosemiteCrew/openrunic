@@ -71,13 +71,66 @@ describe('the identity-provider settings', () => {
     expect(oidcSettings(env)?.clockSkewSeconds).toBe(15);
   });
 
-  it('are refused when only half of them are set', () => {
-    // A partial configuration would fall back to the development principal
-    // table, which is the failure this refusal exists to prevent.
-    expect(() => parseEnv({ OIDC_ISSUER: 'https://idp.example.invalid' })).toThrow(/OIDC_ISSUER/);
+  /**
+   * A partial configuration would fall back to the development principal table,
+   * which is the failure this refusal exists to prevent - and the refusal has
+   * to name the variable that is MISSING.
+   *
+   * `parseEnv` reports paths and never messages, deliberately, so a value
+   * cannot reach a log somebody pastes into a support thread. The path is
+   * therefore the whole of what an operator gets, and the operator is a
+   * sysadmin with a container that will not start and no source in front of
+   * them.
+   *
+   * The second row is the one that changed. It used to assert `OIDC_ISSUER`,
+   * because one refinement over the group named the issuer whichever of the
+   * three was absent - so an operator who set the issuer and the audience and
+   * forgot the JWKS URI was told to fix the line they got right. The assertion
+   * matched the defect (#318).
+   */
+  it.each([
+    ['only the issuer', { OIDC_ISSUER: 'https://idp.example.invalid' }, /OIDC_AUDIENCE/],
+    [
+      'the JWKS URI missing',
+      { OIDC_ISSUER: 'https://idp.example.invalid', OIDC_AUDIENCE: 'a' },
+      /OIDC_JWKS_URI/,
+    ],
+    [
+      'the issuer missing',
+      { OIDC_AUDIENCE: 'a', OIDC_JWKS_URI: 'https://idp.example.invalid/jwks' },
+      /OIDC_ISSUER/,
+    ],
+    [
+      'the audience missing',
+      {
+        OIDC_ISSUER: 'https://idp.example.invalid',
+        OIDC_JWKS_URI: 'https://idp.example.invalid/jwks',
+      },
+      /OIDC_AUDIENCE/,
+    ],
+  ] as const)('names what is missing when %s', (_label, env, expected) => {
+    expect(() => parseEnv(env)).toThrow(expected);
+  });
+
+  /**
+   * And it names ONLY what is missing.
+   *
+   * Every row above would hold against a refusal that listed all three every
+   * time, which is a message that tells the operator to check what they already
+   * checked. The two controls below are the pair the group needs: all three set
+   * is accepted, none set is accepted.
+   */
+  it('names neither of the two that are set', () => {
     expect(() =>
       parseEnv({ OIDC_ISSUER: 'https://idp.example.invalid', OIDC_AUDIENCE: 'a' })
-    ).toThrow(/OIDC_ISSUER/);
+    ).toThrow(/OIDC_JWKS_URI/);
+    try {
+      parseEnv({ OIDC_ISSUER: 'https://idp.example.invalid', OIDC_AUDIENCE: 'a' });
+    } catch (error) {
+      const message = (error as Error).message;
+      expect(message).not.toMatch(/OIDC_ISSUER/);
+      expect(message).not.toMatch(/OIDC_AUDIENCE/);
+    }
   });
 
   it('refuse an issuer that is not a URL', () => {
@@ -247,6 +300,13 @@ describe('a variable that is present and blank', () => {
      * audience is an unset audience, so an issuer and a JWKS URI with a blank
      * audience is still the partial configuration that would otherwise fall
      * back to the demo tokens.
+     *
+     * It names the AUDIENCE now, where it used to name the issuer, and the
+     * change is the point rather than a consequence: the blank variable is the
+     * one to fix, and the two spelt correctly are not (#318). The blank-is-unset
+     * rule and the names-what-is-missing rule agree here, which is the case
+     * worth pinning - a blank value is the shape an operator is most likely to
+     * arrive at from a half-filled template.
      */
     expect(() =>
       parseEnv({
@@ -254,7 +314,7 @@ describe('a variable that is present and blank', () => {
         OIDC_JWKS_URI: verification.OIDC_JWKS_URI,
         OIDC_AUDIENCE: '',
       })
-    ).toThrow(/OIDC_ISSUER/);
+    ).toThrow(/OIDC_AUDIENCE/);
   });
 });
 

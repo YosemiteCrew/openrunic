@@ -40,6 +40,32 @@
 // which turns a fabrication outside the alphabet into a named failure rather
 // than a silence.
 //
+// AND WHY IT DOES NOT COUNT CHARACTERS
+//
+// The same argument applies to every length `pattern` could restate, and the
+// fabricator is not the case that makes it matter - the TYPIST is. Transcribe
+// the mysql2 justification `GHSA-3f6p-5ww8-9rcr` with one character dropped and
+// a segment-counting pattern does not see it at all: the report says sixteen
+// citations, all resolve, exit 0, over an override justified by an identifier
+// nobody can look up. Measured that way before this changed, for a dropped
+// character, an added one, a dropped hyphen, `CVE-202-60876` and `GO-206-4337`
+// alike - five silences, one per lengths `pattern` was restating.
+//
+// So `pattern` is the prefix followed by at least two hyphen-separated groups,
+// uniformly across all three schemes, and nothing about the group LENGTHS is
+// written here. Two groups is exact for CVE and GO and one looser than GHSA,
+// and the looseness is the point: what a reader recognises as a citation is a
+// prefix and some segments, not a character count.
+//
+// The boundary is a boundary and this one is deliberate, so both directions are
+// pinned by tests. Below it, prose ABOUT the format stays uncited - `GHSA-`
+// named as a prefix, or a hyphenated word like `GHSA-style`, is one group and
+// is not a citation. Above it, a document that writes something SHAPED like an
+// identifier is a citation and needs a PLACEHOLDERS entry - which is not new,
+// it is why `.grype.yaml` already has one. What remains outside is an
+// identifier written with every hyphen gone; it is named here rather than
+// discovered, because a boundary nobody wrote down is the defect above.
+//
 // WHERE IT LOOKS
 //
 // Every tracked file, rather than a list of the files that cite advisories
@@ -78,10 +104,17 @@ import process from 'node:process';
  * Two regexes per scheme, and the split is load-bearing.
  *
  * `pattern` is the shape a reader sees, so anything written where an identifier
- * belongs is recognised as one. `wellFormed` is the issuing authority's own
- * alphabet, so a spelling that authority could never have issued is decided
- * without a request - see {@link resolveOne}, where it resolves to `missing`
- * rather than to `unavailable`, because it is an answer and not an outage.
+ * belongs is recognised as one: the prefix, then at least two hyphen-separated
+ * groups, and no length anywhere. `wellFormed` is the issuing authority's own
+ * spelling - alphabet AND lengths - so a string that authority could never have
+ * issued is decided without a request. See {@link resolveOne}, where it
+ * resolves to `missing` rather than to `unavailable`, because it is an answer
+ * and not an outage.
+ *
+ * Every length lives on the `wellFormed` side and none on the `pattern` side.
+ * A length in `pattern` is not a second check, it is a hole: a segment that is
+ * one character short stops being a citation instead of becoming a finding, and
+ * that is the transcription slip rather than the fabrication - see the header.
  *
  * GHSA identifiers use twenty characters: the digits `2` to `9` and the twelve
  * letters `cfghjmpqrvwx`. It is not base32 and `8` is in it - five of the seven
@@ -97,7 +130,7 @@ import process from 'node:process';
 export const SCHEMES = [
   {
     kind: 'ghsa',
-    pattern: /GHSA-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}/gu,
+    pattern: /GHSA-[0-9A-Za-z]+(?:-[0-9A-Za-z]+)+/gu,
     wellFormed:
       /^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/iu,
     url: (id) => `https://api.github.com/advisories/${encodeURIComponent(id)}`,
@@ -105,14 +138,14 @@ export const SCHEMES = [
   },
   {
     kind: 'cve',
-    pattern: /CVE-\d{4}-\d{4,}/gu,
+    pattern: /CVE-\d+(?:-\d+)+/gu,
     wellFormed: /^CVE-\d{4}-\d{4,}$/u,
     url: (id) => `https://cveawg.mitre.org/api/cve/${encodeURIComponent(id)}`,
     registry: 'the CVE Program record service',
   },
   {
     kind: 'go',
-    pattern: /GO-\d{4}-\d+/gu,
+    pattern: /GO-\d+(?:-\d+)+/gu,
     wellFormed: /^GO-\d{4}-\d+$/u,
     url: (id) => `https://vuln.go.dev/ID/${encodeURIComponent(id)}.json`,
     registry: 'the Go vulnerability database',

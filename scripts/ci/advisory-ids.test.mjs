@@ -126,10 +126,74 @@ test('an identifier spelt outside the issuing alphabet is still a citation', () 
   );
 });
 
-/** The shape still has to be a shape: three segments of four, and a real CVE. */
-test('a string that is not an identifier shape is not a citation', () => {
-  assert.deepEqual(findCitations('GHSA-abc-efgh-ijkl', 'notes.md'), []);
-  assert.deepEqual(findCitations('CVE-2025-123', 'notes.md'), []);
+/**
+ * The typist, not the fabricator, and it is the reason no length is in
+ * `pattern`.
+ *
+ * A fabrication is at least written whole. A transcription slip is one
+ * character, and until this changed a segment-counting pattern did not see it
+ * at all - so the citation was never resolved, never reported and never
+ * counted, and the run said sixteen citations, all resolve, exit 0 over an
+ * override justified by an identifier nobody can look up. Measured that way
+ * for all five rows below, one per length `pattern` was restating; the real
+ * identifier they are slips of is `GHSA-3f6p-5ww8-9rcr`, cited in
+ * `pnpm-workspace.yaml`.
+ */
+for (const slip of [
+  'GHSA-3f6p-5ww-9rcr',
+  'GHSA-3f6p-5ww8x-9rcr',
+  'GHSA-3f6p5ww8-9rcr',
+  'CVE-202-60876',
+  'GO-206-4337',
+]) {
+  test(`a transcription slip in ${slip} is a citation, not a silence`, () => {
+    assert.deepEqual(
+      findCitations(`  # ${slip}: the override this justifies`, 'pnpm-workspace.yaml').map(
+        (citation) => citation.id
+      ),
+      [slip],
+      'a mistyped identifier reads as a silence rather than a finding'
+    );
+  });
+
+  test(`a transcription slip in ${slip} is answered without a request`, async () => {
+    const kind = slip.startsWith('GHSA') ? 'ghsa' : slip.startsWith('CVE') ? 'cve' : 'go';
+    const fetchImpl = stubFetch();
+    const verdict = await resolveOne(slip, kind, fetchImpl);
+
+    assert.equal(verdict.state, 'missing');
+    assert.equal(fetchImpl.calls.length, 0, 'a spelling the register cannot have issued was asked');
+  });
+}
+
+/**
+ * The other side of that boundary, and it is the half a wider pattern puts at
+ * risk.
+ *
+ * A false red on correct documentation is the failure that gets a gate deleted,
+ * so the line is drawn where prose stops: `GHSA-` named as a prefix, or a
+ * hyphenated word built on it, is ONE group and is not a citation. A document
+ * that writes something shaped like an identifier - two groups or more - IS a
+ * citation and needs a PLACEHOLDERS entry, which is not a new cost: it is why
+ * `.grype.yaml` already carries one.
+ */
+test('prose about the identifier format is not a citation', () => {
+  assert.deepEqual(findCitations('ids carry the GHSA- prefix', 'notes.md'), []);
+  assert.deepEqual(findCitations('a GHSA-style identifier, or a CVE-numbered one', 'notes.md'), []);
+  assert.deepEqual(findCitations('written GHSA-<segment>-<segment>', 'notes.md'), []);
+});
+
+/**
+ * The residual, named rather than discovered.
+ *
+ * An identifier with every hyphen gone is still not a citation. Recognising it
+ * would mean matching the prefix followed by any alphanumeric run, which makes
+ * every `GHSA-word` compound in prose a finding - the row above. This is the
+ * boundary being a boundary, and the test exists so moving it is a decision
+ * somebody makes rather than a hole somebody finds.
+ */
+test('an identifier written with no hyphens at all is outside the pattern', () => {
+  assert.deepEqual(findCitations('GHSA-3f6p5ww89rcr', 'pnpm-workspace.yaml'), []);
 });
 
 // ---------------------------------------------------------------- scanning

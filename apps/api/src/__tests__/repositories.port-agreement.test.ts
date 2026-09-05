@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { COLLECTION_SPECS } from '../repositories/specs/index.js';
@@ -715,6 +718,35 @@ function satisfy(where: Readonly<Record<string, unknown>>): Record<string, unkno
   return row;
 }
 
+/**
+ * Fills in the nullable columns the synthesised row does not carry.
+ *
+ * `satisfy` builds the row out of the emitted `where`, so a column no clause
+ * mentions is simply absent - and absent is not a state a database row can be
+ * in. That gap hid a whole variant of the drift this file exists to catch.
+ *
+ * A presence filter reads its column as `row.readAt !== null`. Drop that clause
+ * from `where` while leaving it in `matches` and the column stops being
+ * mentioned, so the row does not carry it, so `matches` compares `undefined`
+ * against null, decides the row qualifies, and agrees with a `where` that is no
+ * longer filtering at all. Both ports say yes and the filter has vanished.
+ * Verified on this branch: removing the `read` clause from `messageSpec.where`
+ * left all 166 cases green before this existed.
+ *
+ * Null rather than a guessed value, and only for columns the schema says are
+ * nullable, because null is the one value those columns are certainly allowed
+ * to hold. A non-nullable column stays absent: inventing a value for it would
+ * mean knowing its type, and getting that wrong produces a row the schema could
+ * not hold - the thing the mutant pass is careful about for the same reason.
+ */
+function complete(spec: Loose, row: Record<string, unknown>): Record<string, unknown> {
+  const filled = { ...row };
+  for (const column of NULLABLE_COLUMNS.get(spec.model) ?? []) {
+    if (!(column in filled)) filled[column] = null;
+  }
+  return filled;
+}
+
 /** Every column the emitted `where` constrains, for the mutation pass. */
 function constrained(where: Readonly<Record<string, unknown>>): string[] {
   const columns = new Set<string>();
@@ -729,6 +761,70 @@ function constrained(where: Readonly<Record<string, unknown>>): string[] {
   }
   return [...columns];
 }
+
+/**
+ * Which columns of each model may hold null, read out of the schema.
+ *
+ * The one-column-away pass below needs this, and needs it to be true rather
+ * than approximately true. Its mutants have to be rows the database could
+ * actually hold: a null in a `NOT NULL` column is not a caller two filters
+ * disagree for, it is a row that cannot exist, and `matches` reading a date off
+ * it throws before either port has answered anything.
+ *
+ * Parsed from `schema.prisma` rather than read from Prisma's runtime metadata,
+ * because there is none to read. The `prisma-client` generator emits TypeScript;
+ * the runtime `Prisma` namespace carries the scalar field enums and the Decimal
+ * helpers and no `dmmf`. The generated model types do carry nullability, and
+ * types erase, so a runtime check cannot use them. The schema is what the
+ * generated types are derived from, so parsing it is closer to the truth than
+ * either - and a hand-kept list is the thing that goes stale the first time a
+ * column becomes optional.
+ *
+ * Relation fields are excluded by name: their type is another model, and they
+ * are not columns a `where` can constrain, so admitting them would let a
+ * meaningless mutant through.
+ */
+function nullableColumns(): ReadonlyMap<string, ReadonlySet<string>> {
+  const schema = readFileSync(
+    fileURLToPath(new URL('../../../../packages/database/prisma/schema.prisma', import.meta.url)),
+    'utf8'
+  );
+
+  const blocks = new Map<string, string[]>();
+  let open: string[] | undefined;
+  for (const raw of schema.split('\n')) {
+    const line = raw.trim();
+    const header = /^model\s+(\w+)\s*\{/u.exec(line);
+    if (header?.[1] !== undefined) {
+      open = [];
+      blocks.set(header[1], open);
+      continue;
+    }
+    if (open !== undefined && line === '}') {
+      open = undefined;
+      continue;
+    }
+    if (open !== undefined) open.push(line);
+  }
+
+  const modelNames = new Set(blocks.keys());
+  const nullable = new Map<string, ReadonlySet<string>>();
+  for (const [model, lines] of blocks) {
+    const columns = new Set<string>();
+    for (const line of lines) {
+      // `///` documentation, `@@` block attributes and blank lines carry no field.
+      if (line === '' || line.startsWith('//') || line.startsWith('@@')) continue;
+      const field = /^(\w+)\s+([A-Za-z_]\w*)(\[\])?(\?)?/u.exec(line);
+      if (field?.[1] === undefined || field[4] !== '?') continue;
+      if (modelNames.has(field[2] ?? '')) continue;
+      columns.add(field[1]);
+    }
+    nullable.set(model, columns);
+  }
+  return nullable;
+}
+
+const NULLABLE_COLUMNS = nullableColumns();
 
 /** A value no fixture uses, for building a row or a query that should not match. */
 const FOREIGN = 'a-value-nothing-asked-for';
@@ -803,6 +899,8 @@ function collidingPairs(spec: Loose, query: Record<string, unknown>): [string, s
 }
 
 interface Loose {
+  /** The Prisma model, which is how the nullable-column table is keyed. */
+  model: string;
   matches: (row: never, query: never) => boolean;
   where: (query: never) => Record<string, unknown>;
 }
@@ -822,7 +920,7 @@ describe('every spec answers the same question through both ports', () => {
 
     it('agrees on a row the filter should select', () => {
       const where = spec.where(query);
-      const row = satisfy(where);
+      const row = complete(spec, satisfy(where));
 
       expect(matchesWhere(row, where), 'the synthesised row satisfies its own where').toBe(true);
       expect(spec.matches(row as never, query), 'and matches agrees it does').toBe(true);
@@ -892,32 +990,127 @@ describe('every spec answers the same question through both ports', () => {
       expect(disagreements).toEqual([]);
     });
 
+    /**
+     * The same agreement, asked one parameter at a time.
+     *
+     * Everything above sends the whole query, and a filter can be redundant
+     * under it. `stockPostingSpec` is the worked example: `patientId` names a
+     * chart and `charted` asks whether there is one, so with both sent, every
+     * row satisfying the first satisfies the second - drop `charted` from
+     * `where` while leaving it in `matches` and the two ports agree on every row
+     * the pass above can build, because the row that separates them is one the
+     * other parameter has already excluded.
+     *
+     * Sent alone the redundancy is gone and the clause is the only thing
+     * filtering, so its absence is immediately a disagreement. This is the
+     * whole of #274: a dropped clause was invisible exactly when another
+     * parameter happened to constrain the same column.
+     */
+    it('agrees on every parameter asked on its own', () => {
+      const base = paging(query);
+      const disagreements: string[] = [];
+
+      for (const [param, value] of Object.entries(query)) {
+        if (param in base) continue;
+        const alone = { ...base, [param]: value } as never;
+        let where: Record<string, unknown>;
+        try {
+          where = spec.where(alone);
+        } catch {
+          // A parameter that needs a companion to be meaningful - the claims
+          // date `window` discriminator is the example - throws on its own.
+          continue;
+        }
+        const row = complete(spec, satisfy(where));
+        const nullable = NULLABLE_COLUMNS.get(spec.model) ?? new Set<string>();
+
+        const rows: [string, Record<string, unknown>][] = [['selected', row]];
+        for (const column of constrained(where)) {
+          const held = row[column];
+          rows.push([
+            `${column}=foreign`,
+            {
+              ...row,
+              [column]:
+                held instanceof Date
+                  ? new Date(held.getTime() + 86_400_000 * 400)
+                  : typeof held === 'number'
+                    ? held + 9973
+                    : typeof held === 'boolean'
+                      ? !held
+                      : Array.isArray(held)
+                        ? []
+                        : FOREIGN,
+            },
+          ]);
+          if (nullable.has(column)) rows.push([`${column}=null`, { ...row, [column]: null }]);
+        }
+
+        for (const [label, candidate] of rows) {
+          let memory: boolean;
+          try {
+            memory = spec.matches(candidate as never, alone);
+          } catch {
+            continue;
+          }
+          const prisma = matchesWhere(candidate, where);
+          if (memory !== prisma) {
+            disagreements.push(`${param} alone, ${label}: memory=${memory} prisma=${prisma}`);
+          }
+        }
+      }
+
+      expect(disagreements).toEqual([]);
+    });
+
     it('agrees on every row one column away from selected', () => {
       const where = spec.where(query);
-      const row = satisfy(where);
+      const row = complete(spec, satisfy(where));
+      const nullable = NULLABLE_COLUMNS.get(spec.model) ?? new Set<string>();
 
       const disagreements: string[] = [];
       for (const column of constrained(where)) {
         // A value of the same shape as the one that satisfied, so the mutant is
         // a row the schema could actually hold rather than a type error.
         const held = row[column];
-        const mutant = {
-          ...row,
-          [column]:
-            held instanceof Date
-              ? new Date(held.getTime() + 86_400_000 * 400)
-              : typeof held === 'number'
-                ? held + 9973
-                : typeof held === 'boolean'
-                  ? !held
-                  : Array.isArray(held)
-                    ? []
-                    : 'a-value-nothing-asked-for',
-        };
-        const memory = spec.matches(mutant as never, query);
-        const prisma = matchesWhere(mutant, where);
-        if (memory !== prisma) {
-          disagreements.push(`${column}: memory=${memory} prisma=${prisma}`);
+        const foreign =
+          held instanceof Date
+            ? new Date(held.getTime() + 86_400_000 * 400)
+            : typeof held === 'number'
+              ? held + 9973
+              : typeof held === 'boolean'
+                ? !held
+                : Array.isArray(held)
+                  ? []
+                  : 'a-value-nothing-asked-for';
+
+        /*
+         * And null, where the column may hold it.
+         *
+         * A foreign value of the same type cannot separate two filters that
+         * both constrain one column when one of them tests presence rather than
+         * value: `{ patientId: id }` and `{ patientId: { not: null } }` both
+         * reject a foreign id, so dropping the second from `where` while
+         * leaving it in `matches` left both ports agreeing on every row this
+         * pass built. Null is the row that separates them, and nothing built it.
+         *
+         * Only for columns the schema says are nullable. A null in a `NOT NULL`
+         * column is not a caller two filters disagree for; it is a row that
+         * cannot exist, and `matches` reading a date off it throws before either
+         * port has answered - which is a crash worth failing on somewhere else,
+         * not something to be caught and swallowed here.
+         */
+        const mutants = nullable.has(column) ? [foreign, null] : [foreign];
+
+        for (const value of mutants) {
+          const mutant = { ...row, [column]: value };
+          const memory = spec.matches(mutant as never, query);
+          const prisma = matchesWhere(mutant, where);
+          if (memory !== prisma) {
+            disagreements.push(
+              `${column}=${value === null ? 'null' : 'foreign'}: memory=${memory} prisma=${prisma}`
+            );
+          }
         }
       }
 

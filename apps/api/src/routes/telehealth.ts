@@ -47,8 +47,11 @@ import { idParam, idParamSchema, policyOf, repositories, required } from './help
  * A vendor that is down is a 503 the caller may retry. A vendor that refuses is
  * a 502: retrying will not help, and pretending the room exists would send a
  * clinician to a waiting room that is not there. Neither answer carries the
- * vendor's own message, because that message goes to whoever is holding the
- * request and this one is held by a patient.
+ * vendor's own message: a vendor's error text is written for whoever integrated
+ * it, and forwarding it to an API caller leaks the deployment's internals - a
+ * room identifier, a vendor account, the shape of a misconfiguration - to
+ * someone who can do nothing with it and should not see it. The caller here is
+ * staff or a service, never a patient, and the reasoning holds for both.
  */
 
 const NO_VISIT = 'No such telehealth visit.';

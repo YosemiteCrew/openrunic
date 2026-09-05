@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { formatCount, verbatim } from '@openrunic/i18n';
+
 import { AuditScreen } from '@/app/(app)/admin/audit/AuditScreen';
-import { adminMockFailure, createAdminMockClient } from '@/lib/api';
+import { adminMockFailure, createAdminMockClient, MOCK_AUDIT_EVENTS } from '@/lib/api';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -263,6 +265,39 @@ describe('AuditScreen, one event in full', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Audit events, newest first' })).toBeInTheDocument();
+  });
+
+  it('writes the sequence number as it is stored, not as a grouped quantity', async () => {
+    /*
+     * Localise what is measured, render verbatim what is matched. The two
+     * helpers return the same string for every number below a thousand, and
+     * almost every fixture in this application is below a thousand - so this
+     * site and one delivery latency are the only two places in `apps/web` where
+     * swapping them changes anything at all.
+     *
+     * Read off the fixture rather than written out, and the first assertion is
+     * why. Lowering `sequence` below the grouping threshold is an ordinary
+     * fixture edit; it would fail the two below, and the obvious repair is to
+     * retune the expected strings - which passes, and quietly removes the only
+     * coverage this rule has. This fails first and says what was lost.
+     */
+    const sequence = MOCK_AUDIT_EVENTS[0]?.sequence ?? 0;
+    expect(
+      formatCount(sequence, 'en'),
+      'this fixture can no longer tell verbatim from formatCount: raise the sequence back above the grouping threshold rather than retuning the assertions below'
+    ).not.toBe(verbatim(sequence));
+
+    render(<AuditScreen />);
+    await screen.findByRole('table', { name: 'Audit events, newest first' });
+
+    expect(
+      screen.getByRole('button', { name: `Open event ${verbatim(sequence)}` })
+    ).toBeInTheDocument();
+    // The negative, because `getByRole` with the right name also passes on a
+    // screen that renders the grouped one somewhere too.
+    expect(
+      screen.queryByRole('button', { name: `Open event ${formatCount(sequence, 'en')}` })
+    ).not.toBeInTheDocument();
   });
 
   it('says "no chart context" rather than leaving the patient rows blank', async () => {

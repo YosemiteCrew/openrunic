@@ -15,6 +15,7 @@ import {
   adminBreadcrumb,
   translateColumns,
 } from '@/components/admin';
+import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import type { AdminColumn } from '@/components/admin';
 import type { Command } from '@/components/command';
@@ -224,7 +225,9 @@ function hookRow(
     endpoint: <span className="or-small or-mono">{hook.endpoint}</span>,
     health: (
       <span className="or-small">
-        {t('admin.developer.hooks.health', { percent: Math.round(hook.failureRate * 100) })}
+        {t('admin.developer.hooks.health', {
+          percent: formatCount(Math.round(hook.failureRate * 100), t.locale),
+        })}
       </span>
     ),
     status: <HookStatusBadge status={hook.status} />,
@@ -249,7 +252,9 @@ function deliveryRow(t: Translator, delivery: WebhookDelivery): Record<string, R
     latency:
       delivery.latencyMs === null
         ? t('admin.developer.deliveries.timedOut')
-        : t('admin.developer.deliveries.latencyMs', { ms: delivery.latencyMs }),
+        : t('admin.developer.deliveries.latencyMs', {
+            ms: formatCount(delivery.latencyMs, t.locale),
+          }),
     attempt: String(delivery.attempt),
     outcome: <Badge tone={tone}>{t(labelKey)}</Badge>,
   };
@@ -349,7 +354,7 @@ function HookDetail({ hook }: Readonly<{ hook: Webhook }>): ReactElement {
           {
             label: t('admin.developer.hooks.detail.failureRate'),
             value: t('admin.developer.hooks.detail.failureRateValue', {
-              percent: Math.round(hook.failureRate * 100),
+              percent: formatCount(Math.round(hook.failureRate * 100), t.locale),
             }),
           },
           {

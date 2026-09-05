@@ -104,7 +104,7 @@ export function StatementDrawer({
             {', '}
             {t('billing.statementDrawer.subtitle', {
               stage: t(DUNNING_LABEL_KEYS[single.dunningStage]).toLowerCase(),
-              sent: single.statementsSent,
+              sent: formatCount(single.statementsSent, t.locale),
             })}
           </>
         }
@@ -194,8 +194,8 @@ export function StatementDrawer({
                         amount: formatMoney(t, single.paymentPlan.instalmentAmount, {
                           currency: single.currency,
                         }).text,
-                        paid: single.paymentPlan.instalmentsPaid,
-                        total: single.paymentPlan.instalmentsTotal,
+                        paid: formatCount(single.paymentPlan.instalmentsPaid, t.locale),
+                        total: formatCount(single.paymentPlan.instalmentsTotal, t.locale),
                       })
                     : t('billing.statementDrawer.noPlan')}
                 </span>

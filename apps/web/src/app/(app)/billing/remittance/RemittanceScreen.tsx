@@ -243,8 +243,8 @@ export function RemittanceScreen({ client }: Readonly<RemittanceScreenProps>): R
                     unit="%"
                     state={summary.autoPostedPercent === 100 ? 'success' : 'neutral'}
                     stateLabel={t('billing.remittance.autoPostedOf', {
-                      posted: summary.autoPosted,
-                      total: summary.lines,
+                      posted: formatCount(summary.autoPosted, t.locale),
+                      total: formatCount(summary.lines, t.locale),
                     })}
                   />
                   <VitalStat

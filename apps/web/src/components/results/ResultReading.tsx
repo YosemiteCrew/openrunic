@@ -1,5 +1,6 @@
 'use client';
 
+import { verbatim } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Table } from '@openrunic/ui';
 import type { BadgeTone, TableColumn } from '@openrunic/ui';
@@ -197,7 +198,14 @@ function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode>
         ? analyte.previous
             .map((prior) =>
               t('results.reading.prior', {
-                value: prior.value,
+                // Not `formatCount`, and not because this is an identifier: a lab
+                // value is measured. `lib/format.ts` already renders the
+                // current reading unlocalised and says why - the clinical area
+                // has no Spanish catalogue, so the sentence falls back to
+                // English and a Spanish decimal comma inside it reads worse
+                // than either language alone. This is the same value in the
+                // same pane, and it changes when that decision does.
+                value: verbatim(prior.value),
                 at: formatDate(t, prior.at, 'dense'),
               })
             )

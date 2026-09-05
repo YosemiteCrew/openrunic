@@ -13,7 +13,7 @@ import { useAdminClientOption, useFormDefinitions, useFormFieldTypes } from '@/l
 import type { AdminClient, FormDefinition, FormField, FormFieldType, FormSection } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
-import { formatCount } from '@openrunic/i18n';
+import { formatCount, verbatim } from '@openrunic/i18n';
 
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -290,7 +290,7 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
               screen cannot build them. It used to close a confirmation and
               report the version released, with the definition unchanged. */}
           <Button variant="primary" iconLeft="upload" disabled>
-            {t('admin.forms.publishVersion', { version: nextVersion })}
+            {t('admin.forms.publishVersion', { version: verbatim(nextVersion) })}
           </Button>
         </>
       }
@@ -341,8 +341,8 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                 <div className="or-cell-chips">
                   <Badge tone={current.status === 'PUBLISHED' ? 'success' : 'neutral'}>
                     {current.status === 'PUBLISHED'
-                      ? t('admin.forms.versionPublished', { version: current.version })
-                      : t('admin.forms.versionDraft', { version: current.version })}
+                      ? t('admin.forms.versionPublished', { version: verbatim(current.version) })
+                      : t('admin.forms.versionDraft', { version: verbatim(current.version) })}
                   </Badge>
                   <Tag>
                     {t('admin.forms.responses', {
@@ -362,11 +362,11 @@ export function FormsScreen({ client }: Readonly<FormsScreenProps>): ReactElemen
                 <Card className="or-notice" data-tone="info">
                   <p className="or-body">
                     <strong>
-                      {t('admin.forms.immutable.title', { version: current.version })}
+                      {t('admin.forms.immutable.title', { version: verbatim(current.version) })}
                     </strong>{' '}
                     {dirty || current.hasUnpublishedChanges
-                      ? t('admin.forms.immutable.dirty', { version: nextVersion })
-                      : t('admin.forms.immutable.clean', { version: nextVersion })}
+                      ? t('admin.forms.immutable.dirty', { version: verbatim(nextVersion) })
+                      : t('admin.forms.immutable.clean', { version: verbatim(nextVersion) })}
                   </p>
                 </Card>
               ) : null}

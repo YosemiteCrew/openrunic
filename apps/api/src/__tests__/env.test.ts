@@ -174,3 +174,83 @@ describe('the SMART launch settings', () => {
     expect(message).not.toContain('a.invalid');
   });
 });
+
+/**
+ * A blank `.env` line, which is what an operator writes to decline a setting.
+ *
+ * `.env.example` ships `OPENRUNIC_FHIR_BASE_URL=` with nothing after it, the
+ * installer copies that line into `.env` verbatim, and Compose hands a blank
+ * key to the container as an empty string rather than leaving it out. Without
+ * the blank-is-unset rule the documented way to decline a setting is a startup
+ * failure naming the variable the operator deliberately left alone - so these
+ * assertions are the ones standing between the Compose change that passes
+ * `OPENRUNIC_FHIR_BASE_URL` through and a self-hosted stack that will not boot.
+ */
+describe('a variable that is present and blank', () => {
+  const verification = {
+    OIDC_ISSUER: 'https://idp.example.invalid',
+    OIDC_AUDIENCE: 'openrunic-api',
+    OIDC_JWKS_URI: 'https://idp.example.invalid/jwks',
+  };
+
+  it('reads as unset on the canonical FHIR base', () => {
+    expect(parseEnv({ OPENRUNIC_FHIR_BASE_URL: '' }).OPENRUNIC_FHIR_BASE_URL).toBeUndefined();
+  });
+
+  it('reads as unset when it is only whitespace', () => {
+    expect(parseEnv({ OPENRUNIC_FHIR_BASE_URL: '   ' }).OPENRUNIC_FHIR_BASE_URL).toBeUndefined();
+  });
+
+  it('still refuses a value that is present and malformed', () => {
+    // The point of parsing the environment at startup. Blank means "not this
+    // one"; anything else means the operator meant it and got it wrong.
+    expect(() => parseEnv({ OPENRUNIC_FHIR_BASE_URL: 'not-a-url' })).toThrow(
+      /OPENRUNIC_FHIR_BASE_URL/
+    );
+  });
+
+  it('leaves a defaulted number at its default rather than coercing to zero', () => {
+    /*
+     * The quiet one. `Number('')` is 0, so a blank clock skew would have become
+     * no tolerance at all - every token from a provider a second out of step
+     * rejected, with nothing in a log to say why, and the operator having set
+     * the variable to exactly the value the file told them meant "leave it".
+     */
+    expect(parseEnv({ ...verification, OIDC_CLOCK_SKEW_SECONDS: '' }).OIDC_CLOCK_SKEW_SECONDS).toBe(
+      60
+    );
+    expect(parseEnv({ PORT: '' }).PORT).toBe(4000);
+  });
+
+  it('refuses a blank NODE_ENV rather than quietly defaulting it', () => {
+    /*
+     * The deliberate exception, and the one field where blank and absent differ
+     * in what they cost. Defaulting a blank `NODE_ENV` gives `development`,
+     * which is the mode that accepts the table of public demo tokens printed in
+     * this repository's own source - so the rule that makes every other field
+     * forgiving would turn one empty line into a deployment serving charts to
+     * anyone holding a token anybody can read.
+     *
+     * Absent still defaults, because that is how the process is ordinarily run
+     * and is asserted at the top of this file. Only written-and-blank refuses.
+     */
+    expect(() => parseEnv({ NODE_ENV: '' })).toThrow(/NODE_ENV/);
+    expect(parseEnv({}).NODE_ENV).toBe('development');
+  });
+
+  it('does not turn a half-configured provider into a whole one', () => {
+    /*
+     * The refusal this file cares about most must survive the new rule. A blank
+     * audience is an unset audience, so an issuer and a JWKS URI with a blank
+     * audience is still the partial configuration that would otherwise fall
+     * back to the demo tokens.
+     */
+    expect(() =>
+      parseEnv({
+        OIDC_ISSUER: verification.OIDC_ISSUER,
+        OIDC_JWKS_URI: verification.OIDC_JWKS_URI,
+        OIDC_AUDIENCE: '',
+      })
+    ).toThrow(/OIDC_ISSUER/);
+  });
+});

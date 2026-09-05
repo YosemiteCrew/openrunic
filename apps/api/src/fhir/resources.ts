@@ -627,7 +627,37 @@ const medicationDispenseModule = defineFhirResource({
   chartFrom: 'stockPostings',
   interactions: ['read', 'search-type'],
   params: ['patient'],
-  permission: 'order.read',
+  /*
+   * `encounter.read`, the permission its own prescription is served under, and
+   * not `order.read`.
+   *
+   * A dispense is the fulfilment half of a medication record: `MedicationRequest`
+   * is what was intended, this is what was actually handed over, and
+   * `MedicationStatement` is what the patient reports taking. The other two are
+   * served under `encounter.read` and this one was not, which left a patient
+   * able to read their own prescription and not the record of collecting it.
+   *
+   * `patient-portal` holds `encounter.read` and does not hold `order.read`, so
+   * a patient-scoped token was refused here before the compartment narrowing
+   * could authorise its own record - and `stockPostingSpec` had already been
+   * widened from `closed` to an equality on `patientId` for exactly this read,
+   * with the comment saying so. The gate was the only thing left out of step
+   * with the decision.
+   *
+   * Granting the portal `order.read` instead would have been the wider change
+   * by far: `ServiceRequest` and `Specimen` are served under it, so a patient
+   * app would have gained the practice's lab ordering alongside its own
+   * medicines.
+   *
+   * It is a widening for `front-desk`, which holds `encounter.read` and not
+   * `order.read`. Reception can already read the prescription, the condition it
+   * was written for and the observations behind it; that a dispense against it
+   * was collected is the smaller fact, and answering "has my prescription been
+   * filled" is reception's job. Every other bundle holding `order.read` -
+   * `admin`, `clinician`, `read-only` - holds `encounter.read` too, so nothing
+   * loses this read.
+   */
+  permission: 'encounter.read',
   collection: (repositories) => {
     const postings = repositories.stockPostings;
     return {

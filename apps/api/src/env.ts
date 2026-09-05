@@ -10,9 +10,57 @@ import { z } from 'zod';
  * failure mode this file exists to prevent. `createApp` refuses the development
  * defaults under `NODE_ENV=production` for the same reason.
  */
+/**
+ * An optional or defaulted setting, where blank means "not set".
+ *
+ * A `.env` carries every key the template has, and a key with nothing after the
+ * `=` is how an operator says "not this one" - it is what `.env.example` ships
+ * for the settings a practice may not need. Compose hands such a key to the
+ * container as an empty string rather than leaving it out, so without this the
+ * documented way to decline a setting is a startup failure naming the variable
+ * the operator deliberately left alone.
+ *
+ * Applied to every field an operator can decline rather than to the one that
+ * reached a container first, because the difference is not a property of those
+ * fields: it is what an empty `.env` line means, and it means the same thing on
+ * all of them. On a coerced number it matters more quietly - `Number('')` is 0,
+ * so a blank `OIDC_CLOCK_SKEW_SECONDS` would have become no tolerance at all
+ * rather than the documented sixty seconds, with nothing to read in a log.
+ *
+ * `NODE_ENV` is the exception and says why at its own declaration: it is not a
+ * setting a practice declines, and blank there would mean the demo-token mode
+ * rather than a refusal.
+ *
+ * Only whitespace is read as absence. A value that is present and malformed
+ * still fails, which is the whole point of parsing the environment at startup.
+ */
+function blankAsUnset<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema
+  );
+}
+
 const envSchema = z
   .object({
-    PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+    PORT: blankAsUnset(z.coerce.number().int().min(1).max(65535).default(4000)),
+    /**
+     * Deliberately NOT wrapped in {@link blankAsUnset}, and it is the one field
+     * in this object where that matters.
+     *
+     * Everywhere else, blank and absent have the same consequence: a setting
+     * the operator declined. Here they do not. Blank would default to
+     * `development`, which is the mode that accepts the table of public demo
+     * tokens printed in this repository's own source - so the rule that makes
+     * every other field forgiving would turn one empty line into a deployment
+     * serving charts to anyone holding a token anybody can read.
+     *
+     * It is also not a setting a practice declines. `.env.example` ships no
+     * `NODE_ENV` line at all and Compose sets it on both services, so the only
+     * way to reach a blank one is to have written it, and a refusal to start is
+     * the right answer to that. Fail closed on the one field where "not set"
+     * and "set wrong" differ in what they cost.
+     */
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     /**
      * Canonical base for the FHIR resources this deployment publishes.
@@ -24,15 +72,15 @@ const envSchema = z
      * happens, so a self-hosted deployment serving Questionnaires should set
      * it to its own public API base.
      */
-    OPENRUNIC_FHIR_BASE_URL: z.url().optional(),
+    OPENRUNIC_FHIR_BASE_URL: blankAsUnset(z.url().optional()),
     /** OIDC issuer, matched exactly against the token's `iss`. */
-    OIDC_ISSUER: z.url().optional(),
+    OIDC_ISSUER: blankAsUnset(z.url().optional()),
     /** Audience this API answers to. Several may be listed, comma separated. */
-    OIDC_AUDIENCE: z.string().min(1).optional(),
+    OIDC_AUDIENCE: blankAsUnset(z.string().min(1).optional()),
     /** Where the issuer publishes its signing keys. */
-    OIDC_JWKS_URI: z.url().optional(),
+    OIDC_JWKS_URI: blankAsUnset(z.url().optional()),
     /** Tolerance on `exp`, `nbf` and `iat`, in seconds. */
-    OIDC_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(600).default(60),
+    OIDC_CLOCK_SKEW_SECONDS: blankAsUnset(z.coerce.number().int().min(0).max(600).default(60)),
     /**
      * Where the provider authorises, and where it redeems a code.
      *
@@ -48,8 +96,8 @@ const envSchema = z
      * by leaving these unset rather than by naming an endpoint that is not
      * there.
      */
-    OIDC_AUTHORIZATION_ENDPOINT: z.url().optional(),
-    OIDC_TOKEN_ENDPOINT: z.url().optional(),
+    OIDC_AUTHORIZATION_ENDPOINT: blankAsUnset(z.url().optional()),
+    OIDC_TOKEN_ENDPOINT: blankAsUnset(z.url().optional()),
   })
   .refine(
     (value) =>

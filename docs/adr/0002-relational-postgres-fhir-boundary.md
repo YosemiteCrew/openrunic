@@ -14,6 +14,11 @@ Recorded here rather than by editing the Decision, per `docs/adr/README.md`: an 
 rewritten. A reader checking whether the architecture still holds needs the decision as it was made
 and the one fact about it that has since moved, and cannot get the second from a silent edit.
 
+**This amendment is the last one this line needs.** Read the Decision as naming Prisma without a
+major version: which major the schema is managed by is a dependency fact that `packages/database`
+already states and that moves on its own schedule. A governing document that collected an
+amendment per major would become a changelog of an ORM, which is not what it is for.
+
 ## Date
 
 2026-08-12

@@ -50,11 +50,8 @@
 //   2  a registry could not be reached, so the guard did not run
 
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-
-import { resolveWithin } from './safe-path.mjs';
 
 /**
  * The identifier schemes this repository cites, and the registry that issues
@@ -164,16 +161,113 @@ export const PLACEHOLDERS = new Map([
   ],
 ]);
 
-/** Every tracked file, as repo-relative paths. */
+/**
+ * Every tracked regular file, as `{ file, sha }`.
+ *
+ * The mode is the reason this reads `ls-files -s` rather than `ls-files`.
+ * `120000` is a symlink and `160000` is a submodule; neither is a file this
+ * guard has any business reading, and dropping them here means the rest of the
+ * script never has to remember that they exist.
+ */
 export function trackedFiles(root) {
-  const listed = spawnSync('git', ['-C', root, 'ls-files', '-z'], {
+  const listed = spawnSync('git', ['-C', root, 'ls-files', '-s', '-z'], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
   if (listed.status !== 0) {
     throw new Error(`advisory-ids: git ls-files failed in ${root}: ${listed.stderr.trim()}`);
   }
-  return listed.stdout.split('\0').filter((entry) => entry !== '');
+
+  return parseIndexRecords(listed.stdout);
+}
+
+/**
+ * `git ls-files -s -z` output as `{ file, sha }`, regular files only.
+ *
+ * Split out so the refusal below is reachable from a test. It guards an input
+ * git does not currently produce, and an unreachable guard nothing exercises is
+ * the shape this file has already removed once - so it is either tested or it
+ * should not be here.
+ */
+export function parseIndexRecords(stdout) {
+  const entries = [];
+  for (const record of stdout.split('\0')) {
+    if (record === '') continue;
+    // `<mode> SP <sha> SP <stage> TAB <path>`
+    const match = /^(?<mode>\d{6}) (?<sha>[0-9a-f]{40,64}) \d\t(?<file>.*)$/su.exec(record);
+    if (match === null) {
+      // Refused rather than skipped. A record this cannot read is a file that
+      // would silently stop being scanned, which is the one outcome a guard
+      // must never reach quietly.
+      throw new Error(`advisory-ids: cannot parse a git ls-files record: ${record}`);
+    }
+    const { mode, sha, file } = match.groups;
+    // 120000 is a symlink and 160000 a submodule; neither is a file this guard
+    // has any business reading, and dropping them here means nothing later has
+    // to remember they exist.
+    if (mode !== '100644' && mode !== '100755') continue;
+    entries.push({ file, sha });
+  }
+  return entries;
+}
+
+/**
+ * The text of every blob, keyed by sha, read from git rather than from disk.
+ *
+ * READING THE BLOB IS THE POINT, not an optimisation. An earlier revision
+ * resolved each path and called `readFileSync`, and that had two problems this
+ * does not have.
+ *
+ * The first was real and is why it changed: `git ls-files` lists tracked
+ * symlinks, `readFileSync` follows them, and `safe-path.mjs` cannot see that -
+ * it is documented as reasoning about path STRINGS and never touching the disk,
+ * so a link is just an ordinary name inside the root to it. A pull request could
+ * add a link to a file on the runner and have this guard read it. Reading blobs
+ * closes that by construction rather than by a check somebody has to keep: a
+ * symlink's blob is the target PATH, not the target's contents, and
+ * {@link trackedFiles} drops it by mode before it gets here anyway.
+ *
+ * The second is that a working tree is not what a gate should judge. `--cached`
+ * content is what was committed, so an uncommitted edit cannot make this report
+ * clean over a citation that is about to land.
+ *
+ * `--batch` is one process for the whole tree rather than one per file, and its
+ * output is `<sha> SP <type> SP <size> LF <content> LF`, parsed on bytes
+ * because `size` is a byte count and a multi-byte character would desynchronise
+ * a character-indexed cursor.
+ */
+export function readBlobs(root, entries) {
+  const shas = [...new Set(entries.map((entry) => entry.sha))];
+  const text = new Map();
+  if (shas.length === 0) return text;
+
+  const batch = spawnSync('git', ['-C', root, 'cat-file', '--batch'], {
+    input: `${shas.join('\n')}\n`,
+    maxBuffer: 512 * 1024 * 1024,
+  });
+  if (batch.status !== 0) {
+    throw new Error(`advisory-ids: git cat-file failed in ${root}: ${String(batch.stderr).trim()}`);
+  }
+
+  const out = batch.stdout;
+  let at = 0;
+  while (at < out.length) {
+    const newline = out.indexOf(0x0a, at);
+    if (newline === -1) break;
+    const header = out.toString('utf8', at, newline);
+    const [sha, type, size] = header.split(' ');
+    if (type !== 'blob') {
+      throw new Error(`advisory-ids: git cat-file returned a non-blob: ${header}`);
+    }
+    const start = newline + 1;
+    const end = start + Number(size);
+    const raw = out.subarray(start, end);
+    // A blob with a NUL byte is binary; git's own heuristic, and the reason
+    // this guard has never needed a file-type list.
+    text.set(sha, raw.includes(0) ? null : raw.toString('utf8'));
+    at = end + 1;
+  }
+  return text;
 }
 
 /** Every advisory identifier in one file's text, with the line it sits on. */
@@ -197,59 +291,16 @@ export function findCitations(text, file) {
   return found;
 }
 
-/**
- * Read a tracked file as text, or null when it is not text this guard can read.
- *
- * Anything unreadable is skipped rather than raised: unlike
- * `exception-expiry.mjs`, which reads a fixed set of files that MUST be
- * readable, this walks whatever is tracked, so an unreadable entry is an
- * ordinary repository fact and not a guard that could not do its job. What
- * would make it one is reading nothing at all, and {@link scan} fails on that
- * separately.
- *
- * REGULAR FILES ONLY, and this is a fix rather than a precaution. The comment
- * that used to sit here claimed symlinks pointing outside the tree were
- * skipped, and they were not. `resolveWithin` is documented as reasoning about
- * path STRINGS and never touching the disk, so it sees a tracked symlink as an
- * ordinary name inside the root and returns it; `readFileSync` then follows the
- * link and reads whatever it points at. `git ls-files` lists tracked symlinks,
- * and a pull request may add one - so a fork could have added a link to a file
- * on the runner and had this guard read it.
- *
- * `lstat` is what tells them apart, because it does not follow the link. It is
- * the same call `exception-expiry.mjs` reaches for, in the same file, for the
- * neighbouring half of this hazard.
- */
-function readText(root, file) {
-  const resolved = resolveWithin(root, file);
-  if (resolved === null) return null;
-  let stats;
-  try {
-    stats = lstatSync(resolved);
-  } catch {
-    return null;
-  }
-  if (!stats.isFile()) return null;
-
-  let raw;
-  try {
-    raw = readFileSync(resolved);
-  } catch {
-    return null;
-  }
-  if (raw.includes(0)) return null;
-  return raw.toString('utf8');
-}
-
 /** Every citation in the tree, split into the ones to resolve and the exempt ones. */
-export function scan(root, files) {
+export function scan(root, entries) {
   const cited = [];
   const excludedByPath = [];
   const placeheld = [];
+  const blobs = readBlobs(root, entries);
 
-  for (const file of files) {
-    const text = readText(root, file);
-    if (text === null) continue;
+  for (const { file, sha } of entries) {
+    const text = blobs.get(sha);
+    if (text === undefined || text === null) continue;
     const citations = findCitations(text, file);
     if (citations.length === 0) continue;
 

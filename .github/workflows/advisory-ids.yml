@@ -82,8 +82,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The guard walks tracked files with `git ls-files`, so it needs the
-          # working tree and nothing more. No history is read.
+          # The guard reads tracked blobs through `git ls-files -s` and
+          # `git cat-file`, so a default single-commit checkout is enough - it
+          # needs the index and the objects for this commit, and no history.
           persist-credentials: false
 
       - name: Test the guard itself

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,8 +10,10 @@ import {
   EXCLUDED_PATHS,
   findCitations,
   main,
+  parseIndexRecords,
   PLACEHOLDERS,
   resolveAll,
+  readBlobs,
   resolveOne,
   scan,
   scanProblems,
@@ -34,6 +37,29 @@ function stubFetch(...outcomes) {
   };
   impl.calls = calls;
   return impl;
+}
+
+/**
+ * A real git repository, because `scan` reads blobs rather than the working
+ * tree. Building one is not ceremony: it is what makes these tests exercise the
+ * same path production does, tracked-ness included.
+ */
+function gitRepo(files, links = {}) {
+  const root = mkdtempSync(path.join(tmpdir(), 'advisory-ids-'));
+  const git = (...args) => {
+    const done = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+    assert.equal(done.status, 0, `git ${args.join(' ')}: ${done.stderr}`);
+  };
+  git('init', '-q');
+  for (const [name, body] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    writeFileSync(path.join(root, name), body);
+  }
+  for (const [name, target] of Object.entries(links)) {
+    symlinkSync(target, path.join(root, name));
+  }
+  git('add', '-A');
+  return root;
 }
 
 // ---------------------------------------------------------------- parsing
@@ -92,15 +118,18 @@ test('a GHSA id using characters GitHub does not issue is not a citation', () =>
 /**
  * A real tracked file, and both halves asserted.
  *
- * The first version of this named a path that does not exist. `readText`
- * returns null for it, `scan` skips it, and `cited.length === 0` then held for
- * a reason with nothing to do with EXCLUDED_PATHS - it passed with the list
- * emptied. Asserting what went INTO the exemption is what reads the rail; the
- * count coming back out only says the file was never opened.
+ * The first version of this named a path that does not exist. The file was
+ * skipped, and `cited.length === 0` then held for a reason with nothing to do
+ * with EXCLUDED_PATHS - it passed with the list emptied. Asserting what went
+ * INTO the exemption is what reads the rail; the count coming back out only
+ * says the file was never opened.
  */
 test('a citation in a guard test fixture is exempt by path, not resolved', () => {
   const fixture = 'scripts/ci/advisory-ids.test.mjs';
-  const scanned = scan(REPO_ROOT, [fixture]);
+  const scanned = scan(
+    REPO_ROOT,
+    trackedFiles(REPO_ROOT).filter((entry) => entry.file === fixture)
+  );
 
   assert.equal(scanned.excludedByPath.length > 0, true, `${fixture} cites no identifier`);
   assert.equal(
@@ -126,17 +155,20 @@ test('a declared placeholder is not exempt in a file it was not declared for', (
   // citation under test is one this test put there. Asserting it is absent from
   // the real `pnpm-workspace.yaml` would pass for the reason it is absent -
   // which is the whole state this is trying to distinguish from.
-  const root = mkdtempSync(path.join(tmpdir(), 'advisory-ids-'));
+  const root = gitRepo({
+    'pnpm-workspace.yaml': `  # ${example}: mysql2 override\n`,
+    'scripts/ci/advisory-ids.mjs': `// ${example} is unreal\n`,
+  });
   try {
-    mkdirSync(path.join(root, 'scripts', 'ci'), { recursive: true });
-    writeFileSync(path.join(root, 'pnpm-workspace.yaml'), `  # ${example}: mysql2 override\n`);
-    writeFileSync(
-      path.join(root, 'scripts', 'ci', 'advisory-ids.mjs'),
-      `// ${example} is unreal\n`
+    const entries = trackedFiles(root);
+    const declared = scan(
+      root,
+      entries.filter((entry) => entry.file === 'scripts/ci/advisory-ids.mjs')
     );
-
-    const declared = scan(root, ['scripts/ci/advisory-ids.mjs']);
-    const elsewhere = scan(root, ['pnpm-workspace.yaml']);
+    const elsewhere = scan(
+      root,
+      entries.filter((entry) => entry.file === 'pnpm-workspace.yaml')
+    );
 
     assert.deepEqual(
       declared.placeheld.map((citation) => citation.id),
@@ -156,7 +188,10 @@ test('a declared placeholder is not exempt in a file it was not declared for', (
 
 test('the documented placeholder is exempt by identifier', () => {
   const [id] = [...PLACEHOLDERS.keys()];
-  const scanned = scan(REPO_ROOT, ['.grype.yaml']);
+  const scanned = scan(
+    REPO_ROOT,
+    trackedFiles(REPO_ROOT).filter((entry) => entry.file === '.grype.yaml')
+  );
 
   assert.equal(
     scanned.placeheld.some((citation) => citation.id === id),
@@ -476,32 +511,100 @@ test('the identifier is percent-encoded into the registry URL', () => {
 });
 
 /**
- * A tracked symlink is listed by `git ls-files` and would be FOLLOWED by
- * `readFileSync`, so a pull request could add a link pointing at a file on the
- * runner and have this guard read it. `resolveWithin` cannot see that - it is
- * documented as reasoning about path strings and never touching the disk - so
- * the link resolves to an ordinary name inside the root and is allowed through.
+ * A tracked symlink never becomes a file this guard reads, and it is closed by
+ * construction rather than by a check somebody has to keep.
  *
- * The control matters as much as the case: the same bytes in a REGULAR file in
- * the same root are still read, so this is "does not follow links" and not
- * "stopped reading that directory".
+ * An earlier revision resolved each path and called `readFileSync`, which
+ * FOLLOWS a link - so a pull request adding a tracked link to a file on the
+ * runner would have had the guard read it. `safe-path.mjs` could not see that:
+ * it is documented as reasoning about path strings and never touching the disk,
+ * so a link is an ordinary name inside the root to it.
+ *
+ * Two independent things stop it now, and both are asserted. `trackedFiles`
+ * drops mode 120000; and even reaching the blob could not disclose anything,
+ * because a symlink's blob is the target PATH rather than the target's
+ * contents.
+ *
+ * The control matters as much as the case: a regular file in the same repo is
+ * still read, so this is "does not follow links" and not "stopped reading".
  */
-test('a tracked symlink is not followed out of the tree', () => {
+test('a tracked symlink is never read, by mode and by blob', () => {
   const outside = mkdtempSync(path.join(tmpdir(), 'advisory-outside-'));
-  const root = mkdtempSync(path.join(tmpdir(), 'advisory-root-'));
   try {
     const outsideFile = path.join(outside, 'outside.txt');
     writeFileSync(outsideFile, 'GHSA-3f6p-5ww8-9rcr\n');
-    symlinkSync(outsideFile, path.join(root, 'link.txt'));
-    writeFileSync(path.join(root, 'plain.txt'), 'GHSA-3f6p-5ww8-9rcr\n');
+    const root = gitRepo({ 'plain.txt': 'GHSA-3f6p-5ww8-9rcr\n' }, { 'link.txt': outsideFile });
+    try {
+      const entries = trackedFiles(root);
 
-    const viaLink = scan(root, ['link.txt']);
-    const viaFile = scan(root, ['plain.txt']);
+      assert.deepEqual(
+        entries.map((entry) => entry.file),
+        ['plain.txt'],
+        'the symlink was not dropped by mode'
+      );
 
-    assert.deepEqual(viaLink.cited, [], 'the guard followed a symlink out of the tree');
-    assert.equal(viaFile.cited.length, 1);
+      const listed = spawnSync('git', ['-C', root, 'ls-files', '-s', '-z'], { encoding: 'utf8' });
+      const linkSha = /(?<sha>[0-9a-f]{40,64}) \d\tlink\.txt/u.exec(listed.stdout)?.groups?.sha;
+      assert.equal(typeof linkSha, 'string', 'the symlink is not tracked, so this reads nothing');
+
+      const blob = readBlobs(root, [{ file: 'link.txt', sha: linkSha }]).get(linkSha);
+      assert.equal(blob, outsideFile);
+      assert.equal(blob.includes('GHSA-'), false);
+
+      assert.equal(scan(root, entries).cited.length, 1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   } finally {
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+// ------------------------------------------------- reading the tree from git
+
+test('an index record git could not have produced is refused, not skipped', () => {
+  const sha = 'a'.repeat(40);
+  const good = `100644 ${sha} 0\tkept.md\0`;
+
+  assert.deepEqual(parseIndexRecords(good), [{ file: 'kept.md', sha }]);
+  assert.throws(
+    () => parseIndexRecords(`${good}not-an-index-record\0`),
+    /cannot parse a git ls-files record/u
+  );
+});
+
+test('a submodule is dropped by mode, like a symlink', () => {
+  const sha = 'b'.repeat(40);
+
+  assert.deepEqual(parseIndexRecords(`160000 ${sha} 0\tvendor\0`), []);
+  assert.deepEqual(parseIndexRecords(`120000 ${sha} 0\tlink\0`), []);
+  assert.equal(parseIndexRecords(`100755 ${sha} 0\trun.sh\0`).length, 1);
+});
+
+/**
+ * `cat-file --batch` answers `<sha> missing` for an object it does not have,
+ * and that line carries no size. Read as a blob it gives `Number(undefined)` -
+ * NaN - which walks the cursor off the end and returns fewer blobs than were
+ * asked for: files stop being scanned and nothing says so.
+ */
+test('a sha the object store does not have is refused', () => {
+  const root = gitRepo({ 'plain.txt': 'GHSA-3f6p-5ww8-9rcr\n' });
+  try {
+    assert.throws(() => readBlobs(root, [{ file: 'gone.txt', sha: 'c'.repeat(40) }]), /non-blob/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A blob with a NUL byte is binary; git's own heuristic, and not scanned. */
+test('a binary blob is not scanned for identifiers', () => {
+  const root = gitRepo({ 'blob.bin': `GHSA-3f6p-5ww8-9rcr\0\n` });
+  try {
+    const entries = trackedFiles(root);
+
+    assert.equal(entries.length, 1, 'the fixture is not tracked, so this reads nothing');
+    assert.deepEqual(scan(root, entries).cited, []);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });

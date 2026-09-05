@@ -14,12 +14,14 @@ import { SYSTEMS } from './systems.js';
 
 const PATIENT = '0192f1a0-0000-7000-8000-0000000000p1';
 const AUTHOR = '0192f1a0-0000-7000-8000-0000000000u1';
-const PLAN = '0192f1a0-0000-7000-8000-0000000000c1';
 
 const A1C: DomainGoal = {
   id: '0192f1a0-0000-7000-8000-0000000000g1',
   patientId: PATIENT,
-  carePlanId: PLAN,
+  // A domain field with no conformant home on the FHIR Goal: the plan-goal
+  // link is CarePlan.goal, not Goal.addresses. Kept here so the round trip is
+  // honest that it does not survive, rather than hidden by dropping it.
+  carePlanId: '0192f1a0-0000-7000-8000-0000000000c1',
   lifecycleStatus: 'ACTIVE',
   achievementStatus: 'IMPROVING',
   priority: 'HIGH',
@@ -187,8 +189,13 @@ describe('toFhirGoal', () => {
 });
 
 describe('round trip', () => {
-  it('returns every field of a single-value goal', () => {
-    expect(fromFhirGoal(toFhirGoal(A1C))).toEqual(A1C);
+  it('returns every field of a single-value goal, except the domain-only carePlanId', () => {
+    // carePlanId has no conformant place on a FHIR Goal (the link is
+    // CarePlan.goal), so it is not projected and cannot come back. Everything
+    // else round-trips; this names the one field that does not.
+    // toEqual treats an undefined property as absent, so this asserts every
+    // field survives except carePlanId, which the FHIR Goal has no home for.
+    expect(fromFhirGoal(toFhirGoal(A1C))).toEqual({ ...A1C, carePlanId: undefined });
   });
 
   it('returns every field of a range goal', () => {
@@ -283,12 +290,11 @@ describe('fromFhirGoal, on input it did not write', () => {
     );
   });
 
-  it('ignores an address that is not a care plan', () => {
-    /* `addresses` points at whatever the goal is about, most often a Condition.
-       Read as a care plan id it would produce a foreign key to a row that does
-       not exist. */
-    expect(
-      fromFhirGoal(foreign({ addresses: [{ reference: 'Condition/c-1' }] })).carePlanId
-    ).toBeUndefined();
+  it('emits no addresses, because a CarePlan is not a thing a goal addresses', () => {
+    /* FHIR R4 restricts Goal.addresses to clinical concerns (Condition,
+       Observation, and the like); a CarePlan is not one, and the care-plan link
+       is CarePlan.goal. So the projection carries no addresses at all rather
+       than a reference a validator rejects. */
+    expect(toFhirGoal(A1C).addresses).toBeUndefined();
   });
 });

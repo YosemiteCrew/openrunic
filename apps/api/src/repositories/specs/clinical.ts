@@ -1784,12 +1784,30 @@ export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalLis
      nobody has committed to a date for, and burying it at the end of the list
      is how it stays undated. */
   sortValue(row: ScopedRow<'Goal'>, sort: GoalListQuery['sort']): number {
-    return sort === 'dueDate' ? (row.dueDate?.getTime() ?? 0) : row.createdAt.getTime();
+    /* An absent due date sorts first ascending, last descending, and the
+       sentinel is -Infinity rather than 0 so it beats even a real date before
+       1970 (whose getTime is negative). Zero collided with those, and the two
+       ports then disagreed for a goal dated before the epoch; -Infinity matches
+       the Prisma `nulls: 'first'` placement for every real date. */
+    if (sort !== 'dueDate') return row.createdAt.getTime();
+    return row.dueDate?.getTime() ?? Number.NEGATIVE_INFINITY;
   },
 
   orderBy(query: GoalListQuery) {
     const { order } = query;
-    if (query.sort === 'dueDate') return [{ dueDate: order }, { id: 'asc' as const }];
+    if (query.sort === 'dueDate') {
+      /* Null placement, made explicit. The memory port sorts an absent due date
+         with a -Infinity sentinel, so an undated goal comes first ascending and last
+         descending. Postgres does the opposite by default (nulls last on asc,
+         first on desc), so the two ports disagreed the moment a dated and an
+         undated goal shared a page. `nulls` pins Prisma to the memory port's
+         answer, which is the declared one: no due date is the most urgent thing
+         on the list ascending, and drops to the bottom descending. */
+      return [
+        { dueDate: { sort: order, nulls: order === 'asc' ? 'first' : ('last' as const) } },
+        { id: 'asc' as const },
+      ];
+    }
     return [{ createdAt: order }, { id: 'asc' as const }];
   },
 };

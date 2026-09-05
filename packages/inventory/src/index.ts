@@ -30,6 +30,7 @@ export {
   isStockPrecision,
   MAX_STOCK_QUANTITY,
   toStockPrecision,
+  sumQuantities,
   usableBalance,
   type CountVariance,
   type InboundKind,

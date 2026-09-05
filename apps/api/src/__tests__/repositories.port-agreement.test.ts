@@ -541,6 +541,10 @@ const FILTERS: {
     page: 1,
     pageSize: 25,
     patientId: 'id-patientId',
+    // Compatible with `patientId` on purpose, per the note above: a named chart
+    // is a charted posting, so the pair intersects and is actually exercised.
+    // The conflicting case is generated from it rather than written here.
+    charted: true,
     sort: 'occurredOn',
     order: 'asc',
     facilityId: 'id-facilityId',
@@ -669,7 +673,24 @@ function satisfy(where: Readonly<Record<string, unknown>>): Record<string, unkno
   // would produce a row satisfying the branch and not the clause above it.
   for (const [key, clause] of Object.entries(where)) {
     if (key === 'AND') {
-      for (const inner of asArray(clause)) Object.assign(row, satisfy(inner as never));
+      for (const inner of asArray(clause)) {
+        for (const [column, value] of Object.entries(satisfy(inner as never))) {
+          /*
+           * The rule stated below for disjunctions, which applies to
+           * conjunctions for the same reason and did not used to.
+           *
+           * Two clauses under one `AND` may name one column - an equality and a
+           * `not: null` over a nullable column is how a filter says "this chart"
+           * alongside "any chart at all" - and `Object.assign` kept the later,
+           * producing a row that satisfies the second clause and not the first.
+           * A conjunction has to satisfy both, so a column an earlier clause has
+           * already pinned keeps its value whenever that value also satisfies
+           * this one.
+           */
+          if (column in row && matchesWhere(row, inner)) continue;
+          row[column] = value;
+        }
+      }
       continue;
     }
     if (key === 'OR' || key === 'NOT') continue;

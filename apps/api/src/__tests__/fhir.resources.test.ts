@@ -2984,6 +2984,13 @@ describe('a patient reading their own MedicationDispense', () => {
   const OWN_POSTING = testId(6101);
   const OTHER_POSTING = testId(6102);
   const RECEIPT_POSTING = testId(6103);
+  /*
+   * A dispense that belongs to no chart: a dose drawn against ward stock rather
+   * than against a person. `StockPosting.patientId` is nullable and nothing
+   * requires a chart when `kind` is DISPENSE, so this row is representable and
+   * it is the one `kind: 'DISPENSE'` alone does not exclude.
+   */
+  const WARD_POSTING = testId(6106);
   const ITEM = testId(6110);
   const LOT = testId(6111);
 
@@ -3078,6 +3085,8 @@ describe('a patient reading their own MedicationDispense', () => {
     // A delivery booked in. It belongs to no chart, and it is what a patient
     // must never reach through this route: it says what the practice stocks.
     seedDispense(dataset, RECEIPT_POSTING, null, 'RECEIPT');
+    // And a dispense with no chart, which `kind` does not exclude.
+    seedDispense(dataset, WARD_POSTING, null);
     return made;
   }
 
@@ -3174,6 +3183,74 @@ describe('a patient reading their own MedicationDispense', () => {
       });
       expect(res.status, `${token} reading a receipt`).toBe(404);
     }
+  });
+
+  it('leaves an uncharted dispense out of the bundle, for staff as well as the portal', async () => {
+    /*
+     * The two doors, made to agree.
+     *
+     * `findById` narrows on `kind === 'DISPENSE' && patientId !== null`;
+     * `toQuery` narrowed on `kind` alone. `patientId` is nullable, so a dispense
+     * drawn against ward stock satisfies the second and not the first, and the
+     * same record answered 404 by id while appearing in the search.
+     *
+     * Both tokens are asserted because only the pair says which control did the
+     * work. The portal was never served this row - the compartment is an
+     * equality on `patientId` and null equals nothing - so the portal assertion
+     * would pass with the module unchanged. The staff assertion is the one that
+     * fails without the filter, because a staff bundle has no compartment
+     * underneath it to fall back on.
+     */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.clinicianA, TOKENS.portalA]) {
+      const res = await app.request('/fhir/MedicationDispense', { headers: bearer(token) });
+
+      expect(res.status, `${token} searching`).toBe(200);
+      const ids = ((await res.json()) as Bundle).entry?.map(
+        (entry) => (entry.resource as { id?: string }).id
+      );
+      expect(ids ?? [], `${token} must not be served an uncharted dispense`).not.toContain(
+        WARD_POSTING
+      );
+    }
+  });
+
+  it('still answers 404 for that same posting by id', async () => {
+    /* Unchanged, and asserted alongside the search so the pair is visibly the
+       same rule rather than two rules that happen to agree today. */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.portalA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${WARD_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading an uncharted dispense`).toBe(404);
+    }
+  });
+
+  it('still serves the charted dispenses through both doors', async () => {
+    /*
+     * The control, and it is the assertion that stops the filter being
+     * satisfied by a route that returns nothing. A `charted` filter inverted,
+     * or applied to the wrong column, empties the bundle - which every
+     * assertion above would report as success.
+     */
+    const { app } = world();
+
+    const search = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(search.status).toBe(200);
+    const ids = ((await search.json()) as Bundle).entry?.map(
+      (entry) => (entry.resource as { id?: string }).id
+    );
+    expect(ids).toEqual(expect.arrayContaining([OWN_POSTING, OTHER_POSTING]));
+
+    const read = await app.request(`/fhir/MedicationDispense/${OWN_POSTING}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(read.status).toBe(200);
   });
 
   it('is gated on a permission the portal bundle actually holds', () => {

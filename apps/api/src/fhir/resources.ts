@@ -671,10 +671,28 @@ const medicationDispenseModule = defineFhirResource({
       },
     };
   },
+  /*
+   * `charted: true` is the search half of the narrowing `findById` above
+   * applies, and it is here because the two doors disagreed.
+   *
+   * `kind: 'DISPENSE'` does not imply a chart. `StockPosting.patientId` is
+   * nullable and a dispense drawn against ward stock rather than against a
+   * person carries null, so such a row answered 404 by id and appeared in the
+   * bundle - the same resource, present through one door and absent through the
+   * other. The disclosure is small, an item and a lot and a quantity, but a
+   * resource whose read and search narrow differently is the shape that becomes
+   * a leak the next time either is widened, and the promotion review already
+   * found one instance of exactly that.
+   *
+   * A patient-scoped token was never served these rows: the compartment is an
+   * equality on `patientId` and null equals nothing. This closes the door for
+   * the staff bundles, which have no compartment to fall back on.
+   */
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...patientFilter(query.patient),
     kind: 'DISPENSE' as const,
+    charted: true as const,
     sort: 'occurredOn' as const,
     order: 'desc' as const,
   }),

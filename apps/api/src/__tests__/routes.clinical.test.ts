@@ -1665,9 +1665,6 @@ describe('the prescription state machine', () => {
     ['PENDED', 'sign', 200],
     ['SIGNED', 'sign', 409],
     ['CANCELLED', 'sign', 409],
-    ['SIGNED', 'transmit', 200],
-    ['DRAFT', 'transmit', 409],
-    ['TRANSMITTED', 'transmit', 409],
     ['DRAFT', 'cancel', 200],
     ['SIGNED', 'cancel', 200],
     ['TRANSMITTED', 'cancel', 200],
@@ -1690,16 +1687,13 @@ describe('the prescription state machine', () => {
     }
   });
 
-  it('stamps the moment a prescription left for the pharmacy', async () => {
-    const { app, dataset } = createTestApp();
-    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
-    seed(dataset, 'MedicationRequest', makePrescriptionRow({ status: 'SIGNED' }));
-
-    const body = (await (await move(app, url('transmit'))).json()) as PrescriptionDto;
-
-    expect(body.status).toBe('TRANSMITTED');
-    expect(body.transmittedAt).toMatch(/T.*Z$/);
-  });
+  /*
+   * Transmitting is not a local move and is not in the table above. It resolves
+   * a prescribing network, sends, and records only what the network confirmed -
+   * so every case for it needs an adapter and lives in
+   * `routes.prescription-transmit.test.ts`, including the two transition
+   * refusals that used to sit in the table.
+   */
 
   it('leaves the transmission stamp alone once it is set', async () => {
     const { app, dataset } = createTestApp();

@@ -44,7 +44,7 @@ export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
 
   router.route('/', patientRoutes());
   router.route('/', appointmentRoutes());
-  router.route('/', clinicalRoutes());
+  router.route('/', clinicalRoutes(options.adapters));
   router.route('/', orderRoutes());
   router.route('/', financialRoutes());
   router.route('/', inventoryRoutes());

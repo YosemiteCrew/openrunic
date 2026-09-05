@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 // Security-exception expiry guard.
 //
-// Three files in this repository accept a security finding rather than fixing
-// it: `.grype.yaml` (dependency and container vulnerabilities), `.trivyignore`
-// (infrastructure misconfiguration), and `.secretlintignore.ci` where one is
-// used. Each of their headers demands the same three things of an entry - a
-// reason, an owner, and a date it must be looked at again - and says, in the
-// Trivy file's words, that an exception without all three "is not an exception,
-// it is a hole".
+// Some files in this repository accept a security finding rather than fixing
+// it. SOURCES below is that list, and it is the ONLY list. Restating it here
+// too is how this comment came to name `.secretlintignore.ci`, which carries
+// build-artifact globs and has never held a dated exception in any commit,
+// while omitting `.grant.yaml`, which does hold them. One fact, two spellings,
+// wrong in both directions, in the guard whose whole subject is a claim that
+// nothing keeps true.
+//
+// Each file in SOURCES demands the same three things of an entry - a reason, an
+// owner, and a date it must be looked at again - and says, in the Trivy file's
+// words, that an exception without all three "is not an exception, it is a
+// hole".
 //
 // Until this script existed, the date was the part nothing checked. An accepted
 // finding therefore stayed accepted forever: the comment said November, nobody

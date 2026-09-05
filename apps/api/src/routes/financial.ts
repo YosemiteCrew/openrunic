@@ -700,7 +700,17 @@ function transitionRoutes(): Hono<AppEnv> {
   router.post('/coverage/:id/eligibility', requirePermission('coverage.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, eligibilityCheckSchema);
-    const row = required(await repositories(c).coverages.findById(id), MISSING_COVERAGE);
+    // A POST that READS: it computes a determination and returns it with no
+    // update, under `coverage.read`. It still hands back the payer, the plan
+    // and whether the policy answers for a date - which is a chart read however
+    // the verb is spelt, and a frame keyed on writes cannot see it. Raised in
+    // review (#322).
+    const row = await requiredParentChart(
+      c,
+      'coverages',
+      await repositories(c).coverages.findById(id),
+      MISSING_COVERAGE
+    );
 
     if (row.status === 'ENTERED_IN_ERROR') {
       // A record that should not exist cannot support a determination, and

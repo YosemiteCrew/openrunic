@@ -3292,8 +3292,16 @@ describe('collections and dunning', () => {
    ------------------------------- (#322) */
 
 /**
- * Every route in this file that reads a chart-bearing parent by id and writes
- * to it.
+ * Every route in this file that reads a chart-bearing parent by id, whatever it
+ * then does with it.
+ *
+ * The frame said "and WRITES to it" and that sentence is what missed
+ * `POST /coverage/{id}/eligibility` - a POST that READS, computing a
+ * determination and returning it with no update, under `coverage.read`. It
+ * hands back the payer, the plan and whether the policy answers for a date,
+ * which is a chart read however the verb is spelt. Raised in review, and the
+ * frame is corrected here rather than the one route added quietly, because the
+ * sentence is what will decide the next file.
  *
  * They are registered by hand rather than generated, so the CRUD seam's chart
  * gate does not run on them. Driven on `dev` before the fix, as `billerA` with
@@ -3381,6 +3389,13 @@ describe('a financial write on a chart is not a way round the gate', () => {
           makePaymentRow({ id: testId(4_022), patientId: STRANGER_CHART, status: 'POSTED' })
         ),
       path: `/bff/v0/payments/${testId(4_022)}/refund`,
+    },
+    {
+      door: 'POST /coverage/:id/eligibility',
+      seedIt: (d) =>
+        seed(d, 'Coverage', makeCoverageRow({ id: testId(4_050), patientId: STRANGER_CHART })),
+      path: `/bff/v0/coverage/${testId(4_050)}/eligibility`,
+      body: { serviceDate: '2026-08-01' },
     },
     {
       door: 'POST /charges/:id/void',

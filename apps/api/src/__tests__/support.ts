@@ -41,6 +41,8 @@ export const TOKENS = {
   clinicianB: 'dev-clinician-b',
   /** A portal login, pinned to one chart by its launch context. */
   portalA: 'dev-portal-a',
+  /** A patient principal with no launch context, so no compartment is pinned. */
+  portalNoCompartmentA: 'test-portal-no-compartment',
   adminA: 'test-admin-a',
   /** A second administrator in the same organisation as `adminA`. */
   secondAdminA: 'test-second-admin-a',

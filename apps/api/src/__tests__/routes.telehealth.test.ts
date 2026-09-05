@@ -391,6 +391,17 @@ describe('a portal token and the telehealth routes', () => {
     expect(res.status).toBe(403);
   });
 
+  it('refuses a patient actor even with no compartment on the token', async () => {
+    // The OIDC shape Codex flagged: actor_type patient, no launch context, so no
+    // compartmentPatientId. It must be refused on the actor type, not just the
+    // compartment it happens not to carry.
+    const { app } = createTestApp({ adapters: new AdapterRegistry() });
+    const list = await app.request('/bff/v0/telehealth?status=OPEN', {
+      headers: bearer(TOKENS.portalNoCompartmentA),
+    });
+    expect(list.status).toBe(403);
+  });
+
   it('still lets staff see the whole table', async () => {
     const { app, dataset } = createTestApp({ adapters: new AdapterRegistry() });
     const appt = testId(74112);

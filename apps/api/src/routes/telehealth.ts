@@ -99,7 +99,14 @@ function videoAdapter(registry: AdapterRegistry) {
  * first, before it reads the appointment or the visit table.
  */
 function assertStaff(c: Context<AppEnv>): void {
-  if (c.get('principal')?.compartmentPatientId !== undefined) {
+  const principal = c.get('principal');
+  // Two ways a patient reaches here, and both are refused. A portal token bound
+  // to a chart carries `compartmentPatientId`. A patient principal issued
+  // without a patient scope carries none - the compartment is omitted - and
+  // would read as staff on the compartment check alone, so the actor type is
+  // checked too. `service` is left through: a trusted integration is not a
+  // patient, and telehealth rooms are opened by machines as well as people.
+  if (principal?.compartmentPatientId !== undefined || principal?.actorType === 'patient') {
     throw ApiError.forbidden('Telehealth rooms are managed by staff.');
   }
 }

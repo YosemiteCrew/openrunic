@@ -10,6 +10,7 @@ import {
   lookup,
   plural,
   staleKeys,
+  verbatim,
   type Catalogue,
 } from './index.js';
 
@@ -109,6 +110,37 @@ describe('measuring coverage', () => {
     };
 
     expect(staleKeys(renamed, 'es')).toEqual(['patient.fullName']);
+  });
+});
+
+/**
+ * The two kinds of number, and the rule that tells them apart: localise what is
+ * measured, render verbatim what is matched.
+ */
+describe('verbatim', () => {
+  it('renders a number the reader will compare exactly as it is stored', () => {
+    // The whole reason it is not formatCount. A form version, an audit sequence
+    // number or a claim number is read back, pasted and searched for, so a
+    // locale that regroups the digits has changed the identity rather than the
+    // presentation.
+    //
+    // English is the shorter demonstration and Spanish is the one that shows it
+    // is not about the separator: `es` carries minimumGroupingDigits 2, so it
+    // leaves four digits alone and groups from five. A worked example at 1234
+    // shows nothing in `es` at all, which is worth knowing before quoting one.
+    expect(formatCount(1234, 'en')).toBe('1,234');
+    expect(formatCount(12345, 'es')).toBe('12.345');
+    expect(verbatim(1234)).toBe('1234');
+    expect(verbatim(12345)).toBe('12345');
+  });
+
+  it('passes a string through untouched', () => {
+    expect(verbatim('MRN-000123')).toBe('MRN-000123');
+  });
+
+  it('refuses a number that is not finite', () => {
+    expect(() => verbatim(Number.NaN)).toThrow(/finite number/u);
+    expect(() => verbatim(Number.POSITIVE_INFINITY)).toThrow(/finite number/u);
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { formatCount } from '@openrunic/i18n';
+import { formatCount, verbatim } from '@openrunic/i18n';
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -202,7 +202,9 @@ function auditRow(
     purpose: purposeCell(t, event),
     open: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(event.id)}>
-        {t('admin.audit.openEvent', { sequence: event.sequence })}
+        {/* The sequence number is the handle somebody quotes back when they
+            ask about an event, so it is rendered as it is stored. */}
+        {t('admin.audit.openEvent', { sequence: verbatim(event.sequence) })}
       </Button>
     ),
   };

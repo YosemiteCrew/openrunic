@@ -4,6 +4,16 @@
 
 Accepted
 
+Amended 2026-09-05, in the Decision's naming of the ORM's major version only. The text below says
+"managed by Prisma 6"; `packages/database` has been on Prisma 7 since the major-upgrade sweep, and
+this repository now pins `@prisma/client` at `^7.9.1`. The decision itself is unchanged - a
+relational PostgreSQL schema managed by Prisma, with FHIR R4 serialized at the API boundary - and
+the version it named was incidental to it.
+
+Recorded here rather than by editing the Decision, per `docs/adr/README.md`: an accepted ADR is not
+rewritten. A reader checking whether the architecture still holds needs the decision as it was made
+and the one fact about it that has since moved, and cannot get the second from a silent edit.
+
 ## Date
 
 2026-08-12

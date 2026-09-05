@@ -10,6 +10,7 @@ import {
   EXCLUDED_PATHS,
   findCitations,
   main,
+  parseBatch,
   parseIndexRecords,
   PLACEHOLDERS,
   resolveAll,
@@ -103,13 +104,31 @@ test('finds every identifier on a line, not just the first', () => {
 });
 
 /**
- * The alphabet is the issuing authority's, so a transcription inventing a
- * character outside it never reaches the network. This is the only class of
- * wrong identifier a pattern CAN catch, which is the reason the rest of this
- * guard is a resolution.
+ * The founding defect respelt carelessly, and the reason `pattern` is wider
+ * than the alphabet.
+ *
+ * Recognising only well-formed identifiers reads as the tighter choice and is
+ * the opposite: an unrecognised string is not a citation, so it is never
+ * resolved, never reported and never counted. Only eleven of twenty-six letters
+ * are in the issuing alphabet, so an invented identifier is likelier to fall
+ * outside it than inside - which made the guard catch the hard case and miss
+ * the easy one. Measured before this changed: the mysql2 justification respelt
+ * with vowels scanned exit 0, sixteen citations became fifteen, and nothing
+ * read that number.
  */
-test('a GHSA id using characters GitHub does not issue is not a citation', () => {
-  assert.deepEqual(findCitations('GHSA-a0b1-i8l0-uuuu', 'notes.md'), []);
+test('an identifier spelt outside the issuing alphabet is still a citation', () => {
+  const found = findCitations('# GHSA-abcd-efgh-ijkl: mysql2 downgrade', 'pnpm-workspace.yaml');
+
+  assert.deepEqual(
+    found.map((citation) => citation.id),
+    ['GHSA-abcd-efgh-ijkl'],
+    'a fabrication outside the alphabet reads as a silence rather than a finding'
+  );
+});
+
+/** The shape still has to be a shape: three segments of four, and a real CVE. */
+test('a string that is not an identifier shape is not a citation', () => {
+  assert.deepEqual(findCitations('GHSA-abc-efgh-ijkl', 'notes.md'), []);
   assert.deepEqual(findCitations('CVE-2025-123', 'notes.md'), []);
 });
 
@@ -392,6 +411,29 @@ test('a missing identifier is exit 1 and names where it is cited', async () => {
   assert.match(output, /pnpm-workspace\.yaml:\d+/u);
 });
 
+/**
+ * The two ways to be missing are not the same sentence, and the report has to
+ * say which one it is.
+ *
+ * A 404 was asked and answered. A spelling outside the issuing alphabet was
+ * never asked at all, and printing "not found in the registry" over it would be
+ * this guard asserting a lookup that never happened - the exact move it exists
+ * to catch in a comment.
+ */
+test('a verdict reached without asking does not claim the registry was asked', async () => {
+  const { code, output } = await run((id) =>
+    Promise.resolve(
+      id.startsWith('GHSA')
+        ? { id, state: 'missing', registry: 'somewhere', detail: 'never asked for' }
+        : { id, state: 'exists' }
+    )
+  );
+
+  assert.equal(code, 1);
+  assert.match(output, /never asked for/u);
+  assert.equal(output.includes('not found in somewhere'), false);
+});
+
 test('a registry that could not be reached is exit 2, not a pass', async () => {
   const { code, output } = await run((id) =>
     Promise.resolve({ id, state: 'unavailable', detail: 'HTTP 503' })
@@ -485,8 +527,8 @@ test('an identifier that does not match its scheme is never requested', async ()
   const impl = stubFetch(status(200));
   const result = await resolveOne('GHSA-3f6p-5ww8-9rcr/../../users', 'ghsa', impl);
 
-  assert.equal(result.state, 'unavailable');
-  assert.match(result.detail, /not a well-formed ghsa identifier/u);
+  assert.equal(result.state, 'missing');
+  assert.match(result.detail, /never asked for/u);
   assert.equal(impl.calls.length, 0, 'the registry was asked about a malformed identifier');
 });
 
@@ -495,8 +537,66 @@ test('a string that merely contains a valid identifier is refused', async () => 
   const impl = stubFetch(status(200));
   const result = await resolveOne('see GHSA-3f6p-5ww8-9rcr for detail', 'ghsa', impl);
 
-  assert.equal(result.state, 'unavailable');
+  assert.equal(result.state, 'missing');
   assert.equal(impl.calls.length, 0);
+});
+
+/**
+ * `missing`, not `unavailable`, and the distinction is the exit code.
+ *
+ * `unavailable` is exit 2 and means the guard did not run - a rate limit, a
+ * timeout, a 502. A spelling the register could never have issued needs no
+ * request to be decided, so it is an answer, and spending exit 2 on it would
+ * make the one code that means "do not trust this run" ambiguous.
+ */
+test('a spelling the register could not have issued is missing, not unavailable', async () => {
+  const impl = stubFetch(status(200));
+  const result = await resolveOne('GHSA-abcd-efgh-ijkl', 'ghsa', impl);
+
+  assert.equal(result.state, 'missing');
+  assert.equal(impl.calls.length, 0, 'a decided answer does not need the network');
+  assert.equal(
+    result.registry,
+    'the GitHub advisory database',
+    'the reader has to be told who would have issued it'
+  );
+});
+
+/**
+ * The alphabet is twenty characters and `8` is one of them.
+ *
+ * This exists because the comment describing it was wrong - it said base32
+ * without `0`, `1`, `8` or `l` - and five of the seven GHSA citations in this
+ * tree contain an `8`. Narrowing the set to agree with that sentence takes the
+ * guard to exit 1 on identifiers that are real. A comment cannot hold this;
+ * only a test that spends a real id with an `8` in it can.
+ */
+test('an identifier containing 8 is well formed and is asked for', async () => {
+  const impl = stubFetch(status(200));
+  const result = await resolveOne('GHSA-ggr8-5vv4-36mx', 'ghsa', impl);
+
+  assert.equal(result.state, 'exists');
+  assert.equal(
+    impl.calls.length,
+    1,
+    '8 was dropped from the alphabet: a real id reads as invented'
+  );
+});
+
+/**
+ * The register is case-insensitive, so the alphabet has to be.
+ *
+ * Checked against the registry rather than assumed: the advisories API returns
+ * 200 for an identifier spelt in upper case. Applying the alphabet
+ * case-sensitively would report a correct citation as one the register could
+ * not have issued, which is this guard's own false red.
+ */
+test('an identifier spelt in upper case is well formed', async () => {
+  const impl = stubFetch(status(200));
+  const result = await resolveOne('GHSA-3F6P-5WW8-9RCR', 'ghsa', impl);
+
+  assert.equal(result.state, 'exists');
+  assert.equal(impl.calls.length, 1, 'a legitimate upper-case citation was condemned unasked');
 });
 
 /** Defence in depth behind the anchor: nothing unencoded reaches the path. */
@@ -594,6 +694,25 @@ test('a sha the object store does not have is refused', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+/**
+ * Fewer blobs back than shas asked for is a refusal, not a shortfall nobody
+ * counts.
+ *
+ * `scan` reads this map with `get`, and an absent key and a `null` value arrive
+ * there identically - except `null` is a decision (binary, skip it) and absent
+ * means a tracked file silently stopped being scanned. The stream is the only
+ * way to reach it, so the parse is exercised directly rather than through
+ * `git`, which cannot produce a truncated one without also failing.
+ */
+test('a truncated cat-file stream is refused, not read short', () => {
+  const whole = Buffer.from('aaaa blob 4\nabcd\n');
+  const shas = ['aaaa', 'bbbb'];
+
+  assert.equal(parseBatch(whole, ['aaaa']).get('aaaa'), 'abcd', 'the fixture parses at all');
+  assert.throws(() => parseBatch(whole, shas), /returned 1 of 2 blobs/u);
+  assert.throws(() => parseBatch(Buffer.from('aaaa blob 4'), ['aaaa']), /returned 0 of 1 blobs/u);
 });
 
 /** A blob with a NUL byte is binary; git's own heuristic, and not scanned. */

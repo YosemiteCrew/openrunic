@@ -22,12 +22,23 @@
 // WHY A REGEX CANNOT DO THIS
 //
 // `GHSA-r8f6-24hv-cj3g` passes every shape check that could be written for it:
-// right prefix, right segment lengths, and every character inside the base32
-// alphabet GitHub actually issues from. Nothing separates a fabricated
-// identifier from a real one except asking the registry. So this guard is a
-// resolution, not a pattern - and that is why it needs the network, and why
-// "the registry was unreachable" has to be a distinct outcome rather than a
-// pass.
+// right prefix, right segment lengths, and every character inside the alphabet
+// GitHub actually issues from. Nothing separates a fabricated identifier from a
+// real one except asking the registry. So this guard is a resolution, not a
+// pattern - and that is why it needs the network, and why "the registry was
+// unreachable" has to be a distinct outcome rather than a pass.
+//
+// WHICH IS WHY THE PATTERN MATCHES MORE THAN THE ALPHABET
+//
+// Recognising only well-formed identifiers looks tighter and is the opposite. A
+// careless fabrication is far likelier to fall OUTSIDE the issuing alphabet
+// than inside it - segments spelt `abcd`, `efgh`, `ijkl` are vowels and are not
+// identifiers GitHub could ever have issued - and an unrecognised string is not
+// a citation at all: never resolved, never reported, never counted. The founding
+// defect was in the alphabet, which is the hard case, not the representative
+// one. So `pattern` matches the shape a READER sees and `wellFormed` decides,
+// which turns a fabrication outside the alphabet into a named failure rather
+// than a silence.
 //
 // WHERE IT LOOKS
 //
@@ -64,27 +75,45 @@ import process from 'node:process';
  * CVE can be entirely real and absent from it. `CVE-2025-60876` in busybox and
  * `CVE-2026-14456` in openssl are both in this tree and both are that shape.
  *
- * `pattern` is deliberately the issuing authority's own alphabet. GHSA ids are
- * base32 without the vowels and without `0`, `1`, `8` or `l`, so a
- * transcription that invents a character outside it is caught by the parse
- * rather than by a request.
+ * Two regexes per scheme, and the split is load-bearing.
+ *
+ * `pattern` is the shape a reader sees, so anything written where an identifier
+ * belongs is recognised as one. `wellFormed` is the issuing authority's own
+ * alphabet, so a spelling that authority could never have issued is decided
+ * without a request - see {@link resolveOne}, where it resolves to `missing`
+ * rather than to `unavailable`, because it is an answer and not an outage.
+ *
+ * GHSA identifiers use twenty characters: the digits `2` to `9` and the twelve
+ * letters `cfghjmpqrvwx`. It is not base32 and `8` is in it - five of the seven
+ * GHSA citations in this tree carry one, as does the worked example above.
+ * Nothing here may narrow that set from memory; the test that pins `8` is what
+ * says so, and a comment could not.
+ *
+ * `wellFormed` is case-insensitive because the register is: the advisories API
+ * returns 200 for an identifier spelt in upper case. Applying the alphabet
+ * case-sensitively would condemn a correct citation, which is this guard's own
+ * false red rather than the defect it is looking for.
  */
 export const SCHEMES = [
   {
     kind: 'ghsa',
-    pattern: /GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}/gu,
+    pattern: /GHSA-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}/gu,
+    wellFormed:
+      /^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/iu,
     url: (id) => `https://api.github.com/advisories/${encodeURIComponent(id)}`,
     registry: 'the GitHub advisory database',
   },
   {
     kind: 'cve',
     pattern: /CVE-\d{4}-\d{4,}/gu,
+    wellFormed: /^CVE-\d{4}-\d{4,}$/u,
     url: (id) => `https://cveawg.mitre.org/api/cve/${encodeURIComponent(id)}`,
     registry: 'the CVE Program record service',
   },
   {
     kind: 'go',
     pattern: /GO-\d{4}-\d+/gu,
+    wellFormed: /^GO-\d{4}-\d+$/u,
     url: (id) => `https://vuln.go.dev/ID/${encodeURIComponent(id)}.json`,
     registry: 'the Go vulnerability database',
   },
@@ -238,8 +267,7 @@ export function parseIndexRecords(stdout) {
  */
 export function readBlobs(root, entries) {
   const shas = [...new Set(entries.map((entry) => entry.sha))];
-  const text = new Map();
-  if (shas.length === 0) return text;
+  if (shas.length === 0) return new Map();
 
   const batch = spawnSync('git', ['-C', root, 'cat-file', '--batch'], {
     input: `${shas.join('\n')}\n`,
@@ -249,7 +277,20 @@ export function readBlobs(root, entries) {
     throw new Error(`advisory-ids: git cat-file failed in ${root}: ${String(batch.stderr).trim()}`);
   }
 
-  const out = batch.stdout;
+  return parseBatch(batch.stdout, shas);
+}
+
+/**
+ * `git cat-file --batch` output as `sha -> text`, with `null` for binary.
+ *
+ * Split out for the same reason {@link parseIndexRecords} is: the refusal below
+ * is not reachable through a real `git` - a missing sha, a tree and a submodule
+ * all throw on the type, and a truncated stream sets a non-zero status - and an
+ * unreachable guard nothing exercises is a comment wearing a check's clothes.
+ * Exported, so it is either tested or it should not be here.
+ */
+export function parseBatch(out, shas) {
+  const text = new Map();
   let at = 0;
   while (at < out.length) {
     const newline = out.indexOf(0x0a, at);
@@ -266,6 +307,19 @@ export function readBlobs(root, entries) {
     // this guard has never needed a file-type list.
     text.set(sha, raw.includes(0) ? null : raw.toString('utf8'));
     at = end + 1;
+  }
+
+  // Every sha asked for, or nothing. `null` here is a decision - this blob is
+  // binary, skip it - and an ABSENT key is the opposite: a file that stopped
+  // being scanned with nothing counting the shortfall. The caller cannot tell
+  // those apart from a `get` returning nothing, so they are told apart here,
+  // where the number to compare against is known. Fail closed, because a guard
+  // that reads fewer files than it was given and says nothing is the failure
+  // this whole script exists to make impossible.
+  if (text.size !== shas.length) {
+    throw new Error(
+      `advisory-ids: git cat-file returned ${String(text.size)} of ${String(shas.length)} blobs`
+    );
   }
   return text;
 }
@@ -299,8 +353,12 @@ export function scan(root, entries) {
   const blobs = readBlobs(root, entries);
 
   for (const { file, sha } of entries) {
+    // `null` only: {@link readBlobs} guarantees a key for every sha, so an
+    // absent one cannot be skipped quietly here. If one ever were, `.split`
+    // throws and the run fails loudly rather than reporting clean over a file
+    // it never read.
     const text = blobs.get(sha);
-    if (text === undefined || text === null) continue;
+    if (text === null) continue;
     const citations = findCitations(text, file);
     if (citations.length === 0) continue;
 
@@ -378,20 +436,25 @@ export async function resolveOne(id, kind, fetchImpl = fetch) {
   const scheme = SCHEMES.find((candidate) => candidate.kind === kind);
   if (scheme === undefined) return { id, state: 'unavailable', detail: `unknown scheme ${kind}` };
 
-  // The identifier reaches here from the contents of a file in the repository,
-  // and from here it goes into a URL. {@link findCitations} can only ever
-  // produce one that matches the scheme, so this is not reachable today - and
-  // that is exactly why it is written down rather than assumed. `resolveOne` is
-  // exported; the next caller is not obliged to have come through the scan, and
-  // a function that is safe because of who calls it is safe until somebody else
-  // calls it.
+  // Reached by ordinary scanned input, not only by a stray caller: `pattern`
+  // recognises the shape a reader sees, so an identifier spelt outside the
+  // issuing alphabet arrives here as a citation and is answered here.
   //
-  // Anchored, so a match is the WHOLE identifier: an unanchored test passes on
-  // a string that merely contains one, which is the interesting input rather
-  // than the boring one.
-  const whole = new RegExp(`^(?:${scheme.pattern.source})$`, 'u');
-  if (!whole.test(id)) {
-    return { id, state: 'unavailable', detail: `not a well-formed ${kind} identifier` };
+  // `missing`, not `unavailable`, and that is the whole reason this branch is
+  // worth having. `unavailable` means the guard could not run and exits 2; a
+  // spelling the register could never have issued is a decided answer that
+  // needs no request, so it exits 1 alongside a 404. Reporting it as an outage
+  // would spend the one exit code that means "do not trust this run".
+  //
+  // The registry is named on the way out because the message a reader gets has
+  // to say who would have issued it, the same as a 404 does.
+  if (!scheme.wellFormed.test(id)) {
+    return {
+      id,
+      state: 'missing',
+      registry: scheme.registry,
+      detail: `not spelt the way ${scheme.registry} issues identifiers, so it was never asked for`,
+    };
   }
 
   const headers = { accept: 'application/json', 'user-agent': 'openrunic-advisory-ids' };
@@ -490,7 +553,14 @@ export async function main(argv, { root = process.cwd(), resolver = resolveOne }
   if (missing.length > 0) {
     process.stderr.write(`advisory-ids: ${String(missing.length)} identifier(s) do not exist\n\n`);
     for (const result of missing) {
-      process.stderr.write(`  ${result.id}  not found in ${String(result.registry)}\n`);
+      // `detail` when the verdict carries one, because the two ways to be
+      // missing are not the same sentence. A 404 was asked and answered; a
+      // spelling outside the issuing alphabet was never asked at all, and
+      // printing "not found in the registry" over it would be this guard
+      // making the exact claim it exists to catch - an assertion about a
+      // lookup that never happened.
+      const why = result.detail ?? `not found in ${String(result.registry)}`;
+      process.stderr.write(`  ${result.id}  ${String(why)}\n`);
       process.stderr.write(`    cited at ${describe(result.sites)}\n\n`);
     }
     process.stderr.write(

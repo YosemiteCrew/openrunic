@@ -6,6 +6,7 @@ import {
 } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
+import { rejectUnsupportedParams } from '../fhir/params.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
 import { ROLE_PERMISSIONS } from '../policy/permissions.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
@@ -1762,6 +1763,118 @@ describe('every served resource', () => {
       expect(((await res.json()) as FhirResource).resourceType).toBe(type);
     }
   );
+});
+
+/**
+ * Every parameter of every served resource, including `_id`.
+ *
+ * Shared by the two suites below so they cannot cover different sets: the
+ * narrowing suite exempts `_id` because it is a common parameter no module
+ * declares, and the empty-value suite must not, because the guard it checks
+ * reads the query rather than the module.
+ */
+const EMPTY_VALUE_CASES = SERVED_MODULES.filter((module) =>
+  module.interactions.includes('search-type')
+).flatMap((module) => module.params.map((name) => ({ type: module.type, name })));
+
+describe('every advertised search parameter refuses an empty value', () => {
+  /*
+   * The twin of the suite below, and the case it cannot reach.
+   *
+   * That one sends a value nothing carries and checks the row count drops. This
+   * one sends no value at all, which `SearchParams` delivers as
+   * present-and-empty rather than absent - and before this the boundary
+   * answered it three different ways. Thirteen date parameters and seven
+   * closed-value-set tokens refused it. Forty-one selected nothing, because an
+   * equality against an empty string matches no row. And seven answered with
+   * every row this practice holds:
+   *
+   *   Patient?name=  ?family=  ?given=
+   *   Practitioner?identifier=  ?name=
+   *   Organization?name=
+   *   Location?name=
+   *
+   * A contains-filter on an empty needle is a tautology and a bare token with
+   * no value admits any, so a client that filtered received the whole practice
+   * and had no way to tell - which is the failure `params.ts` opens by naming.
+   *
+   * Every parameter now refuses, including `_id`: the guard is at the boundary
+   * and reads the query rather than the module, so an exemption would have to
+   * be written rather than fallen into.
+   */
+  it.each(EMPTY_VALUE_CASES.map((one) => [`${one.type}?${one.name}`, one] as const))(
+    '%s is refused when it is present and empty',
+    async (_label, one) => {
+      const { app } = harness();
+
+      const res = await app.request(`/fhir/${one.type}?${one.name}=`, {
+        headers: bearer(TOKENS.adminA),
+      });
+
+      expect(res.status, `${one.type}?${one.name}= must not be answered with a bundle`).toBe(400);
+      /* The outcome names the parameter. A refusal that did not would leave a
+         client with several blank fields no better off than an empty bundle. */
+      const outcome = (await res.json()) as {
+        resourceType?: string;
+        issue?: { diagnostics?: string; expression?: string[] }[];
+      };
+      expect(outcome.resourceType).toBe('OperationOutcome');
+      expect(outcome.issue?.[0]?.expression).toEqual([one.name]);
+    }
+  );
+
+  it('names every empty parameter, not just the first', async () => {
+    /*
+     * One issue each, because a client that blanked three fields and is told
+     * about one goes round this loop three times. The map is over the empty
+     * names rather than over the first, and this is what pins that.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Patient?family=&given=&name=', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as { issue?: { expression?: string[] }[] };
+    expect(outcome.issue?.flatMap((issue) => issue.expression ?? [])).toEqual([
+      'family',
+      'given',
+      'name',
+    ]);
+  });
+
+  it('still answers the same searches when the parameter carries a value', async () => {
+    /*
+     * The control, and it is the assertion that stops the guard being too
+     * broad. A refusal that fired on every request would pass every case above
+     * and take the whole boundary down with it.
+     */
+    const { app } = harness();
+    const headers = bearer(TOKENS.adminA);
+
+    for (const type of ['Patient', 'Practitioner', 'Organization', 'Location'] as const) {
+      const all = await app.request(`/fhir/${type}`, { headers });
+      expect(all.status, `${type} with no parameters`).toBe(200);
+      expect(((await all.json()) as Bundle).total ?? 0).toBeGreaterThan(0);
+    }
+
+    const named = await app.request('/fhir/Patient?family=a', { headers });
+    expect(named.status).toBe(200);
+  });
+
+  it('reports an unknown parameter as unknown even when it is also empty', () => {
+    /*
+     * Order matters and is asserted. A misspelled parameter sent with no value
+     * satisfies both rules, and "not a supported search parameter" is the one
+     * that tells the client what to fix; "present but empty" would send them to
+     * put a value in a parameter this server does not have.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: '' }, accepted)).toThrow(
+      /Unsupported search parameter/u
+    );
+  });
 });
 
 describe('every advertised search parameter narrows', () => {

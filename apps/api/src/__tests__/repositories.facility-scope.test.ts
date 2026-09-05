@@ -163,6 +163,14 @@ describe('the facility narrowing is a query Postgres accepts', () => {
   });
 
   it.each(scoped)('%s declares its facility column as the schema does', (key, spec) => {
+    // Named before it is used, because `?? ''` reads every question about a
+    // missing column as "not nullable" and then reports that as a fact about a
+    // column with no name: `patients: Patient. is required`. A spec that is
+    // facilityScoped with nothing to narrow on is its own defect and says so.
+    expect(
+      spec.facilityColumn,
+      `${key}: ${spec.model} is facilityScoped but names no facilityColumn, so there is nothing to narrow on`
+    ).toBeTypeOf('string');
     const column = spec.facilityColumn ?? '';
     const nullableInSchema = OPTIONAL_COLUMNS.get(spec.model)?.has(column) === true;
 
@@ -178,6 +186,11 @@ describe('the facility narrowing is a query Postgres accepts', () => {
     const where = facilityWhere(spec, ['facility-a', 'facility-b']);
     expect(where, `${key} is facilityScoped and emitted no clause`).not.toBeNull();
 
+    // `?? ''` is safe HERE and nowhere else in this file: `facilityWhere`
+    // returns null without a column, so the assertion above has already failed
+    // for the only input that could reach this line with one missing. A guard
+    // here would read as a check and never run - measured by deleting it, and
+    // the counts and both messages were identical with and without.
     const column = spec.facilityColumn ?? '';
     const names = JSON.stringify(where);
     const asksForNull = names.includes(`"${column}":null`);

@@ -363,7 +363,9 @@ export const billing: Messages = {
   'billing.charges.empty.message':
     'Charges appear here once a visit is checked in. Open the schedule to see today.',
   'billing.charges.empty.action': 'Go to the schedule',
-  'billing.charges.confirm.description':
+  'billing.charges.confirm.description.one':
+    '{count} charge locks and a claim is created for {name}. Charges can still be corrected from the claim.',
+  'billing.charges.confirm.description.other':
     '{count} charges lock and a claim is created for {name}. Charges can still be corrected from the claim.',
   'billing.charges.confirm.cancel': 'Cancel',
   'billing.charges.confirm.submit': 'Mark ready',
@@ -374,7 +376,8 @@ export const billing: Messages = {
     'It stays on the sheet, struck through, and can be restored.',
   'billing.charges.toast.restored': 'Charge restored',
   'billing.charges.toast.markedReady': 'Visit marked ready',
-  'billing.charges.toast.markedReadyMessage': 'A claim was created from {count} charges.',
+  'billing.charges.toast.markedReadyMessage.one': 'A claim was created from {count} charge.',
+  'billing.charges.toast.markedReadyMessage.other': 'A claim was created from {count} charges.',
   'billing.charges.command.add': 'Add charge',
   'billing.charges.command.add.keywords': 'cpt, code, procedure, fee sheet',
   'billing.charges.command.markReady': 'Mark visit ready for billing',

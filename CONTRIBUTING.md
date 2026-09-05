@@ -136,19 +136,31 @@ workflow file or only a shell script affects no workspace at all. The gates in t
 it. They run on every pull request whatever changed, and their results are folded into the
 `CI Required` check alongside everything else.
 
-| Gate       | Local command             | What it is there for                                          |
-| ---------- | ------------------------- | ------------------------------------------------------------- |
-| Prettier   | `pnpm run format:check`   | Formatting, whole tree                                        |
-| stylelint  | `pnpm run lint:css`       | CSS correctness and the design-token rules                    |
-| secretlint | `pnpm run check:secrets`  | Secret scanning, including a committed `.env` of any content  |
-| actionlint | `pnpm run lint:workflows` | Workflow YAML, plus shellcheck over every inline `run:` block |
-| shellcheck | `pnpm run lint:shell`     | Tracked `.sh` scripts, which actionlint does not see          |
-| hadolint   | `pnpm run lint:docker`    | Tracked Dockerfiles                                           |
+| Gate        | Local command                    | What it is there for                                             |
+| ----------- | -------------------------------- | ---------------------------------------------------------------- |
+| Prettier    | `pnpm run format:check`          | Formatting, whole tree                                           |
+| stylelint   | `pnpm run lint:css`              | CSS correctness and the design-token rules                       |
+| secretlint  | `pnpm run check:secrets`         | Secret scanning, including a committed `.env` of any content     |
+| node --test | `pnpm run check:ci-scripts:test` | The scripts that decide whether other gates pass                 |
+| roadmap     | `pnpm run roadmap:check`         | `docs/roadmap.md` still matches the sources it is generated from |
+| actionlint  | `pnpm run lint:workflows`        | Workflow YAML, plus shellcheck over every inline `run:` block    |
+| shellcheck  | `pnpm run lint:shell`            | Tracked `.sh` scripts, which actionlint does not see             |
+| hadolint    | `pnpm run lint:docker`           | Tracked Dockerfiles                                              |
 
-`pnpm verify` runs the first three, since they need nothing beyond `pnpm install`. The last three
+`pnpm verify` runs the first five, since they need nothing beyond `pnpm install`. The last three
 need native binaries; install them once (see [Development setup](#development-setup)) and run them
 when you touch the files they cover. CI installs its own pinned, checksum-verified copies of all
-three, so it never depends on what happens to be on a contributor's machine.
+three, so it never depends on what happens to be on a contributor's machine. They stay out of
+`verify` rather than being skipped when absent: a gate that reports clean because it could not run
+is the failure every gate here exists to prevent.
+
+`roadmap:check` is the one most people meet first. `docs/roadmap.md` is generated from
+`docs/emr-capabilities.md`, the served FHIR module list and the message catalogues, so adding,
+removing or splitting a catalogue key makes the committed page stale and the check red.
+
+Which side of `verify` a gate is on is enforced rather than remembered:
+`scripts/ci/verify-covers-gates.test.mjs` asserts that every root script is either in the chain or
+listed with a written reason for staying out.
 
 Formatting is handled by Prettier (repo config). A pre-commit hook formats staged files and runs
 secret scanning; do not bypass it. The Prettier and secretlint gates above exist because the hook

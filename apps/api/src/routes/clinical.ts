@@ -8,6 +8,15 @@ import {
   medicationStatementInput,
   observationInput,
 } from '@openrunic/database';
+import {
+  supportsFeature,
+  type AdapterError,
+  type AdapterRegistry,
+  type ErxAdapter,
+  type PrescriptionTransmissionStatus,
+  type TransmitPrescriptionInput,
+} from '@openrunic/adapters';
+import { SYSTEMS } from '@openrunic/fhir';
 import { createBuiltInSafetyPort, missingCapabilities } from '@openrunic/clinical-safety';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
@@ -24,6 +33,7 @@ import { registryRouteContracts, registryRoutes } from './registry.js';
 import type {
   ClinicalNoteRow,
   EncounterStatus,
+  MedicationRequestPatchInput,
   MedicationRequestRow,
   MedicationRequestStatus,
   NoteState,
@@ -461,7 +471,7 @@ function assertNoteIsEditable(body: NotePatchBody, row: ClinicalNoteRow): void {
 
 /* ------------------------------------------------------------- the routes */
 
-export function clinicalRoutes(): Hono<AppEnv> {
+export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
   registerMedicationSafety(router);
   growthRoutes(router);
@@ -537,8 +547,7 @@ export function clinicalRoutes(): Hono<AppEnv> {
     });
   });
 
-  // See ROUTED_PRESCRIPTION_MOVES: three routes that differed only by segment and
-  // status, declared once instead of written three times.
+  // See ROUTED_PRESCRIPTION_MOVES: the local moves, declared once.
   for (const [segment, status] of ROUTED_PRESCRIPTION_MOVES) {
     router.post(
       `/medications/prescriptions/:id/${segment}`,
@@ -549,6 +558,24 @@ export function clinicalRoutes(): Hono<AppEnv> {
       }
     );
   }
+
+  router.post(
+    '/medications/prescriptions/:id/transmit',
+    requirePermission('encounter.write'),
+    async (c) => {
+      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+      return c.json(toPrescriptionDto(await transmit(c, registry, id)));
+    }
+  );
+
+  router.post(
+    '/medications/prescriptions/:id/cancel',
+    requirePermission('encounter.write'),
+    async (c) => {
+      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+      return c.json(toPrescriptionDto(await cancel(c, registry, id)));
+    }
+  );
 
   return router;
 }
@@ -570,9 +597,13 @@ export function clinicalRoutes(): Hono<AppEnv> {
  * against MedicationRequestStatus rather than a widened string.
  */
 const ROUTED_PRESCRIPTION_MOVES = [
+  /*
+   * Signing is the one move that is purely local, and it is the only one left
+   * here. Transmitting and cancelling both have to reach the network before the
+   * chart may say they happened, so each has a handler of its own below rather
+   * than a row in a table of status writes.
+   */
   ['sign', 'SIGNED'],
-  ['transmit', 'TRANSMITTED'],
-  ['cancel', 'CANCELLED'],
 ] as const satisfies readonly (readonly [string, MedicationRequestStatus])[];
 
 /** What order entry sends to be screened. */
@@ -699,6 +730,359 @@ async function movePrescription(
   assertTransition(PRESCRIPTION_TRANSITIONS, 'prescription', row.status, to);
 
   const moved = await prescriptions.update(id, { status: to });
+  return required(moved, MISSING_PRESCRIPTION);
+}
+
+/* -------------------------------------------------- the prescribing network */
+
+/**
+ * Turns an eRx failure into an answer, without repeating the vendor's words.
+ *
+ * Every branch leaves the prescription exactly as it was. That is the point of
+ * the whole block: a transmission this practice cannot confirm must not leave a
+ * chart claiming one happened.
+ */
+function fromErx(error: AdapterError): ApiError {
+  if (error.kind === 'timeout' || error.kind === 'unavailable') {
+    return ApiError.badGateway(
+      'The prescribing network did not answer. The prescription has not been sent; try again.'
+    );
+  }
+  if (error.kind === 'misconfigured' || error.kind === 'unauthorized') {
+    // Not the prescriber's problem and not fixable by retrying. The registry's
+    // call record has already put it in the deployment's logs.
+    return ApiError.badGateway(
+      'The prescribing network is not configured for this deployment. The prescription has not been sent.'
+    );
+  }
+  return ApiError.badGateway(
+    'The prescribing network refused the prescription. It has not been sent.'
+  );
+}
+
+function erxAdapter(registry: AdapterRegistry): ErxAdapter {
+  const resolved = registry.resolve('erx');
+  if (!resolved.ok) {
+    /*
+     * 501 and not 500: nothing is broken. This deployment does not do
+     * electronic prescribing, and the honest answer is that the operation does
+     * not exist here rather than that it failed.
+     *
+     * Refusing is the whole fix. Before this, the route answered 200 and wrote
+     * TRANSMITTED with no adapter in the deployment at all.
+     */
+    throw ApiError.notImplemented(
+      'This deployment has no prescribing network configured, so a prescription cannot be transmitted.'
+    );
+  }
+  return resolved.value;
+}
+
+/**
+ * What one network state means for the chart.
+ *
+ * The six states the seam defines do not map onto our four, and collapsing them
+ * would put back the defect this replaces in a smaller form. Only `transmitted`
+ * and `filled` mean the prescription has reached the pharmacy, and only those
+ * two move the row.
+ *
+ * `queued` is the one worth being careful about. The network has accepted the
+ * message and has not delivered it, which is a real and common state - and it is
+ * not proof of delivery. So the reference is recorded, the status stays where it
+ * was, and `transmittedAt` stays null. The chart then says "sent to the network,
+ * not yet confirmed at the pharmacy", which is what happened.
+ */
+function chartStateFor(status: PrescriptionTransmissionStatus): {
+  /** The local status this network state justifies, or none. */
+  readonly moveTo?: MedicationRequestStatus;
+  /** Whether the network has confirmed the prescription left it. */
+  readonly delivered: boolean;
+  /** Whether the network refused it outright, so nothing should be recorded. */
+  readonly refused: boolean;
+} {
+  switch (status) {
+    case 'transmitted':
+    case 'filled':
+      return { moveTo: 'TRANSMITTED', delivered: true, refused: false };
+    case 'cancelled':
+      return { moveTo: 'CANCELLED', delivered: false, refused: false };
+    case 'rejected':
+      return { delivered: false, refused: true };
+    case 'queued':
+    case 'cancel_requested':
+      // Accepted, not delivered. Recorded, not claimed.
+      return { delivered: false, refused: false };
+  }
+}
+
+/**
+ * The drug, as a code and the system that code belongs to.
+ *
+ * RxNorm first because it names the medicine, and an NDC names a package of it -
+ * a network can dispense either, and the one that says what was prescribed is
+ * the better thing to send. Undefined when neither is recorded, which the caller
+ * turns into a refusal.
+ */
+function codedDrug(
+  row: MedicationRequestRow
+): { drugCode: string; drugCodeSystem: string } | undefined {
+  if (row.rxnormCode !== null) {
+    return { drugCode: row.rxnormCode, drugCodeSystem: SYSTEMS.rxnorm };
+  }
+  if (row.ndcCode !== null) return { drugCode: row.ndcCode, drugCodeSystem: SYSTEMS.ndc };
+  return undefined;
+}
+
+/**
+ * Refuses a controlled-substance transmission this deployment may not make.
+ *
+ * Electronic prescribing of controlled substances is separately regulated, and
+ * the contract models it as two facts rather than one on purpose: a vendor
+ * declares `epcs` among the features it offers, and an installation records the
+ * enrolment it holds. `ErxConfig`'s own comment says why - "a network may
+ * support controlled substances while a given installation is not enrolled, and
+ * the practice must be able to say so". Both have to be true, so both are asked
+ * here, and each refusal names which one failed because the remedies differ:
+ * one is a conversation with a vendor and the other is an enrolment.
+ *
+ * Before the call rather than after it. A network that rejects the prescription
+ * would answer minutes later, in the vendor's words, on a record the chart may
+ * already have moved - and it would have received the prescription.
+ *
+ * Uncontrolled prescriptions are untouched. A practice that has not enrolled
+ * for controlled substances must still be able to transmit ordinary ones, so
+ * this is a refusal about a prescription and never about a deployment.
+ *
+ * 409 rather than 501, matching the two refusals `toTransmitInput` raises: the
+ * request is well formed, the deployment works, and this particular record
+ * cannot go this way. The message says what to do instead, because a prescriber
+ * reading it needs the next action rather than a diagnosis.
+ */
+function assertMayTransmitControlled(
+  registry: AdapterRegistry,
+  adapter: ErxAdapter,
+  row: MedicationRequestRow
+): void {
+  if (row.controlledSchedule === null) return;
+  if (!supportsFeature(adapter.descriptor, 'epcs')) {
+    throw ApiError.conflict(
+      'This prescribing network does not carry controlled substances, so this prescription cannot be sent electronically. Print it or telephone the pharmacy.'
+    );
+  }
+  if (!registry.entitledTo('erx', 'epcs')) {
+    throw ApiError.conflict(
+      'This practice is not enrolled for electronic prescribing of controlled substances, so this prescription cannot be sent electronically. Print it or telephone the pharmacy.'
+    );
+  }
+}
+
+/** The prescription as the seam wants it, or a refusal naming what is missing. */
+function toTransmitInput(row: MedicationRequestRow): TransmitPrescriptionInput {
+  /*
+   * Both refusals below are 409 rather than 422: the request is well formed and
+   * the record is not ready. A prescription with no coded drug or no pharmacy
+   * chosen is one the prescriber has not finished, and the network would reject
+   * it - later, and less clearly.
+   */
+  const drug = codedDrug(row);
+  if (drug === undefined) {
+    throw ApiError.conflict(
+      'This prescription carries no coded drug, so it cannot be transmitted. Choose a medicine from the catalogue.'
+    );
+  }
+  if (row.pharmacyNcpdpId === null) {
+    throw ApiError.conflict(
+      'This prescription names no pharmacy, so there is nowhere to transmit it to.'
+    );
+  }
+
+  return {
+    prescriptionId: row.id,
+    patientRef: row.patientId,
+    prescriberRef: row.prescriberId,
+    pharmacyRef: row.pharmacyNcpdpId,
+    ...drug,
+    sigText: row.sigText,
+    quantity: row.quantity,
+    quantityUnit: row.quantityUnit,
+    refills: row.refills,
+    ...(row.daysSupply === null ? {} : { daysSupply: row.daysSupply }),
+    dispenseAsWritten: row.dispenseAsWritten,
+    ...(row.controlledSchedule === null ? {} : { controlledSchedule: row.controlledSchedule }),
+    writtenAt: row.writtenAt.toISOString(),
+  };
+}
+
+/**
+ * Writes what the network said, and nothing it did not.
+ *
+ * `erxRef` is written the first time there is one, whatever state came with it,
+ * because the reference is how a later call asks about this transmission and
+ * losing it would strand it. The status and the stamp move only for the states
+ * that justify them.
+ */
+async function applyNetworkState(
+  c: Context<AppEnv>,
+  row: MedicationRequestRow,
+  result: { transmissionRef: string; status: PrescriptionTransmissionStatus; at: string }
+): Promise<MedicationRequestRow> {
+  const chart = chartStateFor(result.status);
+  const { prescriptions } = repositories(c);
+
+  /*
+   * A status the transition graph does not allow is not written, and this is the
+   * only status write in the file that has to say so.
+   *
+   * The poll path deliberately skips `assertTransition` - asking what became of
+   * a prescription is legal from any state, including TRANSMITTED, where
+   * transmitting again is not. That exemption covers reading the network's
+   * answer. It does not cover writing an arbitrary status from it, and without
+   * this guard it did: `PRESCRIPTION_TRANSITIONS` has `CANCELLED: []`, and a
+   * network that cannot recall leaves its own state at `transmitted`, so
+   * polling a prescription the clinician had already cancelled moved the chart
+   * back to TRANSMITTED with nothing to show a cancellation was ever recorded.
+   *
+   * The clinician's decision wins. The network is being asked a question, not
+   * given authority over the record.
+   */
+  const allowed =
+    chart.moveTo !== undefined &&
+    chart.moveTo !== row.status &&
+    (PRESCRIPTION_TRANSITIONS[row.status] ?? []).includes(chart.moveTo);
+
+  const patch: MedicationRequestPatchInput = {
+    ...(row.erxRef === null ? { erxRef: result.transmissionRef } : {}),
+    ...(allowed ? { status: chart.moveTo } : {}),
+    ...(allowed && chart.delivered && row.transmittedAt === null
+      ? { transmittedAt: new Date(result.at) }
+      : {}),
+  };
+  if (Object.keys(patch).length === 0) return row;
+
+  const updated = await prescriptions.update(row.id, patch);
+  return required(updated, MISSING_PRESCRIPTION);
+}
+
+/**
+ * Transmit, which now means what it says.
+ *
+ * The route used to validate the local transition and write the status, with no
+ * adapter resolved and no call made, so a row could carry TRANSMITTED and a
+ * `transmittedAt` while `erxRef` stayed null - a chart asserting to the next
+ * clinician who reads it that the pharmacy has this prescription, on the
+ * strength of an enum.
+ *
+ * Called again for a prescription already in flight it asks the network what
+ * became of it rather than sending a second one. That is idempotency and status
+ * polling in one route: the reference is the evidence that a transmission
+ * exists, so its presence is what decides between sending and asking.
+ */
+async function transmit(
+  c: Context<AppEnv>,
+  registry: AdapterRegistry,
+  id: string
+): Promise<MedicationRequestRow> {
+  const { prescriptions } = repositories(c);
+  const row = required(await prescriptions.findById(id), MISSING_PRESCRIPTION);
+  const adapter = erxAdapter(registry);
+
+  if (row.erxRef !== null) {
+    const polled = await adapter.getTransmissionStatus({ transmissionRef: row.erxRef });
+    if (!polled.ok) throw fromErx(polled.error);
+    return applyNetworkState(c, row, {
+      transmissionRef: polled.value.transmissionRef,
+      status: polled.value.status,
+      at: polled.value.updatedAt,
+    });
+  }
+
+  // Only now, because a poll of a prescription already sent is legal from
+  // TRANSMITTED and this is not.
+  assertTransition(PRESCRIPTION_TRANSITIONS, 'prescription', row.status, 'TRANSMITTED');
+  // After the transition and before the payload is built, so a prescription
+  // this deployment may not send never reaches the seam and the row is
+  // unchanged. The poll branch above is deliberately not gated: asking what
+  // became of a prescription already sent is not sending one.
+  assertMayTransmitControlled(registry, adapter, row);
+
+  const sent = await adapter.transmitPrescription(toTransmitInput(row));
+  if (!sent.ok) throw fromErx(sent.error);
+  if (chartStateFor(sent.value.status).refused) {
+    /*
+     * A refusal leaves the row untouched, reference included. The prescriber
+     * fixes what the network objected to and sends again, and a stored
+     * reference would have turned the retry into a poll of a transmission that
+     * never happened.
+     */
+    throw ApiError.badGateway(
+      'The prescribing network rejected this prescription. It has not been sent, and the record is unchanged.'
+    );
+  }
+
+  return applyNetworkState(c, row, {
+    transmissionRef: sent.value.transmissionRef,
+    status: sent.value.status,
+    at: sent.value.acceptedAt,
+  });
+}
+
+/**
+ * Cancel, which recalls the prescription when it can and never pretends to.
+ *
+ * Three cases, and the third is the one worth writing down. A prescription that
+ * never reached the network is cancelled locally, because there is nothing to
+ * recall. One that did, on a network offering `cancel`, is recalled and then
+ * cancelled. One that did, on a network that does not, is still cancelled here -
+ * a clinician must be able to record the decision - but nothing in the response
+ * or the row says the pharmacy was told, because it was not. Somebody has to
+ * telephone, and a chart that implied otherwise would be the reason they did
+ * not.
+ */
+async function cancel(
+  c: Context<AppEnv>,
+  registry: AdapterRegistry,
+  id: string
+): Promise<MedicationRequestRow> {
+  const { prescriptions } = repositories(c);
+  const row = required(await prescriptions.findById(id), MISSING_PRESCRIPTION);
+  assertTransition(PRESCRIPTION_TRANSITIONS, 'prescription', row.status, 'CANCELLED');
+
+  if (row.erxRef !== null) {
+    const resolved = registry.resolve('erx');
+    if (resolved.ok && supportsFeature(resolved.value.descriptor, 'cancel')) {
+      const recalled = await resolved.value.cancelPrescription({
+        transmissionRef: row.erxRef,
+        reasonCode: 'prescriber_request',
+      });
+      // The local cancellation is refused when the recall is, rather than
+      // recorded anyway: a row saying CANCELLED while the pharmacy is still
+      // holding a live prescription is the failure this route exists to avoid.
+      if (!recalled.ok) throw fromErx(recalled.error);
+
+      /*
+       * And refused just as firmly when the recall was only *requested*.
+       *
+       * `cancelPrescriptionResult` carries a status, and a network answers a
+       * recall on a prescription it has already passed on with
+       * `cancel_requested` rather than `cancelled` - it has asked the pharmacy
+       * and does not yet know. That is the same distinction `queued` makes on
+       * the way out, and `chartStateFor` already classifies it the same way:
+       * accepted, not delivered, recorded, not claimed.
+       *
+       * A refused recall and an unconfirmed one leave the pharmacy in exactly
+       * the same position, so treating one as fatal and the other as success
+       * was the defect. The record stays as it was, and the clinician is told
+       * to check rather than left believing it is done.
+       */
+      if (recalled.value.status !== 'cancelled') {
+        throw ApiError.conflict(
+          'The prescribing network has asked the pharmacy to cancel this prescription and has not confirmed it. The record is unchanged; try again, or telephone the pharmacy.'
+        );
+      }
+    }
+  }
+
+  const moved = await prescriptions.update(id, { status: 'CANCELLED' });
   return required(moved, MISSING_PRESCRIPTION);
 }
 
@@ -848,21 +1232,22 @@ export function clinicalRouteContracts(): RouteContract[] {
     transitionContract({
       path: '/bff/v0/medications/prescriptions/{id}/transmit',
       operationId: 'transmitPrescription',
-      summary: 'Transmit a signed prescription.',
+      summary: 'Send a signed prescription to the prescribing network.',
       description:
-        'Moves a `SIGNED` prescription to `TRANSMITTED` and stamps `transmittedAt`, which is the record that it left this system.',
+        "Hands a `SIGNED` prescription to the deployment's eRx network and records only what the network confirmed. Three outcomes, and they are different facts about this prescription. **Accepted by the network** is the usual first answer: `erxRef` is set, the status stays `SIGNED` and `transmittedAt` stays null, because the network holds the message and the pharmacy does not have it yet. **Transmitted onward** moves the status to `TRANSMITTED` and stamps `transmittedAt` with the instant the network reported, which is the record that it left. **Filled** means the pharmacy has dispensed it; the status and stamp are unchanged, since it left when it left. Call this again for a prescription already in flight and it asks the network what became of it rather than sending a second one, so it is both the retry and the status poll. A deployment with no prescribing network answers 501 and changes nothing.",
       tag: 'medications',
       subject: 'Prescription',
       response: prescriptionDtoSchema,
-      conflict: 'The prescription is not signed, or has already left.',
+      conflict:
+        'The prescription is not signed, or it carries no coded drug or no pharmacy to send it to.',
     }),
 
     transitionContract({
       path: '/bff/v0/medications/prescriptions/{id}/cancel',
       operationId: 'cancelPrescription',
-      summary: 'Cancel a prescription.',
+      summary: 'Cancel a prescription, recalling it from the network where possible.',
       description:
-        'Allowed from any state that is not already terminal. A cancelled prescription stays on the chart: it is a fact about what was intended.',
+        'Allowed from any state that is not already terminal. A cancelled prescription stays on the chart: it is a fact about what was intended. A prescription that reached the network is recalled from it first, and the cancellation is not recorded if that recall fails - a chart saying cancelled while the pharmacy holds a live prescription is the outcome this refuses. A prescription that never reached a network, or one on a network that does not offer recall, is cancelled here alone; nothing in the response says the pharmacy was told, because it was not, and somebody has to telephone.',
       tag: 'medications',
       subject: 'Prescription',
       response: prescriptionDtoSchema,

@@ -1,6 +1,6 @@
 'use client';
 
-import { formatCount } from '@openrunic/i18n';
+import { formatCount, verbatim } from '@openrunic/i18n';
 import { Badge, Button, Card, Checkbox, Input, Select, Table, Tag } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -138,7 +138,7 @@ const EVENT_COUNT_BREAKGLASS = {
  * messages rather than one with a clause appended, because the clause is not
  * appendable in every language.
  */
-function filterSummary(t: Translator, total: number, breakglassCount: number) {
+export function filterSummary(t: Translator, total: number, breakglassCount: number) {
   // The locale comes off the translator rather than beside it. This took both
   // because the local `Translate` type it used to be given had dropped the
   // locale, so the caller passed `t.locale` back in as a second argument.
@@ -202,7 +202,9 @@ function auditRow(
     purpose: purposeCell(t, event),
     open: (
       <Button size="sm" variant="ghost" onClick={() => onOpen(event.id)}>
-        {t('admin.audit.openEvent', { sequence: event.sequence })}
+        {/* The sequence number is the handle somebody quotes back when they
+            ask about an event, so it is rendered as it is stored. */}
+        {t('admin.audit.openEvent', { sequence: verbatim(event.sequence) })}
       </Button>
     ),
   };

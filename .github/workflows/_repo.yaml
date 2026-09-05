@@ -24,7 +24,14 @@ name: Repo
 #
 # Every command below has a matching root package.json script so a contributor
 # can run the identical check locally: format:check, check:ci-scripts:test,
-# lint:css, lint:workflows, lint:shell and lint:docker.
+# roadmap:check, lint:css, lint:workflows, lint:shell and lint:docker. The first
+# three need nothing but `pnpm install` and are in `pnpm verify`; the three
+# linters need native binaries and are deliberately not, because a `verify` that
+# skipped them when absent would report clean for having not run.
+#
+# That split is asserted rather than remembered - see
+# scripts/ci/verify-covers-gates.test.mjs. This list was itself missing
+# roadmap:check until #286 failed on it after a green local verify.
 
 on:
   workflow_call: {}

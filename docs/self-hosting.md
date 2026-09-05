@@ -363,6 +363,13 @@ do, the tokens above are published in the source, and anyone who can reach port
 to your provider. See `.env.example` for the full list. Without them, openrunic
 must only run on a machine that only you can reach.
 
+The API refuses a half-set group on purpose: `OIDC_ISSUER`, `OIDC_AUDIENCE` and
+`OIDC_JWKS_URI` are set together or not at all, because an issuer with no key
+set would otherwise leave the stack quietly on the demo tokens while looking
+configured. All of these are read at runtime, so changing one means
+`docker compose up -d` and not a rebuild - unlike `NEXT_PUBLIC_API_BASE_URL`,
+which Next.js inlines into the image.
+
 **Do not put it on the internet.** Not behind a password-protected reverse
 proxy either. The gap is not the front door; there is no lock on any of the
 rooms.

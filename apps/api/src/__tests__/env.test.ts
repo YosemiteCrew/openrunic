@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
-import { oidcSettings, parseEnv, smartLaunchSettings, type Env } from '../env.js';
+import { ENV_VARIABLES, oidcSettings, parseEnv, smartLaunchSettings, type Env } from '../env.js';
 
 describe('parseEnv', () => {
   it('applies defaults when variables are absent', () => {
@@ -252,5 +255,132 @@ describe('a variable that is present and blank', () => {
         OIDC_AUDIENCE: '',
       })
     ).toThrow(/OIDC_ISSUER/);
+  });
+});
+
+describe('every setting this process reads is passed in by the deployment', () => {
+  /*
+   * The defect this repository has now shipped twice.
+   *
+   * `OPENRUNIC_FHIR_BASE_URL` was read here and never named in
+   * `docker-compose.yml`, so a self-hoster who set it got a Questionnaire
+   * claiming a canonical URL on a domain they do not run. The whole
+   * identity-provider group was the same omission with a much worse
+   * consequence: a deployment that had configured its provider went on
+   * accepting the demo tokens printed in this repository's public source, while
+   * `docs/self-hosting.md` said it would not.
+   *
+   * Both times the code was right, the documentation was right, and the two
+   * were joined by a file nobody thought to change. Neither was findable from
+   * inside this process: a variable that never arrives is indistinguishable
+   * from one the operator declined.
+   *
+   * So the join is asserted. `ENV_VARIABLES` comes off the schema itself rather
+   * than a list beside it, which is what stops this test passing while the
+   * thing it checks drifts.
+   */
+  const composePath = fileURLToPath(new URL('../../../../docker-compose.yml', import.meta.url));
+  const compose = readFileSync(composePath, 'utf8');
+
+  /**
+   * One service's `environment:` block, parsed into the entries it declares.
+   *
+   * Parsed rather than searched as text, and that is the whole difference
+   * between a guard and the appearance of one. Review found that commenting a
+   * line out - which is what someone debugging a stack or resolving a merge
+   * actually does, rather than deleting it - left every case green: the
+   * variable is out of the process, the code still reads it, the docs still
+   * promise it, and `toContain('OIDC_JWKS_URI:')` is satisfied by the comment
+   * that removed it. The defect this file exists to catch, restored, invisibly.
+   *
+   * It is the vacuous-match cousin of the vacuous-list case below: the list was
+   * fine, the substring was found, and the thing it stood for was gone.
+   */
+  function environmentEntries(service: string): Map<string, string> {
+    const start = compose.indexOf(`\n  ${service}:\n`);
+    expect(start, `${service} is a service in docker-compose.yml`).toBeGreaterThan(-1);
+    const envStart = compose.indexOf('\n    environment:\n', start);
+    expect(envStart, `${service} declares an environment block`).toBeGreaterThan(-1);
+    // Up to the next key at the service's own indentation, which ends the block.
+    const rest = compose.slice(envStart + 1);
+    const end = rest.search(/\n {4}[a-z_]+:/u);
+    const block = end === -1 ? rest : rest.slice(0, end);
+
+    const entries = new Map<string, string>();
+    for (const line of block.split('\n')) {
+      // Six spaces exactly: a mapping key one level inside `environment:`. A
+      // comment fails this because `#` is not a name character, which is the
+      // point.
+      const match = /^ {6}([A-Za-z_][A-Za-z0-9_]*): ?(.*)$/u.exec(line);
+      if (match?.[1] !== undefined) entries.set(match[1], match[2] ?? '');
+    }
+    return entries;
+  }
+
+  it.each(ENV_VARIABLES)('the api service passes %s', (name) => {
+    expect([...environmentEntries('api').keys()]).toContain(name);
+  });
+
+  it('checks something, so an empty schema cannot make this vacuous', () => {
+    expect(ENV_VARIABLES.length).toBeGreaterThan(5);
+    expect(ENV_VARIABLES).toContain('OIDC_ISSUER');
+  });
+
+  /*
+   * The web application has no schema to derive from - it reads its settings
+   * where it uses them - so this half is a hand-kept list and says so. It is
+   * still worth having: these five are the sign-in flow, and `oidcWebConfig`
+   * answers a missing one by returning null, which means "stay on the demo
+   * path" and is indistinguishable from a deployment that chose to.
+   */
+  const WEB_RUNTIME_SETTINGS = [
+    'OIDC_ISSUER',
+    'OIDC_CLIENT_ID',
+    'OIDC_REDIRECT_URI',
+    'OIDC_CLIENT_SECRET',
+    'OIDC_SCOPES',
+    'SESSION_COOKIE_SECRET',
+    'OPENRUNIC_API_INTERNAL_URL',
+  ];
+
+  it.each(WEB_RUNTIME_SETTINGS)('the web service passes %s', (name) => {
+    expect([...environmentEntries('web').keys()]).toContain(name);
+  });
+
+  /**
+   * The settings a missing value may legitimately stop the stack for.
+   *
+   * An allowlist rather than a pattern, after review pointed out that filtering
+   * on `OIDC_` left `OPENRUNIC_FHIR_BASE_URL` free to become required one
+   * variable away from where the case was looking. Naming the two that may be
+   * required says the rule; a pattern only says where it was last enforced.
+   *
+   * Both are credentials with no safe default. `DATABASE_URL` interpolates the
+   * application role and its password with `:?`, deliberately, so a stack
+   * cannot start on a published one. `SESSION_COOKIE_SECRET` is the same
+   * argument for the web session: in production the code refuses to fall back to
+   * the development key printed in its own source, so a stack without it starts,
+   * reports healthy, and answers 503 to every sign-in.
+   */
+  const MAY_BE_REQUIRED = new Set(['DATABASE_URL', 'SESSION_COOKIE_SECRET']);
+
+  it('makes every other setting optional rather than able to stop the stack', () => {
+    /*
+     * `:?` makes an unset variable a startup failure. Two rules in `env.ts` need
+     * "absent" to stay expressible - the verification group is refused half-set,
+     * and the launch pair is optional but additionally requires the group - so a
+     * required-form OIDC variable would turn "I have no identity provider" into
+     * a deployment that will not boot.
+     *
+     * Checked over every entry in both services rather than the OIDC ones,
+     * because the next optional setting somebody makes required will not be an
+     * OIDC one.
+     */
+    for (const service of ['api', 'web'] as const) {
+      for (const [name, value] of environmentEntries(service)) {
+        if (MAY_BE_REQUIRED.has(name)) continue;
+        expect(value, `${service}.${name} must not use the :? form`).not.toContain(':?');
+      }
+    }
   });
 });

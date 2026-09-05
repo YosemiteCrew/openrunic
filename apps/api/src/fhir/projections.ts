@@ -320,7 +320,15 @@ export function medicationDispenseResource(
          means the item row is gone rather than unnamed. Saying so beats an
          empty string, which reads as a product with no name. */
       medicationDisplay: item?.name ?? 'Unknown product',
-      quantityValue: first === undefined ? undefined : Number(first.quantity),
+      /* The sum across every lot the dispense drew from, not the first. One
+         dispense of one product can be filled from several lots, and the ledger
+         records a movement per lot; reporting only the first understates what
+         the patient was handed - a 30-tablet fill split 20/10 would read as 20,
+         and medication reconciliation downstream would be wrong by the rest. */
+      quantityValue:
+        movements.length === 0
+          ? undefined
+          : movements.reduce((sum, movement) => sum + Number(movement.quantity), 0),
       quantityUnit: absent(item?.unit ?? null),
       whenHandedOver: row.occurredOn.toISOString(),
       performerId: row.postedById,

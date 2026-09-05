@@ -215,8 +215,15 @@ export function toFhirGoal(input: DomainGoal): fhir4.Goal {
       input.expressedByUserId === undefined
         ? undefined
         : fhirReference('Practitioner', input.expressedByUserId),
-    addresses:
-      input.carePlanId === undefined ? undefined : [fhirReference('CarePlan', input.carePlanId)],
+    /*
+     * No `addresses`. FHIR R4 restricts `Goal.addresses` to the clinical
+     * concerns a goal is about - Condition, Observation, MedicationStatement,
+     * NutritionOrder, ServiceRequest, RiskAssessment - and a CarePlan is none of
+     * them. The care-plan link runs the other way, as `CarePlan.goal`, and
+     * emitting `CarePlan/{id}` here produced a Goal that a validator rejects.
+     * `carePlanId` stays a domain field; the conformant place to project it is
+     * `CarePlan.goal`, which is a follow-up rather than a wrong reference kept.
+     */
   });
 }
 
@@ -267,6 +274,5 @@ export function fromFhirGoal(resource: fhir4.Goal): DomainGoal {
   setOptional(domain, 'dueDate', readString(target?.dueDate));
   setOptional(domain, 'statusReason', readString(resource.statusReason));
   setOptional(domain, 'expressedByUserId', referenceId(resource.expressedBy, 'Practitioner'));
-  setOptional(domain, 'carePlanId', referenceId(resource.addresses?.[0], 'CarePlan'));
   return domain;
 }

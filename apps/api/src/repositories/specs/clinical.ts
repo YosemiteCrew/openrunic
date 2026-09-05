@@ -1789,7 +1789,19 @@ export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalLis
 
   orderBy(query: GoalListQuery) {
     const { order } = query;
-    if (query.sort === 'dueDate') return [{ dueDate: order }, { id: 'asc' as const }];
+    if (query.sort === 'dueDate') {
+      /* Null placement, made explicit. The memory port maps an absent due date
+         to epoch zero, so an undated goal sorts first ascending and last
+         descending. Postgres does the opposite by default (nulls last on asc,
+         first on desc), so the two ports disagreed the moment a dated and an
+         undated goal shared a page. `nulls` pins Prisma to the memory port's
+         answer, which is the declared one: no due date is the most urgent thing
+         on the list ascending, and drops to the bottom descending. */
+      return [
+        { dueDate: { sort: order, nulls: order === 'asc' ? 'first' : ('last' as const) } },
+        { id: 'asc' as const },
+      ];
+    }
     return [{ createdAt: order }, { id: 'asc' as const }];
   },
 };

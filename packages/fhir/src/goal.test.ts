@@ -14,12 +14,10 @@ import { SYSTEMS } from './systems.js';
 
 const PATIENT = '0192f1a0-0000-7000-8000-0000000000p1';
 const AUTHOR = '0192f1a0-0000-7000-8000-0000000000u1';
-const PLAN = '0192f1a0-0000-7000-8000-0000000000c1';
 
 const A1C: DomainGoal = {
   id: '0192f1a0-0000-7000-8000-0000000000g1',
   patientId: PATIENT,
-  carePlanId: PLAN,
   lifecycleStatus: 'ACTIVE',
   achievementStatus: 'IMPROVING',
   priority: 'HIGH',
@@ -283,12 +281,11 @@ describe('fromFhirGoal, on input it did not write', () => {
     );
   });
 
-  it('ignores an address that is not a care plan', () => {
-    /* `addresses` points at whatever the goal is about, most often a Condition.
-       Read as a care plan id it would produce a foreign key to a row that does
-       not exist. */
-    expect(
-      fromFhirGoal(foreign({ addresses: [{ reference: 'Condition/c-1' }] })).carePlanId
-    ).toBeUndefined();
+  it('emits no addresses, because a CarePlan is not a thing a goal addresses', () => {
+    /* FHIR R4 restricts Goal.addresses to clinical concerns (Condition,
+       Observation, and the like); a CarePlan is not one, and the care-plan link
+       is CarePlan.goal. So the projection carries no addresses at all rather
+       than a reference a validator rejects. */
+    expect(toFhirGoal(A1C).addresses).toBeUndefined();
   });
 });

@@ -2636,3 +2636,87 @@ describe('the practice organisation', () => {
     expect(followed.status).toBe(200);
   });
 });
+
+describe('a MedicationDispense filled from more than one lot', () => {
+  it('reports the quantity summed across every lot, not the first', async () => {
+    const { app, dataset } = createTestApp();
+    const patient = testId(6001);
+    const posting = testId(6002);
+    seed(dataset, 'Patient', makePatientRow({ id: patient, mrn: 'OR-600100' }));
+    // Facility-activity gives adminA (facility.all) a relationship with the chart.
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(6003), patientId: patient }));
+    seed(dataset, 'StockItem', {
+      ...storageColumns(testId(6010)),
+      sku: 'MET-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    for (const [n, lot] of [
+      [6011, 'LOT-A'],
+      [6012, 'LOT-B'],
+    ] as const) {
+      seed(dataset, 'StockLot', {
+        ...storageColumns(testId(n)),
+        itemId: testId(6010),
+        facilityId: DEMO_FACILITY_A,
+        lotNumber: lot,
+        status: 'AVAILABLE',
+        expiresOn: null,
+        openedOn: null,
+        beyondUseDays: null,
+        manufacturer: null,
+        ndcCode: null,
+        receivedOn: FIXED_NOW,
+      });
+    }
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind: 'DISPENSE',
+      facilityId: DEMO_FACILITY_A,
+      patientId: patient,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+    // A 30-tablet dispense split 20/10 across two lots: two movements, one posting.
+    for (const [n, lotN, qty, seq] of [
+      [6020, 6011, 20, 1],
+      [6021, 6012, 10, 2],
+    ] as const) {
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(n)),
+        postingId: posting,
+        lotId: testId(lotN),
+        itemId: testId(6010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: qty,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: seq,
+      });
+    }
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(res.status).toBe(200);
+    const dispense = (await res.json()) as { quantity?: { value?: number } };
+    expect(dispense.quantity?.value).toBe(30);
+  });
+});

@@ -2597,6 +2597,11 @@ describe('a write on a chart is not a way round the gate', () => {
       `/bff/v0/documents/${DOCUMENT_A}/reject`,
       { reason: 'Unreadable' },
     ],
+    [
+      'POST /documents/:id/supersede',
+      `/bff/v0/documents/${DOCUMENT_A}/supersede`,
+      { supersededById: DOCUMENT_B },
+    ],
     ['POST /tasks/:id/complete', `/bff/v0/tasks/${TASK_A}/complete`, {}],
     ['POST /tasks/:id/cancel', `/bff/v0/tasks/${TASK_A}/cancel`, {}],
     ['POST /messages/threads/:id/close', `/bff/v0/messages/threads/${THREAD_A}/close`, {}],
@@ -2631,25 +2636,54 @@ describe('a write on a chart is not a way round the gate', () => {
 
   /**
    * `supersede` reads a SECOND document named in the body, and that row names
-   * its own chart. Naming it is reaching into that chart, so it is gated
-   * separately - and only this case can see it: the document in the path is one
-   * the reader may open, so every other assertion here passes with the second
-   * read ungated.
+   * its own chart - which is not necessarily the chart of the document in the
+   * path. Naming it is reaching into that chart.
+   *
+   * This harness is built rather than borrowed, and both halves of that matter.
+   * `seed` is a `push` and the memory port's `findById` takes the FIRST match,
+   * so re-seeding an id already in the table adds a shadowed row and changes
+   * nothing - my first version of this case did exactly that, and both gates
+   * could be deleted with the file still at 216 / 0. Raised in review.
+   *
+   * And the document in the PATH has to be one the reader may open. A body
+   * document that could be refused either way hides which of the two gates
+   * refused it: the path gate answers first, with the same 404 and the same
+   * `No such patient.`, so it subsumes the second entirely.
    */
   it('POST /documents/:id/supersede gates the document named in the body too', async () => {
-    const harness = strangerApp();
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
     seed(
       harness.dataset,
       'Document',
-      makeDocumentRow({ id: DOCUMENT_A, patientId: OTHER_PATIENT })
+      makeDocumentRow({ id: DOCUMENT_B, patientId: OTHER_PATIENT })
     );
-    authorise(harness.dataset, OTHER_PATIENT);
+    // The path document only. The body document names a chart this reader has
+    // no relationship to, so the only thing that can refuse is the second gate.
+    authorise(harness.dataset, PATIENT);
 
     const res = await call(harness.app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
       body: { supersededById: DOCUMENT_B },
     });
 
     expect(res.status).toBe(404);
+  });
+
+  it('POST /documents/:id/supersede still answers when both charts are reachable', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    seed(
+      harness.dataset,
+      'Document',
+      makeDocumentRow({ id: DOCUMENT_B, patientId: OTHER_PATIENT })
+    );
+    authorise(harness.dataset, PATIENT, OTHER_PATIENT);
+
+    const res = await call(harness.app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: DOCUMENT_B },
+    });
+
+    expect(res.status).not.toBe(404);
   });
 
   /**

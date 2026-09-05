@@ -21,7 +21,7 @@ import {
 } from '../schemas/telehealth.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { gateCharts, idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * TELEHEALTH: A ROOM FOR ONE VISIT, AND A TOKEN PER PERSON WHO MAY ENTER IT.
@@ -163,6 +163,36 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     // rather than an attribution, and narrowing on it costs a legitimate caller
     // nothing.
     assertFacilityAccess(policyOf(c), appointment.facilityId);
+    /*
+     * And then the chart, because opening a room is a write on somebody's
+     * record. This route is registered by hand, so the CRUD seam's gate never
+     * ran on it (#322).
+     *
+     * THE ORDER IS DELIBERATE AND IT IS THE OPPOSITE OF `clinical.ts` AND
+     * `financial.ts`, which ask the chart first. `crud.ts` documents the reason
+     * for this one - the chart refusal runs after the facility check so it
+     * reveals nothing the facility check would already have hidden - and here
+     * that is observable rather than theoretical: `refuses a principal who may
+     * not reach the appointment's site` asserts **403**, and asking the chart
+     * first turns it into a 404. Preserving that answer is worth more than
+     * matching the other two files.
+     *
+     * `requiredParentChart` cannot express this, since it couples the read to
+     * the gate on purpose. So the read and the gate are three lines apart and
+     * this comment is the thing keeping them together; do not put anything
+     * between them that can return.
+     *
+     * WHEN IT CAN ACTUALLY REFUSE, because it is narrower than it looks.
+     * `facility-activity` grants the relationship from a live appointment,
+     * narrowed by the repository to the caller's own sites, and the check above
+     * passes only for a caller granted this appointment's site - so for a
+     * BOOKED appointment the two coincide and this cannot refuse anyone the
+     * facility check let through. It bites on the rows `facility-activity`
+     * excludes: CANCELLED, ENTERED_IN_ERROR, and a start more than a year past.
+     * Driven on `dev`, a clinician with no relationship opened a room on a
+     * CANCELLED appointment and got 201.
+     */
+    await gateCharts(c, 'appointments', [appointment]);
 
     const existing = await repos.telehealthVisits.list({
       page: 1,

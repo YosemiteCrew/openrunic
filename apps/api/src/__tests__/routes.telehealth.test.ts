@@ -1,6 +1,7 @@
 import { AdapterRegistry } from '@openrunic/adapters';
 import { describe, expect, it } from 'vitest';
 
+import type { ProblemDocument } from '../http/problem.js';
 import type { JoinTokenResponse, TelehealthVisitDto } from '../schemas/telehealth.js';
 
 import {
@@ -15,6 +16,7 @@ import {
   makeAppointmentRow,
   seed,
   testId,
+  seedCareRelationship,
   TOKENS,
   UNPRIVILEGED_TOKEN,
 } from './support.js';
@@ -140,6 +142,64 @@ describe('opening a room', () => {
     );
 
     expect(res.status).toBe(403);
+  });
+
+  /**
+   * Opening a room is a write on somebody's chart, and it is gated (#322).
+   *
+   * THE FIXTURE IS THE WHOLE CASE. `harness()` seeds a BOOKED appointment, and
+   * a booked appointment IS a relationship source: `facility-activity` grants
+   * the chart to any caller granted its site, which is exactly the caller
+   * `assertFacilityAccess` lets through. So on a booked row the gate cannot
+   * refuse anyone, and a case built on `harness()` would be green with the gate
+   * deleted.
+   *
+   * It bites on the rows `facility-activity` excludes - CANCELLED,
+   * ENTERED_IN_ERROR, and a start more than a year past. Driven on `dev` before
+   * this change, a caller with no relationship opened a room on a CANCELLED
+   * appointment and got 201.
+   */
+  it('refuses a room on an appointment whose chart the caller is not in', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: APPOINTMENT, patientId: PATIENT, status: 'CANCELLED' })
+    );
+
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    // 404 rather than 403: the chart refusal must not confirm the appointment
+    // exists. The site refusal below is deliberately 403 and runs first, which
+    // is why that case still reads 403 and this one reads 404.
+    expect(res.status).toBe(404);
+    expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+  });
+
+  it('opens the room once the caller is in that patient care', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: APPOINTMENT, patientId: PATIENT, status: 'CANCELLED' })
+    );
+    // The reachable control. Without it the refusal above is also satisfied by
+    // a route that refuses everyone - which would take telehealth out of the
+    // product while the pair still read as the gate working.
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: testId(902),
+      as: 'encounter',
+      id: testId(8_600),
+    });
+
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    expect(res.status).toBe(201);
   });
 
   it('refuses a principal who may not reach the appointment\u2019s site', async () => {

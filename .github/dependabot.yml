@@ -56,13 +56,6 @@ updates:
       prefix: 'chore(repo)'
     # Every ignore entry needs a prose rationale and a revisit condition.
     ignore:
-      # TypeScript 7 (the Go-native compiler) ships without a JS compiler API
-      # until TS 7.1 (~Nov 2026); typescript-eslint 8 peer-caps at <6.1.0 and
-      # Next.js needs 16.3+ with its experimental tsc-CLI path. Majors blocked
-      # until typescript-eslint supports it; minors/patches of 5.x still flow.
-      # Revisit: when typescript-eslint's peer range admits >=7. (2026-08-12)
-      - dependency-name: 'typescript'
-        update-types: ['version-update:semver-major']
       # @types/node describes the runtime, so it is pinned to the runtime rather
       # than to the newest release. This project runs Node 22 (.nvmrc, and
       # engines.node >=22.12), and types from a later line describe APIs that
@@ -84,18 +77,6 @@ updates:
       - dependency-name: 'eslint'
         update-types: ['version-update:semver-major']
       - dependency-name: '@eslint/js'
-        update-types: ['version-update:semver-major']
-      # Vite 8 replaces Rollup with Rolldown, and Rolldown cannot parse the TSX
-      # test files: every suite in web and portal dies with a RolldownError
-      # parse failure. Vite is a direct dependency of packages/ui only, but
-      # vitest resolves it from the workspace, so one package taking Vite 8
-      # takes the whole test suite down with it. @vitejs/plugin-react 6 is held
-      # with it because it pairs to Vite 8.
-      # Revisit: when Rolldown parses the repository's TSX, which is worth
-      # re-testing on each Vite 8 minor rather than assuming. (2026-08-14)
-      - dependency-name: 'vite'
-        update-types: ['version-update:semver-major']
-      - dependency-name: '@vitejs/plugin-react'
         update-types: ['version-update:semver-major']
       # jsdom 30 changed accessible-name computation: it no longer inserts a
       # separator between the text of adjacent child elements, so a filter

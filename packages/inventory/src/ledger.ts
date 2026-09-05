@@ -371,6 +371,19 @@ function fromSteps(steps: number): number {
 }
 
 /**
+ * The exact sum of several stock quantities.
+ *
+ * Accumulates in integer grid steps rather than adding the floats, because
+ * float addition is not associative: two large six-decimal quantities can add
+ * to a total a micro-unit off the value the ledger holds, and rounding only the
+ * finished float cannot recover the lost step. Summing the step counts, which
+ * are integers within the supported bound, is exact.
+ */
+export function sumQuantities(quantities: readonly number[]): number {
+  return fromSteps(quantities.reduce((steps, quantity) => steps + toSteps(quantity), 0));
+}
+
+/**
  * A comparison that does not depend on the order the keys were written in.
  *
  * `JSON.stringify` does, so two rows carrying identical fields built by two code

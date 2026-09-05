@@ -5,8 +5,8 @@ import { goalSpec } from '../repositories/specs/clinical.js';
 /**
  * The two ports must agree on where an undated goal falls.
  *
- * The memory port maps an absent `dueDate` to epoch zero, so an undated goal
- * sorts first ascending and last descending. Postgres does the opposite by
+ * The memory port sorts an absent `dueDate` with a -Infinity sentinel, so an
+ * undated goal comes first ascending and last descending. Postgres does the opposite by
  * default, so without an explicit `nulls` the production and in-memory ports
  * returned different orders the moment a dated and an undated goal shared a page
  * - and the sort tests missed it because their fixtures were all dated. The

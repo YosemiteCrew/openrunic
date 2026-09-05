@@ -64,7 +64,7 @@ import {
   type CompiledForm,
   type FormDefinition,
 } from '@openrunic/forms-engine';
-import { toStockPrecision } from '@openrunic/inventory';
+import { sumQuantities } from '@openrunic/inventory';
 
 import { fhirBaseUrl } from '../env.js';
 import type { Row, ScopedRow } from '../repositories/rows.js';
@@ -333,9 +333,7 @@ export function medicationDispenseResource(
       quantityValue:
         movements.length === 0
           ? undefined
-          : toStockPrecision(
-              movements.reduce((sum, movement) => sum + Number(movement.quantity), 0)
-            ),
+          : sumQuantities(movements.map((movement) => Number(movement.quantity))),
       quantityUnit: absent(item?.unit ?? null),
       whenHandedOver: row.occurredOn.toISOString(),
       performerId: row.postedById,

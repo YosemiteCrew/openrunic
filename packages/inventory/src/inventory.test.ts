@@ -34,6 +34,7 @@ import {
   type StockItem,
   type StockMovement,
   toStockPrecision,
+  sumQuantities,
   unusableReason,
   usableBalance,
 } from './index.js';
@@ -2181,5 +2182,21 @@ describe('lot status, as of a date', () => {
     // The status wins before the date is read, which is the whole reason the
     // clauses are in this order.
     expect(unusableReason(held, '2026-09-01')).toContain('recalled');
+  });
+});
+
+describe('sumQuantities adds on the grid, not in floating point', () => {
+  it('sums a fractional split exactly', () => {
+    // 0.1 + 0.2 is 0.30000000000000004 as a raw float.
+    expect(sumQuantities([0.1, 0.2])).toBe(0.3);
+  });
+
+  it('is exact for large six-decimal quantities a float-then-round would miss', () => {
+    // The raw sum rounds to ...671950; the exact step sum is ...671949.
+    expect(sumQuantities([858609846.468067, 2779389445.203882])).toBe(3637999291.671949);
+  });
+
+  it('is an empty sum for no quantities', () => {
+    expect(sumQuantities([])).toBe(0);
   });
 });

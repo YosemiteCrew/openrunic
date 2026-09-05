@@ -286,7 +286,13 @@ function runScan(argv) {
     `forbidden-terms: BLOCKED - a named external product appears on ${findings.length} line(s).\n\n`
   );
   for (const finding of findings) {
-    process.stderr.write(`  [${finding.surface}] ${finding.file}:${finding.line}\n`);
+    // Only the diff surface has a file of its own; for the others the "file" IS
+    // the surface, and `[names] names:1` reads worse than `[names] entry 1`.
+    const where =
+      finding.file === finding.surface
+        ? `entry ${finding.line}`
+        : `${finding.file}:${finding.line}`;
+    process.stderr.write(`  [${finding.surface}] ${where}\n`);
   }
   process.stderr.write(
     '\nThese repositories are public. Draw on prior art freely; never name the source in code,\n' +

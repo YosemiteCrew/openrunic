@@ -43,6 +43,8 @@ export const TOKENS = {
   portalA: 'dev-portal-a',
   /** A patient principal with no launch context, so no compartment is pinned. */
   portalNoCompartmentA: 'test-portal-no-compartment',
+  /** A portal role whose actor_type defaulted to user, and carries no compartment. */
+  portalUserActorA: 'test-portal-user-actor',
   adminA: 'test-admin-a',
   /** A second administrator in the same organisation as `adminA`. */
   secondAdminA: 'test-second-admin-a',
@@ -323,6 +325,35 @@ export const DANGLING_PATIENT_SCOPE_PRINCIPAL: Principal = {
 };
 
 /**
+ * A patient principal with no launch context, so no chart is pinned and no
+ * `compartmentPatientId` is set - the shape an OIDC patient carries when its
+ * `actor_type` claim is present but its scope is a user one. A staff-only route
+ * must refuse it on the actor type and the role, not on a compartment it does
+ * not have. Test-only, because a denial fixture does not ship in the resolver.
+ */
+export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
+  subject: DEMO_PORTAL_PATIENT,
+  tenantId: DEMO_TENANT_A,
+  actorType: 'patient',
+  displayName: 'Testina Patientsson',
+  roles: ['patient-portal'],
+  facilityIds: [DEMO_FACILITY_A],
+  scopes: ['user/*.read'],
+  purposeOfUse: 'TREAT',
+};
+
+/**
+ * The same portal identity again, but with `actor_type` absent so the resolver
+ * defaults it to `user`. The compartment and actor-type signals both read as
+ * staff here; only the `patient-portal` role gives it away. This is the token
+ * shape that made the role a necessary backstop rather than a belt.
+ */
+export const PORTAL_USER_ACTOR_PRINCIPAL: Principal = {
+  ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
+  actorType: 'user',
+};
+
+/**
  * A second administrator in the same organisation.
  *
  * Exists so a test can ask what one privileged principal may do with something
@@ -404,6 +435,8 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.patientScopeAdminA, PATIENT_SCOPE_ADMIN_PRINCIPAL],
       [TOKENS.noScopeA, NO_SCOPE_PRINCIPAL],
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
+      [TOKENS.portalNoCompartmentA, PORTAL_NO_COMPARTMENT_PRINCIPAL],
+      [TOKENS.portalUserActorA, PORTAL_USER_ACTOR_PRINCIPAL],
       [TOKENS.siteReaderA, SITE_READER_PRINCIPAL],
       [TOKENS.auditorA, AUDITOR_PRINCIPAL],
     ])

@@ -402,6 +402,24 @@ describe('a portal token and the telehealth routes', () => {
     expect(list.status).toBe(403);
   });
 
+  it('refuses a portal role whose actor_type defaulted to user', async () => {
+    // The backstop: no compartment, actor_type read as user, only the role
+    // marks it a patient. Without the role check this would pass as staff.
+    const { app } = createTestApp({ adapters: new AdapterRegistry() });
+    const res = await app.request('/bff/v0/telehealth?status=OPEN', {
+      headers: bearer(TOKENS.portalUserActorA),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('audits the staff-only refusal, since requirePermission let the portal past', async () => {
+    const { app, sink } = createTestApp({ adapters: new AdapterRegistry() });
+    await app.request('/bff/v0/telehealth?status=OPEN', { headers: bearer(TOKENS.portalA) });
+    const denials = sink.writes().filter((entry) => entry.event.action === 'authorisation.denied');
+    expect(denials).toHaveLength(1);
+    expect(denials[0]?.event.metadata).toMatchObject({ reason: 'staff-only' });
+  });
+
   it('still lets staff see the whole table', async () => {
     const { app, dataset } = createTestApp({ adapters: new AdapterRegistry() });
     const appt = testId(74112);

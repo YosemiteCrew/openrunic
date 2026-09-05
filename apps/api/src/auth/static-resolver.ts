@@ -114,24 +114,6 @@ export const DEMO_PRINCIPALS: ReadonlyMap<string, Principal> = new Map<string, P
       purposeOfUse: 'TREAT',
     },
   ],
-  [
-    // A patient principal with no launch context, so no chart is pinned and no
-    // `compartmentPatientId` is set - the shape an OIDC patient carries when it
-    // is issued a user scope rather than a patient one. It is still a patient,
-    // and a staff-only route must refuse it on the actor type, not on a
-    // compartment it does not have.
-    'test-portal-no-compartment',
-    {
-      subject: DEMO_PORTAL_PATIENT,
-      tenantId: DEMO_TENANT_A,
-      actorType: 'patient',
-      displayName: 'Testina Patientsson',
-      roles: ['patient-portal'],
-      facilityIds: [DEMO_FACILITY_A],
-      scopes: ['user/*.read'],
-      purposeOfUse: 'TREAT',
-    },
-  ],
 ]);
 
 export { DEMO_FACILITY_A, DEMO_FACILITY_B, DEMO_PORTAL_PATIENT };

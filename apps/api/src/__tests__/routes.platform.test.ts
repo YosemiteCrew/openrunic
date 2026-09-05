@@ -1046,6 +1046,11 @@ describe('the form submission lifecycle', () => {
     async ({ transition, refusedFrom, payload }) => {
       const { app, dataset } = createTestApp();
       seed(dataset, 'FormSubmission', makeFormSubmissionRow({ status: refusedFrom }));
+      // The transitions ask the care-relationship gate now (#322), and this
+      // case is about the state machine rather than about the gate. Without it
+      // the refusal is a 404 from the chart and the 409 this asserts is never
+      // reached - a premise failing quietly and looking like the conclusion.
+      authorise(dataset, PATIENT_ID);
 
       const res = await send(
         app,
@@ -1058,6 +1063,101 @@ describe('the form submission lifecycle', () => {
       expect((await body<ProblemDocument>(res)).type).toBe(
         'https://openrunic.org/problems/invalid-transition'
       );
+    }
+  );
+
+  /* ------------------------------- the chart gate on the hand-registered
+     ------------------------------- transitions (#322) */
+
+  /**
+   * Every door into a submission that is registered by hand.
+   *
+   * The generated read is gated by `chartFrom: 'formSubmissions'`; these three
+   * are not generated, so the CRUD seam never saw them. Driven on `dev` before
+   * this change, one caller with no relationship to the chart:
+   *
+   *   GET  /bff/v0/forms/submissions/{id}            404   the read IS gated
+   *   POST /bff/v0/forms/submissions/{id}/complete   200
+   *   POST /bff/v0/forms/submissions/{id}/sign       200
+   *   POST /bff/v0/forms/submissions/{id}/amend      200
+   *
+   * with the positive control - the same caller, the same row, a relationship
+   * seeded - at 200 on the read, so the 404 is the care gate and not an
+   * unseeded row.
+   *
+   * Signing is the one that decides it: a signed form is an attestation
+   * carrying `signedById`, so an ungated door stamps a refused caller's name on
+   * a document in a chart they cannot open.
+   *
+   * NO APPOINTMENT OR ENCOUNTER IS SEEDED HERE, and that is load-bearing rather
+   * than incidental. `facility-activity` grants the relationship from either,
+   * narrowed to the caller's own sites - so `formsApp()`, which seeds one
+   * through `authorise`, describes a caller who IS in the chart. A stranger
+   * fixture that reuses it measures nothing.
+   */
+  const GATED_DOORS = [
+    ['complete', 'IN_PROGRESS', { completedByType: 'PATIENT' }],
+    ['sign', 'COMPLETED', {}],
+    ['amend', 'SIGNED', { values: { systolic: 120 } }],
+  ] as const;
+
+  /** The submission seeded in a legal prior state, and NO relationship. */
+  function strangerFormsApp(from: ScopedRow<'FormSubmission'>['status']): TestApp {
+    const harness = createTestApp();
+    seed(
+      harness.dataset,
+      'FormDefinition',
+      makeFormDefinitionRow({
+        id: DEFINITION_ID,
+        status: 'PUBLISHED',
+        publishedAt: FIXED_NOW,
+        publishedById: testId(951),
+      })
+    );
+    seed(harness.dataset, 'FormSubmission', makeFormSubmissionRow({ status: from }));
+    return harness;
+  }
+
+  it.each(GATED_DOORS)(
+    'POST /forms/submissions/:id/%s is refused on a chart nothing connects the writer to',
+    async (transition, from, payload) => {
+      const { app } = strangerFormsApp(from);
+
+      // 404 and not 403, the same as every chart refusal, and the detail
+      // separates the gate refusing from the row being absent - two different
+      // findings behind one status code.
+      const res = await send(
+        app,
+        'POST',
+        `/bff/v0/forms/submissions/${SUBMISSION_ID}/${transition}`,
+        payload
+      );
+
+      expect(res.status).toBe(404);
+      expect((await body<ProblemDocument>(res)).detail).toBe('No such patient.');
+    }
+  );
+
+  it.each(GATED_DOORS)(
+    'POST /forms/submissions/:id/%s still answers a writer who is in that patient care',
+    async (transition, from, payload) => {
+      const harness = strangerFormsApp(from);
+      authorise(harness.dataset, PATIENT_ID);
+
+      // A real 200 rather than "not 404": every door is seeded in a state its
+      // transition is legal from, so a 409 here would mean the state machine
+      // had taken the route out of the product while the pair still read as the
+      // gate working.
+      expect(
+        (
+          await send(
+            harness.app,
+            'POST',
+            `/bff/v0/forms/submissions/${SUBMISSION_ID}/${transition}`,
+            payload
+          )
+        ).status
+      ).toBe(200);
     }
   );
 

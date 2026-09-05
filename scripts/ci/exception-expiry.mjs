@@ -300,6 +300,12 @@ export const SUPPRESSION = {
   // repository has deleted three times today. The date goes on a `//` line
   // immediately above the marker run, which is also where a reader deleting a
   // marker would look.
+  //
+  // It FAILS CLOSED, which is what makes the narrowness safe rather than a gap:
+  // a marker documented in a block comment is still found by `entry`, the walk
+  // finds no `//` line above it, and the marker is refused for carrying no
+  // date. Measured. So the cost is a false red on a shape somebody has to
+  // rewrite, never a marker that slips through undated.
   comment: /^\s*\/\//u,
 };
 

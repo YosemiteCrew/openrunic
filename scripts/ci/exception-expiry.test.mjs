@@ -607,6 +607,36 @@ test('a marker only counts in a file a scanner reads one from', () => {
 });
 
 /**
+ * An undated marker is REFUSED, through the gate, not merely counted.
+ *
+ * Everything above proves the walk finds markers and reads their dates, and the
+ * row below proves the gate asks for them. None of it shows the case this whole
+ * change exists for: a marker with no date failing the build. It cannot be
+ * shown against this tree, because this tree has none - both markers are dated
+ * by the same commit that added this walk - so the suppression is handed to
+ * `checkWith` directly.
+ *
+ * Raised in review. The published matrix showed the guard counting 9, 10 and 11
+ * and never showed it refusing, which is the difference between a gate and a
+ * census.
+ */
+test('a suppression with no date fails the build, it is not just counted', () => {
+  const undated = {
+    file: 'apps/api/src/repositories/rls-port.ts',
+    what: 'scanner suppression',
+    id: 'nosec',
+    line: 151,
+    date: null,
+  };
+
+  const { exceptions, problems } = checkWith(process.cwd(), '2026-09-05', [], [undated]);
+
+  assert.equal(exceptions.length, 1, 'the suppression did not reach the exception list');
+  assert.equal(problems.length, 1, 'an undated suppression was counted rather than refused');
+  assert.match(problems[0].reason, /carries no `Re-review by/u);
+});
+
+/**
  * The gate has to actually ask for them.
  *
  * Everything above drives `findSuppressions` directly, so all of it holds

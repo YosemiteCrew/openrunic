@@ -36,11 +36,14 @@
 //
 // Usage:
 //   node scripts/ci/forbidden-terms.mjs selftest --min-corpus <n>
-//   node scripts/ci/forbidden-terms.mjs scan <surface>=<file> [<surface>=<file>...]
+//   node scripts/ci/forbidden-terms.mjs scan --dir <directory>
 //
-// Surfaces: diff, names, messages, branch, title, body. `diff` expects unified
-// diff text and reports the file and line number of the ADDED line, which is
-// why it is a surface of its own rather than another blob of text.
+// The directory holds one file per surface, named for it: diff, names,
+// messages, branch, title, body. ALL SIX are read and a missing one is exit 2 -
+// the caller does not get to choose which surfaces are checked, because a
+// caller that can omit one is a caller that will. `diff` expects unified diff
+// text and reports the file and line of the ADDED line, which is why it is a
+// surface of its own rather than another blob of text.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -248,22 +251,32 @@ function runSelfTest(argv) {
   return 0;
 }
 
+/**
+ * Reads a DIRECTORY and scans every surface in SURFACES, by fixed name.
+ *
+ * It took a list of `<surface>=<file>` pairs first, and that was the same
+ * defect as the ones this repository spent the day finding: the caller decided
+ * what got checked, nothing asserted the caller passed them all, and dropping
+ * `body=` from the workflow left the scan reporting
+ * "clean - no named external product on any checked surface" while the pull
+ * request body carried one. The word "checked" was doing silent work.
+ *
+ * A directory of fixed names cannot be short-passed. There is no argument to
+ * omit, so the coverage is a property of this file rather than of the workflow
+ * that calls it - and a surface the collector failed to write is an unreadable
+ * file, which is already exit 2.
+ */
 function runScan(argv) {
-  if (argv.length === 0) {
-    throw new GuardError('scan needs at least one <surface>=<file> argument.');
+  const flag = argv.indexOf('--dir');
+  const dir = flag === -1 ? '' : (argv[flag + 1] ?? '');
+  if (dir === '') {
+    throw new GuardError('scan needs --dir <directory> holding one file per surface.');
   }
   const pattern = compilePattern(decodeRequired(PATTERN_ENV));
 
   const findings = [];
-  for (const argument of argv) {
-    const split = argument.indexOf('=');
-    const surface = split === -1 ? '' : argument.slice(0, split);
-    const file = argument.slice(split + 1);
-    if (!SURFACES.has(surface)) {
-      throw new GuardError(
-        `Unknown surface '${surface}'. Expected one of: ${[...SURFACES].join(', ')}.`
-      );
-    }
+  for (const surface of SURFACES) {
+    const file = path.join(dir, surface);
     let text;
     try {
       text = readFileSync(file, 'utf8');
@@ -277,7 +290,7 @@ function runScan(argv) {
 
   if (findings.length === 0) {
     process.stdout.write(
-      'forbidden-terms: clean - no named external product on any checked surface.\n'
+      `forbidden-terms: clean - ${SURFACES.size} surfaces read, no named external product on any of them.\n`
     );
     return 0;
   }
@@ -309,7 +322,7 @@ function main(argv) {
     if (command === 'selftest') return runSelfTest(rest);
     if (command === 'scan') return runScan(rest);
     process.stderr.write(
-      'Usage: forbidden-terms.mjs selftest --min-corpus <n> | scan <surface>=<file>...\n'
+      'Usage: forbidden-terms.mjs selftest --min-corpus <n> | scan --dir <directory>\n'
     );
     return 2;
   } catch (error) {

@@ -12,6 +12,8 @@
 
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
@@ -46,6 +48,21 @@ function run(args, env = {}) {
 }
 
 const b64 = (value) => Buffer.from(value, 'utf8').toString('base64');
+
+/**
+ * Writes a full set of surface files and returns the directory.
+ *
+ * Every surface is written even when a case only cares about one, because that
+ * is what the CLI now requires - and requiring it is the point: a caller that
+ * can leave one out is a caller that will.
+ */
+function surfaceDir(overrides = {}) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'forbidden-terms-'));
+  for (const surface of ['diff', 'names', 'messages', 'branch', 'title', 'body']) {
+    writeFileSync(path.join(dir, surface), overrides[surface] ?? '');
+  }
+  return dir;
+}
 
 // ---------------------------------------------------------------------------
 // The diff surface
@@ -133,14 +150,32 @@ test('a finding carries where and never what', () => {
 });
 
 test('the whole blocked-run output never contains the term', () => {
-  const surface = path.join(import.meta.dirname, 'forbidden-terms.test.mjs');
-  const result = run(['scan', `body=${surface}`], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
-  assert.equal(
-    result.code,
-    1,
-    'this test file mentions the synthetic term, so the scan must block'
-  );
+  const dir = surfaceDir({ body: 'ported from acme health, which is the thing not to write' });
+  const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
+  assert.equal(result.code, 1);
   assert.equal(`${result.stdout}${result.stderr}`.toLowerCase().includes('acme'), false);
+});
+
+test('a surface left out of the directory is exit 2, not a clean run', () => {
+  // The defect this CLI shape exists to remove. When `scan` took a list of
+  // `<surface>=<file>` pairs, dropping one from the workflow left the run
+  // reporting clean while that surface carried the term - the caller decided
+  // the coverage and nothing asserted it had passed them all.
+  const dir = surfaceDir({ body: 'acmehealth' });
+  execFileSync('rm', [path.join(dir, 'body')]);
+  const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /Cannot read the 'body' surface/);
+});
+
+test('a clean run says how many surfaces it read', () => {
+  // "no named external product on any CHECKED surface" was true of a run that
+  // checked five of six. The count is what makes the sentence answerable.
+  const result = run(['scan', '--dir', surfaceDir()], {
+    FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC),
+  });
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /6 surfaces read/);
 });
 
 test('a pattern that does not compile is reported without quoting the pattern', () => {
@@ -212,7 +247,7 @@ for (const [name, env] of [
     // An empty pattern is not a no-op: one formulation matches every line and
     // another matches none. The second is a silently green pull request on
     // exactly the contributions that most need checking.
-    const result = run(['scan', `title=${PROSE}`], {
+    const result = run(['scan', '--dir', surfaceDir()], {
       FORBIDDEN_TERMS_PATTERN_B64: undefined,
       ...env,
     });
@@ -221,20 +256,20 @@ for (const [name, env] of [
   });
 }
 
-test('a surface that cannot be read exits 2, not 0', () => {
+test('a directory that does not exist exits 2, not 0', () => {
   // Treating an unreadable surface as empty is how a guard reports clean about
   // something it never looked at.
-  const result = run(['scan', 'title=/nonexistent/surface.txt'], {
+  const result = run(['scan', '--dir', '/nonexistent/surfaces'], {
     FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC),
   });
   assert.equal(result.code, 2);
-  assert.match(result.stderr, /Cannot read the 'title' surface/);
+  assert.match(result.stderr, /Cannot read the 'diff' surface/);
 });
 
-test('an unknown surface exits 2', () => {
-  const result = run(['scan', `readme=${PROSE}`], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
+test('scan without --dir exits 2', () => {
+  const result = run(['scan'], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
   assert.equal(result.code, 2);
-  assert.match(result.stderr, /Unknown surface/);
+  assert.match(result.stderr, /--dir/);
 });
 
 test('selftest without --min-corpus exits 2', () => {
@@ -248,8 +283,10 @@ test('selftest without --min-corpus exits 2', () => {
   assert.match(result.stderr, /--min-corpus/);
 });
 
-test('a clean scan exits 0 and says so', () => {
-  const result = run(['scan', `body=${PROSE}`], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
+test("this repository's own prose passes every surface", () => {
+  const prose = execFileSync('cat', [PROSE], { encoding: 'utf8' });
+  const dir = surfaceDir({ body: prose, messages: prose, title: prose });
+  const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
   assert.equal(result.code, 0);
   assert.match(result.stdout, /clean/);
 });

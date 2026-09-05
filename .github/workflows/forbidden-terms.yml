@@ -178,10 +178,8 @@ jobs:
         env:
           FORBIDDEN_TERMS_PATTERN_B64: ${{ secrets.FORBIDDEN_TERMS_PATTERN_B64 }}
         run: |
-          node scripts/ci/forbidden-terms.mjs scan \
-            "diff=${RUNNER_TEMP}/surfaces/diff" \
-            "names=${RUNNER_TEMP}/surfaces/names" \
-            "messages=${RUNNER_TEMP}/surfaces/messages" \
-            "branch=${RUNNER_TEMP}/surfaces/branch" \
-            "title=${RUNNER_TEMP}/surfaces/title" \
-            "body=${RUNNER_TEMP}/surfaces/body"
+          # A directory rather than a list of surfaces, so this step cannot
+          # short-pass the guard. Every surface the script knows about is read,
+          # and one the step above failed to write is exit 2 rather than a
+          # surface quietly missing from the run.
+          node scripts/ci/forbidden-terms.mjs scan --dir "${RUNNER_TEMP}/surfaces"

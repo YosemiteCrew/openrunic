@@ -105,7 +105,14 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { attributedTo, idParamSchema, policyOf, repositories, required } from './helpers.js';
+import {
+  attributedTo,
+  idParamSchema,
+  policyOf,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * The chart, over HTTP.
@@ -512,10 +519,12 @@ export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const input = parseQuery(c, noteAddendumListQuerySchema);
     const { notes, noteAddenda } = repositories(c);
-    // The note is read first so that addenda on a chart this principal cannot
-    // reach are a 404 rather than an empty list. An empty list would say the
-    // note has no addenda, which is a different and false statement.
-    required(await notes.findById(id), MISSING_NOTE);
+    // The note is read AND gated first, so that addenda on a chart this
+    // principal cannot reach are a 404 rather than an empty list. An empty list
+    // would say the note has no addenda, which is a different and false
+    // statement - and the read on its own is not the check: it narrows by
+    // tenant, compartment and facility and never by care relationship (#300).
+    await requiredParentChart(c, 'notes', await notes.findById(id), MISSING_NOTE);
 
     const page = await noteAddenda.list(toNoteAddendumListQuery(input, id));
     return c.json(toListResponse(page, toNoteAddendumDto));

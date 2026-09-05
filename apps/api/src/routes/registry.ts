@@ -9,7 +9,7 @@ import { parseJsonBody, parseQuery } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { ScopedRow } from '../repositories/types.js';
-import { repositories } from './helpers.js';
+import { gateCharts, repositories } from './helpers.js';
 
 /**
  * IMMUNISATION REGISTRY SUBMISSION, AND WHY IT IS THREE STEPS.
@@ -123,6 +123,10 @@ export function registryRoutes(router: Hono<AppEnv>): void {
   router.get('/immunisations/registry/pending', requirePermission('encounter.read'), async (c) => {
     const query = parseQuery(c, pendingQuerySchema);
     const rows = await pendingDoses(c, query.limit ?? PENDING_LIMIT, query.from, query.to);
+    // The work queue names no chart, so nothing about the request looks like a
+    // chart read - and it was answering with `patientId` for charts whose own
+    // immunisation list is gated on exactly this (#300).
+    await gateCharts(c, 'immunisations', rows);
 
     return c.json({
       items: rows.map((row) => ({

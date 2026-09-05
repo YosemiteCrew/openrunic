@@ -8,7 +8,9 @@ import {
   jsonBearer,
   makePatientRow,
   seed,
+  seedCareRelationship,
   storageColumns,
+  SUBJECTS,
   testId,
   TOKENS,
 } from './support.js';
@@ -39,6 +41,15 @@ const SENDER = {
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+  /* The registry queue is a list of chart data and is gated on the page like
+     every other one (#300). This suite is about what the queue reports and what
+     an acknowledgement records, not about who may read it, so it says in one
+     line that the reader is in this patient's care rather than leaving the
+     relationship implicit and reading as a permission test. */
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: SUBJECTS.clinicianA,
+  });
   seedDose(created.dataset, {});
   return created;
 }

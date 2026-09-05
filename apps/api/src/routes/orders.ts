@@ -98,7 +98,13 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { attributedTo, idParamSchema, repositories, required } from './helpers.js';
+import {
+  attributedTo,
+  idParamSchema,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * Orders, results, documents, the typed inbox and messaging.
@@ -519,8 +525,10 @@ function transitionRoutes(): Hono<AppEnv> {
     const repos = repositories(c);
     // Read through the report rather than straight into the analyte table, so
     // an id naming a report this principal cannot see is absent rather than an
-    // empty list that reads like a report with no results.
-    required(await repos.reports.findById(id), NO_REPORT);
+    // empty list that reads like a report with no results. Gated on the way
+    // through: the read narrows by tenant, compartment and facility and never
+    // by care relationship, so reading the parent was never the check (#300).
+    await requiredParentChart(c, 'reports', await repos.reports.findById(id), NO_REPORT);
     const page = await repos.resultObservations.list(toResultObservationListQuery(input, id));
     return c.json(toListResponse(page, toResultObservationDto));
   });
@@ -714,7 +722,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     const input = parseQuery(c, messageListQuerySchema);
     const repos = repositories(c);
-    required(await repos.messageThreads.findById(id), NO_THREAD);
+    await requiredParentChart(
+      c,
+      'messageThreads',
+      await repos.messageThreads.findById(id),
+      NO_THREAD
+    );
     const page = await repos.messages.list(toMessageListQuery(input, id));
     return c.json(toListResponse(page, toMessageDto));
   });

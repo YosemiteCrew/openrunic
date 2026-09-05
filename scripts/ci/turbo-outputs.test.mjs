@@ -66,18 +66,38 @@ test('the build cache captures every generated output the schemas declare', () =
   );
 
   const declared = JSON.parse(readFileSync(path.join(ROOT, 'turbo.json'), 'utf8'));
-  const patterns = declared.tasks.build.outputs.filter((pattern) => !pattern.startsWith('!'));
+  const patterns = declared.tasks.build.outputs;
+  const includes = patterns.filter((pattern) => !pattern.startsWith('!'));
+  const excludes = patterns
+    .filter((pattern) => pattern.startsWith('!'))
+    .map((pattern) => pattern.slice(1));
+
+  // Compare on a segment boundary: `dist` must not be read as covering
+  // `dist-report/`, which a bare prefix test would allow.
+  const isAncestorOf = (pattern, target) =>
+    `${target}/`.startsWith(`${pattern.replace(/\/?\*+$/, '')}/`);
 
   for (const { schema, packageRelative } of outputs) {
-    // Compare on a segment boundary: `dist` must not be read as covering
-    // `dist-report/`, which a bare prefix test would allow.
-    const covered = patterns.some((pattern) =>
-      `${packageRelative}/`.startsWith(`${pattern.replace(/\/?\*+$/, '')}/`)
+    // Both halves, because an include alone does not mean turbo caches the
+    // directory. A negation is how this task already narrows an output
+    // (`!.next/cache/**`), so it is also how somebody re-introduces the bug -
+    // "stop caching the query engine" is an ordinary line to write, and it puts
+    // the generated client back outside the cache with nothing said.
+    const excludedBy = excludes.find((pattern) => isAncestorOf(pattern, packageRelative));
+    assert.ok(
+      !excludedBy,
+      `${schema} generates into ${packageRelative}, which turbo build excludes via !${excludedBy}. ` +
+        'A cache hit will replay the build log without producing the files.'
     );
     assert.ok(
-      covered,
+      includes.some((pattern) => isAncestorOf(pattern, packageRelative)),
       `${schema} generates into ${packageRelative}, which no turbo build output covers. ` +
         'A cache hit will replay the build log without producing the files.'
     );
   }
+
+  // The boundary, stated rather than papered over: this asks whether the
+  // generator's output DIRECTORY is excluded. An exclusion of one file inside it
+  // - `!src/generated/prisma/query_engine.node` - is a finer question than this
+  // check answers, and it is left out rather than implied.
 });

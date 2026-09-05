@@ -130,6 +130,13 @@ interface SitedSpec {
  * null branch exists to prevent.
  */
 describe('the facility narrowing is a query Postgres accepts', () => {
+  // The field this filters on differs from the describe above deliberately, and
+  // the asymmetry is load-bearing rather than untidy. `it.each` cannot fail for
+  // a member that has left the list, and neither count assertion is exact, so a
+  // spec that lost `facilityScoped` would simply go dark here. It cannot,
+  // because it is still caught above by `facilityColumn` - and a spec that lost
+  // `facilityColumn` is caught here by `facilityScoped`. Making the two filters
+  // agree would close that and open the hole.
   const scoped = Object.entries(COLLECTION_SPECS).filter(
     ([, spec]) => (spec as SitedSpec).facilityScoped === true
   ) as readonly (readonly [string, SitedSpec])[];

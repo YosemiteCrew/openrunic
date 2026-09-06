@@ -73,11 +73,25 @@ name: Forbidden Terms
 #    with no owner named anywhere; name one before assuming it is covered.
 #
 # 3. A REQUIRED CONTEXT IS MATCHED BY STRING, so a typo in the ruleset blocks
-#    forever and passes every check of this workflow. Verified against a real
-#    pull request's rollup rather than by reading: all five required contexts,
-#    including this job's `name:`, appear in what a merged PR actually reported.
-#    Re-run that comparison after renaming any job, because the rename is the
-#    moment the two strings diverge.
+#    forever and passes every check of this workflow. There are THREE objects
+#    here and two edges, and it is worth naming which check covers which:
+#
+#      the ruleset's `context`   <-A->   this job's `name:`   <-B->   what GitHub
+#                                                                     reports
+#
+#    A is the edge a rename breaks, and nothing in the system compares those two
+#    strings. Checked by reading both: `forbidden-terms.yml`'s `name:` and the
+#    `dev` ruleset context are byte-identical.
+#
+#    B is GitHub's own mapping. Observing it does NOT verify A - a rollup shows
+#    what was reported, so a ruleset entry matching a reported name says the
+#    entry is currently satisfiable and says nothing about where that string
+#    came from. Checked separately: all five required contexts appear in a
+#    merged pull request's rollup.
+#
+#    So after ANY job rename, re-run the A check - compare the ruleset context
+#    against the workflow's `name:` field. A green rollup on an older pull
+#    request will not show you the break.
 #
 # ---------------------------------------------------------------------------
 # TWO THINGS NOT TO DO WHEN THE FORK RED BECOMES ANNOYING

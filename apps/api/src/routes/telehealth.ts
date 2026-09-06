@@ -240,7 +240,7 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * refusing here means a finished consultation cannot be rejoined even if a
    * vendor is lenient about it, and lenient is what vendors are.
    */
-  router.post('/telehealth/:id/join', requirePermission('appointment.read'), async (c) => {
+  router.post('/telehealth/:id/join', requirePermission('telehealth.join'), async (c) => {
     await assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, telehealthJoinSchema);
@@ -368,7 +368,7 @@ export function telehealthRouteContracts(): RouteContract[] {
       description:
         'Returns a short-lived token for one named participant. The token is returned exactly once and is never persisted: a caller that loses one asks for another. A visit that has ended issues nothing.',
       tags: ['telehealth'],
-      permission: 'appointment.read',
+      permission: 'telehealth.join',
       pathParams: [idParam('TelehealthVisit')],
       body: telehealthJoinSchema,
       responses: [

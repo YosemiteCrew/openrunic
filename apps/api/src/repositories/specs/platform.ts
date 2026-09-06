@@ -15,7 +15,7 @@ import {
   windowFilter,
   type Writable,
 } from '../collection.js';
-import type { Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, Row, ScopedRow, WhereFor } from '../rows.js';
 
 /**
  * The platform aggregates: the form engine, the staff directory, the places of
@@ -200,7 +200,7 @@ export const formDefinitionSpec: CollectionSpec<
     return row.key;
   },
 
-  orderBy(query: FormDefinitionListQuery) {
+  orderBy(query: FormDefinitionListQuery): OrderByFor<'FormDefinition'> {
     const { order } = query;
     if (query.sort === 'version') return [{ version: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -218,7 +218,10 @@ export const formDefinitionSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: FormDefinitionCreateInput) => ({ key: input.key, version: input.version }),
+    where: (input: FormDefinitionCreateInput): WhereFor<'FormDefinition'> => ({
+      key: input.key,
+      version: input.version,
+    }),
     matches: (row: ScopedRow<'FormDefinition'>, input: FormDefinitionCreateInput) =>
       row.key === input.key && row.version === input.version,
     message: (input: FormDefinitionCreateInput) =>
@@ -346,7 +349,7 @@ export const formSubmissionSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.effectiveAt.getTime();
   },
 
-  orderBy(query: FormSubmissionListQuery) {
+  orderBy(query: FormSubmissionListQuery): OrderByFor<'FormSubmission'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ effectiveAt: query.order }, { id: 'asc' as const }];
   },
@@ -570,7 +573,7 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
     return `${row.familyName} ${row.givenName}`;
   },
 
-  orderBy(query: UserListQuery) {
+  orderBy(query: UserListQuery): OrderByFor<'User'> {
     const { order } = query;
     if (query.sort === 'email') return [{ email: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -582,7 +585,7 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
   },
 
   uniqueBy: {
-    where: (input: UserCreateInput) => ({ email: input.email }),
+    where: (input: UserCreateInput): WhereFor<'User'> => ({ email: input.email }),
     matches: (row: ScopedRow<'User'>, input: UserCreateInput) => row.email === input.email,
     message: (input: UserCreateInput) => `A user with the email ${input.email} already exists.`,
   },
@@ -646,7 +649,7 @@ export const roleSpec: CollectionSpec<'Role', RoleCreateInput, RoleUpdateInput, 
     return row.key;
   },
 
-  orderBy(query: RoleListQuery) {
+  orderBy(query: RoleListQuery): OrderByFor<'Role'> {
     const { order } = query;
     if (query.sort === 'name') return [{ name: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -658,7 +661,7 @@ export const roleSpec: CollectionSpec<'Role', RoleCreateInput, RoleUpdateInput, 
   },
 
   uniqueBy: {
-    where: (input: RoleCreateInput) => ({ key: input.key }),
+    where: (input: RoleCreateInput): WhereFor<'Role'> => ({ key: input.key }),
     matches: (row: ScopedRow<'Role'>, input: RoleCreateInput) => row.key === input.key,
     message: (input: RoleCreateInput) => `A role with the key ${input.key} already exists.`,
   },
@@ -769,7 +772,7 @@ export const roleAssignmentSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: RoleAssignmentListQuery) {
+  orderBy(query: RoleAssignmentListQuery): OrderByFor<'RoleAssignment'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 
@@ -854,7 +857,7 @@ export const userFacilitySpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: UserFacilityListQuery) {
+  orderBy(query: UserFacilityListQuery): OrderByFor<'UserFacility'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 
@@ -874,7 +877,7 @@ export const userFacilitySpec: CollectionSpec<
    * otherwise inherit the divergence and pass its own tests.
    */
   uniqueBy: {
-    where: (input: UserFacilityCreateInput) => ({
+    where: (input: UserFacilityCreateInput): WhereFor<'UserFacility'> => ({
       userId: input.userId,
       facilityId: input.facilityId,
     }),
@@ -995,7 +998,7 @@ export const facilitySpec: CollectionSpec<
     return row.name;
   },
 
-  orderBy(query: FacilityListQuery) {
+  orderBy(query: FacilityListQuery): OrderByFor<'Facility'> {
     const { order } = query;
     if (query.sort === 'code') return [{ code: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1007,7 +1010,7 @@ export const facilitySpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: FacilityCreateInput) => ({ code: input.code }),
+    where: (input: FacilityCreateInput): WhereFor<'Facility'> => ({ code: input.code }),
     matches: (row: ScopedRow<'Facility'>, input: FacilityCreateInput) => row.code === input.code,
     message: (input: FacilityCreateInput) =>
       `A facility with the code ${input.code} already exists.`,
@@ -1097,7 +1100,7 @@ export const terminologyCodeSpec: CollectionSpec<
     return row.display;
   },
 
-  orderBy(query: TerminologyListQuery) {
+  orderBy(query: TerminologyListQuery): OrderByFor<'TerminologyCode'> {
     const { order } = query;
     if (query.sort === 'code') return [{ code: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1109,7 +1112,7 @@ export const terminologyCodeSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: TerminologyCodeInput) => ({
+    where: (input: TerminologyCodeInput): WhereFor<'TerminologyCode'> => ({
       system: input.system,
       code: input.code,
       version: input.version ?? TERMINOLOGY_DEFAULTS.version,
@@ -1199,7 +1202,7 @@ export const valueSetSpec: CollectionSpec<
     return row.url;
   },
 
-  orderBy(query: ValueSetListQuery) {
+  orderBy(query: ValueSetListQuery): OrderByFor<'ValueSet'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ url: order }, { id: 'asc' as const }];

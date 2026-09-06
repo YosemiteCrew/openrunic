@@ -24,7 +24,7 @@ import {
   type Writable,
 } from '../collection.js';
 import { APPOINTMENT_DEFAULTS, PATIENT_DEFAULTS } from '../defaults.js';
-import type { ScopedRow } from '../rows.js';
+import type { OrderByFor, ScopedRow, WhereFor } from '../rows.js';
 import type { AdministrativeGender, AppointmentStatus, TelehealthVisitStatus } from '../types.js';
 
 /**
@@ -235,7 +235,7 @@ export const patientSpec: CollectionSpec<
     return `${row.familyName} ${row.givenName}`;
   },
 
-  orderBy(query: PatientListQuery) {
+  orderBy(query: PatientListQuery): OrderByFor<'Patient'> {
     const { order } = query;
     if (query.sort === 'birthDate') return [{ birthDate: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -247,7 +247,7 @@ export const patientSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: PatientCreateInput) => ({ mrn: input.mrn }),
+    where: (input: PatientCreateInput): WhereFor<'Patient'> => ({ mrn: input.mrn }),
     matches: (row: ScopedRow<'Patient'>, input: PatientCreateInput) => row.mrn === input.mrn,
     message: (input: PatientCreateInput) => `A patient with MRN ${input.mrn} already exists.`,
   },
@@ -374,7 +374,7 @@ export const appointmentSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.start.getTime();
   },
 
-  orderBy(query: AppointmentListQuery) {
+  orderBy(query: AppointmentListQuery): OrderByFor<'Appointment'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ start: query.order }, { id: 'asc' as const }];
   },
@@ -487,7 +487,7 @@ export const telehealthVisitSpec: CollectionSpec<
     return row.scheduledStart.getTime();
   },
 
-  orderBy(query: TelehealthVisitListQuery) {
+  orderBy(query: TelehealthVisitListQuery): OrderByFor<'TelehealthVisit'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ scheduledStart: order }, { id: 'asc' as const }];
@@ -590,7 +590,7 @@ export const relatedPersonSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.familyName;
   },
 
-  orderBy(query: RelatedPersonListQuery) {
+  orderBy(query: RelatedPersonListQuery): OrderByFor<'RelatedPerson'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ familyName: order }, { id: 'asc' as const }];
@@ -676,7 +676,7 @@ export const breakGlassGrantSpec: CollectionSpec<
    * immutable, and "still in force" is a comparison against the row's own time.
    */
   uniqueBy: {
-    where(input: BreakGlassGrantInput) {
+    where(input: BreakGlassGrantInput): WhereFor<'BreakGlassGrant'> {
       return {
         userId: input.userId,
         patientId: input.patientId,
@@ -755,7 +755,7 @@ export const breakGlassGrantSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.grantedAt.getTime();
   },
 
-  orderBy(query: BreakGlassGrantListQuery) {
+  orderBy(query: BreakGlassGrantListQuery): OrderByFor<'BreakGlassGrant'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ grantedAt: order }, { id: 'asc' as const }];

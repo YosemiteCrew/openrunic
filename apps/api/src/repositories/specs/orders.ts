@@ -37,7 +37,7 @@ import {
   type RowContext,
   type Writable,
 } from '../collection.js';
-import type { ScopedRow } from '../rows.js';
+import type { OrderByFor, ScopedRow, WhereFor } from '../rows.js';
 import type { ImagingStudyStatus } from '../types.js';
 
 /**
@@ -270,7 +270,7 @@ export const serviceRequestSpec: CollectionSpec<
     return row.requestedAt.getTime();
   },
 
-  orderBy(query: ServiceRequestListQuery) {
+  orderBy(query: ServiceRequestListQuery): OrderByFor<'ServiceRequest'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     if (query.sort === 'scheduledFor') return [{ scheduledFor: order }, { id: 'asc' as const }];
@@ -367,7 +367,7 @@ export const specimenSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : comparable(row.collectedAt);
   },
 
-  orderBy(query: SpecimenListQuery) {
+  orderBy(query: SpecimenListQuery): OrderByFor<'Specimen'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ collectedAt: query.order }, { id: 'asc' as const }];
   },
@@ -382,7 +382,7 @@ export const specimenSpec: CollectionSpec<
    * mis-labelling incident rather than a save to retry.
    */
   uniqueBy: {
-    where: (input: SpecimenInput) => ({
+    where: (input: SpecimenInput): WhereFor<'Specimen'> => ({
       accessionNumber: input.accessionNumber ?? matchesNothing(),
     }),
     matches: (row: SpecimenRow, input: SpecimenInput) =>
@@ -524,7 +524,7 @@ export const diagnosticReportSpec: CollectionSpec<
     return row.issuedAt.getTime();
   },
 
-  orderBy(query: DiagnosticReportListQuery) {
+  orderBy(query: DiagnosticReportListQuery): OrderByFor<'DiagnosticReport'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     if (query.sort === 'effectiveAt') return [{ effectiveAt: order }, { id: 'asc' as const }];
@@ -647,7 +647,7 @@ export const resultObservationSpec: CollectionSpec<
     return row.sequence;
   },
 
-  orderBy(query: ResultObservationListQuery) {
+  orderBy(query: ResultObservationListQuery): OrderByFor<'ResultObservation'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     if (query.sort === 'effectiveAt') return [{ effectiveAt: order }, { id: 'asc' as const }];
@@ -758,7 +758,7 @@ export const documentSpec: CollectionSpec<
     return row.receivedAt.getTime();
   },
 
-  orderBy(query: DocumentListQuery) {
+  orderBy(query: DocumentListQuery): OrderByFor<'Document'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     if (query.sort === 'title') return [{ title: order }, { id: 'asc' as const }];
@@ -906,7 +906,7 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
     return comparable(row.dueAt);
   },
 
-  orderBy(query: TaskListQuery) {
+  orderBy(query: TaskListQuery): OrderByFor<'Task'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     if (query.sort === 'priority') return [{ priority: order }, { id: 'asc' as const }];
@@ -924,7 +924,7 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
    * to close.
    */
   uniqueBy: {
-    where: (input: TaskCreateInput) =>
+    where: (input: TaskCreateInput): WhereFor<'Task'> =>
       input.sourceEventId === undefined
         ? { sourceEventId: matchesNothing() }
         : { sourceEventId: input.sourceEventId, type: input.type },
@@ -1010,7 +1010,7 @@ export const messageThreadSpec: CollectionSpec<
     return comparable(row.lastMessageAt);
   },
 
-  orderBy(query: MessageThreadListQuery) {
+  orderBy(query: MessageThreadListQuery): OrderByFor<'MessageThread'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     if (query.sort === 'subject') return [{ subject: order }, { id: 'asc' as const }];
@@ -1099,7 +1099,7 @@ export const messageSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.sentAt.getTime();
   },
 
-  orderBy(query: MessageListQuery) {
+  orderBy(query: MessageListQuery): OrderByFor<'Message'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ sentAt: query.order }, { id: 'asc' as const }];
   },
@@ -1229,7 +1229,7 @@ export const imagingStudySpec: CollectionSpec<
     return row.startedAt.getTime();
   },
 
-  orderBy(query: ImagingStudyListQuery) {
+  orderBy(query: ImagingStudyListQuery): OrderByFor<'ImagingStudy'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ startedAt: order }, { id: 'asc' as const }];

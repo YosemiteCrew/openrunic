@@ -27,7 +27,7 @@ import {
   type RowContext,
   type Writable,
 } from '../collection.js';
-import type { Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, Row, ScopedRow } from '../rows.js';
 
 /**
  * The chart: the visit and everything documented against it.
@@ -291,7 +291,7 @@ export const encounterSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.startedAt.getTime();
   },
 
-  orderBy(query: EncounterListQuery) {
+  orderBy(query: EncounterListQuery): OrderByFor<'Encounter'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ startedAt: query.order }, { id: 'asc' as const }];
   },
@@ -410,7 +410,7 @@ export const clinicalNoteSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: ClinicalNoteListQuery) {
+  orderBy(query: ClinicalNoteListQuery): OrderByFor<'ClinicalNote'> {
     if (query.sort === 'signedAt') return [{ signedAt: query.order }, { id: 'asc' as const }];
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
@@ -487,7 +487,7 @@ export const noteAddendumSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: NoteAddendumListQuery) {
+  orderBy(query: NoteAddendumListQuery): OrderByFor<'NoteAddendum'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -614,7 +614,7 @@ export const procedureSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.performedStart.getTime();
   },
 
-  orderBy(query: ProcedureListQuery) {
+  orderBy(query: ProcedureListQuery): OrderByFor<'Procedure'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ performedStart: order }, { id: 'asc' as const }];
@@ -697,7 +697,7 @@ export const conditionSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.recordedAt.getTime();
   },
 
-  orderBy(query: ConditionListQuery) {
+  orderBy(query: ConditionListQuery): OrderByFor<'Condition'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ recordedAt: query.order }, { id: 'asc' as const }];
   },
@@ -782,7 +782,7 @@ export const medicationStatementSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.reportedAt.getTime();
   },
 
-  orderBy(query: MedicationStatementListQuery) {
+  orderBy(query: MedicationStatementListQuery): OrderByFor<'MedicationStatement'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ reportedAt: query.order }, { id: 'asc' as const }];
   },
@@ -942,7 +942,7 @@ export const medicationRequestSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.writtenAt.getTime();
   },
 
-  orderBy(query: MedicationRequestListQuery) {
+  orderBy(query: MedicationRequestListQuery): OrderByFor<'MedicationRequest'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ writtenAt: query.order }, { id: 'asc' as const }];
   },
@@ -1041,7 +1041,7 @@ export const allergySpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.recordedAt.getTime();
   },
 
-  orderBy(query: AllergyListQuery) {
+  orderBy(query: AllergyListQuery): OrderByFor<'AllergyIntolerance'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ recordedAt: query.order }, { id: 'asc' as const }];
   },
@@ -1147,7 +1147,7 @@ export const immunisationSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.administeredAt.getTime();
   },
 
-  orderBy(query: ImmunisationListQuery) {
+  orderBy(query: ImmunisationListQuery): OrderByFor<'Immunization'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ administeredAt: query.order }, { id: 'asc' as const }];
   },
@@ -1265,7 +1265,7 @@ export const observationSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.effectiveAt.getTime();
   },
 
-  orderBy(query: ObservationListQuery) {
+  orderBy(query: ObservationListQuery): OrderByFor<'Observation'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ effectiveAt: query.order }, { id: 'asc' as const }];
   },
@@ -1465,7 +1465,7 @@ export const referralSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: ReferralListQuery) {
+  orderBy(query: ReferralListQuery): OrderByFor<'Referral'> {
     if (query.sort === 'priority') return [{ priority: query.order }, { id: 'asc' as const }];
     if (query.sort === 'sentAt') return [{ sentAt: query.order }, { id: 'asc' as const }];
     return [{ createdAt: query.order }, { id: 'asc' as const }];
@@ -1525,7 +1525,7 @@ export const careTeamSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: CareTeamListQuery) {
+  orderBy(query: CareTeamListQuery): OrderByFor<'CareTeam'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -1645,7 +1645,7 @@ export const careTeamParticipantSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: CareTeamParticipantListQuery) {
+  orderBy(query: CareTeamParticipantListQuery): OrderByFor<'CareTeamParticipant'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -1737,7 +1737,7 @@ export const carePlanSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: CarePlanListQuery) {
+  orderBy(query: CarePlanListQuery): OrderByFor<'CarePlan'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -1829,7 +1829,7 @@ export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalLis
     return row.dueDate?.getTime() ?? Number.NEGATIVE_INFINITY;
   },
 
-  orderBy(query: GoalListQuery) {
+  orderBy(query: GoalListQuery): OrderByFor<'Goal'> {
     const { order } = query;
     if (query.sort === 'dueDate') {
       /* Null placement, made explicit. The memory port sorts an absent due date
@@ -1913,7 +1913,7 @@ export const deviceSpec: CollectionSpec<'Device', DeviceInput, DevicePatchInput,
       return row.createdAt.getTime();
     },
 
-    orderBy(query: DeviceListQuery) {
+    orderBy(query: DeviceListQuery): OrderByFor<'Device'> {
       return [{ createdAt: query.order }, { id: 'asc' as const }];
     },
   };

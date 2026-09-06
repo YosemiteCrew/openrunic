@@ -25,7 +25,7 @@ import {
   type RowContext,
   type Writable,
 } from '../collection.js';
-import type { PrismaModelName, Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, PrismaModelName, Row, ScopedRow, WhereFor } from '../rows.js';
 
 /**
  * The revenue cycle: eligibility, charges, claims, money and statements.
@@ -233,7 +233,7 @@ export const coverageSpec: CollectionSpec<
     return row.rank;
   },
 
-  orderBy(query: CoverageListQuery) {
+  orderBy(query: CoverageListQuery): OrderByFor<'Coverage'> {
     const { order } = query;
     if (query.sort === 'effectiveFrom') return [{ effectiveFrom: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -349,7 +349,7 @@ export const chargeItemSpec: CollectionSpec<
     return row.serviceDate.getTime();
   },
 
-  orderBy(query: ChargeItemListQuery) {
+  orderBy(query: ChargeItemListQuery): OrderByFor<'ChargeItem'> {
     const { order } = query;
     if (query.sort === 'totalPriceCents')
       return [{ totalPriceCents: order }, { id: 'asc' as const }];
@@ -540,7 +540,7 @@ export const claimSpec: CollectionSpec<'Claim', ClaimCreateInput, ClaimPatchInpu
       return row.createdAt.getTime();
     },
 
-    orderBy(query: ClaimListQuery) {
+    orderBy(query: ClaimListQuery): OrderByFor<'Claim'> {
       const { order } = query;
       if (query.sort === 'submittedAt') return [{ submittedAt: order }, { id: 'asc' as const }];
       if (query.sort === 'totalChargedCents') {
@@ -671,7 +671,7 @@ export const claimLineSpec: CollectionSpec<
     return row.sequence;
   },
 
-  orderBy(query: ClaimLineListQuery) {
+  orderBy(query: ClaimLineListQuery): OrderByFor<'ClaimLine'> {
     const { order } = query;
     if (query.sort === 'chargedCents') return [{ chargedCents: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -679,7 +679,7 @@ export const claimLineSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: ClaimLineCreateInput) => ({
+    where: (input: ClaimLineCreateInput): WhereFor<'ClaimLine'> => ({
       claimId: input.claimId,
       sequence: input.sequence,
     }),
@@ -755,7 +755,7 @@ export const claimStatusHistorySpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.occurredAt.getTime();
   },
 
-  orderBy(query: ClaimStatusHistoryListQuery) {
+  orderBy(query: ClaimStatusHistoryListQuery): OrderByFor<'ClaimStatusHistory'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ occurredAt: order }, { id: 'asc' as const }];
@@ -892,7 +892,7 @@ export const paymentSpec: CollectionSpec<
     return row.receivedAt.getTime();
   },
 
-  orderBy(query: PaymentListQuery) {
+  orderBy(query: PaymentListQuery): OrderByFor<'Payment'> {
     const { order } = query;
     if (query.sort === 'amountCents') return [{ amountCents: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -982,7 +982,7 @@ export const paymentAllocationSpec: CollectionSpec<
     return row.appliedAt.getTime();
   },
 
-  orderBy(query: PaymentAllocationListQuery) {
+  orderBy(query: PaymentAllocationListQuery): OrderByFor<'PaymentAllocation'> {
     const { order } = query;
     if (query.sort === 'amountCents') return [{ amountCents: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1105,7 +1105,7 @@ export const remittanceSpec: CollectionSpec<
     return row.receivedAt.getTime();
   },
 
-  orderBy(query: RemittanceListQuery) {
+  orderBy(query: RemittanceListQuery): OrderByFor<'Remittance'> {
     const { order } = query;
     if (query.sort === 'totalPaidCents') return [{ totalPaidCents: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1203,7 +1203,7 @@ export const remittanceLineSpec: CollectionSpec<
     return row.sequence;
   },
 
-  orderBy(query: RemittanceLineListQuery) {
+  orderBy(query: RemittanceLineListQuery): OrderByFor<'RemittanceLine'> {
     const { order } = query;
     if (query.sort === 'paidCents') return [{ paidCents: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1211,7 +1211,7 @@ export const remittanceLineSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: RemittanceLineCreateInput) => ({
+    where: (input: RemittanceLineCreateInput): WhereFor<'RemittanceLine'> => ({
       remittanceId: input.remittanceId,
       sequence: input.sequence,
     }),
@@ -1319,7 +1319,7 @@ export const statementSpec: CollectionSpec<
     return row.generatedAt.getTime();
   },
 
-  orderBy(query: StatementListQuery) {
+  orderBy(query: StatementListQuery): OrderByFor<'Statement'> {
     const { order } = query;
     if (query.sort === 'balanceCents') return [{ balanceCents: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];

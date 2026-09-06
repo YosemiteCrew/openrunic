@@ -104,6 +104,30 @@ describe('a path that escapes the app directory', () => {
     assert.equal(done.status, 1);
     assert.match(done.stdout, /resolved: +0 \(0\.0%\)/u);
   });
+
+  // The case above is the only entry in its report, so it exits through the
+  // zero arm and says nothing about how an escaping path is counted alongside
+  // paths that do resolve. This is that case, and the sibling is named
+  // `app-generated` on purpose: its path starts with the app directory's, so a
+  // containment test written as a bare `startsWith` admits it and the whole
+  // report reads as healthy. See safe-path.test.mjs for the same boundary at
+  // the unit.
+  it('is counted, not swallowed, when other paths do resolve', () => {
+    const present = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts'];
+    const { root, app, lcov } = fixture(present, [...present, '../app-generated/x.ts']);
+    const sibling = path.join(root, 'app-generated');
+    mkdirSync(sibling, { recursive: true });
+    writeFileSync(path.join(sibling, 'x.ts'), 'export const x = 1;\n');
+    const done = run(app, lcov);
+
+    assert.equal(done.status, 1);
+    // The counting arm, not the zero arm: the report measured something, it
+    // just did not measure all of it.
+    assert.match(done.stderr, /1 of 5 SF: paths do not resolve/u);
+    assert.match(done.stderr, /app-generated\/x\.ts/u);
+    assert.doesNotMatch(done.stderr, /pass its gate without measuring anything/u);
+    assert.match(done.stdout, /resolved: +4 \(80\.0%\)/u);
+  });
 });
 
 describe('a report that is not a report', () => {

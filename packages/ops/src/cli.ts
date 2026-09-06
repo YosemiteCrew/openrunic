@@ -161,6 +161,9 @@ async function commandSetup(argv: readonly string[]): Promise<number> {
   out('    dev-clinician-a    Dr. Adaeze Okafor, clinician');
   out('    dev-frontdesk-a    Front desk');
   out('    dev-biller-a       Billing');
+  out('    dev-auditor-a      Audita Trailmore, audit trail only');
+  out('    dev-stockkeeper-a  Stocka Shelfward, stockroom and stock counts');
+  out('    dev-readonly-a     Reada Overlook, reads everything, writes nothing');
   out();
   out('  These tokens are published in the source and are not secrets. This');
   out('  deployment has no authentication. Read docs/self-hosting.md before');

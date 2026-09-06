@@ -166,14 +166,23 @@ cannot be signed into yet.** That is the state of the project, not a fault in
 your install, and it is the same gap the [Security](#security) section is about.
 
 What the demo practice is reachable through in the meantime is the API, which
-accepts three demo tokens directly. Put one of these in an
+accepts six demo tokens directly. Put one of these in an
 `Authorization: Bearer` header on a request to port 4000:
 
-| Token             | Who they are                   |
-| ----------------- | ------------------------------ |
-| `dev-clinician-a` | Dr. Adaeze Okafor, a clinician |
-| `dev-frontdesk-a` | Front desk                     |
-| `dev-biller-a`    | Billing                        |
+| Token               | Who they are                                        |
+| ------------------- | --------------------------------------------------- |
+| `dev-clinician-a`   | Dr. Adaeze Okafor, a clinician                      |
+| `dev-frontdesk-a`   | Front desk                                          |
+| `dev-biller-a`      | Billing                                             |
+| `dev-auditor-a`     | Audita Trailmore, reads the audit trail and no more |
+| `dev-stockkeeper-a` | Stocka Shelfward, runs the stockroom and counts it  |
+| `dev-readonly-a`    | Reada Overlook, reads everything, writes nothing    |
+
+The last three exist so that the jobs that are not an administrator's can be
+done without one. Reviewing who opened which chart, reconciling a physical count
+against the ledger, and looking without touching are each a separate grant, and
+before these tokens existed the only bundle holding any of them was `admin` -
+which holds everything, including breaking glass on a chart.
 
 These are not passwords and they are not secret. They are in the source code,
 and they exist so the demo practice can be looked at. See [Security](#security).

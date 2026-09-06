@@ -388,6 +388,9 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
   const nursemanId = nextId();
   const frontDeskId = nextId();
   const billerId = nextId();
+  const auditorUserId = nextId();
+  const stockKeeperUserId = nextId();
+  const readOnlyUserId = nextId();
 
   const users: Prisma.UserCreateManyInput[] = [
     {
@@ -445,6 +448,54 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
       email: 'r.claimsworth@demo.invalid',
       givenName: 'Reva',
       familyName: 'Claimsworth',
+      isProvider: false,
+      status: 'ACTIVE',
+      createdAt,
+    },
+    /*
+     * The three oversight staff, seeded so the API's demo tokens have someone to
+     * resolve to.
+     *
+     * `createDemoPrincipalResolver` maps each demo token onto a seeded `User` by
+     * email and skips - silently - any token whose email has no row here. So a
+     * demo principal added in `apps/api` without a user added here does not fail
+     * to build, or log: it answers 401 forever on a real database while every
+     * unit test stays green. `demo-principals.reach.test.ts` asserts the two
+     * lists agree, and this comment is why that assertion exists.
+     *
+     * They are not providers: none of them treats anybody. Each exists so that a
+     * job every practice has - reviewing the audit trail, counting the shelf,
+     * looking without touching - can be done by someone who is not an
+     * administrator.
+     */
+    {
+      id: auditorUserId,
+      tenantId,
+      email: 'a.trailmore@demo.invalid',
+      givenName: 'Audita',
+      familyName: 'Trailmore',
+      credential: 'CHC',
+      isProvider: false,
+      status: 'ACTIVE',
+      createdAt,
+    },
+    {
+      id: stockKeeperUserId,
+      tenantId,
+      email: 's.shelfward@demo.invalid',
+      givenName: 'Stocka',
+      familyName: 'Shelfward',
+      credential: 'CPhT',
+      isProvider: false,
+      status: 'ACTIVE',
+      createdAt,
+    },
+    {
+      id: readOnlyUserId,
+      tenantId,
+      email: 'r.overlook@demo.invalid',
+      givenName: 'Reada',
+      familyName: 'Overlook',
       isProvider: false,
       status: 'ACTIVE',
       createdAt,

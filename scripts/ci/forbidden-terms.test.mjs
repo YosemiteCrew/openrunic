@@ -12,7 +12,7 @@
 
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -868,6 +868,75 @@ test('a surface that is a SYMLINK exits 2 rather than being followed', () => {
   assert.doesNotMatch(result.stdout, /clean/);
 });
 
+test('invoked through a SYMLINK the CLI still runs', () => {
+  // Node resolves the ESM main entry to its realpath while `process.argv[1]`
+  // keeps the path as typed, so an entry-point guard comparing them with
+  // `path.resolve` is FALSE through a link: `main` never runs and the process
+  // exits 0 having done nothing.
+  //
+  // Exit 0 is the failure here, which is why the assertion is on a case that
+  // must be NON-zero. A clean scan would also exit 0 and could not separate the
+  // two. `scan` with no `--dir` is exit 2 when the CLI runs at all, and silence
+  // with status 0 when it does not - and status 0 is what the workflow's
+  // `scanned` receipt used to read as evidence of a scan.
+  const link = path.join(mkdtempSync(path.join(os.tmpdir(), 'ft-link-')), 'forbidden-terms.mjs');
+  symlinkSync(SCRIPT, link);
+
+  let code = 0;
+  let stderr = '';
+  try {
+    execFileSync(process.execPath, [link, 'scan'], {
+      encoding: 'utf8',
+      env: { ...process.env, FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    code = error.status;
+    stderr = error.stderr ?? '';
+  }
+
+  assert.equal(code, 2, 'the CLI did not run at all through the link: it exited 0 in silence');
+  assert.match(stderr, /--dir/u);
+});
+
+test('invoked through a symlinked PARENT DIRECTORY the CLI still runs', () => {
+  // The script does not have to be the link. `path.resolve` never touches the
+  // filesystem, so a REAL script reached through a linked parent fails the same
+  // comparison - with nothing linked inside the repository and nothing in the
+  // diff to notice. This one is separating rather than additional: a guard that
+  // resolves only the script's own last component passes the case above and
+  // still no-ops here.
+  //
+  // There is a live instance of this layout on every machine here, which is how
+  // it was found: `$TMPDIR` sits behind `/var -> /private/var` on macOS, so a
+  // rig placed there reproduces the bug with nothing linked at all.
+  const linkedParent = path.join(mkdtempSync(path.join(os.tmpdir(), 'ft-dir-')), 'ci');
+  symlinkSync(path.dirname(SCRIPT), linkedParent);
+  const viaParent = path.join(linkedParent, path.basename(SCRIPT));
+  assert.equal(
+    lstatSync(viaParent).isSymbolicLink(),
+    false,
+    'this case is meant to reach a REAL file through a linked parent; the file itself is a link, ' +
+      'so it cannot separate an ancestor-aware guard from a last-component one'
+  );
+
+  let code = 0;
+  let stderr = '';
+  try {
+    execFileSync(process.execPath, [viaParent, 'scan'], {
+      encoding: 'utf8',
+      env: { ...process.env, FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    code = error.status;
+    stderr = error.stderr ?? '';
+  }
+
+  assert.equal(code, 2, 'the CLI did not run through the linked parent: it exited 0 in silence');
+  assert.match(stderr, /--dir/u);
+});
+
 test('scan without --dir exits 2', () => {
   const result = run(['scan'], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
   assert.equal(result.code, 2);
@@ -1125,6 +1194,35 @@ test('the step that refuses a run which scanned nothing is not itself skippable'
     invocation.index < writes[0].indexOf(`touch ${MARKER}`),
     'the scanned marker is written before the scan runs, so it records an attempt rather than ' +
       'a clean exit and any later edit that stops a failed scan failing the step reports clean'
+  );
+
+  // A CLEAN EXIT IS NOT A SCAN, and the two assertions above cannot tell them
+  // apart: both are satisfied by `node ...; touch marker`, which records that a
+  // process reached that line. A `node` invocation that never reaches `main`
+  // exits 0 having read nothing, `set -e` sees success, and the refusal below
+  // finds the marker and passes. So the receipt must key on something only a
+  // real scan produces.
+  //
+  // Paired deliberately with the run below. Asserting only that the workflow
+  // mentions the sentence pins the workflow against a string the script might
+  // not print - which fails closed rather than open, but is still a gate nobody
+  // can pass. Asserting only that the script prints it pins nothing about the
+  // receipt. Together they say: the thing the workflow waits for is the thing
+  // the script emits.
+  const CLEAN_SENTENCE = 'surfaces read';
+  assert.ok(
+    writes[0].includes(CLEAN_SENTENCE),
+    'the scanned marker is written without checking what the scan REPORTED, so a run that ' +
+      'exited 0 without reading a surface records a scan and the refusal below passes'
+  );
+  const clean = run(['scan', '--dir', surfaceDir()], {
+    FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC),
+  });
+  assert.equal(clean.code, 0);
+  assert.ok(
+    clean.stdout.includes(CLEAN_SENTENCE),
+    'the script no longer prints the sentence the workflow gates its receipt on, so every ' +
+      'clean run now exits 2 on a scan that actually happened'
   );
 });
 

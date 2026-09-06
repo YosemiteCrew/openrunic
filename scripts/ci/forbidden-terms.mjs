@@ -540,6 +540,52 @@ function main(argv) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  process.exit(main(process.argv.slice(2)));
+// Compared by REAL path, both sides. Node resolves the ESM main entry to its
+// realpath while `process.argv[1]` keeps the path as it was typed, so invoked
+// through a symlink the two disagree, `main` never runs, and the process exits
+// 0 having done nothing. Measured on node v22.23.2: direct invocation runs and
+// the same file reached through a link is silent with status 0.
+//
+// That is the one exit code the workflow's `scanned` receipt cannot interpret -
+// a clean exit is not a scan - so the receipt no longer keys on it either. Both
+// halves are needed: this one stops the no-op, and the receipt stops the NEXT
+// way a no-op exits 0.
+//
+// BOTH sides, and any symlinked COMPONENT counts - the script does not have to
+// be the link. `path.resolve` is purely lexical and never touches the
+// filesystem, so a real script reached through a linked parent directory fails
+// the comparison exactly as a linked script does, with nothing linked inside
+// the repository and nothing in the diff. There is a live instance of that on
+// every machine here: `$TMPDIR` sits behind `/var -> /private/var`.
+//
+// Falls back to the lexical pair rather than throwing. A realpath that fails
+// means the entry has gone missing under us, which is not a reason to make
+// importing this module for its pure helpers fail at load.
+//
+// Written inline rather than as a `realOrLexical(candidate)` helper on purpose,
+// and measured rather than assumed: the helper form scores an
+// AIK_ts_generic_path_traversal on its `path.resolve(candidate)`, because that
+// rule counts parameter hops into a path operation rather than where the value
+// came from. Same reason the surface loop above reads constants after a chdir.
+//
+// Both or neither. Assigning the two separately would leave one real and one
+// lexical if the first call threw, which is the mismatch this whole comparison
+// exists to avoid.
+const entryPoint = process.argv[1];
+if (entryPoint) {
+  let entryId = path.resolve(entryPoint);
+  let selfId = path.resolve(import.meta.filename);
+  try {
+    const entryResolved = realpathSync(entryPoint);
+    const selfResolved = realpathSync(import.meta.filename);
+    entryId = entryResolved;
+    selfId = selfResolved;
+  } catch {
+    // Keep the lexical pair. Wrong through a symlink, which is the behaviour
+    // this block replaced, but a comparison that cannot run is not a reason to
+    // fail at import.
+  }
+  if (entryId === selfId) {
+    process.exit(main(process.argv.slice(2)));
+  }
 }

@@ -323,10 +323,36 @@ jobs:
           # short-pass the guard. Every surface the script knows about is read,
           # and one the step above failed to write is exit 2 rather than a
           # surface quietly missing from the run.
-          node scripts/ci/forbidden-terms.mjs scan --dir "${RUNNER_TEMP}/surfaces"
-          # Evidence that the scan happened, read by the last step. Written only
-          # after a clean exit, so it records a scan rather than an attempt.
-          touch "${RUNNER_TEMP}/scanned"
+          #
+          # THE RECEIPT KEYS ON WHAT THE SCRIPT SAID, NOT ON HOW IT EXITED. The
+          # marker used to be written on any clean exit, and a clean exit is not
+          # a scan: a `node` invocation that never reaches `main` exits 0 having
+          # read nothing, `set -e` cannot tell that from a real run, and the
+          # refusal below then finds the marker and passes. That was reachable -
+          # measured on node v22.23.2, the entry-point guard compared
+          # `argv[1]` to the module path and the two disagree through a symlink,
+          # so the same file behind a link ran nothing and exited 0. The guard is
+          # fixed; this line is the half that does not depend on having thought
+          # of the particular way it happens.
+          #
+          # `surfaces read` is the sentence the script prints only after all six
+          # surfaces have been read. No pipeline, so `$?` stays the script's and
+          # a finding (exit 1) or a guard that could not run (exit 2) still fails
+          # the step through `set -e` before this line is reached.
+          scan_output=$(node scripts/ci/forbidden-terms.mjs scan --dir "${RUNNER_TEMP}/surfaces")
+          printf '%s\n' "${scan_output}"
+          case "${scan_output}" in
+            *'surfaces read'*)
+              # Evidence that the scan happened, read by the last step.
+              touch "${RUNNER_TEMP}/scanned"
+              ;;
+            *)
+              echo "forbidden-terms: the scan exited 0 without reporting that it read the" >&2
+              echo "surfaces, so nothing here can say what it looked at. Exit 2 - a guard" >&2
+              echo "that could not run, which is red and not clean." >&2
+              exit 2
+              ;;
+          esac
 
       # No `if:`, deliberately. Every step above is conditional on the trigger,
       # so a `workflow_dispatch` run - or any future edit that skips them -

@@ -91,6 +91,13 @@ export async function seedDemoPractice(
         'medicationRequests',
         () => tx.medicationRequest.createMany({ data: practice.medicationRequests }),
       ],
+      // Stock before the postings that draw on it, and postings before their
+      // movement lines: `StockMovement` carries a four-column key back to the
+      // lot, so a line inserted first has nothing to point at.
+      ['stockItems', () => tx.stockItem.createMany({ data: practice.stockItems })],
+      ['stockLots', () => tx.stockLot.createMany({ data: practice.stockLots })],
+      ['stockPostings', () => tx.stockPosting.createMany({ data: practice.stockPostings })],
+      ['stockMovements', () => tx.stockMovement.createMany({ data: practice.stockMovements })],
       ['immunizations', () => tx.immunization.createMany({ data: practice.immunizations })],
       ['serviceRequests', () => tx.serviceRequest.createMany({ data: practice.serviceRequests })],
       ['specimens', () => tx.specimen.createMany({ data: practice.specimens })],

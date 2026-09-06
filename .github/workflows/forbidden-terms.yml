@@ -280,16 +280,8 @@ jobs:
       # through an earlier pull request sits in the BASE of every later `dev`
       # comparison and is never looked at again - but a `main` pull request's
       # merge base is the previous promotion, so the whole of `dev` since then
-      # is in scope. That is why this workflow is CONFIGURED to run on pull
-      # requests to both branches.
-      #
-      # It is not a REQUIRED status check on either ruleset, and was not on any
-      # repository in the estate when this was checked on 2026-09-06. The
-      # earlier wording here said "required on BOTH branches", which is a claim
-      # about the ruleset and was never true - a reader deciding whether a red
-      # from this job blocks a merge would have got the opposite answer. Running
-      # on both branches is this file's `on:` block; being required is somebody
-      # else's setting.
+      # is in scope. That is why this workflow RUNS on BOTH branches - which is
+      # this file's `on:` block, not a ruleset. It is required on neither.
       - name: Collect the surfaces
         if: ${{ github.event_name == 'pull_request' }}
         env:

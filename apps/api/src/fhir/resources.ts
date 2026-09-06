@@ -14,6 +14,7 @@ import {
 } from '@openrunic/fhir';
 
 import { ApiError } from '../errors.js';
+import { ROLE_MODEL_CAVEAT } from '../policy/permissions.js';
 
 import {
   dateWindow,
@@ -493,6 +494,17 @@ const practitionerRoleModule = defineFhirResource({
   // route that the BFF route refuses them. A boundary that answers a question
   // one door will not is not a second door, it is the way round.
   permission: 'role.read',
+  /*
+   * The rows this projects are not read by anything that decides access. The
+   * BFF operations onto the same model say so in their OpenAPI descriptions;
+   * this is the same sentence at the FHIR boundary, because a conformance
+   * client reads the CapabilityStatement and never sees that document.
+   *
+   * Without it a directory client can search a complete, current, internally
+   * consistent picture of who holds which role - and it is not the picture the
+   * API enforces. On the seeded practice the two already disagree.
+   */
+  documentation: ROLE_MODEL_CAVEAT,
   collection: (repositories) => repositories.roleAssignments,
   toQuery: async (query: SearchParams, paging: FhirPaging, repositories: Repositories) => ({
     ...pageOf(paging),

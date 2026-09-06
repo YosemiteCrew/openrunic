@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { PERMISSIONS } from '../policy/permissions.js';
+import { PERMISSIONS, ROLE_MODEL_CAVEAT } from '../policy/permissions.js';
 import { internalRouteContracts } from '../routes/index.js';
-import { ROLE_MODEL_CAVEAT } from '../routes/platform.js';
 
 /**
  * Every permission in the catalogue gates at least one published operation.

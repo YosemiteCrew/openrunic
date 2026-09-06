@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { rejectUnsupportedParams } from '../fhir/params.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
-import { ROLE_PERMISSIONS } from '../policy/permissions.js';
+import { ROLE_MODEL_CAVEAT, ROLE_PERMISSIONS } from '../policy/permissions.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -2465,6 +2465,32 @@ describe('the permission each resource is served under', () => {
 
     expect(bff, 'the BFF route publishes its permission').toBeDefined();
     expect(module?.permission).toBe(bff);
+  });
+
+  /**
+   * THE SAME SENTENCE, AT THE BOUNDARY A CONFORMANCE CLIENT ACTUALLY READS.
+   *
+   * The six BFF operations onto `Role` and `RoleAssignment` carry
+   * `ROLE_MODEL_CAVEAT` in their OpenAPI descriptions. A directory client never
+   * sees that document - it reads the CapabilityStatement - and this resource
+   * projects the same rows, so without this it can search a complete, current,
+   * internally consistent picture of who holds which role that is not the
+   * picture the API enforces.
+   *
+   * Asserted against the served statement rather than the module, because the
+   * module having the field says nothing about the statement carrying it: the
+   * emission is a separate line in `metadata.ts` and is what a client receives.
+   */
+  it('tells a conformance client that these rows decide nothing', async () => {
+    const { app } = harness();
+
+    const statement = (await (await app.request('/fhir/metadata')).json()) as {
+      rest: { resource: { type: string; documentation?: string }[] }[];
+    };
+    const entry = statement.rest[0]?.resource.find((r) => r.type === 'PractitionerRole');
+
+    expect(entry, 'PractitionerRole is served, so it is in the statement').toBeDefined();
+    expect(entry?.documentation).toBe(ROLE_MODEL_CAVEAT);
   });
 
   it('refuses a principal holding no permissions at all', async () => {

@@ -45,6 +45,11 @@ export function buildCapabilityStatement(
           return {
             type: module.type,
             ...(profile === undefined ? {} : { supportedProfile: [profile] }),
+            /* Published where a conformance client reads, rather than only in
+               the BFF's OpenAPI document. A resource whose rows mean something
+               other than they appear to has to say so at the boundary it is
+               served from. */
+            ...(module.documentation === undefined ? {} : { documentation: module.documentation }),
             interaction: module.interactions.map((code) => ({ code })),
             ...(operationsFor(module.type).length === 0
               ? {}

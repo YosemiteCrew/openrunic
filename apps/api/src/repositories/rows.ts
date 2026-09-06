@@ -70,9 +70,27 @@ export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
  * `CollectionSpec.where` does not carry this and deliberately: its bodies are
  * conditional spreads, and a property a spread contributed survives no
  * excess-property check, annotated or not. `UniqueBy.where` is the opposite -
- * fourteen implementations, none containing a spread - so the annotation works
- * there, and on all fourteen it does: a planted column the model does not have
- * is TS2353 at every one, and rc=0 at every one with the annotation removed.
+ * fourteen implementations returning fifteen literals, none containing a spread -
+ * so the annotation works there, and on all fifteen it does: a column the model
+ * does not have is TS2353, or TS2561 where the misspelling is close enough for
+ * the compiler to suggest the real one.
+ *
+ * Without it, a key ADDED beside the real ones is rc=0 at all fifteen. An
+ * existing key MISSPELLED is rc=0 at nine and caught at six - and those six are
+ * not cover, they are an accident of arity. Rename the only property of a
+ * single-key literal and it has nothing in common with a target whose every
+ * property is optional, so weak-type detection fires where excess-property
+ * checking cannot. It stops firing on the first ordinary edit, in either of two
+ * directions:
+ *
+ *   facilitySpec  `{ codeZZTYPO }`             unannotated  TS2322  caught
+ *   facilitySpec  `{ codeZZTYPO, name }`       unannotated  rc=0    one more column
+ *   taskSpec      `{ sourceEventIdZZ }`        unannotated  rc=0    one more branch
+ *   both of those, annotated                                TS2353 / TS2561
+ *
+ * `taskSpec` is the live example and the reason the count is six rather than
+ * seven: its single-key literal sits beside a two-key one, and the union of the
+ * two branches does have a property in common, so nothing fires unaided.
  *
  * It is not the only guard for most of them, but that cover is incidental rather
  * than systematic. Thirteen of the fourteen are caught at run time by hand-written

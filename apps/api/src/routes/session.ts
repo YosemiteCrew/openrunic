@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import type { RouteContract } from '../openapi/registry.js';
+import { byPermissionId } from '../policy/permissions.js';
 import { policyOf } from './helpers.js';
 
 /**
@@ -56,10 +57,11 @@ export function sessionRoutes(): Hono<AppEnv> {
 
     return c.json({
       roles: [...policy.roles],
-      /* An explicit comparator, not the default: the default sorts by UTF-16
-         code unit, which is a different order the moment an identifier is not
-         plain lower-case ASCII. The browser's mirror sorts the same way. */
-      permissions: [...policy.permissions].sort((a, b) => a.localeCompare(b)),
+      /* `byPermissionId`, never `localeCompare`: this order is promised to be
+         byte-identical to the browser mirror's, and those are two runtimes with
+         independently configured locales. See the comparator for the
+         measurement. */
+      permissions: [...policy.permissions].sort(byPermissionId),
     });
   });
 

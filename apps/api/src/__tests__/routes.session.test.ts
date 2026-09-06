@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildPolicyContext } from '../policy/policy.js';
-import { PERMISSIONS } from '../policy/permissions.js';
+import { byPermissionId, PERMISSIONS } from '../policy/permissions.js';
 import { DEMO_PRINCIPALS } from '../auth/static-resolver.js';
 import { sessionRouteContracts } from '../routes/session.js';
 
@@ -30,9 +30,7 @@ describe('GET /bff/v0/me', () => {
       expect(response.status, token).toBe(200);
 
       const body = (await response.json()) as { roles: string[]; permissions: string[] };
-      const expected = [...buildPolicyContext(principal).permissions].sort((a, b) =>
-        a.localeCompare(b)
-      );
+      const expected = [...buildPolicyContext(principal).permissions].sort(byPermissionId);
 
       expect(body.permissions, token).toStrictEqual(expected);
       expect(body.roles, token).toStrictEqual([...principal.roles]);
@@ -64,8 +62,34 @@ describe('GET /bff/v0/me', () => {
   it('returns permissions sorted, so two calls are comparable', async () => {
     const response = await app().request('/bff/v0/me', { headers: bearer(TOKENS.clinicianA) });
     const { permissions } = (await response.json()) as { permissions: string[] };
-    expect(permissions).toStrictEqual([...permissions].sort((a, b) => a.localeCompare(b)));
+    expect(permissions).toStrictEqual([...permissions].sort(byPermissionId));
     expect(new Set(permissions).size).toBe(permissions.length);
+  });
+
+  it('orders by code unit, which is the same order in every runtime', () => {
+    /* The assertion the catalogue cannot make for itself. Today's 41 identifiers
+       sort identically under every locale and under the default, so no fixture
+       drawn from `PERMISSIONS` can distinguish `byPermissionId` from
+       `localeCompare` - which is exactly how `localeCompare` got here and
+       measured as a no-op (#351). These are shaped like identifiers the
+       catalogue already holds and are chosen to differ.
+
+       What this pins is the comparator's BEHAVIOUR, not its use: swapping it
+       for `localeCompare` at the call site would still pass on today's data.
+       That is why the comparator carries its reason in prose beside it. */
+    const varying = ['order.Write', 'order.audit', 'order.write'];
+
+    // Upper case first, because 'W' is U+0057 and 'a' is U+0061. No
+    // locale-aware collation measured for #351 puts 'order.Write' first.
+    expect([...varying].sort(byPermissionId)).toStrictEqual([
+      'order.Write',
+      'order.audit',
+      'order.write',
+    ]);
+    // And it agrees with the default sort, which is the property that makes it
+    // identical in every runtime and every ICU version.
+    expect([...varying].sort(byPermissionId)).toStrictEqual([...varying].sort());
+    expect(byPermissionId('a', 'a')).toBe(0);
   });
 
   it('publishes only identifiers the API enforces', async () => {

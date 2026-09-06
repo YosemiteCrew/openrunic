@@ -272,3 +272,29 @@ const PERMISSION_SET: ReadonlySet<string> = new Set(PERMISSIONS);
 export function isPermission(value: string): value is Permission {
   return PERMISSION_SET.has(value);
 }
+
+/**
+ * Orders permission identifiers by UTF-16 code unit.
+ *
+ * DELIBERATELY NOT `localeCompare`, which is the idiom everywhere else in this
+ * package - and is right everywhere else, because those call sites order dates
+ * and human-readable names for display inside one runtime. This one does not.
+ *
+ * `/bff/v0/me` sorts on the API server and the browser's generated mirror sorts
+ * in the viewer's browser, and the DTO promises the two are byte-identical so a
+ * client may compare them. `localeCompare` with no locale reads the RUNTIME's
+ * default locale, so those are two independently configured orderings; naming a
+ * locale does not fix it either, because collation also moves with the ICU data
+ * the runtime was built against. Measured: `['order.Write','order.audit',
+ * 'order.write']` sorts two different ways across eight locales, and
+ * `['patient.Info','patient.index','patient.info']` three.
+ *
+ * Code-unit order is the same in every runtime and every version of one. It is
+ * also what the default `.sort()` does - the comparator is written out because
+ * `typescript:S2871` requires one, and because the next reader deserves to know
+ * the plain form was rejected rather than forgotten.
+ */
+export function byPermissionId(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}

@@ -46,76 +46,47 @@ export interface StaffCredential {
   readonly identity: Identity;
 }
 
-const DEVELOPMENT_STAFF: readonly StaffCredential[] = [
-  {
-    token: 'dev-clinician-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000101',
-      displayName: 'Dr. Adaeze Okafor',
-      roles: ['clinician'],
-    },
-  },
-  {
-    token: 'dev-frontdesk-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000102',
-      displayName: 'Front Desk',
-      roles: ['front-desk'],
-    },
-  },
-  {
-    token: 'dev-biller-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000103',
-      displayName: 'Billing',
-      roles: ['biller'],
-    },
-  },
-  {
-    token: 'dev-clinician-b',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000201',
-      displayName: 'Dr. Rowan Vale',
-      roles: ['clinician'],
-    },
-  },
-  /*
-   * The three oversight principals. They are staff, so the rule this table
-   * already states - a patient's credential is not a staff credential - admits
-   * them, and leaving them out would mean the API grew a token for reading the
-   * audit trail that nobody could sign in with.
-   *
-   * They will meet more refusals than a clinician does, and that is the point
-   * rather than a defect: `read-only` may open a chart and not write to it, and
-   * `auditor` may open the log and almost nothing else. The screens say which
-   * permission is missing; a role that cannot do a thing being told so is the
-   * behaviour, not a gap in this table.
-   */
-  {
-    token: 'dev-auditor-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000104',
-      displayName: 'Audita Trailmore, CHC',
-      roles: ['auditor'],
-    },
-  },
-  {
-    token: 'dev-stockkeeper-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000105',
-      displayName: 'Stocka Shelfward, CPhT',
-      roles: ['stock-keeper'],
-    },
-  },
-  {
-    token: 'dev-readonly-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000106',
-      displayName: 'Reada Overlook',
-      roles: ['read-only'],
-    },
-  },
-];
+/**
+ * The table, written as rows rather than as seven copies of one object.
+ *
+ * Each row is `[token, subject, display name, ...roles]`. The subjects are
+ * spelled out in full on purpose: they are the load-bearing half, because an
+ * audit record attributes an access to the subject, so these have to be
+ * diffable by eye against `apps/api/src/auth/static-resolver.ts` rather than
+ * merely look like it. Deriving them from a shared prefix would save a few
+ * characters and cost exactly that.
+ *
+ * This was seven eight-line object literals until 2026-09-06, which Sonar reads
+ * as one sixty-line self-duplication, and it is right: the shape carried no
+ * information, and the four values on each row were the only thing that ever
+ * differed. Every principal happens to hold one role today; the rest spread so
+ * a two-role one needs no change here.
+ */
+const DEVELOPMENT_STAFF: readonly StaffCredential[] = (
+  [
+    ['dev-clinician-a', '01890000-0000-7000-8000-000000000101', 'Dr. Adaeze Okafor', 'clinician'],
+    ['dev-frontdesk-a', '01890000-0000-7000-8000-000000000102', 'Front Desk', 'front-desk'],
+    ['dev-biller-a', '01890000-0000-7000-8000-000000000103', 'Billing', 'biller'],
+    ['dev-clinician-b', '01890000-0000-7000-8000-000000000201', 'Dr. Rowan Vale', 'clinician'],
+    // The three oversight principals. They are staff, so the rule this table
+    // already states - a patient's credential is not a staff credential -
+    // admits them, and leaving them out would mean the API grew a token for
+    // reading the audit trail that nobody could sign in with. They meet more
+    // refusals than a clinician does, and that is the behaviour rather than a
+    // gap here: the screens say which permission is missing.
+    ['dev-auditor-a', '01890000-0000-7000-8000-000000000104', 'Audita Trailmore, CHC', 'auditor'],
+    [
+      'dev-stockkeeper-a',
+      '01890000-0000-7000-8000-000000000105',
+      'Stocka Shelfward, CPhT',
+      'stock-keeper',
+    ],
+    ['dev-readonly-a', '01890000-0000-7000-8000-000000000106', 'Reada Overlook', 'read-only'],
+  ] as const satisfies readonly (readonly [string, string, string, ...string[]])[]
+).map(([token, subject, displayName, ...roles]) => ({
+  token,
+  identity: { subject, displayName, roles },
+}));
 
 /**
  * The credentials this build accepts, which outside development is almost never

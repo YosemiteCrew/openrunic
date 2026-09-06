@@ -4,7 +4,13 @@ import { AdapterRegistry } from '@openrunic/adapters';
 import { createApp, type CreateAppOptions } from './app.js';
 import { createOidcPrincipalResolver } from './auth/oidc-resolver.js';
 import { oidcSettings, parseEnv, smartLaunchSettings } from './env.js';
-import { buildServerWiring, parseWiringEnv, type ServerWiring } from './server/wiring.js';
+import {
+  announceDemoTokenAuthentication,
+  announceIssuerAuthentication,
+  buildServerWiring,
+  parseWiringEnv,
+  type ServerWiring,
+} from './server/wiring.js';
 
 const env = parseEnv();
 const oidc = oidcSettings(env);
@@ -30,8 +36,9 @@ const wiring: ServerWiring | null =
  *
  * `buildServerWiring` always supplies a principal resolver, but in the absence
  * of an issuer that resolver is the demo one: a short list of tokens printed in
- * this repository, granting full access to the seeded tenant. It announces
- * itself in the boot log for exactly that reason.
+ * this repository, granting full access to the seeded tenant. The boot log says
+ * so - announced below rather than by the wiring, because the wiring builds
+ * that resolver whether or not this file goes on to use it.
  *
  * So a configured issuer takes precedence over it. A deployment that set one
  * gets real signature verification even though the wiring offered a resolver of
@@ -66,6 +73,30 @@ const options: CreateAppOptions =
                 clockSkewSeconds: oidc.clockSkewSeconds,
               }),
       };
+
+/**
+ * Announce the resolver that is actually in force, after the choice above.
+ *
+ * The warning used to be written inside `buildServerWiring`, which builds the
+ * demo resolver unconditionally and cannot see `oidc`. So a deployment with a
+ * complete, enforcing OIDC group was told on every boot that it had NO
+ * authentication - a message about an object this file had just discarded.
+ * #307 was filed as an authentication bypass on the strength of that log line;
+ * measured, a demo token is refused 401 when an issuer is configured and
+ * accepted 200 when it is not.
+ *
+ * Nothing is announced outside production, where `wiring` is null: development
+ * keeps `createApp`'s in-memory defaults, and a banner about self-hosting on a
+ * laptop running `pnpm dev` is noise that trains people to skim the one that
+ * matters.
+ */
+if (wiring !== null) {
+  if (oidc === undefined) {
+    announceDemoTokenAuthentication(wiring.authMode);
+  } else {
+    announceIssuerAuthentication(oidc.issuer);
+  }
+}
 
 const app = createApp(options);
 

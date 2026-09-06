@@ -106,6 +106,15 @@ export interface FhirResourceDescriptor<
   readonly params: readonly string[];
   /** The role capability required on top of the SMART scope. */
   readonly permission: Permission;
+  /**
+   * Markdown published for this resource in the CapabilityStatement.
+   *
+   * For something a conformance client has to know that the interactions and
+   * search parameters cannot tell it. The statement is generated, never
+   * hand-written, so this is the only place such a sentence can live without
+   * drifting from what the server actually serves.
+   */
+  readonly documentation?: string;
   collection(repositories: Repositories): {
     list(query: TQuery): Promise<Page<TRow>>;
     findById(id: string): Promise<TRow | null>;
@@ -221,6 +230,15 @@ export interface FhirResourceModule {
   readonly params: readonly string[];
   readonly permission: Permission;
   /**
+   * Markdown published for this resource in the CapabilityStatement.
+   *
+   * For something a conformance client has to know that the interactions and
+   * search parameters cannot tell it. The statement is generated, never
+   * hand-written, so this is the only place such a sentence can live without
+   * drifting from what the server actually serves.
+   */
+  readonly documentation?: string;
+  /**
    * The collection this resource's chart is read from, when it has one.
    *
    * Carried onto the mounted module rather than left on the descriptor so the
@@ -319,6 +337,11 @@ export function defineFhirResource<
     interactions: descriptor.interactions,
     params: descriptor.params,
     permission: descriptor.permission,
+    /* Carried through explicitly, like every other optional field here: this
+       factory rebuilds the module from a named list rather than spreading the
+       descriptor, so a field added to both interfaces and not to this line is
+       accepted by the compiler and dropped at run time. */
+    ...(descriptor.documentation === undefined ? {} : { documentation: descriptor.documentation }),
     ...(descriptor.chartFrom === undefined ? {} : { chartFrom: descriptor.chartFrom }),
     ...(descriptor.narrow === undefined ? {} : { narrow: descriptor.narrow }),
 

@@ -144,7 +144,8 @@ const READ_EVERYTHING: readonly Permission[] = PERMISSIONS.filter(
  * written through `/bff/v0/users/{id}/roles` is stored, durable, and inert.
  *
  * The six BFF role operations say so in their published descriptions
- * (`ROLE_MODEL_CAVEAT` in `routes/platform.ts`). They are kept rather than
+ * (`ROLE_MODEL_CAVEAT`, below), as does the FHIR `PractitionerRole` resource
+ * that projects the same rows. They are kept rather than
  * withdrawn because the forked-`Role` model above is the stated forward path
  * and those routes are its only implementation. When enforcement lands it lands
  * here: this map stops being the only answer, and the caveat and this paragraph
@@ -281,6 +282,26 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
   auditor: ['audit.read', 'facility.read'],
   'read-only': READ_EVERYTHING,
 };
+
+/**
+ * What every published surface onto the tenant role model has to say.
+ *
+ * `Role` and `RoleAssignment` are written by six BFF operations and projected by
+ * the FHIR `PractitionerRole` resource, and none of the enforcement path reads
+ * either table - `buildPolicyContext` above resolves permissions from
+ * `principal.roles`, which arrives as a literal or an IdP claim. So a grant
+ * recorded through any of those doors is stored, durable and inert, and a
+ * document that described the write without saying so would tell a client an
+ * access-control change had taken effect.
+ *
+ * It lives here rather than beside any one of those doors because the fact is
+ * about THIS file: `ROLE_PERMISSIONS` being the only thing consulted is what
+ * makes the sentence true, and this is the file that has to change for it to
+ * become false. When enforcement lands, the constant and the paragraph above it
+ * come out together.
+ */
+export const ROLE_MODEL_CAVEAT =
+  "Authorisation is resolved from the roles on the caller's token, not from these rows: recording a grant here does not change what any user may do. The tenant role model is stored and not yet enforced.";
 
 const PERMISSION_SET: ReadonlySet<string> = new Set(PERMISSIONS);
 

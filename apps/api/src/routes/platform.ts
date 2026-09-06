@@ -97,6 +97,7 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
+import { ROLE_MODEL_CAVEAT } from '../policy/permissions.js';
 import { idParamSchema, policyOf, repositories, required, requiredParentChart } from './helpers.js';
 
 /**
@@ -612,34 +613,6 @@ function handWrittenContracts(): RouteContract[] {
     },
   ];
 }
-
-/**
- * What the published document must say about every role operation.
- *
- * The rows these six operations read and write are real and are stored; what
- * they are not is consulted. `buildPolicyContext` resolves permissions from
- * `principal.roles` - a literal in the demo tables, or a claim in a verified
- * token - and never from `Role` or `RoleAssignment`. So a grant recorded
- * through this API is durable and inert, and a document that described the
- * write without saying so would be telling a client that an access-control
- * change had taken effect.
- *
- * The routes are kept rather than withdrawn because `permissions.ts` names the
- * forked-`Role` model as the forward path and this is its only implementation;
- * deleting it would delete the scaffolding for the design and the guard that
- * pins `PractitionerRole` to the same permission as its BFF twin. One sentence,
- * referenced everywhere it is true, is removed in one line when enforcement
- * lands.
- *
- * Declared below its three readers on purpose, next to the contract assembly it
- * is about. That is safe by placement rather than by construction: every reader
- * sits inside a function evaluated when the contracts are built, so the const
- * is initialised by then. Hoisting one of those objects to module scope would
- * turn this into a temporal-dead-zone error at import, which is a strange way
- * to learn about it - so move this declaration up first if you ever do.
- */
-export const ROLE_MODEL_CAVEAT =
-  "Authorisation is resolved from the roles on the caller's token, not from these rows: recording a grant here does not change what any user may do. The tenant role model is stored and not yet enforced.";
 
 export function platformRouteContracts(): RouteContract[] {
   return [

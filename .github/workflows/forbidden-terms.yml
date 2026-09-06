@@ -35,7 +35,8 @@ name: Forbidden Terms
 # THE TRIGGER - that is the whole before-and-after, and it is worth having.
 #
 # THIS DECISION IS ABOUT THIS REPOSITORY AND MUST NOT TRAVEL WITH THE GATE.
-# Counted rather than assumed, 2026-09-06: this repository has had 243 pull
+# Counted rather than assumed and RE-counted 2026-09-06: this repository has
+# had 264 pull
 # requests and ZERO from a fork, so red-on-fork costs nothing here. The sibling
 # repository has had 596 fork pull requests with 536 merged across 23 authors -
 # roughly half its merged work - and the same change there would land on all of
@@ -279,7 +280,16 @@ jobs:
       # through an earlier pull request sits in the BASE of every later `dev`
       # comparison and is never looked at again - but a `main` pull request's
       # merge base is the previous promotion, so the whole of `dev` since then
-      # is in scope. That is why this workflow is required on BOTH branches.
+      # is in scope. That is why this workflow is CONFIGURED to run on pull
+      # requests to both branches.
+      #
+      # It is not a REQUIRED status check on either ruleset, and was not on any
+      # repository in the estate when this was checked on 2026-09-06. The
+      # earlier wording here said "required on BOTH branches", which is a claim
+      # about the ruleset and was never true - a reader deciding whether a red
+      # from this job blocks a merge would have got the opposite answer. Running
+      # on both branches is this file's `on:` block; being required is somebody
+      # else's setting.
       - name: Collect the surfaces
         if: ${{ github.event_name == 'pull_request' }}
         env:

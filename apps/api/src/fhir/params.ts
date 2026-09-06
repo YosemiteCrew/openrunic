@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import { ApiError } from '../errors.js';
 import { MAX_PAGE_SIZE } from '../schemas/pagination.js';
 
@@ -174,8 +176,28 @@ export function tokenMatches(token: string, system: string, code: string): boole
  * thing. A typed reference to a different resource type is a client error
  * rather than a miss, so it is refused: silently returning nothing would look
  * exactly like "this patient has no observations".
+ *
+ * The id itself has to be a UUID, for the same reason and with the same
+ * status. Every column these parameters land on is `@db.Uuid`; the one that is
+ * not reads with `referenceText`.
  */
 export function referenceId(value: string, expectedType: string, param: string): string {
+  return uuidValue(referenceText(value, expectedType, param), param);
+}
+
+/**
+ * The same reading, without requiring the id to be a UUID.
+ *
+ * Only for a parameter whose column is text rather than `@db.Uuid`. The audit
+ * log's `actorId` is the case: it stores an OIDC `sub`, which is whatever the
+ * issuer mints and is not a UUID on a real deployment. Requiring one here would
+ * refuse the ordinary caller rather than the malformed one.
+ *
+ * Prefer `referenceId`. A parameter that lands on a UUID column and is read
+ * with this instead reaches the driver unvalidated, which is a 500 and not a
+ * 400 - see the note on `uuidValue`.
+ */
+export function referenceText(value: string, expectedType: string, param: string): string {
   const separator = value.indexOf('/');
   if (separator === -1) return value;
   const type = value.slice(0, separator);
@@ -185,6 +207,31 @@ export function referenceId(value: string, expectedType: string, param: string):
     });
   }
   return value.slice(separator + 1);
+}
+
+const uuidSchema = z.uuid();
+
+/**
+ * Refuses a search parameter that cannot be an id on a UUID column.
+ *
+ * Every `@db.Uuid` column in the schema is reached from this surface by a
+ * parameter the caller supplies. Postgres refuses the cast, so a value that
+ * gets this far surfaces as a 500 with an opaque body - the caller is told the
+ * server failed when what happened is that they sent a bad id, and the same
+ * value on the internal routes is already a 400 because those parse it with
+ * `z.uuid()`. Two doors onto the same data should not disagree about the same
+ * input.
+ *
+ * A well-formed id that matches nothing is not this: it stays a 200 and an
+ * empty bundle, which is the honest answer to a search for something absent.
+ */
+export function uuidValue(value: string, param: string): string {
+  if (!uuidSchema.safeParse(value).success) {
+    throw ApiError.malformed(`${param} must be a UUID.`, {
+      issues: [{ path: param, message: 'expected a UUID' }],
+    });
+  }
+  return value;
 }
 
 /** A half-open instant window, as a date search parameter expresses one. */

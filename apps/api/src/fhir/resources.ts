@@ -20,9 +20,11 @@ import {
   dateWindow,
   parseDateOnly,
   referenceId,
+  referenceText,
   tokenMatches,
   tokenSystem,
   tokenValue,
+  uuidValue,
   type DateWindow,
   type FhirPaging,
   type SearchParams,
@@ -228,7 +230,7 @@ const patientModule = defineFhirResource({
     }
     return {
       ...pageOf(paging),
-      ...(query._id === undefined ? {} : { id: query._id }),
+      ...(query._id === undefined ? {} : { id: uuidValue(query._id, '_id') }),
       // `identifier` is a token: `system|value` or a bare value. The value half
       // is the MRN, the only identifier this search is implemented against.
       ...(query.identifier === undefined ? {} : { mrn: tokenValue(query.identifier) }),
@@ -1232,7 +1234,7 @@ const appointmentModule = defineFhirResource({
   collection: (repositories) => repositories.appointments,
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
-    ...(query._id === undefined ? {} : { id: query._id }),
+    ...(query._id === undefined ? {} : { id: uuidValue(query._id, '_id') }),
     ...patientFilter(query.patient),
     ...(query.practitioner === undefined
       ? {}
@@ -1519,6 +1521,9 @@ const taskModule = defineFhirResource({
  * rather than an error about a type they never mentioned.
  */
 function provenanceTarget(raw: string | undefined): { targetType?: string; targetId?: string } {
+  // No UUID check on the id half: `targetId` is text, so it is compared as
+  // text and there is no cast to fail. The audit log records what was
+  // addressed, which includes ids this server never minted.
   if (raw === undefined) return {};
   const separator = raw.indexOf('/');
   if (separator === -1) return { targetId: raw };
@@ -1539,7 +1544,10 @@ const provenanceModule = defineFhirResource({
     ...provenanceTarget(query.target),
     ...(query.agent === undefined
       ? {}
-      : { actorId: referenceId(query.agent, 'Practitioner', 'agent') }),
+      : // `referenceText`, not `referenceId`: `actorId` is text, because it
+        // stores an OIDC `sub` and an issuer may mint anything as one. A UUID
+        // check here would refuse the ordinary caller on a real deployment.
+        { actorId: referenceText(query.agent, 'Practitioner', 'agent') }),
     ...(query.recorded === undefined ? {} : dateWindow(query.recorded, 'recorded')),
     // Newest first: a provenance search is nearly always "what happened to this
     // recently", and `seq` would order by write rather than by event time.

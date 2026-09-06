@@ -35,13 +35,23 @@ name: Forbidden Terms
 # THE TRIGGER - that is the whole before-and-after, and it is worth having.
 #
 # THIS DECISION IS ABOUT THIS REPOSITORY AND MUST NOT TRAVEL WITH THE GATE.
-# Counted rather than assumed and RE-counted 2026-09-06: this repository has
-# had 264 pull
-# requests and ZERO from a fork, so red-on-fork costs nothing here. The sibling
-# repository has had 596 fork pull requests with 536 merged across 23 authors -
-# roughly half its merged work - and the same change there would land on all of
-# them. Whoever ports this gate makes the trade again for that repository; the
-# answer here is not evidence about it.
+# Counted rather than assumed, and re-counted 2026-09-06: this repository has
+# had 270 pull requests and ZERO from a fork. The sibling repository has had
+# 596 fork pull requests with 536 merged across 23 authors - roughly half its
+# merged work - and the same change there would land on all of them. Whoever
+# ports this gate makes the trade again for that repository; the answer here is
+# not evidence about it.
+#
+# WHAT RED-ON-FORK COSTS CHANGED ON 2026-09-06 AT 13:08 UTC, when `No named
+# external product` was added to the `dev` ruleset's required contexts. Before
+# that, a fork's red reported honestly and blocked nothing. It now BLOCKS a
+# merge into `dev`. The cost here is still zero, but for a weaker reason than
+# it was: not because the red is advisory, but because this repository has
+# never had a fork pull request, so the case has not arisen yet. The first one
+# WILL be blocked - by a guard that cannot run on a fork at all, because GitHub
+# withholds the secrets from a fork's `pull_request` run. The two things not to
+# do about that are immediately below, and they stopped being hypothetical on
+# that date.
 #
 # ---------------------------------------------------------------------------
 # TWO THINGS NOT TO DO WHEN THE FORK RED BECOMES ANNOYING
@@ -281,7 +291,9 @@ jobs:
       # comparison and is never looked at again - but a `main` pull request's
       # merge base is the previous promotion, so the whole of `dev` since then
       # is in scope. That is why this workflow RUNS on BOTH branches - which is
-      # this file's `on:` block, not a ruleset. It is required on neither.
+      # this file's `on:` block, not a ruleset. Whether it is also REQUIRED on a
+      # ruleset is a separate fact that changes without touching this file, so
+      # it is not asserted here; the header covers it.
       - name: Collect the surfaces
         if: ${{ github.event_name == 'pull_request' }}
         env:

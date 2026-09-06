@@ -421,3 +421,75 @@ describe('announceAuthentication', () => {
     expect(written).toEqual([]);
   });
 });
+
+/**
+ * The default writer, which is the only one production ever uses.
+ *
+ * Every test above injects a writer, because injecting one is what makes the
+ * announcements assertable at all. The consequence is that the parameter
+ * default - `process.stderr.write` - is the one line on this path that no test
+ * reaches, and it is the line that runs on a real boot: `index.ts` calls
+ * `announceAuthentication(wiring, oidc?.issuer)` with two arguments.
+ *
+ * So the assertion is the STREAM, not just the text. A default rewritten to
+ * stdout still prints the banner and still passes any test that only reads what
+ * was written; it also puts a security warning on the channel a container
+ * operator pipes to their application log rather than the one they read for
+ * diagnostics. Both halves are asserted here: stderr got it, stdout did not.
+ */
+describe('the default writer', () => {
+  let toStderr: string[];
+  let toStdout: string[];
+
+  beforeEach(() => {
+    toStderr = [];
+    toStdout = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      toStderr.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      toStdout.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sends the demo-token banner to stderr when no writer is supplied', () => {
+    announceDemoTokenAuthentication('demo-tokens');
+
+    expect(toStderr.join('')).toContain('NO authentication');
+    expect(toStdout).toEqual([]);
+  });
+
+  it('sends the issuer line to stderr when no writer is supplied', () => {
+    announceIssuerAuthentication('https://issuer.example');
+
+    expect(toStderr.join('')).toContain('verified against https://issuer.example');
+    expect(toStdout).toEqual([]);
+  });
+
+  /**
+   * The production call shape. `announceAuthentication` forwards a `write` of
+   * `undefined` to whichever announcement it picks, and `undefined` reaching a
+   * parameter default is the only reason that works - a forward written as
+   * `write ?? console.error` or a callee that called `write(...)` unguarded
+   * would throw here and nowhere else in this file.
+   */
+  it('reaches the default through the composition, with two arguments as index.ts calls it', () => {
+    const wiring = { authMode: 'demo-tokens' } as unknown as Parameters<
+      typeof announceAuthentication
+    >[0];
+
+    announceAuthentication(wiring, undefined);
+    announceAuthentication(wiring, 'https://issuer.example');
+
+    const output = toStderr.join('');
+    expect(output).toContain('NO authentication');
+    expect(output).toContain('verified against https://issuer.example');
+    expect(toStdout).toEqual([]);
+  });
+});

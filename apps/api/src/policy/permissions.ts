@@ -134,6 +134,21 @@ const READ_EVERYTHING: readonly Permission[] = PERMISSIONS.filter(
  * The seeded system roles. A tenant may fork these into its own `Role` rows;
  * this map is the default that ships, and the only one the static resolver
  * knows.
+ *
+ * THE FORK IS NOT YET READ, AND THIS IS THE FILE THAT DECIDES IT.
+ *
+ * `buildPolicyContext` resolves a caller's permissions by looking their role
+ * names up in this map, and the names come from the principal - a literal in
+ * the demo tables, or a claim in a verified token. Neither the `Role` table nor
+ * `RoleAssignment` is consulted anywhere in the enforcement path, so a grant
+ * written through `/bff/v0/users/{id}/roles` is stored, durable, and inert.
+ *
+ * The six BFF role operations say so in their published descriptions
+ * (`ROLE_MODEL_CAVEAT` in `routes/platform.ts`). They are kept rather than
+ * withdrawn because the forked-`Role` model above is the stated forward path
+ * and those routes are its only implementation. When enforcement lands it lands
+ * here: this map stops being the only answer, and the caveat and this paragraph
+ * come out together.
  */
 export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> = {
   admin: PERMISSIONS,

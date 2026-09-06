@@ -299,6 +299,7 @@ function platformCrudModules(): CrudModule[] {
     }),
     defineCrud({
       segment: 'roles',
+      caveat: ROLE_MODEL_CAVEAT,
       singular: 'role',
       plural: 'roles',
       tag: 'roles',
@@ -505,7 +506,7 @@ function handWrittenContracts(): RouteContract[] {
       path: '/bff/v0/users/{id}/roles',
       operationId: 'listUserRoles',
       summary: "List a user's role assignments.",
-      description: 'A grant with no facility is organisation-wide.',
+      description: `A grant with no facility is organisation-wide. ${ROLE_MODEL_CAVEAT}`,
       tags: ['users'],
       permission: 'role.read',
       pathParams: [{ name: 'id', description: 'User id (UUIDv7).', schema: idParamSchema }],
@@ -525,8 +526,7 @@ function handWrittenContracts(): RouteContract[] {
       path: '/bff/v0/users/{id}/roles',
       operationId: 'assignUserRole',
       summary: 'Grant a user a role.',
-      description:
-        'Optionally narrowed to one facility; omitting the facility grants it across the organisation. The same grant cannot be handed out twice.',
+      description: `Optionally narrowed to one facility; omitting the facility grants it across the organisation. The same grant cannot be handed out twice. ${ROLE_MODEL_CAVEAT}`,
       tags: ['users'],
       permission: 'role.write',
       pathParams: [{ name: 'id', description: 'User id (UUIDv7).', schema: idParamSchema }],
@@ -612,6 +612,27 @@ function handWrittenContracts(): RouteContract[] {
     },
   ];
 }
+
+/**
+ * What the published document must say about every role operation.
+ *
+ * The rows these six operations read and write are real and are stored; what
+ * they are not is consulted. `buildPolicyContext` resolves permissions from
+ * `principal.roles` - a literal in the demo tables, or a claim in a verified
+ * token - and never from `Role` or `RoleAssignment`. So a grant recorded
+ * through this API is durable and inert, and a document that described the
+ * write without saying so would be telling a client that an access-control
+ * change had taken effect.
+ *
+ * The routes are kept rather than withdrawn because `permissions.ts` names the
+ * forked-`Role` model as the forward path and this is its only implementation;
+ * deleting it would delete the scaffolding for the design and the guard that
+ * pins `PractitionerRole` to the same permission as its BFF twin. One sentence,
+ * referenced everywhere it is true, is removed in one line when enforcement
+ * lands.
+ */
+export const ROLE_MODEL_CAVEAT =
+  "Authorisation is resolved from the roles on the caller's token, not from these rows: recording a grant here does not change what any user may do. The tenant role model is stored and not yet enforced.";
 
 export function platformRouteContracts(): RouteContract[] {
   return [

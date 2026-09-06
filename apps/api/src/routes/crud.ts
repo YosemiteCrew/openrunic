@@ -59,6 +59,17 @@ export const CONFLICT_RESPONSE = {
   schema: problemDocumentSchema,
 } as const;
 
+/**
+ * Joins an operation's own description with its aggregate's standing caveat.
+ *
+ * Spread into a contract so that "no description at all" stays absent rather
+ * than becoming an empty string, which the document would publish.
+ */
+function describe(own: string | undefined, caveat: string | undefined): { description?: string } {
+  const parts = [own, caveat].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? {} : { description: parts.join(' ') };
+}
+
 /** Everything the factory needs to serve one aggregate. */
 export interface CrudResource<
   TRow,
@@ -102,6 +113,16 @@ export interface CrudResource<
   toQuery(input: TQueryInput): TQuery;
   /** What the list query means, in one line, for the published spec. */
   readonly listDescription?: string;
+  /**
+   * A sentence true of every operation on this aggregate, appended to each
+   * one's description in the published document.
+   *
+   * It exists because a caveat that belongs to the *aggregate* would otherwise
+   * be written out four times and drift: a reader who arrives at `PATCH` must
+   * be told what a reader who arrives at `GET` was told. Written once here, it
+   * cannot say different things on different verbs.
+   */
+  readonly caveat?: string;
   readonly createSchema: z.ZodType<TCreateBody>;
   toCreate(body: TCreateBody): TCreate;
   readonly patchSchema: z.ZodType<TPatchBody>;
@@ -214,7 +235,7 @@ function crudContracts<
       path: base,
       operationId: `list${resource.operation}s`,
       summary: `List ${resource.plural}.`,
-      ...(resource.listDescription === undefined ? {} : { description: resource.listDescription }),
+      ...describe(resource.listDescription, resource.caveat),
       tags: [resource.tag],
       permission: resource.readPermission,
       query: resource.listQuerySchema,
@@ -232,6 +253,7 @@ function crudContracts<
       path: `${base}/{id}`,
       operationId: `read${resource.operation}`,
       summary: `Read one ${resource.singular}.`,
+      ...describe(undefined, resource.caveat),
       tags: [resource.tag],
       permission: resource.readPermission,
       pathParams: [idParam],
@@ -246,6 +268,7 @@ function crudContracts<
       path: base,
       operationId: `create${resource.operation}`,
       summary: `Record a ${resource.singular}.`,
+      ...describe(undefined, resource.caveat),
       tags: [resource.tag],
       permission: resource.writePermission,
       body: resource.createSchema,
@@ -265,6 +288,7 @@ function crudContracts<
       path: `${base}/{id}`,
       operationId: `update${resource.operation}`,
       summary: `Amend a ${resource.singular}.`,
+      ...describe(undefined, resource.caveat),
       tags: [resource.tag],
       permission: resource.writePermission,
       pathParams: [idParam],

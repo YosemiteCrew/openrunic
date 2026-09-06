@@ -56,6 +56,13 @@ updates:
       prefix: 'chore(repo)'
     # Every ignore entry needs a prose rationale and a revisit condition.
     ignore:
+      # TypeScript 7 (the Go-native compiler) ships without a JS compiler API
+      # until TS 7.1 (~Nov 2026); typescript-eslint 8 peer-caps at <6.1.0 and
+      # Next.js needs 16.3+ with its experimental tsc-CLI path. Majors blocked
+      # until typescript-eslint supports it; minors/patches of 5.x still flow.
+      # Revisit: when typescript-eslint's peer range admits >=7. (2026-08-12)
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
       # @types/node describes the runtime, so it is pinned to the runtime rather
       # than to the newest release. This project runs Node 22 (.nvmrc, and
       # engines.node >=22.12), and types from a later line describe APIs that

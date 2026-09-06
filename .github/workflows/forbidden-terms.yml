@@ -43,6 +43,57 @@ name: Forbidden Terms
 # answer here is not evidence about it.
 #
 # ---------------------------------------------------------------------------
+# THIS CONTEXT IS REQUIRED ON `dev` AS OF 2026-09-06, AND THAT CHANGED THE COST
+# OF EVERY SENTENCE ABOVE
+# ---------------------------------------------------------------------------
+#
+# Until then it was advisory: it went red and merges proceeded, which is how it
+# sat red on every pull request for weeks while both `FORBIDDEN_TERMS_*` secrets
+# were absent and nobody was obliged to notice. It is now one of five required
+# contexts on the `dev` ruleset, and the external pre-commit hook is no longer
+# the only blocking enforcement of this rule.
+#
+# Three consequences, none of which the paragraphs above account for:
+#
+# 1. THE FORK TRADE IS NOW ENFORCED, AND HAS NEVER BEEN EXECUTED. The count
+#    above ("243 pull requests and ZERO from a fork") was a sound basis for
+#    "red-on-fork costs nothing". It is not a basis for "BLOCKED-on-fork costs
+#    nothing", because the two differ only in the case that has never happened.
+#    Nobody in this organisation can drive that path without opening a fork pull
+#    request, so the fork branch below is reasoned about, never executed, and now
+#    blocking. The first fork contributor finds out.
+#
+# 2. FAIL-CLOSED NOW COSTS THE BRANCH. This job exits 2 when the pattern or the
+#    corpus is missing, which is correct and is stated below. While it was
+#    advisory that cost a red decoration; now it makes every pull request on
+#    `dev` unmergeable. Both secrets were created 2026-09-06T11:09Z - hours
+#    before they became load-bearing - so a rotation, an accidental deletion or
+#    an org policy change is a merge-blocking event for everyone, and restoring
+#    them needs whoever holds their contents. That is an operational dependency
+#    with no owner named anywhere; name one before assuming it is covered.
+#
+# 3. A REQUIRED CONTEXT IS MATCHED BY STRING, so a typo in the ruleset blocks
+#    forever and passes every check of this workflow. There are THREE objects
+#    here and two edges, and it is worth naming which check covers which:
+#
+#      the ruleset's `context`   <-A->   this job's `name:`   <-B->   what GitHub
+#                                                                     reports
+#
+#    A is the edge a rename breaks, and nothing in the system compares those two
+#    strings. Checked by reading both: `forbidden-terms.yml`'s `name:` and the
+#    `dev` ruleset context are byte-identical.
+#
+#    B is GitHub's own mapping. Observing it does NOT verify A - a rollup shows
+#    what was reported, so a ruleset entry matching a reported name says the
+#    entry is currently satisfiable and says nothing about where that string
+#    came from. Checked separately: all five required contexts appear in a
+#    merged pull request's rollup.
+#
+#    So after ANY job rename, re-run the A check - compare the ruleset context
+#    against the workflow's `name:` field. A green rollup on an older pull
+#    request will not show you the break.
+#
+# ---------------------------------------------------------------------------
 # TWO THINGS NOT TO DO WHEN THE FORK RED BECOMES ANNOYING
 # ---------------------------------------------------------------------------
 #

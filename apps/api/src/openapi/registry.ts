@@ -38,8 +38,25 @@ export interface RouteContract {
   summary: string;
   description?: string;
   tags: string[];
-  /** The capability the route requires. Absent means the route is public. */
+  /**
+   * The capability the route requires.
+   *
+   * Absent is not "public" and not "no capability": it is UNDECIDED, and
+   * `openapi.test.ts` refuses it. A route that genuinely needs none says so with
+   * `authenticatedOnly`, because the two states used to be the same value and a
+   * route nobody had thought about was indistinguishable from one deliberately
+   * left open.
+   */
   permission?: Permission;
+  /**
+   * The route requires a bearer token and no capability.
+   *
+   * Every principal may call it, and what it answers is about the caller rather
+   * than about the practice - `/bff/v0/me` is the case it exists for. Declaring
+   * it is what separates "decided: none" from "not decided", and it is emitted
+   * into the document so a reader is told which one this is.
+   */
+  authenticatedOnly?: true;
   /**
    * Further capabilities the route ALSO requires, all of them.
    *

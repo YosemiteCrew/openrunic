@@ -23,7 +23,10 @@ function failing(): ApiClient {
 }
 
 async function renderComposer() {
-  render(<NewOrderScreen client={createMockClient()} now={MOCK_NOW} />);
+  /* A clinician, stated rather than defaulted: signing is the act under test and
+     the whole of #313 is that this screen answers differently for a principal
+     who may not. `signsNothing` below drives the other one. */
+  render(<NewOrderScreen client={createMockClient({ roles: ['clinician'] })} now={MOCK_NOW} />);
   // Wait for the composer, not for the heading: the shell renders "New order"
   // straight away, including over the loading state, so the h1 says nothing
   // about whether the patient list has arrived. The patient select does.
@@ -118,6 +121,39 @@ describe('NewOrderScreen', () => {
 
     const blockers = await screen.findByRole('alert', { name: 'Before signing' });
     expect(within(blockers).getByText(/has no diagnosis linked/)).toBeInTheDocument();
+  });
+
+  it('tells a role that cannot sign why, and still lets it pend', async () => {
+    /* #313: the biller was offered "Sign orders" and learned the answer from a
+       403 after composing the order - and in the demonstration build, which has
+       no API, never learned it at all. `order.write` is a permission the biller
+       does not hold. */
+    render(<NewOrderScreen client={createMockClient({ roles: ['biller'] })} now={MOCK_NOW} />);
+    await screen.findByLabelText('Ordering for');
+    choosePatient('Patientsson');
+
+    fireEvent.click(favourite(/Full blood count/));
+    await screen.findByRole('list', { name: 'Drafted orders' });
+    fireEvent.click(at(screen.getAllByRole('button', { name: 'Sign 1 order' })));
+
+    const blockers = await screen.findByRole('alert', { name: 'Before signing' });
+    expect(within(blockers).getByText(/role cannot sign orders/)).toBeInTheDocument();
+
+    /* The screen is not hidden and the other route out is still open: the point
+       is to say what cannot be done, not to remove the work. */
+    expect(screen.getAllByRole('button', { name: /Pend/ }).length).toBeGreaterThan(0);
+  });
+
+  it('says nothing about permission to a role that holds it', async () => {
+    /* The separating half. Without it the blocker could be unconditional and
+       every assertion above would still pass. */
+    await renderComposer();
+
+    fireEvent.click(favourite(/Full blood count/));
+    await screen.findByRole('list', { name: 'Drafted orders' });
+    fireEvent.click(at(screen.getAllByRole('button', { name: 'Sign 1 order' })));
+
+    expect(screen.queryByText(/role cannot sign orders/)).not.toBeInTheDocument();
   });
 
   it('takes a priority, a specimen and a diagnosis on the drafted order', async () => {

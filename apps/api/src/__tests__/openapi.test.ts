@@ -112,12 +112,53 @@ describe('the OpenAPI document', () => {
 
   it('names the permission every operation requires', () => {
     const missing = internalRouteContracts().filter(
-      (contract) => contract.permission === undefined
+      (contract) => contract.permission === undefined && contract.authenticatedOnly !== true
     );
 
     // A route with no declared permission is a route nobody decided the
     // authorisation for, which is a worse failure than the wrong permission.
+    //
+    // `authenticatedOnly` is the other decision, stated: a bearer token and no
+    // capability. It is an opt-in rather than a default so that the undecided
+    // case still fails here - before it, the two were the same absent value.
     expect(missing.map((contract) => contract.operationId)).toEqual([]);
+  });
+
+  it('opens the no-capability hatch for exactly the routes named here', () => {
+    /* The set, not the shape. `authenticatedOnly` is a thing a developer can type
+       to stop a failing gate complaining, so a second one must not be able to
+       appear without editing a line that names it - a reviewer sees an edited
+       assertion in the diff, and cannot see an absence. This is how the
+       repository already handles accepted findings and advisory exceptions:
+       enumerated records rather than an open switch. */
+    const opened = internalRouteContracts()
+      .filter((contract) => contract.authenticatedOnly === true)
+      .map((contract) => contract.operationId)
+      .sort();
+
+    expect(opened).toEqual(['readOwnCapabilities']);
+  });
+
+  it('makes a no-capability route say so, in the contract and in the document', () => {
+    const open = internalRouteContracts().filter((contract) => contract.authenticatedOnly === true);
+
+    // Every one of them has to explain itself where a reader looks, because
+    // `authenticatedOnly` is the one flag that widens who may call a route.
+    for (const contract of open) {
+      expect(contract.permission, contract.operationId).toBeUndefined();
+      expect(contract.description ?? '', contract.operationId).toContain(
+        'bearer token and no capability'
+      );
+    }
+
+    const document = buildOpenApiDocument(internalRouteContracts());
+    for (const contract of open) {
+      const operation = (
+        document.paths[contract.path] as Record<string, Record<string, unknown>> | undefined
+      )?.[contract.method];
+      expect(operation?.['x-openrunic-authenticated'], contract.operationId).toBe(true);
+      expect(operation?.['x-openrunic-permission'], contract.operationId).toBeUndefined();
+    }
   });
 
   it('converts a braced OpenAPI path to the Hono form', () => {

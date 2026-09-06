@@ -16,7 +16,14 @@ import {
 import type { DraftOrder } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
-import { MOCK_NOW, patientProblems, rankCatalog, usePatients, warningsFor } from '@/lib/api';
+import {
+  MOCK_NOW,
+  patientProblems,
+  rankCatalog,
+  useOwnCapabilities,
+  usePatients,
+  warningsFor,
+} from '@/lib/api';
 import type {
   ApiClient,
   ListResponse,
@@ -171,7 +178,7 @@ export function NewOrderScreen({
    * inside the shell; this one had it wrapped around the outside.
    */
   if (page !== null && !isEmptyList(page)) {
-    return <Composer patients={page} now={now} />;
+    return <Composer patients={page} now={now} client={client} />;
   }
 
   return (
@@ -202,6 +209,8 @@ export function NewOrderScreen({
 interface ComposerProps {
   patients: ListResponse<Patient>;
   now: string;
+  /** The screen's client, threaded so the capability read is the same one. */
+  client?: ApiClient;
 }
 
 /** The review table's columns, as catalogue keys. See `OrdersScreen` for why. */
@@ -359,8 +368,18 @@ function signBlockers(
   t: Translator,
   drafts: readonly DraftOrder[],
   warnings: readonly OrderWarning[],
-  cleared: Readonly<Record<string, string>>
+  cleared: Readonly<Record<string, string>>,
+  maySign: boolean
 ): string[] {
+  /* First, because it is the one a person cannot fix by editing the draft. The
+     API refuses `order.write` for this principal either way (#313); before this
+     the refusal arrived after the whole order had been composed and pressed,
+     and in the demonstration build - which has no API - it did not arrive at
+     all and a biller appeared to sign clinical orders.
+  
+     A blocker rather than a hidden button: the screen stays readable, and the
+     reason is in the same `role="alert"` panel as every other reason. */
+  const notPermitted = maySign ? [] : [t('orders.new.blocker.notPermitted')];
   /* `flatMap` rather than `.filter().map()`: one pass over each list, and the
      empty array is the "not a blocker" case rather than a second traversal. */
   const openCriticals = warnings.flatMap((warning) =>
@@ -373,7 +392,7 @@ function signBlockers(
     draft.diagnosisCode ? [] : [t('orders.new.blocker.noDiagnosis', { order: draft.entry.name })]
   );
 
-  return [...openCriticals, ...missingDiagnosis];
+  return [...notPermitted, ...openCriticals, ...missingDiagnosis];
 }
 
 /**
@@ -475,7 +494,7 @@ function ReviewStep({
   );
 }
 
-function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
+function Composer({ patients, now, client }: Readonly<ComposerProps>): ReactElement {
   const t = useTranslator();
   const rows = patients.data;
   const [patientId, setPatientId] = useState(rows[0]?.id ?? '');
@@ -503,9 +522,15 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
     [patient?.id, drafts]
   );
 
+  /* Empty while it loads and empty on failure, which reads as "cannot sign yet"
+     rather than "may sign". The permissive default is the one that offers a
+     signature because a request has not come back. */
+  const capabilities = useOwnCapabilities({ client });
+  const maySign = capabilities.data?.permissions.includes('order.write') ?? false;
+
   const blockers = useMemo(
-    () => signBlockers(t, drafts, warnings, cleared),
-    [t, drafts, warnings, cleared]
+    () => signBlockers(t, drafts, warnings, cleared, maySign),
+    [t, drafts, warnings, cleared, maySign]
   );
 
   const addOrder = useCallback(

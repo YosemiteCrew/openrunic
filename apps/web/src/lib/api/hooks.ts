@@ -11,6 +11,7 @@ import type {
   ListResponse,
   Patient,
   PatientListQuery,
+  PrincipalCapabilities,
 } from './types';
 
 /**
@@ -274,4 +275,24 @@ export function useAppointment(
     (signal) => client.appointments.get(resolved, signal),
     { enabled: (options.enabled ?? true) && resolved !== '' }
   );
+}
+
+/**
+ * What the signed-in principal may do, as this deployment resolved it.
+ *
+ * One request per screen that asks, cached by `useApiQuery` like every other
+ * read. It answers from `/bff/v0/me` in a live build and from the mirrored role
+ * table in the demonstration build, and a screen never learns which - the whole
+ * point of #313 is that both behave the same way.
+ *
+ * `permissions` is empty while it loads and empty on failure. Screens must read
+ * that as "do not offer the action yet" rather than as "may not": an interface
+ * that offers a signature because a request has not come back is the failure
+ * this exists to prevent, in the direction that matters.
+ */
+export function useOwnCapabilities(
+  options: { client?: ApiClient } = {}
+): AsyncState<PrincipalCapabilities> {
+  const client = options.client ?? api;
+  return useApiQuery(queryKey('session.me'), (signal) => client.session.me(signal));
 }

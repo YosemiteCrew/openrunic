@@ -131,6 +131,8 @@ export const orders: Messages = {
      catalogue, so only the sentence around them is translated. */
   'orders.new.blocker.critical': '{warning}. Choose an override reason or remove the order.',
   'orders.new.blocker.noDiagnosis': '{order} has no diagnosis linked.',
+  'orders.new.blocker.notPermitted':
+    'Your role cannot sign orders. Pend them for a clinician to sign, or ask one to sign now.',
   'orders.new.blockers.heading': 'Before signing',
 
   'orders.new.review.headingOne': 'Review {count} order',

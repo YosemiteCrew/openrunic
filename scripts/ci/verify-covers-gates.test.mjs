@@ -77,6 +77,7 @@ const NOT_IN_VERIFY = {
   'lint:css:fix': 'the writing half of lint:css, which is in the chain',
   verify: 'the chain itself',
   roadmap: 'the writing half of roadmap:check, which is in the chain',
+  capabilities: 'the writing half of check:capabilities, which is in the chain',
 
   // External binaries that are not pnpm dependencies. Left out deliberately: a
   // `verify` that skipped them when the binary is absent would report clean

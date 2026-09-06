@@ -35,12 +35,37 @@ name: Forbidden Terms
 # THE TRIGGER - that is the whole before-and-after, and it is worth having.
 #
 # THIS DECISION IS ABOUT THIS REPOSITORY AND MUST NOT TRAVEL WITH THE GATE.
-# Counted rather than assumed, 2026-09-06: this repository has had 243 pull
-# requests and ZERO from a fork, so red-on-fork costs nothing here. The sibling
-# repository has had 596 fork pull requests with 536 merged across 23 authors -
-# roughly half its merged work - and the same change there would land on all of
-# them. Whoever ports this gate makes the trade again for that repository; the
-# answer here is not evidence about it.
+# Counted rather than assumed, and re-counted 2026-09-06: this repository has
+# had 270 pull requests and ZERO from a fork. The sibling repository has had
+# 596 fork pull requests with 536 merged across 23 authors - roughly half its
+# merged work - and the same change there would land on all of them. Whoever
+# ports this gate makes the trade again for that repository; the answer here is
+# not evidence about it.
+#
+# WHAT RED-ON-FORK COSTS CHANGED ON 2026-09-06 AT 13:08 UTC, when `No named
+# external product` was added to the `dev` ruleset's required contexts. Read
+# that as a DATED OBSERVATION and not a standing fact: rulesets change without
+# touching this file, which is why nothing else here asserts one.
+#
+# What it meant on that date is that a fork's red stopped being advisory. NO
+# BRANCH STATE A CONTRIBUTOR CAN REACH TURNS IT GREEN - GitHub withholds the
+# secrets from a fork's `pull_request` run, so the guard exits 2 rather than
+# reporting clean. That half is structural and holds whatever the ruleset says.
+#
+# It is not a dead end. `dev` carries an admin `always` bypass, so a maintainer
+# has two paths and they record different things: merge the fork pull request
+# over the red, which logs that an admin overrode a failing required check, or
+# push the branch into this repository and reopen it from there, which logs a
+# maintainer's own pull request and drops the contributor as its author. Prefer
+# the first. The audit trail should say what actually happened, and the second
+# reads as if no outside contribution ever arrived.
+#
+# THE COST HERE IS STILL ZERO AND THE REASON GOT WEAKER: not because the red is
+# advisory, but because this repository has never had a fork pull request (270
+# to date, none from a fork). That is a fact about history rather than about
+# configuration, and it is the kind that changes without anyone deciding to
+# change it. The two things not to do when the fork red becomes annoying are
+# immediately below, and they stopped being hypothetical on that date.
 #
 # ---------------------------------------------------------------------------
 # THIS CONTEXT IS REQUIRED ON `dev` AS OF 2026-09-06, AND THAT CHANGED THE COST
@@ -330,7 +355,10 @@ jobs:
       # through an earlier pull request sits in the BASE of every later `dev`
       # comparison and is never looked at again - but a `main` pull request's
       # merge base is the previous promotion, so the whole of `dev` since then
-      # is in scope. That is why this workflow is required on BOTH branches.
+      # is in scope. That is why this workflow RUNS on BOTH branches - which is
+      # this file's `on:` block, not a ruleset. Whether it is also REQUIRED on a
+      # ruleset is a separate fact that changes without touching this file, so
+      # it is not asserted here; the header covers it.
       - name: Collect the surfaces
         if: ${{ github.event_name == 'pull_request' }}
         env:

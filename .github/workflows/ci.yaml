@@ -5,8 +5,9 @@ name: CI
 # artifacts and outputs to each other by ordinary same-run means: no
 # workflow_run, no download-by-run-id, no PAT.
 #
-# This is the primary CI. The `CI Required` aggregate below is the one check to
-# mark required on the branch rulesets once its behaviour has been observed.
+# This is the primary CI. The `CI Required` aggregate below is the one check
+# marked required on the branch rulesets - the comment on that job records when
+# that happened and how to read its absence on a pull request.
 
 on:
   pull_request: {}
@@ -165,8 +166,19 @@ jobs:
 
   ci-required:
     name: CI Required
-    # The one check to mark required on the branch rulesets. Published first so
-    # its behaviour can be observed before it is made required.
+    # The one check marked required on BOTH branch rulesets. It was published
+    # first so its behaviour could be observed before that happened - the
+    # switchover has since been made, and this comment went on describing it as
+    # pending until 2026-09-06.
+    #
+    # What each ruleset requires ALONGSIDE it is deliberately not listed here.
+    # An earlier version of this comment enumerated it and was wrong within
+    # three hours: `dev` gained a required context on 2026-09-06 and nothing in
+    # this file can notice when that happens. Read the rulesets.
+    #
+    # Which matters for how a reader treats its absence: a pull request with no
+    # `CI Required` row is a check that has not reported yet, not a check nobody
+    # is enforcing.
     if: always()
     needs: [core, repo, test, agent-disabled, migration, ops, sonar]
     runs-on: ubuntu-latest

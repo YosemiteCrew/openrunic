@@ -89,6 +89,10 @@ export interface DemoPractice {
   payments: Prisma.PaymentCreateManyInput[];
   paymentAllocations: Prisma.PaymentAllocationCreateManyInput[];
   statements: Prisma.StatementCreateManyInput[];
+  stockItems: Prisma.StockItemCreateManyInput[];
+  stockLots: Prisma.StockLotCreateManyInput[];
+  stockPostings: Prisma.StockPostingCreateManyInput[];
+  stockMovements: Prisma.StockMovementCreateManyInput[];
   auditEvents: Prisma.AuditEventCreateManyInput[];
 }
 
@@ -711,6 +715,10 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
   const payments: Prisma.PaymentCreateManyInput[] = [];
   const paymentAllocations: Prisma.PaymentAllocationCreateManyInput[] = [];
   const statements: Prisma.StatementCreateManyInput[] = [];
+  const stockItems: Prisma.StockItemCreateManyInput[] = [];
+  const stockLots: Prisma.StockLotCreateManyInput[] = [];
+  const stockPostings: Prisma.StockPostingCreateManyInput[] = [];
+  const stockMovements: Prisma.StockMovementCreateManyInput[] = [];
 
   /** Events accumulated as rows are built, then chained in one pass at the end. */
   const auditDrafts: {
@@ -1536,6 +1544,202 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
     tail = { seq: link.seq, hash: link.hash };
   }
 
+  // --- Pharmacy stock -------------------------------------------------------
+  //
+  // Opening stock predates the earliest encounter so a dispense never draws
+  // from a lot that had not been received yet. `nursemanId` posts it: the seed
+  // has no pharmacist and adding one belongs with the role work in #302, not
+  // here, so the demo shows the pillar without inventing a principal for it.
+  const openingDate = new Date(today.getTime() - 120 * DAY);
+  const stockKeeperId = nursemanId;
+  /** `StockMovement.lotSeq` is this row's position in its lot's ledger, from 1. */
+  const lotSeqByLot = new Map<string, number>();
+  const nextLotSeq = (lotId: string): number => {
+    const seq = (lotSeqByLot.get(lotId) ?? 0) + 1;
+    lotSeqByLot.set(lotId, seq);
+    return seq;
+  };
+  //
+  // The pillar the demo could not show. Without these four tables every
+  // inventory read answers 200 with an empty page, so an evaluation sees a
+  // practice that prescribes and never dispenses - ten `MedicationRequest`
+  // rows and nothing to fill them from.
+  //
+  // Shaped so each read route has something to return rather than merely
+  // something to count: one lot expires inside the default `expiring` window,
+  // and one item is dispensed below its reorder level so `reorder` is not
+  // empty either. A count alone would leave both of those answering [].
+  const STOCK_CATALOGUE = [
+    {
+      sku: 'AMOX-500',
+      name: 'Amoxicillin 500 mg capsule',
+      unit: 'capsule',
+      rxnormCode: '308182',
+      reorderLevel: 60,
+      controlled: false,
+    },
+    {
+      sku: 'LISI-10',
+      name: 'Lisinopril 10 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '314076',
+      reorderLevel: 40,
+      controlled: false,
+    },
+    {
+      sku: 'METF-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      reorderLevel: 40,
+      controlled: false,
+    },
+    {
+      sku: 'NACL-0-9',
+      name: 'Sodium chloride 0.9% 10 mL',
+      unit: 'mL',
+      rxnormCode: '1807627',
+      reorderLevel: 200,
+      controlled: false,
+    },
+    // Controlled, so the schedule column and the witness field on a posting are
+    // exercised by the demo rather than only by tests.
+    {
+      sku: 'LORA-1',
+      name: 'Lorazepam 1 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '197899',
+      reorderLevel: 20,
+      controlled: true,
+    },
+  ] as const;
+
+  const stockItemIds = STOCK_CATALOGUE.map(() => nextId());
+  STOCK_CATALOGUE.forEach((entry, itemIndex) => {
+    stockItems.push({
+      id: stockItemIds[itemIndex] as string,
+      tenantId,
+      sku: entry.sku,
+      name: entry.name,
+      unit: entry.unit,
+      rxnormCode: entry.rxnormCode,
+      reorderLevel: entry.reorderLevel,
+      controlled: entry.controlled,
+      controlledSchedule: entry.controlled ? 'CIV' : null,
+      active: true,
+      createdAt: openingDate,
+      updatedAt: openingDate,
+    });
+  });
+
+  // One opening receipt per site, and one lot per item at each site. The lot a
+  // site holds of its own first item expires inside the demo's window, which is
+  // what gives `/inventory/expiring` a row without making everything urgent.
+  facilityIds.forEach((stockFacilityId, siteIndex) => {
+    const receiptId = nextId();
+    stockPostings.push({
+      id: receiptId,
+      tenantId,
+      kind: 'RECEIPT',
+      facilityId: stockFacilityId,
+      occurredOn: openingDate,
+      postedById: stockKeeperId,
+      reference: `OPENING-${siteIndex + 1}`,
+      note: 'Opening stock for the demo practice.',
+      createdAt: openingDate,
+      updatedAt: openingDate,
+    });
+
+    STOCK_CATALOGUE.forEach((entry, itemIndex) => {
+      const lotId = nextId();
+      const soonestExpiry = itemIndex === siteIndex;
+      stockLots.push({
+        id: lotId,
+        tenantId,
+        itemId: stockItemIds[itemIndex] as string,
+        facilityId: stockFacilityId,
+        lotNumber: `${entry.sku}-L${siteIndex + 1}`,
+        status: 'AVAILABLE',
+        // Anchored on TODAY, not on the receipt. Anchored on the receipt, the
+        // "expiring soon" lot expires 99 days before the demo is ever opened,
+        // and `/inventory/expiring` - whose window starts at today - answers
+        // empty while the seed looks correct.
+        expiresOn: new Date(today.getTime() + (soonestExpiry ? 21 : 400 + itemIndex * 30) * DAY),
+        receivedOn: openingDate,
+        createdAt: openingDate,
+        updatedAt: openingDate,
+      });
+
+      stockMovements.push({
+        id: nextId(),
+        tenantId,
+        postingId: receiptId,
+        lotId,
+        itemId: stockItemIds[itemIndex] as string,
+        facilityId: stockFacilityId,
+        kind: 'RECEIPT',
+        // Deliberately just above the reorder level for four of the five, and
+        // below it for the controlled item, so `reorder` has exactly one row.
+        quantity: entry.controlled ? entry.reorderLevel / 2 : entry.reorderLevel * 2,
+        occurredOn: openingDate,
+        actorId: stockKeeperId,
+        lotSeq: nextLotSeq(lotId),
+        createdAt: openingDate,
+        updatedAt: openingDate,
+      });
+    });
+  });
+
+  // A fill against a prescription, at the site the encounter happened at, for
+  // every third prescription. `StockPosting.prescriptionId` is the only link
+  // between a prescription and a record that it was filled, so without this the
+  // demo cannot show a dispense at all.
+  const encounterFacility = new Map(
+    encounters.map((encounter) => [encounter.id as string, encounter.facilityId as string])
+  );
+  medicationRequests.forEach((prescription, prescriptionIndex) => {
+    if (prescriptionIndex % 3 !== 0) return;
+    const dispenseFacilityId = encounterFacility.get(prescription.encounterId as string);
+    if (dispenseFacilityId === undefined) return;
+    const lot = stockLots.find(
+      (candidate) =>
+        candidate.facilityId === dispenseFacilityId &&
+        candidate.itemId === (stockItemIds[prescriptionIndex % stockItemIds.length] as string)
+    );
+    if (lot === undefined) return;
+
+    const dispensedOn = new Date((prescription.writtenAt as Date).getTime() + DAY);
+    const postingId = nextId();
+    stockPostings.push({
+      id: postingId,
+      tenantId,
+      kind: 'DISPENSE',
+      facilityId: dispenseFacilityId,
+      patientId: prescription.patientId as string,
+      encounterId: prescription.encounterId as string,
+      prescriptionId: prescription.id as string,
+      occurredOn: dispensedOn,
+      postedById: stockKeeperId,
+      createdAt: dispensedOn,
+      updatedAt: dispensedOn,
+    });
+    stockMovements.push({
+      id: nextId(),
+      tenantId,
+      postingId,
+      lotId: lot.id as string,
+      itemId: lot.itemId as string,
+      facilityId: dispenseFacilityId,
+      kind: 'DISPENSE',
+      quantity: 30,
+      occurredOn: dispensedOn,
+      actorId: stockKeeperId,
+      lotSeq: nextLotSeq(lot.id as string),
+      createdAt: dispensedOn,
+      updatedAt: dispensedOn,
+    });
+  });
+
   return {
     organisation,
     facilities,
@@ -1583,6 +1787,10 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
     payments,
     paymentAllocations,
     statements,
+    stockItems,
+    stockLots,
+    stockPostings,
+    stockMovements,
     auditEvents,
   };
 }

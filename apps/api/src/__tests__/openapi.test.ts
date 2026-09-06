@@ -248,6 +248,51 @@ describe('the OpenAPI document', () => {
     );
   });
 
+  /**
+   * THE COMPARATOR TEST ABOVE PROVES THE COMPARATOR. THIS PROVES THE CALL SITE.
+   *
+   * Reverting `byTagName`'s body to `localeCompare` reddens that test. Reverting
+   * only the *call site*, leaving the comparator correct, was declared uncaught
+   * when #354 shipped - carried across from #351, where the same limit is real.
+   * It is not real here, and the difference is not how the file is written:
+   *
+   *   #351   session.ts sorts the permissions `buildPolicyContext` derives from
+   *          `ROLE_PERMISSIONS[role]` - closed over a module constant, so no
+   *          synthetic identifier can reach the sort. Genuinely irreducible.
+   *   here   `buildOpenApiDocument(contracts)` takes its tags from the argument,
+   *          so a synthetic contract reaches the call site directly.
+   *
+   * **Whether the value under test arrives as an argument or is closed over a
+   * module constant is what decides it**, and a declared limit is a claim like
+   * any other: driving the mutation confirms the symptom and says nothing about
+   * whether it had to be that way.
+   *
+   * The document's own tags cannot show this - all of them are plain lower-case
+   * ASCII, which no comparator disagrees on. Same reason the comparator test
+   * constructs its identifiers rather than drawing them from the document.
+   */
+  it('sorts the document\u2019s tags with that comparator, not merely defining it', () => {
+    const contract = (tag: string): unknown => ({
+      method: 'get',
+      path: `/bff/v0/${tag}`,
+      operationId: `list${tag}`,
+      summary: 'A synthetic route, present only to carry its tag.',
+      tags: [tag],
+      permission: 'patient.read',
+      responses: [{ status: 200, description: 'ok', schema: z.object({}) }],
+    });
+
+    const document = buildOpenApiDocument(
+      ['orders.write', 'orders.Write', 'orders.audit'].map(contract) as never
+    );
+
+    expect(document.tags.map((tag) => tag.name)).toEqual([
+      'orders.Write',
+      'orders.audit',
+      'orders.write',
+    ]);
+  });
+
   it('documents every error status the routes can produce', () => {
     const document = buildOpenApiDocument(internalRouteContracts());
     const statuses = new Set(

@@ -372,4 +372,60 @@ describe('the OpenAPI document as a contract the routes honour', () => {
     expect(required).not.toContain('deceasedAt');
     expect(required).toContain('mrn');
   });
+
+  it('keeps a required `unknown`, which reads as omissible but is not', () => {
+    // `safeParse(undefined)` succeeds for a bare `z.unknown()` and `z.any()`, so
+    // the shape walk alone would drop them - while zod, asking whether the type
+    // admits `undefined`, correctly lists them. The first version of this fix
+    // replaced zod's list and lost them; the union is what this pins.
+    const rendered = toJsonSchema(
+      z.strictObject({
+        mrn: z.string(),
+        definition: z.unknown(),
+        anything: z.any(),
+        // The preprocess is the case the recomputation exists for, included so
+        // this asserts the union rather than "leave zod's list alone".
+        born: z.preprocess((value) => value, z.date()),
+      })
+    ) as { required?: string[] };
+
+    expect(rendered.required).toEqual(['mrn', 'definition', 'anything', 'born']);
+  });
+
+  it('keeps the `definition` a value-set response actually always sends', () => {
+    const document = buildOpenApiDocument(internalRouteContracts());
+    const path = document.paths['/bff/v0/value-sets'] as Record<
+      string,
+      {
+        responses: Record<
+          string,
+          {
+            content: {
+              'application/json': {
+                schema: {
+                  required?: string[];
+                  properties?: { data?: { items?: { required?: string[] } } };
+                };
+              };
+            };
+          }
+        >;
+      }
+    >;
+
+    const listItem =
+      path.get?.responses['200']?.content['application/json'].schema.properties?.data?.items;
+    const created = path.post?.responses['201']?.content['application/json'].schema;
+
+    // The live case that caught the replace-versus-union bug. The DTO is a
+    // strictObject and the route always sends `definition`, so a document that
+    // drops it from `required` under-states its own response - the same defect
+    // as #298, on the way back out. Asserted on both the list item and the
+    // created body, because the recomputation runs per object node and a fix
+    // that reached only the top level would pass on one of them.
+    // Optional chaining here cannot make the assertion vacuous: `toContain` on
+    // `undefined` fails rather than passing, so a missing node is still red.
+    expect(listItem?.required).toContain('definition');
+    expect(created?.required).toContain('definition');
+  });
 });

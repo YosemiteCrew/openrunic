@@ -89,6 +89,20 @@ type JsonSchema = Record<string, unknown>;
  * schema can answer that; `.optional()` is one of several ways to be omissible
  * and a def-type check would miss the others. Objects nest, and the hook runs
  * per node, so a nested body is covered by the same pass.
+ *
+ * WHY IT UNIONS RATHER THAN REPLACES, which is the part to keep. The first
+ * version of this assigned the computed list over zod's, and that DROPPED
+ * properties zod had listed correctly: `safeParse(undefined)` succeeds for a
+ * bare `z.unknown()` and `z.any()`, so both read as omissible while zod - which
+ * is asking a different question, "is there an `undefined` in the type" - had
+ * put them in `required`. Measured, and live rather than hypothetical:
+ * `valueSetDtoSchema.definition` is a bare `z.unknown()`, and three
+ * `/bff/v0/value-sets` responses lost their `required` entry for it.
+ *
+ * The defect being fixed here is an OMISSION, so the repair may only ever add.
+ * Replacing made this function authoritative about a question it answers less
+ * well than zod does in every case except the preprocess one. Order follows the
+ * shape so the document stays stable between runs.
  */
 export function toJsonSchema(schema: z.ZodType): JsonSchema {
   return z.toJSONSchema(schema, {
@@ -104,14 +118,20 @@ export function toJsonSchema(schema: z.ZodType): JsonSchema {
       }
 
       if (def.type === 'object' && def.shape !== undefined) {
-        const required = Object.entries(def.shape)
-          .filter(([, property]) => !property.safeParse(undefined).success)
-          .map(([name]) => name);
+        const alreadyRequired = new Set(
+          Array.isArray(context.jsonSchema.required)
+            ? (context.jsonSchema.required as unknown[]).map(String)
+            : []
+        );
+
+        const required = Object.keys(def.shape).filter(
+          (name) =>
+            alreadyRequired.has(name) ||
+            !(def.shape as Record<string, z.ZodType>)[name]!.safeParse(undefined).success
+        );
 
         if (required.length > 0) {
           context.jsonSchema.required = required;
-        } else {
-          delete context.jsonSchema.required;
         }
       }
     },

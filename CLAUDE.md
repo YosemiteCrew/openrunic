@@ -152,6 +152,12 @@ Before declaring a task finished, run and pass, scoped to what you changed:
 - **PR titles require a scope**: `type(scope): subject`. A scopeless title fails the "Validate PR
   title" CI check even though commitlint accepts scopeless commits locally.
 - **All PRs target `dev`**, never `main`. Releases are promotion PRs (see RELEASING.md).
+- **Close the issue by hand after merging.** `Fixes #N` / `Closes #N` only fires for merges into
+  the default branch, which is `main`, so a PR into `dev` never closes anything however the
+  keyword is written. Comment on the issue naming the PR and the `dev` commit, then close it.
+  Five issues were fixed and left open this way; at least one carried a correct `Closes #N` in
+  its merge commit and stayed open regardless. An open issue is not evidence that anything is
+  still broken unless somebody has checked.
 - Header max length 100.
 
 ## Hard rules

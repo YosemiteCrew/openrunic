@@ -16,8 +16,10 @@ import {
   dateWindow,
   parseDateOnly,
   referenceId,
+  referenceText,
   rejectUnsupportedParams,
   tokenValue,
+  uuidValue,
 } from '../fhir/params.js';
 import { acceptedSearchParams } from '../fhir/registry.js';
 import { toPatientDto } from '../schemas/patients.js';
@@ -373,6 +375,31 @@ describe('search parameter handling', () => {
     );
   });
 
+  it('refuses an id that is not a UUID, bare or behind a reference', () => {
+    expect(() => referenceId('does-not-exist', 'Patient', 'patient')).toThrow(/must be a UUID/);
+    expect(() => referenceId('Patient/does-not-exist', 'Patient', 'patient')).toThrow(
+      /must be a UUID/
+    );
+    // The type is read first: a wrong type is reported as a wrong type, not as
+    // a bad id, because that is the mistake the caller actually made.
+    expect(() => referenceId('Group/nope', 'Patient', 'patient')).toThrow(/must reference a/);
+  });
+
+  it('reads a text id without requiring a UUID, for a column that is not one', () => {
+    expect(referenceText('auth0|abc', 'Practitioner', 'agent')).toBe('auth0|abc');
+    expect(referenceText('Practitioner/auth0|abc', 'Practitioner', 'agent')).toBe('auth0|abc');
+    expect(() => referenceText('Group/abc', 'Practitioner', 'agent')).toThrow(
+      /must reference a Practitioner/
+    );
+  });
+
+  it('accepts a UUID and refuses everything else as a value', () => {
+    expect(uuidValue(testId(1), '_id')).toBe(testId(1));
+    for (const bad of ['', '123', 'does-not-exist', `${testId(1)}x`, "'; select 1--"]) {
+      expect(() => uuidValue(bad, '_id')).toThrow(/must be a UUID/);
+    }
+  });
+
   it('reads a date parameter as a half-open window, prefix by prefix', () => {
     const day = dateWindow('2026-08-14', 'date');
     expect(day.from?.toISOString()).toBe('2026-08-14T00:00:00.000Z');
@@ -714,5 +741,88 @@ describe('the FHIR error contract', () => {
 
     expect(outcome.issue.at(-1)).toMatchObject({ severity: 'information', code: 'informational' });
     expect(outcome.issue.at(-1)?.diagnostics).toContain(res.headers.get('x-request-id') ?? '');
+  });
+});
+
+describe('a search parameter that cannot be an id', () => {
+  /*
+   * The defect these cover: `patient` was read straight through to a `@db.Uuid`
+   * column, so Postgres refused the cast and the caller got a 500 with an
+   * opaque body - while the same value on the internal routes was already a
+   * 400. The route suites run the in-memory repository, which casts nothing, so
+   * the 500 was invisible to every one of them. Validating at the parameter
+   * boundary is what makes the case expressible here at all.
+   */
+
+  /** Every served type that accepts `patient`, read from the registry. */
+  const patientSearchable = servedResources()
+    .filter((resource) => resource.params.includes('patient'))
+    .map((resource) => resource.type);
+
+  it('covers every compartment type the registry serves, not a list written by hand', () => {
+    // The premise of the sweep below. If a type stops accepting `patient` this
+    // fails here rather than silently shrinking the sweep to nothing.
+    expect(patientSearchable.length).toBeGreaterThanOrEqual(17);
+    expect(patientSearchable).toContain('Observation');
+  });
+
+  it.each(patientSearchable)('400s a non-UUID patient on %s', async (type) => {
+    const { app } = createTestApp();
+    const res = await app.request(`/fhir/${type}?patient=does-not-exist`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as OperationOutcome;
+    expect(outcome.resourceType).toBe('OperationOutcome');
+    expect(outcome.issue[0]).toMatchObject({ severity: 'error', code: 'invalid' });
+  });
+
+  it('400s a non-UUID id behind a well-formed reference, not just a bare one', async () => {
+    const { app } = createTestApp();
+    const res = await app.request('/fhir/Observation?patient=Patient/does-not-exist', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('still answers a well-formed but absent patient with an empty bundle', async () => {
+    // The control. A gate that also refuses the correct caller is the failure
+    // that gets a gate deleted: "absent" and "malformed" are different answers
+    // and this is the one that must not have changed.
+    const { app } = createTestApp();
+    const res = await app.request(`/fhir/Observation?patient=${testId(9999)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.resourceType).toBe('Bundle');
+    expect(bundle.entry ?? []).toHaveLength(0);
+  });
+
+  it('400s a non-UUID _id, which reached the same column by a different route', async () => {
+    const { app } = createTestApp();
+    const res = await app.request('/fhir/Patient?_id=does-not-exist', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('does NOT refuse a non-UUID Provenance agent, whose column is text', async () => {
+    /*
+     * `actorId` stores an OIDC `sub`, which an issuer may mint as anything. The
+     * blanket version of this fix refused it, which would have broken audit
+     * search on every deployment that is not using demo tokens - a gate on the
+     * ordinary caller rather than the malformed one.
+     */
+    const { app } = createTestApp();
+    const res = await app.request('/fhir/Provenance?agent=auth0|not-a-uuid', {
+      headers: bearer(TOKENS.auditorA),
+    });
+
+    expect(res.status).not.toBe(400);
   });
 });

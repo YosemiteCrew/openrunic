@@ -534,6 +534,22 @@ test('a corpus shorter than the alternation is a problem even when all of it is 
   assert.match(problems[0], /claims 3 alternatives and the must-block corpus has 1/);
 });
 
+test('a corpus ONE short of the alternation fires, which is the boundary itself', () => {
+  // Weakening the count to `< claimed - 1` was green on everything until this
+  // existed: the two-short case below still fires under that mutation, and the
+  // equal case is silent under both, so nothing sat on the boundary. Two
+  // entries covering all three alternatives keeps the per-alternative check
+  // quiet, so the single problem is the count and only the count.
+  const problems = selfTest({
+    pattern,
+    blockCorpus: ['acmehealth and acme health', 'acme-health'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /claims 3 alternatives and the must-block corpus has 2/);
+});
+
 test('a corpus two short of the alternation still fires, which separates removed from off-by-one', () => {
   // Every other fixture is exactly one short, so deleting the count and
   // weakening it to `< claimed - 1` redden an identical set and the two are

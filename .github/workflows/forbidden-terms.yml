@@ -43,15 +43,29 @@ name: Forbidden Terms
 # not evidence about it.
 #
 # WHAT RED-ON-FORK COSTS CHANGED ON 2026-09-06 AT 13:08 UTC, when `No named
-# external product` was added to the `dev` ruleset's required contexts. Before
-# that, a fork's red reported honestly and blocked nothing. It now BLOCKS a
-# merge into `dev`. The cost here is still zero, but for a weaker reason than
-# it was: not because the red is advisory, but because this repository has
-# never had a fork pull request, so the case has not arisen yet. The first one
-# WILL be blocked - by a guard that cannot run on a fork at all, because GitHub
-# withholds the secrets from a fork's `pull_request` run. The two things not to
-# do about that are immediately below, and they stopped being hypothetical on
-# that date.
+# external product` was added to the `dev` ruleset's required contexts. Read
+# that as a DATED OBSERVATION and not a standing fact: rulesets change without
+# touching this file, which is why nothing else here asserts one.
+#
+# What it meant on that date is that a fork's red stopped being advisory. NO
+# BRANCH STATE A CONTRIBUTOR CAN REACH TURNS IT GREEN - GitHub withholds the
+# secrets from a fork's `pull_request` run, so the guard exits 2 rather than
+# reporting clean. That half is structural and holds whatever the ruleset says.
+#
+# It is not a dead end. `dev` carries an admin `always` bypass, so a maintainer
+# has two paths and they record different things: merge the fork pull request
+# over the red, which logs that an admin overrode a failing required check, or
+# push the branch into this repository and reopen it from there, which logs a
+# maintainer's own pull request and drops the contributor as its author. Prefer
+# the first. The audit trail should say what actually happened, and the second
+# reads as if no outside contribution ever arrived.
+#
+# THE COST HERE IS STILL ZERO AND THE REASON GOT WEAKER: not because the red is
+# advisory, but because this repository has never had a fork pull request (270
+# to date, none from a fork). That is a fact about history rather than about
+# configuration, and it is the kind that changes without anyone deciding to
+# change it. The two things not to do when the fork red becomes annoying are
+# immediately below, and they stopped being hypothetical on that date.
 #
 # ---------------------------------------------------------------------------
 # TWO THINGS NOT TO DO WHEN THE FORK RED BECOMES ANNOYING

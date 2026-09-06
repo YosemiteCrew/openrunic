@@ -165,8 +165,15 @@ jobs:
 
   ci-required:
     name: CI Required
-    # The one check to mark required on the branch rulesets. Published first so
-    # its behaviour can be observed before it is made required.
+    # The one check marked required on both branch rulesets. `dev` requires it
+    # today alongside the three security contexts; `main` requires those plus
+    # `Promotion source`. It was published first so its behaviour could be
+    # observed before that happened - the switchover has since been made, and
+    # this comment went on describing it as pending until 2026-09-06.
+    #
+    # Which matters for how a reader treats its absence: a pull request with no
+    # `CI Required` row is a check that has not reported yet, not a check nobody
+    # is enforcing.
     if: always()
     needs: [core, repo, test, agent-disabled, migration, ops, sonar]
     runs-on: ubuntu-latest

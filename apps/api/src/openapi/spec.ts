@@ -186,7 +186,12 @@ export interface OpenApiDocument {
  * common case reads exactly as it did and the exception is visible as one.
  */
 function permissionExtensions(contract: RouteContract): Record<string, unknown> {
-  if (contract.permission === undefined) return {};
+  if (contract.permission === undefined) {
+    /* A route that decided it needs none says so in the document too. Silence
+       here would read as an omission, which is the state this field exists to
+       be distinguishable from. */
+    return contract.authenticatedOnly === true ? { 'x-openrunic-authenticated': true } : {};
+  }
 
   const also = contract.alsoRequires ?? [];
   return {

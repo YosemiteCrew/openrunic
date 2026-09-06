@@ -12,6 +12,7 @@ import { orderRouteContracts, orderRoutes } from './orders.js';
 import { patientRouteContracts, patientRoutes } from './patients.js';
 import { platformRouteContracts, platformRoutes } from './platform.js';
 import { qualityRouteContracts, qualityRoutes, type QualityRouteOptions } from './quality.js';
+import { sessionRouteContracts, sessionRoutes } from './session.js';
 import { telehealthRouteContracts, telehealthRoutes } from './telehealth.js';
 
 /**
@@ -50,6 +51,7 @@ export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
   router.route('/', inventoryRoutes());
   router.route('/', platformRoutes());
   router.route('/', qualityRoutes(options.quality));
+  router.route('/', sessionRoutes());
   router.route('/', telehealthRoutes(options.adapters));
 
   return router;
@@ -66,6 +68,7 @@ export function internalRouteContracts(): RouteContract[] {
     ...inventoryRouteContracts(),
     ...platformRouteContracts(),
     ...qualityRouteContracts(),
+    ...sessionRouteContracts(),
     ...telehealthRouteContracts(),
   ];
 }

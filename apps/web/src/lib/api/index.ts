@@ -49,6 +49,7 @@ export {
   useAppointments,
   useMutation,
   usePatient,
+  useOwnCapabilities,
   usePatients,
 } from './hooks';
 export type { AsyncState, AsyncStatus, HookOptions, MutationOutcome, MutationState } from './hooks';

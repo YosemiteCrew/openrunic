@@ -1,3 +1,7 @@
+import { heldSession } from '@/lib/auth/store';
+
+import { capabilitiesForRoles } from '../capabilities';
+
 import { paginate } from '../pagination';
 import type { ApiError } from '../client';
 import type {
@@ -548,6 +552,15 @@ export interface MockClientOptions {
   claims?: readonly ClaimDto[];
   payments?: readonly PaymentDto[];
   remittances?: readonly RemittanceDto[];
+  /**
+   * The roles the caller holds, for `session.me`.
+   *
+   * The demonstration reads the held session, because the caller is whoever
+   * signed in. A TEST has no sign-in, so it states the principal it is driving
+   * as - which is better than a default, since #313 is precisely about a screen
+   * behaving differently for two principals and a default would pick one.
+   */
+  roles?: readonly string[];
   statements?: readonly StatementDto[];
   formDefinitions?: readonly FormDefinitionDto[];
   /**
@@ -630,6 +643,18 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
 
   return {
     mode: 'mock',
+
+    /* The demonstration build has no API, and this is the answer one would have
+       given. Read from the held session for the same reason `config.ts` reads
+       `currentAccessToken` for the live client: the caller is whoever signed in,
+       and a client that had to be told would be told by every screen. */
+    session: {
+      me: () =>
+        answer(() => {
+          const roles = options.roles ?? heldSession()?.identity.roles ?? [];
+          return { roles: [...roles], permissions: capabilitiesForRoles(roles) };
+        }),
+    },
 
     facilities: {
       list: (query = {}) =>

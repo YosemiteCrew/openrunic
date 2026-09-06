@@ -867,8 +867,25 @@ export interface UserListQuery extends PaginationQuery {
  * ahead of the route: a contract that promises more than the server does is how
  * a screen ends up reporting a save that never happened.
  */
+/**
+ * What the signed-in principal may do, as the API resolved it.
+ *
+ * The staff application uses this to stop offering an action the server will
+ * refuse (#313). It is not a security boundary: every route enforces its own
+ * permission, and this only decides what the interface offers.
+ */
+export interface PrincipalCapabilities {
+  readonly roles: readonly string[];
+  /** Sorted, so two answers that mean the same thing compare equal. */
+  readonly permissions: readonly string[];
+}
+
 export interface ApiClient {
   readonly mode: 'live' | 'mock';
+  /** The caller, as this deployment sees them. */
+  session: {
+    me: (signal?: AbortSignal) => Promise<PrincipalCapabilities>;
+  };
   /**
    * The facility directory. Read-only here: a screen books into a facility, it
    * does not create one, and the admin surface that does is its own client.

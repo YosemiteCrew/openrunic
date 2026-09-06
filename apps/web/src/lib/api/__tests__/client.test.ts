@@ -104,6 +104,23 @@ describe('createHttpClient', () => {
 
     expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://api.test/bff/v0/patients?q=testp&pageSize=5');
   });
+
+  it('asks the API what the caller may do, rather than deriving it here', async () => {
+    /* #313: the browser holds no rule about what a role allows. The live client
+       has one job on this route - ask - and the path has to be the one the
+       route contract publishes, because a 404 here fails open in every screen
+       that reads it. */
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ roles: ['clinician'], permissions: ['order.write'] }));
+    const client = createHttpClient({ baseUrl: 'http://api.test', fetchImpl });
+
+    await expect(client.session.me()).resolves.toStrictEqual({
+      roles: ['clinician'],
+      permissions: ['order.write'],
+    });
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://api.test/bff/v0/me');
+  });
 });
 
 describe('mock fixtures', () => {

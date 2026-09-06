@@ -22,6 +22,7 @@ import type {
   StatementDto,
   TaskDto,
   UserDto,
+  PrincipalCapabilities,
 } from './types';
 
 /**
@@ -200,6 +201,9 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
 
   return {
     mode: 'live',
+    session: {
+      me: (signal) => get<PrincipalCapabilities>('/me', signal),
+    },
     facilities: {
       list: (query, signal) =>
         get<ListResponse<FacilityDto>>(`/facilities${toSearchParams(query)}`, signal),

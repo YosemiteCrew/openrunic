@@ -74,9 +74,14 @@ Protection and gating:
   Rulesets cannot express "only `dev` may be the source branch", so that constraint is expressed as
   a status check instead. It is required on `main` alone because it only runs on pull requests
   targeting `main`.
-- The live lists are therefore **four required contexts on `dev`** (`CI Required`,
-  `Detect secrets (Gitleaks)`, `GitGuardian Security Checks`, `Aikido Security: check code`) and
-  **five on `main`** (those four plus `Promotion source`). The exception to the single-aggregate
+- The live lists are therefore **five required contexts on `dev`** (`CI Required`,
+  `Detect secrets (Gitleaks)`, `GitGuardian Security Checks`, `Aikido Security: check code`,
+  `No named external product`) and **five on `main`** (the first four plus `Promotion source`).
+  `No named external product` was added to `dev` on 2026-09-06 and deliberately not to `main`: a
+  promotion carries content already checked on `dev`, so the marginal value is lower and the blast
+  radius is a release. Read the live lists with
+  `gh api repos/YosemiteCrew/openrunic/rulesets/<id> --jq '.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context'`
+  rather than trusting this sentence - it has been stale before. The exception to the single-aggregate
   rule is deliberately narrow: a check earns its own entry only when the aggregate is structurally
   incapable of covering it, never because a job feels important enough to name.
 - Branch protection is implemented with **repository rulesets**, not classic branch protection:

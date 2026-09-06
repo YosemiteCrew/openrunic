@@ -272,9 +272,15 @@ jobs:
             --clobber --repo "$REPO"
 
   # Aggregate for THIS workflow (same fail-closed pattern as ci.yaml's
-  # CI Required). Per ADR-0003, "CI Required" is the only ruleset-required
-  # status check today; promoting this aggregate to required is a deliberate
-  # follow-up once the supply-chain gate has a track record. Required checks
+  # CI Required). "CI Required" is the only check ci.yaml contributes to the
+  # required list; it is NOT the only required context - `dev` requires five as
+  # of 2026-09-06 (see ADR-0003, and read the ruleset rather than either
+  # sentence). Promoting this aggregate to required remains a deliberate
+  # follow-up once the supply-chain gate has a track record, and 2026-09-06 is
+  # one data point against: it failed on `curl: (35)` downloading `grant` from a
+  # release, on one pull request and not its sibling minutes earlier. A gate
+  # whose stage fetches a binary over the network fails transiently, and that is
+  # exactly what a track record is for. Required checks
   # treat a skipped job as satisfied, so a failed SBOM stage silently passing
   # its dependents is exactly what this aggregate exists to prevent.
   supply-chain-required:

@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { rejectUnsupportedParams } from '../fhir/params.js';
+import { CONTROL_SEARCH_PARAMS } from '../fhir/registry.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
 import { ROLE_MODEL_CAVEAT, ROLE_PERMISSIONS } from '../policy/permissions.js';
 import { observationSpec } from '../repositories/specs/clinical.js';
@@ -2083,11 +2084,84 @@ describe('every advertised search parameter narrows', () => {
     }
   });
 
-  it('has a case for every parameter of every served resource', () => {
-    /* The guard on the guard. A module whose params list were read wrongly
-       would produce no cases and this suite would pass by testing nothing. */
-    expect(cases.length).toBeGreaterThanOrEqual(SERVED_MODULES.length);
+  it('has a case for every parameter the server advertises', async () => {
+    /*
+     * The guard on the guard, against the CapabilityStatement rather than
+     * against a count.
+     *
+     * What it replaced was `cases.length >= SERVED_MODULES.length`, which
+     * compares a count of parameters against a count of modules and so
+     * tolerates losing about seven cases in eight: shrink `cases` to one per
+     * module and the floor is satisfied exactly. Measured on `dev` before this
+     * changed - thirty-six of the three hundred and fourteen cases in this file
+     * could vanish and the suite stayed green.
+     *
+     * A count recomputed from `SERVED_MODULES` would not fix it. That is the
+     * same list this suite already reads, so it can only agree with itself, and
+     * a check that can only agree with itself is the fault this file spent a
+     * whole review on.
+     *
+     * `/fhir/metadata` is a second position rather than a second copy.
+     * `buildCapabilityStatement` derives its `searchParam` list from the same
+     * `module.params` this suite reads, but through the application's own
+     * expression rather than through the `flatMap` above, so a mistake in
+     * either derivation shows as a disagreement.
+     *
+     * What it cannot see is a `params` list that is wrong in the first place,
+     * because both sides read it. That is pinned elsewhere and it was measured
+     * rather than assumed: dropping `given` from the Patient module fails four
+     * tests, among them `lists exactly the parameters each resource implements`
+     * in `readme.fhir-table.test.ts`, which holds every module's list - order
+     * included - against a hand-maintained table in the README, and merely
+     * swapping two names fails that same test. The per-case `definition` lookup
+     * below is the other half, for a name no `SEARCH_SUPPORT` entry defines.
+     *
+     * Not `SEARCH_SUPPORT`, which was the first thing tried and is the wrong
+     * relation: it is a catalogue of definitions and a strict superset of what
+     * the modules serve on seventeen of the thirty resources - `Task` declares
+     * one parameter against five defined - so a shrunk `cases` is still a
+     * subset of it and passes.
+     */
+    const { app } = harness();
+    const statement = (await (await app.request('/fhir/metadata')).json()) as {
+      rest: { resource: { type: string; searchParam: { name: string }[] }[] }[];
+    };
+    const advertised = statement.rest[0]?.resource ?? [];
+
+    /* The rail read nothing, as distinct from finding nothing: an unmounted
+       endpoint or a changed envelope would otherwise make every comparison
+       below vacuous. */
+    expect(advertised.length, '/fhir/metadata advertised no resources at all').toBeGreaterThan(0);
+
+    /* `_count` and `_offset` are paging, appended by the generator to every
+       resource; `_id` is the common parameter this suite exempts above. None of
+       the three is a filter a module implements. */
+    const notAFilter = new Set([...CONTROL_SEARCH_PARAMS.map((param) => param.name), '_id']);
+
+    for (const resource of advertised) {
+      expect(
+        cases
+          .filter((one) => one.type === resource.type)
+          .map((one) => one.name)
+          .sort(),
+        `${resource.type}: the cases in this suite and the parameters /fhir/metadata ` +
+          `advertises disagree, so one of the two derivations has dropped something`
+      ).toEqual(
+        resource.searchParam
+          .map((param) => param.name)
+          .filter((name) => !notAFilter.has(name))
+          .sort()
+      );
+    }
+
+    /* The other direction, so a resource the generator dropped cannot hide by
+       simply not being iterated above. */
+    const advertisedTypes = new Set(advertised.map((resource) => resource.type));
     for (const one of cases) {
+      expect(
+        [...advertisedTypes],
+        `${one.type} has cases in this suite but /fhir/metadata does not serve it`
+      ).toContain(one.type);
       expect(
         one.definition,
         `${one.type}?${one.name} is mounted but absent from SEARCH_SUPPORT`

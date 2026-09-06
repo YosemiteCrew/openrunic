@@ -107,6 +107,42 @@ export function compilePattern(source) {
   }
 }
 
+/**
+ * The only pattern shape this guard accepts: a `|` alternation of literal words
+ * over `[A-Za-z0-9 -]`.
+ *
+ * Two separate jobs, one predicate, and it is not a coincidence that the same
+ * character set answers both.
+ *
+ * FIRST, the two implementations agree. This pattern is consumed twice - here
+ * through `new RegExp(source, 'i')`, and by the machine-local hook through
+ * `grep -inE`, which is POSIX ERE. `\b`, `\d`, a quantifier or a class can
+ * mean different things in the two dialects, and then the value is a
+ * TRANSLATION between them rather than one value used twice. Inside this
+ * alphabet there is no construct they can disagree about.
+ *
+ * SECOND, `alternativesIn` below is exact. Counting by splitting on `|` is
+ * right for a plain alternation and wrong the moment a group, an escaped pipe
+ * or a class containing one appears.
+ *
+ * It fails CLOSED: a pattern outside this shape is a red self-test with an
+ * explanation, never a silently weaker check. If a future pattern genuinely
+ * needs a metacharacter, this predicate and `alternativesIn` are what has to
+ * change, deliberately and together.
+ */
+export const PATTERN_SHAPE = /^[A-Za-z0-9 -]+(\|[A-Za-z0-9 -]+)*$/u;
+
+/**
+ * How many alternatives a pattern claims.
+ *
+ * Sound ONLY for a source satisfying {@link PATTERN_SHAPE}, which is why the
+ * caller checks that first and skips this when it fails - a count taken from an
+ * unconstrained pattern is a plausible number rather than an answer.
+ */
+export function alternativesIn(source) {
+  return source.split('|').length;
+}
+
 /** Non-comment, non-blank lines. Shared by both corpora. */
 export function corpusLines(text) {
   return text
@@ -231,6 +267,34 @@ export function selfTest({ pattern, blockCorpus, passCorpus, minCorpus }) {
       `the must-block corpus decoded to ${blockCorpus.length} entries, fewer than the ${minCorpus} ` +
         'this workflow expects: the secret is truncated, rotated or stale'
     );
+  }
+
+  // The pattern's own shape, and then what the shape makes countable.
+  //
+  // This closes the direction the corpus check cannot see. The known-positives
+  // pass below walks the CORPUS, so it answers "the pattern catches everything
+  // the corpus knows about" and is blind to the converse: an alternative added
+  // to the pattern with no corresponding entry is never exercised by anything,
+  // and a typo in it protects nothing while looking exactly like a term that is
+  // guarded.
+  //
+  // The message never quotes the pattern - the failed-compile path one screen up
+  // exists for the same reason - so it names the constraint and the counts.
+  if (!PATTERN_SHAPE.test(pattern.source)) {
+    problems.push(
+      'the pattern is not a plain alternation of literal words over [A-Za-z0-9 -]. ' +
+        'That shape is what lets this guard use one value in two regular-expression ' +
+        'dialects and count its alternatives; outside it, neither is sound. Rewrite the ' +
+        'pattern, or change PATTERN_SHAPE and alternativesIn together and deliberately'
+    );
+  } else {
+    const claimed = alternativesIn(pattern.source);
+    if (blockCorpus.length < claimed) {
+      problems.push(
+        `the pattern claims ${claimed} alternatives and the must-block corpus has ` +
+          `${blockCorpus.length} entries, so at least one alternative is checked by nothing`
+      );
+    }
   }
 
   // Known positives: every one must be caught. Reported by INDEX, never by value.

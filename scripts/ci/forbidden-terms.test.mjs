@@ -406,7 +406,15 @@ const passCorpus = ['open an issue', 'open standards', 'the door opens'];
 
 test('a healthy pattern and corpus produce no problems', () => {
   assert.deepEqual(
-    selfTest({ pattern, blockCorpus: ['acmehealth', 'acme health'], passCorpus, minCorpus: 2 }),
+    selfTest({
+      pattern,
+      // One entry per alternative. It was two against a three-alternative
+      // pattern until the arity check was added and reddened this very case -
+      // the guard's own fixture was an instance of the gap it now closes.
+      blockCorpus: ['acmehealth', 'acme health', 'acme-health'],
+      passCorpus,
+      minCorpus: 2,
+    }),
     []
   );
 });
@@ -414,7 +422,9 @@ test('a healthy pattern and corpus produce no problems', () => {
 test('a known positive the pattern misses is a problem, reported by position', () => {
   const problems = selfTest({
     pattern,
-    blockCorpus: ['acmehealth', 'acme  health'],
+    // Three entries, so the arity check is satisfied and the ONE problem below
+    // is the missed positive rather than two problems collapsed into a count.
+    blockCorpus: ['acmehealth', 'acme  health', 'acme-health'],
     passCorpus,
     minCorpus: 2,
   });
@@ -426,21 +436,105 @@ test('a known positive the pattern misses is a problem, reported by position', (
 test('a corpus shorter than the declared minimum is a problem', () => {
   // The truncated-secret case. Nothing else notices it: a short corpus still
   // passes every entry it has.
-  const problems = selfTest({ pattern, blockCorpus: ['acmehealth'], passCorpus, minCorpus: 2 });
+  //
+  // The corpus is long enough for the ARITY check on purpose - one entry per
+  // alternative - so the single problem below is the floor and only the floor.
+  // A two-entry corpus would fire both and `problems.length === 1` would be
+  // asserting that two independent checks happen to be one.
+  const problems = selfTest({
+    pattern,
+    blockCorpus: ['acmehealth', 'acme health', 'acme-health'],
+    passCorpus,
+    minCorpus: 5,
+  });
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /1 entries, fewer than the 2/);
+  assert.match(problems[0], /3 entries, fewer than the 5/);
 });
 
 test('a pattern that matches this repository own prose is a problem', () => {
-  const broad = compilePattern('open[ -]?[a-z]+');
+  // Over-broad WITHIN the accepted shape, which is the realistic version: a
+  // term that is also an ordinary phrase in this repository's own writing. The
+  // previous fixture used `open[ -]?[a-z]+`, and once the shape assertion
+  // existed that raised two problems - so the case would have been asserting
+  // that over-breadth and a bad shape are one thing.
+  const broad = compilePattern('open an issue|open standards');
   const problems = selfTest({
     pattern: broad,
-    blockCorpus: ['open acme'],
+    // Matched by the pattern, so the known-positives pass stays silent and the
+    // one problem below is over-breadth alone. Two entries for two alternatives.
+    blockCorpus: ['open an issue now', 'open standards body'],
     passCorpus,
     minCorpus: 1,
   });
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /line\(s\) 1, 2, 3/);
+  assert.match(problems[0], /line\(s\) 1, 2/);
+  assert.doesNotMatch(problems[0], /plain alternation/u, 'this case must not be a shape failure');
+});
+
+// ---------------------------------------------------------------------------
+// The direction the corpus pass cannot see
+// ---------------------------------------------------------------------------
+
+test('an alternative with no corpus entry behind it is a problem', () => {
+  // The gap this check closes. The known-positives pass walks the CORPUS, so it
+  // answers "the pattern catches everything the corpus knows about" and is blind
+  // to the converse: a seventh alternative against a six-entry corpus is
+  // exercised by nothing, and a typo in it protects nothing while looking
+  // exactly like a term that is guarded.
+  const problems = selfTest({
+    pattern,
+    blockCorpus: ['acmehealth', 'acme health'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /claims 3 alternatives and the must-block corpus has 2/);
+});
+
+test('the floor and the arity check are independent, in both directions', () => {
+  // Neither subsumes the other, which is the reason both exist.
+  //
+  // BOTH secrets truncating together is the case the arity check cannot see: a
+  // pattern cut to one alternative against a corpus cut to one entry satisfies
+  // 1 >= 1, and only the literal floor written in the workflow notices that the
+  // pair has shrunk.
+  const bothShrank = selfTest({
+    pattern: compilePattern('acmehealth'),
+    blockCorpus: ['acmehealth'],
+    passCorpus,
+    minCorpus: 3,
+  });
+  assert.equal(bothShrank.length, 1);
+  assert.match(bothShrank[0], /1 entries, fewer than the 3/);
+
+  // And the converse: a corpus over the floor still leaves an alternative
+  // unchecked, which the floor cannot see.
+  const overFloorUnderArity = selfTest({
+    pattern,
+    blockCorpus: ['acmehealth', 'acme health'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(overFloorUnderArity.length, 1);
+  assert.match(overFloorUnderArity[0], /checked by nothing/);
+});
+
+test('a pattern outside the accepted shape is refused, and says why without quoting it', () => {
+  // Fails CLOSED. Counting alternatives by splitting on `|` is exact for a plain
+  // alternation and wrong for a group, an escaped pipe or a class containing
+  // one - and the same alphabet is what lets one value serve both this
+  // `new RegExp(source, 'i')` and the machine-local hook's POSIX `grep -inE`.
+  // So the shape carries two jobs and a pattern outside it makes neither sound.
+  const problems = selfTest({
+    pattern: compilePattern('(acmehealth|acme health)'),
+    blockCorpus: ['acmehealth', 'acme health'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /plain alternation of literal words/);
+  // Never quote the pattern, the same rule the failed-compile path follows.
+  assert.equal(problems[0].toLowerCase().includes('acme'), false);
 });
 
 // ---------------------------------------------------------------------------

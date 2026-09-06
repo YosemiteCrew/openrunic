@@ -760,9 +760,15 @@ describe('a search parameter that cannot be an id', () => {
     .map((resource) => resource.type);
 
   it('covers every compartment type the registry serves, not a list written by hand', () => {
-    // The premise of the sweep below. If a type stops accepting `patient` this
-    // fails here rather than silently shrinking the sweep to nothing.
-    expect(patientSearchable.length).toBeGreaterThanOrEqual(17);
+    /*
+     * The premise of the sweep below, pinned to the measured population rather
+     * than to a floor. A floor is not a canary: at `>= 17` - the figure the
+     * report gave, before the registry said 24 - seven types could stop
+     * accepting `patient` and the sweep would shrink in silence. Pinning it
+     * makes adding or removing a compartment type a line someone chose to
+     * write, which is the only version that can fail.
+     */
+    expect(patientSearchable).toHaveLength(24);
     expect(patientSearchable).toContain('Observation');
   });
 

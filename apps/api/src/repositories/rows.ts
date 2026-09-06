@@ -74,10 +74,14 @@ export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
  * there, and on all fourteen it does: a planted column the model does not have
  * is TS2353 at every one, and rc=0 at every one with the annotation removed.
  *
- * It is not the only guard for most of them. Thirteen of the fourteen are also
- * caught by `repositories.prisma.test.ts`, which builds the create-idempotency
- * query. `breakGlassGrantSpec` is the one that is not - nothing builds its
- * `uniqueBy.where`, so there this annotation is the whole of it.
+ * It is not the only guard for most of them, but that cover is incidental rather
+ * than systematic. Thirteen of the fourteen are caught at run time by hand-written
+ * per-spec tests spread across six files - `repositories.prisma.test.ts` reaches
+ * only `patients` - so nothing arranges it and a spec added tomorrow inherits none
+ * of it. `breakGlassGrantSpec` is reached by nothing at all: made to throw, the
+ * whole api suite is rc=0 at 3993 passed and the marker never prints, while the
+ * same throw in `patientSpec` fails eight tests. There this annotation is the
+ * whole guard.
  */
 export type WhereFor<M extends PrismaModelName> = FindManyArgs<M>['where'];
 

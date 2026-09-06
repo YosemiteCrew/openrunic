@@ -5,8 +5,9 @@ name: CI
 # artifacts and outputs to each other by ordinary same-run means: no
 # workflow_run, no download-by-run-id, no PAT.
 #
-# This is the primary CI. The `CI Required` aggregate below is the one check to
-# mark required on the branch rulesets once its behaviour has been observed.
+# This is the primary CI. The `CI Required` aggregate below is the one check
+# marked required on the branch rulesets - the comment on that job records when
+# that happened and how to read its absence on a pull request.
 
 on:
   pull_request: {}

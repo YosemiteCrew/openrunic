@@ -156,8 +156,17 @@ Before declaring a task finished, run and pass, scoped to what you changed:
   `Closes #N` does not fire on a merge into `dev`: GitHub honours it only when the commit
   reaches the default branch, `main`. It does fire later, at the next `dev` -> `main`
   promotion - 11 issues closed exactly that way between 2026-08-14 and 2026-08-17, each within
-  three seconds of the promotion merge. So the keyword is a backstop, not a no-op; close the
-  issue by hand as well, with a comment naming the PR and the `dev` commit. Between the `dev`
+  three seconds of the promotion merge, at promotions of 7, 6 and 8 commits (`git rev-list
+--count <merge>^1..<merge>^2`, which excludes the merge commit, the same basis as
+  `main..dev`). It has never had the chance to fire at a larger one: the 76-commit promotion
+  (PR #230) named 11 issues and all 11 had been closed by hand seven days earlier. The absence
+  of evidence above 8 commits is an absence of subjects, not an absence of firings - do not
+  read a size limit into it. So the keyword is a backstop, not a no-op; close the
+  issue by hand as well, with a comment naming the PR and the `dev` commit.
+  **Unless the issue says it is being held.** An issue may be deliberately left open as a
+  subject for the next promotion, to measure whether the keyword fires at a push size nobody
+  has observed; such an issue carries a comment saying so. Read the issue before closing it,
+  and leave a held one alone. Between the `dev`
   merge and the promotion an issue sits fixed-and-open for hours or days, and five were found
   in that state on 2026-09-06. **An open issue is not evidence that anything is broken.**
   `git log origin/dev --grep '#N'` settles it before you claim one - `--grep` reads the whole

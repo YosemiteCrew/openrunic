@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 // Unit tests for the shared path-containment helper.
 //
-// `resolveWithin` is what five CI scripts use to decide whether a path they
+// `resolveWithin` is what four CI scripts use to decide whether a path they
 // were handed belongs to the tree they are allowed to touch - affected-matrix,
-// exception-expiry, git-blobs, lcov-check and merge-coverage. It had no test of
-// its own, and the case that matters is the one a plain prefix comparison gets
-// wrong: a *sibling* directory whose name starts with the root's name. Dropping
-// the separator from the boundary passed all 286 ci-script tests, so the
-// boundary itself is pinned here rather than through a caller.
+// exception-expiry, lcov-check and merge-coverage. It had no test of its own,
+// and the case that matters is the one a plain prefix comparison gets wrong: a
+// *sibling* directory whose name starts with the root's name. Dropping the
+// separator from the boundary passed all 286 ci-script tests, so the boundary
+// itself is pinned here rather than through a caller.
+//
+// git-blobs.mjs mentions this helper and is NOT a caller: it documents why an
+// earlier revision stopped resolving paths and reading them, because a
+// string-only helper cannot see a tracked symlink. Do not read the name there
+// as a fifth call site.
 //
 // The helper touches no filesystem by design, so neither does this.
 //

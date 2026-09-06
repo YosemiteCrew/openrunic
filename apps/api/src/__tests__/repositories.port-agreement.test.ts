@@ -284,6 +284,7 @@ const FILTERS: {
     order: 'asc',
     patientId: 'id-patientId',
     encounterId: 'id-encounterId',
+    status: 'FINAL',
     category: 'VITAL_SIGNS',
     code: 'id-code',
     loincCode: 'id-loincCode',

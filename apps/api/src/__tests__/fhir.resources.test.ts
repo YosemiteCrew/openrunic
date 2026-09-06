@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { rejectUnsupportedParams } from '../fhir/params.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
 import { ROLE_MODEL_CAVEAT, ROLE_PERMISSIONS } from '../policy/permissions.js';
+import { observationSpec } from '../repositories/specs/clinical.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -3565,4 +3566,125 @@ describe('a patient reading their own MedicationDispense', () => {
       expect(res.status, `${token} reading a dispense`).toBe(200);
     }
   });
+});
+
+describe('a status search selects only the rows carrying that status', () => {
+  /*
+   * The hole in `every advertised search parameter narrows`, and the defect it
+   * let through.
+   *
+   * That suite sends `openrunic-no-such-value` and accepts a 4xx as a pass,
+   * because refusing a value is not ignoring it. For a closed value set the
+   * refusal happens first, every time: `statusToken` rejects any code the
+   * mapping does not round-trip, so the probe is answered 400 before the filter
+   * would have run. The suite can never reach the branch it exists to test, and
+   * a `status` that selected nothing looked identical to one that worked.
+   *
+   * `Observation?status=` was exactly that. `toQuery` built the term correctly;
+   * `ObservationListQuery` never declared the field, so `matches` did not
+   * compare it and `where` did not emit it. A client asking for amended results
+   * received forty final ones, 200, in a well-formed searchset. #380.
+   *
+   * The probe here is a code that IS in the value set and is absent from the
+   * data, which is the one shape neither suite was sending and the one a real
+   * client sends. Note that the two ports cannot check each other on this:
+   * `matches` and `where` were wrong in the same way, so they agreed.
+   */
+  const advertising = SERVED_MODULES.filter((module) => module.params.includes('status'));
+
+  it('covers every resource that advertises status', () => {
+    /* The guard on the guard. `losslessStatus` advertises `status` only where
+       the value set round-trips, which today is Observation alone - but a
+       mapping losing its lossy values would mount another one, and the cases
+       below would silently stop covering the server. This fails when that
+       happens, rather than passing over a resource nobody probed. */
+    expect(advertising.map((module) => module.type).sort()).toEqual([
+      'CarePlan',
+      'CareTeam',
+      'Claim',
+      'Device',
+      'Observation',
+    ]);
+  });
+
+  it('answers a legal status that no row carries with an empty bundle', async () => {
+    const { app } = harness();
+    const headers = bearer(TOKENS.adminA);
+
+    const all = (await (await app.request('/fhir/Observation', { headers })).json()) as Bundle;
+    expect(all.total, 'Observation has no seeded rows, so this proves nothing').toBeGreaterThan(0);
+
+    const res = await app.request('/fhir/Observation?status=amended', { headers });
+    expect(res.status, 'amended is in the value set, so it must be answered').toBe(200);
+
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.total, 'no seeded observation is amended').toBe(0);
+    expect(bundle.entry ?? []).toHaveLength(0);
+  });
+
+  it('reaches both halves of the collection filter, not only the one the doubles read', () => {
+    /*
+     * The HTTP cases above run against the memory port, so `matches` decides
+     * them and a `where` that dropped the term would pass every one - which is
+     * the blindness that hid this defect in the first place, pointed at the
+     * suite meant to catch it. Removing the term from `where` leaves all of
+     * them green; this is the case that goes red.
+     *
+     * Asserted directly rather than through a port comparison, because both
+     * halves were wrong in the same direction and agreed with each other.
+     */
+    const base = { sort: 'effectiveAt', page: 1, pageSize: 10, order: 'desc' } as const;
+
+    expect(observationSpec.where({ ...base, status: 'FINAL' })).toMatchObject({ status: 'FINAL' });
+    expect(observationSpec.where(base)).not.toHaveProperty('status');
+
+    const row = { status: 'FINAL' } as Parameters<typeof observationSpec.matches>[0];
+    expect(observationSpec.matches(row, { ...base, status: 'FINAL' })).toBe(true);
+    expect(observationSpec.matches(row, { ...base, status: 'AMENDED' })).toBe(false);
+  });
+
+  it.each(advertising.map((module) => [module.type, module] as const))(
+    '%s returns only rows carrying the status it was asked for',
+    async (type) => {
+      /*
+       * The other side of it, and the arm that generalises: an empty answer
+       * alone would also be produced by a filter that selects nothing at all,
+       * which is a different defect wearing the same result.
+       *
+       * The codes come from the data rather than from a value set, so this
+       * needs no per-resource table and covers a resource that starts
+       * advertising `status` later. Where a resource holds exactly one status
+       * it cannot discriminate a working filter from a dropped one - that is
+       * what the Observation case above is for, and it is why that one sends a
+       * code the data does not carry.
+       */
+      const { app } = harness();
+      const headers = bearer(TOKENS.adminA);
+
+      const all = (await (await app.request(`/fhir/${type}`, { headers })).json()) as Bundle;
+      expect(all.total, `${type} has no seeded rows, so this proves nothing`).toBeGreaterThan(0);
+
+      const present = [
+        ...new Set(
+          (all.entry ?? [])
+            .map((entry) => (entry.resource as { status?: string }).status)
+            .filter((status): status is string => status !== undefined)
+        ),
+      ];
+      expect(present.length, `${type} rows carry no status to filter on`).toBeGreaterThan(0);
+
+      for (const status of present) {
+        const res = await app.request(`/fhir/${type}?status=${encodeURIComponent(status)}`, {
+          headers,
+        });
+        expect(res.status, `${type}?status=${status}`).toBe(200);
+
+        const bundle = (await res.json()) as Bundle;
+        expect(bundle.total, `${type}?status=${status} selected nothing`).toBeGreaterThan(0);
+        for (const entry of bundle.entry ?? []) {
+          expect((entry.resource as { status?: string }).status).toBe(status);
+        }
+      }
+    }
+  );
 });

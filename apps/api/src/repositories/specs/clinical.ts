@@ -1158,6 +1158,7 @@ export const immunisationSpec: CollectionSpec<
 export interface ObservationListQuery extends BaseQuery {
   patientId?: string;
   encounterId?: string;
+  status?: ObservationStatus;
   category?: ObservationCategory;
   code?: string;
   loincCode?: string;
@@ -1240,6 +1241,7 @@ export const observationSpec: CollectionSpec<
   matches(row: ScopedRow<'Observation'>, query: ObservationListQuery): boolean {
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.status !== undefined && row.status !== query.status) return false;
     if (query.category !== undefined && row.category !== query.category) return false;
     if (query.code !== undefined && row.code !== query.code) return false;
     if (query.loincCode !== undefined && row.loincCode !== query.loincCode) return false;
@@ -1251,6 +1253,7 @@ export const observationSpec: CollectionSpec<
     return {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.category === undefined ? {} : { category: query.category }),
       ...(query.code === undefined ? {} : { code: query.code }),
       ...(query.loincCode === undefined ? {} : { loincCode: query.loincCode }),

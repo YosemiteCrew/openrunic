@@ -80,19 +80,36 @@ jobs:
     # A squash merge writes a new single-parent commit, so the head is reachable
     # only through `refs/pull/<n>/head` once the branch goes; a merge commit
     # keeps the head as its second parent, so the range resolves whether or not
-    # the branch still exists. `actions/checkout` fetches `refs/heads/*`,
-    # `refs/tags/*` and one further ref - this pull request's `/merge` ref while
-    # it is open, and the base commit once it is closed - but never
-    # `refs/pull/<n>/head`, which is the one ref that would resolve a squashed
-    # head. So in the first case `git rev-list` reports
+    # the branch still exists. What THIS job's checkout fetches, read from its own
+    # run logs rather than from the action's documentation:
+    #
+    #   open            one fetch:  +refs/heads/*  +refs/tags/*  +<sha>:refs/remotes/pull/<n>/merge
+    #   closed, merged  two fetches: +refs/heads/*  +refs/tags/*
+    #                                then +<sha>:refs/remotes/origin/<base>
+    #
+    # In the closed case that pinned `<sha>` is the pull request's own MERGE
+    # COMMIT, not `base.sha`. It is mapped onto the base branch's remote ref,
+    # which is why it reads as "the base commit" and why anyone debugging this
+    # will look for `base.sha` in the fetch line and not find it. So `BASE_SHA`
+    # resolves only because it is an ancestor reachable through `refs/heads/*` -
+    # nothing pins it deliberately.
+    #
+    # `refs/pull/<n>/head` is fetched in neither state, and it is the one ref
+    # that would resolve a squashed head. So `git rev-list` reports
     # `Invalid revision range <base>..<head>` - naming BOTH ends when only the
     # head is missing, which reads like a base-SHA problem and is not one.
     # `fetch-depth: 0` is a depth, not a ref set, and does not help.
     #
-    # Read from the fetch lines of this workflow's own runs in both states, not
-    # from the action's documentation. Note that fixing this closes the window:
-    # with the guard in place the job no longer checks out on a closed pull
-    # request, so the closed-state refspec is not observable here any more.
+    # Scoped to this job on purpose: `pr-title` above takes the default depth and
+    # makes a single `--depth=1` fetch, so a fetch line read without checking
+    # which job printed it will not match the shape above. And only the merged
+    # closed state was observed - a closed-but-unmerged pull request has no merge
+    # commit and nobody has looked at what it pins.
+    #
+    # Note that fixing this closes the window: with the guard in place the job no
+    # longer checks out on a closed pull request, so the closed-state refspecs
+    # are not observable from this workflow any more. They were measured from
+    # runs that predate the guard, and those logs expire.
     #
     # Note that the two failing pull requests were squashed in August; squash
     # merging is now disabled at the repository level, so under current policy a

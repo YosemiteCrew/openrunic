@@ -587,6 +587,32 @@ test('an alternative no corpus entry exercises is a problem, reported by positio
   assert.equal(problems[0].toLowerCase().includes('acme'), false);
 });
 
+test('an alternative is exercised only if the pattern MATCHES the entry, not if it contains it', () => {
+  // Substring containment looks strictly simpler here and cannot throw, which
+  // is why it is the tempting shape. It fails OPEN in the one check whose job
+  // is to find unexercised alternatives: `'k'` is contained in nothing here,
+  // but U+212A KELVIN SIGN is a character `includes` sees as different and a
+  // case-folding `includes()` implementation would not.
+  //
+  // Driven the other way round, which is the version that fails: the entry
+  // holds the KELVIN SIGN, the alternative is `k`. `entry.includes('k')` is
+  // false and so is the regex, so both agree - the divergence needs the FOLDING
+  // that `includes` does not do. So the case that separates them is an entry
+  // differing only by case, where `includes` says unexercised and the pattern
+  // matches it.
+  //
+  // Without this the substitution is still caught, but by a case about the
+  // ACCEPTED ALPHABET, which names the wrong cause. Raised against my own
+  // matrix.
+  const problems = selfTest({
+    pattern: compilePattern('acmehealth'),
+    blockCorpus: ['ACMEHEALTH'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.deepEqual(problems, [], 'a case-differing entry exercises the alternative');
+});
+
 test('a corpus shorter than the alternation is a problem even when all of it is exercised', () => {
   // The count's own separating input, and it is what shows the two checks are
   // not one. A single entry containing every term exercises all three

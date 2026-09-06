@@ -829,14 +829,43 @@ for (const [name, env] of [
   });
 }
 
-test('a directory that does not exist exits 2, not 0', () => {
+test('a directory that does not exist exits 2 and names the DIRECTORY', () => {
   // Treating an unreadable surface as empty is how a guard reports clean about
   // something it never looked at.
   const result = run(['scan', '--dir', '/nonexistent/surfaces'], {
     FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC),
   });
   assert.equal(result.code, 2);
-  assert.match(result.stderr, /Cannot read the 'diff' surface/);
+  assert.match(result.stderr, /Cannot read the surface directory/);
+  // The absence is the point. This used to report `Cannot read the 'diff'
+  // surface` - the first name the loop happened to touch - which sends whoever
+  // reads it looking for a file when the whole directory is missing. Asserting
+  // only the new message would stay green if the old one came back alongside
+  // it.
+  assert.doesNotMatch(result.stderr, /Cannot read the '\w+' surface/u);
+});
+
+test('a surface that is a SYMLINK exits 2 rather than being followed', () => {
+  // `readFileSync` follows links, so without the `lstat` check this run reads
+  // the link's target, finds nothing in it, and exits 0 with
+  // "clean - 6 surfaces read". The target here is deliberately clean and the
+  // real surface deliberately is not: a guard that reports clean about a file
+  // nobody collected is the exact failure this script exists to remove, and it
+  // arrives through the filesystem rather than through an argument.
+  const dir = surfaceDir({ body: 'acmehealth is named here' });
+  const elsewhere = path.join(mkdtempSync(path.join(os.tmpdir(), 'ft-target-')), 'clean.txt');
+  writeFileSync(elsewhere, 'nothing named in this file\n');
+  rmSync(path.join(dir, 'body'));
+  symlinkSync(elsewhere, path.join(dir, 'body'));
+
+  const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
+
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /The 'body' surface is not a regular file/);
+  // Not 0 AND not 1: following the link is exit 0 here, so asserting "not
+  // clean" alone would also pass on a run that found the term through some
+  // other path. This pins that the LINK was refused.
+  assert.doesNotMatch(result.stdout, /clean/);
 });
 
 test('scan without --dir exits 2', () => {

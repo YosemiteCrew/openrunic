@@ -45,7 +45,7 @@
 // text and reports the file and line of the ADDED line, which is why it is a
 // surface of its own rather than another blob of text.
 
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -452,16 +452,44 @@ function runScan(argv) {
   }
   const pattern = compilePattern(decodeRequired(PATTERN_ENV));
 
+  // RESOLVE ONCE, THEN CHANGE INTO IT, so the six reads below take the SURFACES
+  // constants themselves and nothing built from `--dir`. The docstring above
+  // says the coverage is a property of this file rather than of the caller, and
+  // until now that was true of the LOOP while the read still took a path joined
+  // from the caller's argument. Both are constants now.
+  //
+  // A missing directory is reported as a missing DIRECTORY. It used to surface
+  // as `Cannot read the 'diff' surface` - the first thing the loop happened to
+  // touch - which is the same defect the workflow's Preconditions step was
+  // rewritten to remove: a guard that cannot run should say what it needs.
+  let root;
+  try {
+    root = realpathSync(dir);
+  } catch {
+    throw new GuardError(`Cannot read the surface directory ${dir}.`);
+  }
+  process.chdir(root);
+
   const findings = [];
   for (const surface of SURFACES) {
-    const file = path.join(dir, surface);
     let text;
     try {
-      text = readFileSync(file, 'utf8');
-    } catch {
+      // `lstat` and not `stat`: `readFileSync` FOLLOWS a symlink, so a surface
+      // that is a link is read as though it were the surface, and the guard
+      // reports on a file nobody collected. The collector writes six plain
+      // files, but the read site is what decides that rather than the step that
+      // wrote them - the same reason the checkout is pinned to the base.
+      if (!lstatSync(surface).isFile()) {
+        throw new GuardError(
+          `The '${surface}' surface is not a regular file. A surface must be a plain file in ${root}.`
+        );
+      }
+      text = readFileSync(surface, 'utf8');
+    } catch (error) {
+      if (error instanceof GuardError) throw error;
       // A surface that cannot be read is an error. Treating it as empty is how
       // a guard reports "clean" about something it never looked at.
-      throw new GuardError(`Cannot read the '${surface}' surface from ${file}.`);
+      throw new GuardError(`Cannot read the '${surface}' surface from ${root}.`);
     }
     findings.push(...scanSurface(pattern, surface, text));
   }

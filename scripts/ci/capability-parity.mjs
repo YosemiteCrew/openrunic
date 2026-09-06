@@ -128,8 +128,16 @@ export function compare(api, web) {
   return { problems, roles: api.size };
 }
 
-/** The browser table, exactly as it is committed. */
-export async function render(api) {
+/**
+ * The browser table before formatting.
+ *
+ * Separate from `render` so this file's own tests can exercise the emitter
+ * without loading prettier: the `CI scripts (node --test)` job runs with
+ * `install: false`, on the stated ground that everything under `scripts/ci` is
+ * dependency-free, and a test that imported prettier turned that job red while
+ * `pnpm verify` stayed green locally.
+ */
+export function renderSource(api) {
   const entries = [...api.entries()]
     .map(([role, permissions]) => {
       const key = /^[a-zA-Z][a-zA-Z0-9]*$/.test(role) ? role : `'${role}'`;
@@ -138,15 +146,21 @@ export async function render(api) {
     })
     .join('');
 
-  const source = `${HEADER}export const ROLE_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {\n${entries}};\n${FOOTER}`;
+  return `${HEADER}export const ROLE_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {\n${entries}};\n${FOOTER}`;
+}
 
-  /* Formatted here rather than left to a contributor, because `format:check`
-     runs in the same `verify` chain: an emitter that produces a file the
-     formatter rejects turns one gate green by making another red. The roadmap
-     generator loads prettier for the same reason. */
+/**
+ * The browser table, exactly as it is committed.
+ *
+ * Formatted here rather than left to a contributor, because `format:check` runs
+ * in the same `verify` chain: an emitter that produces a file the formatter
+ * rejects turns one gate green by making another red. The roadmap generator
+ * loads prettier for the same reason.
+ */
+export async function render(api) {
   const { default: prettier } = await import('prettier');
   const config = (await prettier.resolveConfig(WEB_SOURCE)) ?? {};
-  return await prettier.format(source, { ...config, filepath: WEB_SOURCE });
+  return await prettier.format(renderSource(api), { ...config, filepath: WEB_SOURCE });
 }
 
 async function main() {

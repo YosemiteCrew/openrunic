@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { compare, readRoleTable, render } from './capability-parity.mjs';
+import { compare, readRoleTable, renderSource } from './capability-parity.mjs';
 
 /**
  * The guard's own tests. Every case is a disagreement someone could actually
@@ -15,6 +15,13 @@ import { compare, readRoleTable, render } from './capability-parity.mjs';
  * something else and would not have caught the failure that motivated this
  * file's rewrite.
  */
+/* Resolved from this file rather than from the caller's cwd. The assertions
+   below read two real files, and a path that misses returns a failure that
+   looks like drift - the same output a genuine divergence produces. */
+const repo = (relative) => fileURLToPath(new URL(`../../${relative}`, import.meta.url));
+const API_MODULE = repo('apps/api/src/policy/permissions.ts');
+const WEB_ARTEFACT = repo('apps/web/src/lib/api/capabilities.ts');
+
 const scratch = mkdtempSync(join(tmpdir(), 'capability-parity-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -109,16 +116,18 @@ test('agrees only when the two tables agree', () => {
   assert.deepEqual(compare(both(), both()).problems, []);
 });
 
-test('quotes a role name that is not a bare identifier', async () => {
-  const emitted = await render(
+test('quotes a role name that is not a bare identifier', () => {
+  /* `renderSource` rather than `render`: this job runs without an install, so
+     the assertion is on the emitter and not on prettier's re-wrapping of it. */
+  const emitted = renderSource(
     table([
       ['admin', ['order.read']],
       ['read-only', ['order.read']],
     ])
   );
 
-  assert.match(emitted, /^ {2}admin: \['order\.read'\],$/m);
-  assert.match(emitted, /^ {2}'read-only': \['order\.read'\],$/m);
+  assert.match(emitted, /^ {2}admin: \[$/m);
+  assert.match(emitted, /^ {2}'read-only': \[$/m);
 });
 
 test('the committed browser table names every role the API defines', async () => {
@@ -131,10 +140,8 @@ test('the committed browser table names every role the API defines', async () =>
      imported here, and the artefact is read as TEXT, so a fault in this file's
      own reader cannot silence both halves at once the way the parser it
      replaced did. */
-  const { ROLE_PERMISSIONS } = await import(
-    pathToFileURL('apps/api/src/policy/permissions.ts').href
-  );
-  const committed = readFileSync('apps/web/src/lib/api/capabilities.ts', 'utf8');
+  const { ROLE_PERMISSIONS } = await import(pathToFileURL(API_MODULE).href);
+  const committed = readFileSync(WEB_ARTEFACT, 'utf8');
 
   const named = Object.keys(ROLE_PERMISSIONS).filter((role) =>
     new RegExp(`^ {2}'?${role}'?:`, 'm').test(committed)
@@ -144,8 +151,8 @@ test('the committed browser table names every role the API defines', async () =>
 });
 
 test('and agrees with it permission by permission', async () => {
-  const api = await readRoleTable('apps/api/src/policy/permissions.ts', 'ROLE_PERMISSIONS');
-  const web = await readRoleTable('apps/web/src/lib/api/capabilities.ts', 'ROLE_CAPABILITIES');
+  const api = await readRoleTable(API_MODULE, 'ROLE_PERMISSIONS');
+  const web = await readRoleTable(WEB_ARTEFACT, 'ROLE_CAPABILITIES');
 
   assert.deepEqual(compare(api, web).problems, []);
 });

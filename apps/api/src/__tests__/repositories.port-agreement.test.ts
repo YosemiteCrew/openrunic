@@ -787,6 +787,39 @@ function constrained(where: Readonly<Record<string, unknown>>): string[] {
 }
 
 /**
+ * The field lines of every `model` block in `schema.prisma`.
+ *
+ * Split out because two tables below are read off the same file, and a second
+ * copy of the block scanner is a second thing to get wrong when Prisma's syntax
+ * moves. It returns lines rather than columns because the two tables disagree
+ * about which lines are columns, which is the whole reason there are two.
+ */
+function modelBlocks(): ReadonlyMap<string, readonly string[]> {
+  const schema = readFileSync(
+    fileURLToPath(new URL('../../../../packages/database/prisma/schema.prisma', import.meta.url)),
+    'utf8'
+  );
+
+  const blocks = new Map<string, string[]>();
+  let open: string[] | undefined;
+  for (const raw of schema.split('\n')) {
+    const line = raw.trim();
+    const header = /^model\s+(\w+)\s*\{/u.exec(line);
+    if (header?.[1] !== undefined) {
+      open = [];
+      blocks.set(header[1], open);
+      continue;
+    }
+    if (open !== undefined && line === '}') {
+      open = undefined;
+      continue;
+    }
+    if (open !== undefined) open.push(line);
+  }
+  return blocks;
+}
+
+/**
  * Which columns of each model may hold null, and what type each one is, read
  * out of the schema.
  *
@@ -810,28 +843,7 @@ function constrained(where: Readonly<Record<string, unknown>>): string[] {
  * meaningless mutant through.
  */
 function nullableColumns(): ReadonlyMap<string, ReadonlyMap<string, string>> {
-  const schema = readFileSync(
-    fileURLToPath(new URL('../../../../packages/database/prisma/schema.prisma', import.meta.url)),
-    'utf8'
-  );
-
-  const blocks = new Map<string, string[]>();
-  let open: string[] | undefined;
-  for (const raw of schema.split('\n')) {
-    const line = raw.trim();
-    const header = /^model\s+(\w+)\s*\{/u.exec(line);
-    if (header?.[1] !== undefined) {
-      open = [];
-      blocks.set(header[1], open);
-      continue;
-    }
-    if (open !== undefined && line === '}') {
-      open = undefined;
-      continue;
-    }
-    if (open !== undefined) open.push(line);
-  }
-
+  const blocks = modelBlocks();
   const modelNames = new Set(blocks.keys());
   const nullable = new Map<string, ReadonlyMap<string, string>>();
   for (const [model, lines] of blocks) {
@@ -849,7 +861,40 @@ function nullableColumns(): ReadonlyMap<string, ReadonlyMap<string, string>> {
   return nullable;
 }
 
+/**
+ * Every column of every model, nullable or not, from the same blocks.
+ *
+ * The table above answers "may this column hold null"; this one answers "is
+ * this a column at all", which is a different question and the one the section
+ * at the foot of this file needs. Kept separate rather than folded together
+ * because the nullable table is deliberately NOT a table of every column - a
+ * `NOT NULL` column appearing in it would let the one-column-away pass build
+ * rows the database forbids, and that is asserted below.
+ *
+ * Relation fields are excluded the same way and for the same reason: their type
+ * is another model, and `Observation.patient` is not something a `where` may
+ * name. `Observation.patientId` is, and both are on the model.
+ */
+function allColumns(): ReadonlyMap<string, ReadonlySet<string>> {
+  const blocks = modelBlocks();
+  const modelNames = new Set(blocks.keys());
+  const all = new Map<string, ReadonlySet<string>>();
+  for (const [model, lines] of blocks) {
+    const columns = new Set<string>();
+    for (const line of lines) {
+      if (line === '' || line.startsWith('//') || line.startsWith('@@')) continue;
+      const field = /^(\w+)\s+([A-Za-z_]\w*)(\[\])?(\?)?/u.exec(line);
+      if (field?.[1] === undefined) continue;
+      if (modelNames.has(field[2] ?? '')) continue;
+      columns.add(field[1]);
+    }
+    all.set(model, columns);
+  }
+  return all;
+}
+
 const NULLABLE_COLUMNS = nullableColumns();
+const MODEL_COLUMNS = allColumns();
 
 /**
  * The table has to have found something, and the right something.
@@ -972,10 +1017,11 @@ function collidingPairs(spec: Loose, query: Record<string, unknown>): [string, s
 }
 
 interface Loose {
-  /** The Prisma model, which is how the nullable-column table is keyed. */
+  /** The Prisma model, which is how the column tables are keyed. */
   model: string;
   matches: (row: never, query: never) => boolean;
   where: (query: never) => Record<string, unknown>;
+  orderBy: (query: never) => unknown;
 }
 
 const SPECS = Object.entries(COLLECTION_SPECS) as [keyof typeof COLLECTION_SPECS, Loose][];
@@ -1274,5 +1320,124 @@ describe('the patient birth-date filter states one rule, not two', () => {
       );
       expect(matchesWhere(row, where), `Prisma rejects ${iso}`).toBe(false);
     }
+  });
+});
+
+/**
+ * Every column name a Prisma filter or ordering argument mentions.
+ *
+ * Deliberately not `constrained` above, which answers a neighbouring question
+ * for the mutation pass and drops `NOT` because a negated clause is not a
+ * column that pass may mutate. Here a `NOT` is exactly as interesting as an
+ * `AND`: the name inside it still has to be a column. Sharing the walker would
+ * have given this section that omission for free and silently.
+ */
+function namedColumns(node: unknown, into: Set<string>): void {
+  if (Array.isArray(node)) {
+    for (const entry of node) namedColumns(entry, into);
+    return;
+  }
+  if (!isRecord(node)) return;
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'AND' || key === 'OR' || key === 'NOT') {
+      namedColumns(value, into);
+      continue;
+    }
+    into.add(key);
+  }
+}
+
+/**
+ * Every column a spec names is a column `schema.prisma` has.
+ *
+ * The compiler does half of it and cannot be made to do the other half.
+ * A generated `WhereInput` or ordering argument has every property optional, so
+ * an object carrying six real columns and one misspelled one is structurally
+ * assignable; only excess-property checking objects, and that survives just to
+ * a property written straight into a literal. `orderBy` bodies are written that
+ * way - all fifty-four, none containing a spread - so the return annotation
+ * `OrderByFor<M>` catches a misspelling there at compile time, and does. `where`
+ * bodies are `...(query.x === undefined ? {} : { x: query.x })` almost
+ * throughout, and a property a spread contributed is checked by nothing:
+ * measured on this branch, `{ statusTYPO: query.status }` inside that spread
+ * compiles at rc=0 with the outer return type annotated, with the outer literal
+ * in argument position, and with `satisfies` on the outer literal. Annotating
+ * the inner literal does catch it, at three hundred-odd terms.
+ *
+ * So this is the check for `where`, and it covers `orderBy` too rather than
+ * leaving that half resting on one annotation nobody is obliged to keep.
+ *
+ * What a misspelled column costs depends on the member. In a `where` it is a
+ * filter that silently stops filtering: Postgres is handed a key it does not
+ * know, and the caller gets a well-formed 200 over rows nobody narrowed - the
+ * shape of #380, one layer down. In an `orderBy` it is a page in no particular
+ * order. Neither is visible to the HTTP suites, which run on the memory port
+ * where `matches` and `sortValue` decide and the emitted arguments are never
+ * built.
+ *
+ * It lives in this file because both halves it needs are already here and
+ * neither is worth a second copy: `FILTERS`, which sets every parameter a spec
+ * declares so that every conditional spread fires, and the `schema.prisma`
+ * parse. What it does NOT reach is a clause guarded by a particular *value* of
+ * a parameter rather than by its presence, and the `uniqueBy.where` of the
+ * fourteen specs that declare one, which takes a create input rather than a
+ * query and has no table of those to draw on.
+ */
+describe('every column a spec filters or orders by is a column the schema has', () => {
+  it('reads a column name out of every position one can appear in', () => {
+    // The walker itself, on a shape no spec emits today. `NOT` is the reason:
+    // nothing in `COLLECTION_SPECS` negates a clause, so the branch that
+    // recurses into one is not reached by the fifty-four cases below and would
+    // sit there unexercised - and a walker that quietly stopped looking inside
+    // negations would report a clean sweep over a column it never read.
+    const named = new Set<string>();
+    namedColumns(
+      {
+        status: 'FINAL',
+        AND: [{ code: '1' }, { AND: [{ loincCode: '2' }] }],
+        OR: [{ display: 'x' }],
+        NOT: { valueText: 'y' },
+      },
+      named
+    );
+
+    expect([...named].sort()).toEqual(['code', 'display', 'loincCode', 'status', 'valueText']);
+    // And the logical operators are not themselves reported as columns.
+    expect(named.has('AND')).toBe(false);
+    expect(named.has('NOT')).toBe(false);
+  });
+
+  it('found the schema, and can tell a column from something that is not one', () => {
+    // A size floor survives a regex that matched the wrong thing and found
+    // plenty of it; the named pairs survive a parse that found two models and
+    // stopped. The negative halves are the ones that matter: a table that
+    // answered "yes" to everything would pass every assertion below.
+    expect(MODEL_COLUMNS.size).toBeGreaterThan(40);
+    expect(MODEL_COLUMNS.get('Observation')?.has('status')).toBe(true);
+    expect(MODEL_COLUMNS.get('Observation')?.has('statusTYPO')).toBe(false);
+    // A relation field is not a column a `where` may name; its foreign key is.
+    expect(MODEL_COLUMNS.get('Observation')?.has('patient')).toBe(false);
+    expect(MODEL_COLUMNS.get('Observation')?.has('patientId')).toBe(true);
+  });
+
+  describe.each(SPECS)('%s', (key, spec) => {
+    const query = FILTERS[key] as never;
+
+    it.each(['where', 'orderBy'] as const)('%s names only real columns', (member) => {
+      const columns = MODEL_COLUMNS.get(spec.model);
+      expect(columns, `${spec.model} is not a model in schema.prisma`).toBeDefined();
+
+      const named = new Set<string>();
+      namedColumns(spec[member](query), named);
+
+      // Separate from the assertion below, and before it, so a spec whose
+      // emitted arguments are empty fails as "measured nothing" rather than
+      // passing as "nothing wrong found".
+      expect(named.size, `${key}.${member} named no column at all`).toBeGreaterThan(0);
+      expect(
+        [...named].filter((column) => columns?.has(column) !== true),
+        `${key}.${member} names columns ${spec.model} does not have`
+      ).toEqual([]);
+    });
   });
 });

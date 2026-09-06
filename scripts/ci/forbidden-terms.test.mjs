@@ -865,21 +865,47 @@ test('scan refuses a pattern outside PATTERN_SHAPE, without needing selftest fir
   // runs an unconstrained expression over pull-request text and reports a
   // finding on everything, which reads as a catastrophic leak rather than as a
   // misconfigured pattern.
+  // TWO out-of-shape patterns, because the shape excludes two different
+  // hazards and one case cannot stand for both. `.*` is refused for matching
+  // every line of every surface; `(a+)+b` is refused for nested quantifiers
+  // that backtrack exponentially, which hangs the scan on a crafted surface
+  // rather than over-reporting on an ordinary one. A test carrying only one of
+  // them reads as covering the predicate and covers half of it.
   const dir = surfaceDir({ body: 'nothing named in this file' });
 
-  const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64('.*') });
-
-  assert.equal(result.code, 2);
-  assert.match(result.stderr, /not a plain alternation of literal words/);
+  const everything = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64('.*') });
+  assert.equal(everything.code, 2);
+  assert.match(everything.stderr, /not a plain alternation of literal words/);
   // Exit 2 and not 1: this is a guard that could not run, not a guard that
   // blocked. Asserting non-zero alone would pass on a run that matched every
   // line and reported findings, which is the outcome being prevented.
-  assert.doesNotMatch(result.stdout, /BLOCKED/);
+  assert.doesNotMatch(everything.stdout, /BLOCKED/);
+
+  const backtracking = run(['scan', '--dir', dir], {
+    FORBIDDEN_TERMS_PATTERN_B64: b64('(a+)+b'),
+  });
+  assert.equal(backtracking.code, 2, 'a catastrophic pattern must not reach the scan');
+  assert.match(backtracking.stderr, /not a plain alternation of literal words/);
+  // Never the pattern itself, for the same reason the failed-compile path
+  // reports only the error name. This guard exists to keep one class of string
+  // out of its own output; the pattern it just rejected is in that class.
+  assert.doesNotMatch(backtracking.stderr, /\(a\+\)\+b/u);
+
+  // The control, and without it neither refusal above means anything: both
+  // could be a complaint about this directory rather than about the pattern.
+  // The same surfaces with an IN-shape pattern have to scan clean, or "refused
+  // because the shape is wrong" is an inference rather than a reading.
+  const control = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
+  assert.equal(
+    control.code,
+    0,
+    'control: the same directory scans clean under an in-shape pattern'
+  );
 });
 
 test('a surface that is a SYMLINK exits 2 rather than being followed', () => {
-  // `readFileSync` follows links, so without the `lstat` check this run reads
-  // the link's target, finds nothing in it, and exits 0 with
+  // `readFileSync` follows links, so without `O_NOFOLLOW` on the open this run
+  // reads the link's target, finds nothing in it, and exits 0 with
   // "clean - 6 surfaces read". The target here is deliberately clean and the
   // real surface deliberately is not: a guard that reports clean about a file
   // nobody collected is the exact failure this script exists to remove, and it

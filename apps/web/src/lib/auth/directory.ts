@@ -128,7 +128,14 @@ export function developmentCredentials(
   /* The empty list IS the refusal: no throw, no guard, the door closed by there
      being nothing to iterate. Anything that replaces this lookup with a call to
      the API has to re-express it explicitly, because an absence cannot fail a
-     test - the API accepts a demo token whatever `NODE_ENV` says, so asking it
-     instead would mint a session here and redden nothing. */
+     test.
+
+     And it cannot be delegated to the API. A self-hosted stack installs
+     `createDemoPrincipalResolver` deliberately and resolves these tokens under
+     production; an API left on its defaults refuses to start at all, because
+     `assertProductionWiring` will not boot without a `principalResolver`. Both
+     are reachable from a browser holding only a base URL, and this build cannot
+     see which one it is pointed at - so the decision has to be made here, where
+     it is knowable, rather than deferred to a server whose wiring is not. */
   return demoBuild ? DEVELOPMENT_STAFF : [];
 }

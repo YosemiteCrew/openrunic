@@ -1,0 +1,60 @@
+# Must-pass corpus for the forbidden-terms gate.
+#
+# Every line below is REAL PROSE ALREADY IN THIS REPOSITORY, copied verbatim
+# with its source. None of it names an external product, and the gate must stay
+# silent on all of it.
+#
+# Why this file is checked in while the must-block half is not: the must-block
+# half IS the term list, and committing it to a public repository publishes
+# exactly what the pattern exists to withhold. That half lives with the pattern
+# in a repository secret. This half is the reviewable one, and it is not the
+# consolation half - broadening a pattern under deadline pressure is what makes
+# it fire on ordinary prose, and this is the file that catches that, in the
+# open, where a reviewer can see what "our own documentation" actually says.
+#
+# Drawn from real sentences rather than invented near-misses on purpose:
+# invented ones drift towards what the author imagines the pattern does.
+#
+# To add a line: copy it verbatim from a tracked file and put the source in a
+# trailing comment. Do not invent one.
+#
+# A line matched here is a FALSE POSITIVE in the pattern, not a bug in the
+# prose. Fix the pattern.
+
+# README.md
+Open-Source Operating System for Human Health
+and the open platform that grows around it.
+for animal health, and applies the same philosophy to human healthcare: open standards, a fast and
+- A FHIR R4 API at the service boundary, so integrations speak an open standard from day one
+is invented, and the build that opens its sign-in door cannot be pointed at a real API.
+openssl rand -hex 32
+
+# CONTRIBUTING.md
+- **Bugs**: open an issue using the bug report template. Fill in the reproduction steps and
+- **Features**: open an issue using the feature request template before writing significant code,
+- **Security vulnerabilities**: never open a public issue. Follow [SECURITY.md](SECURITY.md).
+
+# docs/demo.md
+So there is a door, and it takes two conditions to open, both in `lib/auth/build.ts`:
+anyway. A build pointed at a real deployment can never open the door, whatever the flag says, and
+is already serving invented records to everyone who reaches it, so the door opens onto a room that
+
+# docs/quality-gates.md
+| OpenSSF Scorecard                      | `scorecard.yml`                      | Supply-chain posture, published                     |
+project as a whole must sit at 95% coverage, zero duplication and zero open issues.
+that failed, and writes the answer into one tracking issue. It opens no pull request: a green result
+
+# docs/security-gates.md
+built image, so the operating-system packages in the base layer - openssl, zlib, busybox, the
+- **An entry the script cannot parse is an error, not a skip.** Three separate fail-open bugs
+found by whoever opened the next unrelated change, which is late and somebody else's problem. The
+
+# docs/ops-runbook.md
+against this package, once per call that opens a path held in a variable. Every
+
+# docs/compliance.md
+bug and open an issue.
+
+# docs/traffic.md
+history, it starts from the day the secret was first set, not from the day the repository opened.
+many times has this been cloned since we opened it", and neither can the API: by the time the

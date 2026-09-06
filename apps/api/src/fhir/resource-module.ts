@@ -23,8 +23,17 @@ import type { FhirPaging, SearchParams } from './params.js';
  *
  * The declared `params` are load-bearing twice over: they are what the
  * CapabilityStatement advertises, and they are what a search is validated
- * against. Advertising a parameter the handler ignores is the failure mode this
- * arrangement exists to make impossible, and `fhir.test.ts` asserts it directly.
+ * against. What that makes impossible is reaching the handler with a parameter
+ * this list does not name, and `fhir.test.ts` asserts exactly that, as `refuses
+ * an unsupported parameter rather than ignoring it`.
+ *
+ * It says nothing about the other direction. A parameter named here and dropped
+ * on the way to `toQuery` is advertised, accepted, and silently ignored - the
+ * client gets a well-formed 200 over rows nobody narrowed. That is not
+ * hypothetical: it shipped twice, as `Procedure?date` and as the `status`
+ * filters. Adding a name here without a term in `toQuery` that reads it is that
+ * failure, and `every advertised search parameter narrows` in
+ * `fhir.resources.test.ts` is the test that catches it.
  */
 
 /**

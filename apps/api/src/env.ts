@@ -10,60 +10,142 @@ import { z } from 'zod';
  * failure mode this file exists to prevent. `createApp` refuses the development
  * defaults under `NODE_ENV=production` for the same reason.
  */
-const envSchema = z
-  .object({
-    PORT: z.coerce.number().int().min(1).max(65535).default(4000),
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    /**
-     * Canonical base for the FHIR resources this deployment publishes.
-     *
-     * Only `Questionnaire.url` needs it today, and it needs it badly: a form
-     * published without this claims a canonical URL on the openrunic project's
-     * own domain, which the practice does not run and nobody can resolve to
-     * its forms. Left unset the compiler's default applies and that is what
-     * happens, so a self-hosted deployment serving Questionnaires should set
-     * it to its own public API base.
-     */
-    OPENRUNIC_FHIR_BASE_URL: z.url().optional(),
-    /** OIDC issuer, matched exactly against the token's `iss`. */
-    OIDC_ISSUER: z.url().optional(),
-    /** Audience this API answers to. Several may be listed, comma separated. */
-    OIDC_AUDIENCE: z.string().min(1).optional(),
-    /** Where the issuer publishes its signing keys. */
-    OIDC_JWKS_URI: z.url().optional(),
-    /** Tolerance on `exp`, `nbf` and `iat`, in seconds. */
-    OIDC_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(600).default(60),
-    /**
-     * Where the provider authorises, and where it redeems a code.
-     *
-     * Named explicitly rather than discovered from the issuer, for the same
-     * reason `OIDC_JWKS_URI` is. The one document that needs them,
-     * `.well-known/smart-configuration`, is served unauthenticated, and an
-     * unauthenticated endpoint that makes an outbound request on demand lets
-     * anybody drive traffic out of this API at a URL this API chose. Two lines
-     * of configuration are cheaper than owning that.
-     *
-     * Optional even when the rest of OIDC is set: a deployment can verify
-     * tokens perfectly well without publishing a SMART launch, and it says so
-     * by leaving these unset rather than by naming an endpoint that is not
-     * there.
-     */
-    OIDC_AUTHORIZATION_ENDPOINT: z.url().optional(),
-    OIDC_TOKEN_ENDPOINT: z.url().optional(),
-  })
-  .refine(
-    (value) =>
-      [value.OIDC_ISSUER, value.OIDC_AUDIENCE, value.OIDC_JWKS_URI].every(
-        (entry) => entry === undefined
-      ) ||
-      [value.OIDC_ISSUER, value.OIDC_AUDIENCE, value.OIDC_JWKS_URI].every(
-        (entry) => entry !== undefined
-      ),
-    {
-      message: 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be set together or not at all',
-      path: ['OIDC_ISSUER'],
-    }
-  )
+/**
+ * An optional or defaulted setting, where blank means "not set".
+ *
+ * A `.env` carries every key the template has, and a key with nothing after the
+ * `=` is how an operator says "not this one" - it is what `.env.example` ships
+ * for the settings a practice may not need. Compose hands such a key to the
+ * container as an empty string rather than leaving it out, so without this the
+ * documented way to decline a setting is a startup failure naming the variable
+ * the operator deliberately left alone.
+ *
+ * Applied to every field an operator can decline rather than to the one that
+ * reached a container first, because the difference is not a property of those
+ * fields: it is what an empty `.env` line means, and it means the same thing on
+ * all of them. On a coerced number it matters more quietly - `Number('')` is 0,
+ * so a blank `OIDC_CLOCK_SKEW_SECONDS` would have become no tolerance at all
+ * rather than the documented sixty seconds, with nothing to read in a log.
+ *
+ * `NODE_ENV` is the exception and says why at its own declaration: it is not a
+ * setting a practice declines, and blank there would mean the demo-token mode
+ * rather than a refusal.
+ *
+ * Only whitespace is read as absence. A value that is present and malformed
+ * still fails, which is the whole point of parsing the environment at startup.
+ */
+function blankAsUnset<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema
+  );
+}
+
+const envObject = z.object({
+  PORT: blankAsUnset(z.coerce.number().int().min(1).max(65535).default(4000)),
+  /**
+   * Deliberately NOT wrapped in {@link blankAsUnset}, and it is the one field
+   * in this object where that matters.
+   *
+   * Everywhere else, blank and absent have the same consequence: a setting
+   * the operator declined. Here they do not. Blank would default to
+   * `development`, which is the mode that accepts the table of public demo
+   * tokens printed in this repository's own source - so the rule that makes
+   * every other field forgiving would turn one empty line into a deployment
+   * serving charts to anyone holding a token anybody can read.
+   *
+   * It is also not a setting a practice declines. `.env.example` ships no
+   * `NODE_ENV` line at all and Compose sets it on both services, so the only
+   * way to reach a blank one is to have written it, and a refusal to start is
+   * the right answer to that. Fail closed on the one field where "not set"
+   * and "set wrong" differ in what they cost.
+   */
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /**
+   * Canonical base for the FHIR resources this deployment publishes.
+   *
+   * Only `Questionnaire.url` needs it today, and it needs it badly: a form
+   * published without this claims a canonical URL on the openrunic project's
+   * own domain, which the practice does not run and nobody can resolve to
+   * its forms. Left unset the compiler's default applies and that is what
+   * happens, so a self-hosted deployment serving Questionnaires should set
+   * it to its own public API base.
+   */
+  OPENRUNIC_FHIR_BASE_URL: blankAsUnset(z.url().optional()),
+  /** OIDC issuer, matched exactly against the token's `iss`. */
+  OIDC_ISSUER: blankAsUnset(z.url().optional()),
+  /** Audience this API answers to. Several may be listed, comma separated. */
+  OIDC_AUDIENCE: blankAsUnset(z.string().min(1).optional()),
+  /** Where the issuer publishes its signing keys. */
+  OIDC_JWKS_URI: blankAsUnset(z.url().optional()),
+  /** Tolerance on `exp`, `nbf` and `iat`, in seconds. */
+  OIDC_CLOCK_SKEW_SECONDS: blankAsUnset(z.coerce.number().int().min(0).max(600).default(60)),
+  /**
+   * Where the provider authorises, and where it redeems a code.
+   *
+   * Named explicitly rather than discovered from the issuer, for the same
+   * reason `OIDC_JWKS_URI` is. The one document that needs them,
+   * `.well-known/smart-configuration`, is served unauthenticated, and an
+   * unauthenticated endpoint that makes an outbound request on demand lets
+   * anybody drive traffic out of this API at a URL this API chose. Two lines
+   * of configuration are cheaper than owning that.
+   *
+   * Optional even when the rest of OIDC is set: a deployment can verify
+   * tokens perfectly well without publishing a SMART launch, and it says so
+   * by leaving these unset rather than by naming an endpoint that is not
+   * there.
+   */
+  OIDC_AUTHORIZATION_ENDPOINT: blankAsUnset(z.url().optional()),
+  OIDC_TOKEN_ENDPOINT: blankAsUnset(z.url().optional()),
+});
+
+/**
+ * Every variable this process reads from its environment.
+ *
+ * Derived from the schema rather than listed beside it, so it cannot drift from
+ * what is actually parsed. It exists because a setting the code reads and the
+ * deployment never passes is a defect this repository has now shipped twice -
+ * `OPENRUNIC_FHIR_BASE_URL` and then the whole identity-provider group - and
+ * both times it looked like a working deployment ignoring its own
+ * configuration. `env.test.ts` reads this and asserts `docker-compose.yml`
+ * names each one, so the third instance fails a test instead of a clinic.
+ */
+export const ENV_VARIABLES: readonly string[] = Object.keys(envObject.shape);
+
+/**
+ * The three settings that verify a token, which are set together or not at all.
+ *
+ * One refinement per variable rather than one over the group, so the path names
+ * the variable that is MISSING. `parseEnv` reports paths and never messages, on
+ * purpose - a value must not reach a log somebody pastes into a support thread
+ * - so the path is the whole of what the operator is told.
+ *
+ * Written as a group over one refinement, this named `OIDC_ISSUER` whichever of
+ * the three was absent: an operator who set the issuer and the audience and
+ * forgot the JWKS URI was told to fix the issuer, which is the line they got
+ * right. The rule was already written down two lines below and applied to the
+ * endpoint pair; this is it applied to the group it was written above.
+ */
+const OIDC_VERIFICATION = ['OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI'] as const;
+
+const withVerificationGroup = OIDC_VERIFICATION.reduce(
+  (schema, name) =>
+    schema.refine(
+      (value) =>
+        OIDC_VERIFICATION.every((other) => value[other] === undefined) || value[name] !== undefined,
+      {
+        message: `${OIDC_VERIFICATION.join(', ')} must be set together or not at all`,
+        path: [name],
+      }
+    ),
+  // A single assertion rather than one through `unknown`. Asserting through
+  // `unknown` succeeds whatever the two types are, so it would keep compiling
+  // if the accumulator stopped producing this object's own inferred type -
+  // which is the one thing this cast exists to promise. Raised in review.
+  envObject as z.ZodType<z.infer<typeof envObject>>
+);
+
+const envSchema = withVerificationGroup
   // Two refinements rather than one comparing the pair, so the path names the
   // variable that is MISSING. `parseEnv` reports paths, not messages, and an
   // error naming the variable the operator just set tells them nothing they did

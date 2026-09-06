@@ -271,11 +271,34 @@ export const breakGlassGrantInput = z
     userId: uuid,
     patientId: uuid,
     reason: shortText,
+    /**
+     * The instant the declaration was made, supplied rather than taken from the
+     * repository's clock.
+     *
+     * `expiresAt` is derived from the caller's own reading of the time, so
+     * leaving `grantedAt` to the clock inside the write made a row whose window
+     * started a few milliseconds after the moment it was measured from. That was
+     * survivable while nothing compared the two, and stopped being so once "has
+     * this reader already got this chart open" had to be answered about one
+     * instant: the natural key, the route's bounds check and the trigger all ask
+     * it, and three readings of the clock give three answers near a boundary.
+     *
+     * It is not a client-supplied value. The route builds it from its own clock;
+     * the request body carries a reason and a number of minutes and nothing
+     * else.
+     */
+    grantedAt: timestamp,
     expiresAt: timestamp,
   })
   .refine((value) => value.reason.trim().length > 0, {
     message: 'reason must say why',
     path: ['reason'],
+  })
+  .refine((value) => value.expiresAt > value.grantedAt, {
+    // The same statement the table makes as a CHECK. A window that ended before
+    // it began would look like access was taken when none was.
+    message: 'expiresAt must be after grantedAt',
+    path: ['expiresAt'],
   });
 
 export const payerInput = z.strictObject({

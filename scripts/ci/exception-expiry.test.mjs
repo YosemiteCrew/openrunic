@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -9,7 +9,10 @@ import {
   checkWith,
   expired,
   findExceptions,
+  findSuppressions,
   SOURCES,
+  SUPPRESSION,
+  SUPPRESSION_FILE,
   todayUtc,
 } from './exception-expiry.mjs';
 
@@ -185,17 +188,62 @@ test('finds the exceptions this repository actually carries', () => {
 });
 
 /**
- * A missing file is fine. `.trivyignore` may legitimately not exist, and a file
- * that is not there has no exceptions to expire.
+ * A source that names a file which is not there is a failure, not an empty read.
+ *
+ * This used to pass, and passing was the hole: rename `.grant.yaml` without
+ * touching `SOURCES` and the guard reported "2 accepted finding(s), all
+ * current", exit 0, with seven dated licence exceptions no longer re-reviewed.
+ * `.trivyignore` was the quiet version - it carries no live entries today, so
+ * renaming it did not even move the count.
+ *
+ * The message has to name the file, because the two ways to reach this state
+ * have opposite fixes: a rename wants the list updated, a dropped scanner wants
+ * the entry deleted.
  */
-test('a missing exception file is not an error', () => {
+test('a source naming a file that is not there is a failure', () => {
   const empty = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
   try {
-    const { exceptions, problems } = check(empty, '2026-08-24');
-    assert.deepEqual(exceptions, []);
-    assert.deepEqual(problems, []);
+    // Deliberately not naming a file. Which source is reported first is a fact
+    // about the order of a list this test is not about - asserting `.grype.yaml`
+    // here went red when the list was reordered, a legal edit. WHICH files are
+    // covered is the next test's job, and it does not care about order either.
+    assert.throws(
+      () => checkWith(empty, '2026-08-24', SOURCES),
+      /is named in SOURCES but is not in/u
+    );
   } finally {
     rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+/**
+ * And every file in the list is checked for, not just the first one. Asserting
+ * only the first would pass against a loop that stopped after it - which is the
+ * shape of the defect this test exists for, one level in.
+ *
+ * `checkWith` rather than `check` for the reason the block further down gives,
+ * plus one this change added: `check` walks the git tree for suppression
+ * markers, so on a temp directory it fails with `not a git repository` before
+ * it reaches the SOURCES read this test is about - a refusal for the right
+ * reason, arriving in front of the one being asserted.
+ */
+test('every source in the list must name a file that exists', () => {
+  assert.notEqual(SOURCES.length, 0, 'no sources: this test is reading nothing');
+
+  const directory = mkdtempSync(path.join(tmpdir(), 'exception-expiry-'));
+  try {
+    for (const source of SOURCES) {
+      const missing = SOURCES.filter((other) => other !== source);
+      for (const other of missing) writeFileSync(path.join(directory, other.file), '');
+      assert.throws(
+        () => checkWith(directory, '2026-08-24', SOURCES),
+        new RegExp(`${source.file.replaceAll('.', '\\.')} is named in SOURCES but is not in`, 'u'),
+        `${source.file} going missing was not reported`
+      );
+      for (const other of missing) rmSync(path.join(directory, other.file));
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -207,6 +255,16 @@ test('a missing exception file is not an error', () => {
  * exact failure this script exists to stop happening to a re-review date.
  *
  * Raised by review rather than by me, and it was right.
+ */
+/*
+ * The synthetic-root tests below drive `checkWith` with one source rather than
+ * `check` with all of them, now that a source naming nothing is a failure. Two
+ * reasons, and the second is the one that matters: a temp directory holding
+ * only `.grype.yaml` would otherwise fail on the two files it was never meant
+ * to have, and `check` passed here before only because `.grype.yaml` happens to
+ * be first in `SOURCES` - a result that depended on the iteration order of a
+ * list these tests are not about. `checkWith` takes its sources for exactly
+ * this.
  */
 test('an unreadable exception file is a hard failure, not an empty scan', (t) => {
   if (process.getuid?.() === 0) {
@@ -220,7 +278,7 @@ test('an unreadable exception file is a hard failure, not an empty scan', (t) =>
   chmodSync(file, 0o000);
 
   try {
-    assert.throws(() => check(directory, '2026-08-24'), /EACCES|permission denied/iu);
+    assert.throws(() => checkWith(directory, '2026-08-24', [GRYPE]), /EACCES|permission denied/iu);
   } finally {
     chmodSync(file, 0o600);
     rmSync(directory, { recursive: true, force: true });
@@ -257,7 +315,7 @@ test('a dangling symlink is a read failure, not an absent file', () => {
   symlinkSync(path.join(directory, 'nowhere.yaml'), path.join(directory, '.grype.yaml'));
 
   try {
-    assert.throws(() => check(directory, '2026-08-24'), /ENOENT|no such file/iu);
+    assert.throws(() => checkWith(directory, '2026-08-24', [GRYPE]), /ENOENT|no such file/iu);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -273,7 +331,7 @@ test('a symlink that resolves is read normally', () => {
   symlinkSync(path.join(directory, 'real.yaml'), path.join(directory, '.grype.yaml'));
 
   try {
-    const { exceptions, problems } = check(directory, '2026-08-24');
+    const { exceptions, problems } = checkWith(directory, '2026-08-24', [GRYPE]);
     assert.deepEqual(
       exceptions.map((exception) => exception.id),
       ['CVE-2025-00001']
@@ -422,4 +480,210 @@ test('a mismatched quote does not sneak through as a bare name', () => {
 `;
 
   assert.throws(() => findExceptions(grant, GRANT), /cannot parse/u);
+});
+
+// ------------------------------------------- suppressions written in the code
+
+/**
+ * The marker is built rather than written, and this is not fastidiousness.
+ *
+ * A literal one in this file would BE a suppression in a tracked source file,
+ * so the walk would find it, it would carry no date, and this test file would
+ * fail the guard it is testing. The advisory guard shipped exactly that defect
+ * three hours before this was written - a header explaining a fabricated
+ * identifier became a citation of one - so the lesson is one commit old.
+ */
+const MARK = `// ${'no'}${'sec'}`;
+
+/** The only file in this repository carrying a marker today. */
+const MARKED_FILE = 'apps/api/src/repositories/rls-port.ts';
+
+const SUPPRESSED = `const a = 1;
+// Owner: someone. Re-review by: 2026-11-18.
+const b = read(args); ${MARK}
+const c = read(args); ${MARK}
+`;
+
+test('a marker takes its date from the comment above the run, like a list item does', () => {
+  const found = findExceptions(SUPPRESSED, SUPPRESSION);
+
+  assert.equal(found.length, 2, 'both markers are exceptions, not just the first');
+  assert.deepEqual(
+    found.map((marker) => marker.date),
+    ['2026-11-18', '2026-11-18'],
+    'the second marker cannot see past the first to the comment'
+  );
+});
+
+test('a marker with no date is a failure, the same as an undated entry', () => {
+  const undated = `const a = 1;\nconst b = read(args); ${MARK}\n`;
+  const problems = expired(findExceptions(undated, SUPPRESSION), '2026-09-05');
+
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].reason, /carries no `Re-review by/u);
+});
+
+test('a marker whose date has passed is a failure', () => {
+  const problems = expired(findExceptions(SUPPRESSED, SUPPRESSION), '2026-11-19');
+
+  assert.equal(problems.length, 2);
+  assert.match(problems[0].reason, /was due for re-review on 2026-11-18/u);
+});
+
+/**
+ * Prose about the marker is not a marker, and the pattern is what says so.
+ *
+ * Anchored to a comment opener immediately before the word, so a sentence
+ * mentioning it - every sentence in this file, and the block in `rls-port.ts`
+ * that explains the cost of one - is not an instance of it. Without this the
+ * guard would go red on its own documentation, which is the false red that gets
+ * a gate deleted.
+ */
+test('prose that mentions the marker is not one', () => {
+  const prose = [
+    `// The ${'no'}${'sec'} marker silences every rule on its line.`,
+    ` * A ${'no'}${'sec'} in a JSDoc block is prose too.`,
+    `const label = '${'no'}${'sec'}';`,
+  ].join('\n');
+
+  assert.deepEqual(findExceptions(prose, SUPPRESSION), []);
+});
+
+/**
+ * The narrowing to line comments is FAIL-CLOSED, and this is what says so.
+ *
+ * The paragraph beside `comment` claims a block-comment marker is still found
+ * and then refused for carrying no date. Raised in review: widening `comment`
+ * to accept `*` lines left the suite at 35 / 0 while turning that refused
+ * marker into an accepted one, so the narrowing was held by the paragraph
+ * describing it and by nothing else - in a change whose whole subject is that a
+ * written-down decision with no clock is not a decision.
+ *
+ * Both halves are asserted, and they are independent. `found.length` is what
+ * separates REFUSED from NEVER SEEN, which is the claim the paragraph makes;
+ * without it, `entry` losing its `/*` alternative reads as a pass. `date` is
+ * what says the block above was not read as documentation for it.
+ */
+test('a marker documented in a block comment is found and then refused', () => {
+  const blockDocumented = [
+    'const a = 1;',
+    '/*',
+    ' * Owner: someone. Re-review by: 2026-11-18.',
+    ' */',
+    `const b = read(args); /* ${'no'}${'sec'} */`,
+    '',
+  ].join('\n');
+
+  const found = findExceptions(blockDocumented, SUPPRESSION);
+
+  assert.equal(found.length, 1, 'a block-comment marker was not matched at all');
+  assert.equal(found[0].date, null, 'the block above was read as this marker documentation');
+  assert.equal(expired(found, '2026-09-05').length, 1);
+});
+
+/**
+ * The walk over this repository, and it has to find the markers that are here.
+ *
+ * Every assertion above would hold against a walk that read nothing - the
+ * failure mode of anything that greps a tree, and the one `#295` was about one
+ * layer down. Two is the count on `dev` today; the assertion is on the file
+ * rather than the number, so adding a third marker elsewhere does not fail
+ * this.
+ */
+test('the walk finds the markers this repository actually carries', () => {
+  const found = findSuppressions(process.cwd());
+
+  assert.ok(found.length > 0, 'the walk read nothing: this test is asserting an empty list');
+  assert.deepEqual(
+    [...new Set(found.map((marker) => marker.file))],
+    [MARKED_FILE],
+    'the walk found markers somewhere this test does not know about'
+  );
+
+  // Every marker in that file, not the first one. Counted from the file rather
+  // than written down here, so adding a third does not fail this and dropping
+  // one does: a walk that kept only the first per file left the guard at exit 0
+  // saying "10 accepted finding(s), all current" over eleven, which is this
+  // script's own subject one layer out.
+  const inFile = readFileSync(MARKED_FILE, 'utf8')
+    .split('\n')
+    .filter((line) => SUPPRESSION.entry.test(line)).length;
+  assert.equal(found.length, inFile, 'the walk found fewer markers than the file carries');
+
+  assert.equal(
+    found.every((marker) => marker.date !== null),
+    true,
+    'a marker in this repository carries no re-review date'
+  );
+});
+
+/**
+ * A marker is only a marker in a file a scanner reads one from.
+ *
+ * A fenced code block in a document showing the syntax would otherwise be a
+ * suppression with no date, and the build would go red over correct
+ * documentation - the false red that gets a gate deleted.
+ *
+ * Asserted on the filter itself rather than on the walk's output. No document
+ * in this tree carries a marker today, so a walk-based version would hold with
+ * the filter deleted: it would be asserting that a list with nothing in it
+ * contains nothing of the wrong kind.
+ */
+test('a marker only counts in a file a scanner reads one from', () => {
+  for (const name of ['a.ts', 'a.tsx', 'a.js', 'a.jsx', 'a.mjs', 'a.cjs']) {
+    assert.equal(SUPPRESSION_FILE.test(name), true, `${name} should be walked`);
+  }
+  for (const name of ['README.md', 'docs/adr/0003-x.md', 'a.yaml', 'a.json', 'a.css', 'a.txt']) {
+    assert.equal(SUPPRESSION_FILE.test(name), false, `${name} should not be walked`);
+  }
+});
+
+/**
+ * An undated marker is REFUSED, through the gate, not merely counted.
+ *
+ * Everything above proves the walk finds markers and reads their dates, and the
+ * row below proves the gate asks for them. None of it shows the case this whole
+ * change exists for: a marker with no date failing the build. It cannot be
+ * shown against this tree, because this tree has none - both markers are dated
+ * by the same commit that added this walk - so the suppression is handed to
+ * `checkWith` directly.
+ *
+ * Raised in review. The published matrix showed the guard counting 9, 10 and 11
+ * and never showed it refusing, which is the difference between a gate and a
+ * census.
+ */
+test('a suppression with no date fails the build, it is not just counted', () => {
+  const undated = {
+    file: 'apps/api/src/repositories/rls-port.ts',
+    what: 'scanner suppression',
+    id: 'nosec',
+    line: 151,
+    date: null,
+  };
+
+  const { exceptions, problems } = checkWith(process.cwd(), '2026-09-05', [], [undated]);
+
+  assert.equal(exceptions.length, 1, 'the suppression did not reach the exception list');
+  assert.equal(problems.length, 1, 'an undated suppression was counted rather than refused');
+  assert.match(problems[0].reason, /carries no `Re-review by/u);
+});
+
+/**
+ * The gate has to actually ask for them.
+ *
+ * Everything above drives `findSuppressions` directly, so all of it holds
+ * against a `check` that never calls it - the walk would work perfectly and
+ * gate nothing, which is the wiring half and the half no unit test sees. This
+ * is the same shape as a design-system prop that works and a wrapper that never
+ * passes it.
+ */
+test('the gate counts the markers, not only the named files', () => {
+  const { exceptions } = check(process.cwd(), todayUtc());
+  const markers = exceptions.filter((exception) => exception.what === 'scanner suppression');
+
+  assert.ok(markers.length > 0, 'check() reported no suppression: the walk is not wired in');
+  assert.deepEqual(
+    [...new Set(markers.map((marker) => marker.file))],
+    ['apps/api/src/repositories/rls-port.ts']
+  );
 });

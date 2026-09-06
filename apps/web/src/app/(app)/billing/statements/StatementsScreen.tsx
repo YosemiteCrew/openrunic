@@ -284,8 +284,8 @@ export function StatementsScreen({ client }: Readonly<StatementsScreenProps>): R
           {account.paymentPlan ? (
             <Badge tone="neutral" icon="calendar-clock">
               {t('billing.statements.plan', {
-                paid: account.paymentPlan.instalmentsPaid,
-                total: account.paymentPlan.instalmentsTotal,
+                paid: formatCount(account.paymentPlan.instalmentsPaid, t.locale),
+                total: formatCount(account.paymentPlan.instalmentsTotal, t.locale),
               })}
             </Badge>
           ) : null}

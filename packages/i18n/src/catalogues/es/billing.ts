@@ -324,7 +324,9 @@ export const billing: Messages = {
   'billing.charges.empty.message':
     'Los cargos aparecen aquí en cuanto se registra la llegada de una visita. Abra la agenda para ver el día de hoy.',
   'billing.charges.empty.action': 'Ir a la agenda',
-  'billing.charges.confirm.description':
+  'billing.charges.confirm.description.one':
+    'Se bloquea {count} cargo y se crea una reclamación para {name}. Los cargos todavía se pueden corregir desde la reclamación.',
+  'billing.charges.confirm.description.other':
     'Se bloquean {count} cargos y se crea una reclamación para {name}. Los cargos todavía se pueden corregir desde la reclamación.',
   'billing.charges.confirm.cancel': 'Cancelar',
   'billing.charges.confirm.submit': 'Marcar como lista',
@@ -334,7 +336,10 @@ export const billing: Messages = {
   'billing.charges.toast.removedMessage': 'Sigue en la hoja, tachado, y se puede restaurar.',
   'billing.charges.toast.restored': 'Cargo restaurado',
   'billing.charges.toast.markedReady': 'Visita marcada como lista',
-  'billing.charges.toast.markedReadyMessage': 'Se creó una reclamación a partir de {count} cargos.',
+  'billing.charges.toast.markedReadyMessage.one':
+    'Se creó una reclamación a partir de {count} cargo.',
+  'billing.charges.toast.markedReadyMessage.other':
+    'Se creó una reclamación a partir de {count} cargos.',
   'billing.charges.command.add': 'Agregar un cargo',
   'billing.charges.command.add.keywords': 'cpt, código, procedimiento, hoja de cargos',
   'billing.charges.command.markReady': 'Marcar la visita como lista para facturar',

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ScopedRow } from '../repositories/rows.js';
 import { stockPostingSpec, type StockPostingListQuery } from '../repositories/specs/inventory.js';
 
+import { matchesWhere } from './fake-port.js';
 import { DEMO_FACILITY_A, FIXED_NOW, testId } from './support.js';
 
 /**
@@ -105,23 +106,97 @@ describe('the patient filter, which the compartment leans on', () => {
   });
 });
 
+describe('the charted filter, which the clinical route leans on', () => {
+  /*
+   * A dispense that belongs to no chart.
+   *
+   * `kind` does not imply a chart: `patientId` is nullable on every posting,
+   * and a dose drawn against ward stock rather than against a person is a
+   * DISPENSE with a null one. `MedicationDispense` narrowed its read by id on
+   * `kind === 'DISPENSE' && patientId !== null` and its search on `kind` alone,
+   * so this row answered 404 through one door and appeared in the bundle
+   * through the other. `charted` is what lets the search say the same thing the
+   * read already said.
+   */
+  const WARD_STOCK = posting({ id: testId(307), kind: 'DISPENSE', patientId: null });
+
+  it('excludes a dispense that belongs to no chart', () => {
+    expect(stockPostingSpec.matches(WARD_STOCK, query({ charted: true }))).toBe(false);
+  });
+
+  it('includes a dispense that belongs to one', () => {
+    /* The control. Without it the assertion above passes for a filter that
+       selects nothing at all. */
+    expect(stockPostingSpec.matches(posting(), query({ charted: true }))).toBe(true);
+  });
+
+  it('selects exactly the uncharted postings when asked the other way', () => {
+    expect(stockPostingSpec.matches(WARD_STOCK, query({ charted: false }))).toBe(true);
+    expect(stockPostingSpec.matches(posting(), query({ charted: false }))).toBe(false);
+  });
+
+  it('leaves every posting visible when it is not asked at all', () => {
+    /* Staff reading the ledger ask for neither, and a receipt has to stay
+       readable by them. An absent filter must not behave like `charted: true`. */
+    expect(stockPostingSpec.matches(WARD_STOCK, query())).toBe(true);
+    expect(stockPostingSpec.matches(posting(), query())).toBe(true);
+  });
+
+  it('does not let a named chart and the charted filter overwrite each other', () => {
+    /*
+     * The failure this filter would otherwise have introduced, asserted at the
+     * emitted object rather than only through the port-agreement suite.
+     *
+     * `patientId` and `charted` both write the `patientId` column. Spread side
+     * by side into one literal they are the same key twice, the later wins, and
+     * a search for one person's dispenses silently becomes a search for
+     * everybody's - the exact shape the promotion review found. Under `AND`
+     * both survive, so the emitted filter still names the chart it was given.
+     */
+    const emitted = stockPostingSpec.where(query({ patientId: PATIENT, charted: true }));
+
+    expect(JSON.stringify(emitted)).toContain(PATIENT);
+    expect(
+      stockPostingSpec.matches(
+        posting({ patientId: OTHER_PATIENT }),
+        query({ patientId: PATIENT, charted: true })
+      )
+    ).toBe(false);
+  });
+});
+
 describe('matches and where agree about the chart', () => {
   it('describes the same set through both storage paths', () => {
     const rows = [
       posting(),
       posting({ id: testId(305), patientId: OTHER_PATIENT }),
       posting({ id: testId(306), patientId: null, kind: 'RECEIPT' }),
+      posting({ id: testId(307), patientId: null, kind: 'DISPENSE' }),
     ];
 
-    for (const q of [query(), query({ patientId: PATIENT }), query({ kind: 'DISPENSE' })]) {
+    /*
+     * `matchesWhere` rather than a scalar comparison, because the chart filters
+     * are no longer all scalars: `charted` emits `{ not: null }` and composes
+     * with `patientId` under an `AND`, neither of which a `row[column] ===
+     * value` loop can read. It is the same interpreter the fake Prisma port
+     * answers with, so the two sides compared here are the two sides in
+     * production.
+     */
+    const queries = [
+      query(),
+      query({ patientId: PATIENT }),
+      query({ kind: 'DISPENSE' }),
+      query({ charted: true }),
+      query({ charted: false }),
+      query({ kind: 'DISPENSE', charted: true }),
+      query({ patientId: PATIENT, charted: true }),
+    ];
+
+    for (const q of queries) {
       const where = stockPostingSpec.where(q) as Record<string, unknown>;
       for (const row of rows) {
-        const byWhere = Object.entries(where).every(
-          ([column, value]) => (row as unknown as Record<string, unknown>)[column] === value
-        );
-
         expect(stockPostingSpec.matches(row, q), `${row.id} under ${JSON.stringify(q)}`).toBe(
-          byWhere
+          matchesWhere(row as unknown as Record<string, unknown>, where)
         );
       }
     }

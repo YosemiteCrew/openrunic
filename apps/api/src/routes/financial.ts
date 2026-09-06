@@ -33,6 +33,7 @@ import type {
   RemittanceStatus,
   StatementStatus,
 } from '../repositories/specs/financial.js';
+import type { Page } from '../repositories/collection.js';
 import type { Repositories } from '../repositories/types.js';
 import {
   chargeDtoSchema,
@@ -119,7 +120,15 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
+import {
+  gateCharts,
+  idParam,
+  idParamSchema,
+  policyOf,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * The revenue cycle, from eligibility to a paid statement.
@@ -525,7 +534,16 @@ function claimStamps(move: ClaimStatus, at: Date): ClaimPatchInput {
  */
 async function moveClaim(c: Context<AppEnv>, id: string, move: ClaimMove): Promise<ClaimDto> {
   const repos = repositories(c);
-  const before = required(await repos.claims.findById(id), MISSING_CLAIM);
+  // Every claim transition comes through here, so the gate does too. A claim
+  // names a chart; the generated read of one is gated by `chartFrom: 'claims'`
+  // and these were not, so a biller refused the chart could still scrub, submit
+  // and re-status the claim on it (#322).
+  const before = await requiredParentChart(
+    c,
+    'claims',
+    await repos.claims.findById(id),
+    MISSING_CLAIM
+  );
   assertTransition(CLAIM_TRANSITIONS, 'claim', before.status, move.to);
 
   const occurredAt = move.occurredAt ?? new Date();
@@ -577,7 +595,15 @@ async function movePayment(
   note: string | undefined
 ): Promise<PaymentDto> {
   const repos = repositories(c);
-  const before = required(await repos.payments.findById(id), MISSING_PAYMENT);
+  // The same for `post`, `refund` and `void`. Posting is the moment the money
+  // became the practice's, and voiding it unmakes that on a named patient's
+  // account.
+  const before = await requiredParentChart(
+    c,
+    'payments',
+    await repos.payments.findById(id),
+    MISSING_PAYMENT
+  );
   assertTransition(PAYMENT_TRANSITIONS, 'payment', before.status, to);
 
   const patch: PaymentPatchInput = {
@@ -593,10 +619,37 @@ async function movePayment(
 
 /* -------------------------------------------------------- remittance posting */
 
+/**
+ * A remittance's service lines, with the charts behind them gated.
+ *
+ * A remittance is a payer document: `remittances.findById` narrows by tenant
+ * and by nothing else, so unlike every other parent in #300 there is no chart
+ * ON the parent to guard - and the chart data is on the children. A
+ * `RemittanceLine` names a claim and publishes that claim's procedure code, its
+ * service date and four money fields including what the patient owes. So the
+ * guard resolves the claims this page names and asks the chart question about
+ * those, which is the move the collections worklist already makes over its own
+ * rows.
+ *
+ * A line naming NO claim is an unmatched line: there is no chart behind it and
+ * nothing to check.
+ *
+ * There is deliberately no branch for a line whose claim does not resolve.
+ * `Claim` is compartment-scoped but not facility-scoped, and a compartment
+ * principal cannot reach a remittance at all, so for every caller that gets
+ * here the claims resolve - a refusal there could not fire, and a guard that
+ * cannot fail is not a guard. `allocationForLine` already documents the
+ * unresolvable claim as a legitimate skip on the posting path rather than an
+ * error, and this does not contradict it.
+ *
+ * Every caller reads through here rather than listing the rows itself, so the
+ * read route and the two write routes over the same rows cannot drift apart.
+ */
 async function allRemittanceLines(
+  c: Context<AppEnv>,
   repos: Repositories,
   remittanceId: string
-): Promise<RemittanceLineRow[]> {
+): Promise<Page<RemittanceLineRow>> {
   const page = await repos.remittanceLines.list({
     page: 1,
     pageSize: REMITTANCE_LINE_LIMIT,
@@ -604,7 +657,9 @@ async function allRemittanceLines(
     order: 'asc',
     remittanceId,
   });
-  return page.rows;
+  const claimIds = [...new Set(page.rows.map((line) => line.claimId).filter((id) => id !== null))];
+  await gateCharts(c, 'claims', await repos.claims.findByIds(claimIds));
+  return page;
 }
 
 /**
@@ -645,7 +700,17 @@ function transitionRoutes(): Hono<AppEnv> {
   router.post('/coverage/:id/eligibility', requirePermission('coverage.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, eligibilityCheckSchema);
-    const row = required(await repositories(c).coverages.findById(id), MISSING_COVERAGE);
+    // A POST that READS: it computes a determination and returns it with no
+    // update, under `coverage.read`. It still hands back the payer, the plan
+    // and whether the policy answers for a date - which is a chart read however
+    // the verb is spelt, and a frame keyed on writes cannot see it. Raised in
+    // review (#322).
+    const row = await requiredParentChart(
+      c,
+      'coverages',
+      await repositories(c).coverages.findById(id),
+      MISSING_COVERAGE
+    );
 
     if (row.status === 'ENTERED_IN_ERROR') {
       // A record that should not exist cannot support a determination, and
@@ -666,7 +731,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, chargeVoidSchema);
     const charges = repositories(c).charges;
-    const before = required(await charges.findById(id), MISSING_CHARGE);
+    const before = await requiredParentChart(
+      c,
+      'charges',
+      await charges.findById(id),
+      MISSING_CHARGE
+    );
     assertFacilityAccess(policyOf(c), before.facilityId);
     assertTransition(CHARGE_TRANSITIONS, 'charge', before.status, 'VOIDED');
 
@@ -711,8 +781,10 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     // Asked first so an unknown claim is a 404 rather than an empty list, which
-    // would read as "this claim has no lines".
-    required(await repos.claims.findById(id), MISSING_CLAIM);
+    // would read as "this claim has no lines" - and gated, because the read
+    // narrows by tenant, compartment and facility and never by care
+    // relationship (#300).
+    await requiredParentChart(c, 'claims', await repos.claims.findById(id), MISSING_CLAIM);
     const page = await repos.claimLines.list({
       page: 1,
       pageSize: CLAIM_LINE_LIMIT,
@@ -726,7 +798,7 @@ function transitionRoutes(): Hono<AppEnv> {
   router.get('/claims/:id/history', requirePermission('claim.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
-    required(await repos.claims.findById(id), MISSING_CLAIM);
+    await requiredParentChart(c, 'claims', await repos.claims.findById(id), MISSING_CLAIM);
     const page = await repos.claimStatusHistory.list({
       page: 1,
       pageSize: CLAIM_HISTORY_LIMIT,
@@ -752,7 +824,7 @@ function transitionRoutes(): Hono<AppEnv> {
   router.get('/payments/:id/allocations', requirePermission('payment.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
-    required(await repos.payments.findById(id), MISSING_PAYMENT);
+    await requiredParentChart(c, 'payments', await repos.payments.findById(id), MISSING_PAYMENT);
     const page = await repos.paymentAllocations.list({
       page: 1,
       pageSize: PAYMENT_ALLOCATION_LIMIT,
@@ -770,7 +842,7 @@ function transitionRoutes(): Hono<AppEnv> {
     const before = required(await repos.remittances.findById(id), MISSING_REMITTANCE);
     assertTransition(REMITTANCE_TRANSITIONS, 'remittance', before.status, 'PARSED');
 
-    const lines = await allRemittanceLines(repos, id);
+    const lines = (await allRemittanceLines(c, repos, id)).rows;
     const matchedCount = lines.filter((line) => line.matched).length;
     const exceptionCount = lines.length - matchedCount;
     const row = required(
@@ -795,7 +867,7 @@ function transitionRoutes(): Hono<AppEnv> {
     // payment behind for a remittance that did not move.
     assertTransition(REMITTANCE_TRANSITIONS, 'remittance', before.status, 'POSTED');
 
-    const lines = await allRemittanceLines(repos, id);
+    const lines = (await allRemittanceLines(c, repos, id)).rows;
     const allocations: PaymentAllocationInput[] = [];
     for (const line of lines) {
       const allocation = await allocationForLine(repos, line);
@@ -842,13 +914,7 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const repos = repositories(c);
     required(await repos.remittances.findById(id), MISSING_REMITTANCE);
-    const page = await repos.remittanceLines.list({
-      page: 1,
-      pageSize: REMITTANCE_LINE_LIMIT,
-      sort: 'sequence',
-      order: 'asc',
-      remittanceId: id,
-    });
+    const page = await allRemittanceLines(c, repos, id);
     return c.json(toListResponse(page, toRemittanceLineDto));
   });
 
@@ -856,7 +922,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementGenerateSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
     assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'GENERATED');
 
     const row = required(
@@ -875,7 +946,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementSendSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
     assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'SENT');
 
     const row = required(
@@ -928,6 +1004,22 @@ function transitionRoutes(): Hono<AppEnv> {
       )
     );
 
+    /*
+     * The same page gate `GET /bff/v0/statements` runs over the same rows.
+     * This queue names no chart, so nothing about the request looks like a
+     * chart read - which is exactly why it was serving `patientId` and
+     * `balanceCents` for charts whose own statement read answers 404 (#300).
+     *
+     * Refuses the queue rather than dropping the row, because that is what the
+     * crud list and the FHIR search already do on this boundary and a third
+     * answer to the same question is how the two doors drift apart.
+     */
+    await gateCharts(
+      c,
+      'statements',
+      pages.flatMap((page) => page.rows)
+    );
+
     const entries = pages
       .flatMap((page) => page.rows)
       .map((row) => {
@@ -969,7 +1061,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementNoticeSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
 
     // GENERATED is where the first notice comes from, and SENT is where every
     // later one does. Anything else has left the schedule.
@@ -1009,7 +1106,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementHoldSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
 
     if (before.status === 'PAID' || before.status === 'VOID' || before.status === 'WRITTEN_OFF') {
       throw ApiError.conflict(`A statement in ${before.status} is not being chased.`);
@@ -1036,7 +1138,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseTransitionBody(c, statementWriteOffSchema);
     const statements = repositories(c).statements;
-    const before = required(await statements.findById(id), MISSING_STATEMENT);
+    const before = await requiredParentChart(
+      c,
+      'statements',
+      await statements.findById(id),
+      MISSING_STATEMENT
+    );
     assertTransition(STATEMENT_TRANSITIONS, 'statement', before.status, 'WRITTEN_OFF');
 
     const row = required(

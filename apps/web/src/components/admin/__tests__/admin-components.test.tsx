@@ -396,11 +396,14 @@ describe('the admin copy helpers', () => {
     // one right while the other is wrong.
     const es = createTranslator(appCatalogue, 'es');
 
-    expect(t(pluralKey(keys, 1, 'en'), { count: 1 })).toBe('1 account');
-    expect(t(pluralKey(keys, 4, 'en'), { count: 4 })).toBe('4 accounts');
-    expect(es(pluralKey(keys, 1, 'es'), { count: 1 })).toBe('1 cuenta');
+    // The counts are already strings: this is about which key `pluralKey`
+    // picks, and a real caller has put the number through `formatCount` before
+    // it gets here.
+    expect(t(pluralKey(keys, 1, 'en'), { count: '1' })).toBe('1 account');
+    expect(t(pluralKey(keys, 4, 'en'), { count: '4' })).toBe('4 accounts');
+    expect(es(pluralKey(keys, 1, 'es'), { count: '1' })).toBe('1 cuenta');
     // Zero is `other` in both languages this build carries, and the count that
     // most often gets hard-coded to the singular by mistake.
-    expect(es(pluralKey(keys, 0, 'es'), { count: 0 })).toBe('0 cuentas');
+    expect(es(pluralKey(keys, 0, 'es'), { count: '0' })).toBe('0 cuentas');
   });
 });

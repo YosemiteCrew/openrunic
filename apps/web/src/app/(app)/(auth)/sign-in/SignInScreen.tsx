@@ -1,5 +1,7 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
+import type { Translator } from '@openrunic/i18n';
 import { Button, Input } from '@openrunic/ui';
 import { useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
@@ -57,7 +59,13 @@ interface ReasonNotice {
    * something it does not. So the idle notice carries the minute count and the
    * expired notice carries nothing.
    */
-  readonly titleValues?: Readonly<Record<string, string | number>>;
+  /*
+   * A function of the translator rather than a plain object, because this table
+   * is built once at module scope and the reader's locale is not known there.
+   * A count formatted at module scope would be formatted for whoever loaded the
+   * file.
+   */
+  readonly titleValues?: (translate: Translator) => Readonly<Record<string, string>>;
 }
 
 /**
@@ -70,7 +78,7 @@ const REASON_NOTICE: Record<SignInReason, ReasonNotice> = {
     tone: 'caution',
     titleKey: 'auth.signedOut.idle.title',
     bodyKey: 'auth.signedOut.idle.body',
-    titleValues: { minutes: IDLE_MINUTES },
+    titleValues: (translate) => ({ minutes: formatCount(IDLE_MINUTES, translate.locale) }),
   },
   expired: {
     tone: 'info',
@@ -155,13 +163,15 @@ export function SignInScreen({
       <div className="or-auth__panel">
         <div className="or-auth__intro">
           <h1 className="or-auth__title">{t('auth.signIn.title')}</h1>
-          <p className="or-auth__lede">{t('auth.signIn.lede', { minutes: IDLE_MINUTES })}</p>
+          <p className="or-auth__lede">
+            {t('auth.signIn.lede', { minutes: formatCount(IDLE_MINUTES, t.locale) })}
+          </p>
         </div>
 
         {notice === null ? null : (
           <Alert
             tone={notice.tone}
-            title={t(notice.titleKey, notice.titleValues)}
+            title={t(notice.titleKey, notice.titleValues?.(t))}
             message={t(notice.bodyKey)}
           />
         )}

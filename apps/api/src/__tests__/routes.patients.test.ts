@@ -457,6 +457,49 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     );
   });
 
+  it('files one grant, not two, when the same chart is declared twice at once', async () => {
+    /*
+     * The race the sequential test above cannot see.
+     *
+     * That test declares twice in a row, so the second read finds the first
+     * row and the handler returns it without ever reaching the create. Sent
+     * together, both requests read no grant - the handler awaits between the
+     * read and the create, so the two interleave at exactly that point - and
+     * both went on to file one. The documented idempotency held only for
+     * requests that happened not to overlap, which is not a property, and near
+     * the ceiling the loser surfaced a limit error where this route documents
+     * a 200.
+     *
+     * This is a real reproduction rather than a simulation: the in-memory store
+     * is a real implementation of the same port, and the interleaving is the
+     * handler's own, not something the test arranges.
+     *
+     * What closes it is the natural key on the spec, which both stores enforce
+     * inside the create. Against Postgres there is a second race underneath
+     * this one - two connections can pass a check-then-write that one event
+     * loop cannot - and `break_glass_ceiling` refuses that loser under the
+     * advisory lock it already holds. `packages/database` asserts that half
+     * against a real server; this asserts the half the API owns, which is that
+     * losing is answered with the winner's grant rather than with an error.
+     */
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+    const declare = async (): Promise<Response> =>
+      app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+        method: 'POST',
+        headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+      });
+
+    const [first, second] = await Promise.all([declare(), declare()]);
+    const bodies = await Promise.all([first.json(), second.json()]);
+
+    // One of the two won; which one is not a property worth asserting.
+    expect([first.status, second.status].toSorted((a, b) => a - b)).toEqual([200, 201]);
+    expect((bodies[0] as { id: string }).id).toBe((bodies[1] as { id: string }).id);
+    expect(dataset.table('BreakGlassGrant')).toHaveLength(1);
+  });
+
   it('refuses a break-glass declaration with no reason', async () => {
     const { app, dataset } = createTestApp();
     seedElsewhere(dataset);

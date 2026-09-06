@@ -31,8 +31,22 @@ import type { Locale, MessageKey } from './catalogue.js';
  * checked in a language nobody here reads.
  */
 
-/** Values a placeholder may take. Deliberately narrow; see `format`. */
-export type Interpolations = Readonly<Record<string, string | number>>;
+/**
+ * Values a placeholder may take: strings, and only strings.
+ *
+ * A `number` used to be allowed and `format` rendered it with `String(value)`,
+ * which is the reader's grammar with the runtime's digits - `1234` where a
+ * locale writes `1.234`, Latin numerals for a reader whose language does not
+ * use them. Thirty call sites did it. A source-scanning guard existed and
+ * reported none of them, because it was written around the one placeholder name
+ * the bug was first found under; the type finds all of them in one pass and
+ * cannot be green for the wrong reason. #285.
+ *
+ * The cost is that every caller now says which kind of number it has, which is
+ * the point rather than the price: see {@link formatCount} and
+ * {@link verbatim}.
+ */
+export type Interpolations = Readonly<Record<string, string>>;
 
 /** `{name}` - a single brace pair around a name, and nothing cleverer. */
 const PLACEHOLDER = /\{(?<name>[a-zA-Z][a-zA-Z0-9_]*)\}/gu;
@@ -61,10 +75,17 @@ export function formatProblems(
       problems.push(
         `${key} has a placeholder {${name}} and no value for it, so the message would render with a gap where the value belongs.`
       );
-    } else if (typeof value === 'number' && !Number.isFinite(value)) {
-      // `String(NaN)` is "NaN", which renders as a word in the middle of a
-      // sentence and reads to a user as a value rather than as an error.
-      problems.push(`${key} was given ${String(value)} for {${name}}, which is not a number.`);
+    } else if (typeof value !== 'string') {
+      // The type says string, and this is the same rule for a caller the type
+      // cannot reach - a JavaScript consumer of this package. It replaces a
+      // narrower check for NaN, whose reason was that `String(NaN)` renders the
+      // word "NaN" mid-sentence and reads as a value rather than as an error.
+      // A raw number is the same failure one step quieter: it renders, and it
+      // renders in the runtime's digits rather than the reader's. #285.
+      problems.push(
+        `${key} was given ${String(value)} for {${name}}, which is not a string. ` +
+          'Put a count through formatCount and an identifier through verbatim.'
+      );
     }
   }
 
@@ -164,4 +185,38 @@ export function formatCount(count: number, locale: Locale): string {
     throw new RangeError(`A count must be a number, not ${String(count)}.`);
   }
   return new Intl.NumberFormat(locale).format(count);
+}
+
+/**
+ * A number the reader will compare, rendered exactly as it is stored.
+ *
+ * THE RULE: localise what is measured, render verbatim what is matched.
+ *
+ * {@link formatCount} is for a quantity - a count, a duration, a percentage, a
+ * measurement. Those are read, and the reader's own digits and grouping are
+ * what they should be read in.
+ *
+ * This is for the other kind: a value spelled with digits that is an identity
+ * rather than an amount. A form version, an audit sequence number, an MRN, a
+ * claim number. The test is not whether the value is a quantity, it is whether
+ * two renderings of it must compare equal - because these are read back,
+ * pasted, quoted in a ticket and typed into a search box. `Intl.NumberFormat`
+ * writes 1234 as `1,234` in English and 12345 as `12.345` in Spanish, and
+ * neither is a formatting variation of the same identifier: it is a different
+ * string from the one in the URL.
+ *
+ * Spanish is the example worth carrying because it is the one that surprises.
+ * `es` has `minimumGroupingDigits: 2`, so it leaves a four-digit number alone
+ * and groups from five - a demonstration written at 1234 shows nothing, which
+ * is how an invented worked example passes review.
+ *
+ * It exists as a function rather than as a bare `String(value)` at the call
+ * site so that the decision is visible and reviewable. A raw `String` reads as
+ * somebody who did not think about the locale; this reads as somebody who did.
+ */
+export function verbatim(value: number | string): string {
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    throw new RangeError(`An identifier must be a finite number, not ${String(value)}.`);
+  }
+  return String(value);
 }

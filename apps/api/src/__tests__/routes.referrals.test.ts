@@ -10,10 +10,12 @@ import { matchesWhere } from './fake-port.js';
 import {
   bearer,
   createTestApp,
+  DEMO_TENANT_A,
   FIXED_NOW,
   jsonBearer,
   makePatientRow,
   seed,
+  seedCareRelationship,
   testId,
   TOKENS,
 } from './support.js';
@@ -29,10 +31,29 @@ import {
 
 const PATIENT = testId(1);
 const USER = testId(951);
+/** The subject `TOKENS.clinicianA` resolves to. */
+const CLINICIAN = '01890000-0000-7000-8000-000000000101';
 
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+  /*
+   * Every referral in this file names PATIENT, and reading or moving one now
+   * asks the care-relationship gate (#322). Without this the whole file
+   * describes a clinician with no business in that chart, which is not the
+   * caller any of these cases is about - and it is what let seventeen of them
+   * assert a 200 through a door that had no gate at all.
+   *
+   * Seeded as an appointment rather than an encounter: an encounter would
+   * satisfy the same relationship source and show up in nothing here either,
+   * but the appointment is the cheaper row and the one `seedCareRelationship`
+   * offers for exactly this.
+   */
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: CLINICIAN,
+    as: 'appointment',
+  });
   return created;
 }
 
@@ -413,6 +434,16 @@ describe('the outstanding tray', () => {
   it('narrows by patient, specialty and status', async () => {
     const { app, dataset } = harness();
     seed(dataset, 'Patient', makePatientRow({ id: testId(2), mrn: 'OR-2' }));
+    // The second chart needs its own relationship: the list gate asks about
+    // every chart the page returns, and this case is about the filters rather
+    // than about the gate. Without it the `status=DRAFT` row is refused and
+    // reads as the narrowing being wrong.
+    seedCareRelationship(dataset, {
+      patientId: testId(2),
+      providerId: CLINICIAN,
+      as: 'appointment',
+      id: testId(8_002),
+    });
     await create(app);
     await create(app, { patientId: testId(2), specialtyCode: '394582007' });
 
@@ -647,5 +678,172 @@ describe('the referral status filter', () => {
     }
 
     expect(disagreements).toEqual([]);
+  });
+});
+
+/* --------------------------------------- the chart gate on this whole surface
+   --------------------------------------- (#322) */
+
+/**
+ * Every door into a referral, driven by a clinician with no relationship to the
+ * chart it names.
+ *
+ * `referrals` is registered by hand rather than generated, so none of it went
+ * through the CRUD seam where `chartFrom` puts the care-relationship gate on a
+ * read. That makes this a wider hole than the one #322 found on `orders.ts`:
+ * there the generated read was refused and only the hand-registered writes were
+ * open, so the finding was the asymmetry. Here the READ was open too, and so was
+ * the list - a caller holding `order.read` was answered every referral in the
+ * tenant, each naming a patient, a specialty and a reason code.
+ *
+ * Driven on `dev` before this change, one clinician with no relationship:
+ * `GET /referrals/{id}` 200 with the patient on it, `GET /referrals` 200 with
+ * two charts in the page, and all seven transitions 200. The control that
+ * identifies the reader is a `notes` read on the same chart with the same
+ * token: 404 without the relationship and 200 with it.
+ *
+ * Each door gets its own case, so un-gating one lands on that one rather than on
+ * a neighbour, and each is seeded in the state its transition is legal from -
+ * otherwise `assertTransition` answers 409 before the gate is reached and a
+ * refusal that never happened reads as one that did.
+ */
+describe('a referral is not readable or movable from outside the chart', () => {
+  const STRANGER_PATIENT = testId(7401);
+  const SECOND_PATIENT = testId(7402);
+
+  function makeReferralRow(
+    id: string,
+    overrides: Partial<ScopedRow<'Referral'>> = {}
+  ): ScopedRow<'Referral'> {
+    return {
+      id,
+      tenantId: DEMO_TENANT_A,
+      patientId: STRANGER_PATIENT,
+      encounterId: null,
+      referredById: USER,
+      status: 'DRAFT',
+      priority: 'ROUTINE',
+      specialtyCode: '394579002',
+      specialtyDisplay: 'Cardiology',
+      receivingPractice: 'Example Cardiology Associates',
+      receivingNpi: null,
+      receivingPhone: null,
+      reasonCodes: ['I25.10'],
+      reasonText: null,
+      note: null,
+      authorisationNumber: null,
+      sentAt: null,
+      scheduledFor: null,
+      seenAt: null,
+      reportReceivedAt: null,
+      reportDocumentId: null,
+      declinedReason: null,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+      ...overrides,
+    };
+  }
+
+  /** One referral per door, each already in the state that door moves it out of. */
+  const DOORS = [
+    ['send', testId(7410), 'DRAFT', {}],
+    ['accept', testId(7411), 'SENT', {}],
+    ['decline', testId(7412), 'SENT', { reason: 'Closed list.' }],
+    ['schedule', testId(7413), 'ACCEPTED', { scheduledFor: '2026-10-01T09:00:00.000Z' }],
+    ['seen', testId(7414), 'SCHEDULED', { seenAt: '2026-10-01T09:30:00.000Z' }],
+    ['report', testId(7415), 'SEEN', { reportReceivedAt: '2026-10-02T09:00:00.000Z' }],
+    ['cancel', testId(7416), 'DRAFT', {}],
+  ] as const;
+
+  /** Every referral seeded, and NO care relationship to the chart they name. */
+  function strangerApp(): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    seed(created.dataset, 'Patient', makePatientRow({ id: STRANGER_PATIENT, mrn: 'OR-7401' }));
+    seed(created.dataset, 'Patient', makePatientRow({ id: SECOND_PATIENT, mrn: 'OR-7402' }));
+    for (const [, id, status] of DOORS) {
+      seed(created.dataset, 'Referral', makeReferralRow(id, { status }));
+    }
+    // A second chart, so the list has more than one to be refused over and a
+    // page that leaks is visibly tenant-wide rather than one row.
+    seed(created.dataset, 'Referral', makeReferralRow(testId(7420), { patientId: SECOND_PATIENT }));
+    return created;
+  }
+
+  function authorise(dataset: ReturnType<typeof createTestApp>['dataset'], ...ids: string[]): void {
+    ids.forEach((patientId, index) => {
+      seedCareRelationship(dataset, {
+        patientId,
+        providerId: CLINICIAN,
+        as: 'appointment',
+        id: testId(8_100 + index),
+      });
+    });
+  }
+
+  it.each(DOORS)(
+    'POST /referrals/:id/%s is refused on a chart nothing connects the writer to',
+    async (segment, id, _status, body) => {
+      const { app } = strangerApp();
+
+      // 404 and not 403, the same as every other chart refusal: a 403 confirms
+      // the row exists to somebody who may not see it.
+      expect((await step(app, id, segment, body)).status).toBe(404);
+    }
+  );
+
+  it.each(DOORS)(
+    'POST /referrals/:id/%s still answers a writer who is in that patient care',
+    async (segment, id, _status, body) => {
+      const created = strangerApp();
+      authorise(created.dataset, STRANGER_PATIENT);
+
+      // The reachable control. Without it every row above is also satisfied by a
+      // route that refuses everyone, which would take the loop out of the product
+      // while reading as the gate working.
+      expect((await step(created.app, id, segment, body)).status).toBe(200);
+    }
+  );
+
+  it('GET /referrals/:id is refused, and answers once the relationship exists', async () => {
+    const refused = strangerApp();
+    const allowed = strangerApp();
+    authorise(allowed.dataset, STRANGER_PATIENT);
+
+    const [outside, inside] = await Promise.all([
+      refused.app.request(`/bff/v0/referrals/${testId(7410)}`, {
+        headers: bearer(TOKENS.clinicianA),
+      }),
+      allowed.app.request(`/bff/v0/referrals/${testId(7410)}`, {
+        headers: bearer(TOKENS.clinicianA),
+      }),
+    ]);
+
+    expect(outside.status).toBe(404);
+    expect(inside.status).toBe(200);
+  });
+
+  it('GET /referrals refuses a page carrying a chart the reader is not in', async () => {
+    /*
+     * The broad-list shape. A list of chart data is a read of every chart it
+     * returns, and the caller naming no `patientId` is the request that asks
+     * for everything - so the gate, not the query, has to answer it. Before
+     * this change that page came back 200 with both patients in it.
+     */
+    const { app, dataset } = strangerApp();
+    authorise(dataset, STRANGER_PATIENT);
+
+    const res = await app.request('/bff/v0/referrals', { headers: bearer(TOKENS.clinicianA) });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /referrals answers the page once every chart in it is reachable', async () => {
+    const { app, dataset } = strangerApp();
+    authorise(dataset, STRANGER_PATIENT, SECOND_PATIENT);
+
+    const res = await app.request('/bff/v0/referrals', { headers: bearer(TOKENS.clinicianA) });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { total: number }).total).toBe(DOORS.length + 1);
   });
 });

@@ -46,11 +46,26 @@ export interface AlertProps extends HTMLAttributes<HTMLElement> {
   onClose?: () => void;
   /**
    * The accessible name of the dismiss control. A prop rather than a literal
-   * because a design system has no translator: "Dismiss" is the only word this
-   * component says, and a consumer rendering in another language has to be able
-   * to say it. Defaults to the English it used to hardcode.
+   * because a design system has no translator, and a consumer rendering in
+   * another language has to be able to say it. Defaults to the English it used
+   * to hardcode.
    */
   closeLabel?: string;
+  /**
+   * The tone word a screen reader hears before the body, for the same reason
+   * and by the same route as {@link closeLabel}.
+   *
+   * This one matters more. The comment on TONE above says the word is what
+   * keeps the tone off colour alone - so it is the accessibility affordance,
+   * and it was the one word here that could not be translated. It is also the
+   * one nobody sees: `.or-alert__tone` is clipped to 1x1, so a sighted reader
+   * never meets it and only a screen reader does, announced inside whatever
+   * `lang` the page carries.
+   *
+   * Defaults to the English it used to hardcode, so an existing call site
+   * renders exactly as before.
+   */
+  toneLabel?: string;
   /** Free-form body, used when `message` is not enough. Renders after the message. */
   children?: ReactNode;
 }
@@ -76,11 +91,13 @@ export function Alert({
   icon,
   onClose,
   closeLabel = 'Dismiss',
+  toneLabel,
   className,
   children,
   ...rest
 }: AlertProps) {
-  const { icon: toneIcon, label } = TONE[tone];
+  const { icon: toneIcon, label: defaultToneLabel } = TONE[tone];
+  const label = toneLabel ?? defaultToneLabel;
   const ToneIcon = resolveLucideIcon(icon ?? toneIcon);
   const CloseIcon = resolveLucideIcon('x');
 

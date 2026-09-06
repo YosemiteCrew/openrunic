@@ -1,7 +1,7 @@
 /// <reference types="fhir" preserve="true" />
 
 import { enumMapping } from './enum-mapping.js';
-import { compact, period, readString, setOptional } from './primitives.js';
+import { compact, period, present, readString, setOptional } from './primitives.js';
 import { fhirReference, referenceId } from './reference.js';
 import { SYSTEMS } from './systems.js';
 
@@ -81,6 +81,22 @@ export interface DomainCarePlan {
   periodStart?: string;
   periodEnd?: string;
   authorId?: string;
+  /**
+   * The goals this plan is working towards.
+   *
+   * The link is stored the other way round - a `Goal` row carries the
+   * `carePlanId` it belongs to - and it is projected here because this is the
+   * direction FHIR R4 defines. `Goal.addresses` points at the conditions a goal
+   * concerns, not at a plan, so a plan-goal association emitted there was
+   * invalid and was removed; `CarePlan.goal` is the conformant home for it, and
+   * until it was projected the FHIR surface carried no plan-goal association at
+   * all.
+   *
+   * Absent and empty are the same thing here and both mean "no goals on this
+   * plan", which is the ordinary case: a plan is an assessment first, and most
+   * carry none.
+   */
+  goalIds?: readonly string[];
 }
 
 /**
@@ -283,6 +299,10 @@ export function toFhirCarePlan(input: DomainCarePlan): fhir4.CarePlan {
     period: period(input.periodStart, input.periodEnd),
     author:
       input.authorId === undefined ? undefined : fhirReference('Practitioner', input.authorId),
+    /* `compact` drops an empty array, so a plan with no goals emits no element
+       rather than `goal: []` - which a consumer would read as a claim that the
+       plan was checked and found to have none. */
+    goal: present((input.goalIds ?? []).map((id) => fhirReference('Goal', id))),
   });
 }
 
@@ -301,5 +321,17 @@ export function fromFhirCarePlan(resource: fhir4.CarePlan): DomainCarePlan {
   setOptional(domain, 'periodStart', readString(resource.period?.start));
   setOptional(domain, 'periodEnd', readString(resource.period?.end));
   setOptional(domain, 'authorId', referenceId(resource.author, 'Practitioner'));
+
+  /*
+   * Read back only when the resource carried at least one. An absent `goal` and
+   * an empty one both mean no goals, and writing `goalIds: []` for the first
+   * would make a round trip report a field the sender never sent.
+   *
+   * A reference to anything other than a Goal is dropped rather than kept as an
+   * id: `referenceId` refuses the type mismatch, and a plan that listed some
+   * other resource among its goals is not a plan this system can hold.
+   */
+  const goalIds = present((resource.goal ?? []).map((one) => referenceId(one, 'Goal')));
+  if (goalIds.length > 0) domain.goalIds = goalIds;
   return domain;
 }

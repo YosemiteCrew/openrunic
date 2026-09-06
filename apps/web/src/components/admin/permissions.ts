@@ -35,7 +35,7 @@ export function isAllowed(
  * has one is how a grid and a policy engine end up disagreeing in words.
  */
 export function summariseRole(
-  translate: (key: string, values?: Readonly<Record<string, string | number>>) => string,
+  translate: (key: string, values?: Readonly<Record<string, string>>) => string,
   rows: PermissionRow[],
   role: StaffRole,
   overrides: Record<string, boolean>

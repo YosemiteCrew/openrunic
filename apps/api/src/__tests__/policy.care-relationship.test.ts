@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RELATIONSHIP_SOURCES } from '../policy/care-relationship.js';
 import type { ScopedRow } from '../repositories/rows.js';
+import type { RemittanceStatus } from '../repositories/specs/financial.js';
 
 import {
   bearer,
@@ -614,6 +615,1035 @@ describe('the gate is not walked around', () => {
     });
 
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * The gate is asked by the route that reads the parent row, and the routes that
+ * read a collection INSIDE that parent were not asking it.
+ *
+ * #300. Every one of these routes reads its parent first and says so in a
+ * comment: an id naming a chart this principal cannot reach should be a 404
+ * rather than an empty list, because an empty list says the parent has no
+ * children and that is a different and false statement. The reasoning is right
+ * about the row being ABSENT and silent about it being present and ungated -
+ * `findById` narrows by tenant, by the portal compartment and by facility, and
+ * never by care relationship. So the parent answered 404 and the thing inside
+ * it answered 200, to the same principal, in the same breath.
+ *
+ * Each case carries the refused parent beside it, because without that half the
+ * case only says the fixture is unreachable rather than that the child route is
+ * the way round.
+ */
+describe('a collection inside a chart is not a way round the gate', () => {
+  const ENCOUNTER = testId(3_600);
+
+  /**
+   * A chart whose only encounter is at a site this reader holds no grant for.
+   *
+   * `facility-activity` is what would otherwise answer for a clinician with no
+   * other tie to the chart, so the encounter has to exist - the parent rows
+   * below all hang off one - and it has to be somewhere the reader is not.
+   */
+  function unreachableChart(): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    baseChart(created.dataset);
+    anEncounter(created.dataset, { id: ENCOUNTER, facilityId: DEMO_FACILITY_B });
+    return created;
+  }
+
+  /** The same chart, with the reader on the encounter. The control for every case. */
+  function reachableChart(): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    baseChart(created.dataset);
+    anEncounter(created.dataset, { id: ENCOUNTER, providerId: SUBJECTS.clinicianA });
+    return created;
+  }
+
+  const NOTE = testId(3_610);
+
+  function aNoteWithAddendum(dataset: Dataset): void {
+    seed(dataset, 'ClinicalNote', {
+      ...storageColumns(NOTE),
+      patientId: PATIENT,
+      encounterId: ENCOUNTER,
+      authorId: SUBJECTS.clinicianA,
+      title: 'Progress note',
+      blocks: [],
+      state: 'AMENDED',
+      cosignerId: null,
+      cosignedAt: null,
+      signedAt: FIXED_NOW,
+      signedById: SUBJECTS.clinicianA,
+      lockedAt: null,
+    } as unknown as ScopedRow<'ClinicalNote'>);
+    seed(dataset, 'NoteAddendum', {
+      ...storageColumns(testId(3_611)),
+      noteId: NOTE,
+      authorId: SUBJECTS.clinicianA,
+      blocks: [],
+      reason: 'Corrected the laterality',
+      signedAt: FIXED_NOW,
+    });
+  }
+
+  it('refuses the addenda of a note whose own read is refused', async () => {
+    /* The amendment text: a clinician's correction to a signed note, which is
+       chart content and was being served whole. */
+    const { app, dataset } = unreachableChart();
+    aNoteWithAddendum(dataset);
+
+    const note = await app.request(`/bff/v0/notes/${NOTE}`, { headers: bearer(TOKENS.clinicianA) });
+    const addenda = await app.request(`/bff/v0/notes/${NOTE}/addenda`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(note.status, 'the parent read is the half that was already right').toBe(404);
+    expect(addenda.status).toBe(404);
+  });
+
+  it('still serves the addenda to a reader who is in that patient’s care', async () => {
+    /* The other half, and the one that decides whether this is a fix or an
+       outage: a refusal that also refuses the correct reader is the failure
+       that gets a gate deleted. */
+    const { app, dataset } = reachableChart();
+    aNoteWithAddendum(dataset);
+
+    const note = await app.request(`/bff/v0/notes/${NOTE}`, { headers: bearer(TOKENS.clinicianA) });
+    const addenda = await app.request(`/bff/v0/notes/${NOTE}/addenda`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(note.status).toBe(200);
+    expect(addenda.status).toBe(200);
+  });
+
+  const THREAD = testId(3_620);
+
+  function aThreadWithMessage(dataset: Dataset): void {
+    seed(dataset, 'MessageThread', {
+      ...storageColumns(THREAD),
+      kind: 'PATIENT',
+      patientId: PATIENT,
+      subject: 'Repeat prescription',
+      lastMessageAt: FIXED_NOW,
+      closedAt: null,
+    } as unknown as ScopedRow<'MessageThread'>);
+    seed(dataset, 'Message', {
+      ...storageColumns(testId(3_621)),
+      threadId: THREAD,
+      senderType: 'PATIENT',
+      senderUserId: null,
+      senderPatientId: PATIENT,
+      body: 'Asking about the dose.',
+      sentAt: FIXED_NOW,
+      readAt: null,
+    } as unknown as ScopedRow<'Message'>);
+  }
+
+  it('refuses the messages inside a thread whose own read is refused', async () => {
+    const { app, dataset } = unreachableChart();
+    aThreadWithMessage(dataset);
+
+    const thread = await app.request(`/bff/v0/messages/threads/${THREAD}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const messages = await app.request(`/bff/v0/messages/threads/${THREAD}/messages`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(thread.status).toBe(404);
+    expect(messages.status).toBe(404);
+  });
+
+  it('still serves those messages to a reader in that patient’s care', async () => {
+    const { app, dataset } = reachableChart();
+    aThreadWithMessage(dataset);
+
+    const messages = await app.request(`/bff/v0/messages/threads/${THREAD}/messages`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(messages.status).toBe(200);
+  });
+
+  const REPORT = testId(3_630);
+
+  function aReportWithAnalyte(dataset: Dataset): void {
+    seed(dataset, 'DiagnosticReport', {
+      ...storageColumns(REPORT),
+      patientId: PATIENT,
+      encounterId: null,
+      serviceRequestId: null,
+      specimenId: null,
+      status: 'FINAL',
+      category: 'LAB',
+      code: '58410-2',
+      codeSystem: 'http://loinc.org',
+      display: 'CBC panel',
+      performingLabName: null,
+      abnormalFlag: 'NORMAL',
+      narrative: null,
+      rawStorageKey: null,
+      effectiveAt: FIXED_NOW,
+      issuedAt: FIXED_NOW,
+      reviewedById: null,
+      reviewedAt: null,
+    } as unknown as ScopedRow<'DiagnosticReport'>);
+    seed(dataset, 'ResultObservation', {
+      ...storageColumns(testId(3_631)),
+      diagnosticReportId: REPORT,
+      patientId: PATIENT,
+      status: 'FINAL',
+      sequence: 1,
+      loincCode: '718-7',
+      code: '718-7',
+      codeSystem: 'http://loinc.org',
+      display: 'Haemoglobin',
+      valueNumber: null,
+      valueText: '13.4',
+      valueCode: null,
+      unit: 'g/dL',
+      referenceLow: null,
+      referenceHigh: null,
+      referenceRangeText: null,
+      interpretationCode: null,
+      abnormalFlag: 'NORMAL',
+      effectiveAt: FIXED_NOW,
+    } as unknown as ScopedRow<'ResultObservation'>);
+  }
+
+  it('refuses the analytes under a report whose own read is refused', async () => {
+    const { app, dataset } = unreachableChart();
+    aReportWithAnalyte(dataset);
+
+    const report = await app.request(`/bff/v0/results/${REPORT}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const analytes = await app.request(`/bff/v0/results/${REPORT}/observations`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(report.status).toBe(404);
+    expect(analytes.status).toBe(404);
+  });
+
+  it('still serves those analytes to a reader in that patient’s care', async () => {
+    const { app, dataset } = reachableChart();
+    aReportWithAnalyte(dataset);
+
+    const analytes = await app.request(`/bff/v0/results/${REPORT}/observations`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(analytes.status).toBe(200);
+  });
+
+  const PAYMENT = testId(3_640);
+
+  function aPaymentWithAllocation(dataset: Dataset): void {
+    seed(dataset, 'Payment', {
+      ...storageColumns(PAYMENT),
+      patientId: PATIENT,
+      payerId: null,
+      remittanceId: null,
+      source: 'PATIENT',
+      method: 'CARD',
+      status: 'POSTED',
+      amountCents: 4_000,
+      currency: 'USD',
+      reference: null,
+      adapterRef: null,
+      receivedAt: FIXED_NOW,
+      postedAt: FIXED_NOW,
+      postedById: null,
+      note: null,
+    } as unknown as ScopedRow<'Payment'>);
+    seed(dataset, 'PaymentAllocation', {
+      ...storageColumns(testId(3_641)),
+      paymentId: PAYMENT,
+      patientId: PATIENT,
+      claimId: null,
+      claimLineId: null,
+      chargeItemId: null,
+      amountCents: 4_000,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      appliedAt: FIXED_NOW,
+      note: null,
+    });
+  }
+
+  it('refuses the allocations under a payment whose own read is refused', async () => {
+    /* The biller, not the clinician: `payment.read` is a billing permission and
+       a clinician asking is a 403 before the chart question is ever reached,
+       which would have made this case pass for the wrong reason. */
+    const { app, dataset } = unreachableChart();
+    aPaymentWithAllocation(dataset);
+
+    const payment = await app.request(`/bff/v0/payments/${PAYMENT}`, {
+      headers: bearer(TOKENS.billerA),
+    });
+    const allocations = await app.request(`/bff/v0/payments/${PAYMENT}/allocations`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(payment.status).toBe(404);
+    expect(allocations.status).toBe(404);
+  });
+
+  it('still serves the allocations to a biller who may open that chart', async () => {
+    const { app, dataset } = reachableChart();
+    aPaymentWithAllocation(dataset);
+
+    const allocations = await app.request(`/bff/v0/payments/${PAYMENT}/allocations`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(allocations.status).toBe(200);
+  });
+
+  /*
+   * The claim pair runs as the biller, because a clinician holds no
+   * `claim.read` and the case that matters for a claim is the one the suite
+   * already carries for the addressed read: a biller with no grant for the site
+   * the encounter happened at.
+   */
+  const BILLED_CLAIM = testId(3_650);
+
+  function aClaimWithLine(dataset: Dataset): void {
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, {
+      id: testId(3_652),
+      facilityId: DEMO_FACILITY_B,
+      patientId: testId(3_651),
+    });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    seed(dataset, 'ClaimLine', {
+      ...storageColumns(testId(3_653)),
+      claimId: BILLED_CLAIM,
+      chargeItemId: testId(3_654),
+      sequence: 1,
+      code: '99213',
+      codeSystem: 'http://www.ama-assn.org/go/cpt',
+      modifiers: [],
+      units: 1,
+      chargedCents: 12_000,
+      allowedCents: null,
+      paidCents: 0,
+      adjustedCents: 0,
+      diagnosisPointers: [1],
+      serviceDateFrom: FIXED_NOW,
+      serviceDateTo: null,
+      statusReason: null,
+    });
+  }
+
+  it('refuses the LINES of a claim whose own read is refused', async () => {
+    /* `refuses the same claim to a biller with no grant for that site` above is
+       the parent half of this, on the FHIR boundary, and it was already
+       passing while this answered 200 with the CPT codes and the amounts.
+       Separate from the history case below so that reverting one route names
+       one test: a single case covering both cannot say which of the two is
+       ungated, which is the whole failure this block exists to catch. */
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+
+    const claim = await app.request(`/fhir/Claim/${BILLED_CLAIM}`, {
+      headers: bearer(TOKENS.billerA),
+    });
+    const lines = await app.request(`/bff/v0/claims/${BILLED_CLAIM}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(claim.status).toBe(404);
+    expect(lines.status).toBe(404);
+  });
+
+  it('refuses the STATUS HISTORY of a claim whose own read is refused', async () => {
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+
+    const history = await app.request(`/bff/v0/claims/${BILLED_CLAIM}/history`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(history.status).toBe(404);
+  });
+
+  /*
+   * The ninth route, and the one where the shape of the fix above does not fit.
+   *
+   * A remittance is a payer document, so unlike every other parent here there
+   * is no chart ON it to guard - `remittances.findById` narrows by tenant and
+   * by nothing else. The chart data is on the CHILDREN: a `RemittanceLine`
+   * names a claim and publishes its procedure code, its service date and what
+   * the patient owes. Refusing `claims/{id}/lines` and serving the same line
+   * one hop sideways is the gate working and the window open.
+   */
+  const REMITTANCE = testId(3_660);
+
+  /*
+   * `status` is a parameter because POSTING is only reachable from `PARSED`,
+   * and `assertTransition` runs BEFORE the gate - a remittance left at
+   * `RECEIVED` answers 409 and never reaches the guard the post cases are
+   * written for. Re-seeding the same id does NOT move it: the first seed wins
+   * silently, so this has to be right at the one call.
+   */
+  function aRemittanceOverThatClaim(dataset: Dataset, status: RemittanceStatus = 'RECEIVED'): void {
+    seed(dataset, 'Remittance', {
+      ...storageColumns(REMITTANCE),
+      payerId: testId(3_661),
+      status,
+      checkOrEftNumber: null,
+      totalPaidCents: 9_000,
+      receivedAt: FIXED_NOW,
+      paidAt: null,
+      rawStorageKey: null,
+      parsed: null,
+      exceptionCount: 0,
+      postedAt: null,
+      postedById: null,
+      // No cast: with `status` typed the row satisfies `ScopedRow<'Remittance'>`
+      // on its own, so a field going wrong here is a type error rather than a
+      // green test seeding a shape the repository never returns.
+    });
+    seed(dataset, 'RemittanceLine', {
+      ...storageColumns(testId(3_662)),
+      remittanceId: REMITTANCE,
+      claimId: BILLED_CLAIM,
+      claimLineId: testId(3_653),
+      sequence: 1,
+      payerControlNumber: null,
+      code: '99213',
+      chargedCents: 12_000,
+      allowedCents: 9_000,
+      paidCents: 9_000,
+      patientResponsibilityCents: 3_000,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      remarkCodes: [],
+      serviceDateFrom: FIXED_NOW,
+      matched: true,
+    });
+  }
+
+  it('refuses a remittance line naming a claim the reader may not open', async () => {
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset);
+
+    const claimLines = await app.request(`/bff/v0/claims/${BILLED_CLAIM}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+    const remittanceLines = await app.request(`/bff/v0/remittances/${REMITTANCE}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(claimLines.status, 'the claim route is the half already fixed').toBe(404);
+    expect(remittanceLines.status).toBe(404);
+  });
+
+  it('refuses the remittance when only its LAST line is out of reach', async () => {
+    /*
+     * One claim-bearing line cannot tell "every claim on the page" from "the
+     * first one" - the mutation that gates only `rows[0]` is green against the
+     * case above. So there are two lines here in sequence order, the REACHABLE
+     * chart first, and the row that must refuse is the one a first-only gate
+     * never looks at. Same correction the collections worklist needed.
+     */
+    const REACHABLE = testId(3_670);
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset);
+    seed(dataset, 'Patient', makePatientRow({ id: REACHABLE, mrn: 'OR-103670' }));
+    anEncounter(dataset, { id: testId(3_671), patientId: REACHABLE });
+    aClaim(dataset, testId(3_672), REACHABLE, testId(3_671));
+    seed(dataset, 'RemittanceLine', {
+      ...storageColumns(testId(3_673)),
+      remittanceId: REMITTANCE,
+      claimId: testId(3_672),
+      claimLineId: null,
+      sequence: 0,
+      payerControlNumber: null,
+      code: '99214',
+      chargedCents: 15_000,
+      allowedCents: 11_000,
+      paidCents: 11_000,
+      patientResponsibilityCents: 4_000,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      remarkCodes: [],
+      serviceDateFrom: FIXED_NOW,
+      matched: true,
+    });
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses to PARSE a remittance whose lines name a chart out of reach', async () => {
+    /*
+     * The write half, and it had no test at all: removing the guard from the
+     * shared reader was red on exactly one case in the whole 3597-test package,
+     * which is a guard covering three routes and pinned on one.
+     *
+     * Parsing is where a remittance's lines are counted and its status moves,
+     * and posting turns those same lines into payment allocations ON those
+     * charts. Both read through the same function, so both are gated - and now
+     * one of them says so.
+     */
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset);
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/parse`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('still parses a remittance whose claims the reader may open', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    aRemittanceOverThatClaim(dataset);
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/parse`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses to POST a remittance whose lines name a chart out of reach', async () => {
+    /*
+     * The third door on the shared reader, and the one nothing observed: at
+     * `33d76c8` un-sharing ONLY `post` left the whole 3600-test package green,
+     * so the guard covered three routes and was pinned on two. Posting is the
+     * route where the miss costs money - it turns these lines into
+     * `PaymentAllocation` rows ON the charts the reader is refused.
+     *
+     * `PARSED` because `assertTransition` runs first and a `RECEIVED`
+     * remittance answers 409 without ever reaching the guard.
+     */
+    const { app, dataset } = createTestApp();
+    aClaimWithLine(dataset);
+    aRemittanceOverThatClaim(dataset, 'PARSED');
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/post`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('still posts a remittance whose claims the reader may open', async () => {
+    /* Without this the case above is satisfied by a 409 or by refusing every
+       biller every post, either of which takes payment posting out entirely
+       while reading as the gate working. */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    aRemittanceOverThatClaim(dataset, 'PARSED');
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/post`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.billerA), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('still serves a remittance line whose claim the reader may open', async () => {
+    /* Facility A, so `facility-activity` answers. Without this the case above
+       is satisfied by refusing every biller every remittance, which would take
+       the payment-posting workflow out entirely. */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+    aRemittanceOverThatClaim(dataset);
+
+    const res = await app.request(`/bff/v0/remittances/${REMITTANCE}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('serves an unmatched line, which names no claim and so has no chart', async () => {
+    /* The other direction the guard must not break: an exception line nobody
+       has matched yet is the biller's actual work queue, and it carries no
+       chart to ask about. */
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    aRemittanceOverThatClaim(dataset);
+    seed(dataset, 'RemittanceLine', {
+      ...storageColumns(testId(3_663)),
+      remittanceId: testId(3_664),
+      claimId: null,
+      claimLineId: null,
+      sequence: 1,
+      payerControlNumber: 'UNMATCHED-1',
+      code: '99213',
+      chargedCents: 12_000,
+      allowedCents: 0,
+      paidCents: 0,
+      patientResponsibilityCents: 0,
+      adjustmentGroupCode: null,
+      adjustmentReasonCode: null,
+      remarkCodes: [],
+      serviceDateFrom: FIXED_NOW,
+      matched: false,
+    });
+    seed(dataset, 'Remittance', {
+      ...storageColumns(testId(3_664)),
+      payerId: testId(3_661),
+      status: 'RECEIVED',
+      checkOrEftNumber: null,
+      totalPaidCents: 0,
+      receivedAt: FIXED_NOW,
+      paidAt: null,
+      rawStorageKey: null,
+      parsed: null,
+      exceptionCount: 1,
+      postedAt: null,
+      postedById: null,
+    } as unknown as ScopedRow<'Remittance'>);
+
+    const res = await app.request(`/bff/v0/remittances/${testId(3_664)}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('still serves the lines for a claim the biller may open', async () => {
+    /* Facility A this time, so `facility-activity` answers and the biller does
+       their daily job. Without this the case above is satisfied by refusing
+       every biller every claim. */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(3_651), mrn: 'OR-103651' }));
+    anEncounter(dataset, { id: testId(3_652), patientId: testId(3_651) });
+    aClaim(dataset, BILLED_CLAIM, testId(3_651), testId(3_652));
+
+    const lines = await app.request(`/bff/v0/claims/${BILLED_CLAIM}/lines`, {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(lines.status).toBe(200);
+  });
+});
+
+/**
+ * The WRITES, which are the half #306 did not reach.
+ *
+ * Every route here is hand-registered with `router.post`, reads its parent with
+ * `findById`, and never enters the CRUD seam where the gate lives. Measured on
+ * Postgres before the fix: the same clinician who got 404 reading the chart
+ * could sign the note, amend it, sign the visit, and sign and cancel a
+ * controlled prescription on it - and `encounters/{id}/sign` stamped
+ * `signedById` with the id the gate had just refused. A visit signature is an
+ * attestation, so that is the one that matters most: it was being made by
+ * somebody who could not open the chart it attests to.
+ *
+ * Driven end to end rather than asserted structurally, and each door gets its
+ * OWN case so that un-gating one lands on that one rather than on a neighbour.
+ * The reachable control beside it is what separates "the gate refuses this
+ * reader" from "the route refuses everyone", which would take signing out of
+ * the product while reading as the gate working.
+ */
+describe('a write on a chart is not a way round the gate', () => {
+  const W_ENCOUNTER = testId(3_800);
+  const W_NOTE = testId(3_810);
+  const W_RX = testId(3_820);
+
+  function aChart(reachable: boolean): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    baseChart(created.dataset);
+    anEncounter(
+      created.dataset,
+      reachable
+        ? { id: W_ENCOUNTER, providerId: SUBJECTS.clinicianA }
+        : { id: W_ENCOUNTER, facilityId: DEMO_FACILITY_B }
+    );
+    return created;
+  }
+
+  function aNote(dataset: Dataset, state: 'DRAFT' | 'SIGNED'): void {
+    seed(dataset, 'ClinicalNote', {
+      ...storageColumns(W_NOTE),
+      patientId: PATIENT,
+      encounterId: W_ENCOUNTER,
+      authorId: OTHER_PROVIDER,
+      title: 'Progress note',
+      blocks: [],
+      state,
+      cosignerId: null,
+      cosignedAt: null,
+      signedAt: state === 'SIGNED' ? FIXED_NOW : null,
+      signedById: state === 'SIGNED' ? OTHER_PROVIDER : null,
+      lockedAt: null,
+      // No cast: `state` is a literal union rather than a widened string, so
+      // this row satisfies `ScopedRow<'ClinicalNote'>` on its own and a field
+      // going wrong here is a type error rather than a green test seeding a
+      // shape the repository never returns. Same reasoning as the remittance
+      // fixture above.
+    });
+  }
+
+  function aPrescription(dataset: Dataset, status: 'DRAFT' | 'SIGNED'): void {
+    seed(dataset, 'MedicationRequest', {
+      ...storageColumns(W_RX),
+      patientId: PATIENT,
+      encounterId: W_ENCOUNTER,
+      prescriberId: OTHER_PROVIDER,
+      rxnormCode: null,
+      ndcCode: null,
+      display: 'Amoxicillin 500 mg oral capsule',
+      sig: {},
+      sigText: 'One capsule by mouth three times daily',
+      quantity: 21,
+      quantityUnit: 'capsule',
+      refills: 0,
+      daysSupply: 7,
+      dispenseAsWritten: false,
+      controlledSchedule: null,
+      pharmacyName: null,
+      pharmacyNcpdpId: null,
+      status,
+      intent: 'ORDER',
+      erxRef: null,
+      writtenAt: FIXED_NOW,
+      transmittedAt: null,
+    } as unknown as ScopedRow<'MedicationRequest'>);
+  }
+
+  interface WriteDoor {
+    readonly door: string;
+    readonly seedIt: (dataset: Dataset) => void;
+    readonly path: string;
+    readonly body?: unknown;
+    /**
+     * What the SAME request answers for a reader who is in this patient's care.
+     *
+     * Not always 200: `transmit` reaches the prescribing-network seam and this
+     * build registers no eRx adapter, so its control is the 501 that says so
+     * (#311). A control that expected 200 there would have to be deleted or
+     * weakened the day someone read it, and the point of the control is that
+     * the gate is not what refused.
+     */
+    readonly reachable: number;
+  }
+
+  const DOORS: readonly WriteDoor[] = [
+    {
+      door: 'POST /encounters/:id/sign',
+      seedIt: () => undefined,
+      path: `/bff/v0/encounters/${W_ENCOUNTER}/sign`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /notes/:id/sign',
+      seedIt: (dataset) => aNote(dataset, 'DRAFT'),
+      path: `/bff/v0/notes/${W_NOTE}/sign`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /notes/:id/addenda',
+      seedIt: (dataset) => aNote(dataset, 'SIGNED'),
+      path: `/bff/v0/notes/${W_NOTE}/addenda`,
+      body: { blocks: [], reason: 'Corrected the laterality' },
+      reachable: 201,
+    },
+    {
+      door: 'POST /medications/prescriptions/:id/sign',
+      seedIt: (dataset) => aPrescription(dataset, 'DRAFT'),
+      path: `/bff/v0/medications/prescriptions/${W_RX}/sign`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /medications/prescriptions/:id/transmit',
+      seedIt: (dataset) => aPrescription(dataset, 'SIGNED'),
+      path: `/bff/v0/medications/prescriptions/${W_RX}/transmit`,
+      reachable: 501,
+    },
+    {
+      door: 'POST /medications/prescriptions/:id/cancel',
+      seedIt: (dataset) => aPrescription(dataset, 'SIGNED'),
+      path: `/bff/v0/medications/prescriptions/${W_RX}/cancel`,
+      reachable: 200,
+    },
+    {
+      door: 'POST /medications/screen',
+      seedIt: () => undefined,
+      path: '/bff/v0/medications/screen',
+      body: { patientId: PATIENT, display: 'Amoxicillin 500 mg oral capsule' },
+      reachable: 200,
+    },
+  ];
+
+  async function ask(
+    app: ReturnType<typeof createTestApp>['app'],
+    door: WriteDoor
+  ): Promise<number> {
+    const res = await app.request(door.path, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify(door.body ?? {}),
+    });
+    return res.status;
+  }
+
+  it.each(DOORS.map((d) => [d.door, d] as const))(
+    '%s is refused on a chart nothing connects the writer to',
+    async (_label, door) => {
+      const { app, dataset } = aChart(false);
+      door.seedIt(dataset);
+
+      // 404 and not 403, the same as every read: a 403 confirms the row exists
+      // to somebody who may not see it.
+      expect(await ask(app, door)).toBe(404);
+    }
+  );
+
+  it.each(DOORS.map((d) => [d.door, d] as const))(
+    '%s still answers a writer who is in that patient’s care',
+    async (_label, door) => {
+      const { app, dataset } = aChart(true);
+      door.seedIt(dataset);
+
+      expect(await ask(app, door)).toBe(door.reachable);
+    }
+  );
+
+  it('the refusal is the chart gate, not the transition or the body', async () => {
+    /*
+     * Every refusal above is a 404, and three different things in these routes
+     * answer 404 - a missing row, a parent read, and the gate. The control is
+     * the same request on the SAME seeded rows with only the relationship
+     * changed, which is what the pair of tables above is; this pins the one
+     * case where the two tables could agree for the wrong reason. Signing a
+     * visit that is already signed is a 409, so if the gate were absent this
+     * would be 409 rather than 404, and if the row were missing it would be 404
+     * for a reason that has nothing to do with a relationship.
+     */
+    const { app, dataset } = aChart(false);
+    seed(dataset, 'Encounter', {
+      ...storageColumns(testId(3_801)),
+      facilityId: DEMO_FACILITY_B,
+      patientId: PATIENT,
+      providerId: OTHER_PROVIDER,
+      appointmentId: null,
+      class: 'AMBULATORY',
+      status: 'COMPLETED',
+      reasonCode: 'R51',
+      reasonText: 'Headache',
+      startedAt: FIXED_NOW,
+      endedAt: null,
+      signedAt: FIXED_NOW,
+      signedById: OTHER_PROVIDER,
+    } as unknown as ScopedRow<'Encounter'>);
+
+    const refused = await app.request(`/bff/v0/encounters/${testId(3_801)}/sign`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(refused.status, 'the gate answers before the signature transition does').toBe(404);
+  });
+
+  it('a refused write leaves a denial in the trail, and no domain event', async () => {
+    /*
+     * The accountability half, and it inverts what #308 found. There, a refused
+     * READ left nothing in the trail on Postgres. Here the ungated WRITES left
+     * no access decision at all - not a denial and not a success - so the trail
+     * said a note was signed without saying whether the signer was allowed in
+     * the chart. `docs/adr/0008` makes the trail the supervisory control over
+     * exactly this.
+     */
+    const { app, dataset, sink } = aChart(false);
+    aNote(dataset, 'DRAFT');
+
+    await app.request(`/bff/v0/notes/${W_NOTE}/sign`, {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: '{}',
+    });
+
+    const actions = sink.writes().map((entry) => entry.event.action);
+    expect(actions).toContain('chart.access.denied');
+    expect(actions, 'a refused signature must not also be recorded as one').not.toContain(
+      'note.updated'
+    );
+  });
+});
+
+/**
+ * The work queues, which are the same bypass with no id in the request at all.
+ *
+ * A queue names no chart, so nothing about the request looks like a chart read
+ * - and that is exactly what made these invisible. Both list rows their crud
+ * sibling already gates on the page, and both were answering with `patientId`
+ * for charts whose own list is refused.
+ */
+describe('a work queue is not a way round the gate either', () => {
+  const STATEMENT = testId(3_700);
+  const DOSE = testId(3_710);
+
+  function aStatement(dataset: Dataset): void {
+    seed(dataset, 'Statement', {
+      ...storageColumns(STATEMENT),
+      patientId: PATIENT,
+      status: 'SENT',
+      balanceCents: 42_100,
+      dunningCycle: 1,
+      lastNoticeAt: FIXED_NOW,
+      holdUntil: null,
+      holdReason: null,
+      closedReason: null,
+      periodStart: null,
+      periodEnd: null,
+      generatedAt: FIXED_NOW,
+      deliveredVia: null,
+      deliveredAt: null,
+      pdfStorageKey: null,
+      payLinkToken: null,
+      payLinkExpiresAt: null,
+      paidAt: null,
+    } as unknown as ScopedRow<'Statement'>);
+  }
+
+  function aPendingDose(dataset: Dataset): void {
+    seed(dataset, 'Immunization', {
+      ...storageColumns(DOSE),
+      patientId: PATIENT,
+      encounterId: null,
+      status: 'COMPLETED',
+      cvxCode: '208',
+      mvxCode: null,
+      ndcCode: null,
+      display: 'COVID-19 vaccine',
+      lotNumber: null,
+      expirationDate: null,
+      siteCode: null,
+      routeCode: null,
+      doseQuantity: null,
+      doseUnit: null,
+      administeredAt: FIXED_NOW,
+      administeredById: null,
+      visDate: null,
+      refusalReasonCode: null,
+      reportedToRegistryAt: null,
+    } as unknown as ScopedRow<'Immunization'>);
+  }
+
+  it('refuses the collections worklist over a chart the reader may not open', async () => {
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    aStatement(dataset);
+
+    const gated = await app.request('/bff/v0/statements', { headers: bearer(TOKENS.billerA) });
+    const worklist = await app.request('/bff/v0/collections/worklist', {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(gated.status, 'the crud list of the same rows was already right').toBe(404);
+    expect(worklist.status).toBe(404);
+  });
+
+  it('refuses the queue when only its LAST chart is out of reach', async () => {
+    /*
+     * A one-row queue cannot tell "every chart on the page" from "the first
+     * one", and the first one is the version somebody writes by accident. So
+     * the reachable chart is generated a day earlier and the queue sorts
+     * oldest-first: the row that must refuse is the one a first-only gate
+     * never reaches.
+     */
+    const OTHER = testId(3_702);
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    seed(dataset, 'Patient', makePatientRow({ id: OTHER, mrn: 'OR-103702' }));
+    anEncounter(dataset, { id: testId(3_703), patientId: OTHER });
+    seed(dataset, 'Statement', {
+      ...storageColumns(testId(3_704)),
+      patientId: OTHER,
+      status: 'SENT',
+      balanceCents: 1_000,
+      dunningCycle: 1,
+      lastNoticeAt: FIXED_NOW,
+      holdUntil: null,
+      holdReason: null,
+      closedReason: null,
+      periodStart: null,
+      periodEnd: null,
+      generatedAt: new Date(FIXED_NOW.getTime() - 24 * 60 * 60 * 1000),
+      deliveredVia: null,
+      deliveredAt: null,
+      pdfStorageKey: null,
+      payLinkToken: null,
+      payLinkExpiresAt: null,
+      paidAt: null,
+    } as unknown as ScopedRow<'Statement'>);
+    aStatement(dataset);
+
+    const worklist = await app.request('/bff/v0/collections/worklist', {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(worklist.status).toBe(404);
+  });
+
+  it('still serves the worklist once the reader may open the chart', async () => {
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    anEncounter(dataset, { id: testId(3_701) });
+    aStatement(dataset);
+
+    const worklist = await app.request('/bff/v0/collections/worklist', {
+      headers: bearer(TOKENS.billerA),
+    });
+
+    expect(worklist.status).toBe(200);
+  });
+
+  it('refuses the registry queue over a chart the reader may not open', async () => {
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    aPendingDose(dataset);
+
+    const pending = await app.request('/bff/v0/immunisations/registry/pending', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(pending.status).toBe(404);
+  });
+
+  it('still serves the registry queue once the reader may open the chart', async () => {
+    const { app, dataset } = createTestApp();
+    baseChart(dataset);
+    anEncounter(dataset, { id: testId(3_711), providerId: SUBJECTS.clinicianA });
+    aPendingDose(dataset);
+
+    const pending = await app.request('/bff/v0/immunisations/registry/pending', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(pending.status).toBe(200);
   });
 });
 

@@ -392,6 +392,18 @@ export interface StockPostingListQuery extends BaseQuery {
   kind?: StockPostingKind;
   /** The chart a posting belongs to, for the postings that belong to one. */
   patientId?: string;
+  /**
+   * Whether the posting belongs to a chart at all, for callers that need the
+   * distinction without naming which chart.
+   *
+   * `patientId` is nullable and null is a meaning rather than an absence: a
+   * receipt, a count, a wastage and a correction belong to no patient, and so
+   * does a dispense drawn against ward stock rather than against a person. A
+   * clinical route serves the charted postings and only those, and until this
+   * existed it had no way to say so - it could ask for one chart or for all of
+   * them, and "any chart" was not expressible.
+   */
+  charted?: boolean;
   sort: 'occurredOn' | 'createdAt';
 }
 
@@ -540,14 +552,31 @@ export const stockPostingSpec: CollectionSpec<
 
   matches(row: ScopedRow<'StockPosting'>, query: StockPostingListQuery): boolean {
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    if (query.charted !== undefined && (row.patientId !== null) !== query.charted) return false;
     return equalsIfSet(query.facilityId, row.facilityId) && equalsIfSet(query.kind, row.kind);
   },
 
   where(query: StockPostingListQuery) {
+    /*
+     * The two chart filters are ANDed rather than spread, because they name one
+     * column.
+     *
+     * Spread side by side, `{ patientId: id }` and `{ patientId: { not: null } }`
+     * are the same key twice and the later one silently replaces the earlier -
+     * turning a search for one person's postings into a search for everybody's,
+     * with nothing in the object to show it happened. Under `AND` both have to
+     * hold, so a caller that sends both gets the intersection, and the
+     * contradictory pair (a named chart with `charted: false`) correctly selects
+     * nothing instead of quietly dropping one half.
+     */
+    const chart = [
+      ...(query.patientId === undefined ? [] : [{ patientId: query.patientId }]),
+      ...(query.charted === undefined ? [] : [{ patientId: query.charted ? { not: null } : null }]),
+    ];
     return {
       ...(query.facilityId === undefined ? {} : { facilityId: query.facilityId }),
       ...(query.kind === undefined ? {} : { kind: query.kind }),
-      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(chart.length === 0 ? {} : { AND: chart }),
     };
   },
 

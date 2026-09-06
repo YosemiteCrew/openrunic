@@ -362,9 +362,53 @@ export const formSubmissionSpec: CollectionSpec<
 
 /* ------------------------------------------------------------------- users */
 
+/** A column this directory can answer an identifier search against. */
+export type UserIdentifierColumn = 'npi' | 'dea';
+
+/**
+ * An identifier search, already resolved to the columns it may match.
+ *
+ * The token arrives at the FHIR boundary as `system|value` or a bare `value`,
+ * and deciding which stored identifier a system names is the boundary's job -
+ * it is the layer that knows the URIs. What reaches the repository is the
+ * answer: a value, and the columns the caller's system admits.
+ *
+ * Resolving it there rather than here is what makes "an unknown system matches
+ * nothing" expressible at all. A repository handed a raw token would have to
+ * either know the systems or fall back to matching on the value alone, and the
+ * fallback is the bug: `urn:example:staff-number|1234567893` would answer with
+ * the practitioner whose NPI happens to be 1234567893, which is a different
+ * person's identifier in a different namespace.
+ */
+export interface UserIdentifierQuery {
+  /**
+   * The value half of the token.
+   *
+   * Empty means "any identifier in the system named", which is what FHIR's
+   * `system|` form asks for.
+   */
+  value: string;
+  /**
+   * Which columns the token's system admits.
+   *
+   * Both for a bare token, one for a qualified one, and **none** for a system
+   * this server does not publish - which selects nothing rather than widening
+   * to a match on the value alone.
+   */
+  columns: readonly UserIdentifierColumn[];
+}
+
 export interface UserListQuery extends BaseQuery {
   status?: UserStatus;
   isProvider?: boolean;
+  /**
+   * NPI or DEA, matched exactly.
+   *
+   * Exact and never a prefix or a fold: an identifier is a key, and a
+   * practitioner who matched half of one is the wrong practitioner rather than
+   * a near miss.
+   */
+  identifier?: UserIdentifierQuery;
   /**
    * NUCC provider taxonomy code, matched exactly.
    *
@@ -401,6 +445,54 @@ export interface UserUpdateInput {
   isProvider?: boolean;
   locale?: string;
   status?: UserStatus;
+}
+
+/** What one column holds for a user, or null where it is unrecorded. */
+function identifierValue(row: ScopedRow<'User'>, column: UserIdentifierColumn): string | null {
+  return column === 'npi' ? row.npi : row.dea;
+}
+
+/** The in-memory half of the identifier filter. Agrees with {@link identifierWhere}. */
+function holdsIdentifier(row: ScopedRow<'User'>, query: UserIdentifierQuery): boolean {
+  return query.columns.some((column) => {
+    const held = identifierValue(row, column);
+    // `system|` asks for anyone carrying an identifier in that system, whatever
+    // its value. A column that holds nothing answers neither form.
+    return query.value === '' ? held !== null : held === query.value;
+  });
+}
+
+/**
+ * The same filter as a Prisma `where`.
+ *
+ * Two things here are deliberate and neither is obvious.
+ *
+ * No admitted column means the caller named a system this server does not
+ * publish, and the answer is an empty bundle. `{ in: [] }` is this repository's
+ * idiom for that - stated rather than achieved by omitting the clause, because
+ * an omitted clause is the widening: the search would quietly become "every
+ * practitioner", which is the failure the FHIR boundary refuses parameters to
+ * avoid.
+ *
+ * The disjunction is nested under `AND` rather than written as a second `OR`
+ * key. The free-text `q` filter already owns `OR` in this object, and two `OR`
+ * spreads onto one literal keep the later and drop the earlier in silence -
+ * exactly the shape that has produced three shipped filter bugs here. Under
+ * `AND` the two compose instead, so `?name=okafor&identifier=...` means both.
+ */
+function identifierWhere(query: UserIdentifierQuery | undefined): Record<string, unknown> {
+  if (query === undefined) return {};
+  if (query.columns.length === 0) return { id: { in: [] } };
+  const condition = query.value === '' ? { not: null } : query.value;
+  return {
+    AND: [
+      {
+        OR: query.columns.map((column) =>
+          column === 'npi' ? { npi: condition } : { dea: condition }
+        ),
+      },
+    ],
+  };
 }
 
 export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, UserListQuery> = {
@@ -448,6 +540,7 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
     if (query.status !== undefined && row.status !== query.status) return false;
     if (query.isProvider !== undefined && row.isProvider !== query.isProvider) return false;
     if (query.taxonomyCode !== undefined && row.taxonomyCode !== query.taxonomyCode) return false;
+    if (query.identifier !== undefined && !holdsIdentifier(row, query.identifier)) return false;
     return (
       query.q === undefined || containsFold([row.givenName, row.familyName, row.email], query.q)
     );
@@ -458,6 +551,7 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.isProvider === undefined ? {} : { isProvider: query.isProvider }),
       ...(query.taxonomyCode === undefined ? {} : { taxonomyCode: query.taxonomyCode }),
+      ...identifierWhere(query.identifier),
       ...(query.q === undefined
         ? {}
         : {
@@ -636,6 +730,9 @@ export const roleAssignmentSpec: CollectionSpec<
   action: 'role.assignment',
   facilityColumn: 'facilityId',
   facilityScoped: true,
+  // `facilityId` is nullable here, and on the seeded practice every row uses
+  // it: a grant with no site is a grant across the whole tenant.
+  facilityColumnOptional: true,
   // Who holds which capability, and where, is the other half of the staff
   // directory and is closed for the same reason.
   compartment: 'closed',

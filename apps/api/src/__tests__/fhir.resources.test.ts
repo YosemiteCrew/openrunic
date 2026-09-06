@@ -6,7 +6,9 @@ import {
 } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
+import { rejectUnsupportedParams } from '../fhir/params.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
+import { ROLE_PERMISSIONS } from '../policy/permissions.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -15,6 +17,7 @@ import type { ClaimStatus } from '../repositories/specs/financial.js';
 import {
   DEMO_TENANT_A,
   DEMO_TENANT_B,
+  DEMO_PORTAL_PATIENT,
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
@@ -1175,6 +1178,387 @@ describe('one crowded care team does not empty the others', () => {
     /* The assertion that fails without the per-team trim. */
     expect(byId.get(testId(1100))).toBe(1);
   });
+
+  it('leaves the rest of the page intact when one team is bigger than the whole old allowance', async () => {
+    /*
+     * The case the assertion above cannot reach, and the reason this issue was
+     * filed with the one above already passing.
+     *
+     * The old loader took one page of `MAX_TEAM_MEMBERS * rows.length + 1` and
+     * trimmed per team afterwards. With twenty-five members and two teams the
+     * allowance was forty-one, so everything fit and the trim did the rest -
+     * which is a real property, and not the one that was broken. The trim only
+     * comes too late once a single team is larger than the WHOLE allowance:
+     * then it consumes the page before any other team is reached, and the trim
+     * has nothing left to trim.
+     *
+     * Forty-five on the first team against an allowance of forty-one is that
+     * case. What a client saw was a care team with nobody on it, because a
+     * different patient's team was large - no error, no truncation flag,
+     * nothing to distinguish it from a team that really has no members.
+     */
+    const { app, dataset } = harness();
+
+    for (let index = 0; index < 45; index += 1) {
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(2000 + index)),
+        careTeamId: testId(41),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: PROVIDER,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    }
+
+    seed(dataset, 'CareTeam', {
+      ...storageColumns(testId(2100)),
+      patientId: PATIENT,
+      status: 'ACTIVE',
+      name: 'Starved team',
+      periodStart: null,
+      periodEnd: null,
+    });
+    seed(dataset, 'CareTeamParticipant', {
+      ...storageColumns(testId(2101)),
+      careTeamId: testId(2100),
+      patientId: PATIENT,
+      memberType: 'PATIENT',
+      memberUserId: null,
+      memberRelatedPersonId: null,
+      roleCode: '116154003',
+      roleSystem: 'http://snomed.info/sct',
+      roleText: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+
+    const bundle = (await (
+      await app.request('/fhir/CareTeam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const byId = new Map(
+      (bundle.entry ?? []).map((entry) => {
+        const resource = entry.resource as { id?: string; participant?: unknown[] };
+        return [resource.id, resource.participant?.length ?? 0];
+      })
+    );
+
+    // The crowded team still loses its own tail, which is the bound doing its
+    // job rather than a second bug.
+    expect(byId.get(testId(41))).toBe(20);
+    // And the team that has nothing to do with it keeps its member.
+    expect(byId.get(testId(2100))).toBe(1);
+  });
+});
+
+/**
+ * The plan-goal link, end to end.
+ *
+ * `Goal.addresses` used to carry it, which R4 forbids - its targets are the
+ * clinical concerns a goal is about, not the plan it belongs to - so the invalid
+ * reference was dropped to make the Goal conformant. That left the association
+ * in the database and nowhere a client could see it: `CarePlan.goal` is the
+ * conformant home and was not projected.
+ */
+describe('a care plan carries the goals it is working towards', () => {
+  it('names its own goals and only its own', async () => {
+    /*
+     * The harness seeds two goals on this chart: one pointing at this plan and
+     * one with no plan at all. A loader that filtered on nothing would emit
+     * both, and the resource would claim the practice is working towards a goal
+     * that belongs to no plan - which reads as a plan commitment nobody made.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const plan = (bundle.entry ?? [])
+      .map((entry) => entry.resource as { id?: string; goal?: { reference?: string }[] })
+      .find((resource) => resource.id === testId(44));
+
+    expect(plan?.goal?.map((one) => one.reference)).toEqual([`Goal/${testId(45)}`]);
+  });
+
+  it('reads the same link back through the single-resource route', async () => {
+    /* Read-by-id builds its own single-row page, so a `prepare` wired only into
+       the search would leave this one empty and nothing would say so. */
+    const { app } = harness();
+
+    const plan = (await (
+      await app.request(`/fhir/CarePlan/${testId(44)}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { goal?: { reference?: string }[] };
+
+    expect(plan.goal?.map((one) => one.reference)).toEqual([`Goal/${testId(45)}`]);
+  });
+});
+
+describe('a dispense too large to summarise is refused rather than understated', () => {
+  const patient = testId(7001);
+  const posting = testId(7002);
+  const fitting = testId(7004);
+
+  /**
+   * A chart holding one dispense this server cannot summarise, and optionally
+   * one it can.
+   *
+   * The second is what makes the search assertions mean anything: a bundle
+   * carrying an outcome and no matches would also satisfy "the client was
+   * told", and it is the wrong answer. The interesting claim is that the
+   * dispense that was fine is still served.
+   */
+  function world(alsoFitting: boolean, inCare = true): ReturnType<typeof createTestApp> {
+    const made = createTestApp();
+    const { dataset } = made;
+    seed(dataset, 'Patient', makePatientRow({ id: patient, mrn: 'OR-700100' }));
+    /* The appointment is what gives a staff principal a care relationship with
+       this chart. `inCare: false` withholds it, which is the only way to reach
+       the gate below with an otherwise ordinary token. */
+    if (inCare) {
+      seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    }
+    seed(dataset, 'StockItem', {
+      ...storageColumns(testId(7010)),
+      sku: 'MET-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind: 'DISPENSE',
+      facilityId: DEMO_FACILITY_A,
+      patientId: patient,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+
+    // Fifty-one lots against a per-posting page of fifty. Clinically absurd and
+    // structurally permitted, which is the combination that produces a silent
+    // wrong number rather than an error.
+    for (let index = 0; index < 51; index += 1) {
+      seed(dataset, 'StockLot', {
+        ...storageColumns(testId(7100 + index)),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        lotNumber: `LOT-${String(index)}`,
+        status: 'AVAILABLE',
+        expiresOn: null,
+        openedOn: null,
+        beyondUseDays: null,
+        manufacturer: null,
+        ndcCode: null,
+        receivedOn: FIXED_NOW,
+      });
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(7200 + index)),
+        postingId: posting,
+        lotId: testId(7100 + index),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 1,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: index + 1,
+      });
+    }
+
+    if (alsoFitting) {
+      seed(dataset, 'StockPosting', {
+        ...storageColumns(fitting),
+        kind: 'DISPENSE',
+        facilityId: DEMO_FACILITY_A,
+        patientId: patient,
+        encounterId: null,
+        prescriptionId: null,
+        immunizationId: null,
+        occurredOn: FIXED_NOW,
+        postedById: PROVIDER,
+        witnessedById: null,
+        reference: null,
+        note: null,
+      });
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(7300)),
+        postingId: fitting,
+        lotId: testId(7100),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 2,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: 1,
+      });
+    }
+    return made;
+  }
+
+  it('answers 501 instead of a quantity short by the lots it did not load', async () => {
+    /*
+     * The projection sums the movements it is handed and publishes the total as
+     * `quantity`, which a receiving system reads as how much medicine this
+     * person was given. The loader takes one page per posting, so a dispense
+     * drawn from more lots than that page holds was summed from part of itself:
+     * a number too low, entirely plausible, and indistinguishable from a
+     * smaller dispense.
+     *
+     * There is no approximately correct dispensed quantity. An understated one
+     * reconciles against nothing, hides a recall, and would be read as the dose
+     * actually supplied. Refusing says what is true - this server cannot
+     * represent that record - and points at the ledger, which can.
+     *
+     * The read refuses where the search below does not, and that asymmetry is
+     * the point: "give me exactly that record" has no honest partial answer,
+     * and "give me this chart's dispenses" does.
+     */
+    const { app } = world(false);
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(501);
+    const outcome = (await res.json()) as {
+      resourceType?: string;
+      issue?: { diagnostics?: string }[];
+    };
+
+    // And specifically not a resource carrying 50 where 51 were handed over.
+    expect(outcome.resourceType).toBe('OperationOutcome');
+    // The posting is named, so a client is told which record is at fault rather
+    // than only that something on this chart cannot be served.
+    expect(outcome.issue?.[0]?.diagnostics).toContain(posting);
+  });
+
+  it('refuses a reader with no care relationship before it says the record is unprojectable', async () => {
+    /*
+     * The order of the two checks in `read`, asserted rather than left to the
+     * comment that states it.
+     *
+     * `withheld` runs after `assertCareRelationship` on purpose. Run first, it
+     * answers 501 to a principal the policy layer is about to refuse - and this
+     * 501 is not an empty refusal: it names the posting and says the dispense
+     * was drawn from more than fifty lots. That is the record's id and a fact
+     * about its size, handed to a reader who is not allowed to know it exists.
+     *
+     * Nothing but the ordering stands between those two answers, `withheld` is
+     * a framework hook other modules will implement, and swapping the lines
+     * leaves the rest of the suite green. So the refusal is pinned here: 404,
+     * the same answer this chart gives for any record, with no diagnostics.
+     */
+    const { app } = world(false, false);
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(404);
+    // And specifically not the 501, which would name the record while refusing it.
+    expect(JSON.stringify(await res.json())).not.toContain(posting);
+  });
+
+  it('serves the rest of the chart and names the one it withheld', async () => {
+    /*
+     * The whole reason this bundle machinery exists.
+     *
+     * `prepare` runs for the search as well as the read, so refusing from
+     * inside it made one pathological record answer 501 for a whole chart's
+     * dispense history - and since the portal gained this resource, that is a
+     * patient unable to read any of their medicines because of one of them.
+     *
+     * Dropping the entry silently would have been the same understatement one
+     * level up: a medication list one dispense short, with nothing to say so,
+     * is indistinguishable from a patient dispensed one fewer medicine. So the
+     * search returns what it can AND says what it could not, which is what an
+     * `outcome` entry is for.
+     */
+    const { app } = world(true);
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${patient}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    const entries = bundle.entry ?? [];
+
+    // The dispense that was fine is served. Without this the bundle could carry
+    // an outcome and nothing else and still look like it passed.
+    expect(
+      entries
+        .filter((entry) => entry.search?.mode === 'match')
+        .map((entry) => (entry.resource as { id?: string }).id)
+    ).toEqual([fitting]);
+
+    // And the one that was not is named, as an outcome rather than as a match.
+    const outcomes = entries.filter((entry) => entry.search?.mode === 'outcome');
+    expect(outcomes).toHaveLength(1);
+    const issues = (outcomes[0]?.resource as { issue?: { diagnostics?: string }[] }).issue ?? [];
+    expect(issues.map((issue) => issue.diagnostics).join(' ')).toContain(posting);
+
+    /*
+     * `total` is unchanged at two. The withheld row matched - it is a dispense
+     * on this chart - and the outcome is not a match, so counting either
+     * differently would put a new wrong number in place of the old one. The gap
+     * between the total and the matches returned is exactly what the outcome
+     * explains.
+     */
+    expect(bundle.total).toBe(2);
+  });
+
+  it('emits no outcome entry when it withheld nothing', async () => {
+    /*
+     * The control that matters most, because every searchset this server
+     * produces goes through the same builder. The interesting question is not
+     * whether the new entry appears, it is whether anything else moved.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.every((entry) => entry.search?.mode === 'match')).toBe(true);
+  });
+
+  it('still serves a dispense that fits', async () => {
+    /* The control. The assertion above passes for a route that refuses
+       everything. */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('the CarePlan category filter is honoured, not merely advertised', () => {
@@ -1379,6 +1763,118 @@ describe('every served resource', () => {
       expect(((await res.json()) as FhirResource).resourceType).toBe(type);
     }
   );
+});
+
+/**
+ * Every parameter of every served resource, including `_id`.
+ *
+ * Shared by the two suites below so they cannot cover different sets: the
+ * narrowing suite exempts `_id` because it is a common parameter no module
+ * declares, and the empty-value suite must not, because the guard it checks
+ * reads the query rather than the module.
+ */
+const EMPTY_VALUE_CASES = SERVED_MODULES.filter((module) =>
+  module.interactions.includes('search-type')
+).flatMap((module) => module.params.map((name) => ({ type: module.type, name })));
+
+describe('every advertised search parameter refuses an empty value', () => {
+  /*
+   * The twin of the suite below, and the case it cannot reach.
+   *
+   * That one sends a value nothing carries and checks the row count drops. This
+   * one sends no value at all, which `SearchParams` delivers as
+   * present-and-empty rather than absent - and before this the boundary
+   * answered it three different ways. Thirteen date parameters and seven
+   * closed-value-set tokens refused it. Forty-one selected nothing, because an
+   * equality against an empty string matches no row. And seven answered with
+   * every row this practice holds:
+   *
+   *   Patient?name=  ?family=  ?given=
+   *   Practitioner?identifier=  ?name=
+   *   Organization?name=
+   *   Location?name=
+   *
+   * A contains-filter on an empty needle is a tautology and a bare token with
+   * no value admits any, so a client that filtered received the whole practice
+   * and had no way to tell - which is the failure `params.ts` opens by naming.
+   *
+   * Every parameter now refuses, including `_id`: the guard is at the boundary
+   * and reads the query rather than the module, so an exemption would have to
+   * be written rather than fallen into.
+   */
+  it.each(EMPTY_VALUE_CASES.map((one) => [`${one.type}?${one.name}`, one] as const))(
+    '%s is refused when it is present and empty',
+    async (_label, one) => {
+      const { app } = harness();
+
+      const res = await app.request(`/fhir/${one.type}?${one.name}=`, {
+        headers: bearer(TOKENS.adminA),
+      });
+
+      expect(res.status, `${one.type}?${one.name}= must not be answered with a bundle`).toBe(400);
+      /* The outcome names the parameter. A refusal that did not would leave a
+         client with several blank fields no better off than an empty bundle. */
+      const outcome = (await res.json()) as {
+        resourceType?: string;
+        issue?: { diagnostics?: string; expression?: string[] }[];
+      };
+      expect(outcome.resourceType).toBe('OperationOutcome');
+      expect(outcome.issue?.[0]?.expression).toEqual([one.name]);
+    }
+  );
+
+  it('names every empty parameter, not just the first', async () => {
+    /*
+     * One issue each, because a client that blanked three fields and is told
+     * about one goes round this loop three times. The map is over the empty
+     * names rather than over the first, and this is what pins that.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Patient?family=&given=&name=', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as { issue?: { expression?: string[] }[] };
+    expect(outcome.issue?.flatMap((issue) => issue.expression ?? [])).toEqual([
+      'family',
+      'given',
+      'name',
+    ]);
+  });
+
+  it('still answers the same searches when the parameter carries a value', async () => {
+    /*
+     * The control, and it is the assertion that stops the guard being too
+     * broad. A refusal that fired on every request would pass every case above
+     * and take the whole boundary down with it.
+     */
+    const { app } = harness();
+    const headers = bearer(TOKENS.adminA);
+
+    for (const type of ['Patient', 'Practitioner', 'Organization', 'Location'] as const) {
+      const all = await app.request(`/fhir/${type}`, { headers });
+      expect(all.status, `${type} with no parameters`).toBe(200);
+      expect(((await all.json()) as Bundle).total ?? 0).toBeGreaterThan(0);
+    }
+
+    const named = await app.request('/fhir/Patient?family=a', { headers });
+    expect(named.status).toBe(200);
+  });
+
+  it('reports an unknown parameter as unknown even when it is also empty', () => {
+    /*
+     * Order matters and is asserted. A misspelled parameter sent with no value
+     * satisfies both rules, and "not a supported search parameter" is the one
+     * that tells the client what to fix; "present but empty" would send them to
+     * put a value in a parameter this server does not have.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: '' }, accepted)).toThrow(
+      /Unsupported search parameter/u
+    );
+  });
 });
 
 describe('every advertised search parameter narrows', () => {
@@ -2720,5 +3216,327 @@ describe('a MedicationDispense filled from more than one lot', () => {
     expect(res.status).toBe(200);
     const dispense = (await res.json()) as { quantity?: { value?: number } };
     expect(dispense.quantity?.value).toBe(0.3);
+  });
+});
+
+/**
+ * A patient reading the record of their own medicines being handed over.
+ *
+ * `MedicationDispense` was served under `order.read`, which `patient-portal`
+ * does not hold, so a portal token was refused at the permission gate before
+ * the compartment narrowing it depends on was ever consulted. The chart was
+ * readable and the prescription was readable; only the record of collecting it
+ * was not.
+ *
+ * The gate is now `encounter.read`, the permission `MedicationRequest` and
+ * `MedicationStatement` are already served under. These assertions are what
+ * makes that safe rather than merely open, and they are deliberately taken at
+ * every read shape rather than at the one the change was made for: the
+ * promotion review found a chart search leaking tenant-wide because only
+ * read-by-id had been guarded, and a permission is not a boundary until every
+ * door through it has been tried.
+ */
+describe('a patient reading their own MedicationDispense', () => {
+  const OTHER_PATIENT = testId(6100);
+  const OWN_POSTING = testId(6101);
+  const OTHER_POSTING = testId(6102);
+  const RECEIPT_POSTING = testId(6103);
+  /*
+   * A dispense that belongs to no chart: a dose drawn against ward stock rather
+   * than against a person. `StockPosting.patientId` is nullable and nothing
+   * requires a chart when `kind` is DISPENSE, so this row is representable and
+   * it is the one `kind: 'DISPENSE'` alone does not exclude.
+   */
+  const WARD_POSTING = testId(6106);
+  const ITEM = testId(6110);
+  const LOT = testId(6111);
+
+  /** One dispensing posting and the movement under it, on a named chart. */
+  function seedDispense(
+    dataset: MemoryDataset,
+    posting: string,
+    patientId: string | null,
+    kind: 'DISPENSE' | 'RECEIPT' = 'DISPENSE'
+  ): void {
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind,
+      facilityId: DEMO_FACILITY_A,
+      patientId,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+    seed(dataset, 'StockMovement', {
+      ...storageColumns(testId(Number(posting.slice(-4)) + 100)),
+      postingId: posting,
+      lotId: LOT,
+      itemId: ITEM,
+      facilityId: DEMO_FACILITY_A,
+      kind: kind === 'DISPENSE' ? 'DISPENSE' : 'RECEIPT',
+      quantity: 1,
+      occurredOn: FIXED_NOW,
+      actorId: PROVIDER,
+      reason: null,
+      correctsMovementId: null,
+      lotSeq: 1,
+    });
+  }
+
+  function world(): ReturnType<typeof createTestApp> {
+    const made = createTestApp();
+    const { dataset } = made;
+    seed(dataset, 'Patient', makePatientRow({ id: DEMO_PORTAL_PATIENT, mrn: 'OR-610001' }));
+    seed(dataset, 'Patient', makePatientRow({ id: OTHER_PATIENT, mrn: 'OR-610002' }));
+    /*
+     * An appointment on each chart, which is what gives a staff principal a
+     * care relationship with it. Without them the staff control below reads
+     * 404 for the reason `assertCareRelationship` exists rather than for the
+     * permission this suite is about - a premise failing quietly and looking
+     * like the conclusion.
+     */
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(6104), patientId: DEMO_PORTAL_PATIENT })
+    );
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(6105), patientId: OTHER_PATIENT })
+    );
+    seed(dataset, 'StockItem', {
+      ...storageColumns(ITEM),
+      sku: 'AMX-250',
+      name: 'Amoxicillin 250 mg capsule',
+      unit: 'capsule',
+      rxnormCode: '308182',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockLot', {
+      ...storageColumns(LOT),
+      itemId: ITEM,
+      facilityId: DEMO_FACILITY_A,
+      lotNumber: 'LOT-610',
+      status: 'AVAILABLE',
+      expiresOn: null,
+      openedOn: null,
+      beyondUseDays: null,
+      manufacturer: null,
+      ndcCode: null,
+      receivedOn: FIXED_NOW,
+    });
+    seedDispense(dataset, OWN_POSTING, DEMO_PORTAL_PATIENT);
+    seedDispense(dataset, OTHER_POSTING, OTHER_PATIENT);
+    // A delivery booked in. It belongs to no chart, and it is what a patient
+    // must never reach through this route: it says what the practice stocks.
+    seedDispense(dataset, RECEIPT_POSTING, null, 'RECEIPT');
+    // And a dispense with no chart, which `kind` does not exclude.
+    seedDispense(dataset, WARD_POSTING, null);
+    return made;
+  }
+
+  it('reads its own dispense by id', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense/${OWN_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { id?: string }).toMatchObject({
+      resourceType: 'MedicationDispense',
+      id: OWN_POSTING,
+    });
+  });
+
+  it('finds its own dispense through a patient search', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${DEMO_PORTAL_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      OWN_POSTING,
+    ]);
+  });
+
+  it('is given only its own chart by a search that names no patient at all', async () => {
+    /*
+     * The broad-list shape, and the one the promotion review found unguarded
+     * elsewhere. A search with no `patient` parameter is the request that asks
+     * for everything, and the compartment - not the query - is what has to
+     * answer it.
+     */
+    const { app } = world();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      OWN_POSTING,
+    ]);
+  });
+
+  it('cannot read another patient dispense by id', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense/${OTHER_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    // Absent rather than forbidden, for the reason the patient routes give:
+    // a 403 would confirm the id names something.
+    expect(res.status).toBe(404);
+  });
+
+  it('cannot widen its own compartment by naming another chart in the query', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${OTHER_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bundle).entry ?? []).toEqual([]);
+  });
+
+  it('reaches no posting that belongs to no chart, and neither does staff', async () => {
+    /*
+     * A receipt, a count and a wastage carry a null chart. They are in the same
+     * table as the dispense this change opened up and they say what a practice
+     * stocks and how much of it, so they are the thing a widening here would
+     * leak.
+     *
+     * Both tokens are asserted because only the pair says which control did the
+     * work. This one is the module's own narrowing - `findById` keeps anything
+     * that is not a DISPENSE on a chart out of a clinical route for every
+     * caller - and it would still hold if the compartment did nothing. The
+     * compartment is proved by the other-patient assertions above, where staff
+     * are served the row and the portal is not.
+     */
+    const { app } = world();
+
+    for (const token of [TOKENS.portalA, TOKENS.adminA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${RECEIPT_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading a receipt`).toBe(404);
+    }
+  });
+
+  it('leaves an uncharted dispense out of the bundle, for staff as well as the portal', async () => {
+    /*
+     * The two doors, made to agree.
+     *
+     * `findById` narrows on `kind === 'DISPENSE' && patientId !== null`;
+     * `toQuery` narrowed on `kind` alone. `patientId` is nullable, so a dispense
+     * drawn against ward stock satisfies the second and not the first, and the
+     * same record answered 404 by id while appearing in the search.
+     *
+     * Both tokens are asserted because only the pair says which control did the
+     * work. The portal was never served this row - the compartment is an
+     * equality on `patientId` and null equals nothing - so the portal assertion
+     * would pass with the module unchanged. The staff assertion is the one that
+     * fails without the filter, because a staff bundle has no compartment
+     * underneath it to fall back on.
+     */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.clinicianA, TOKENS.portalA]) {
+      const res = await app.request('/fhir/MedicationDispense', { headers: bearer(token) });
+
+      expect(res.status, `${token} searching`).toBe(200);
+      const ids = ((await res.json()) as Bundle).entry?.map(
+        (entry) => (entry.resource as { id?: string }).id
+      );
+      expect(ids ?? [], `${token} must not be served an uncharted dispense`).not.toContain(
+        WARD_POSTING
+      );
+    }
+  });
+
+  it('still answers 404 for that same posting by id', async () => {
+    /* Unchanged, and asserted alongside the search so the pair is visibly the
+       same rule rather than two rules that happen to agree today. */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.portalA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${WARD_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading an uncharted dispense`).toBe(404);
+    }
+  });
+
+  it('still serves the charted dispenses through both doors', async () => {
+    /*
+     * The control, and it is the assertion that stops the filter being
+     * satisfied by a route that returns nothing. A `charted` filter inverted,
+     * or applied to the wrong column, empties the bundle - which every
+     * assertion above would report as success.
+     */
+    const { app } = world();
+
+    const search = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(search.status).toBe(200);
+    const ids = ((await search.json()) as Bundle).entry?.map(
+      (entry) => (entry.resource as { id?: string }).id
+    );
+    expect(ids).toEqual(expect.arrayContaining([OWN_POSTING, OTHER_POSTING]));
+
+    const read = await app.request(`/fhir/MedicationDispense/${OWN_POSTING}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(read.status).toBe(200);
+  });
+
+  it('is gated on a permission the portal bundle actually holds', () => {
+    /*
+     * The regression this suite exists to prevent, asserted at its source
+     * rather than through a request.
+     *
+     * Every assertion above goes through the router, so all of them would break
+     * together and for the same reason if the module's permission were changed
+     * back - which is a real answer but a slow one to read. This says the thing
+     * directly: whatever `MedicationDispense` is served under has to be
+     * something a patient's own token carries, or a patient cannot read their
+     * own record however well the compartment works.
+     */
+    const module = SERVED_MODULES.find((served) => served.type === 'MedicationDispense');
+
+    expect(module).toBeDefined();
+    expect(ROLE_PERMISSIONS['patient-portal']).toContain(module?.permission);
+  });
+
+  it('still serves the staff who could already read it', async () => {
+    /* The control. Every assertion above passes for a route nobody can reach. */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.clinicianA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${OTHER_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading a dispense`).toBe(200);
+    }
   });
 });

@@ -5,19 +5,14 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
-import {
-  assertCareRelationship,
-  assertFacilityAccess,
-  requirePermission,
-} from '../middleware/policy.js';
-import { chartIdOf } from '../policy/chart.js';
+import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Collection } from '../repositories/collection.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { gateCharts, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * List, read, create and amend, written once.
@@ -317,8 +312,7 @@ function crudRoutes<
   // before the row is serialised, so the body never forms for a refused read.
   const guardChart = async (c: Context<AppEnv>, res: typeof resource, row: TRow): Promise<void> => {
     if (res.chartFrom === undefined) return;
-    const chart = chartIdOf(res.chartFrom, row);
-    if (chart !== undefined) await assertCareRelationship(c, chart);
+    await gateCharts(c, res.chartFrom, [row]);
   };
 
   router.get(base, requirePermission(resource.readPermission), async (c) => {
@@ -335,14 +329,7 @@ function crudRoutes<
     // check; a broad clinical list of other patients' rows is refused, which is
     // the FHIR search's rule on this boundary. Only the DTOs form after the
     // gate, so a refused list never serialises the rows it read to decide.
-    if (resource.chartFrom !== undefined) {
-      const chartFrom = resource.chartFrom;
-      for (const chart of new Set(
-        page.rows.map((row) => chartIdOf(chartFrom, row)).filter((id) => id !== undefined)
-      )) {
-        await assertCareRelationship(c, chart);
-      }
-    }
+    if (resource.chartFrom !== undefined) await gateCharts(c, resource.chartFrom, page.rows);
     return c.json(toListResponse(page, (row) => resource.toDto(row)));
   });
 

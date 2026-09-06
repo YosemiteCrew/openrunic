@@ -20,6 +20,7 @@ import {
   parseDateOnly,
   referenceId,
   tokenMatches,
+  tokenSystem,
   tokenValue,
   type DateWindow,
   type FhirPaging,
@@ -244,14 +245,50 @@ const patientModule = defineFhirResource({
   toResource: patientRowToFhir,
 });
 
+/**
+ * Which stored identifier a `Practitioner?identifier=` token is asking about.
+ *
+ * A bare token names no system, so it may match either column - that is what
+ * FHIR says a bare token means, and it is what a client that does not care
+ * about the vocabulary sends. A qualified token has to agree about the system:
+ * an NPI and a DEA number are different identifiers in different namespaces,
+ * and answering `{dea-system}|1234567893` with the practitioner whose NPI is
+ * 1234567893 is a wrong answer about a different person, not a near miss.
+ *
+ * A system this server does not publish admits no column at all, which selects
+ * nothing. Falling back to the value alone would be the same wrong answer with
+ * an extra step - and unlike a refusal it would look like a result.
+ *
+ * `|value`, meaning "an identifier with no system", also admits nothing: every
+ * identifier this server emits carries one.
+ */
+function practitionerIdentifierColumns(token: string): readonly ('npi' | 'dea')[] {
+  const system = tokenSystem(token);
+  if (system === undefined) return ['npi', 'dea'];
+  if (system === SYSTEMS.npi) return ['npi'];
+  if (system === SYSTEMS.dea) return ['dea'];
+  return [];
+}
+
 const practitionerModule = defineFhirResource({
   type: 'Practitioner',
   interactions: ['read', 'search-type'],
-  params: ['name'],
+  params: ['identifier', 'name'],
   permission: 'user.read',
   collection: (repositories) => repositories.users,
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
+    /* Resolved to columns here rather than passed down as a token: the systems
+       are this boundary's vocabulary, and a repository that had to know them
+       would be the wrong place to decide what an unrecognised one means. */
+    ...(query.identifier === undefined
+      ? {}
+      : {
+          identifier: {
+            value: tokenValue(query.identifier),
+            columns: practitionerIdentifierColumns(query.identifier),
+          },
+        }),
     ...(query.name === undefined ? {} : { q: query.name }),
     sort: 'familyName' as const,
     order: 'asc' as const,
@@ -590,24 +627,64 @@ const medicationDispenseModule = defineFhirResource({
   chartFrom: 'stockPostings',
   interactions: ['read', 'search-type'],
   params: ['patient'],
-  permission: 'order.read',
-  collection: (repositories) => {
-    const postings = repositories.stockPostings;
-    return {
-      list: postings.list.bind(postings),
-      /* A read is narrowed the same way the search is. Without this, any
-         posting could be fetched by id through this route, including the
-         receipts and counts that belong to no patient at all. */
-      findById: async (id: string) => {
-        const row = await postings.findById(id);
-        return row?.kind === 'DISPENSE' && row.patientId !== null ? row : null;
-      },
-    };
-  },
+  /*
+   * `encounter.read`, the permission its own prescription is served under, and
+   * not `order.read`.
+   *
+   * A dispense is the fulfilment half of a medication record: `MedicationRequest`
+   * is what was intended, this is what was actually handed over, and
+   * `MedicationStatement` is what the patient reports taking. The other two are
+   * served under `encounter.read` and this one was not, which left a patient
+   * able to read their own prescription and not the record of collecting it.
+   *
+   * `patient-portal` holds `encounter.read` and does not hold `order.read`, so
+   * a patient-scoped token was refused here before the compartment narrowing
+   * could authorise its own record - and `stockPostingSpec` had already been
+   * widened from `closed` to an equality on `patientId` for exactly this read,
+   * with the comment saying so. The gate was the only thing left out of step
+   * with the decision.
+   *
+   * Granting the portal `order.read` instead would have been the wider change
+   * by far: `ServiceRequest` and `Specimen` are served under it, so a patient
+   * app would have gained the practice's lab ordering alongside its own
+   * medicines.
+   *
+   * It is a widening for `front-desk`, which holds `encounter.read` and not
+   * `order.read`. Reception can already read the prescription, the condition it
+   * was written for and the observations behind it; that a dispense against it
+   * was collected is the smaller fact, and answering "has my prescription been
+   * filled" is reception's job. Every other bundle holding `order.read` -
+   * `admin`, `clinician`, `read-only` - holds `encounter.read` too, so nothing
+   * loses this read.
+   */
+  permission: 'encounter.read',
+  collection: (repositories) => repositories.stockPostings,
+  /*
+   * Dispenses that belong to a chart, and nothing else in the ledger.
+   *
+   * The receipts, counts and wastages sharing this table are not clinical
+   * records, and `kind: 'DISPENSE'` alone does not exclude a dose drawn against
+   * ward stock rather than against a person. Both halves are stated once here
+   * and applied to the read and the search together; they used to be a
+   * `findById` wrapper and a `toQuery` term, which is how they came to disagree.
+   *
+   * `kind: 'DISPENSE'` does not imply a chart. `StockPosting.patientId` is
+   * nullable and a dispense drawn against ward stock rather than against a
+   * person carries null, so such a row answered 404 by id and appeared in the
+   * bundle - the same resource, present through one door and absent through the
+   * other. The disclosure is small, an item and a lot and a quantity, but a
+   * resource whose read and search narrow differently is the shape that becomes
+   * a leak the next time either is widened, and the promotion review already
+   * found one instance of exactly that.
+   *
+   * A patient-scoped token was never served these rows: the compartment is an
+   * equality on `patientId` and null equals nothing. This closes the door for
+   * the staff bundles, which have no compartment to fall back on.
+   */
+  narrow: { spec: 'stockPostings', terms: { kind: 'DISPENSE', charted: true } },
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...patientFilter(query.patient),
-    kind: 'DISPENSE' as const,
     sort: 'occurredOn' as const,
     order: 'desc' as const,
   }),
@@ -615,7 +692,8 @@ const medicationDispenseModule = defineFhirResource({
     const movementsByPosting = new Map<string, ScopedRow<'StockMovement'>[]>();
     const itemsById = new Map<string, ScopedRow<'StockItem'>>();
     const lotsById = new Map<string, ScopedRow<'StockLot'>>();
-    if (rows.length === 0) return { movementsByPosting, itemsById, lotsById };
+    const unsummable = new Set<string>();
+    if (rows.length === 0) return { movementsByPosting, itemsById, lotsById, unsummable };
 
     const pages = await Promise.all(
       rows.map(async (row) =>
@@ -628,7 +706,39 @@ const medicationDispenseModule = defineFhirResource({
         })
       )
     );
-    for (const page of pages) {
+    for (const [index, page] of pages.entries()) {
+      /*
+       * A dispense whose lines did not fit is withheld, not summed.
+       *
+       * `medicationDispenseResource` adds up the movements it is given and
+       * publishes the total as `quantity`, which a receiving system reads as
+       * how much medicine this person was handed. Loading one page per posting
+       * and summing whatever came back makes that number quietly wrong for a
+       * dispense drawn from more than `MAX_DISPENSE_MOVEMENTS` lots: too low,
+       * plausible, and indistinguishable from a smaller dispense.
+       *
+       * There is no such thing as an approximately correct dispensed quantity.
+       * An understated one reconciles against nothing, hides a recall, and
+       * would be read by a clinician as the dose that was actually supplied.
+       *
+       * This used to throw from here, which was right about the record and
+       * wrong about everything else on the page: `prepare` runs for the search
+       * as well as the read, so one pathological record made a whole chart's
+       * dispense history answer 501 - and since the portal gained this
+       * resource, that is a patient unable to read any of their medicines
+       * because of one of them.
+       *
+       * So the posting is recorded and `withheld` below decides per
+       * interaction: the search serves the other dispenses and names this one
+       * in an outcome entry, the read still answers 501. Its movements are
+       * deliberately not collected, so nothing downstream can sum a partial set
+       * even if it tried.
+       */
+      if (page.total > page.rows.length) {
+        const posting = rows[index];
+        if (posting !== undefined) unsummable.add(posting.id);
+        continue;
+      }
       for (const movement of page.rows) {
         const bucket = movementsByPosting.get(movement.postingId);
         if (bucket) bucket.push(movement);
@@ -644,8 +754,31 @@ const medicationDispenseModule = defineFhirResource({
     for (const item of items) itemsById.set(item.id, item);
     for (const lot of lots) lotsById.set(lot.id, lot);
 
-    return { movementsByPosting, itemsById, lotsById };
+    return { movementsByPosting, itemsById, lotsById, unsummable };
   },
+  /*
+   * Named rather than merely absent, and that is the whole point.
+   *
+   * Dropping the entry silently would be the same understatement one level up:
+   * a medication list one dispense short, with nothing to say so, is
+   * indistinguishable from a patient who was dispensed one fewer medicine.
+   *
+   * It does NOT tell the caller to exclude the record, because they cannot:
+   * this module declares `params: ['patient']` and nothing else, so there is no
+   * `_id`, no `:not`, and no way to select a subset of one chart's dispenses.
+   * An OperationOutcome is read by a machine that will attempt what it is told,
+   * and advice the surface does not offer is worse than none.
+   *
+   * The id is safe to name here. The page is compartment-narrowed before
+   * `prepare` runs, so it discloses nothing the bundle would not have carried -
+   * and an outcome carries the reason and the record, never its contents.
+   */
+  withheld: (row, context) =>
+    context.prepared.unsummable.has(row.id)
+      ? `MedicationDispense/${row.id} was drawn from more than ` +
+        `${String(MAX_DISPENSE_MOVEMENTS)} lots, which this server cannot summarise as a ` +
+        'single quantity. Read the stock ledger for the individual movements.'
+      : undefined,
   toResource: (row, context) => medicationDispenseResource(row, context.prepared),
 });
 
@@ -665,27 +798,20 @@ const questionnaireModule = defineFhirResource({
    */
   params: ['name'],
   permission: 'form.read',
+  collection: (repositories) => repositories.formDefinitions,
   /*
-   * `findById` is narrowed as well as the search, and it has to be narrowed
-   * here rather than in `toQuery`: a read goes straight to the collection and
-   * never builds a query, so filtering only there left every draft readable at
-   * `/fhir/Questionnaire/{id}` by anyone who could guess an id. Answering null
-   * makes that a 404, which is what an unpublished form should look like.
+   * A draft is not served through either door.
+   *
+   * The read needs saying as much as the search does: a read goes straight to
+   * the collection and never builds a query, so narrowing only `toQuery` left
+   * every draft readable at `/fhir/Questionnaire/{id}` by anyone who could
+   * guess an id. It used to be said twice, once here and once as a `findById`
+   * wrapper, which is the drift #276 removes.
    */
-  collection: (repositories) => {
-    const definitions = repositories.formDefinitions;
-    return {
-      list: definitions.list.bind(definitions),
-      findById: async (id: string) => {
-        const row = await definitions.findById(id);
-        return row?.status === 'PUBLISHED' ? row : null;
-      },
-    };
-  },
+  narrow: { spec: 'formDefinitions', terms: { status: 'PUBLISHED' } },
   toQuery: (query: SearchParams, paging: FhirPaging) => ({
     ...pageOf(paging),
     ...(query.name === undefined ? {} : { key: query.name }),
-    status: 'PUBLISHED' as const,
     sort: 'version' as const,
     order: 'desc' as const,
   }),
@@ -771,6 +897,69 @@ const procedureModule = defineFhirResource({
  */
 const MAX_TEAM_MEMBERS = 20;
 
+/**
+ * The most goals one plan contributes to a page.
+ *
+ * Same shape and same reasoning as {@link MAX_TEAM_MEMBERS}: a ceiling nobody
+ * reaches rather than a limit, applied per plan so a plan past it loses its own
+ * tail and no other plan loses anything. Deliberately NOT the global page the
+ * care team loader used to take - that shape is the bug this issue is here to
+ * stop being copied.
+ */
+const MAX_PLAN_GOALS = 20;
+
+/*
+ * WHY TWO OF THESE THREE BOUNDS TRIM AND THE THIRD REFUSES.
+ *
+ * `MAX_TEAM_MEMBERS` and `MAX_PLAN_GOALS` publish a LIST. A list one entry
+ * short is still a true statement about the entries it contains, and FHIR
+ * clients read a bounded collection as a page rather than as a census.
+ *
+ * `MAX_DISPENSE_MOVEMENTS` feeds a DERIVED TOTAL. A quantity summed from part
+ * of its inputs is not a shorter answer to the question, it is a wrong one, and
+ * nothing in the resource lets a client tell. That is the whole of the
+ * difference, and it is why making the three consistent would be the wrong
+ * move: the next bound should trim if it publishes members and refuse if it
+ * publishes an arithmetic result.
+ */
+
+/**
+ * The goals each plan on the page is working towards.
+ *
+ * The link lives on the goal - a `Goal` row carries the `carePlanId` it belongs
+ * to - so this reads it in the direction FHIR asks for it, once per plan, and
+ * hands the ids to the projection.
+ */
+async function prepareCarePlans(
+  rows: readonly ScopedRow<'CarePlan'>[],
+  repositories: Repositories
+): Promise<Map<string, string[]>> {
+  const byPlan = new Map<string, string[]>();
+  if (rows.length === 0) return byPlan;
+
+  const pages = await Promise.all(
+    rows.map(async (row) =>
+      repositories.goals.list({
+        page: 1,
+        pageSize: MAX_PLAN_GOALS,
+        sort: 'createdAt',
+        order: 'asc',
+        carePlanId: row.id,
+      })
+    )
+  );
+  for (const [index, page] of pages.entries()) {
+    const plan = rows[index];
+    if (plan !== undefined && page.rows.length > 0) {
+      byPlan.set(
+        plan.id,
+        page.rows.map((goal) => goal.id)
+      );
+    }
+  }
+  return byPlan;
+}
+
 async function prepareCareTeams(
   rows: readonly ScopedRow<'CareTeam'>[],
   repositories: Repositories
@@ -778,30 +967,41 @@ async function prepareCareTeams(
   const byTeam = new Map<string, ScopedRow<'CareTeamParticipant'>[]>();
   if (rows.length === 0) return byTeam;
 
-  const participants = await repositories.careTeamParticipants.list({
-    page: 1,
-    /*
-     * A global ceiling, and it is only safe because of the per-team trim below.
-     *
-     * On its own it is not a limit of twenty per team: rows come back ordered
-     * by creation across every team on the page, so one team with a thousand
-     * members would consume the whole allowance and every team after it would
-     * be served with no participants at all. Not an error, not a truncation a
-     * client can detect - a care team that appears to have nobody on it,
-     * because a different patient's team was malformed.
-     *
-     * The extra room past the per-team cap is what makes the overflow visible
-     * rather than indistinguishable from a team that is merely large.
-     */
-    pageSize: MAX_TEAM_MEMBERS * rows.length + 1,
-    sort: 'createdAt',
-    order: 'asc',
-    careTeamIds: rows.map((row) => row.id),
-  });
-  for (const participant of participants.rows) {
-    const existing = byTeam.get(participant.careTeamId);
-    if (existing === undefined) byTeam.set(participant.careTeamId, [participant]);
-    else if (existing.length < MAX_TEAM_MEMBERS) existing.push(participant);
+  /*
+   * One bounded query per team, rather than one page shared by all of them.
+   *
+   * The shared page was a global ceiling of `MAX_TEAM_MEMBERS * rows.length`
+   * trimmed per team afterwards, and the trim came too late: rows arrive
+   * ordered by creation across every team on the page, so one team with more
+   * members than the whole allowance consumed it, and every team after it was
+   * served with no participants at all. That is not a truncation a client can
+   * detect. It is a care team that appears to have nobody on it, because a
+   * different patient's team was large.
+   *
+   * Asking per team makes the bound mean what its name says. A team past the
+   * cap loses its own tail and no other team loses anything, which is what the
+   * old comment claimed and the old query could not deliver.
+   *
+   * The cost is one round trip per team on the page instead of one for the
+   * page. That is the same shape the dispense loader already uses, and it is
+   * the right trade here: the alternative is a correct answer for some teams
+   * and an empty one for the rest, decided by which patient's team happened to
+   * sort first.
+   */
+  const pages = await Promise.all(
+    rows.map(async (row) =>
+      repositories.careTeamParticipants.list({
+        page: 1,
+        pageSize: MAX_TEAM_MEMBERS,
+        sort: 'createdAt',
+        order: 'asc',
+        careTeamId: row.id,
+      })
+    )
+  );
+  for (const [index, page] of pages.entries()) {
+    const team = rows[index];
+    if (team !== undefined && page.rows.length > 0) byTeam.set(team.id, [...page.rows]);
   }
   return byTeam;
 }
@@ -929,7 +1129,9 @@ const carePlanModule = defineFhirResource({
     sort: 'createdAt' as const,
     order: 'desc' as const,
   }),
-  toResource: carePlanResource,
+  prepare: prepareCarePlans,
+  toResource: (row: ScopedRow<'CarePlan'>, context) =>
+    carePlanResource(row, context.prepared.get(row.id) ?? []),
 });
 
 /**

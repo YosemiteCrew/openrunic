@@ -98,7 +98,13 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { attributedTo, idParamSchema, repositories, required } from './helpers.js';
+import {
+  attributedTo,
+  idParamSchema,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * Orders, results, documents, the typed inbox and messaging.
@@ -468,7 +474,11 @@ function transitionRoutes(): Hono<AppEnv> {
       const id = pathId(c.req.param('id'));
       await parseTransitionBody(c, emptyBodySchema);
       const orders = repositories(c).orders;
-      const before = required(await orders.findById(id), NO_ORDER);
+      // Three routes through one loop, and one gate for all three. The
+      // generated read of an order gets this from `chartFrom: 'orders'`; these
+      // did not, so a clinician refused the chart could still sign, transmit
+      // and cancel a test on it (#322).
+      const before = await requiredParentChart(c, 'orders', await orders.findById(id), NO_ORDER);
       assertTransition(ORDER_TRANSITIONS, 'order', before.status, move.status);
       const row = required(
         await orders.update(id, { status: move.status, ...move.stamp?.() }),
@@ -484,7 +494,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     await parseTransitionBody(c, emptyBodySchema);
     const specimens = repositories(c).specimens;
-    const before = required(await specimens.findById(id), NO_SPECIMEN);
+    const before = await requiredParentChart(
+      c,
+      'specimens',
+      await specimens.findById(id),
+      NO_SPECIMEN
+    );
     if (before.collectedAt === null) {
       // A specimen cannot arrive before it exists. Accessioning an uncollected
       // tube means somebody scanned the wrong label, and the right answer is to
@@ -499,7 +514,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     const body = await parseTransitionBody(c, specimenRejectSchema);
     const specimens = repositories(c).specimens;
-    const before = required(await specimens.findById(id), NO_SPECIMEN);
+    const before = await requiredParentChart(
+      c,
+      'specimens',
+      await specimens.findById(id),
+      NO_SPECIMEN
+    );
     assertTransition(SPECIMEN_TRANSITIONS, 'specimen', before.status, 'UNSATISFACTORY');
     const row = required(
       await specimens.update(id, {
@@ -519,8 +539,10 @@ function transitionRoutes(): Hono<AppEnv> {
     const repos = repositories(c);
     // Read through the report rather than straight into the analyte table, so
     // an id naming a report this principal cannot see is absent rather than an
-    // empty list that reads like a report with no results.
-    required(await repos.reports.findById(id), NO_REPORT);
+    // empty list that reads like a report with no results. Gated on the way
+    // through: the read narrows by tenant, compartment and facility and never
+    // by care relationship, so reading the parent was never the check (#300).
+    await requiredParentChart(c, 'reports', await repos.reports.findById(id), NO_REPORT);
     const page = await repos.resultObservations.list(toResultObservationListQuery(input, id));
     return c.json(toListResponse(page, toResultObservationDto));
   });
@@ -530,7 +552,7 @@ function transitionRoutes(): Hono<AppEnv> {
     await parseTransitionBody(c, emptyBodySchema);
     const reviewedById = actingUserId(c);
     const reports = repositories(c).reports;
-    const before = required(await reports.findById(id), NO_REPORT);
+    const before = await requiredParentChart(c, 'reports', await reports.findById(id), NO_REPORT);
     if (before.reviewedAt !== null) {
       // An already-reviewed result is a result somebody has already acted on,
       // and a second sign-off would overwrite the name of whoever did.
@@ -569,7 +591,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const body = await parseTransitionBody(c, documentFileSchema);
     const filedById = actingUserId(c);
     const documents = repositories(c).documents;
-    const before = required(await documents.findById(id), NO_DOCUMENT);
+    const before = await requiredParentChart(
+      c,
+      'documents',
+      await documents.findById(id),
+      NO_DOCUMENT
+    );
     assertTransition(DOCUMENT_TRANSITIONS, 'document', before.status, 'FILED');
 
     const patientId = body.patientId ?? before.patientId;
@@ -611,7 +638,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     const body = await parseTransitionBody(c, documentSupersedeSchema);
     const documents = repositories(c).documents;
-    const before = required(await documents.findById(id), NO_DOCUMENT);
+    const before = await requiredParentChart(
+      c,
+      'documents',
+      await documents.findById(id),
+      NO_DOCUMENT
+    );
     assertTransition(DOCUMENT_TRANSITIONS, 'document', before.status, 'SUPERSEDED');
 
     if (body.supersededById === id) {
@@ -620,8 +652,15 @@ function transitionRoutes(): Hono<AppEnv> {
       ]);
     }
     // Read through the same scoped collection as everything else, so a document
-    // in another organisation is absent rather than forbidden.
-    required(await documents.findById(body.supersededById), NO_DOCUMENT);
+    // in another organisation is absent rather than forbidden - and gated on
+    // its own chart, which is not necessarily the chart of the document being
+    // superseded. Naming a second row is reaching into a second chart.
+    await requiredParentChart(
+      c,
+      'documents',
+      await documents.findById(body.supersededById),
+      NO_DOCUMENT
+    );
 
     const row = required(
       await documents.update(id, {
@@ -644,7 +683,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     const body = await parseTransitionBody(c, documentRejectSchema);
     const documents = repositories(c).documents;
-    const before = required(await documents.findById(id), NO_DOCUMENT);
+    const before = await requiredParentChart(
+      c,
+      'documents',
+      await documents.findById(id),
+      NO_DOCUMENT
+    );
     assertTransition(DOCUMENT_TRANSITIONS, 'document', before.status, 'ENTERED_IN_ERROR');
 
     const row = required(
@@ -661,7 +705,7 @@ function transitionRoutes(): Hono<AppEnv> {
     const body = await parseTransitionBody(c, taskCompleteSchema);
     const completedById = actingUserId(c);
     const tasks = repositories(c).tasks;
-    const before = required(await tasks.findById(id), NO_TASK);
+    const before = await requiredParentChart(c, 'tasks', await tasks.findById(id), NO_TASK);
     assertTransition(TASK_TRANSITIONS, 'task', before.status, 'DONE');
     const row = required(
       await tasks.update(id, {
@@ -680,7 +724,7 @@ function transitionRoutes(): Hono<AppEnv> {
     await parseTransitionBody(c, emptyBodySchema);
     const completedById = actingUserId(c);
     const tasks = repositories(c).tasks;
-    const before = required(await tasks.findById(id), NO_TASK);
+    const before = await requiredParentChart(c, 'tasks', await tasks.findById(id), NO_TASK);
     assertTransition(TASK_TRANSITIONS, 'task', before.status, 'CANCELLED');
     // A cancelled task has left somebody's inbox, and when it left is the
     // question the inbox metrics ask, so the same two columns are stamped as
@@ -702,7 +746,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     await parseTransitionBody(c, emptyBodySchema);
     const threads = repositories(c).messageThreads;
-    const before = required(await threads.findById(id), NO_THREAD);
+    const before = await requiredParentChart(
+      c,
+      'messageThreads',
+      await threads.findById(id),
+      NO_THREAD
+    );
     if (before.closedAt !== null) {
       throw ApiError.conflict('That thread is already closed.');
     }
@@ -714,7 +763,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     const input = parseQuery(c, messageListQuerySchema);
     const repos = repositories(c);
-    required(await repos.messageThreads.findById(id), NO_THREAD);
+    await requiredParentChart(
+      c,
+      'messageThreads',
+      await repos.messageThreads.findById(id),
+      NO_THREAD
+    );
     const page = await repos.messages.list(toMessageListQuery(input, id));
     return c.json(toListResponse(page, toMessageDto));
   });
@@ -724,7 +778,12 @@ function transitionRoutes(): Hono<AppEnv> {
     const body = await parseTransitionBody(c, messagePostSchema);
     const actor = principalOf(c);
     const repos = repositories(c);
-    const thread = required(await repos.messageThreads.findById(id), NO_THREAD);
+    const thread = await requiredParentChart(
+      c,
+      'messageThreads',
+      await repos.messageThreads.findById(id),
+      NO_THREAD
+    );
     if (thread.closedAt !== null) {
       throw ApiError.conflict('That thread is closed, so it cannot take another message.');
     }
@@ -756,8 +815,24 @@ function transitionRoutes(): Hono<AppEnv> {
   router.post('/messages/:id/read', requirePermission('message.write'), async (c) => {
     const id = pathId(c.req.param('id'));
     await parseTransitionBody(c, emptyBodySchema);
-    const messages = repositories(c).messages;
+    const repos = repositories(c);
+    const messages = repos.messages;
     const before = required(await messages.findById(id), NO_MESSAGE);
+    // A message reaches a chart only through its thread - `messageSpec` says so
+    // and declines to perform that join - so the gate is asked about the
+    // thread, in the one place that already has the message in hand.
+    //
+    // `NO_MESSAGE` decides the refusal where the thread row is genuinely
+    // absent, and not the one where the gate refuses: `assertCareRelationship`
+    // raises `No such patient.` before this message is used. Written down
+    // because the first version of the comment claimed otherwise, on the
+    // strength of the argument passed rather than of what came back.
+    await requiredParentChart(
+      c,
+      'messageThreads',
+      await repos.messageThreads.findById(before.threadId),
+      NO_MESSAGE
+    );
     // Idempotent by design. A portal that re-renders a thread must not keep
     // moving the timestamp that says when the patient first saw it, and it
     // must not fail either.

@@ -41,7 +41,7 @@ export interface DowntimeBoundaryProps {
  * component cannot call.
  */
 interface DowntimeBoundaryViewProps extends DowntimeBoundaryProps {
-  readonly translate: (key: string, values?: Record<string, string | number>) => string;
+  readonly translate: (key: string, values?: Record<string, string>) => string;
 }
 
 interface DowntimeBoundaryState {

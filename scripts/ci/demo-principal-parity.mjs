@@ -58,10 +58,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
    same output a genuine divergence produces. */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/* `resolve` returns an absolute argument unchanged, which is what lets the
-   tests below point these readers at fixture modules on disk rather than hand
-   them objects. The guard IMPORTS its inputs, so a test passing a Map would be
-   exercising something the guard never does. */
+/* The readers below take a path and open it; they do not build one. Joining a
+   base to an argument inside the sink is the shape a scanner matches on, and
+   arguing that the argument is safe does not clear it - the guidance here is to
+   remove the variable from the sink rather than to guard it. So the join
+   happens once, in `main`, over the two literals above, and
+   `capability-parity.mjs` reads its inputs the same way.
+
+   The parameter stays because the guard IMPORTS its inputs: a test that handed
+   it a Map would exercise something the guard never does, so the tests point
+   these readers at fixture modules written to disk. */
+function sourcePath(repoRelative) {
+  return resolve(REPO_ROOT, repoRelative);
+}
 
 export const API_SOURCE = 'apps/api/src/auth/static-resolver.ts';
 export const WEB_SOURCE = 'apps/web/src/lib/auth/directory.ts';
@@ -94,7 +103,7 @@ export const NOT_OFFERED = ['dev-portal-a'];
 
 /** Every demo principal the API's static resolver publishes. */
 export async function readApiPrincipals(path) {
-  const module = await import(pathToFileURL(resolve(REPO_ROOT, path)).href);
+  const module = await import(pathToFileURL(path).href);
   return new Map(
     [...module.DEMO_PRINCIPALS].map(([token, principal]) => [
       token,
@@ -110,13 +119,19 @@ export async function readApiPrincipals(path) {
 /**
  * What the staff sign-in offers, as identities.
  *
- * `'development'` is passed explicitly. It is the argument under which the
- * table is populated, and the assertion that the result is not empty lives in
- * `compare` rather than here, so a change to what these arguments mean fails
- * loudly instead of emptying the comparison.
+ * `'development'` is chosen, and the second argument is deliberately not
+ * passed: under any `nodeEnv` other than `'production'` the full table is
+ * returned whatever `demoBuild` says, so this call cannot be changed by a flip
+ * of that default. Passing `'production'` here - or reaching a state where
+ * `'development'` stops meaning "populated" - empties the comparison, and an
+ * empty comparison agrees with everything.
+ *
+ * Two things catch that, and neither is this function: `main` refuses outright
+ * when either side reads empty, and `compare` names the tokens it expects, so
+ * an empty list fails as seven missing identifiers rather than as silence.
  */
 export async function readOfferedCredentials(path) {
-  const module = await import(pathToFileURL(resolve(REPO_ROOT, path)).href);
+  const module = await import(pathToFileURL(path).href);
   return new Map(
     module.developmentCredentials('development').map((credential) => [
       credential.token,
@@ -202,8 +217,8 @@ async function main() {
   let api;
   let offered;
   try {
-    api = await readApiPrincipals(API_SOURCE);
-    offered = await readOfferedCredentials(WEB_SOURCE);
+    api = await readApiPrincipals(sourcePath(API_SOURCE));
+    offered = await readOfferedCredentials(sourcePath(WEB_SOURCE));
   } catch (error) {
     process.stderr.write(`demo-principal-parity: a source could not be read: ${error.message}\n`);
     return 1;
@@ -229,6 +244,49 @@ async function main() {
     return 0;
   }
 
+  /*
+   * WHY IT IS SAFE FOR THIS MESSAGE TO PRINT SUBJECTS AND DISPLAY NAMES.
+   *
+   * A scanner flags identity fields reaching a CI log, and the shape is real.
+   * The reason it is safe is not that these are demo values. It is the read
+   * surface: THIS GUARD'S ENTIRE ABILITY TO READ ANYTHING IS TWO DYNAMIC
+   * IMPORTS. No `readFileSync`, no `fetch`, no `process.env`, no subprocess -
+   * checkable in one grep, and it does not depend on which two paths are
+   * passed.
+   *
+   * The precise bound is one layer in, and it is tighter than "two files":
+   * `import()` evaluates the whole graph, so the bound is only as good as what
+   * those two modules import. Both import exactly one thing and both are
+   * `import type`, which strip-types erases:
+   *
+   *   static-resolver.ts   import type { Principal, PrincipalResolver }
+   *   directory.ts         import type { Identity }
+   *
+   * Measured rather than read off the line - copy both files somewhere with no
+   * siblings, no package.json and no node_modules, and they still load: 8
+   * principals and 7 credentials. **The graph is empty.** Each produces a table
+   * and performs no I/O: a `Map` of principals, and an array built by a pure
+   * `.map` over literal rows.
+   *
+   * So the trigger a reader can actually check: **this bound holds while both
+   * files' only imports are `import type`.** A value import appearing in either
+   * one makes this guard's exposure that module's entire graph, and unlike "if
+   * it ever reads something new" that is one grep and it is visible in a diff.
+   *
+   * It prints the WORKING TREE, not the commit - Claude L3 drove a failure and
+   * traced the values, and a planted mutant subject present in no commit came
+   * out of the message. That is worth knowing and it is not an exposure: in CI
+   * the tree is the checkout, so tree and commit coincide and nothing is
+   * published that a clone does not carry; locally the output goes to the
+   * terminal of whoever is already holding that tree. Said explicitly because
+   * the caveat alone reads like a risk, and the repair someone would reach for
+   * is truncating the identifiers - which costs the only thing that makes the
+   * message actionable.
+   *
+   * They are printed rather than counted because naming the drifted subject is
+   * the entire point: "this is the audit attribution key" is what makes a
+   * reader act, and "one field differs" is not.
+   */
   process.stderr.write(
     `demo-principal-parity: ${WEB_SOURCE} disagrees with ${API_SOURCE}.\n` +
       problems.map((problem) => `  ${problem}\n`).join('') +

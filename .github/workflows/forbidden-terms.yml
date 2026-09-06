@@ -43,6 +43,43 @@ name: Forbidden Terms
 # answer here is not evidence about it.
 #
 # ---------------------------------------------------------------------------
+# THIS CONTEXT IS REQUIRED ON `dev` AS OF 2026-09-06, AND THAT CHANGED THE COST
+# OF EVERY SENTENCE ABOVE
+# ---------------------------------------------------------------------------
+#
+# Until then it was advisory: it went red and merges proceeded, which is how it
+# sat red on every pull request for weeks while both `FORBIDDEN_TERMS_*` secrets
+# were absent and nobody was obliged to notice. It is now one of five required
+# contexts on the `dev` ruleset, and the external pre-commit hook is no longer
+# the only blocking enforcement of this rule.
+#
+# Three consequences, none of which the paragraphs above account for:
+#
+# 1. THE FORK TRADE IS NOW ENFORCED, AND HAS NEVER BEEN EXECUTED. The count
+#    above ("243 pull requests and ZERO from a fork") was a sound basis for
+#    "red-on-fork costs nothing". It is not a basis for "BLOCKED-on-fork costs
+#    nothing", because the two differ only in the case that has never happened.
+#    Nobody in this organisation can drive that path without opening a fork pull
+#    request, so the fork branch below is reasoned about, never executed, and now
+#    blocking. The first fork contributor finds out.
+#
+# 2. FAIL-CLOSED NOW COSTS THE BRANCH. This job exits 2 when the pattern or the
+#    corpus is missing, which is correct and is stated below. While it was
+#    advisory that cost a red decoration; now it makes every pull request on
+#    `dev` unmergeable. Both secrets were created 2026-09-06T11:09Z - hours
+#    before they became load-bearing - so a rotation, an accidental deletion or
+#    an org policy change is a merge-blocking event for everyone, and restoring
+#    them needs whoever holds their contents. That is an operational dependency
+#    with no owner named anywhere; name one before assuming it is covered.
+#
+# 3. A REQUIRED CONTEXT IS MATCHED BY STRING, so a typo in the ruleset blocks
+#    forever and passes every check of this workflow. Verified against a real
+#    pull request's rollup rather than by reading: all five required contexts,
+#    including this job's `name:`, appear in what a merged PR actually reported.
+#    Re-run that comparison after renaming any job, because the rename is the
+#    moment the two strings diverge.
+#
+# ---------------------------------------------------------------------------
 # TWO THINGS NOT TO DO WHEN THE FORK RED BECOMES ANNOYING
 # ---------------------------------------------------------------------------
 #

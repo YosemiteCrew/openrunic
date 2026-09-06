@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { createApp } from '../app.js';
 import { toHonoPath } from '../openapi/registry.js';
-import { buildOpenApiDocument, toJsonSchema } from '../openapi/spec.js';
+import { buildOpenApiDocument, byTagName, toJsonSchema } from '../openapi/spec.js';
 import { internalRouteContracts } from '../routes/index.js';
 
 import { bearer, createTestApp, TOKENS } from './support.js';
@@ -218,13 +218,34 @@ describe('the OpenAPI document', () => {
     });
   });
 
-  it('lists one tag per aggregate, sorted', () => {
+  it('lists one tag per aggregate, sorted by the comparator the document uses', () => {
     const document = buildOpenApiDocument(internalRouteContracts());
     const tags = document.tags.map((tag) => tag.name);
 
-    expect(tags).toEqual([...tags].sort());
+    /* Asserted with `byTagName`, not a bare `.sort()`. Before #354 the source
+       ordered with `localeCompare` and this line expected code-unit order: two
+       different comparators that agree only because every tag is plain
+       lower-case ASCII, so the assertion passed without testing what it named. */
+    expect(tags).toEqual([...tags].sort(byTagName));
     expect(tags).toContain('patients');
     expect(tags).toContain('claims');
+  });
+
+  it('orders tag names by code unit, which is the same order in every runtime', () => {
+    /* The document's own 32 tags cannot exercise this: every one is plain
+       lower-case ASCII, and no comparator disagrees on those. The case the
+       comparator exists for is the one no fixture drawn from the document could
+       show, so the identifiers here are chosen to differ. */
+    const differing = ['orders.Write', 'orders.audit', 'orders.write'];
+
+    expect([...differing].sort(byTagName)).toEqual([
+      'orders.Write',
+      'orders.audit',
+      'orders.write',
+    ]);
+    expect([...differing].sort((a, b) => a.localeCompare(b))).not.toEqual(
+      [...differing].sort(byTagName)
+    );
   });
 
   it('documents every error status the routes can produce', () => {

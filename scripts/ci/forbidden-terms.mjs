@@ -132,12 +132,29 @@ export function compilePattern(source) {
  * Two separate jobs, one predicate, and it is not a coincidence that the same
  * character set answers both.
  *
- * FIRST, the two implementations agree. This pattern is consumed twice - here
- * through `new RegExp(source, 'i')`, and by the machine-local hook through
- * `grep -inE`, which is POSIX ERE. `\b`, `\d`, a quantifier or a class can
- * mean different things in the two dialects, and then the value is a
+ * FIRST, the two implementations agree ON CONSTRUCTS. This pattern is consumed
+ * twice - here through `new RegExp(source, 'i')`, and by the machine-local hook
+ * through `grep -inE`, which is POSIX ERE. `\b`, `\d`, a quantifier or a class
+ * can mean different things in the two dialects, and then the value is a
  * TRANSLATION between them rather than one value used twice. Inside this
  * alphabet there is no construct they can disagree about.
+ *
+ * BE PRECISE ABOUT WHAT THAT DOES NOT COVER, because the narrower statement is
+ * the true one and the wider one was written here first. Removing construct
+ * disagreement does not make the two implementations identical: they can still
+ * differ on the SAME in-shape value, because case folding is a property of the
+ * engine and the locale rather than of the pattern. Measured - `s` against
+ * U+017F LATIN SMALL LETTER LONG S is no match for `new RegExp(s,'i')` and for
+ * BSD grep in every locale (this is what our machines have, bytes `61c5bf62`
+ * verified by `od`, with `aSb`/`azb` controls on both sides), and a MATCH for
+ * GNU grep 3.8 under `LC_ALL=C.UTF-8`. Reported by another machine; not
+ * reproducible here, where there is no GNU grep.
+ *
+ * So the agreement rests partly on which `grep` is on `PATH`, and
+ * `PATTERN_SHAPE` cannot reach that. It is not pinned by a test because a CI
+ * test would assert GNU grep's behaviour, which is not the implementation the
+ * claim is about. The direction is harmless: grep matching MORE means a local
+ * hook false-positives, never that something CI would block gets through.
  *
  * SECOND, `alternativesIn` below is exact. Counting by splitting on `|` is
  * right for a plain alternation and wrong the moment a group, an escaped pipe

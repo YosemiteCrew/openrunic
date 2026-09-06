@@ -4,10 +4,11 @@
 // Both repositories are public. Prior art may be studied freely; the source may
 // never be NAMED - not in code, comments, tests, fixtures, docs, commit
 // messages, branch names, or pull-request text. Until this script existed the
-// rule was enforced by a git hook on three laptops, and a hook is a reminder
-// rather than a gate: `pnpm install` runs husky's `prepare`, which rewrites
-// `core.hooksPath` for the whole clone, and the guard is disarmed until somebody
-// notices. That happened seven times in one day and reached a commit once.
+// rule was enforced by a git hook on each contributor's machine, and a hook is
+// a reminder rather than a gate: `pnpm install` runs husky's `prepare`, which
+// rewrites `core.hooksPath` for the whole clone, and the guard is disarmed until
+// somebody notices. That happened seven times in one day and reached a commit
+// once.
 //
 // WHAT THIS SCRIPT MUST NEVER DO
 //
@@ -145,9 +146,10 @@ export function compilePattern(source) {
  * differ on the SAME in-shape value, because case folding is a property of the
  * engine and the locale rather than of the pattern. Measured - `s` against
  * U+017F LATIN SMALL LETTER LONG S is no match for `new RegExp(s,'i')` and for
- * BSD grep in every locale (this is what our machines have, bytes `61c5bf62`
+ * BSD grep in every locale (which is the grep a BSD userland puts on `PATH`,
+ * bytes `61c5bf62`
  * verified by `od`, with `aSb`/`azb` controls on both sides), and a MATCH for
- * GNU grep 3.8 under `LC_ALL=C.UTF-8`. Reported by another machine; not
+ * GNU grep 3.8 under `LC_ALL=C.UTF-8`. Reported from a GNU userland; not
  * reproducible here, where there is no GNU grep.
  *
  * So the agreement rests partly on which `grep` is on `PATH`, and
@@ -556,7 +558,7 @@ function main(argv) {
 // filesystem, so a real script reached through a linked parent directory fails
 // the comparison exactly as a linked script does, with nothing linked inside
 // the repository and nothing in the diff. There is a live instance of that on
-// every machine here: `$TMPDIR` sits behind `/var -> /private/var`.
+// any macOS host: `$TMPDIR` sits behind `/var -> /private/var`.
 //
 // Falls back to the lexical pair rather than throwing. A realpath that fails
 // means the entry has gone missing under us, which is not a reason to make

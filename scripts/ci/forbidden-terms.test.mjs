@@ -907,9 +907,9 @@ test('invoked through a symlinked PARENT DIRECTORY the CLI still runs', () => {
   // resolves only the script's own last component passes the case above and
   // still no-ops here.
   //
-  // There is a live instance of this layout on every machine here, which is how
-  // it was found: `$TMPDIR` sits behind `/var -> /private/var` on macOS, so a
-  // rig placed there reproduces the bug with nothing linked at all.
+  // There is a live instance of this layout on any macOS host, which is how it
+  // was found: `$TMPDIR` sits behind `/var -> /private/var`, so a rig placed
+  // there reproduces the bug with nothing linked at all.
   const linkedParent = path.join(mkdtempSync(path.join(os.tmpdir(), 'ft-dir-')), 'ci');
   symlinkSync(path.dirname(SCRIPT), linkedParent);
   const viaParent = path.join(linkedParent, path.basename(SCRIPT));

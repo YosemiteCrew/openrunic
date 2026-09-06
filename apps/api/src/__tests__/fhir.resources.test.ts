@@ -1997,6 +1997,92 @@ describe('every advertised search parameter narrows', () => {
       }))
   );
 
+  /*
+   * The cases that cannot narrow, and the assertions that keep the list honest.
+   *
+   * `absentValue` sends a value nothing carries. For an enum-validated
+   * parameter that value is not merely absent, it is not a code at all, so the
+   * module refuses it with a 400 before any filter runs and the case proves
+   * nothing about whether the parameter narrows. Allowing a refusal through is
+   * right - refusing a value is not ignoring it - but it used to be allowed
+   * through *silently*: eight of these cases returned before asserting anything
+   * and were counted as coverage. That is the failure this suite exists to
+   * catch, one level up from where it catches it.
+   *
+   * Both directions are checked. A parameter that starts being refused has to
+   * be added here deliberately; one that stops being refused removes itself;
+   * and an entry naming a parameter no module declares fails rather than going
+   * on excusing a case that no longer runs.
+   *
+   * Each entry also names the test that does cover the parameter, and that
+   * pairing was measured rather than assumed: the emitted filter key was
+   * renamed at each module's `toQuery`, so the token still validates and only
+   * the filter is lost, and the whole api suite was run per arm. Every arm
+   * failed exactly the test paired with it here and nothing else.
+   *
+   *   CarePlan?status        CarePlan returns only rows carrying the status
+   *   CareTeam?status        CareTeam ... (one `it.each` over `advertising`)
+   *   Device?status          Device ...
+   *   Observation?status     Observation ...
+   *   Claim?status           finds the one claim whose state maps to the code,
+   *                          not its neighbours
+   *   Goal?lifecycle-status  narrows by lifecycle status and refuses a code
+   *                          outside the value set
+   *   Patient?birthdate      fhir.test.ts, searches by _id, identifier, name,
+   *   Patient?gender         family, given, birthdate and gender
+   *
+   * That table is a measurement and deliberately not a guard, which is why it
+   * is a comment and the set below is only labels. Asserting those names still
+   * appear in the two suites does not work: they would be written here, in a
+   * file the scan reads, so the haystack would contain every needle by
+   * construction and a misspelt entry passes. Matching the declaration instead
+   * does not rescue it - four of the eight are rendered by an `it.each` from
+   * `'%s returns only rows carrying the status it was asked for'`, so their
+   * full names exist in no source line. Delete one of those tests and nothing
+   * here objects; re-run the rename arm rather than trusting the table.
+   *
+   * `toBe(400)` rather than the 4xx range on purpose: 401, 403 and 404 do not
+   * mean "not a code in this value set", and a case that began answering one of
+   * those would be an authorisation or routing fault wearing an exemption.
+   *
+   * There is deliberately no floor on the size of this map. Emptying it does
+   * not go unnoticed - the eight cases below then fail one by one, each naming
+   * itself - and a cardinality assertion here would fire for that same cause
+   * with a worse message than the cases give.
+   */
+  const REFUSES_THE_ABSENT_VALUE: ReadonlySet<string> = new Set([
+    /* Enum-validated: the probe value is not a code in the resource's value
+       set, so the module refuses it before any filter runs. */
+    'CarePlan?status',
+    'CareTeam?status',
+    'Claim?status',
+    'Device?status',
+    'Goal?lifecycle-status',
+    'Observation?status',
+    /* Format-validated, and refused in `patientModule.toQuery` before the query
+       is built. Both are covered by the one Patient search case, which is in
+       `fhir.test.ts` rather than this file. */
+    'Patient?birthdate',
+    'Patient?gender',
+  ]);
+
+  it('exempts only parameters that still exist', () => {
+    /* The other end of the exemption. A parameter removed from a module, or a
+       resource no longer served, leaves an entry here that nothing else would
+       notice - and the entry would go on excusing a case that no longer runs.
+       The reverse direction, an exemption for a parameter that does narrow, is
+       asserted by the case itself. */
+    const labels = new Set(cases.map((one) => `${one.type}?${one.name}`));
+
+    for (const exempt of REFUSES_THE_ABSENT_VALUE) {
+      expect(
+        [...labels],
+        `${exempt} is exempt from narrowing but is not a case: the parameter or the ` +
+          `resource is gone, so the exemption should go too`
+      ).toContain(exempt);
+    }
+  });
+
   it('has a case for every parameter of every served resource', () => {
     /* The guard on the guard. A module whose params list were read wrongly
        would produce no cases and this suite would pass by testing nothing. */
@@ -2024,9 +2110,31 @@ describe('every advertised search parameter narrows', () => {
         headers,
       });
 
-      if (res.status >= 400 && res.status < 500) return;
+      const label = `${one.type}?${one.name}`;
+
+      if (res.status >= 400 && res.status < 500) {
+        expect(
+          res.status,
+          `${label} was refused with ${String(res.status)}. An exempted case is one whose ` +
+            `value set rejects the probe value, which is a 400; anything else here is a ` +
+            `different fault being read as one`
+        ).toBe(400);
+        expect(
+          [...REFUSES_THE_ABSENT_VALUE],
+          `${label} refuses the probe value, so this case cannot tell a working filter from ` +
+            `a dropped one. Add it to REFUSES_THE_ABSENT_VALUE, naming the test that does ` +
+            `cover it, or give absentValue a code this parameter accepts`
+        ).toContain(label);
+        return;
+      }
 
       expect(res.status).toBe(200);
+      expect(
+        [...REFUSES_THE_ABSENT_VALUE],
+        `${label} answers 200, so it is no longer exempt from proving that it narrows: ` +
+          `remove it from REFUSES_THE_ABSENT_VALUE`
+      ).not.toContain(label);
+
       const filtered = (await res.json()) as Bundle;
       expect(
         filtered.total,

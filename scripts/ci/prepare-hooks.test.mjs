@@ -39,7 +39,7 @@ test('restores only a setting that existed before husky and that husky changed',
  * husky, and depending on the real binary would make these cases fail for
  * reasons that have nothing to do with the subject.
  */
-function repoWithStubHusky({ before, huskyExit = 0 }) {
+function repoWithStubHusky({ before, huskyExit = 0, lockConfig = false }) {
   const dir = mkdtempSync(path.join(tmpdir(), 'prepare-hooks-'));
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (before !== undefined) {
@@ -47,9 +47,15 @@ function repoWithStubHusky({ before, huskyExit = 0 }) {
   }
   const bin = path.join(dir, 'bin');
   mkdirSync(bin);
+  // The DIRECTORY, not the file: `git config` writes through a lock file and a
+  // rename, so `chmod 0444 config` leaves the write SUCCEEDING. A read-only
+  // `.git` stops the lock file being created, which is what actually fails it.
+  // Kept as a comment because the version that does not work looks more correct
+  // than the one that does. Raised in review.
+  const lock = lockConfig ? 'chmod 0555 .git\n' : '';
   writeFileSync(
     path.join(bin, 'husky'),
-    `#!/bin/sh\ngit config core.hooksPath .husky/_\nexit ${huskyExit}\n`
+    `#!/bin/sh\ngit config core.hooksPath .husky/_\n${lock}exit ${huskyExit}\n`
   );
   chmodSync(path.join(bin, 'husky'), 0o755);
   return { dir, bin };
@@ -97,4 +103,20 @@ test('a failing husky is a failing prepare, and the value is not touched', () =>
 
   assert.equal(result.status, 3);
   assert.doesNotMatch(result.stderr, /kept at/u);
+});
+
+test('a restore that fails is a failing prepare, and it says so', () => {
+  // Without this case the whole `status !== 0` branch can be deleted and the
+  // suite stays green - a failed restore would return 0 while leaving the
+  // machine disarmed, which is the exact state this script exists to prevent,
+  // arriving in the recovery path. Raised in review.
+  const repo = repoWithStubHusky({ before: '/outside/the/tree', lockConfig: true });
+
+  const result = run(repo);
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /could not be put back/u);
+  assert.doesNotMatch(result.stderr, /kept at/u, 'it must not also claim success');
+  assert.equal(hooksPath(repo.dir), '.husky/_');
+  chmodSync(path.join(repo.dir, '.git'), 0o755);
 });

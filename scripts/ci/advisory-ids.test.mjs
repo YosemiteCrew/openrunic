@@ -559,6 +559,25 @@ test('a missing identifier is exit 1 and names where it is cited', async () => {
   assert.match(output, /pnpm-workspace\.yaml:\d+/u);
 });
 
+test('a real identifier outside the local alphabet is exit 1 with the repair named', async () => {
+  const { code, output } = await run((id) =>
+    Promise.resolve(
+      id.startsWith('GHSA')
+        ? {
+            id,
+            state: 'stale-syntax',
+            detail: 'exists but falls outside this guard; widen SCHEMES[0].wellFormed',
+          }
+        : { id, state: 'exists' }
+    )
+  );
+
+  assert.equal(code, 1);
+  assert.match(output, /real identifier\(s\) outgrew the local syntax/u);
+  assert.match(output, /widen SCHEMES\[0\]\.wellFormed/u);
+  assert.equal(output.includes('do not exist'), false);
+});
+
 /**
  * The two ways to be missing are not the same sentence, and the report has to
  * say which one it is.
@@ -697,9 +716,9 @@ test('a string that merely contains a valid identifier is refused', async () => 
  * request to be decided, so it is an answer, and spending exit 2 on it would
  * make the one code that means "do not trust this run" ambiguous.
  */
-test('a spelling the register could not have issued is missing, not unavailable', async () => {
+test('a malformed length the register could not have issued is missing without a request', async () => {
   const impl = stubFetch(status(200));
-  const result = await resolveOne('GHSA-abcd-efgh-ijkl', 'ghsa', impl);
+  const result = await resolveOne('GHSA-abcd-efg-ijkl', 'ghsa', impl);
 
   assert.equal(result.state, 'missing');
   assert.equal(impl.calls.length, 0, 'a decided answer does not need the network');
@@ -708,6 +727,37 @@ test('a spelling the register could not have issued is missing, not unavailable'
     'the GitHub advisory database',
     'the reader has to be told who would have issued it'
   );
+});
+
+/**
+ * The GHSA alphabet is observed history rather than a contract. A correctly
+ * shaped identifier outside it can therefore mean either a fabrication or a
+ * real identifier issued after GitHub widened the alphabet. Only the registry
+ * can separate those states.
+ */
+test('a real GHSA outside the observed alphabet reports stale syntax', async () => {
+  const impl = stubFetch(status(200));
+  const result = await resolveOne('GHSA-abcd-efgh-ijkl', 'ghsa', impl);
+
+  assert.equal(result.state, 'stale-syntax');
+  assert.match(result.detail, /widen SCHEMES\[0\]\.wellFormed/u);
+  assert.equal(impl.calls.length, 1);
+});
+
+test('a fabricated GHSA outside the observed alphabet is still missing', async () => {
+  const impl = stubFetch(status(404));
+  const result = await resolveOne('GHSA-abcd-efgh-ijkl', 'ghsa', impl);
+
+  assert.equal(result.state, 'missing');
+  assert.equal(impl.calls.length, 1);
+});
+
+test('an out-of-alphabet GHSA does not become fabricated when its registry is unavailable', async () => {
+  const impl = stubFetch(status(503), status(503));
+  const result = await resolveOne('GHSA-abcd-efgh-ijkl', 'ghsa', impl);
+
+  assert.equal(result.state, 'unavailable');
+  assert.equal(impl.calls.length, 2);
 });
 
 /**

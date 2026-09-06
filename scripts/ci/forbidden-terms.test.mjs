@@ -422,9 +422,11 @@ test('a healthy pattern and corpus produce no problems', () => {
 test('a known positive the pattern misses is a problem, reported by position', () => {
   const problems = selfTest({
     pattern,
-    // Three entries, so the arity check is satisfied and the ONE problem below
-    // is the missed positive rather than two problems collapsed into a count.
-    blockCorpus: ['acmehealth', 'acme  health', 'acme-health'],
+    // Entry 2 is deliberately mangled so the pattern misses it. Every
+    // alternative still needs an entry of its OWN behind it, or the
+    // per-alternative check fires too and this case stops being about the
+    // missed positive - which is what happened when that check was added.
+    blockCorpus: ['acmehealth', 'acme  health', 'acme-health', 'acme health'],
     passCorpus,
     minCorpus: 2,
   });
@@ -471,33 +473,90 @@ test('a pattern that matches this repository own prose is a problem', () => {
   assert.doesNotMatch(problems[0], /plain alternation/u, 'this case must not be a shape failure');
 });
 
+test('the compiled pattern folds case the way the other implementation does', () => {
+  // `'i'` and NOT `'iu'`, pinned behaviourally rather than by reading the flags
+  // string - the flags are two characters that read like a tidy-up next to the
+  // `/u` on PATTERN_SHAPE twenty lines away, and PATTERN_SHAPE cannot see this
+  // because `u` changes folding on the HAYSTACK rather than on the pattern.
+  //
+  // Under `iu`, `k` matches U+212A KELVIN SIGN. Under `i` it does not, and
+  // neither does the machine-local hook's POSIX `grep -inE`. So the missing `u`
+  // is what makes "one secret used in two implementations" true rather than
+  // "two implementations that agree on ASCII". Raised in review.
+  const kelvin = 'a\u212Ab';
+
+  // The haystack asserted by its BYTES. A literal that silently degraded to
+  // ASCII would make every row below pass for the wrong reason - which is how
+  // this was first measured wrongly.
+  assert.equal(Buffer.from(kelvin, 'utf8').toString('hex'), '61e284aa62');
+
+  assert.equal(compilePattern('k').test(kelvin), false, 'the u flag has been added');
+  // Controls: the same pattern on an ordinary capital, and on a letter it must
+  // never match. Without them a compiled pattern that matches nothing at all
+  // would satisfy the row above.
+  assert.equal(compilePattern('k').test('aKb'), true);
+  assert.equal(compilePattern('k').test('azb'), false);
+});
+
 // ---------------------------------------------------------------------------
 // The direction the corpus pass cannot see
 // ---------------------------------------------------------------------------
 
-test('an alternative with no corpus entry behind it is a problem', () => {
-  // The gap this check closes. The known-positives pass walks the CORPUS, so it
-  // answers "the pattern catches everything the corpus knows about" and is blind
-  // to the converse: a seventh alternative against a six-entry corpus is
-  // exercised by nothing, and a typo in it protects nothing while looking
-  // exactly like a term that is guarded.
+test('an alternative no corpus entry exercises is a problem, reported by position', () => {
+  // The gap the COUNT cannot see, and the count is green on exactly this input.
+  // Three entries against three alternatives satisfies `3 >= 3` while two
+  // alternatives are matched by nothing - three spellings of one term and none
+  // of another, which is what a corpus of variants naturally drifts into.
+  // Raised in review after the count shipped.
   const problems = selfTest({
     pattern,
-    blockCorpus: ['acmehealth', 'acme health'],
+    blockCorpus: ['acmehealth', 'acmehealth ltd', 'a acmehealth thing'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(problems.length, 1, 'the count must stay silent here, or this proves nothing');
+  assert.match(problems[0], /alternative\(s\) at position\(s\) 2, 3/);
+  assert.equal(problems[0].toLowerCase().includes('acme'), false);
+});
+
+test('a corpus shorter than the alternation is a problem even when all of it is exercised', () => {
+  // The count's own separating input, and it is what shows the two checks are
+  // not one. A single entry containing every term exercises all three
+  // alternatives, so the per-alternative check is silent - and the corpus is
+  // still one entry against three terms, which is what the count is for.
+  const problems = selfTest({
+    pattern,
+    blockCorpus: ['acmehealth and acme health and acme-health'],
     passCorpus,
     minCorpus: 1,
   });
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /claims 3 alternatives and the must-block corpus has 2/);
+  assert.match(problems[0], /claims 3 alternatives and the must-block corpus has 1/);
 });
 
-test('the floor and the arity check are independent, in both directions', () => {
-  // Neither subsumes the other, which is the reason both exist.
-  //
-  // BOTH secrets truncating together is the case the arity check cannot see: a
-  // pattern cut to one alternative against a corpus cut to one entry satisfies
-  // 1 >= 1, and only the literal floor written in the workflow notices that the
-  // pair has shrunk.
+test('a corpus two short of the alternation still fires, which separates removed from off-by-one', () => {
+  // Every other fixture is exactly one short, so deleting the count and
+  // weakening it to `< claimed - 1` redden an identical set and the two are
+  // indistinguishable. At two short the weakened form still fires and the
+  // deleted one does not. Raised in review; six lines of fixture.
+  const problems = selfTest({
+    pattern: compilePattern('acmehealth|acme health|acme-health|acme  health'),
+    blockCorpus: ['acmehealth and acme health and acme-health and acme  health'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /claims 4 alternatives and the must-block corpus has 1/);
+});
+
+test('the floor, the count and the per-alternative check are three checks, not one', () => {
+  // Each fires alone on an input the other two are silent on. Without this the
+  // three could be one check wearing three messages, which is what the count
+  // alone looked like until the per-alternative check was driven.
+
+  // BOTH secrets truncating together: a pattern cut to one alternative against
+  // a corpus cut to one entry satisfies `1 >= 1` and exercises that
+  // alternative, so only the literal floor in the workflow sees the shrink.
   const bothShrank = selfTest({
     pattern: compilePattern('acmehealth'),
     blockCorpus: ['acmehealth'],
@@ -507,16 +566,26 @@ test('the floor and the arity check are independent, in both directions', () => 
   assert.equal(bothShrank.length, 1);
   assert.match(bothShrank[0], /1 entries, fewer than the 3/);
 
-  // And the converse: a corpus over the floor still leaves an alternative
-  // unchecked, which the floor cannot see.
-  const overFloorUnderArity = selfTest({
+  // A corpus over the floor and long enough for the count, piling on one
+  // alternative: only the per-alternative check sees it.
+  const pileup = selfTest({
     pattern,
-    blockCorpus: ['acmehealth', 'acme health'],
+    blockCorpus: ['acmehealth', 'acmehealth ltd', 'a acmehealth thing'],
     passCorpus,
     minCorpus: 1,
   });
-  assert.equal(overFloorUnderArity.length, 1);
-  assert.match(overFloorUnderArity[0], /checked by nothing/);
+  assert.equal(pileup.length, 1);
+  assert.match(pileup[0], /position\(s\) 2, 3/);
+
+  // One entry exercising every alternative: only the count sees it.
+  const short = selfTest({
+    pattern,
+    blockCorpus: ['acmehealth and acme health and acme-health'],
+    passCorpus,
+    minCorpus: 1,
+  });
+  assert.equal(short.length, 1);
+  assert.match(short[0], /must-block corpus has 1/);
 });
 
 // ---------------------------------------------------------------------------

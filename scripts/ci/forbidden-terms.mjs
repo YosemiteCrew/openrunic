@@ -97,6 +97,24 @@ function decodeRequired(name) {
  * `scanSurface`'s filter invisible - a guard that checks half its input and says
  * nothing about the half it skipped.
  */
+/**
+ * The pattern, compiled case-insensitively because the terms are words.
+ *
+ * `'i'` AND NOT `'iu'`, and the absence is load-bearing rather than an
+ * oversight. The `u` flag changes case folding on the HAYSTACK, so
+ * `PATTERN_SHAPE` cannot see it - it constrains the pattern, and this is the one
+ * axis that is not about the pattern at all. Under `iu`, `k` matches U+212A
+ * KELVIN SIGN; under `i` it does not, and neither does the machine-local hook's
+ * POSIX `grep -inE`. So the missing `u` is what makes "one value used twice"
+ * true rather than "two implementations that agree on ASCII".
+ *
+ * Driven with the haystack asserted by its bytes: `61e284aa62`, `/k/i` false,
+ * `/k/iu` true, `/usr/bin/grep -inE k` no match, and both controls (`aKb`
+ * matching everywhere, `azb` nowhere). Raised in review. `PATTERN_SHAPE` two
+ * dozen lines below carries `/u` legitimately - it has no haystack of untrusted
+ * text - so harmonising the two reads like tidying up, which is why there is a
+ * behavioural case pinning this one.
+ */
 export function compilePattern(source) {
   try {
     return new RegExp(source, 'i');
@@ -288,6 +306,39 @@ export function selfTest({ pattern, blockCorpus, passCorpus, minCorpus }) {
         'pattern, or change PATTERN_SHAPE and alternativesIn together and deliberately'
     );
   } else {
+    // Every alternative must be exercised by SOME corpus entry, reported by
+    // index. This is the check that answers the question; the count below is a
+    // weaker proxy for it.
+    //
+    // A count is green on a corpus that piles up on one alternative - three
+    // spellings of one term and none of another satisfies `3 >= 3` while two
+    // alternatives are checked by nothing, which is precisely the state a typo
+    // in a new alternative produces. Raised in review, driven, and it is the
+    // per-pattern-versus-per-part distinction one level down: one hit satisfies
+    // the whole and hides the parts.
+    //
+    // `compilePattern` rather than a second `new RegExp(...)`, so the flags can
+    // never drift from the ones the real pattern is built with - and it is safe
+    // here only because the shape holds: outside it `acme\` throws and `acme+`
+    // compiles into something else.
+    const alternatives = pattern.source.split('|');
+    const unexercised = alternatives
+      .map((alternative, index) =>
+        blockCorpus.some((entry) => compilePattern(alternative).test(entry)) ? null : index + 1
+      )
+      .filter((index) => index !== null);
+    if (unexercised.length > 0) {
+      problems.push(
+        `the must-block corpus exercises no entry for the pattern's alternative(s) at ` +
+          `position(s) ${unexercised.join(', ')}: nothing checks that they match anything`
+      );
+    }
+
+    // The weaker proxy, kept deliberately rather than as a second detector. It
+    // enforces one corpus entry per alternative, which is what makes the
+    // by-index messages above legible to whoever maintains the corpus - and it
+    // catches a corpus authored with fewer entries than terms before anyone has
+    // to read an index at all.
     const claimed = alternativesIn(pattern.source);
     if (blockCorpus.length < claimed) {
       problems.push(

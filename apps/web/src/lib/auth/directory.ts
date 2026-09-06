@@ -6,11 +6,15 @@ import type { Identity } from './session';
  *
  * ## Why the web app holds a table at all
  *
- * The API has no endpoint that answers "who is this token". Its authn
- * middleware resolves a token to a principal and hands that principal to the
- * handler; nothing serves it back to the caller. So a sign-in surface that has
- * just accepted a token has no way to ask what it means, and something has to
- * know the name to render. Under OIDC that something is the token itself - the
+ * `GET /bff/v0/me` (#346) answers what a token may DO - its roles and its
+ * permissions - and deliberately not whose it is. That DTO says it is not a
+ * security boundary, and `subject` is what an audit record attributes an access
+ * to, so an identity fact inside an advisory object would invite a client to
+ * trust it for attribution. Nothing serves the caller their own subject or
+ * display name, which is the half this table carries. So a sign-in surface that
+ * has just accepted a token still has no way to ask whose it is, and something
+ * has to know the name to render. Under OIDC that something is the token itself
+ * - the
  * identity comes out of the verified claims, and this table stops being
  * consulted. `identityForAccessToken` in `credentials.ts` is that seam: it is
  * the one function that turns a credential into a name, and the OIDC path
@@ -28,7 +32,8 @@ import type { Identity } from './session';
  * API package, which would put a server's auth module into a browser bundle.
  * The subjects are the load-bearing half: they are what an audit record
  * attributes an access to, so they must match the API's, not merely look like
- * it.
+ * it. `scripts/ci/demo-principal-parity.mjs` asserts that on every `verify`; it
+ * was checked by hand once, and a hand check works exactly once.
  *
  * ## Who is deliberately missing
  *
@@ -120,5 +125,10 @@ export function developmentCredentials(
   demoBuild = false
 ): readonly StaffCredential[] {
   if (nodeEnv !== 'production') return DEVELOPMENT_STAFF;
+  /* The empty list IS the refusal: no throw, no guard, the door closed by there
+     being nothing to iterate. Anything that replaces this lookup with a call to
+     the API has to re-express it explicitly, because an absence cannot fail a
+     test - the API accepts a demo token whatever `NODE_ENV` says, so asking it
+     instead would mint a session here and redden nothing. */
   return demoBuild ? DEVELOPMENT_STAFF : [];
 }

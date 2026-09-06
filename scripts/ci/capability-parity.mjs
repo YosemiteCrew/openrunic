@@ -11,8 +11,8 @@
  *
  * So the table is not maintained, it is EMITTED, and this script is both halves:
  *
- *   node scripts/ci/capability-parity.mjs           regenerate and diff, exit 1 on drift
- *   node scripts/ci/capability-parity.mjs --write   emit it
+ *   node --experimental-strip-types scripts/ci/capability-parity.mjs
+ *   node --experimental-strip-types scripts/ci/capability-parity.mjs --write
  *
  * Same shape as `roadmap:check`, which is the local idiom for a committed file
  * derived from source. It matters more than it looks: the first version of this
@@ -20,19 +20,32 @@
  * and was wrong in eight ways across four roles. Generation removes the step
  * that failed rather than asking for more care at it.
  *
- * ## The parser does not go away, and it should be said plainly
+ * ## Why this imports rather than reads
  *
- * This reads `apps/api/src/policy/permissions.ts` as text rather than importing
- * it: the module is TypeScript, there is no root `tsx`, and `apps/api/dist` does
- * not exist when `verify` reaches this point - `build` is the last link in that
- * chain. `scripts/roadmap/build.mjs` has the same constraint and answers it the
- * same way (`keysIn`, a regex over the catalogue sources). So generation buys
- * an unmaintainable-by-hand artefact, not a parser-free one, and the parser
- * keeps its own tests - including the one for `admin: PERMISSIONS`, a form a
- * bracket-only reader turns into an empty set that then AGREES with an empty
- * browser entry.
+ * The first version of this script parsed `permissions.ts` as text, because
+ * `apps/api/dist` does not exist when `verify` reaches this point - `build` is
+ * the last link in that chain - and `scripts/roadmap/build.mjs` answers the
+ * same constraint the same way. It handled the two forms it had seen, an array
+ * literal and the bare `PERMISSIONS` identifier, and SKIPPED anything else.
+ *
+ * `read-only: READ_EVERYTHING` is anything else. It is a computed bundle -
+ * every `.read` permission minus the supervisory ones - and the parser dropped
+ * the role silently, so the browser told a read-only account it could do
+ * nothing at all. Regenerate-and-diff could not catch it: both sides of that
+ * comparison come from this file, so a generator that omits a role omits it
+ * from the expectation too and the two agree. A derived artefact cannot be its
+ * own control.
+ *
+ * A regex cannot evaluate `PERMISSIONS.filter(...)`, and the next bundle will
+ * be some third form. So this imports the module and asks it, which is exact by
+ * construction and has no form to fail to recognise. Node strips the types;
+ * the flag is a no-op from 22.18 and is passed for the rest of the supported
+ * `^22.12` range. Nothing is built first - the SOURCE is imported, which also
+ * removes the chance of checking against a stale `dist`.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 const API_SOURCE = 'apps/api/src/policy/permissions.ts';
 const WEB_SOURCE = 'apps/web/src/lib/api/capabilities.ts';
@@ -75,80 +88,26 @@ export function capabilitiesForRoles(roles: readonly string[]): string[] {
 }
 `;
 
-/** Every identifier inside the first array literal after `marker`. */
-function arrayAfter(source, marker) {
-  const start = source.indexOf(marker);
-  if (start === -1) return null;
-  const open = source.indexOf('[', start);
-  if (open === -1) return null;
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === '[') depth += 1;
-    else if (source[index] === ']') {
-      depth -= 1;
-      if (depth === 0) return source.slice(open, index + 1);
-    }
+/**
+ * `{ role: Set<permission> }` from a module's exported role table.
+ *
+ * Throws rather than returning an empty table when the export is missing: an
+ * empty table agrees with an empty browser file, so a silent failure here would
+ * report parity instead of the absence of both halves.
+ */
+export async function readRoleTable(path, exportName) {
+  const module = await import(pathToFileURL(path).href);
+  const table = module[exportName];
+  if (table === undefined || table === null || typeof table !== 'object') {
+    throw new Error(`${path} does not export ${exportName}`);
   }
-  return null;
+  const entries = Object.entries(table);
+  if (entries.length === 0) throw new Error(`${path} exports an empty ${exportName}`);
+  return new Map(entries.map(([role, permissions]) => [role, new Set(permissions)]));
 }
 
-/** `{ role: Set<permission> }` from a `ROLE_PERMISSIONS`-shaped object literal. */
-function parseRoleTable(source, marker, expandAll) {
-  const start = source.indexOf(marker);
-  if (start === -1) throw new Error(`${marker} not found`);
-  const open = source.indexOf('{', start);
-  let depth = 0;
-  let end = -1;
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1;
-    else if (source[index] === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        end = index;
-        break;
-      }
-    }
-  }
-  const body = source.slice(open + 1, end);
-
-  const table = new Map();
-  const roleHead = /(?:^|\n)\s{2}('?[a-zA-Z][a-zA-Z-]*'?)\s*:\s*(PERMISSIONS|\[)/g;
-  let match;
-  while ((match = roleHead.exec(body)) !== null) {
-    const role = match[1].replaceAll("'", '');
-    if (match[2] === 'PERMISSIONS') {
-      table.set(role, new Set(expandAll));
-      continue;
-    }
-    const arrayStart = roleHead.lastIndex - 1;
-    let arrayDepth = 0;
-    let arrayEnd = -1;
-    for (let index = arrayStart; index < body.length; index += 1) {
-      if (body[index] === '[') arrayDepth += 1;
-      else if (body[index] === ']') {
-        arrayDepth -= 1;
-        if (arrayDepth === 0) {
-          arrayEnd = index;
-          break;
-        }
-      }
-    }
-    const entries = body.slice(arrayStart, arrayEnd + 1).match(/'[a-zA-Z]+\.[a-zA-Z]+'/g) ?? [];
-    table.set(role, new Set(entries.map((entry) => entry.replaceAll("'", ''))));
-  }
-  return table;
-}
-
-export function compare(apiSource, webSource) {
-  const permissionsLiteral = arrayAfter(apiSource, 'export const PERMISSIONS');
-  if (permissionsLiteral === null) throw new Error('PERMISSIONS literal not found');
-  const all = (permissionsLiteral.match(/'[a-zA-Z]+\.[a-zA-Z]+'/g) ?? []).map((entry) =>
-    entry.replaceAll("'", '')
-  );
-
-  const api = parseRoleTable(apiSource, 'export const ROLE_PERMISSIONS', all);
-  const web = parseRoleTable(webSource, 'export const ROLE_CAPABILITIES', all);
-
+/** Per-role differences, for the failure message rather than for the verdict. */
+export function compare(api, web) {
   const problems = [];
   for (const role of new Set([...api.keys(), ...web.keys()])) {
     const mine = api.get(role);
@@ -170,17 +129,10 @@ export function compare(apiSource, webSource) {
 }
 
 /** The browser table, exactly as it is committed. */
-export async function render(apiSource) {
-  const permissionsLiteral = arrayAfter(apiSource, 'export const PERMISSIONS');
-  if (permissionsLiteral === null) throw new Error('PERMISSIONS literal not found');
-  const all = (permissionsLiteral.match(/'[a-zA-Z]+\.[a-zA-Z]+'/g) ?? []).map((entry) =>
-    entry.replaceAll("'", '')
-  );
-  const api = parseRoleTable(apiSource, 'export const ROLE_PERMISSIONS', all);
-
+export async function render(api) {
   const entries = [...api.entries()]
     .map(([role, permissions]) => {
-      const key = /^[a-zA-Z]+$/.test(role) ? role : `'${role}'`;
+      const key = /^[a-zA-Z][a-zA-Z0-9]*$/.test(role) ? role : `'${role}'`;
       const items = [...permissions].map((permission) => `    '${permission}',\n`).join('');
       return `  ${key}: [\n${items}  ],\n`;
     })
@@ -198,8 +150,8 @@ export async function render(apiSource) {
 }
 
 async function main() {
-  const apiSource = readFileSync(API_SOURCE, 'utf8');
-  const expected = await render(apiSource);
+  const api = await readRoleTable(API_SOURCE, 'ROLE_PERMISSIONS');
+  const expected = await render(api);
 
   if (process.argv.includes('--write')) {
     writeFileSync(WEB_SOURCE, expected);
@@ -207,11 +159,15 @@ async function main() {
     return 0;
   }
 
-  const actual = existsSync(WEB_SOURCE) ? readFileSync(WEB_SOURCE, 'utf8') : '';
+  const actual = existsSync(WEB_SOURCE) ? await readFile(WEB_SOURCE, 'utf8') : '';
   if (actual === expected) {
-    const { roles } = compare(apiSource, actual);
+    /* Counted on the BROWSER's table, not the API's. A mutation that made the
+       generator drop a role printed `8 roles agree` from `api.size` while the
+       emitted file held seven - a success message describing the wrong side of
+       the comparison it was reporting on. */
+    const web = await readRoleTable(WEB_SOURCE, 'ROLE_CAPABILITIES');
     process.stdout.write(
-      `capability-parity: ${roles} roles agree between the API and the browser.\n`
+      `capability-parity: ${web.size} roles in the browser table agree with the API.\n`
     );
     return 0;
   }
@@ -219,8 +175,15 @@ async function main() {
   /* The text comparison is what decides, because it catches a difference the
      per-role one cannot see - ordering, a stray edit, a lost comment. The
      per-role report is then run for the message, so the failure names the roles
-     and the identifiers rather than telling somebody a file differs. */
-  const { problems } = compare(apiSource, actual);
+     and the identifiers rather than telling somebody a file differs. A browser
+     file too broken to import still fails, with the import error as the
+     reason. */
+  let problems;
+  try {
+    problems = compare(api, await readRoleTable(WEB_SOURCE, 'ROLE_CAPABILITIES')).problems;
+  } catch (error) {
+    problems = [`${WEB_SOURCE} could not be read: ${error.message}`];
+  }
   process.stderr.write(
     `capability-parity: ${WEB_SOURCE} is not what the API's table generates.\n` +
       (problems.length > 0

@@ -146,6 +146,26 @@ export const ROLE_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {
   ],
   'stock-keeper': ['inventory.read', 'inventory.write', 'inventory.adjust', 'facility.read'],
   auditor: ['audit.read', 'facility.read'],
+  'read-only': [
+    'patient.read',
+    'appointment.read',
+    'encounter.read',
+    'document.read',
+    'order.read',
+    'result.read',
+    'message.read',
+    'coverage.read',
+    'charge.read',
+    'claim.read',
+    'payment.read',
+    'task.read',
+    'form.read',
+    'user.read',
+    'role.read',
+    'facility.read',
+    'terminology.read',
+    'inventory.read',
+  ],
 };
 
 /**

@@ -1,97 +1,151 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 
-import { compare } from './capability-parity.mjs';
+import { compare, readRoleTable, render } from './capability-parity.mjs';
 
 /**
  * The guard's own tests. Every case is a disagreement someone could actually
- * introduce, and the fixtures are the two file shapes rather than a mock: the
- * guard reads text, so a test that hands it objects would be testing something
- * else.
+ * introduce, and the fixtures are real modules on disk rather than objects: the
+ * guard IMPORTS its inputs, so a test that handed it a Map would be testing
+ * something else and would not have caught the failure that motivated this
+ * file's rewrite.
  */
-const API = `
-export const PERMISSIONS = ['order.read', 'order.write', 'patient.read'] as const;
-export const ROLE_PERMISSIONS = {
-  admin: PERMISSIONS,
-  clinician: ['order.read', 'order.write'],
-  biller: ['order.read'],
-};
-`;
+const scratch = mkdtempSync(join(tmpdir(), 'capability-parity-'));
+after(() => rmSync(scratch, { recursive: true, force: true }));
 
-function web(body) {
-  return `export const ROLE_CAPABILITIES = {\n${body}\n};\n`;
+let seq = 0;
+/** Writes `source` as an importable module and returns its path. */
+function module_(source) {
+  seq += 1;
+  const path = join(scratch, `fixture-${seq}.ts`);
+  writeFileSync(path, source);
+  return path;
 }
 
-const MATCHING = web(`
-  admin: ['order.read', 'order.write', 'patient.read'],
-  clinician: ['order.read', 'order.write'],
-  biller: ['order.read'],
-`);
+const table = (entries) => new Map(entries.map(([role, held]) => [role, new Set(held)]));
 
-test('agrees when the two tables say the same thing', () => {
-  const { problems, roles } = compare(API, MATCHING);
-  assert.deepEqual(problems, []);
-  assert.equal(roles, 3);
+test('reads a role whose permissions are computed rather than listed', async () => {
+  /* This is the case that was silently dropped: `read-only: READ_EVERYTHING`
+     is neither an array literal nor the bare `PERMISSIONS` identifier, and the
+     text parser this replaced recognised only those two forms. It emitted no
+     entry for the role, so `capabilitiesForRoles(['read-only'])` returned
+     nothing and the browser told the account it could do nothing at all. */
+  const path = module_(`
+    export const PERMISSIONS = ['order.read', 'order.write', 'patient.read'] as const;
+    const READ_EVERYTHING = PERMISSIONS.filter((p) => p.endsWith('.read'));
+    export const ROLE_PERMISSIONS = {
+      clinician: ['order.read', 'order.write'],
+      'read-only': READ_EVERYTHING,
+    };
+  `);
+
+  const read = await readRoleTable(path, 'ROLE_PERMISSIONS');
+
+  assert.deepEqual([...read.keys()], ['clinician', 'read-only']);
+  assert.deepEqual([...read.get('read-only')], ['order.read', 'patient.read']);
 });
 
-test('names a permission the browser is missing', () => {
+test('reads the bare identifier form, which is not an empty set', async () => {
+  /* `admin: PERMISSIONS` and an empty browser entry would AGREE if the reader
+     turned the identifier into nothing, and two empty sets are the quietest
+     possible false pass. */
+  const path = module_(`
+    export const PERMISSIONS = ['order.read', 'order.write'] as const;
+    export const ROLE_PERMISSIONS = { admin: PERMISSIONS };
+  `);
+
+  const read = await readRoleTable(path, 'ROLE_PERMISSIONS');
+
+  assert.deepEqual([...read.get('admin')], ['order.read', 'order.write']);
+});
+
+test('refuses a module that does not export the table, rather than reporting parity', async () => {
+  const path = module_(`export const SOMETHING_ELSE = { admin: [] };\n`);
+
+  await assert.rejects(
+    () => readRoleTable(path, 'ROLE_PERMISSIONS'),
+    /does not export ROLE_PERMISSIONS/
+  );
+});
+
+test('refuses an empty table, because empty agrees with empty', async () => {
+  const path = module_(`export const ROLE_PERMISSIONS = {};\n`);
+
+  await assert.rejects(() => readRoleTable(path, 'ROLE_PERMISSIONS'), /empty ROLE_PERMISSIONS/);
+});
+
+test('names a role the API has and the browser does not', () => {
   const { problems } = compare(
-    API,
-    web(`
-  admin: ['order.read', 'order.write', 'patient.read'],
-  clinician: ['order.read'],
-  biller: ['order.read'],
-`)
+    table([
+      ['clinician', ['order.write']],
+      ['read-only', ['order.read']],
+    ]),
+    table([['clinician', ['order.write']]])
   );
-  assert.deepEqual(problems, ['clinician: the browser is missing order.write']);
+
+  assert.deepEqual(problems, ['read-only: the API knows a role the browser does not']);
 });
 
-test('names a permission the browser has invented', () => {
+test('names the identifiers a role differs by, in both directions', () => {
   const { problems } = compare(
-    API,
-    web(`
-  admin: ['order.read', 'order.write', 'patient.read'],
-  clinician: ['order.read', 'order.write'],
-  biller: ['order.read', 'order.write'],
-`)
+    table([['clinician', ['order.read', 'order.write']]]),
+    table([['clinician', ['order.read', 'patient.write']]])
   );
-  assert.deepEqual(problems, ['biller: the browser claims order.write']);
+
+  assert.deepEqual(problems, [
+    'clinician: the browser is missing order.write',
+    'clinician: the browser claims patient.write',
+  ]);
 });
 
-test('catches a role that exists on only one side, in both directions', () => {
-  const missingRole = compare(
-    API,
-    web(`
-  admin: ['order.read', 'order.write', 'patient.read'],
-  clinician: ['order.read', 'order.write'],
-`)
-  );
-  assert.deepEqual(missingRole.problems, ['biller: the API knows a role the browser does not']);
+test('agrees only when the two tables agree', () => {
+  const both = () => table([['clinician', ['order.read']]]);
 
-  const extraRole = compare(
-    API,
-    web(`
-  admin: ['order.read', 'order.write', 'patient.read'],
-  clinician: ['order.read', 'order.write'],
-  biller: ['order.read'],
-  auditor: ['order.read'],
-`)
-  );
-  assert.deepEqual(extraRole.problems, ['auditor: the browser knows a role the API does not']);
+  assert.deepEqual(compare(both(), both()).problems, []);
 });
 
-test('expands the role that is granted PERMISSIONS by reference', () => {
-  /* `admin: PERMISSIONS` is not an array literal, so a parser that only reads
-     brackets silently gives the admin no permissions - and then agrees with a
-     browser table that gives it none either. */
-  const { problems } = compare(
-    API,
-    web(`
-  admin: ['order.read'],
-  clinician: ['order.read', 'order.write'],
-  biller: ['order.read'],
-`)
+test('quotes a role name that is not a bare identifier', async () => {
+  const emitted = await render(
+    table([
+      ['admin', ['order.read']],
+      ['read-only', ['order.read']],
+    ])
   );
-  assert.deepEqual(problems, ['admin: the browser is missing order.write, patient.read']);
+
+  assert.match(emitted, /^ {2}admin: \['order\.read'\],$/m);
+  assert.match(emitted, /^ {2}'read-only': \['order\.read'\],$/m);
+});
+
+test('the committed browser table names every role the API defines', async () => {
+  /* The assertion regenerate-and-diff cannot make. Both sides of that
+     comparison are produced by the same generator, so a generator that omits a
+     role omits it from the expectation too and the two files agree - which is
+     how a missing `read-only` shipped green.
+
+     Deliberately not routed through `readRoleTable` on either side. The API is
+     imported here, and the artefact is read as TEXT, so a fault in this file's
+     own reader cannot silence both halves at once the way the parser it
+     replaced did. */
+  const { ROLE_PERMISSIONS } = await import(
+    pathToFileURL('apps/api/src/policy/permissions.ts').href
+  );
+  const committed = readFileSync('apps/web/src/lib/api/capabilities.ts', 'utf8');
+
+  const named = Object.keys(ROLE_PERMISSIONS).filter((role) =>
+    new RegExp(`^ {2}'?${role}'?:`, 'm').test(committed)
+  );
+
+  assert.deepEqual(named.sort(), Object.keys(ROLE_PERMISSIONS).sort());
+});
+
+test('and agrees with it permission by permission', async () => {
+  const api = await readRoleTable('apps/api/src/policy/permissions.ts', 'ROLE_PERMISSIONS');
+  const web = await readRoleTable('apps/web/src/lib/api/capabilities.ts', 'ROLE_CAPABILITIES');
+
+  assert.deepEqual(compare(api, web).problems, []);
 });

@@ -137,9 +137,13 @@ const NOT_IN_VERIFY = {
  * tomorrow is covered without anyone remembering to add it anywhere.
  */
 function testFilesRunBy(script) {
+  /* Drops the interpreter, then every flag by shape rather than by counting
+     them: `node --test x` and `node --experimental-strip-types --test x` name
+     the same file, and a fixed `slice(2)` reads the second one as one flag
+     short. */
   const args = script
     .split(/\s+/u)
-    .slice(2)
+    .slice(1)
     .filter((arg) => !arg.startsWith('-'));
   const files = new Set();
   for (const arg of args) {
@@ -156,7 +160,10 @@ function testFilesRunBy(script) {
   return files;
 }
 
-const isNodeTest = (name) => (scripts[name] ?? '').startsWith('node --test ');
+/* `--test` anywhere in the node invocation, not only immediately after it:
+   anchoring on the prefix made `check:ci-scripts:test` invisible to this file
+   the moment it gained a flag, and the canary below caught exactly that. */
+const isNodeTest = (name) => /^node( --[a-z-]+)* --test /u.test(scripts[name] ?? '');
 
 /** The scripts `verify` runs, in the order it runs them. */
 const chained = [...(scripts.verify ?? '').matchAll(/pnpm run ([a-z0-9:._-]+)/gu)].map(

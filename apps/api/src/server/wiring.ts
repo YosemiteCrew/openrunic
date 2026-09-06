@@ -130,6 +130,41 @@ export function announceIssuerAuthentication(
 }
 
 /**
+ * Announce the resolver that is actually in force.
+ *
+ * THE CHOICE LIVES HERE, not at the call site, and that is the whole point of
+ * this function existing. #307 was a defect of composition: `buildServerWiring`
+ * was individually correct, the banner's wording was individually correct about
+ * the object it described, and `index.ts` was individually correct to prefer a
+ * configured issuer. Nothing was wrong except which of them spoke.
+ *
+ * `index.ts` has top-level side effects and no test imports it, so a condition
+ * written there is a condition nothing can exercise. Two tests that each call an
+ * announcement directly pin what each one SAYS and say nothing about which is
+ * chosen - which would leave the composition as the only untested part of a
+ * change whose entire subject is the composition.
+ *
+ * Pure, and takes its writer, so both branches are reachable from a test.
+ */
+export function announceAuthentication(
+  wiring: ServerWiring | null,
+  issuer: string | undefined,
+  write?: (message: string) => void
+): void {
+  // Nothing outside production. Development keeps `createApp`'s in-memory
+  // defaults, and a banner about self-hosting on a laptop running `pnpm dev` is
+  // noise that trains people to skim the one that matters.
+  if (wiring === null) return;
+
+  if (issuer === undefined) {
+    announceDemoTokenAuthentication(wiring.authMode, write);
+    return;
+  }
+
+  announceIssuerAuthentication(issuer, write);
+}
+
+/**
  * Resolves bearer tokens to principals.
  *
  * The one supported mode is the demo table. This function no longer announces

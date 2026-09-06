@@ -2,6 +2,7 @@ import type { PrismaClient } from '@openrunic/database';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  announceAuthentication,
   announceDemoTokenAuthentication,
   announceIssuerAuthentication,
   buildServerWiring,
@@ -373,5 +374,50 @@ describe('announcing which resolver is in force', () => {
     );
 
     expect(wiring.authMode).toBe('demo-tokens');
+  });
+});
+
+/**
+ * Which announcement is CHOSEN, which is the layer #307 actually lived in.
+ *
+ * Every layer was individually correct - the resolver selection, the banner's
+ * wording, the wiring's construction - and the defect was in the composition of
+ * them. The tests above pin what each announcement says; these pin which one
+ * runs. Without them a regression reintroducing the exact reported symptom - the
+ * demo banner on a deployment enforcing OIDC - passes the suite.
+ */
+describe('announceAuthentication', () => {
+  const wiring = { authMode: 'demo-tokens' } as unknown as Parameters<
+    typeof announceAuthentication
+  >[0];
+
+  function announced(issuer: string | undefined): string {
+    const written: string[] = [];
+    announceAuthentication(wiring, issuer, (message) => written.push(message));
+    return written.join('');
+  }
+
+  it('warns about demo tokens when no issuer is configured', () => {
+    const output = announced(undefined);
+
+    expect(output).toContain('NO authentication');
+    expect(output).not.toContain('verified against');
+  });
+
+  it('names the issuer, and does not warn, when one is configured', () => {
+    const output = announced('https://issuer.example');
+
+    // The pair. Asserting only the issuer passes on a build that prints both,
+    // and printing both IS the state #307 reported.
+    expect(output).toContain('verified against https://issuer.example');
+    expect(output).not.toContain('NO authentication');
+  });
+
+  it('says nothing at all outside production, where there is no wiring', () => {
+    const written: string[] = [];
+
+    announceAuthentication(null, undefined, (message) => written.push(message));
+
+    expect(written).toEqual([]);
   });
 });

@@ -296,10 +296,14 @@ function seedChart(dataset: MemoryDataset): void {
     expirationDate: null,
   });
 
+  /* Retired rather than active, so the two implants carry two different
+     statuses. A chart where every row of a resource shares one status cannot
+     tell a working `status` filter from a dropped one - every row it returns
+     carries the code that was asked for either way. */
   seed(dataset, 'Device', {
     ...storageColumns(testId(48)),
     patientId: PATIENT,
-    status: 'ACTIVE',
+    status: 'INACTIVE',
     typeCode: null,
     typeSystem: null,
     typeText: 'Hip prosthesis, left',
@@ -376,6 +380,20 @@ function seedChart(dataset: MemoryDataset): void {
     authorId: PROVIDER,
   });
 
+  /* A finished plan, so the collection holds two statuses rather than one. */
+  seed(dataset, 'CarePlan', {
+    ...storageColumns(testId(34)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    status: 'COMPLETED',
+    intent: 'PLAN',
+    title: 'Smoking cessation',
+    narrative: 'Quit date reached and sustained at twelve weeks.',
+    periodStart: FIXED_NOW,
+    periodEnd: FIXED_NOW,
+    authorId: PROVIDER,
+  });
+
   /* A team with one member of each kind, so the projection exercises all three
      member reference types rather than the practitioner one three times. */
   seed(dataset, 'CareTeam', {
@@ -385,6 +403,18 @@ function seedChart(dataset: MemoryDataset): void {
     name: 'Primary care',
     periodStart: FIXED_NOW,
     periodEnd: null,
+  });
+
+  /* A stood-down team, so the collection holds two statuses rather than one.
+     It carries no participants on purpose: the membership projection is
+     exercised by the team above, and this row is here for the filter. */
+  seed(dataset, 'CareTeam', {
+    ...storageColumns(testId(35)),
+    patientId: PATIENT,
+    status: 'INACTIVE',
+    name: 'Post-discharge transition',
+    periodStart: FIXED_NOW,
+    periodEnd: FIXED_NOW,
   });
 
   seed(dataset, 'CareTeamParticipant', {
@@ -549,6 +579,35 @@ function seedChart(dataset: MemoryDataset): void {
     unit: '/min',
     referenceLow: 60,
     referenceHigh: 100,
+    interpretationCode: 'N',
+    bodySiteCode: null,
+    effectiveAt: FIXED_NOW,
+    issuedAt: null,
+    performerId: PROVIDER,
+    formSubmissionId: null,
+  });
+
+  /* An unverified reading, so the collection holds two statuses rather than
+     one. `PRELIMINARY` and not `AMENDED`: the empty-bundle case below asserts
+     that no seeded observation is amended, and a fixture that fills that
+     absence turns a discriminating test into a failing one. */
+  seed(dataset, 'Observation', {
+    ...storageColumns(testId(27)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    category: 'VITAL_SIGNS',
+    status: 'PRELIMINARY',
+    loincCode: '8310-5',
+    code: '8310-5',
+    codeSystem: 'http://loinc.org',
+    display: 'Body temperature',
+    valueNumber: 37,
+    valueText: null,
+    valueCode: null,
+    valueBoolean: null,
+    unit: 'Cel',
+    referenceLow: 36,
+    referenceHigh: 38,
     interpretationCode: 'N',
     bodySiteCode: null,
     effectiveAt: FIXED_NOW,
@@ -1577,7 +1636,9 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
     const matched = (await (
       await app.request('/fhir/CarePlan?category=assess-plan', { headers: bearer(TOKENS.adminA) })
     ).json()) as Bundle;
-    expect(matched.total).toBe(1);
+    // Both seeded plans carry the served category; the half that catches the
+    // bug is the zero below, which a dropped filter cannot produce.
+    expect(matched.total).toBe(2);
 
     const missed = (await (
       await app.request('/fhir/CarePlan?category=careteam', { headers: bearer(TOKENS.adminA) })
@@ -1598,7 +1659,7 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
       )
     ).json()) as Bundle;
 
-    expect(bundle.total).toBe(1);
+    expect(bundle.total).toBe(2);
   });
 
   it('refuses a token that names another system, even with the same code', async () => {
@@ -1625,10 +1686,14 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
     const bundle = (await (
       await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
     ).json()) as Bundle;
-    const plan = bundle.entry?.[0]?.resource as { text?: { div?: string; status?: string } };
+    /* By id, not by position. The bundle's order is not this test's subject,
+       and reading entry[0] made the assertion depend on it - seeding a second
+       plan moved the row out from under it. */
+    const plan = bundle.entry?.find((entry) => (entry.resource as FhirResource).id === testId(44))
+      ?.resource as { text?: { div?: string; status?: string } } | undefined;
 
-    expect(plan.text?.status).toBe('additional');
-    expect(plan.text?.div).toContain('<p>Continue metformin.</p>');
+    expect(plan?.text?.status).toBe('additional');
+    expect(plan?.text?.div).toContain('<p>Continue metformin.</p>');
   });
 });
 
@@ -2414,7 +2479,9 @@ describe('the projections', () => {
       await app.request('/fhir/Observation?date=2026-08-14', { headers: bearer(TOKENS.adminA) })
     ).json()) as Bundle;
 
-    expect(inside.total).toBe(1);
+    // Both seeded observations sit on the same instant; the discriminating
+    // half is the day either side answering zero.
+    expect(inside.total).toBe(2);
     expect(outside.total).toBe(0);
   });
 
@@ -3592,6 +3659,11 @@ describe('a status search selects only the rows carrying that status', () => {
    */
   const advertising = SERVED_MODULES.filter((module) => module.params.includes('status'));
 
+  /* Resources whose shared chart deliberately holds a single status. See the
+     parameterised case below, which asserts each name here really is
+     single-status rather than taking the exemption on trust. */
+  const singleStatusByDesign = new Set(['Claim']);
+
   it('covers every resource that advertises status', () => {
     /* The guard on the guard. `losslessStatus` advertises `status` only where
        the value set round-trips, which today is Observation alone - but a
@@ -3672,6 +3744,34 @@ describe('a status search selects only the rows carrying that status', () => {
         ),
       ];
       expect(present.length, `${type} rows carry no status to filter on`).toBeGreaterThan(0);
+
+      /*
+       * The precondition that decides whether the loop below can fail at all.
+       * With one distinct status in the chart, "every returned row carries the
+       * status asked for" is true whether the filter runs or not - the case
+       * passes a dropped filter and reports it as coverage. That was the state
+       * of all five resources before this seeding, and nothing said so.
+       *
+       * The exemption is checked rather than taken on trust: `Claim` must
+       * really be single-status here, so if the chart ever gains a second claim
+       * code the exemption fails and has to be removed rather than quietly
+       * covering a case it no longer describes. Claim is exempt because its
+       * FHIR `status` is a mapped code and its own suite already discriminates
+       * it across two rows seeded per-test; a second claim in the shared chart
+       * would break neighbouring assertions whose whole value is an exact id
+       * set.
+       */
+      if (singleStatusByDesign.has(type)) {
+        expect(
+          present.length,
+          `${type} is exempt from the two-status rule but is no longer single-status`
+        ).toBe(1);
+      } else {
+        expect(
+          present.length,
+          `${type} carries one status, so this case cannot tell a working filter from a dropped one`
+        ).toBeGreaterThan(1);
+      }
 
       for (const status of present) {
         const res = await app.request(`/fhir/${type}?status=${encodeURIComponent(status)}`, {

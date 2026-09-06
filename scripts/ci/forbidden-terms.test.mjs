@@ -519,6 +519,96 @@ test('the floor and the arity check are independent, in both directions', () => 
   assert.match(overFloorUnderArity[0], /checked by nothing/);
 });
 
+// ---------------------------------------------------------------------------
+// The shape predicate itself
+// ---------------------------------------------------------------------------
+//
+// PATTERN_SHAPE is now load-bearing for two separate checks - one value read in
+// two regular-expression dialects, and `alternativesIn` splitting on `|` - so a
+// predicate that quietly admits one more construct makes both unsound while
+// every other test stays green.
+//
+// One fixture cannot pin it. The case above violates the shape in three ways at
+// once (a leading `(`, a trailing `)`, a group), so a predicate that has lost
+// only its `^`, only its `$` or only one excluded character still rejects it and
+// the case still passes. These tables are one row per construct and one row per
+// anchor, so a single lost admission has somewhere to show up.
+
+const REJECTED_SHAPES = [
+  // Splitting on `|` is inexact for all of these: the escaped pipe is ONE
+  // alternative that splits into two, and a class or a group can hide a pipe.
+  ['an escaped pipe', String.raw`acme\|health`, 'acme|health'],
+  ['a character class', 'acme[ -]health|acme health', 'acme health'],
+  ['a quantifier', 'acmes?health|acme health', 'acmehealth'],
+  ['a wildcard', 'acme.health|acme health', 'acmexhealth'],
+  // Anchors, one end each. Both ends bad at once cannot separate them.
+  // An ordinary character that is simply not in the alphabet, so these two rows
+  // are about the ANCHOR and nothing else - a metacharacter here would redden
+  // for a second reason and stop separating a lost `^` from a lost `$`.
+  ['an excluded character at the start only', '_acmehealth|acme health', '_acmehealth'],
+  ['an excluded character at the end only', 'acmehealth|acme health_', 'acmehealth'],
+];
+
+for (const [construct, source, entry] of REJECTED_SHAPES) {
+  test(`the shape refuses ${construct}`, () => {
+    const problems = selfTest({
+      pattern: compilePattern(source),
+      // Matched by the pattern, so known-positives stays silent and the single
+      // problem is the shape alone.
+      blockCorpus: [entry],
+      passCorpus,
+      minCorpus: 1,
+    });
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /plain alternation of literal words/);
+    assert.equal(problems[0].toLowerCase().includes('acme'), false);
+  });
+}
+
+const ACCEPTED_SHAPES = [
+  // The positive half. Without it the predicate can narrow to admit only what
+  // SYNTHETIC happens to use - which is letters, a space and a hyphen, and no
+  // digit at all - and nothing notices.
+  ['a digit', 'acme2health', 'acme2health'],
+  ['a space', 'acme health', 'acme health'],
+  ['a hyphen', 'acme-health', 'acme-health'],
+  ['a leading hyphen', '-acmehealth', '-acmehealth'],
+  ['a trailing hyphen', 'acmehealth-', 'acmehealth-'],
+  ['upper case', 'AcmeHealth', 'acmehealth'],
+];
+
+for (const [construct, source, entry] of ACCEPTED_SHAPES) {
+  test(`the shape accepts ${construct}`, () => {
+    assert.deepEqual(
+      selfTest({
+        pattern: compilePattern(source),
+        blockCorpus: [entry],
+        passCorpus,
+        minCorpus: 1,
+      }),
+      []
+    );
+  });
+}
+
+test('a corpus with more entries than alternatives is fine', () => {
+  // The arity check reads "at LEAST one entry per alternative", and nothing
+  // pinned the "at least". Every other fixture has the corpus exactly equal to
+  // the alternative count or exactly short of it, so `<` and `!==` are the same
+  // check on all of them - and `!==` would go red on a corpus that carries two
+  // spellings of one term, with a message saying an alternative is unchecked
+  // when the opposite is true.
+  assert.deepEqual(
+    selfTest({
+      pattern,
+      blockCorpus: ['acmehealth', 'acme health', 'acme-health', 'the acmehealth product'],
+      passCorpus,
+      minCorpus: 1,
+    }),
+    []
+  );
+});
+
 test('a pattern outside the accepted shape is refused, and says why without quoting it', () => {
   // Fails CLOSED. Counting alternatives by splitting on `|` is exact for a plain
   // alternation and wrong for a group, an escaped pipe or a class containing

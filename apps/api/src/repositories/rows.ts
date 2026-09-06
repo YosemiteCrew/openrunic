@@ -86,11 +86,17 @@ export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
  *   facilitySpec  `{ codeZZTYPO }`             unannotated  TS2322  caught
  *   facilitySpec  `{ codeZZTYPO, name }`       unannotated  rc=0    one more column
  *   taskSpec      `{ sourceEventIdZZ }`        unannotated  rc=0    one more branch
- *   both of those, annotated                                TS2353 / TS2561
+ *   taskSpec      same, sibling collapsed away  unannotated  TS2322  caught
+ *   taskSpec      both branches misspelled      unannotated  TS2322  caught
+ *   taskSpec      sibling = one CORRECT key     unannotated  rc=0    missed
+ *   any of those, annotated                                  TS2353 / TS2561
  *
  * `taskSpec` is the live example and the reason the count is six rather than
- * seven: its single-key literal sits beside a two-key one, and the union of the
- * two branches does have a property in common, so nothing fires unaided.
+ * seven. The last three rows say which half of it matters: collapse the sibling
+ * away and the check returns, and two misspelled branches are still caught - so
+ * it is the sibling NAMING A REAL COLUMN that suppresses it, giving the union a
+ * property in common with the target. Not the union itself, and not the
+ * sibling's arity: one correct key suppresses it just as well as two.
  *
  * It is not the only guard for most of them, but that cover is incidental rather
  * than systematic. Thirteen of the fourteen are caught at run time by hand-written

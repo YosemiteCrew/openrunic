@@ -69,20 +69,57 @@ jobs:
     #
     # What made it visible: `edited` is one of this workflow's triggers, so
     # editing the title or body of an already-merged pull request re-runs this
-    # job. Nine merged pull requests were edited in one pass on 2026-09-06; the
-    # two whose head branch had been deleted failed and the seven whose branch
-    # still existed passed. `dev` takes squash merges, so a deleted branch
-    # leaves the head commit reachable only under `refs/pull/<n>/head`, which
-    # `actions/checkout` never fetches - it fetches `refs/heads/*` plus the one
-    # base commit. `git rev-list` then reports
-    # `Invalid revision range <base>..<head>`, naming BOTH ends when only the
+    # job. Nine merged pull requests were edited in one pass on 2026-09-06 and
+    # two of them failed. The condition is that the pull request was
+    # SQUASH-merged AND its head branch was deleted - both together:
+    #
+    #   #148 #221                  1 parent   branch deleted   head not on dev   FAILED
+    #   #297 #306 #308 #314        2 parents  branch alive     head on dev       passed
+    #   #327 #332 #335             2 parents  branch alive     head on dev       passed
+    #
+    # A squash merge writes a new single-parent commit, so the head is reachable
+    # only through `refs/pull/<n>/head` once the branch goes; a merge commit
+    # keeps the head as its second parent, so the range resolves whether or not
+    # the branch still exists. What THIS job's checkout fetches, read from its own
+    # run logs rather than from the action's documentation:
+    #
+    #   open            one fetch:  +refs/heads/*  +refs/tags/*  +<sha>:refs/remotes/pull/<n>/merge
+    #   closed, merged  two fetches: +refs/heads/*  +refs/tags/*
+    #                                then +<sha>:refs/remotes/origin/<base>
+    #
+    # In the closed case that pinned `<sha>` is the pull request's own MERGE
+    # COMMIT, not `base.sha`. It is mapped onto the base branch's remote ref,
+    # which is why it reads as "the base commit" and why anyone debugging this
+    # will look for `base.sha` in the fetch line and not find it. So `BASE_SHA`
+    # resolves only because it is an ancestor reachable through `refs/heads/*` -
+    # nothing pins it deliberately.
+    #
+    # `refs/pull/<n>/head` is fetched in neither state, and it is the one ref
+    # that would resolve a squashed head. So `git rev-list` reports
+    # `Invalid revision range <base>..<head>` - naming BOTH ends when only the
     # head is missing, which reads like a base-SHA problem and is not one.
     # `fetch-depth: 0` is a depth, not a ref set, and does not help.
     #
+    # Scoped to this job on purpose: `pr-title` above takes the default depth and
+    # makes a single `--depth=1` fetch, so a fetch line read without checking
+    # which job printed it will not match the shape above. And only the merged
+    # closed state was observed - a closed-but-unmerged pull request has no merge
+    # commit and nobody has looked at what it pins.
+    #
+    # Note that fixing this closes the window: with the guard in place the job no
+    # longer checks out on a closed pull request, so the closed-state refspecs
+    # are not observable from this workflow any more. They were measured from
+    # runs that predate the guard, and those logs expire.
+    #
+    # Note that the two failing pull requests were squashed in August; squash
+    # merging is now disabled at the repository level, so under current policy a
+    # deleted branch alone no longer reproduces this.
+    #
     # Deliberately keyed on the pull request being closed rather than on whether
-    # the head ref resolves. Branch tidying is what exposed this, not what is
-    # wrong with it; a head-ref check would keep running a job that gates
-    # nothing and would go back to failing the next time a branch is deleted.
+    # the head ref resolves, and the paragraph above is why that matters beyond
+    # tidiness: a head-ref check would have been tuned to half of a condition
+    # that has already stopped occurring, while still running a job that gates
+    # nothing.
     #
     # Not a weakening: this job is not a required status check on either
     # ruleset, `synchronize` cannot fire on a merged pull request, and

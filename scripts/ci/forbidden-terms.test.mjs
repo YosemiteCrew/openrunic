@@ -845,6 +845,30 @@ test('a directory that does not exist exits 2 and names the DIRECTORY', () => {
   assert.doesNotMatch(result.stderr, /Cannot read the '\w+' surface/u);
 });
 
+test('scan refuses a pattern outside PATTERN_SHAPE, without needing selftest first', () => {
+  // The shape check lived only in `selftest`. The workflow happens to run
+  // `selftest` before `scan`, so a pathological pattern was already red by the
+  // time a scan started - but that is an ORDER OF STEPS in a workflow file,
+  // and a guarantee held in another file is the kind this script exists to
+  // stop relying on. A caller that runs `scan` alone gets the check anyway.
+  //
+  // `.*` is the case that matters: it compiles, it is a valid expression, and
+  // it matches every line of every surface. Without this check a scan under it
+  // runs an unconstrained expression over pull-request text and reports a
+  // finding on everything, which reads as a catastrophic leak rather than as a
+  // misconfigured pattern.
+  const dir = surfaceDir({ body: 'nothing named in this file' });
+
+  const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64('.*') });
+
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /not a plain alternation of literal words/);
+  // Exit 2 and not 1: this is a guard that could not run, not a guard that
+  // blocked. Asserting non-zero alone would pass on a run that matched every
+  // line and reported findings, which is the outcome being prevented.
+  assert.doesNotMatch(result.stdout, /BLOCKED/);
+});
+
 test('a surface that is a SYMLINK exits 2 rather than being followed', () => {
   // `readFileSync` follows links, so without the `lstat` check this run reads
   // the link's target, finds nothing in it, and exits 0 with

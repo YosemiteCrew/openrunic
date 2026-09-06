@@ -79,6 +79,42 @@ const DEVELOPMENT_STAFF: readonly StaffCredential[] = [
       roles: ['clinician'],
     },
   },
+  /*
+   * The three oversight principals. They are staff, so the rule this table
+   * already states - a patient's credential is not a staff credential - admits
+   * them, and leaving them out would mean the API grew a token for reading the
+   * audit trail that nobody could sign in with.
+   *
+   * They will meet more refusals than a clinician does, and that is the point
+   * rather than a defect: `read-only` may open a chart and not write to it, and
+   * `auditor` may open the log and almost nothing else. The screens say which
+   * permission is missing; a role that cannot do a thing being told so is the
+   * behaviour, not a gap in this table.
+   */
+  {
+    token: 'dev-auditor-a',
+    identity: {
+      subject: '01890000-0000-7000-8000-000000000104',
+      displayName: 'Audita Trailmore, CHC',
+      roles: ['auditor'],
+    },
+  },
+  {
+    token: 'dev-stockkeeper-a',
+    identity: {
+      subject: '01890000-0000-7000-8000-000000000105',
+      displayName: 'Stocka Shelfward, CPhT',
+      roles: ['stock-keeper'],
+    },
+  },
+  {
+    token: 'dev-readonly-a',
+    identity: {
+      subject: '01890000-0000-7000-8000-000000000106',
+      displayName: 'Reada Overlook',
+      roles: ['read-only'],
+    },
+  },
 ];
 
 /**

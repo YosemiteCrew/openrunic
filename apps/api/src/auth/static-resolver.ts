@@ -82,6 +82,62 @@ export const DEMO_PRINCIPALS: ReadonlyMap<string, Principal> = new Map<string, P
       purposeOfUse: 'HPAYMT',
     },
   ],
+  /*
+   * The three oversight principals, mirrored from `server/demo-principals.ts`.
+   *
+   * Both tables have to carry them. This one is what `createApp` installs in
+   * development and in the test suite; the other is what a self-hosted stack
+   * resolves against under `NODE_ENV=production`. A principal added to one and
+   * not the other is reachable in exactly the environment where nobody needs it.
+   * `demo-principals.reach.test.ts` asserts the two tables put the same set of
+   * permissions within reach.
+   *
+   * The fields deliberately do not match the other table: subjects and tenants
+   * there come from the seeded rows, and here they are the fixed synthetic ids
+   * this map has always used. What has to agree is the roles and the scopes.
+   */
+  [
+    'dev-auditor-a',
+    {
+      subject: '01890000-0000-7000-8000-000000000104',
+      tenantId: DEMO_TENANT_A,
+      actorType: 'user',
+      displayName: 'Audita Trailmore, CHC',
+      roles: ['auditor'],
+      facilityIds: [DEMO_FACILITY_A],
+      // Read only: this principal holds `audit.read` and `facility.read`, and a
+      // write scope would hand the audit account FHIR write reach at the API
+      // layer that no permission it holds would ever ask for.
+      scopes: ['user/*.read'],
+      purposeOfUse: 'HCOMPL',
+    },
+  ],
+  [
+    'dev-stockkeeper-a',
+    {
+      subject: '01890000-0000-7000-8000-000000000105',
+      tenantId: DEMO_TENANT_A,
+      actorType: 'user',
+      displayName: 'Stocka Shelfward, CPhT',
+      roles: ['stock-keeper'],
+      facilityIds: [DEMO_FACILITY_A],
+      scopes: ['user/*.read', 'user/*.write'],
+      purposeOfUse: 'HOPERAT',
+    },
+  ],
+  [
+    'dev-readonly-a',
+    {
+      subject: '01890000-0000-7000-8000-000000000106',
+      tenantId: DEMO_TENANT_A,
+      actorType: 'user',
+      displayName: 'Reada Overlook',
+      roles: ['read-only'],
+      facilityIds: [DEMO_FACILITY_A],
+      scopes: ['user/*.read'],
+      purposeOfUse: 'HQUALIMP',
+    },
+  ],
   [
     'dev-clinician-b',
     {

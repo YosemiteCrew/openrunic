@@ -3,11 +3,30 @@ import { describe, expect, it } from 'vitest';
 import { isDemoBuild } from '@/lib/auth/build';
 import { developmentCredentials } from '@/lib/auth/directory';
 
+/**
+ * Named rather than counted.
+ *
+ * This was `toHaveLength(4)`, and a count moves for two unrelated reasons - a
+ * principal arriving and a principal being dropped by mistake - reporting the
+ * same failure for both. `dev-auditor-a` was added to the API and would have
+ * shown up here as `expected 4 to be 5`, which says nothing about which door
+ * opened. The list says which.
+ */
+const OFFERED_IN_DEVELOPMENT = [
+  'dev-clinician-a',
+  'dev-frontdesk-a',
+  'dev-biller-a',
+  'dev-clinician-b',
+  'dev-auditor-a',
+  'dev-stockkeeper-a',
+  'dev-readonly-a',
+];
+
 describe('the credentials the sign-in screen offers', () => {
   it('offers every development principal, each with a name and a role to show', () => {
     const offered = developmentCredentials('development');
 
-    expect(offered).toHaveLength(4);
+    expect(offered.map((credential) => credential.token)).toStrictEqual(OFFERED_IN_DEVELOPMENT);
     for (const credential of offered) {
       expect(credential.token).not.toBe('');
       expect(credential.identity.displayName).not.toBe('');
@@ -28,7 +47,9 @@ describe('the credentials the sign-in screen offers', () => {
   });
 
   it('opens for a demonstration build, which is the only production one that has a door', () => {
-    expect(developmentCredentials('production', true)).toHaveLength(4);
+    expect(
+      developmentCredentials('production', true).map((credential) => credential.token)
+    ).toStrictEqual(OFFERED_IN_DEVELOPMENT);
   });
 });
 

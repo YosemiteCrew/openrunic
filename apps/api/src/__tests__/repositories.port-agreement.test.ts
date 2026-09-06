@@ -1364,8 +1364,14 @@ function namedColumns(node: unknown, into: Set<string>): void {
  * in argument position, and with `satisfies` on the outer literal. Annotating
  * the inner literal does catch it, at three hundred-odd terms.
  *
- * So this is the check for `where`, and it covers `orderBy` too rather than
- * leaving that half resting on one annotation nobody is obliged to keep.
+ * So this is the check for `where`. It is not a replacement for `OrderByFor<M>`
+ * on the other half. It calls each member once, with a query that sets every
+ * parameter the spec declares, so on a branching `orderBy` it reads one branch
+ * and the annotation is the only thing looking at the rest. Measured on
+ * `patients`, whose ordering nothing else covers: a typo in the `birthDate`
+ * branch with the annotation removed is invisible to this file and to the
+ * compiler both, while the same typo in the default branch fails here. Of the
+ * twenty-six specs with no other ordering cover, twenty-five branch.
  *
  * What a misspelled column costs depends on the member. In a `where` it is a
  * filter that silently stops filtering: Postgres is handed a key it does not
@@ -1381,7 +1387,8 @@ function namedColumns(node: unknown, into: Set<string>): void {
  * parse. What it does NOT reach is a clause guarded by a particular *value* of
  * a parameter rather than by its presence, and the `uniqueBy.where` of the
  * fourteen specs that declare one, which takes a create input rather than a
- * query and has no table of those to draw on.
+ * query and has no table of those to draw on - those carry `WhereFor<M>`, and
+ * thirteen of them are reached by `repositories.prisma.test.ts` instead.
  */
 describe('every column a spec filters or orders by is a column the schema has', () => {
   it('reads a column name out of every position one can appear in', () => {
@@ -1412,6 +1419,13 @@ describe('every column a spec filters or orders by is a column the schema has', 
     // plenty of it; the named pairs survive a parse that found two models and
     // stopped. The negative halves are the ones that matter: a table that
     // answered "yes" to everything would pass every assertion below.
+    //
+    // The floor is the loosest of them on purpose. `schema.prisma` declares
+    // sixty-three models and the specs below name fifty-four; a parse that lost
+    // one a spec names fails on the `toBeDefined` further down, which is the
+    // stronger assertion. What forty leaves this line owning is a parse that
+    // kept every spec model and lost most of the rest - so do not read it as
+    // cover for the schema at large, which this file asks nothing about.
     expect(MODEL_COLUMNS.size).toBeGreaterThan(40);
     expect(MODEL_COLUMNS.get('Observation')?.has('status')).toBe(true);
     expect(MODEL_COLUMNS.get('Observation')?.has('statusTYPO')).toBe(false);

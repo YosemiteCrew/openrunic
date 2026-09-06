@@ -52,19 +52,32 @@ export type UpdateManyArgs<M extends PrismaModelName> = Operations<M>['updateMan
  * work for `where`, whose bodies are almost entirely
  * `...(query.x === undefined ? {} : { x: query.x })`. That half is checked
  * against `schema.prisma` at run time instead, in
- * `repositories.port-agreement.test.ts`, and that check covers this one too.
+ * `repositories.port-agreement.test.ts`.
+ *
+ * Do not drop this annotation on the strength of that check. It calls `orderBy`
+ * once, with a query that sets every parameter the spec declares, so it reads
+ * whichever branch that query selects and no other - and forty-seven of the
+ * fifty-four bodies branch. Measured on `patientSpec`: a typo in the
+ * `sort === 'birthDate'` branch with this annotation removed is rc=0 from the
+ * compiler and rc=0 from the whole api suite, with the annotation it is TS2561,
+ * and the same typo in the default branch is rc=1 from the run-time check.
  */
 export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
 
 /**
- * A Prisma `where` for `M`, for the one place an annotation is the whole guard.
+ * A Prisma `where` for `M`, for the half of the surface an annotation can hold.
  *
  * `CollectionSpec.where` does not carry this and deliberately: its bodies are
  * conditional spreads, and a property a spread contributed survives no
  * excess-property check, annotated or not. `UniqueBy.where` is the opposite -
- * fourteen implementations, none containing a spread - so the annotation is
- * sufficient there and is the only thing standing between a misspelled column
- * and the create-idempotency query, which no test builds.
+ * fourteen implementations, none containing a spread - so the annotation works
+ * there, and on all fourteen it does: a planted column the model does not have
+ * is TS2353 at every one, and rc=0 at every one with the annotation removed.
+ *
+ * It is not the only guard for most of them. Thirteen of the fourteen are also
+ * caught by `repositories.prisma.test.ts`, which builds the create-idempotency
+ * query. `breakGlassGrantSpec` is the one that is not - nothing builds its
+ * `uniqueBy.where`, so there this annotation is the whole of it.
  */
 export type WhereFor<M extends PrismaModelName> = FindManyArgs<M>['where'];
 

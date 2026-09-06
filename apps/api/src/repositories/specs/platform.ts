@@ -15,7 +15,7 @@ import {
   windowFilter,
   type Writable,
 } from '../collection.js';
-import type { Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, Row, ScopedRow } from '../rows.js';
 
 /**
  * The platform aggregates: the form engine, the staff directory, the places of
@@ -200,7 +200,7 @@ export const formDefinitionSpec: CollectionSpec<
     return row.key;
   },
 
-  orderBy(query: FormDefinitionListQuery) {
+  orderBy(query: FormDefinitionListQuery): OrderByFor<'FormDefinition'> {
     const { order } = query;
     if (query.sort === 'version') return [{ version: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -346,7 +346,7 @@ export const formSubmissionSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.effectiveAt.getTime();
   },
 
-  orderBy(query: FormSubmissionListQuery) {
+  orderBy(query: FormSubmissionListQuery): OrderByFor<'FormSubmission'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ effectiveAt: query.order }, { id: 'asc' as const }];
   },
@@ -570,7 +570,7 @@ export const userSpec: CollectionSpec<'User', UserCreateInput, UserUpdateInput, 
     return `${row.familyName} ${row.givenName}`;
   },
 
-  orderBy(query: UserListQuery) {
+  orderBy(query: UserListQuery): OrderByFor<'User'> {
     const { order } = query;
     if (query.sort === 'email') return [{ email: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -646,7 +646,7 @@ export const roleSpec: CollectionSpec<'Role', RoleCreateInput, RoleUpdateInput, 
     return row.key;
   },
 
-  orderBy(query: RoleListQuery) {
+  orderBy(query: RoleListQuery): OrderByFor<'Role'> {
     const { order } = query;
     if (query.sort === 'name') return [{ name: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -769,7 +769,7 @@ export const roleAssignmentSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: RoleAssignmentListQuery) {
+  orderBy(query: RoleAssignmentListQuery): OrderByFor<'RoleAssignment'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 
@@ -854,7 +854,7 @@ export const userFacilitySpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: UserFacilityListQuery) {
+  orderBy(query: UserFacilityListQuery): OrderByFor<'UserFacility'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 
@@ -995,7 +995,7 @@ export const facilitySpec: CollectionSpec<
     return row.name;
   },
 
-  orderBy(query: FacilityListQuery) {
+  orderBy(query: FacilityListQuery): OrderByFor<'Facility'> {
     const { order } = query;
     if (query.sort === 'code') return [{ code: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1097,7 +1097,7 @@ export const terminologyCodeSpec: CollectionSpec<
     return row.display;
   },
 
-  orderBy(query: TerminologyListQuery) {
+  orderBy(query: TerminologyListQuery): OrderByFor<'TerminologyCode'> {
     const { order } = query;
     if (query.sort === 'code') return [{ code: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -1199,7 +1199,7 @@ export const valueSetSpec: CollectionSpec<
     return row.url;
   },
 
-  orderBy(query: ValueSetListQuery) {
+  orderBy(query: ValueSetListQuery): OrderByFor<'ValueSet'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ url: order }, { id: 'asc' as const }];

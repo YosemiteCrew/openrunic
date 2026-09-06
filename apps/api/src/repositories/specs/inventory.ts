@@ -19,7 +19,7 @@ import {
   type Writable,
 } from '../collection.js';
 import { STOCK_ITEM_DEFAULTS, STOCK_LOT_DEFAULTS } from '../defaults.js';
-import type { PrismaModelName, Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, PrismaModelName, Row, ScopedRow } from '../rows.js';
 
 /**
  * THE STOCKROOM'S FIVE TABLES.
@@ -186,7 +186,7 @@ export const stockItemSpec: CollectionSpec<
     return row.name;
   },
 
-  orderBy(query: StockItemListQuery) {
+  orderBy(query: StockItemListQuery): OrderByFor<'StockItem'> {
     if (query.sort === 'sku') return [{ sku: query.order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ name: query.order }, { id: 'asc' as const }];
@@ -303,7 +303,7 @@ export const stockLotSpec: CollectionSpec<
     return row.expiresOn === null ? NEVER_EXPIRES : toIsoDate(row.expiresOn);
   },
 
-  orderBy(query: StockLotListQuery) {
+  orderBy(query: StockLotListQuery): OrderByFor<'StockLot'> {
     if (query.sort === 'receivedOn') return [{ receivedOn: query.order }, { id: 'asc' as const }];
     if (query.sort === 'lotNumber') return [{ lotNumber: query.order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
@@ -584,7 +584,7 @@ export const stockPostingSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.occurredOn.getTime();
   },
 
-  orderBy(query: StockPostingListQuery) {
+  orderBy(query: StockPostingListQuery): OrderByFor<'StockPosting'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ occurredOn: query.order }, { id: 'asc' as const }];
   },
@@ -672,7 +672,7 @@ export const stockMovementSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.occurredOn.getTime();
   },
 
-  orderBy(query: StockMovementListQuery) {
+  orderBy(query: StockMovementListQuery): OrderByFor<'StockMovement'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ occurredOn: query.order }, { id: 'asc' as const }];
   },
@@ -835,7 +835,7 @@ export const stockLotStatusChangeSpec: CollectionSpec<
     return row.effectiveOn.getTime();
   },
 
-  orderBy(query: StockLotStatusChangeListQuery) {
+  orderBy(query: StockLotStatusChangeListQuery): OrderByFor<'StockLotStatusChange'> {
     const { order } = query;
     if (query.sort === 'lotSeq') return [{ lotSeq: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];

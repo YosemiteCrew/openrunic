@@ -36,6 +36,26 @@ export type FindFirstArgs<M extends PrismaModelName> = Operations<M>['findFirst'
 export type CreateArgs<M extends PrismaModelName> = Operations<M>['create']['args'];
 export type UpdateManyArgs<M extends PrismaModelName> = Operations<M>['updateMany']['args'];
 
+/**
+ * A Prisma `orderBy` for `M`, named so a spec can annotate its own with one.
+ *
+ * The name exists for the annotation, not for the type: `OrderByFor<'Observation'>`
+ * is exactly `FindManyArgs<'Observation'>['orderBy']`. What the annotation buys
+ * is excess-property checking, and nothing else here does. Every property of a
+ * generated ordering argument is optional, so `[{ effectiveAtTYPO: 'desc' }]` is
+ * structurally assignable and the compiler has nothing to say about it - and a
+ * misspelled sort column is not a wrong page, it is an unordered one, which no
+ * HTTP test sees because the memory port sorts with `sortValue` instead.
+ *
+ * Freshness only survives to a property written directly into a literal, so this
+ * works for `orderBy`, whose fifty-four bodies contain no spread, and would not
+ * work for `where`, whose bodies are almost entirely
+ * `...(query.x === undefined ? {} : { x: query.x })`. That half is checked
+ * against `schema.prisma` at run time instead, in
+ * `repositories.port-agreement.test.ts`, and that check covers this one too.
+ */
+export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
+
 /** A value that carries a `toNumber`, which is how a Decimal presents itself. */
 interface DecimalLike {
   toNumber(): number;

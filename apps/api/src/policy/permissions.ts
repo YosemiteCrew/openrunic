@@ -33,6 +33,14 @@ export const PERMISSIONS = [
   'patient.breakGlass',
   'appointment.read',
   'appointment.write',
+  /**
+   * Minting a credential that admits its bearer to a clinical video room.
+   *
+   * Separate from `appointment.read` because a billing role needs the schedule
+   * to collect for a visit but has no reason to enter its consultation. The
+   * front desk does: reception admits participants from the waiting room.
+   */
+  'telehealth.join',
   'encounter.read',
   'encounter.write',
   'document.read',
@@ -138,6 +146,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'patient.breakGlass',
     'appointment.read',
     'appointment.write',
+    'telehealth.join',
     'encounter.read',
     'encounter.write',
     'document.read',
@@ -171,6 +180,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'patient.breakGlass',
     'appointment.read',
     'appointment.write',
+    // Reception admits participants from the waiting room. Billing does not.
+    'telehealth.join',
     'encounter.read',
     'document.read',
     'document.write',

@@ -2,6 +2,7 @@ import { AdapterRegistry } from '@openrunic/adapters';
 import { describe, expect, it } from 'vitest';
 
 import type { ProblemDocument } from '../http/problem.js';
+import { telehealthRouteContracts } from '../routes/telehealth.js';
 import type { JoinTokenResponse, TelehealthVisitDto } from '../schemas/telehealth.js';
 
 import {
@@ -240,6 +241,43 @@ describe('opening a room', () => {
 });
 
 describe('letting somebody in', () => {
+  it('publishes the narrower permission in the route contract', () => {
+    const join = telehealthRouteContracts().find(
+      (contract) => contract.operationId === 'issueTelehealthJoinToken'
+    );
+
+    expect(join?.permission).toBe('telehealth.join');
+  });
+
+  it('lets reception admit a participant', async () => {
+    const { app } = harness();
+    const visit = await openVisit(app);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.frontDeskA, {
+        participantId: PATIENT,
+        role: 'guest',
+      })
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses billing a credential for the consultation', async () => {
+    const { app } = harness();
+    const visit = await openVisit(app);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.billerA, {
+        participantId: PATIENT,
+        role: 'host',
+      })
+    );
+
+    expect(res.status).toBe(403);
+    expect((await json<ProblemDocument>(res)).detail).toContain('telehealth.join');
+  });
+
   it('issues a token for one named participant', async () => {
     const { app } = harness();
     const visit = await openVisit(app);

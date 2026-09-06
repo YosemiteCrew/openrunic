@@ -156,7 +156,11 @@ Before declaring a task finished, run and pass, scoped to what you changed:
   `Closes #N` does not fire on a merge into `dev`: GitHub honours it only when the commit
   reaches the default branch, `main`. It does fire later, at the next `dev` -> `main`
   promotion - 11 issues closed exactly that way between 2026-08-14 and 2026-08-17, each within
-  three seconds of the promotion merge. So the keyword is a backstop, not a no-op; close the
+  three seconds of the promotion merge, at promotions of 8, 7 and 9 commits. It has never had
+  the chance to fire at a larger one: the 77-commit promotion (PR #230) named 11 issues and all
+  11 had been closed by hand seven days earlier. The absence of evidence above 9 commits is an
+  absence of subjects, not an absence of firings - do not read a size limit into it. So the
+  keyword is a backstop, not a no-op; close the
   issue by hand as well, with a comment naming the PR and the `dev` commit. Between the `dev`
   merge and the promotion an issue sits fixed-and-open for hours or days, and five were found
   in that state on 2026-09-06. **An open issue is not evidence that anything is broken.**

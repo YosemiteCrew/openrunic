@@ -195,18 +195,14 @@ export function compare({
        to, and the record cannot be rewritten afterwards. */
     if (mine.subject !== theirs.subject) {
       problems.push(
-        `${token}: subject ${mine.subject} does not match the API's ${theirs.subject} - this is the audit attribution key`
+        `${token}: subject differs between the two tables - this is the audit attribution key`
       );
     }
     if (mine.displayName !== theirs.displayName) {
-      problems.push(
-        `${token}: displayName ${JSON.stringify(mine.displayName)} does not match the API's ${JSON.stringify(theirs.displayName)}`
-      );
+      problems.push(`${token}: displayName differs between the two tables`);
     }
     if (mine.roles.join(',') !== theirs.roles.join(',')) {
-      problems.push(
-        `${token}: roles [${mine.roles.join(', ')}] do not match the API's [${theirs.roles.join(', ')}]`
-      );
+      problems.push(`${token}: roles differ between the two tables`);
     }
   }
 
@@ -245,52 +241,28 @@ async function main() {
   }
 
   /*
-   * WHY IT IS SAFE FOR THIS MESSAGE TO PRINT SUBJECTS AND DISPLAY NAMES.
+   * NAMES WHAT DIFFERS AND DOES NOT PRINT IT.
    *
-   * A scanner flags identity fields reaching a CI log, and the shape is real.
-   * The reason it is safe is not that these are demo values. It is the read
-   * surface: THIS GUARD'S ENTIRE ABILITY TO READ ANYTHING IS TWO DYNAMIC
-   * IMPORTS. No `readFileSync`, no `fetch`, no `process.env`, no subprocess -
-   * checkable in one grep, and it does not depend on which two paths are
-   * passed.
+   * An earlier version emitted both subjects, and four rounds of review went
+   * into justifying that - read surface, transitive graph, working tree versus
+   * commit. Every step was true and none of it was needed: the message never
+   * required the values. Naming the token, the field and both files is the
+   * whole of what makes a reader act, and the values are one `git diff` away.
    *
-   * The precise bound is one layer in, and it is tighter than "two files":
-   * `import()` evaluates the whole graph, so the bound is only as good as what
-   * those two modules import. Both import exactly one thing and both are
-   * `import type`, which strip-types erases:
+   * That is the difference between identifying what is wrong and displaying it,
+   * and conflating the two is what produced a security finding to argue with
+   * instead of a message to fix. Nothing here reaches a log that a reader does
+   * not already have in front of them.
    *
-   *   static-resolver.ts   import type { Principal, PrincipalResolver }
-   *   directory.ts         import type { Identity }
-   *
-   * Measured rather than read off the line - copy both files somewhere with no
-   * siblings, no package.json and no node_modules, and they still load: 8
-   * principals and 7 credentials. **The graph is empty.** Each produces a table
-   * and performs no I/O: a `Map` of principals, and an array built by a pure
-   * `.map` over literal rows.
-   *
-   * So the trigger a reader can actually check: **this bound holds while both
-   * files' only imports are `import type`.** A value import appearing in either
-   * one makes this guard's exposure that module's entire graph, and unlike "if
-   * it ever reads something new" that is one grep and it is visible in a diff.
-   *
-   * It prints the WORKING TREE, not the commit - Claude L3 drove a failure and
-   * traced the values, and a planted mutant subject present in no commit came
-   * out of the message. That is worth knowing and it is not an exposure: in CI
-   * the tree is the checkout, so tree and commit coincide and nothing is
-   * published that a clone does not carry; locally the output goes to the
-   * terminal of whoever is already holding that tree. Said explicitly because
-   * the caveat alone reads like a risk, and the repair someone would reach for
-   * is truncating the identifiers - which costs the only thing that makes the
-   * message actionable.
-   *
-   * They are printed rather than counted because naming the drifted subject is
-   * the entire point: "this is the audit attribution key" is what makes a
-   * reader act, and "one field differs" is not.
+   * Scope worth keeping from that exchange, as a statement about this guard
+   * rather than about disclosure: its entire read surface is two dynamic
+   * imports, over two files whose own only imports are `import type`. That is
+   * what makes it cheap to reason about at all.
    */
   process.stderr.write(
     `demo-principal-parity: ${WEB_SOURCE} disagrees with ${API_SOURCE}.\n` +
       problems.map((problem) => `  ${problem}\n`).join('') +
-      `\nThese two tables are transcribed by hand. The subjects are what an audit record attributes an access to.\n`
+      `\nThese two tables are transcribed by hand, and the subjects are what an audit record attributes an access to. Diff the two files named above to see the values.\n`
   );
   return 1;
 }

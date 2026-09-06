@@ -88,8 +88,13 @@ test('names a drifted subject as the audit attribution key', async () => {
   const problems = await problemsFor([ALICE, BOB, WITHHELD], [drifted, BOB]);
 
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /^dev-a: subject sub-somebody-else does not match the API's sub-a/u);
+  assert.match(problems[0], /^dev-a: subject differs between the two tables/u);
   assert.match(problems[0], /audit attribution key/u);
+
+  /* The invariant that replaced four rounds of justifying the opposite: the
+     message names what differs and never shows it. Both values are absent, so
+     there is nothing to argue about reaching a public CI log. */
+  assert.doesNotMatch(problems[0], /sub-somebody-else|sub-a/u);
 });
 
 test('catches a display name and a role list that drift', async () => {
@@ -102,8 +107,10 @@ test('catches a display name and a role list that drift', async () => {
   );
 
   assert.equal(problems.length, 2);
-  assert.match(problems[0], /displayName "Someone Else" does not match the API's "Ada"/u);
-  assert.match(problems[1], /roles \[clinician\] do not match the API's \[biller\]/u);
+  assert.match(problems[0], /^dev-a: displayName differs between the two tables$/u);
+  assert.match(problems[1], /^dev-b: roles differ between the two tables$/u);
+  // Neither the drifted values nor the expected ones appear.
+  assert.doesNotMatch(problems.join('\n'), /Someone Else|Ada|clinician|biller/u);
 });
 
 test('catches a principal the API publishes and the sign-in never offers', async () => {

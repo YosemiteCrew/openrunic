@@ -61,6 +61,33 @@ jobs:
     name: Validate commit messages
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Only an OPEN pull request, because linting the commit messages of a merged
+    # one gates nothing: those commits are in the history either way, and no
+    # outcome of this job can change that. Every pull request is open when it
+    # merges, so the gate still runs on everything it is able to block. That is
+    # the justification, and it does not depend on the failure below.
+    #
+    # What made it visible: `edited` is one of this workflow's triggers, so
+    # editing the title or body of an already-merged pull request re-runs this
+    # job. Nine merged pull requests were edited in one pass on 2026-09-06; the
+    # two whose head branch had been deleted failed and the seven whose branch
+    # still existed passed. `dev` takes squash merges, so a deleted branch
+    # leaves the head commit reachable only under `refs/pull/<n>/head`, which
+    # `actions/checkout` never fetches - it fetches `refs/heads/*` plus the one
+    # base commit. `git rev-list` then reports
+    # `Invalid revision range <base>..<head>`, naming BOTH ends when only the
+    # head is missing, which reads like a base-SHA problem and is not one.
+    # `fetch-depth: 0` is a depth, not a ref set, and does not help.
+    #
+    # Deliberately keyed on the pull request being closed rather than on whether
+    # the head ref resolves. Branch tidying is what exposed this, not what is
+    # wrong with it; a head-ref check would keep running a job that gates
+    # nothing and would go back to failing the next time a branch is deleted.
+    #
+    # Not a weakening: this job is not a required status check on either
+    # ruleset, `synchronize` cannot fire on a merged pull request, and
+    # `reopened` is safe because GitHub requires the branch to exist to reopen.
+    #
     # Promotion PRs (dev -> main) replay already-merged dev history into main.
     # Keep title validation active, but do not re-lint historical commits in
     # that path.
@@ -70,7 +97,7 @@ jobs:
     # fail this job on every bot PR. The PR-title gate above still runs, so the
     # conventional type(scope) contract is enforced on the squash-merge subject;
     # only the generated body lines are exempt.
-    if: ${{ !(github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'dev') && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ github.event.pull_request.state == 'open' && !(github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'dev') && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

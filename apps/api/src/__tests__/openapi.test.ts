@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { createApp } from '../app.js';
-import { toHonoPath } from '../openapi/registry.js';
+import { toHonoPath, type RouteContract } from '../openapi/registry.js';
 import { buildOpenApiDocument, byTagName, toJsonSchema } from '../openapi/spec.js';
 import { internalRouteContracts } from '../routes/index.js';
 
@@ -246,6 +246,56 @@ describe('the OpenAPI document', () => {
     expect([...differing].sort((a, b) => a.localeCompare(b))).not.toEqual(
       [...differing].sort(byTagName)
     );
+  });
+
+  /**
+   * THE COMPARATOR TEST ABOVE PROVES THE COMPARATOR. THIS PROVES THE CALL SITE.
+   *
+   * Reverting `byTagName`'s body to `localeCompare` reddens that test. Reverting
+   * only the *call site*, leaving the comparator correct, was declared uncaught
+   * when #354 shipped - carried across from #351, where the same limit is real.
+   * It is not real here, and the difference is not how the file is written:
+   *
+   *   #351   session.ts sorts the permissions `buildPolicyContext` derives from
+   *          `ROLE_PERMISSIONS[role]` - closed over a module constant, so no
+   *          synthetic identifier can reach the sort. Genuinely irreducible.
+   *   here   `buildOpenApiDocument(contracts)` takes its tags from the argument,
+   *          so a synthetic contract reaches the call site directly.
+   *
+   * **Whether the value under test arrives as an argument or is closed over a
+   * module constant is what decides it**, and a declared limit is a claim like
+   * any other: driving the mutation confirms the symptom and says nothing about
+   * whether it had to be that way.
+   *
+   * The document's own tags cannot show this - all of them are plain lower-case
+   * ASCII, which no comparator disagrees on. Same reason the comparator test
+   * constructs its identifiers rather than drawing them from the document.
+   */
+  it('sorts the document\u2019s tags with that comparator, not merely defining it', () => {
+    /* Typed as the real thing rather than cast. A cast that accepts anything is
+       never checked against the interface it stands in for, so it drifts
+       silently the moment `RouteContract` gains a required field - and a scoped
+       `test` run does not type-check test files, so the drift would surface as
+       a CI failure on somebody else's pull request. */
+    const contract = (tag: string): RouteContract => ({
+      method: 'get',
+      path: `/bff/v0/${tag}`,
+      operationId: `list${tag}`,
+      summary: 'A synthetic route, present only to carry its tag.',
+      tags: [tag],
+      permission: 'patient.read',
+      responses: [{ status: 200, description: 'ok', schema: z.object({}) }],
+    });
+
+    const document = buildOpenApiDocument(
+      ['orders.write', 'orders.Write', 'orders.audit'].map(contract)
+    );
+
+    expect(document.tags.map((tag) => tag.name)).toEqual([
+      'orders.Write',
+      'orders.audit',
+      'orders.write',
+    ]);
   });
 
   it('documents every error status the routes can produce', () => {

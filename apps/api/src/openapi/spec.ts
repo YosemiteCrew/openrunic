@@ -285,6 +285,12 @@ export function buildOpenApiDocument(
  * comparator is a worse coupling than three lines. `capabilities.ts` carries a
  * third copy for its own reason.
  *
+ * THE TRIGGER, WRITTEN DOWN NOW RATHER THAN ARGUED LATER: at three copies this
+ * is coupling avoidance and is worth the duplication. **A fourth makes it a
+ * missing module** - extract a shared `byIdentifier` then, rather than
+ * relitigating the boundary each time. This is the copy a fourth would be
+ * modelled on, which is why the trigger lives here.
+ *
  * `localeCompare` is correct at the other call sites in this package -
  * `errors.ts`, `memory.ts` - which order human-readable values for display
  * inside one runtime. This is not that.

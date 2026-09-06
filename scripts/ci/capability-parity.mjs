@@ -84,7 +84,7 @@ export function capabilitiesForRoles(roles: readonly string[]): string[] {
   for (const role of roles) {
     for (const capability of ROLE_CAPABILITIES[role] ?? []) held.add(capability);
   }
-  return [...held].sort();
+  return [...held].sort((a, b) => a.localeCompare(b));
 }
 `;
 

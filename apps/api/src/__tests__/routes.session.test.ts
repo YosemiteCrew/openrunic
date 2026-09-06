@@ -30,7 +30,9 @@ describe('GET /bff/v0/me', () => {
       expect(response.status, token).toBe(200);
 
       const body = (await response.json()) as { roles: string[]; permissions: string[] };
-      const expected = [...buildPolicyContext(principal).permissions].sort();
+      const expected = [...buildPolicyContext(principal).permissions].sort((a, b) =>
+        a.localeCompare(b)
+      );
 
       expect(body.permissions, token).toStrictEqual(expected);
       expect(body.roles, token).toStrictEqual([...principal.roles]);
@@ -62,7 +64,7 @@ describe('GET /bff/v0/me', () => {
   it('returns permissions sorted, so two calls are comparable', async () => {
     const response = await app().request('/bff/v0/me', { headers: bearer(TOKENS.clinicianA) });
     const { permissions } = (await response.json()) as { permissions: string[] };
-    expect(permissions).toStrictEqual([...permissions].sort());
+    expect(permissions).toStrictEqual([...permissions].sort((a, b) => a.localeCompare(b)));
     expect(new Set(permissions).size).toBe(permissions.length);
   });
 

@@ -56,7 +56,10 @@ export function sessionRoutes(): Hono<AppEnv> {
 
     return c.json({
       roles: [...policy.roles],
-      permissions: [...policy.permissions].sort(),
+      /* An explicit comparator, not the default: the default sorts by UTF-16
+         code unit, which is a different order the moment an identifier is not
+         plain lower-case ASCII. The browser's mirror sorts the same way. */
+      permissions: [...policy.permissions].sort((a, b) => a.localeCompare(b)),
     });
   });
 

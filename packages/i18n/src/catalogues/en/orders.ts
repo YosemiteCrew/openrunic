@@ -133,6 +133,8 @@ export const orders: Messages = {
   'orders.new.blocker.noDiagnosis': '{order} has no diagnosis linked.',
   'orders.new.blocker.notPermitted':
     'Your role cannot sign orders. Pend them for a clinician to sign, or ask one to sign now.',
+  'orders.new.blocker.permissionUnknown':
+    'We could not confirm whether you may sign. Try again, or pend these orders.',
   'orders.new.blockers.heading': 'Before signing',
 
   'orders.new.review.headingOne': 'Review {count} order',

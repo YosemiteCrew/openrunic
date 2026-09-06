@@ -144,6 +144,37 @@ describe('NewOrderScreen', () => {
     expect(screen.getAllByRole('button', { name: /Pend/ }).length).toBeGreaterThan(0);
   });
 
+  it('does not tell a clinician their role cannot sign when it simply could not ask', async () => {
+    /* The deny copy is true of ONE of the three states `AsyncState` carries.
+       Collapsing them to a boolean showed "Your role cannot sign orders. Pend
+       them for a clinician to sign" to a clinician whose capability request
+       failed - #313 with the sign reversed, the interface asserting a lack the
+       user does not have. Still blocked, and that is deliberate; the sentence
+       is what changes. */
+    const client = createMockClient({ roles: ['clinician'] });
+    render(
+      <NewOrderScreen
+        client={{
+          ...client,
+          session: { me: () => Promise.reject(new ApiError('offline', { kind: 'network' })) },
+        }}
+        now={MOCK_NOW}
+      />
+    );
+    await screen.findByLabelText('Ordering for');
+    choosePatient('Patientsson');
+
+    fireEvent.click(favourite(/Full blood count/));
+    await screen.findByRole('list', { name: 'Drafted orders' });
+    fireEvent.click(at(screen.getAllByRole('button', { name: 'Sign 1 order' })));
+
+    const blockers = await screen.findByRole('alert', { name: 'Before signing' });
+    expect(
+      within(blockers).getByText(/could not confirm whether you may sign/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/role cannot sign orders/)).not.toBeInTheDocument();
+  });
+
   it('says nothing about permission to a role that holds it', async () => {
     /* The separating half. Without it the blocker could be unconditional and
        every assertion above would still pass. */

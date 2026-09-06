@@ -369,7 +369,7 @@ function signBlockers(
   drafts: readonly DraftOrder[],
   warnings: readonly OrderWarning[],
   cleared: Readonly<Record<string, string>>,
-  maySign: boolean
+  maySign: 'yes' | 'no' | 'unknown'
 ): string[] {
   /* First, because it is the one a person cannot fix by editing the draft. The
      API refuses `order.write` for this principal either way (#313); before this
@@ -379,7 +379,15 @@ function signBlockers(
   
      A blocker rather than a hidden button: the screen stays readable, and the
      reason is in the same `role="alert"` panel as every other reason. */
-  const notPermitted = maySign ? [] : [t('orders.new.blocker.notPermitted')];
+  /* Three states, not two. `no` is resolved-and-denied; `unknown` is in flight
+     or failed, and saying "your role cannot sign orders" there tells a
+     clinician something false about their own authority - #313 with the sign
+     reversed. Both still block, so the gate direction is unchanged. */
+  const notPermitted = {
+    yes: [],
+    no: [t('orders.new.blocker.notPermitted')],
+    unknown: [t('orders.new.blocker.permissionUnknown')],
+  }[maySign];
   /* `flatMap` rather than `.filter().map()`: one pass over each list, and the
      empty array is the "not a blocker" case rather than a second traversal. */
   const openCriticals = warnings.flatMap((warning) =>
@@ -522,11 +530,15 @@ function Composer({ patients, now, client }: Readonly<ComposerProps>): ReactElem
     [patient?.id, drafts]
   );
 
-  /* Empty while it loads and empty on failure, which reads as "cannot sign yet"
-     rather than "may sign". The permissive default is the one that offers a
-     signature because a request has not come back. */
+  /* Blocked while it loads and blocked on failure - the permissive default is
+     the one that offers a signature because a request has not come back. The
+     status is carried through rather than collapsed to a boolean, because the
+     REASON differs: a denied clinician and an unreachable API are not the same
+     sentence to show someone. */
   const capabilities = useOwnCapabilities({ client });
-  const maySign = capabilities.data?.permissions.includes('order.write') ?? false;
+  const resolved = capabilities.status === 'success' ? capabilities.data : null;
+  const maySign =
+    resolved === null ? 'unknown' : resolved.permissions.includes('order.write') ? 'yes' : 'no';
 
   const blockers = useMemo(
     () => signBlockers(t, drafts, warnings, cleared, maySign),

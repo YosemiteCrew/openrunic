@@ -152,12 +152,16 @@ Before declaring a task finished, run and pass, scoped to what you changed:
 - **PR titles require a scope**: `type(scope): subject`. A scopeless title fails the "Validate PR
   title" CI check even though commitlint accepts scopeless commits locally.
 - **All PRs target `dev`**, never `main`. Releases are promotion PRs (see RELEASING.md).
-- **Close the issue by hand after merging.** `Fixes #N` / `Closes #N` only fires for merges into
-  the default branch, which is `main`, so a PR into `dev` never closes anything however the
-  keyword is written. Comment on the issue naming the PR and the `dev` commit, then close it.
-  Five issues were fixed and left open this way; at least one carried a correct `Closes #N` in
-  its merge commit and stayed open regardless. An open issue is not evidence that anything is
-  still broken unless somebody has checked.
+- **Close the issue by hand after merging, and keep writing the keyword.** `Fixes #N` /
+  `Closes #N` does not fire on a merge into `dev`: GitHub honours it only when the commit
+  reaches the default branch, `main`. It does fire later, at the next `dev` -> `main`
+  promotion - 11 issues closed exactly that way between 2026-08-14 and 2026-08-17, each within
+  three seconds of the promotion merge. So the keyword is a backstop, not a no-op; close the
+  issue by hand as well, with a comment naming the PR and the `dev` commit. Between the `dev`
+  merge and the promotion an issue sits fixed-and-open for hours or days, and five were found
+  in that state on 2026-09-06. **An open issue is not evidence that anything is broken.**
+  `git log origin/dev --grep '#N'` settles it before you claim one - `--grep` reads the whole
+  message, and the keyword is usually in the body rather than the subject.
 - Header max length 100.
 
 ## Hard rules

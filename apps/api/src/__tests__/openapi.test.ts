@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { createApp } from '../app.js';
-import { toHonoPath } from '../openapi/registry.js';
+import { toHonoPath, type RouteContract } from '../openapi/registry.js';
 import { buildOpenApiDocument, byTagName, toJsonSchema } from '../openapi/spec.js';
 import { internalRouteContracts } from '../routes/index.js';
 
@@ -272,7 +272,12 @@ describe('the OpenAPI document', () => {
    * constructs its identifiers rather than drawing them from the document.
    */
   it('sorts the document\u2019s tags with that comparator, not merely defining it', () => {
-    const contract = (tag: string): unknown => ({
+    /* Typed as the real thing rather than cast. A cast that accepts anything is
+       never checked against the interface it stands in for, so it drifts
+       silently the moment `RouteContract` gains a required field - and a scoped
+       `test` run does not type-check test files, so the drift would surface as
+       a CI failure on somebody else's pull request. */
+    const contract = (tag: string): RouteContract => ({
       method: 'get',
       path: `/bff/v0/${tag}`,
       operationId: `list${tag}`,
@@ -283,7 +288,7 @@ describe('the OpenAPI document', () => {
     });
 
     const document = buildOpenApiDocument(
-      ['orders.write', 'orders.Write', 'orders.audit'].map(contract) as never
+      ['orders.write', 'orders.Write', 'orders.audit'].map(contract)
     );
 
     expect(document.tags.map((tag) => tag.name)).toEqual([

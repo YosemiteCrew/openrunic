@@ -26,11 +26,13 @@ import {
 } from '@/lib/api';
 import type {
   ApiClient,
+  AsyncState,
   ListResponse,
   OrderCatalogEntry,
   OrderWarning,
   Patient,
   PatientProblem,
+  PrincipalCapabilities,
 } from '@/lib/api';
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
 import type { Translator } from '@openrunic/i18n';
@@ -353,6 +355,21 @@ function OrderingForRail({
 }
 
 /**
+ * Whether this principal may sign, as three states rather than two.
+ *
+ * `AsyncState` carries `loading | success | error` and the difference between
+ * them is a difference in what to SAY. Collapsed to a boolean, a clinician
+ * whose capability request failed was told their role cannot sign orders -
+ * #313 with the sign reversed. Both non-`yes` states still block.
+ */
+type SignPermission = 'yes' | 'no' | 'unknown';
+
+function signPermission(state: AsyncState<PrincipalCapabilities>): SignPermission {
+  if (state.status !== 'success' || state.data === null) return 'unknown';
+  return state.data.permissions.includes('order.write') ? 'yes' : 'no';
+}
+
+/**
  * What stands between this draft and a signature, in the order a person would
  * fix it: the criticals they must answer, then the diagnoses they must link.
  *
@@ -369,7 +386,7 @@ function signBlockers(
   drafts: readonly DraftOrder[],
   warnings: readonly OrderWarning[],
   cleared: Readonly<Record<string, string>>,
-  maySign: 'yes' | 'no' | 'unknown'
+  maySign: SignPermission
 ): string[] {
   /* First, because it is the one a person cannot fix by editing the draft. The
      API refuses `order.write` for this principal either way (#313); before this
@@ -536,9 +553,7 @@ function Composer({ patients, now, client }: Readonly<ComposerProps>): ReactElem
      REASON differs: a denied clinician and an unreachable API are not the same
      sentence to show someone. */
   const capabilities = useOwnCapabilities({ client });
-  const resolved = capabilities.status === 'success' ? capabilities.data : null;
-  const maySign =
-    resolved === null ? 'unknown' : resolved.permissions.includes('order.write') ? 'yes' : 'no';
+  const maySign = signPermission(capabilities);
 
   const blockers = useMemo(
     () => signBlockers(t, drafts, warnings, cleared, maySign),

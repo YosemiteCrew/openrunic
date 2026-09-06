@@ -399,6 +399,74 @@ test('a pattern that does not compile is reported without quoting the pattern', 
 });
 
 // ---------------------------------------------------------------------------
+// The flags, which PATTERN_SHAPE cannot see
+// ---------------------------------------------------------------------------
+//
+// The shape predicate constrains the PATTERN. `compilePattern`'s flags are the
+// other half of what the guard matches with, and one of them acts on the
+// HAYSTACK, where no constraint on the pattern can reach it. Found by mutating
+// the module against this file: `'i'` -> `'iu'` was green on all 47 tests.
+//
+// `g` and `y` are already pinned, because both carry `lastIndex` between calls
+// and the surface tests go red. `s`, `m` and `d` are invisible and that is
+// CORRECT rather than a gap: `s` changes only `.`, `m` changes only `^` and
+// `$`, and `d` changes only what `exec` returns, so inside the accepted
+// alphabet all three are inert - the shape predicate doing exactly its job.
+// `u` is the exception, because it changes CASE FOLDING, and folding reads the
+// input rather than the pattern.
+
+/**
+ * Code points that ONLY full Unicode case folding maps onto an ASCII letter.
+ *
+ * Written as escapes rather than literally, because the assertion is about a
+ * specific code point and a raw one is indistinguishable on screen from the
+ * letter it folds to - a fixture nobody can check by reading it.
+ */
+const FOLD_ONLY_TO_ASCII = [
+  ['KELVIN SIGN', '\u212A', 'k'],
+  ['LATIN SMALL LETTER LONG S', '\u017F', 's'],
+];
+
+for (const [name, char, ascii] of FOLD_ONLY_TO_ASCII) {
+  test(`case folding stops at ASCII: ${name}`, () => {
+    const p = compilePattern(`acme${ascii}are`);
+
+    // Positive controls: `i` is present and doing its job, so a `false` below
+    // is this code point and not a pattern that matches nothing.
+    assert.equal(p.test(`acme${ascii}are`), true, 'the ASCII spelling must match');
+    assert.equal(p.test(`ACME${ascii.toUpperCase()}ARE`), true, 'upper case must match');
+
+    // The assertion. `u` folds this code point onto its ASCII letter, and the
+    // guard would then match a string the machine-local `grep -inE` does not -
+    // making the secret a TRANSLATION between the two implementations rather
+    // than one value used twice, which is the whole argument for PATTERN_SHAPE.
+    assert.equal(p.test(`acme${char}are`), false, `${name} must not fold onto '${ascii}'`);
+
+    // ...and the control that earns that `false`. Built from a literal `'iu'`
+    // rather than from `compilePattern`, so it cannot inherit the change it
+    // exists to detect. Without it, a code point that folds under NEITHER flag
+    // would pass this test while proving nothing about `u`.
+    assert.equal(
+      new RegExp(`acme${ascii}are`, 'iu').test(`acme${char}are`),
+      true,
+      `fixture is vacuous: ${name} does not fold onto '${ascii}' even with the u flag`
+    );
+  });
+}
+
+test('the pattern is matched case-insensitively', () => {
+  // Named for the flag it is about. Dropping the `i` does redden one row of the
+  // accepted-shape table below, but that row is called `the shape accepts upper
+  // case` and is about the ALPHABET - so the only test that currently sees this
+  // mutation reports the wrong cause for it.
+  const p = compilePattern('acmekare|acme care');
+  for (const spelling of ['ACMEKARE', 'AcMeKaRe', 'ACME CARE', 'Acme Care']) {
+    assert.equal(p.test(spelling), true, `${spelling} must match`);
+  }
+  assert.equal(p.test('acme fare'), false, 'control: not every string matches');
+});
+
+// ---------------------------------------------------------------------------
 // The self-test
 // ---------------------------------------------------------------------------
 

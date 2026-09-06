@@ -1387,8 +1387,12 @@ function namedColumns(node: unknown, into: Set<string>): void {
  * parse. What it does NOT reach is a clause guarded by a particular *value* of
  * a parameter rather than by its presence, and the `uniqueBy.where` of the
  * fourteen specs that declare one, which takes a create input rather than a
- * query and has no table of those to draw on - those carry `WhereFor<M>`, and
- * thirteen of them are reached by `repositories.prisma.test.ts` instead.
+ * query and has no table of those to draw on - those carry `WhereFor<M>` instead.
+ * Thirteen of the fourteen are also caught at run time, but by hand-written
+ * per-spec tests spread over six files rather than by any one of them, so
+ * nothing arranges that cover and a spec added tomorrow inherits none of it.
+ * `breakGlassGrantSpec` is reached by nothing: made to throw, the whole api suite
+ * is rc=0, while the same throw in `patientSpec` fails eight tests.
  */
 describe('every column a spec filters or orders by is a column the schema has', () => {
   it('reads a column name out of every position one can appear in', () => {

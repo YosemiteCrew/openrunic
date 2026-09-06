@@ -630,6 +630,13 @@ function handWrittenContracts(): RouteContract[] {
  * pins `PractitionerRole` to the same permission as its BFF twin. One sentence,
  * referenced everywhere it is true, is removed in one line when enforcement
  * lands.
+ *
+ * Declared below its three readers on purpose, next to the contract assembly it
+ * is about. That is safe by placement rather than by construction: every reader
+ * sits inside a function evaluated when the contracts are built, so the const
+ * is initialised by then. Hoisting one of those objects to module scope would
+ * turn this into a temporal-dead-zone error at import, which is a strange way
+ * to learn about it - so move this declaration up first if you ever do.
  */
 export const ROLE_MODEL_CAVEAT =
   "Authorisation is resolved from the roles on the caller's token, not from these rows: recording a grant here does not change what any user may do. The tenant role model is stored and not yet enforced.";

@@ -121,6 +121,14 @@ export interface CrudResource<
    * be written out four times and drift: a reader who arrives at `PATCH` must
    * be told what a reader who arrives at `GET` was told. Written once here, it
    * cannot say different things on different verbs.
+   *
+   * THAT INVARIANT IS THE WHOLE FIELD, AND IT IS WHAT A SECOND USER WOULD COST.
+   * A sentence belongs here only when it is true of the aggregate on every verb
+   * and would be a defect if one operation disagreed. Anything true of a single
+   * operation goes in that operation's own description. A field used twice for
+   * unrelated reasons is no longer a guarantee about an aggregate; it is a
+   * place to put sentences, and every reader after that has to check which kind
+   * it is holding.
    */
   readonly caveat?: string;
   readonly createSchema: z.ZodType<TCreateBody>;

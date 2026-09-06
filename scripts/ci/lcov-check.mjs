@@ -15,12 +15,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolveWithin } from './safe-path.mjs';
 
-// Below this share of resolvable SF: paths the report is treated as
-// systematically mis-rooted rather than merely stale. A few paths can
-// legitimately vanish when files are deleted between runs; most of them
-// vanishing means the prefix is wrong.
-const MIN_RESOLVED_SHARE = 0.5;
-
 function fail(message) {
   console.error(`lcov-check: ${message}`);
   process.exit(1);
@@ -63,9 +57,27 @@ if (resolved === 0) {
       'project and pass its gate without measuring anything.'
   );
 }
-if (share < MIN_RESOLVED_SHARE) {
+// Every path, not most of them. This used to tolerate up to half the report
+// going unresolved, for paths that "vanish when files are deleted between
+// runs" - but the two trees are the same commit, so there is no between: the
+// job checks out `pull_request.head.sha`, and the coverage artifact it
+// downloads was produced from that same sha earlier in the same run. The base
+// checkout is a separate path holding only these scripts.
+//
+// Measured before removing it: 34 sonar jobs across 2026-08-25 to 2026-09-06
+// printed `resolved: N (100.0%)`, every one, over reports of 46 to 236 files.
+// The tolerance had never been used, and at the observed sizes it would have
+// admitted 46 unresolved files for the API and 118 for the web app while the
+// gate stayed green.
+//
+// The cost of this is a red build if a generated or untracked file under an
+// app's `src/**` ever becomes instrumented. That is the right outcome: it
+// means Sonar is scoring lines the tests measured and it cannot see, and the
+// message below names them.
+if (unresolved.length > 0) {
   fail(
-    `only ${(share * 100).toFixed(1)}% of SF: paths resolve under '${dir}', which means the paths ` +
-      `are mis-rooted rather than stale. First unresolved: ${unresolved.slice(0, 3).join(', ')}`
+    `${unresolved.length} of ${files.length} SF: paths do not resolve under '${dir}', so Sonar ` +
+      `would score less code than the tests measured. First unresolved: ` +
+      unresolved.slice(0, 3).join(', ')
   );
 }

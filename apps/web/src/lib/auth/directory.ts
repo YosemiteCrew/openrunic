@@ -13,9 +13,9 @@ import type { Identity } from './session';
  * trust it for attribution. Nothing serves the caller their own subject or
  * display name, which is the half this table carries. So a sign-in surface that
  * has just accepted a token still has no way to ask whose it is, and something
- * has to know the name to render. Under OIDC that something is the token itself
- * - the
- * identity comes out of the verified claims, and this table stops being
+ * has to know the name to render. Under OIDC that something is the token
+ * itself: the identity comes out of the verified claims, and this table stops
+ * being
  * consulted. `identityForAccessToken` in `credentials.ts` is that seam: it is
  * the one function that turns a credential into a name, and the OIDC path
  * replaces its body rather than the shape of anything that calls it. It lives
@@ -130,12 +130,21 @@ export function developmentCredentials(
      the API has to re-express it explicitly, because an absence cannot fail a
      test.
 
-     And it cannot be delegated to the API. A self-hosted stack installs
-     `createDemoPrincipalResolver` deliberately and resolves these tokens under
-     production; an API left on its defaults refuses to start at all, because
-     `assertProductionWiring` will not boot without a `principalResolver`. Both
-     are reachable from a browser holding only a base URL, and this build cannot
-     see which one it is pointed at - so the decision has to be made here, where
-     it is knowable, rather than deferred to a server whose wiring is not. */
+     And it cannot be delegated to the API, for a reason that does not depend on
+     configuration: THIS BUILD CANNOT KNOW WHICH RESOLVER THE API IT IS POINTED
+     AT HAS INSTALLED. A browser holds a base URL and sees no server wiring.
+     Some deployments accept these tokens and some refuse them, the selection is
+     made server-side, and it will stay unknowable from here however the modes
+     and issuers are arranged later. So the decision is made where it IS
+     knowable.
+
+     Stated as an invariant on purpose. Three earlier drafts named a specific
+     condition and each was falsified by reading one file further: the API
+     selects its resolver on whether an OIDC issuer is configured
+     (`apps/api/src/index.ts`), and `announceAuthentication` branches on exactly
+     that to say which verifier is in force. If a future reader wants the
+     server-side condition, it is there - it does not belong here, because a
+     comment whose job is to stop a refactor must not rest on a premise a
+     reader can find a counter-example to. */
   return demoBuild ? DEVELOPMENT_STAFF : [];
 }

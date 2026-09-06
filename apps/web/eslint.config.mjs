@@ -20,6 +20,11 @@ import nextTs from 'eslint-config-next/typescript';
  * added without the label coming with it"). It was true by convention and nothing
  * enforced it, so this rule is that sentence made checkable.
  *
+ * PER APP. This is `apps/web`'s config. `apps/portal` has its own with no
+ * `no-restricted-imports`; it does not use either component today, so there is
+ * no defect, but the same mistake there is unguarded. Copy this block if portal
+ * ever raises a notice.
+ *
  * NAMES, NOT THE MODULE. `AlertTone`, `ToastTone`, `AlertProps` and `ToastProps`
  * are types with no words in them, and screens legitimately import `ToastTone` to
  * hold a tone in state. Banning the module would break three call sites that are

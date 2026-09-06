@@ -9,7 +9,7 @@
     "node": "^22.12"
   },
   "scripts": {
-    "prepare": "husky",
+    "prepare": "node scripts/ci/prepare-hooks.mjs",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",

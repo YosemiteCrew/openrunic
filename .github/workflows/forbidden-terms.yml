@@ -159,6 +159,64 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # EVERY precondition, reported together, before anything that can die on
+      # one of them. The steps below fail fast and in order, so the FIRST thing
+      # missing is the only thing anyone learns - and on the pull request that
+      # introduces this guard that first thing is the guard's own test file,
+      # absent from the base by design. Six runs died there, and the message
+      # written to tell a maintainer the secrets are missing was never printed
+      # by any of them. A guard that cannot run should say what it needs, not
+      # the first thing it happened to touch. Raised in review.
+      #
+      # `set -u` and NOT `-e`: an early exit here is the defect this step
+      # exists to remove.
+      - name: Preconditions
+        env:
+          FORBIDDEN_TERMS_PATTERN_B64: ${{ secrets.FORBIDDEN_TERMS_PATTERN_B64 }}
+          FORBIDDEN_TERMS_CORPUS_B64: ${{ secrets.FORBIDDEN_TERMS_CORPUS_B64 }}
+          # The script cannot tell an empty secret from a fork; this job can.
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          set -uo pipefail
+          missing=0
+
+          for f in scripts/ci/forbidden-terms.mjs scripts/ci/forbidden-terms.test.mjs \
+                   scripts/ci/forbidden-terms-allowed-prose.txt; do
+            if [ ! -f "$f" ]; then
+              echo "forbidden-terms: '$f' is not on the base branch." >&2
+              missing=1
+            fi
+          done
+          if [ "${missing}" = "1" ]; then
+            echo "This job checks out the BASE deliberately, so a pull request cannot edit" >&2
+            echo "the thing that checks it. Expected on the pull request that INTRODUCES the" >&2
+            echo "guard, and on the first port to another repository: merge it, or dispatch" >&2
+            echo "this workflow from a branch that already has it." >&2
+          fi
+
+          if [ -z "${FORBIDDEN_TERMS_PATTERN_B64:-}" ] || [ -z "${FORBIDDEN_TERMS_CORPUS_B64:-}" ]; then
+            missing=1
+            echo "forbidden-terms: no pattern and/or corpus available to this run." >&2
+            if [ "${IS_FORK:-}" = "true" ]; then
+              echo "CAUSE: this pull request comes from a fork, and GitHub withholds secrets" >&2
+              echo "from a fork's pull_request run. Nothing you change on your branch will" >&2
+              echo "turn this green - a maintainer has to review the named-product rule by" >&2
+              echo "hand before merging. Do not go looking for a word: the other red this job" >&2
+              echo "produces names the surface, the file and the line." >&2
+            else
+              echo "CAUSE: this is not a fork, so the secret is missing from the repository" >&2
+              echo "itself. A maintainer has to create both FORBIDDEN_TERMS_* repository" >&2
+              echo "secrets; until then this gate has never run, on any pull request. Do not" >&2
+              echo "work around it by making this job skip - see the header." >&2
+            fi
+          fi
+
+          if [ "${missing}" = "1" ]; then
+            echo "forbidden-terms: exit 2 - a guard that could not run, which is red and not clean." >&2
+            exit 2
+          fi
+          echo 'forbidden-terms: preconditions met.'
+
       # The runner's system Node. The guard is dependency-free by design, so
       # there is nothing to install - which is also the security constraint.
       - name: Test the guard itself
@@ -197,38 +255,8 @@ jobs:
         env:
           FORBIDDEN_TERMS_PATTERN_B64: ${{ secrets.FORBIDDEN_TERMS_PATTERN_B64 }}
           FORBIDDEN_TERMS_CORPUS_B64: ${{ secrets.FORBIDDEN_TERMS_CORPUS_B64 }}
-          # An empty secret has two causes and they need two different actions.
-          # The first version of this step named the fork one as though it were
-          # the only one, and the very first run it met was a same-repo branch
-          # where the secret simply did not exist yet - so the message asserted
-          # a cause it had not checked. This is the field that tells them apart.
-          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
-          # The script cannot tell an empty secret from a fork; this job can.
-          # Both are exit 2 and both are red - this one says WHICH, so a
-          # contributor does not read a withheld secret as a broken guard.
-          if [ -z "${FORBIDDEN_TERMS_PATTERN_B64:-}" ]; then
-            echo "forbidden-terms: no pattern available to this run." >&2
-            echo "Exit 2 is a guard that could not run, and it is red rather than clean" >&2
-            echo "because a check that did not run is not a check that passed." >&2
-            echo "" >&2
-            if [ "${IS_FORK:-}" = "true" ]; then
-              echo "CAUSE: this pull request comes from a fork, and GitHub withholds" >&2
-              echo "secrets from a fork's pull_request run. Nothing you change on your" >&2
-              echo "branch will turn this green - a maintainer has to review the" >&2
-              echo "named-product rule by hand before merging. In particular, do not go" >&2
-              echo "looking for a word: the other red this job produces names the" >&2
-              echo "surface, the file and the line." >&2
-            else
-              echo "CAUSE: this is not a fork, so the secret is missing from the" >&2
-              echo "repository itself. A maintainer has to create both" >&2
-              echo "FORBIDDEN_TERMS_* repository secrets; until then this gate has" >&2
-              echo "never run, on any pull request. Do not work around it by making" >&2
-              echo "this job skip - see the header." >&2
-            fi
-            exit 2
-          fi
           node scripts/ci/forbidden-terms.mjs selftest --min-corpus 6
 
       # refs/pull/<n>/head exists in the BASE repository for every pull request,

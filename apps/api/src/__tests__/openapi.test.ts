@@ -6,7 +6,7 @@ import { toHonoPath } from '../openapi/registry.js';
 import { buildOpenApiDocument, toJsonSchema } from '../openapi/spec.js';
 import { internalRouteContracts } from '../routes/index.js';
 
-import { createTestApp } from './support.js';
+import { bearer, createTestApp, TOKENS } from './support.js';
 
 /**
  * The published spec, checked against the routes that exist.
@@ -262,5 +262,114 @@ describe('zod to JSON Schema', () => {
     const document = buildOpenApiDocument(internalRouteContracts());
 
     expect(Object.keys(document.paths['/bff/v0/patients'] ?? {}).sort()).toEqual(['get', 'post']);
+  });
+});
+
+/**
+ * The document is a contract, so the tests that matter are the ones that make it
+ * answer to the routes rather than to itself.
+ *
+ * Every assertion here was red before the fix for #298, and each is red for a
+ * different reason, so a failure says which half broke:
+ *
+ *   - the round trip fails if `required` under-states the body OR if a
+ *     `localDate` publishes as `date-time`, because it builds its request out of
+ *     the document and sends it to the route;
+ *   - the `format` case fails only for the date/date-time confusion;
+ *   - the `required` case fails only for the preprocess omission.
+ *
+ * The first is the one worth having. A document checked against itself agreed
+ * with itself while `POST /bff/v0/patients` refused the exact body it described.
+ */
+describe('the OpenAPI document as a contract the routes honour', () => {
+  /** A value the document itself says is acceptable for this property. */
+  const sampleFor = (schema: { type?: string; format?: string }): unknown => {
+    if (schema.type !== 'string') return 1;
+    if (schema.format === 'date') return '1990-01-01';
+    if (schema.format === 'date-time') return '1990-01-01T00:00:00.000Z';
+    return 'QA-CONTRACT-1';
+  };
+
+  it('describes a create body the route accepts, built only from the document', async () => {
+    const document = buildOpenApiDocument(internalRouteContracts());
+    const post = document.paths['/bff/v0/patients']?.post as {
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              required?: string[];
+              properties: Record<string, { type?: string; format?: string }>;
+            };
+          };
+        };
+      };
+    };
+
+    const schema = post.requestBody.content['application/json'].schema;
+    const required = schema.required ?? [];
+
+    // A body that names no required field would satisfy the round trip for the
+    // wrong reason, so the set itself is pinned first.
+    expect(required).toContain('birthDate');
+
+    const body = Object.fromEntries(
+      required.map((name) => [name, sampleFor(schema.properties[name] ?? {})])
+    );
+
+    const { app } = createTestApp();
+    const response = await app.request('/bff/v0/patients', {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status, await response.text()).toBe(201);
+  });
+
+  /**
+   * `patientCreateInput` is the fixture rather than a constructed one, because
+   * it already holds both halves of the distinction in one object: `birthDate`
+   * is a required `localDate` and `deceasedAt` is an optional `timestamp`. A
+   * synthetic pair would prove the renderer works on a schema nothing ships.
+   */
+  const patientCreateSchema = (): {
+    required?: string[];
+    properties: Record<string, { type?: string; format?: string }>;
+  } => {
+    const document = buildOpenApiDocument(internalRouteContracts());
+    const post = document.paths['/bff/v0/patients']?.post as {
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              required?: string[];
+              properties: Record<string, { type?: string; format?: string }>;
+            };
+          };
+        };
+      };
+    };
+
+    return post.requestBody.content['application/json'].schema;
+  };
+
+  it('publishes a calendar date as `date` and an instant as `date-time`', () => {
+    const { properties } = patientCreateSchema();
+
+    // Asserted as a pair. Both were `date-time` before the fix, so pinning only
+    // the calendar date would still pass on a build that had collapsed the two
+    // the other way.
+    expect(properties.birthDate).toEqual({ type: 'string', format: 'date' });
+    expect(properties.deceasedAt).toEqual({ type: 'string', format: 'date-time' });
+  });
+
+  it('lists a required preprocess field, and still omits an optional one', () => {
+    const { required = [] } = patientCreateSchema();
+
+    // The optional half is what separates "required is computed from the shape"
+    // from "required lists every property it can see".
+    expect(required).toContain('birthDate');
+    expect(required).not.toContain('deceasedAt');
+    expect(required).toContain('mrn');
   });
 });

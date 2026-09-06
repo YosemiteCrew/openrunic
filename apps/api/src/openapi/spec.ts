@@ -54,11 +54,41 @@ type JsonSchema = Record<string, unknown>;
 /**
  * Renders one zod schema as a JSON Schema object.
  *
- * Two conversion hooks earn their place. `unrepresentable: 'any'` keeps a
+ * Three conversion hooks earn their place. `unrepresentable: 'any'` keeps a
  * `z.date()` from aborting the whole document, and the `override` turns those
- * date nodes into `string`/`date-time` - which is what actually crosses the
- * wire, since the schemas accept an ISO string and preprocess it into a Date.
- * Without the override, every timestamp field would document as "anything".
+ * date nodes into `string` - which is what actually crosses the wire, since the
+ * schemas accept an ISO string and preprocess it into a Date. Without the
+ * override, every timestamp field would document as "anything".
+ *
+ * HOW A CALENDAR DATE KEEPS ITS OWN FORMAT. `timestamp` and `localDate` are
+ * both a `z.preprocess` around `z.date()`, so this hook sees an identical inner
+ * node for an instant and for a calendar date and cannot tell them apart. The
+ * distinction is carried by `.meta({ format: 'date' })` on `localDate`, and zod
+ * merges metadata AFTER this override runs - measured on 4.4.3: the emitted
+ * property is `format: 'date'` whether this line assigns with `=` or `??=`.
+ *
+ * So the assignment stays unconditional on purpose. A `??=` would look like the
+ * thing protecting the calendar date and would not be: it would also mask a
+ * future zod that applied metadata first, which is the case the test
+ * `publishes a calendar date as \`date\` and an instant as \`date-time\`` exists
+ * to catch. Before the metadata existed, every birth date, service date and
+ * onset date published as `date-time`, and a client generated from the document
+ * sent `1990-01-01T00:00:00.000Z` to a route that refused it.
+ *
+ * WHY `required` IS RECOMPUTED. `z.toJSONSchema` with `io: 'input'` omits a
+ * `z.preprocess` property from its object's `required` list whatever it wraps -
+ * measured on zod 4.4.3 for a preprocess around `z.date()` AND around
+ * `z.string()`, while the bare forms of both are listed. So every required
+ * field built from `timestamp` or `localDate` published as optional: 69 such
+ * properties across 117 request bodies at the time of writing. The document
+ * said `POST /bff/v0/patients` needed only `mrn`, `givenName` and `familyName`,
+ * and that exact body is a 422.
+ *
+ * The membership test is `safeParse(undefined)` rather than a check on the def
+ * type, because the thing being asked is "may this be omitted" and only the
+ * schema can answer that; `.optional()` is one of several ways to be omissible
+ * and a def-type check would miss the others. Objects nest, and the hook runs
+ * per node, so a nested body is covered by the same pass.
  */
 export function toJsonSchema(schema: z.ZodType): JsonSchema {
   return z.toJSONSchema(schema, {
@@ -66,9 +96,23 @@ export function toJsonSchema(schema: z.ZodType): JsonSchema {
     io: 'input',
     unrepresentable: 'any',
     override: (context) => {
-      if (context.zodSchema._zod.def.type === 'date') {
+      const def = context.zodSchema._zod.def as { type: string; shape?: Record<string, z.ZodType> };
+
+      if (def.type === 'date') {
         context.jsonSchema.type = 'string';
         context.jsonSchema.format = 'date-time';
+      }
+
+      if (def.type === 'object' && def.shape !== undefined) {
+        const required = Object.entries(def.shape)
+          .filter(([, property]) => !property.safeParse(undefined).success)
+          .map(([name]) => name);
+
+        if (required.length > 0) {
+          context.jsonSchema.required = required;
+        } else {
+          delete context.jsonSchema.required;
+        }
       }
     },
   });

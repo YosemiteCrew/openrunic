@@ -37,7 +37,7 @@ import {
   type RowContext,
   type Writable,
 } from '../collection.js';
-import type { OrderByFor, ScopedRow } from '../rows.js';
+import type { OrderByFor, ScopedRow, WhereFor } from '../rows.js';
 import type { ImagingStudyStatus } from '../types.js';
 
 /**
@@ -382,7 +382,7 @@ export const specimenSpec: CollectionSpec<
    * mis-labelling incident rather than a save to retry.
    */
   uniqueBy: {
-    where: (input: SpecimenInput) => ({
+    where: (input: SpecimenInput): WhereFor<'Specimen'> => ({
       accessionNumber: input.accessionNumber ?? matchesNothing(),
     }),
     matches: (row: SpecimenRow, input: SpecimenInput) =>
@@ -924,7 +924,7 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
    * to close.
    */
   uniqueBy: {
-    where: (input: TaskCreateInput) =>
+    where: (input: TaskCreateInput): WhereFor<'Task'> =>
       input.sourceEventId === undefined
         ? { sourceEventId: matchesNothing() }
         : { sourceEventId: input.sourceEventId, type: input.type },

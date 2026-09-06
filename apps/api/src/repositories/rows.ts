@@ -56,6 +56,18 @@ export type UpdateManyArgs<M extends PrismaModelName> = Operations<M>['updateMan
  */
 export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
 
+/**
+ * A Prisma `where` for `M`, for the one place an annotation is the whole guard.
+ *
+ * `CollectionSpec.where` does not carry this and deliberately: its bodies are
+ * conditional spreads, and a property a spread contributed survives no
+ * excess-property check, annotated or not. `UniqueBy.where` is the opposite -
+ * fourteen implementations, none containing a spread - so the annotation is
+ * sufficient there and is the only thing standing between a misspelled column
+ * and the create-idempotency query, which no test builds.
+ */
+export type WhereFor<M extends PrismaModelName> = FindManyArgs<M>['where'];
+
 /** A value that carries a `toNumber`, which is how a Decimal presents itself. */
 interface DecimalLike {
   toNumber(): number;

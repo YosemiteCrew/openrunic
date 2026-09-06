@@ -25,7 +25,7 @@ import {
   type RowContext,
   type Writable,
 } from '../collection.js';
-import type { OrderByFor, PrismaModelName, Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, PrismaModelName, Row, ScopedRow, WhereFor } from '../rows.js';
 
 /**
  * The revenue cycle: eligibility, charges, claims, money and statements.
@@ -679,7 +679,7 @@ export const claimLineSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: ClaimLineCreateInput) => ({
+    where: (input: ClaimLineCreateInput): WhereFor<'ClaimLine'> => ({
       claimId: input.claimId,
       sequence: input.sequence,
     }),
@@ -1211,7 +1211,7 @@ export const remittanceLineSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: RemittanceLineCreateInput) => ({
+    where: (input: RemittanceLineCreateInput): WhereFor<'RemittanceLine'> => ({
       remittanceId: input.remittanceId,
       sequence: input.sequence,
     }),

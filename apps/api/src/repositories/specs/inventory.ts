@@ -19,7 +19,7 @@ import {
   type Writable,
 } from '../collection.js';
 import { STOCK_ITEM_DEFAULTS, STOCK_LOT_DEFAULTS } from '../defaults.js';
-import type { OrderByFor, PrismaModelName, Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, PrismaModelName, Row, ScopedRow, WhereFor } from '../rows.js';
 
 /**
  * THE STOCKROOM'S FIVE TABLES.
@@ -197,7 +197,7 @@ export const stockItemSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: StockItemCreateInput) => ({ sku: input.sku }),
+    where: (input: StockItemCreateInput): WhereFor<'StockItem'> => ({ sku: input.sku }),
     matches: (row: ScopedRow<'StockItem'>, input: StockItemCreateInput) => row.sku === input.sku,
     message: (input: StockItemCreateInput) => `A stock item with sku ${input.sku} already exists.`,
   },
@@ -315,7 +315,7 @@ export const stockLotSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: StockLotCreateInput) => ({
+    where: (input: StockLotCreateInput): WhereFor<'StockLot'> => ({
       itemId: input.itemId,
       facilityId: input.facilityId,
       lotNumber: input.lotNumber,

@@ -24,7 +24,7 @@ import {
   type Writable,
 } from '../collection.js';
 import { APPOINTMENT_DEFAULTS, PATIENT_DEFAULTS } from '../defaults.js';
-import type { OrderByFor, ScopedRow } from '../rows.js';
+import type { OrderByFor, ScopedRow, WhereFor } from '../rows.js';
 import type { AdministrativeGender, AppointmentStatus, TelehealthVisitStatus } from '../types.js';
 
 /**
@@ -247,7 +247,7 @@ export const patientSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: PatientCreateInput) => ({ mrn: input.mrn }),
+    where: (input: PatientCreateInput): WhereFor<'Patient'> => ({ mrn: input.mrn }),
     matches: (row: ScopedRow<'Patient'>, input: PatientCreateInput) => row.mrn === input.mrn,
     message: (input: PatientCreateInput) => `A patient with MRN ${input.mrn} already exists.`,
   },
@@ -676,7 +676,7 @@ export const breakGlassGrantSpec: CollectionSpec<
    * immutable, and "still in force" is a comparison against the row's own time.
    */
   uniqueBy: {
-    where(input: BreakGlassGrantInput) {
+    where(input: BreakGlassGrantInput): WhereFor<'BreakGlassGrant'> {
       return {
         userId: input.userId,
         patientId: input.patientId,

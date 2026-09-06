@@ -26,7 +26,9 @@
 // GitHub actually issues from. Nothing separates a fabricated identifier from a
 // real one except asking the registry. So this guard is a resolution, not a
 // pattern - and that is why it needs the network, and why "the registry was
-// unreachable" has to be a distinct outcome rather than a pass.
+// unreachable" has to be a distinct outcome rather than a pass. A 4-4-4 GHSA
+// outside the observed alphabet is asked too: it may be fabricated, or GitHub
+// may have widened its alphabet since this file was written.
 //
 // WHICH IS WHY THE PATTERN MATCHES MORE THAN THE ALPHABET
 //
@@ -114,9 +116,10 @@ import { readBlobs, trackedFiles } from './git-blobs.mjs';
  * belongs is recognised as one: the prefix, then at least two hyphen-separated
  * groups, and no length anywhere. `wellFormed` is the issuing authority's own
  * spelling - alphabet AND lengths - so a string that authority could never have
- * issued is decided without a request. See {@link resolveOne}, where it
- * resolves to `missing` rather than to `unavailable`, because it is an answer
- * and not an outage.
+ * issued is normally decided without a request. A GHSA with the authority's
+ * 4-4-4 shape but a character outside the observed alphabet is the exception:
+ * the registry decides whether the citation is fabricated or this constant is
+ * stale. See {@link resolveOne}.
  *
  * Every length lives on the `wellFormed` side and none on the `pattern` side.
  * A length in `pattern` is not a second check, it is a hole: a segment that is
@@ -138,6 +141,7 @@ export const SCHEMES = [
   {
     kind: 'ghsa',
     pattern: /GHSA-[0-9A-Za-z]+(?:-[0-9A-Za-z]+)+/gu,
+    registryShape: /^GHSA-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}$/iu,
     wellFormed:
       /^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/iu,
     url: (id) => `https://api.github.com/advisories/${encodeURIComponent(id)}`,
@@ -332,8 +336,8 @@ export function scanProblems({ cited, excludedByPath, placeheld }) {
 /**
  * Ask a registry whether one identifier exists.
  *
- * Three outcomes, and keeping the third apart from the second is the point:
- * `exists`, `missing`, and `unavailable` - the registry could not be asked. A
+ * Four outcomes, and keeping the last two apart is the point: `exists`,
+ * `missing`, `stale-syntax`, and `unavailable` - the registry could not be asked. A
  * rate limit, a timeout and a 502 all mean the guard did not run, and reporting
  * any of them as `missing` would turn an outage into a false accusation against
  * a correct comment.
@@ -342,19 +346,22 @@ export async function resolveOne(id, kind, fetchImpl = fetch) {
   const scheme = SCHEMES.find((candidate) => candidate.kind === kind);
   if (scheme === undefined) return { id, state: 'unavailable', detail: `unknown scheme ${kind}` };
 
+  const syntaxMayBeStale = scheme.registryShape?.test(id) === true && !scheme.wellFormed.test(id);
+
   // Reached by ordinary scanned input, not only by a stray caller: `pattern`
-  // recognises the shape a reader sees, so an identifier spelt outside the
-  // issuing alphabet arrives here as a citation and is answered here.
+  // recognises the shape a reader sees, so malformed identifiers arrive here
+  // as citations rather than disappearing from the scan.
   //
   // `missing`, not `unavailable`, and that is the whole reason this branch is
   // worth having. `unavailable` means the guard could not run and exits 2; a
-  // spelling the register could never have issued is a decided answer that
-  // needs no request, so it exits 1 alongside a 404. Reporting it as an outage
-  // would spend the one exit code that means "do not trust this run".
+  // malformed length the register could never have issued is a decided answer
+  // that needs no request, so it exits 1 alongside a 404. A 4-4-4 GHSA outside
+  // the observed alphabet is different: the registry must say whether the
+  // citation is fabricated or the observed alphabet has become stale.
   //
   // The registry is named on the way out because the message a reader gets has
   // to say who would have issued it, the same as a 404 does.
-  if (!scheme.wellFormed.test(id)) {
+  if (!scheme.wellFormed.test(id) && !syntaxMayBeStale) {
     return {
       id,
       state: 'missing',
@@ -386,7 +393,18 @@ export async function resolveOne(id, kind, fetchImpl = fetch) {
       last = error instanceof Error ? error.message : String(error);
       continue;
     }
-    if (response.status === 200) return { id, state: 'exists' };
+    if (response.status === 200) {
+      if (syntaxMayBeStale) {
+        return {
+          id,
+          state: 'stale-syntax',
+          registry: scheme.registry,
+          detail:
+            "exists in the registry but falls outside this guard's GHSA alphabet; widen SCHEMES[0].wellFormed",
+        };
+      }
+      return { id, state: 'exists' };
+    }
     if (response.status === 404) return { id, state: 'missing', registry: scheme.registry };
     last = `HTTP ${String(response.status)} from ${scheme.registry}`;
   }
@@ -437,6 +455,7 @@ export async function main(argv, { root = process.cwd(), resolver = resolveOne }
 
   const results = await resolveAll(scanned.cited, resolver);
   const missing = results.filter((result) => result.state === 'missing');
+  const staleSyntax = results.filter((result) => result.state === 'stale-syntax');
   const unavailable = results.filter((result) => result.state === 'unavailable');
 
   if (json) {
@@ -453,6 +472,20 @@ export async function main(argv, { root = process.cwd(), resolver = resolveOne }
     process.stderr.write(
       'This is a guard that could not run, not a guard that passed. Nothing is being\n' +
         'claimed about the identifiers above.\n\n'
+    );
+  }
+
+  if (staleSyntax.length > 0) {
+    process.stderr.write(
+      `advisory-ids: ${String(staleSyntax.length)} real identifier(s) outgrew the local syntax\n\n`
+    );
+    for (const result of staleSyntax) {
+      process.stderr.write(`  ${result.id}  ${String(result.detail)}\n`);
+      process.stderr.write(`    cited at ${describe(result.sites)}\n\n`);
+    }
+    process.stderr.write(
+      'The citation is real. Update the GHSA alphabet in SCHEMES[0].wellFormed and add\n' +
+        'the identifier as the regression test; do not replace or delete the citation.\n'
     );
   }
 
@@ -482,6 +515,7 @@ export async function main(argv, { root = process.cwd(), resolver = resolveOne }
     return 1;
   }
 
+  if (staleSyntax.length > 0) return 1;
   if (unavailable.length > 0) return 2;
 
   process.stdout.write(

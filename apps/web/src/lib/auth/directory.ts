@@ -6,12 +6,16 @@ import type { Identity } from './session';
  *
  * ## Why the web app holds a table at all
  *
- * The API has no endpoint that answers "who is this token". Its authn
- * middleware resolves a token to a principal and hands that principal to the
- * handler; nothing serves it back to the caller. So a sign-in surface that has
- * just accepted a token has no way to ask what it means, and something has to
- * know the name to render. Under OIDC that something is the token itself - the
- * identity comes out of the verified claims, and this table stops being
+ * `GET /bff/v0/me` (#346) answers what a token may DO - its roles and its
+ * permissions - and deliberately not whose it is. That DTO says it is not a
+ * security boundary, and `subject` is what an audit record attributes an access
+ * to, so an identity fact inside an advisory object would invite a client to
+ * trust it for attribution. Nothing serves the caller their own subject or
+ * display name, which is the half this table carries. So a sign-in surface that
+ * has just accepted a token still has no way to ask whose it is, and something
+ * has to know the name to render. Under OIDC that something is the token
+ * itself: the identity comes out of the verified claims, and this table stops
+ * being
  * consulted. `identityForAccessToken` in `credentials.ts` is that seam: it is
  * the one function that turns a credential into a name, and the OIDC path
  * replaces its body rather than the shape of anything that calls it. It lives
@@ -28,7 +32,8 @@ import type { Identity } from './session';
  * API package, which would put a server's auth module into a browser bundle.
  * The subjects are the load-bearing half: they are what an audit record
  * attributes an access to, so they must match the API's, not merely look like
- * it.
+ * it. `scripts/ci/demo-principal-parity.mjs` asserts that on every `verify`; it
+ * was checked by hand once, and a hand check works exactly once.
  *
  * ## Who is deliberately missing
  *
@@ -120,5 +125,26 @@ export function developmentCredentials(
   demoBuild = false
 ): readonly StaffCredential[] {
   if (nodeEnv !== 'production') return DEVELOPMENT_STAFF;
+  /* The empty list IS the refusal: no throw, no guard, the door closed by there
+     being nothing to iterate. Anything that replaces this lookup with a call to
+     the API has to re-express it explicitly, because an absence cannot fail a
+     test.
+
+     And it cannot be delegated to the API, for a reason that does not depend on
+     configuration: THIS BUILD CANNOT KNOW WHICH RESOLVER THE API IT IS POINTED
+     AT HAS INSTALLED. A browser holds a base URL and sees no server wiring.
+     Some deployments accept these tokens and some refuse them, the selection is
+     made server-side, and it will stay unknowable from here however the modes
+     and issuers are arranged later. So the decision is made where it IS
+     knowable.
+
+     Stated as an invariant on purpose. Three earlier drafts named a specific
+     condition and each was falsified by reading one file further: the API
+     selects its resolver on whether an OIDC issuer is configured
+     (`apps/api/src/index.ts`), and `announceAuthentication` branches on exactly
+     that to say which verifier is in force. If a future reader wants the
+     server-side condition, it is there - it does not belong here, because a
+     comment whose job is to stop a refactor must not rest on a premise a
+     reader can find a counter-example to. */
   return demoBuild ? DEVELOPMENT_STAFF : [];
 }

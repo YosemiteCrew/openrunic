@@ -22,7 +22,13 @@ describe('capabilitiesForRoles', () => {
     const both = capabilitiesForRoles(['clinician', 'biller']);
 
     expect(new Set(both).size).toBe(both.length);
-    expect(both).toStrictEqual([...both].sort((a, b) => a.localeCompare(b)));
+    /* Code-unit order, deliberately: the generated `capabilitiesForRoles` sorts
+       with `byPermissionId` because this runs in the browser and the API's copy
+       runs on the server, and `/bff/v0/me` promises the two are byte-identical.
+       `localeCompare` would be two independently configured orderings (#351).
+       The default `.sort()` here IS code-unit order, so it is the right
+       expectation to write. */
+    expect(both).toStrictEqual([...both].sort());
     for (const permission of [
       ...capabilitiesForRoles(['clinician']),
       ...capabilitiesForRoles(['biller']),

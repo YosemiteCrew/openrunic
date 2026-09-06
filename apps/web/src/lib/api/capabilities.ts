@@ -181,5 +181,22 @@ export function capabilitiesForRoles(roles: readonly string[]): string[] {
   for (const role of roles) {
     for (const capability of ROLE_CAPABILITIES[role] ?? []) held.add(capability);
   }
-  return [...held].sort((a, b) => a.localeCompare(b));
+  return [...held].sort(byPermissionId);
+}
+
+/**
+ * Orders permission identifiers by UTF-16 code unit. Mirrors the API's
+ * `byPermissionId`, and mirrors it deliberately rather than importing it,
+ * because this file is generated and stands alone.
+ *
+ * NOT `localeCompare`. This sort runs in the viewer's browser and the API's
+ * runs on the server, and `/bff/v0/me` promises the two are byte-identical so
+ * a client may compare them. `localeCompare` with no locale reads each
+ * runtime's own default, and naming a locale does not help because collation
+ * moves with the runtime's ICU data. Code-unit order is the same everywhere,
+ * forever.
+ */
+function byPermissionId(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }

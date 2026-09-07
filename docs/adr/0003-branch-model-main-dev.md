@@ -64,7 +64,7 @@ Protection and gating:
   else is invisible to it, and leaving it unrequired would mean it could fail without blocking a
   merge. This document named three of them and there were seventeen, which is what #317 was filed
   about: the rule was stated, applied to three, and fourteen more sat in its stated class being
-  read by reviewers rather than blocking anything. Eleven were added to `dev` on 2026-09-07.
+  read by reviewers rather than blocking anything. Ten were added to `dev` on 2026-09-07.
 
   The ones with no workflow in this repository at all, so the aggregate could not depend on them
   even in principle:
@@ -84,8 +84,8 @@ Protection and gating:
     Chain has been required on Yosemite Crew since before this.
   - `Scan infrastructure files (Trivy config + Compose guard)` (`iac-scan.yml`),
     `Review dependency changes` (`dependency-review.yml`),
-    `Audit workflow security (zizmor)` (`workflow-audit.yml`),
-    `Validate PR title` and `Validate commit messages` (`pr-governance.yml`).
+    `Audit workflow security (zizmor)` (`workflow-audit.yml`) and
+    `Validate PR title` (`pr-governance.yml`).
 
   **Deliberately not required, each for a stated reason** - this is the part that goes stale
   silently, so it is written down rather than left as an absence:
@@ -105,15 +105,33 @@ Protection and gating:
     would become permanently absent - which fails closed and deadlocks the branch. That workflow
     has no aggregate; giving it one is a code change rather than a settings change, and is the
     prerequisite for requiring this class at all.
+  - `Validate commit messages`. Its job carries
+    `github.event.pull_request.user.login != 'dependabot[bot]'`, so on a Dependabot pull request
+    it is **skipped**, and a skipped context never becomes success. `dependabot.yml` sets
+    `target-branch: dev` for all three ecosystems, so every Dependabot pull request lands on the
+    branch this ruleset protects. Measured: `skipped` on #232 and #171, `success` on a
+    human-authored one as the control.
+
+    This one was required for four minutes on 2026-09-07 and removed. It is the case an
+    empirical sweep cannot find - eleven pull requests across five change shapes were all
+    human-authored, so the shape that deadlocks was not in the sample - and that a scan of
+    workflow-level `on:` blocks also cannot find, because the condition is on the **job**. The
+    check that finds it is: for each context, read the `if:` of the job whose `name:` produces
+    it, and then test the shape that condition excludes.
+
+    Requiring it needs the carve-out resolved first. Dropping the carve-out makes Dependabot's
+    commit messages a merge gate, which is a decision about a bot nobody writes messages for;
+    keeping it means this context can never be required. Neither is obvious and it is not a
+    settings change.
 
 - `main` requires one more, `Promotion source`, from `.github/workflows/promotion-guard.yaml`.
   Rulesets cannot express "only `dev` may be the source branch", so that constraint is expressed as
   a status check instead. It is required on `main` alone because it only runs on pull requests
   targeting `main`.
-- The live lists are therefore **sixteen required contexts on `dev`** and **five on `main`**
+- The live lists are therefore **fifteen required contexts on `dev`** and **five on `main`**
   (`CI Required`, `Detect secrets (Gitleaks)`, `GitGuardian Security Checks`,
   `Aikido Security: check code`, `Promotion source`). `No named external product` was added to
-  `dev` on 2026-09-06 and the eleven above on 2026-09-07, and deliberately none of them to `main`:
+  `dev` on 2026-09-06 and the ten above on 2026-09-07, and deliberately none of them to `main`:
   a promotion carries content already checked on `dev`, so the marginal value is lower and the
   blast radius is a release.
 

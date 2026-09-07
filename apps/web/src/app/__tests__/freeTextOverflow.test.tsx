@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { InboxScreen } from '@/app/(app)/inbox/InboxScreen';
-import { MOCK_NOW } from '@/lib/api/mock/fixtures';
+import { MOCK_INBOX_ITEMS, MOCK_NOW } from '@/lib/api/mock/fixtures';
 import { createWorklistClient } from '@/lib/api/worklist';
 
 vi.mock('next/navigation', () => ({
@@ -86,8 +86,17 @@ describe('the styled class is the one the component renders', () => {
 
     const list = await screen.findByRole('list', { name: 'Inbox items' });
     const rows = [...list.querySelectorAll('li')];
-    const styled = rows.flatMap((row) => [...row.querySelectorAll('.or-inbox__body')]);
+    // The element has to CONTAIN the free text, not merely exist: moving the
+    // class to an outer wrapper would leave the summary unwrapped and satisfy a
+    // presence check. The summary is the free text this row is read for.
+    const summary = MOCK_INBOX_ITEMS[0]?.summary ?? '';
+    const styled = rows.flatMap((row) =>
+      [...row.querySelectorAll('.or-inbox__body')].filter((node) =>
+        node.textContent?.includes(summary)
+      )
+    );
 
+    expect(summary).not.toBe('');
     expect(styled.length).toBeGreaterThan(0);
     // CONTROL: a name the stylesheet does not target must find nothing, or the
     // query above would pass against any markup at all.

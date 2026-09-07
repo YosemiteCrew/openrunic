@@ -2354,7 +2354,18 @@ fieldset {
    the child, which is what made the sentence this replaces read plausible.
    `anywhere` is kept anyway, because one property with one reason across both
    applications is worth more than each side carrying the minimum that happens
-   to work, and because `min-width: 0` above is one edit away from being tidied. */
+   to work, and because `min-width: 0` above is one edit away from being tidied.
+
+   One thing this column does sweep in, said rather than left to be found: the
+   patient header carries the MRN in a monospace cell, and it inherits
+   `anywhere` from here - which the portal's version of this comment says is the
+   kind of content to keep out of it. Measured before keeping it: at a realistic
+   inbox width a normal-length MRN never breaks, and the case that reaches it
+   needs an identifier wider than its own column, at which point the alternative
+   is the page scrolling sideways instead. `formatMrn` puts no bound on length,
+   so that shape is the server's to produce. Breaking the identifier is the
+   better of the two, and format.ts says the MRN is read character by character,
+   so a break in it is not free - just cheaper than the alternative. */
 .or-inbox__body {
   display: flex;
   flex-direction: column;

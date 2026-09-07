@@ -1,5 +1,10 @@
+import { render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+import { MessagesScreen } from '@/app/messages/MessagesScreen';
+import { AssistantTurnView } from '@/components/assistant';
+import { stubApi } from '@/__tests__/support';
 
 /**
  * A person's own words, rendered in a box that did not choose their length.
@@ -72,5 +77,65 @@ describe('free-text bodies wrap anywhere', () => {
     const rules = rulesFor('portal-no-such-class');
 
     expect(rules).toHaveLength(0);
+  });
+});
+
+/**
+ * The pair the stylesheet test cannot see, mirrored from the staff side.
+ *
+ * Each of these class names is written twice - once in `globals.css` and once
+ * as a `className` in a component - and nothing above asserts they agree.
+ * Rename one in the component alone and the rule is orphaned, the page
+ * overflows again, and every assertion in this file still passes: the rule
+ * exists, it carries the declaration, and it applies to nothing.
+ *
+ * Rendered rather than grepped, because a class name in a comment or a dead
+ * branch would satisfy a grep. And each case asserts the element CONTAINS the
+ * free text, not merely that an element with the name exists - moving the class
+ * to an outer wrapper would leave the text unwrapped and satisfy a presence
+ * check.
+ */
+describe('the styled classes are the ones the components render', () => {
+  const containing = (selector: string, text: string) =>
+    [...document.querySelectorAll(selector)].filter((node) => node.textContent?.includes(text));
+
+  it('the message body and the notice text render under the classes the stylesheet targets', async () => {
+    render(<MessagesScreen api={stubApi()} />);
+    const body = await screen.findByText(/Your thyroid result is a little above the usual range\./);
+
+    expect(containing('.portal-message__body', body.textContent ?? '')).not.toHaveLength(0);
+    expect(document.querySelectorAll('.portal-notice__text').length).toBeGreaterThan(0);
+    // CONTROL: a name the stylesheet does not target finds nothing, or the
+    // queries above would pass against any markup at all.
+    expect(document.querySelectorAll('.portal-no-such-body')).toHaveLength(0);
+  });
+
+  it('the assistant question and answer render under the classes the stylesheet targets', () => {
+    const question = 'What does my thyroid result mean?';
+    const answer = 'It is a little above the usual range.';
+
+    render(
+      <AssistantTurnView
+        answering={false}
+        turn={{
+          id: 'turn-1',
+          question,
+          answer,
+          steps: [],
+          sources: [],
+          failures: [],
+          deferrals: [],
+          outcome: null,
+          withheld: 'none',
+        }}
+      />
+    );
+
+    expect(containing('.portal-assistant__question', question)).not.toHaveLength(0);
+    expect(containing('.portal-assistant__answer', answer)).not.toHaveLength(0);
+    // CONTROL: the same query for text that is not on the page.
+    expect(containing('.portal-assistant__answer', 'text that is not rendered here')).toHaveLength(
+      0
+    );
   });
 });

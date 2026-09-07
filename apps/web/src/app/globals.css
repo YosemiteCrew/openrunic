@@ -2333,25 +2333,40 @@ fieldset {
   color: var(--text-secondary);
 }
 
+/* Free text a person typed, so whatever arrives has to render inside the box it
+   is given. Set on the column rather than on one line inside it: `summary`,
+   `detail` and the patient header all carry free text from the same interface,
+   one line apart, and whatever puts a 37-character run in one puts it in the
+   others. Only `summary` has a class of its own, so the column is the only
+   place that reaches all three.
+
+   `anywhere` here is consistency and headroom rather than necessity, and the
+   difference from the portal is worth stating because the first version of this
+   comment got it backwards. Measured min-content width of an 80-character
+   unbroken run: `normal` 681px, `break-word` 681px - identical, it does not
+   shrink min-content - and `anywhere` 8.5px. That difference decides the outcome
+   only where the track is sized from content, which is the portal's message
+   grid. It is NOT this row, at any width: `.or-inbox__row` is `minmax(0, 1fr)`
+   in the base rule and `96px minmax(0, 1fr) 220px 260px` above 1024px, so the
+   text track has a zero floor at every breakpoint - and this column carries
+   `min-width: 0` besides. `break-word` is already enough here, measured clean at
+   900px where `normal` overflowed 1118/900. The row is a grid and the flex is
+   the child, which is what made the sentence this replaces read plausible.
+   `anywhere` is kept anyway, because one property with one reason across both
+   applications is worth more than each side carrying the minimum that happens
+   to work, and because `min-width: 0` above is one edit away from being tidied. */
 .or-inbox__body {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-/* Free text a person typed, so whatever arrives has to render inside the box it
-   is given. `anywhere` rather than `break-word` because only `anywhere` shrinks
-   the intrinsic min-content size, and this sits in a flex row whose track is
-   sized from content - `break-word` breaks the text and still pushes the row
-   wide. Same declaration and same reasoning as the portal's message bodies;
-   this is one property of free-text rendering across both applications rather
-   than one component's bug. */
 .or-inbox__summary {
   font-family: var(--font-text);
   font-size: var(--text-body);
   color: var(--text-ink);
-  overflow-wrap: anywhere;
 }
 
 /* Unread is weight, not a coloured dot on its own. */

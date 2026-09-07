@@ -1,5 +1,15 @@
+import { render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { InboxScreen } from '@/app/(app)/inbox/InboxScreen';
+import { MOCK_NOW } from '@/lib/api/mock/fixtures';
+import { createWorklistClient } from '@/lib/api/worklist';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => '/inbox',
+}));
 
 /**
  * The staff side of the same property: free text a person typed, rendered in a
@@ -30,19 +40,21 @@ describe('free-text bodies wrap anywhere', () => {
       .map((match) => ({ head: match[1] ?? '', body: match[2] ?? '' }))
       .filter((rule) => rule.head.split(',').some((part) => part.trim() === `.${selector}`));
 
-  it('or-inbox__summary carries overflow-wrap: anywhere', () => {
-    const rules = rulesFor('or-inbox__summary');
+  it('or-inbox__body carries overflow-wrap: anywhere', () => {
+    const rules = rulesFor('or-inbox__body');
 
     expect(rules.length).toBeGreaterThan(0);
     expect(rules.some((rule) => /overflow-wrap:\s*anywhere/.test(rule.body))).toBe(true);
   });
 
   it('does not settle for break-word, which leaves the track wide', () => {
-    // `break-word` breaks the text and still reports the unbroken run as the
-    // intrinsic min-content size, so a flex or grid track sized from content is
-    // pushed wide anyway - it looks fixed and is not. Only `anywhere` shrinks
-    // that size, and the inbox row is exactly such a track.
-    for (const { body } of rulesFor('or-inbox__summary')) {
+    // Not because `break-word` fails here - this column carries `min-width: 0`
+    // inside a `minmax(0, 1fr)` track, so it would be enough. The portal's
+    // message grid is the one where the difference decides the outcome, and one
+    // property with one reason across both applications is worth more than each
+    // side carrying the minimum that happens to work. Holding the stronger value
+    // is what keeps the two from drifting apart.
+    for (const { body } of rulesFor('or-inbox__body')) {
       expect(body).not.toMatch(/overflow-wrap:\s*break-word/);
     }
   });
@@ -51,5 +63,36 @@ describe('free-text bodies wrap anywhere', () => {
     // The control: every assertion above is "some rule matched", which a matcher
     // that matches everything would also satisfy.
     expect(rulesFor('or-no-such-class')).toHaveLength(0);
+  });
+});
+
+/**
+ * The pair the stylesheet test cannot see.
+ *
+ * The class is written twice - once in `globals.css` and once as a `className`
+ * in `InboxList.tsx` - and nothing above asserts they agree. Rename it in the
+ * component alone and the CSS rule is orphaned, the page overflows again, and
+ * every assertion in this file still passes: the rule exists, it carries the
+ * declaration, and it now applies to nothing.
+ *
+ * This renders the screen and requires the free-text column to actually be in
+ * the document under the name the rule targets, so the two cannot drift apart
+ * silently. Rendering rather than grepping the source, because a class name in
+ * a comment or a dead branch would satisfy a grep.
+ */
+describe('the styled class is the one the component renders', () => {
+  it('renders a free-text column under the class the stylesheet targets', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+
+    const list = await screen.findByRole('list', { name: 'Inbox items' });
+    const rows = [...list.querySelectorAll('li')];
+    const styled = rows.flatMap((row) => [...row.querySelectorAll('.or-inbox__body')]);
+
+    expect(styled.length).toBeGreaterThan(0);
+    // CONTROL: a name the stylesheet does not target must find nothing, or the
+    // query above would pass against any markup at all.
+    expect(
+      rows.flatMap((row) => [...row.querySelectorAll('.or-inbox__no-such-column')])
+    ).toHaveLength(0);
   });
 });

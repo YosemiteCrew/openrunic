@@ -180,8 +180,8 @@ jobs:
         run: pnpm turbo run build --filter=api^...
 
       # The API's own database-gated suites, which have no other home: this is
-      # the only stage with a Postgres, and `describe.skipIf(DATABASE_URL ===
-      # undefined)` makes them silently absent everywhere else.
+      # the only stage with a Postgres, and `describe.skipIf(!DATABASE_URL)`
+      # makes them silently absent everywhere else.
       #
       # They had never run in CI, and the reason is simply that no step ran
       # them - this stage did reach an apps/api change all along, because the

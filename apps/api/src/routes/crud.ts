@@ -370,13 +370,17 @@ function crudRoutes<
    */
   const updateGated = async (
     c: Context<AppEnv>,
-    collection: Collection<TRow, TCreate, TPatch, TQuery>,
     id: string,
     existing: TRow,
     patch: TPatch
   ): Promise<TRow> => {
     await guardChart(c, resource, { ...existing, ...patch });
-    return required(await collection.update(id, patch), missing);
+    // The collection is derived from `resource` rather than passed in. Taking it
+    // as a parameter while closing over `resource` is two things that have to
+    // agree with nothing making them: a caller handing a different collection
+    // would gate on `resource.chartFrom` and write to another table. That is the
+    // pair-that-must-agree shape this seam exists to remove, one level in.
+    return required(await resource.collection(repositories(c)).update(id, patch), missing);
   };
 
   router.get(base, requirePermission(resource.readPermission), async (c) => {
@@ -444,7 +448,7 @@ function crudRoutes<
     //
     // Through `updateGated`, which pairs the write with that gate so the two
     // are one expression rather than two statements in an order nothing holds.
-    const row = await updateGated(c, collection, id, existing, stamped);
+    const row = await updateGated(c, id, existing, stamped);
     return c.json(resource.toDto(row));
   });
 

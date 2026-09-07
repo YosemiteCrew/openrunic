@@ -255,8 +255,15 @@ export function findCitations(text, file) {
   return found;
 }
 
-/** Every citation in the tree, split into the ones to resolve and the exempt ones. */
-export function scan(root, entries) {
+/**
+ * Every citation in the tree, split into the ones to resolve and the exempt ones.
+ *
+ * `placeholders` is a parameter so a test can declare one this repository does
+ * not: writing a malformed key into {@link PLACEHOLDERS} would put a malformed
+ * identifier into a file this guard walks, which fails for a different reason
+ * than the one under test.
+ */
+export function scan(root, entries, placeholders = PLACEHOLDERS) {
   const cited = [];
   const excludedByPath = [];
   const placeheld = [];
@@ -277,10 +284,22 @@ export function scan(root, entries) {
       continue;
     }
     for (const citation of citations) {
-      // Both halves, because the exemption is the pair. A declared id in a file
-      // that was not declared for it is an ordinary citation and gets resolved.
-      const placeholder = PLACEHOLDERS.get(citation.id);
-      if (placeholder !== undefined && placeholder.where.test(citation.file)) {
+      // All three, because the exemption is the pair AND the spelling. A
+      // declared id in a file that was not declared for it is an ordinary
+      // citation and gets resolved; so is a declared id that no register could
+      // have issued. A placeholder is an identifier a document NAMES without
+      // claiming it exists, which is a statement about the register and not
+      // about the spelling - and exempting a malformed one exempts nothing
+      // useful, since both real entries are well-formed on purpose. Without the
+      // third clause this function and the tree test in advisory-ids.test.mjs
+      // answered differently about the same tree: exit 0 here, red there.
+      const scheme = SCHEMES.find((candidate) => candidate.kind === citation.kind);
+      const placeholder = placeholders.get(citation.id);
+      if (
+        placeholder !== undefined &&
+        placeholder.where.test(citation.file) &&
+        scheme.wellFormed.test(citation.id)
+      ) {
         placeheld.push(citation);
       } else cited.push(citation);
     }
@@ -296,7 +315,7 @@ export function scan(root, entries) {
  * are here because a guard reporting clean having read nothing is
  * indistinguishable from one reporting clean having read everything.
  */
-export function scanProblems({ cited, excludedByPath, placeheld }) {
+export function scanProblems({ cited, excludedByPath, placeheld }, placeholders = PLACEHOLDERS) {
   const problems = [];
 
   // Zero, not a threshold. This tree cites advisories in its override block,
@@ -322,7 +341,19 @@ export function scanProblems({ cited, excludedByPath, placeheld }) {
         'EXCLUDED_PATHS matched no citation: delete the entry rather than leaving an unused exemption',
     });
   }
-  for (const [id, { why }] of PLACEHOLDERS) {
+  for (const [id, { why }] of placeholders) {
+    // Before the appears-nowhere check and not beside it. A malformed entry no
+    // longer reaches `placeheld` at all, so that check would fire too - saying
+    // an identifier sitting in the tree appears nowhere, which is false, with a
+    // remedy that is right for the wrong reason. One cause, one message.
+    if (!SCHEMES.some((scheme) => scheme.wellFormed.test(id))) {
+      problems.push({
+        reason:
+          `PLACEHOLDERS declares ${id} (${why}), which no register could have issued: ` +
+          'an exemption is for an identifier a document names, not for a spelling',
+      });
+      continue;
+    }
     if (!placeheld.some((citation) => citation.id === id)) {
       problems.push({
         reason: `PLACEHOLDERS declares ${id} (${why}) but it appears nowhere: delete the entry`,

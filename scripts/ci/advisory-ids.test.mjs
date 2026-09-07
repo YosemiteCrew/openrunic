@@ -263,7 +263,8 @@ test('no tracked file cites a malformed identifier', () => {
 
   assert.deepEqual(
     malformed.map((citation) => `${citation.id} at ${citation.file}:${String(citation.line)}`),
-    []
+    [],
+    'a tracked file cites an identifier no register could have issued'
   );
 });
 
@@ -368,6 +369,90 @@ test('the documented placeholder is exempt by identifier', () => {
     scanned.cited.some((citation) => citation.id === id),
     false
   );
+});
+
+/**
+ * Assembled rather than written whole, for the guard's own reason.
+ *
+ * This file is exempt by path, so a literal here would not fail the walk. It
+ * would still be an identifier a reader has to check against the alphabet
+ * before knowing it was deliberate, which is the state the guard exists to
+ * remove. `GHSA-` is not adjacent to the segments in this source.
+ */
+const ghsa = (segments) => `GHSA-${segments}`;
+
+/**
+ * The guard and this file used to answer differently about the same tree.
+ *
+ * `scan` exempted any declared placeholder in a file declared for it, without
+ * asking whether the identifier was spelt the way a register issues one. So a
+ * malformed declared placeholder went into `placeheld`, was never resolved, and
+ * the guard exited 0 - while `no tracked file cites a malformed identifier`
+ * above filters `[...cited, ...placeheld]` and went red on the same state.
+ *
+ * The strict side wins, and it exempts nothing useful to lose: a placeholder is
+ * an identifier a document NAMES without claiming it exists, and both real
+ * entries are well-formed on purpose, since the point of one is a spelling that
+ * does not give it away. A malformed one is a fabrication that would not
+ * survive the shape check anyway, so exempting it widens the exemption to a
+ * class nobody meant to include.
+ *
+ * The map is injected rather than edited into the module: writing a malformed
+ * key into `PLACEHOLDERS` would put a malformed identifier in a file the guard
+ * walks, which fails for a different reason than the one under test.
+ */
+test('a malformed declared placeholder is not exempt in the file it was declared for', () => {
+  const malformed = ghsa('aa-bb-cc');
+  const wellFormed = ghsa('r8f6-24hv-cj3g');
+  const placeholders = new Map([
+    [malformed, { where: /^notes\.md$/u, why: 'the case under test' }],
+    [wellFormed, { where: /^notes\.md$/u, why: 'the control' }],
+  ]);
+  const root = gitRepo({ 'notes.md': `${malformed} and ${wellFormed}\n` });
+
+  try {
+    const scanned = scan(root, trackedFiles(root), placeholders);
+
+    // CONTROL: the well-formed id is declared for the same file, on the same
+    // line, by the same map. Spelling is the only thing that differs between
+    // the two rows, so a gate that exempted neither would pass the assertion
+    // below and fail this one.
+    assert.deepEqual(
+      scanned.placeheld.map((citation) => citation.id),
+      [wellFormed]
+    );
+    assert.deepEqual(
+      scanned.cited.map((citation) => citation.id),
+      [malformed]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The gate alone would report the wrong fault.
+ *
+ * A malformed entry that is no longer placeheld is also, by the check below,
+ * an entry that "appears nowhere" - which is a false sentence about an
+ * identifier sitting in the tree, and it arrives with a remedy (`delete the
+ * entry`) that happens to be right for the wrong reason. Two failures from one
+ * cause, and the louder one is untrue, in a guard whose whole subject is a
+ * message that reads as authoritative.
+ */
+test('a malformed placeholder is reported as malformed, not as one that appears nowhere', () => {
+  const malformed = ghsa('aa-bb-cc');
+  const placeholders = new Map([
+    [malformed, { where: /^notes\.md$/u, why: 'the case under test' }],
+  ]);
+
+  const problems = scanProblems({ cited: [{}], excludedByPath: [{}], placeheld: [] }, placeholders);
+
+  // Exactly one, which is the assertion that says the appears-nowhere check
+  // did not also fire on the same entry.
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].reason, /no register could have issued/u);
+  assert.doesNotMatch(problems[0].reason, /appears nowhere/u);
 });
 
 /**

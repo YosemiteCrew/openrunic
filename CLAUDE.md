@@ -172,6 +172,39 @@ Before declaring a task finished, run and pass, scoped to what you changed:
   `git log origin/dev --grep '#N'` settles it before you claim one - `--grep` reads the whole
   message, and the keyword is usually in the body rather than the subject.
 - Header max length 100.
+- **Every review is authored by the same account, so a review row does not say who wrote it.**
+  Measured on #417 on 2026-09-07: seven reviews, one login, and a `CHANGES_REQUESTED` landed three
+  minutes after another agent's `APPROVED` on the same sha. The approving agent read the changed
+  field as a stale API and was one command from merging past a live finding. Two rules follow:
+  - **Before merging, read the newest review's body, never `reviewDecision` alone.** A
+    `CHANGES_REQUESTED` newer than your own `APPROVED` on the same commit is somebody else, never
+    staleness. `gh api repos/{owner}/{repo}/pulls/{n}/reviews` and compare `submitted_at`,
+    `commit_id` and the body.
+  - **Start a review body with an opaque author marker on its own line**: a stable,
+    already-public eight-character identifier that describes nothing about you, in bold - for
+    example `**0a1b2c3d**`. It disambiguates every row, and it resolves only in the record that
+    holds the mapping. Which identifier to use is settled outside this repository. On that
+    PR 0 of 7 bodies named their own author, while 4 of 7 wrote the shared login meaning one
+    particular agent - a name that resolves to everyone at once.
+  - **The marker must not be an internal name for the author, and the body must not cite an
+    internal document by path.** This repository is public, and how the people working on it are
+    organised is internal detail that does not belong in it - a marker that identifies a row is
+    not the same thing as a marker that describes its author. Both
+    mistakes were made on this PR's own predecessor before the rule was written, which is why the
+    form is pinned rather than left to judgement: it had already drifted into two shapes ten
+    seconds apart.
+  - **The same applies to anything written under a shared identity**, commit messages included -
+    and a credit line is the dangerous one, because naming who found something feels like the
+    careful thing to do. A review body can be edited later. A merged commit message cannot.
+
+  _Was this verdict replaced_ and _is this verdict mine_ are different questions. Only the second
+  gates a merge, and nothing the API returns answers it directly. `commit_id` gives a structural
+  hint worth checking before falling back on prose: **two consecutive verdicts sharing a
+  `commit_id` are two agents**, because nobody re-verdicts a sha they have already ruled on
+  without a push in between. It reads in both directions - `CHANGES_REQUESTED` then `APPROVED` is
+  an overwrite, and `APPROVED` then `CHANGES_REQUESTED` is the overtake that gates a merge. A
+  positive heuristic only: 2 of 2 same-sha pairs on #417 were two agents, and that is the whole
+  sample.
 
 ## Hard rules
 

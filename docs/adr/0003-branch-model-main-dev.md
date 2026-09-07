@@ -140,8 +140,14 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   - `Validate commit messages`. Its job carries
     `github.event.pull_request.user.login != 'dependabot[bot]'`, so on a Dependabot pull request
     it is **skipped**. `dependabot.yml` sets `target-branch: dev` for all three ecosystems, so
-    every Dependabot pull request lands on the branch this ruleset protects. Measured: `skipped`
-    on #232 and #171, `success` on a human-authored one as the control.
+    every Dependabot **version** pull request lands on the branch this ruleset protects. Measured:
+    `skipped` on #232 and #171, `success` on a human-authored one as the control.
+
+    That "every" is conditional on a repository **setting**, not on this file: Dependabot
+    _security_ updates ignore `target-branch` entirely and open against the default branch, and
+    `dependabot.yml` records that they are deliberately disabled and must stay disabled. Turning
+    them back on puts Dependabot pull requests on `main`, where this ruleset does not apply and a
+    different list of five does.
 
     **This bullet originally said "a skipped context never becomes success" and that is false** -
     see _What a required context guarantees_ below, where it is measured. The removal was right
@@ -222,12 +228,12 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
 Enumerating required contexts measures the list, not the enforcement. Three conclusions and one
 absence decide what "required" buys, and only two of the four are measured here:
 
-| the context ...     | effect on the merge | status                                        |
-| ------------------- | ------------------- | --------------------------------------------- |
-| concludes `success` | passes              | measured, continuously                        |
-| concludes `skipped` | **passes**          | **measured**, #412, this ruleset, 2026-09-07  |
-| concludes `neutral` | passes              | **inferred** - see the bound below            |
-| never posts at all  | **blocks**          | measured, #258's `is expected` evaluation row |
+| the context ...     | effect on the merge | status                                                                    |
+| ------------------- | ------------------- | ------------------------------------------------------------------------- |
+| concludes `success` | passes              | measured, continuously                                                    |
+| concludes `skipped` | **passes**          | **measured**, #412, this ruleset, 2026-09-07                              |
+| concludes `neutral` | passes              | **inferred** - see the bound below                                        |
+| never posts at all  | **fails the rule**  | measured; whether it blocks the _merge_ depends on the bypass - see below |
 
 `skipped` was settled by manufacturing it: a throwaway pull request gave one required job a
 never-true event condition, and with the other fifteen `success` and that one `skipped`,
@@ -235,6 +241,24 @@ never-true event condition, and with the other fifteen `success` and that one `s
 moment the review was dismissed. Controls: a fully green pull request reaching `CLEAN` on the same
 ruleset the same day, the dismissal as a reversibility arm, and a context name nothing reports
 returning zero rows.
+
+**The blocking row is weaker than it looks and the distinction is the table's whole value.** The
+evidence is #258's rule evaluation, recorded `FAIL` with
+`Required status check "CI Required" is expected` - so what is measured is that the **rule** fails
+when a required context never posts. #258 then **merged**, over that failed rule, on the admin
+bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
+and this repository has no instance of a merge actually being stopped by it. Read the row as: the
+rule fails, and the bypass decides whether that is the end of the matter.
+
+**`ABSENT` has no transient form, and the two readings are far apart.** `mergeStateStatus` says
+`BLOCKED` both for a required context whose producing workflow is still running and for one that
+will never post at all, and the distance between them is _wait four minutes_ and _edit a ruleset_.
+The discriminator is cheap and belongs here rather than in anyone's notes:
+
+```
+required context ABSENT + any check run from its producing workflow queued or in_progress -> transient
+required context ABSENT + nothing from that workflow on the head at all                   -> permanent
+```
 
 `neutral` is **not measurable from history**, which is a stronger statement than "not yet
 measured". The `CodeQL` aggregate has concluded `neutral` on nine pull requests here - seven on
@@ -250,19 +274,49 @@ passing, and treat the nine as evidence that an analysis can fail while its aggr
 **Which of ours can reach `skipped`: none, as of this commit.** Each required context mapped to
 the job whose `name:` produces it - five carry a job-level `if:` (`always()` twice,
 `always() && github.event_name != 'release'`, `github.event_name != 'schedule'` twice) and all
-five evaluate true on a `pull_request`; eight carry no condition and no `paths` filter; three have
-no job at all because an app posts them. So the general hazard is real and currently unexercised,
-and **one added `if:` converts any of the eight silently**. That is why the condition, not the
-trigger, is what has to be read before a context is required - and why the check is per context
-rather than per workflow.
+five evaluate true on a `pull_request`; eight carry neither a condition nor a `needs:` nor a
+`paths` filter; three have no job at all because an app posts them.
+
+**Two ways to convert one of those eight, not one.** An added `if:` is the obvious one. A `needs:`
+is the other: a job with a dependency and no `if:` is skipped when that dependency skips or fails,
+so the context goes green having not run. That is precisely why all three aggregates below carry
+`always()`, which means the repository already knows the mechanism - it is the sentence that was
+short, not the state. The check before requiring a context is therefore per context and on both
+axes: the `if:` of the job whose `name:` produces it, and whether it has a `needs:` without one.
+
+**And "none of the contexts can skip" is not "nothing can skip".** Three of the sixteen are
+aggregates over stage jobs, and the platform's own answer - `skipped` passes - is re-implemented
+one level down as a shell predicate, in two opposite ways:
+
+```
+CI Required          if: always()  needs: [core, repo, test, agent-disabled, migration, ops, sonar]
+Storybook Required   if: always()  needs: [stories, publish]
+  both:  contains(needs.*.result,'failure') || contains(needs.*.result,'cancelled') -> exit 1
+         a `skipped` stage falls through to GREEN, deliberately, with the reason in the file
+
+Supply Chain Required                                          <- the contrast, same repository
+  grep -qE '"result": *"(failure|cancelled|skipped)"' -> exit 1
+         a `skipped` stage FAILS the aggregate
+```
+
+Both policies are defensible where they stand - `publish` only runs on a push to `main`, and a
+packages-only change legitimately skips `test`'s app shards - and this is not hypothetical: on
+this document's own pull request `Storybook Required` is `success` with `Publish to GitHub Pages`
+`skipped`. The point is that a reader who takes "none of the sixteen can skip" as the guarantee
+has the wrong picture: the stages inside `CI Required` that can go quiet include `ops`, which is
+where the full-day clinical drill runs. `ci.yaml` states the hazard at its aggregate
+(_"a stage that can skip is a stage that can silently pass"_); the same sentence had never been
+written for the context level, which is what this section is for.
 
 ### The three app-posted contexts are a fourth class
 
 `CodeQL`, `GitGuardian Security Checks` and `Aikido Security: check code` have no job in this
 repository. Two of them - GitGuardian and Aikido - depend on no workflow here at all, so their
 silence modes are entirely external: an app disabled, uninstalled, or out of credits. `Aikido
-Security: check code` is protection rather than decoration and has posted `failure` six times on
-real findings; its sibling `Aikido Deep Review` has been `skipped` for want of credits on every
+Security: check code` is protection rather than decoration and has posted `failure` on real
+findings repeatedly, most recently on #413 (2026-09-07, a `MEDIUM` path traversal in a script
+added by that pull request, fixed rather than suppressed) - a running count is left out of this
+document deliberately, because it is a number somebody then has to keep; its sibling `Aikido Deep Review` has been `skipped` for want of credits on every
 run since the app was installed, and that residual is tracked in #408.
 
 `CodeQL` is the fourth class and the one worth naming separately: **posted by an app _and_

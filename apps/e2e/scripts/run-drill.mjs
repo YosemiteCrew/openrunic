@@ -27,19 +27,27 @@ const repoRoot = path.resolve(here, '../../..');
 /**
  * One route per clinical area. All of them have to exist: a partial surface
  * would produce a drill that passes having skipped half the day.
+ *
+ * Under `(app)`, which is a Next route group: a directory whose name is in
+ * parentheses groups files without appearing in the URL. These paths were the
+ * bare ones until the screens moved into that group, and this list did not move
+ * with them - so the check below reported `Missing 11 of 11` and exited zero,
+ * and the acceptance test for the product did not run for fifteen days while
+ * its job stayed green. See #407 for the harder half: nothing here can tell
+ * "the screens are not here yet" from "I am looking in the wrong place".
  */
 const REQUIRED_ROUTES = [
-  'apps/web/src/app/schedule/page.tsx',
-  'apps/web/src/app/schedule/flow-board/page.tsx',
-  'apps/web/src/app/patients/[id]/page.tsx',
-  'apps/web/src/app/encounters/[id]/page.tsx',
-  'apps/web/src/app/orders/new/page.tsx',
-  'apps/web/src/app/results/page.tsx',
-  'apps/web/src/app/billing/charges/page.tsx',
-  'apps/web/src/app/billing/claims/page.tsx',
-  'apps/web/src/app/billing/remittance/page.tsx',
-  'apps/web/src/app/billing/payments/page.tsx',
-  'apps/web/src/app/admin/audit/page.tsx',
+  'apps/web/src/app/(app)/schedule/page.tsx',
+  'apps/web/src/app/(app)/schedule/flow-board/page.tsx',
+  'apps/web/src/app/(app)/patients/[id]/page.tsx',
+  'apps/web/src/app/(app)/encounters/[id]/page.tsx',
+  'apps/web/src/app/(app)/orders/new/page.tsx',
+  'apps/web/src/app/(app)/results/page.tsx',
+  'apps/web/src/app/(app)/billing/charges/page.tsx',
+  'apps/web/src/app/(app)/billing/claims/page.tsx',
+  'apps/web/src/app/(app)/billing/remittance/page.tsx',
+  'apps/web/src/app/(app)/billing/payments/page.tsx',
+  'apps/web/src/app/(app)/admin/audit/page.tsx',
 ];
 
 const missing = REQUIRED_ROUTES.filter((route) => !existsSync(path.join(repoRoot, route)));

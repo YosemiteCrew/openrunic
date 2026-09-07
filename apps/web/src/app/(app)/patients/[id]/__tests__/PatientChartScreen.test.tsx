@@ -6,7 +6,7 @@ import { PatientChartScreen } from '@/app/(app)/patients/[id]/PatientChartScreen
 import { ApiError, MOCK_PATIENTS } from '@/lib/api';
 import type { Patient } from '@/lib/api';
 import { createMockChartClient } from '@/lib/api/chart';
-import type { ChartClient } from '@/lib/api/chart';
+import type { ChartClient, ChartSummary, Medication } from '@/lib/api/chart';
 import { emptyChart } from '@/lib/api/mock/chart';
 
 const push = vi.fn();
@@ -40,6 +40,82 @@ describe('PatientChartScreen', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Tess Patientsson' })
     ).toBeInTheDocument();
+  });
+
+  /**
+   * The badge is what the strip claims the tab holds, so it has to count the
+   * tab's own contents. It counted `status === 'ACTIVE'`, which made it the only
+   * badge on the row that did not, and put it in contradiction with `isTabEmpty`
+   * ten lines above, which has always read the whole list.
+   *
+   * Two cases, because one cannot tell the three candidate readings apart. A
+   * chart with no active medication is the case that MOTIVATES the change - the
+   * panel renders every row under a badge saying `0` - but on that chart the
+   * whole list and the not-active list are the same number, so it is green for
+   * `filter(status !== 'ACTIVE')` too. The mixed chart is what separates them:
+   * 2 active and 3 not gives 5, 2 and 3, and only one of those is the answer.
+   *
+   * Built rather than taken from a fixture: no shipped chart has either shape,
+   * and a guard that needs one stops working the day a fixture gains an active
+   * medication for an unrelated reason.
+   */
+  const medication = (id: string, status: Medication['status']): Medication => ({
+    id,
+    drug: `Fixture drug ${id}`,
+    sig: null,
+    prescriber: null,
+    status,
+    source: 'REPORTED',
+    startedOn: '2026-01-04',
+    stoppedOn: status === 'ACTIVE' ? null : '2026-05-30',
+    refillsRemaining: null,
+  });
+
+  const chartWith = (...statuses: Medication['status'][]): ChartSummary => ({
+    ...emptyChart(testina.id),
+    medications: statuses.map((status, index) => medication(`md-x-${String(index)}`, status)),
+  });
+
+  it('counts every medication on the tab, not only the active ones', async () => {
+    render(
+      <PatientChartScreen
+        patientId={testina.id}
+        chartClient={createMockChartClient({
+          charts: [chartWith('ACTIVE', 'ACTIVE', 'STOPPED', 'ON_HOLD', 'COMPLETED')],
+        })}
+      />
+    );
+
+    // 5, not 2 (the active ones) and not 3 (the rest).
+    expect(await screen.findByRole('tab', { name: /Medications/ })).toHaveAccessibleName(
+      'Medications 5'
+    );
+  });
+
+  it('does not put a zero on a tab whose panel is about to list three rows', async () => {
+    render(
+      <PatientChartScreen
+        patientId={testina.id}
+        chartClient={createMockChartClient({
+          charts: [chartWith('STOPPED', 'ON_HOLD', 'COMPLETED')],
+        })}
+      />
+    );
+
+    const tab = await screen.findByRole('tab', { name: /Medications/ });
+    expect(tab).toHaveAccessibleName('Medications 3');
+
+    // The rows are the half that makes the old count a lie rather than merely a
+    // different number: `isTabEmpty` reads the whole list, so the panel renders.
+    fireEvent.click(tab);
+    const table = await screen.findByRole('table', {
+      name: 'Medications that are not active, with the state of each',
+    });
+    expect(within(table).getAllByRole('row')).toHaveLength(4); // header + three
+
+    // And the tab is not showing its empty state, which is what would make a
+    // zero honest.
+    expect(screen.queryByText(/No medications recorded/i)).not.toBeInTheDocument();
   });
 
   it('opens on the summary, with the rail beside it', async () => {

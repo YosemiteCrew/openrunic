@@ -167,6 +167,45 @@ describe('Table', () => {
     expect(scrollRule).toMatch(/position:\s*relative/);
   });
 
+  /**
+   * Two more CSS assertions, for the same reason as the one above and with a
+   * sharper edge: jsdom does no layout, so a table that scrolls its subject off
+   * the screen and a table that pins it render identically here. Both of these
+   * declarations read as decoration and both were, or would be, deleted by
+   * someone tidying.
+   */
+  it('pins the first column outside any media query, so the pin follows the container', () => {
+    const css = readFileSync('src/components/Table/Table.css', 'utf8');
+
+    // The pin used to live above a `@media (min-width: 768px)` that released it,
+    // which put it on the VIEWPORT while overflow is a property of the CONTAINER:
+    // the chart rail leaves a records table 743px of a 1440px page, so the pin was
+    // off at exactly the width where the table overflowed most. Stripping every
+    // media block and requiring the rule to survive is what asserts "always",
+    // rather than merely "present somewhere in this file".
+    const unconditional = css.replaceAll(/@media[^{]*\{(?:[^{}]|\{[^{}]*\})*\}/g, '');
+
+    expect(unconditional).toMatch(
+      /\.or-table__th:first-child,\s*\.or-table__td:first-child\s*\{[^}]*position:\s*sticky[^}]*\}/
+    );
+    // And nothing anywhere may hand it back: `static` is the only value that
+    // silently undoes a sticky cell without looking like it did.
+    expect(css).not.toMatch(/\.or-table__td:first-child\s*\{[^}]*position:\s*static/);
+  });
+
+  it('carries both scroll-affordance layers, the local cover and the fixed edge', () => {
+    const css = readFileSync('src/components/Table/Table.css', 'utf8');
+    const scrollRule = /\.or-table__scroll\s*\{((?:[^{}]|\([^()]*\))*)\}/.exec(css)?.[1] ?? '';
+
+    // The pair is the mechanism, not the decoration. `local` travels with the
+    // content so it covers the edge once the end is reached; `scroll` stays with
+    // the box and is what shows while there is more to the right. Keep only one
+    // and the shading is either permanent or never visible - both of which look
+    // deliberate and neither of which answers "is there more this way".
+    expect(scrollRule).toMatch(/no-repeat\s+local/);
+    expect(scrollRule).toMatch(/no-repeat\s+scroll/);
+  });
+
   it('merges className and forwards native attributes', () => {
     render(
       <Table

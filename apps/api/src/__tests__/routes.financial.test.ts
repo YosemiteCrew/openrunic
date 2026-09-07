@@ -3652,3 +3652,103 @@ describe('the claim status filter', () => {
     expect(financialSpecs.claims.matches(claim('PAID'), { ...paged })).toBe(true);
   });
 });
+
+/* ------------------------------------------- a payment that names no chart (#336) */
+
+/**
+ * `Payment.patientId` is nullable and this is the state it is nullable FOR: a
+ * payer remittance arrives against a payer, and `paymentCreateInput` refines
+ * `patientId !== undefined || payerId !== undefined` rather than requiring the
+ * chart. The chart attaches at ALLOCATION, not at receipt.
+ *
+ * `gateCharts` skips a row whose chart column is null, so every gated payment
+ * door is inert on such a row - see the note on `gateCharts` itself, which is
+ * where this exemption is stated. These cases are what make it an assertion
+ * rather than a thing the next person discovers while writing a fixture, and
+ * they are here rather than in `routes.orders.test.ts` because the payment
+ * fixtures are here.
+ *
+ * All three arms per door, deliberately. A charted refusal alone cannot tell a
+ * working gate from a route that refuses everybody, a chartless success alone
+ * cannot tell an exemption from an ungated route, and neither says whether the
+ * exemption stops at the tenant. Driven at c636835: 404 / success / 404.
+ */
+describe('the chart gate is inert on a payment that names no chart, and bounded by the tenant', () => {
+  const CHARTLESS_PAYMENT = testId(9_270);
+
+  function exemptionApp(): ReturnType<typeof createTestApp> {
+    const harness = createTestApp();
+    seed(
+      harness.dataset,
+      'Payment',
+      makePaymentRow(),
+      makePaymentRow({
+        id: CHARTLESS_PAYMENT,
+        patientId: null,
+        payerId: PAYER_ID,
+        source: 'PAYER_ERA',
+      })
+    );
+    return harness;
+  }
+
+  const DOORS = [
+    ['GET /payments/:id', 'GET', (id: string) => `/bff/v0/payments/${id}`, undefined],
+    ['POST /payments/:id/post', 'POST', (id: string) => `/bff/v0/payments/${id}/post`, {}],
+    ['POST /payments/:id/void', 'POST', (id: string) => `/bff/v0/payments/${id}/void`, {}],
+  ] as const;
+
+  async function drive(
+    id: string,
+    token: string,
+    method: string,
+    path: (id: string) => string,
+    reqBody: unknown
+  ): Promise<number> {
+    const { app } = exemptionApp();
+    if (method === 'GET') return (await app.request(path(id), { headers: bearer(token) })).status;
+    return (await app.request(...post(path(id), token, reqBody))).status;
+  }
+
+  it.each(DOORS)(
+    '%s refuses a biller with no relationship on the payment that NAMES a chart',
+    async (_label, method, path, reqBody) => {
+      expect(await drive(testId(50), TOKENS.billerA, method, path, reqBody)).toBe(404);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s admits the same biller on the payment that names NONE - the exemption',
+    async (_label, method, path, reqBody) => {
+      // 200 rather than `not.toBe(404)`: a 409 from the payment state machine
+      // would satisfy a not-404 and would say nothing about the chart gate.
+      expect(await drive(CHARTLESS_PAYMENT, TOKENS.billerA, method, path, reqBody)).toBe(200);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s still refuses the other tenant on the chartless payment',
+    async (_label, method, path, reqBody) => {
+      expect(await drive(CHARTLESS_PAYMENT, TOKENS.adminB, method, path, reqBody)).toBe(404);
+    }
+  );
+
+  /**
+   * The one door on this row that a chart gate still holds, and the reason the
+   * exemption above is not an escalation: a patch naming a chart is gated on
+   * the chart it NAMES (#421), not only on the one the row is already in. So a
+   * caller who reaches a chartless payment cannot use it to write into a chart
+   * they have no relationship with.
+   */
+  it('refuses a patch that attaches a chart the caller cannot read', async () => {
+    const { app } = exemptionApp();
+
+    const res = await app.request(
+      ...patch(`/bff/v0/payments/${CHARTLESS_PAYMENT}`, TOKENS.billerA, {
+        patientId: OTHER_PATIENT_ID,
+      })
+    );
+
+    expect(res.status).toBe(404);
+  });
+});

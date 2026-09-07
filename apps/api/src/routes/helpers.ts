@@ -76,6 +76,31 @@ export function required<T>(value: T | null, message: string): T {
  * Every distinct chart on the page rather than the first: a page spans
  * patients, and one refused chart refuses the page, which is what the addressed
  * read of that row would have done on its own.
+ *
+ * WHAT THIS DOES NOT GATE, and it is not a defect (#336). A row whose chart
+ * column is null answers `undefined` from `chartIdOf` and is filtered out
+ * below, so it never reaches `assertCareRelationship`. That is correct - a row
+ * naming no chart has no relationship to require, and refusing it would refuse
+ * a chart it could never have - but it means "this route is gated" always
+ * reads "gated when the row names a chart". Six of the 34 specs declaring
+ * `patientColumn: 'patientId'` resolve to a nullable column: `Appointment`,
+ * `Document`, `MessageThread`, `Payment`, `StockPosting` and `Task`. On those,
+ * the only things standing between a chartless row and any caller are the
+ * tenant and the permission.
+ *
+ * Driven at c636835 across ten doors on `Task`, `MessageThread` and `Payment`:
+ * the same principal is refused 404 on every chart-naming row and admitted on
+ * every chartless one, and the other tenant is refused on both. So the
+ * exemption is real and bounded by tenancy. The cases live beside the fixtures
+ * they need - `routes.orders.test.ts` for tasks and threads,
+ * `routes.financial.test.ts` for payments - and each door carries all three
+ * arms, because a charted refusal alone cannot tell a working gate from a route
+ * that refuses everyone.
+ *
+ * The consequence for anyone adding a nullable chart column: the row is outside
+ * this gate for its whole life, and no status and no state machine can put it
+ * back. `messages/threads`' patch route refuses `kind: 'PATIENT'` on such a row
+ * for exactly that reason.
  */
 export async function gateCharts(
   c: Context<AppEnv>,

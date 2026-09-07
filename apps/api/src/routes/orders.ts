@@ -452,7 +452,41 @@ function crudModules(): CrudModule[] {
       createSchema: messageThreadCreateSchema,
       toCreate: toMessageThreadCreateInput,
       patchSchema: messageThreadPatchSchema,
-      toPatch: toMessageThreadPatchInput,
+      /* `messageThreadCreateSchema` refines `kind !== 'PATIENT' || patientId
+         !== undefined` - a patient thread must name the chart it belongs to.
+         The patch schema carries `kind` and cannot carry `patientId`, so the
+         same promise on this route is a question about the EXISTING row rather
+         than about the body, and a body-only refine could not ask it.
+
+         Without this, moving a chartless staff thread to `PATIENT` produces the
+         one state the create route exists to refuse, and produces it
+         permanently: nothing on the patch schema can then supply the chart.
+         Driven on `dev` at c636835, `PATCH {kind: 'PATIENT'}` on a thread with
+         a null `patientId` answered 200 with `kind` PATIENT and `patientId`
+         null.
+
+         It also matters on the authorisation axis, which is what #336 is
+         about. `gateCharts` skips a row whose chart column is null, so such a
+         thread is outside the care-relationship gate for the rest of its life
+         while its own `kind` claims it is chart data. The exemption for a
+         genuine staff thread is deliberate and pinned in
+         `routes.orders.test.ts`; a row that says PATIENT is not that case.
+
+         Shaped as a row-aware `toPatch` because the seam already hands the
+         existing row to it - `clinical.ts` refuses an invalid encounter
+         transition the same way - so this needs no new hook. */
+      toPatch: (body, row) => {
+        if (body.kind === 'PATIENT' && row.patientId === null) {
+          throw ApiError.validation('A patient thread must name the chart it belongs to.', [
+            {
+              path: 'kind',
+              message:
+                'this thread names no chart, and a patch cannot supply one: create a patient thread instead',
+            },
+          ]);
+        }
+        return toMessageThreadPatchInput(body);
+      },
       dtoSchema: messageThreadDtoSchema,
       toDto: toMessageThreadDto,
     }),

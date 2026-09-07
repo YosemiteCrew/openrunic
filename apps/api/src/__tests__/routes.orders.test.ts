@@ -2876,3 +2876,211 @@ function serviceApp(): Harness {
   });
   return harness;
 }
+
+/* ------------------------------------------- a row that names no chart (#336) */
+
+/**
+ * `gateCharts` skips a row whose chart column is null - `chartIdOf` answers
+ * `undefined` and the id never reaches `assertCareRelationship`. That is
+ * correct: a row naming no chart has no relationship to require, and refusing
+ * it would refuse a chart it could never have.
+ *
+ * The consequence is what #336 asked for and what nothing here said: "this
+ * route is gated" means "gated when the row names a chart", and on a nullable
+ * chart column that is a standing exemption on an axis no status and no state
+ * machine can rescue. `Task` and `MessageThread` are two of the six columns
+ * where it applies.
+ *
+ * These cases exist so the exemption is ASSERTED rather than discovered. The
+ * question the issue posed was not whether the product can produce such a row -
+ * it can, `POST /bff/v0/tasks` with no `patientId` is a 201 - but what protects
+ * one once it exists. Driven at `c636835`, the answer is the tenant and the
+ * permission and nothing else, and the third column is what makes that an
+ * exemption to write down rather than a hole to close: the same request from
+ * the other tenant is refused.
+ *
+ * Each door carries all three arms, because two of them alone cannot say which
+ * thing failed. A charted 404 with no chartless arm is a gate that might refuse
+ * everyone; a chartless 200 with no charted arm is a route that might admit
+ * everyone; and both without the cross-tenant arm cannot tell an exemption from
+ * an unscoped read.
+ */
+describe('the chart gate is inert on a row that names no chart, and bounded by the tenant', () => {
+  const CHARTLESS_TASK = testId(9_250);
+  const CHARTLESS_THREAD = testId(9_260);
+
+  /** Both rows seeded twice: naming PATIENT, and naming nobody. */
+  function exemptionApp(): Harness {
+    const harness = createTestApp();
+    const { dataset } = harness;
+    // Assigned elsewhere on purpose: `assigned-task` is a relationship source,
+    // so a task handed to CLINICIAN would authorise the caller and the charted
+    // arm would measure a reader who is in the chart. That is the mistake the
+    // stranger harness above records having made.
+    seed(dataset, 'Task', makeTaskRow({ assigneeUserId: OTHER_USER }));
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({ id: CHARTLESS_TASK, patientId: null, assigneeUserId: OTHER_USER })
+    );
+    seed(dataset, 'MessageThread', makeThreadRow());
+    seed(
+      dataset,
+      'MessageThread',
+      makeThreadRow({ id: CHARTLESS_THREAD, patientId: null, kind: 'STAFF' })
+    );
+    return harness;
+  }
+
+  const DOORS = [
+    ['GET /tasks/:id', 'get', (id: string) => `/bff/v0/tasks/${id}`, undefined],
+    ['POST /tasks/:id/complete', 'post', (id: string) => `/bff/v0/tasks/${id}/complete`, {}],
+    ['POST /tasks/:id/cancel', 'post', (id: string) => `/bff/v0/tasks/${id}/cancel`, {}],
+    [
+      'GET /messages/threads/:id',
+      'get',
+      (id: string) => `/bff/v0/messages/threads/${id}`,
+      undefined,
+    ],
+    [
+      'POST /messages/threads/:id/close',
+      'post',
+      (id: string) => `/bff/v0/messages/threads/${id}/close`,
+      {},
+    ],
+    [
+      'POST /messages/threads/:id/messages',
+      'post',
+      (id: string) => `/bff/v0/messages/threads/${id}/messages`,
+      { body: 'A reply.' },
+    ],
+  ] as const;
+
+  const chartlessIdFor = (label: string): string =>
+    label.includes('/tasks/') ? CHARTLESS_TASK : CHARTLESS_THREAD;
+  const chartedIdFor = (label: string): string => (label.includes('/tasks/') ? TASK_A : THREAD_A);
+
+  it.each(DOORS)(
+    '%s refuses a stranger on the row that NAMES a chart',
+    async (label, method, path, reqBody) => {
+      const { app } = exemptionApp();
+
+      const res = await call(app, method, path(chartedIdFor(label)), { body: reqBody });
+
+      expect(res.status).toBe(404);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s admits the same stranger on the row that names NONE - the exemption',
+    async (label, method, path, reqBody) => {
+      const { app } = exemptionApp();
+
+      const res = await call(app, method, path(chartlessIdFor(label)), { body: reqBody });
+
+      // Deliberately not `not.toBe(404)`. The point of the case is that the
+      // request SUCCEEDS - a 409 from a state machine would also satisfy a
+      // not-404 and would say nothing about the gate.
+      expect([200, 201]).toContain(res.status);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s still refuses the other tenant on the chartless row',
+    async (label, method, path, reqBody) => {
+      const { app } = exemptionApp();
+
+      const res = await call(app, method, path(chartlessIdFor(label)), {
+        token: TOKENS.clinicianB,
+        body: reqBody,
+      });
+
+      expect(res.status).toBe(404);
+    }
+  );
+});
+
+/**
+ * `messageThreadCreateSchema` refuses a `PATIENT` thread that names no chart.
+ * The patch schema carries `kind` and cannot carry `patientId`, so before this
+ * was gated one PATCH reached that state and reached it permanently - nothing
+ * on the patch schema could then supply the chart, and the row sat outside the
+ * gate above for the rest of its life while its own `kind` claimed to be chart
+ * data.
+ *
+ * BEFORE THIS CHANGE, `PATCH /bff/v0/messages/threads/{id}` with
+ * `{kind: 'PATIENT'}` on a thread whose `patientId` is null answered 200, and
+ * the row came back `kind` PATIENT with `patientId` null.
+ *
+ * The refusal is a 422 rather than a 409: it is the create schema's own
+ * invariant, reported in the same shape a create violating it gets, not a state
+ * transition the product knows about and refuses.
+ */
+describe('a patch cannot make a chartless thread claim to be a patient thread', () => {
+  const CHARTLESS_THREAD = testId(9_261);
+
+  function threadApp(): Harness {
+    const harness = createTestApp();
+    seed(harness.dataset, 'MessageThread', makeThreadRow());
+    seed(
+      harness.dataset,
+      'MessageThread',
+      makeThreadRow({ id: CHARTLESS_THREAD, patientId: null, kind: 'STAFF' })
+    );
+    return harness;
+  }
+
+  it('refuses kind PATIENT on a thread that names no chart', async () => {
+    const { app } = threadApp();
+
+    const res = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { kind: 'PATIENT' },
+    });
+
+    expect(res.status).toBe(422);
+    const problemDoc = await problem(res);
+    expect(problemDoc.detail).toBe('A patient thread must name the chart it belongs to.');
+    // The row did not move. A 422 says the REPLY was refused, not the write.
+    const after = await call(app, 'get', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`);
+    expect(await body<MessageThreadDto>(after)).toMatchObject({ kind: 'STAFF', patientId: null });
+  });
+
+  it('still allows every other patch on that same thread', async () => {
+    const { app } = threadApp();
+
+    const subject = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { subject: 'Rota cover for Friday' },
+    });
+    expect(subject.status).toBe(200);
+
+    const staff = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { kind: 'STAFF' },
+    });
+    expect(staff.status).toBe(200);
+  });
+
+  /**
+   * The must-not-fire, and it is the one that separates "a chartless row was
+   * refused" from "the route stopped accepting `kind` at all". A thread that
+   * DOES name a chart may be moved to PATIENT by a caller in that chart.
+   */
+  it('allows kind PATIENT on a thread that already names a chart', async () => {
+    const harness = threadApp();
+    authorise(harness.dataset, PATIENT);
+    seed(
+      harness.dataset,
+      'MessageThread',
+      makeThreadRow({ id: testId(9_262), patientId: PATIENT, kind: 'STAFF' })
+    );
+
+    const res = await call(harness.app, 'patch', `/bff/v0/messages/threads/${testId(9_262)}`, {
+      body: { kind: 'PATIENT' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await body<MessageThreadDto>(res)).toMatchObject({
+      kind: 'PATIENT',
+      patientId: PATIENT,
+    });
+  });
+});

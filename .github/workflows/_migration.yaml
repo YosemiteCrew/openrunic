@@ -183,7 +183,10 @@ jobs:
       # the only stage with a Postgres, and `describe.skipIf(DATABASE_URL ===
       # undefined)` makes them silently absent everywhere else.
       #
-      # They had never run in CI. `repositories.database.test.ts` was red on
+      # They had never run in CI, and the reason is simply that no step ran
+      # them - this stage did reach an apps/api change all along, because the
+      # affected matrix is built with `--filter="...[BASE]"` and the leading
+      # dots pull in dependencies. `repositories.database.test.ts` was red on
       # `dev` at c12b5a8 - its fixture handed the repositories the MEMORY audit
       # sink and then read the audit table out of Postgres, so the assertion was
       # `0 > 0` - and nothing anywhere could report it, because a stage that

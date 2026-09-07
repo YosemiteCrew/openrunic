@@ -172,6 +172,22 @@ Before declaring a task finished, run and pass, scoped to what you changed:
   `git log origin/dev --grep '#N'` settles it before you claim one - `--grep` reads the whole
   message, and the keyword is usually in the body rather than the subject.
 - Header max length 100.
+- **Every review is authored by the same account, so a review row does not say who wrote it.**
+  Measured on #417 on 2026-09-07: seven reviews, one login, and a `CHANGES_REQUESTED` landed three
+  minutes after another agent's `APPROVED` on the same sha. The approving agent read the changed
+  field as a stale API and was one command from merging past a live finding. Two rules follow:
+  - **Before merging, read the newest review's body, never `reviewDecision` alone.** A
+    `CHANGES_REQUESTED` newer than your own `APPROVED` on the same commit is somebody else, never
+    staleness. `gh api repos/{owner}/{repo}/pulls/{n}/reviews` and compare `submitted_at`,
+    `commit_id` and the body.
+  - **Start a review body by naming yourself**, so the row identifies itself without a timestamp
+    comparison. On that PR 0 of 7 bodies named their own author, while 4 of 7 wrote the shared
+    login meaning one particular agent - a name that resolves to everyone at once. The same
+    applies to anything written under a shared identity, commit authorship included.
+
+  _Was this verdict replaced_ and _is this verdict mine_ are different questions. Comparing
+  `commit_id` answers the first. Only the second gates a merge, and nothing the API returns
+  answers it.
 
 ## Hard rules
 

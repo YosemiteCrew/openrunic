@@ -11,6 +11,21 @@ out/
 # Turbo
 .turbo/
 
+# Next's generated ambient types, one per Next app.
+#
+# `next dev` and `next build` write DIFFERENT contents - `./.next/dev/types/...`
+# against `./.next/types/...` - so a tracked copy flips with whichever command
+# ran last and rides into an unrelated diff. It reached `dev` twice that way, in
+# `2abc8ce` (a font-face removal) and back out in `19ae465` (a refactor), and the
+# file's own header says it should not be edited, which is what makes the hunk
+# easy to wave through (#301).
+#
+# Safe to untrack rather than merely guard, measured at `e896012`: `tsc --noEmit`
+# is clean without it both scoped and repo-wide with no `.next` present, and
+# `next build` regenerates it byte-identically and leaves the tree clean. So a
+# fresh clone has it the moment anything runs, and nothing in the index can flip.
+apps/*/next-env.d.ts
+
 # Test coverage
 coverage/
 

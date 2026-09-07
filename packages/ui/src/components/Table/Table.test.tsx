@@ -195,7 +195,14 @@ describe('Table', () => {
 
   it('carries both scroll-affordance layers, the local cover and the fixed edge', () => {
     const css = readFileSync('src/components/Table/Table.css', 'utf8');
-    const scrollRule = /\.or-table__scroll\s*\{((?:[^{}]|\([^()]*\))*)\}/.exec(css)?.[1] ?? '';
+    // `[^}]*`, the same shape the containing-block test above uses. The first
+    // version of this alternated `[^{}]` with `\([^()]*\)` so a `rgba()` inside
+    // a `linear-gradient()` could not end the match early - which was never
+    // needed, because `[^}]` already matches a parenthesis, and the two branches
+    // both accept `(`. CodeQL called it: js/redos, high, exponential backtracking
+    // on many repetitions of `()`. Reaching past a correct neighbouring pattern
+    // for a cleverer one is what introduced it.
+    const scrollRule = /\.or-table__scroll\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
 
     // The pair is the mechanism, not the decoration. `local` travels with the
     // content so it covers the edge once the end is reached; `scroll` stays with

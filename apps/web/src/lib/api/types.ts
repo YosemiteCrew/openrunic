@@ -395,6 +395,51 @@ export interface NoteListQuery extends PaginationQuery {
 }
 
 /** Mirrors `encounterListQuerySchema`. */
+/**
+ * A medication statement, as `/bff/v0/medications/statements` returns it.
+ *
+ * A statement is what somebody says the patient takes. It is not a
+ * prescription, which is why there is no prescriber and no refill count here -
+ * those belong to `prescriptionDtoSchema` and inferring them from a statement
+ * would put a name against a record nobody wrote.
+ */
+export interface MedicationStatementDto {
+  id: string;
+  patientId: string;
+  encounterId: string | null;
+  rxnormCode: string | null;
+  display: string;
+  sigText: string | null;
+  status: MedicationStatementStatus;
+  source: MedicationStatementSource;
+  effectiveStart: string | null;
+  effectiveEnd: string | null;
+  reportedAt: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MedicationStatementStatus =
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'ENTERED_IN_ERROR'
+  | 'INTENDED'
+  | 'NOT_TAKEN'
+  | 'ON_HOLD'
+  | 'STOPPED'
+  | 'UNKNOWN';
+
+export type MedicationStatementSource = 'REPORTED' | 'PRESCRIBED' | 'RECONCILED' | 'IMPORTED';
+
+export interface MedicationStatementListQuery extends PaginationQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: MedicationStatementStatus;
+  sort?: 'reportedAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
 export interface EncounterListQuery extends PaginationQuery {
   patientId?: string;
   facilityId?: string;
@@ -911,6 +956,12 @@ export interface ApiClient {
     get: (id: string, signal?: AbortSignal) => Promise<Appointment>;
     create: (body: AppointmentCreateBody, signal?: AbortSignal) => Promise<Appointment>;
     update: (id: string, body: AppointmentUpdateBody, signal?: AbortSignal) => Promise<Appointment>;
+  };
+  medicationStatements: {
+    list: (
+      query?: MedicationStatementListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<MedicationStatementDto>>;
   };
   encounters: {
     list: (query?: EncounterListQuery, signal?: AbortSignal) => Promise<ListResponse<EncounterDto>>;

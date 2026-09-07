@@ -21,6 +21,7 @@ import type {
   FacilityDto,
   FacilityListQuery,
   FormDefinitionDto,
+  MedicationStatementDto,
   NoteListQuery,
   Patient,
   PatientCreateBody,
@@ -37,10 +38,12 @@ import type {
   UserListQuery,
 } from '../types';
 
+import { mockChartFor } from './chart';
 import {
   MOCK_APPOINTMENTS,
   MOCK_DIRECTORY_FACILITIES,
   MOCK_DIRECTORY_USERS,
+  MOCK_NOW,
   MOCK_PATIENTS,
 } from './fixtures';
 import { assertTransition, attempt, conflict, validationFailed } from './protocol';
@@ -716,6 +719,45 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
               ? { checkedInAt: clock.now() }
               : {};
           return appointments.patch(id, { ...defined(rest), ...type, ...arrival }, NO_APPOINTMENT);
+        }),
+    },
+
+    /*
+     * The demo build's medication statements, read back off the demo chart.
+     *
+     * The chart a reader sees in fixture mode is composed in
+     * `chart/client.ts` from `mock/chart.ts` and does not come through here -
+     * so this door could have returned an empty page and nothing would have
+     * noticed. An empty page is the wrong answer: it says this patient records
+     * no medications, which is the sentence the issue behind this work is
+     * about. It answers from the same fixture the chart shows instead, so the
+     * two cannot disagree.
+     *
+     * `prescriber` and `refillsRemaining` have no home in the DTO, which is why
+     * they are dropped here rather than invented - a statement is not a
+     * prescription.
+     */
+    medicationStatements: {
+      list: (query = {}) =>
+        answer(() => {
+          const chart = query.patientId === undefined ? undefined : mockChartFor(query.patientId);
+          const rows: MedicationStatementDto[] = (chart?.medications ?? []).map((med) => ({
+            id: med.id,
+            patientId: chart?.patientId ?? '',
+            encounterId: null,
+            rxnormCode: null,
+            display: med.drug,
+            sigText: med.sig,
+            status: med.status,
+            source: med.source,
+            effectiveStart: med.startedOn,
+            effectiveEnd: med.stoppedOn,
+            reportedAt: med.startedOn ?? MOCK_NOW,
+            note: null,
+            createdAt: med.startedOn ?? MOCK_NOW,
+            updatedAt: med.startedOn ?? MOCK_NOW,
+          }));
+          return paginate(rows, query.page, query.pageSize);
         }),
     },
 

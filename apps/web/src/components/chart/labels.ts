@@ -4,6 +4,7 @@ import type {
   AllergySeverity,
   CareTeamRelationship,
   MedicationSource,
+  MedicationStatus,
   NoteState,
   ProblemStatus,
 } from '@/lib/api/chart/types';
@@ -51,9 +52,28 @@ export const ALLERGY_CATEGORY_LABELS: Record<AllergyCategory, { labelKey: string
 };
 
 export const MEDICATION_SOURCE_LABELS: Record<MedicationSource, { labelKey: string }> = {
-  PRESCRIBED_HERE: { labelKey: 'chart.medicationSource.prescribedHere' },
-  PATIENT_REPORTED: { labelKey: 'chart.medicationSource.patientReported' },
+  REPORTED: { labelKey: 'chart.medicationSource.reported' },
+  PRESCRIBED: { labelKey: 'chart.medicationSource.prescribed' },
   RECONCILED: { labelKey: 'chart.medicationSource.reconciled' },
+  IMPORTED: { labelKey: 'chart.medicationSource.imported' },
+};
+
+/**
+ * Every medication state, each with its own words.
+ *
+ * A `Record` over the union rather than a lookup with a fallback, so adding a
+ * state to `MedicationStatus` fails to compile here instead of rendering as a
+ * raw enum name or, worse, as the wrong neighbour.
+ */
+export const MEDICATION_STATUS_LABELS: Record<MedicationStatus, { labelKey: string }> = {
+  ACTIVE: { labelKey: 'chart.medicationStatus.active' },
+  COMPLETED: { labelKey: 'chart.medicationStatus.completed' },
+  ENTERED_IN_ERROR: { labelKey: 'chart.medicationStatus.enteredInError' },
+  INTENDED: { labelKey: 'chart.medicationStatus.intended' },
+  NOT_TAKEN: { labelKey: 'chart.medicationStatus.notTaken' },
+  ON_HOLD: { labelKey: 'chart.medicationStatus.onHold' },
+  STOPPED: { labelKey: 'chart.medicationStatus.stopped' },
+  UNKNOWN: { labelKey: 'chart.medicationStatus.unknown' },
 };
 
 export const CARE_TEAM_LABELS: Record<CareTeamRelationship, { labelKey: string }> = {

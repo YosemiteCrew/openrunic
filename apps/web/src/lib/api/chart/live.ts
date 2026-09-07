@@ -1,10 +1,18 @@
 import { ATTESTATION, contentHash } from './signature';
-import type { ApiClient, ClinicalNoteDto, EncounterDto, NoteAddendumDto, UserDto } from '../types';
+import type {
+  ApiClient,
+  ClinicalNoteDto,
+  EncounterDto,
+  MedicationStatementDto,
+  NoteAddendumDto,
+  UserDto,
+} from '../types';
 
 import type {
   Addendum,
   ChartSummary,
   EncounterNote,
+  Medication,
   NoteSection,
   NoteSectionKey,
   NoteState,
@@ -30,6 +38,7 @@ import type {
 
 /** How many visits a chart's timeline shows before it starts paging. */
 const VISIT_PAGE_SIZE = 50;
+const MEDICATION_PAGE_SIZE = 50;
 
 /** One page of the staff directory. The API caps a page at 100. */
 const DIRECTORY_PAGE_SIZE = 100;
@@ -191,6 +200,54 @@ function toVisit(
 }
 
 /**
+ * Every medication statement for a patient, in view shape.
+ *
+ * Paged to exhaustion rather than truncated at the first page. A medication
+ * list that silently stops at fifty is the same failure as an empty one - the
+ * screen renders successfully and is wrong - and a chart is the last place to
+ * show a reader part of a list without saying so. `totalPages` decides when to
+ * stop, and an empty page stops it too, so a server that disagreed with its own
+ * count cannot spin here.
+ *
+ * `prescriber` and `refillsRemaining` are null and not derived. They belong to
+ * a prescription; this is a statement, which is what somebody says the patient
+ * takes, and the endpoint carries neither. Filling them from anything here
+ * would put a clinician's name against a record they did not write.
+ */
+async function readMedications(
+  client: ApiClient,
+  patientId: string,
+  signal?: AbortSignal
+): Promise<Medication[]> {
+  const rows: MedicationStatementDto[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const response = await client.medicationStatements.list(
+      { patientId, page, pageSize: MEDICATION_PAGE_SIZE, sort: 'reportedAt', order: 'desc' },
+      signal
+    );
+    rows.push(...response.data);
+    totalPages = response.page.totalPages;
+    page += 1;
+    if (response.data.length === 0) break;
+  } while (page <= totalPages);
+
+  return rows.map((row) => ({
+    id: row.id,
+    drug: row.display,
+    sig: row.sigText,
+    prescriber: null,
+    status: row.status,
+    source: row.source,
+    startedOn: row.effectiveStart,
+    stoppedOn: row.effectiveEnd,
+    refillsRemaining: null,
+  }));
+}
+
+/**
  * The chart summary, from the four routes that exist.
  *
  * Allergies, problems, medications, results and documents each have a segment
@@ -211,17 +268,18 @@ export async function readChartSummary(
   // full of empty tabs for a person who may not exist.
   await client.patients.get(patientId, signal);
 
-  const [encounters, notes, directory] = await Promise.all([
+  const [encounters, notes, directory, medications] = await Promise.all([
     client.encounters.list({ patientId, pageSize: VISIT_PAGE_SIZE }, signal),
     client.notes.list({ patientId, pageSize: VISIT_PAGE_SIZE }, signal),
     readDirectory(client, signal),
+    readMedications(client, patientId, signal),
   ]);
 
   return {
     patientId,
     allergies: { state: 'NOT_RECORDED', affirmedOn: null, entries: [] },
     problems: [],
-    medications: [],
+    medications,
     careGaps: [],
     visits: encounters.data.map((encounter) => toVisit(encounter, notes.data, directory)),
     results: [],

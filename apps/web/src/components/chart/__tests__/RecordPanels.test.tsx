@@ -10,7 +10,7 @@ import {
   VisitsPanel,
 } from '@/components/chart/RecordPanels';
 import { MOCK_NOW } from '@/lib/api';
-import type { ChartSummary } from '@/lib/api/chart';
+import type { ChartSummary, Medication } from '@/lib/api/chart';
 import { MOCK_CHARTS } from '@/lib/api/mock/chart';
 
 /**
@@ -113,13 +113,68 @@ describe('a patient who has never stopped a medication', () => {
     render(<MedicationsPanel medications={NEVER_STOPPED.medications} />);
 
     expect(screen.getByText('Current medications')).toBeInTheDocument();
-    expect(screen.queryByText('Discontinued')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not currently active')).not.toBeInTheDocument();
   });
 
   it('still gets the table once something has been stopped', () => {
     render(<MedicationsPanel medications={CHART.medications} />);
 
-    expect(screen.getByText('Discontinued')).toBeInTheDocument();
+    expect(screen.getByText('Not currently active')).toBeInTheDocument();
+  });
+});
+
+describe('a medication in a state the old pair had no room for', () => {
+  const HELD: Medication = {
+    id: 'md-hold',
+    drug: 'Warfarin 5 mg tablet',
+    sig: null,
+    prescriber: null,
+    status: 'ON_HOLD',
+    source: 'IMPORTED',
+    startedOn: null,
+    stoppedOn: null,
+    refillsRemaining: null,
+  };
+
+  it('is shown at all, rather than falling between the two tables', () => {
+    /*
+     * The panel used to split on `=== 'ACTIVE'` against `=== 'DISCONTINUED'`,
+     * which was exhaustive while those were the only two states. A medication
+     * that is neither would have been rendered by neither card - absent from
+     * the chart with nothing to say it had been dropped, which is the worst
+     * thing this panel can do. The second list is the complement of the first
+     * now, so this cannot recur for a state added later either.
+     */
+    render(<MedicationsPanel medications={[HELD]} />);
+
+    expect(screen.getByText('Warfarin 5 mg tablet')).toBeInTheDocument();
+  });
+
+  it('says which state it is in rather than being described by the card it landed in', () => {
+    /* "Not currently active" covers six states that mean different things to a
+       prescriber. On hold is not stopped, and neither is not taken. */
+    render(<MedicationsPanel medications={[HELD]} />);
+
+    const row = screen.getByRole('row', { name: /Warfarin/ });
+    expect(within(row).getByText('On hold')).toBeInTheDocument();
+    expect(within(row).getByText('Imported')).toBeInTheDocument();
+  });
+
+  it('describes an absent direction, prescriber and start as absent', () => {
+    /*
+     * A statement is what somebody says the patient takes; it carries no
+     * prescriber and often no directions. A blank cell reads as "there are
+     * none" rather than "nobody recorded one", and the two are answers to
+     * different questions.
+     */
+    render(<MedicationsPanel medications={[HELD]} />);
+
+    const row = screen.getByRole('row', { name: /Warfarin/ });
+    /* Five: directions, prescriber, started, refills and stopped. The last is
+       right - a medication on hold has not been stopped - and `refills` is the
+       one cell that already read this way, which is where the idiom came
+       from. */
+    expect(within(row).getAllByText('Not recorded')).toHaveLength(5);
   });
 });
 

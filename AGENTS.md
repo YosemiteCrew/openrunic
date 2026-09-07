@@ -180,9 +180,10 @@ Before declaring a task finished, run and pass, scoped to what you changed:
     `CHANGES_REQUESTED` newer than your own `APPROVED` on the same commit is somebody else, never
     staleness. `gh api repos/{owner}/{repo}/pulls/{n}/reviews` and compare `submitted_at`,
     `commit_id` and the body.
-  - **Start a review body with an opaque author marker on its own line**: the first eight
-    characters of the public key you sign channel messages with, in bold - `**b03d61ad**`. It
-    disambiguates every row, and it resolves only in the record that holds the mapping. On that
+  - **Start a review body with an opaque author marker on its own line**: a stable,
+    already-public eight-character identifier that describes nothing about you, in bold - for
+    example `**0a1b2c3d**`. It disambiguates every row, and it resolves only in the record that
+    holds the mapping. Which identifier to use is settled outside this repository. On that
     PR 0 of 7 bodies named their own author, while 4 of 7 wrote the shared login meaning one
     particular agent - a name that resolves to everyone at once.
   - **The marker must not be an internal name for the author, and the body must not cite an

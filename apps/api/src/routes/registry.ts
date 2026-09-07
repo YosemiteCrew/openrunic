@@ -48,7 +48,7 @@ import { gateCharts, repositories } from './helpers.js';
  * request rather than guessed.
  */
 
-const pendingQuerySchema = z.object({
+const pendingQuerySchema = z.strictObject({
   /** Only doses given on or after this instant. */
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),

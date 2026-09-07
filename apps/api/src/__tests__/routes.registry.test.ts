@@ -87,6 +87,32 @@ interface PendingBody {
   total: number;
 }
 
+describe('the registry queue query string', () => {
+  /*
+   * `pendingQuerySchema` was a `z.object`, so `?limitt=1` was dropped and the
+   * caller received the default page believing their cap had applied - the
+   * failure `http/validate.ts` describes and claimed could not happen here.
+   */
+  it('refuses an unknown parameter and a repeated one', async () => {
+    const { app } = harness();
+    const url = '/bff/v0/immunisations/registry/pending';
+
+    const unknown = await app.request(`${url}?limitt=1`, { headers: bearer(TOKENS.clinicianA) });
+    expect(unknown.status).toBe(400);
+    const unknownBody = (await unknown.json()) as { errors?: { message: string }[] };
+    expect(unknownBody.errors?.map((issue) => issue.message).join(' ')).toContain('limitt');
+
+    const repeated = await app.request(`${url}?limit=1&limit=500`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(repeated.status).toBe(400);
+    const repeatedBody = (await repeated.json()) as {
+      errors?: { path: string; message: string }[];
+    };
+    expect(repeatedBody.errors).toEqual([{ path: 'limit', message: 'sent more than once' }]);
+  });
+});
+
 async function pending(app: ReturnType<typeof createTestApp>['app']): Promise<PendingBody> {
   const res = await app.request('/bff/v0/immunisations/registry/pending', {
     headers: bearer(TOKENS.clinicianA),

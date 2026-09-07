@@ -374,6 +374,48 @@ describe('the outstanding tray', () => {
     expect(body.items.map((item) => item.id)).not.toContain(draft.id);
   });
 
+  it('refuses an unknown query parameter rather than ignoring it', async () => {
+    /*
+     * This schema was a `z.object`, which drops an unrecognised key instead of
+     * refusing it, so `?statuss=SENT` answered 200 with the whole unfiltered
+     * tray while the same typo against `/patients` answered 400. Three of the
+     * forty-seven query schemas were non-strict and `http/validate.ts` claimed
+     * in its own docblock that none were.
+     *
+     * The failure is the one that docblock describes: a client ships a typo'd
+     * parameter name, receives a successful response, and finds out in
+     * production that the filter never applied.
+     */
+    const { app } = createTestApp();
+
+    const res = await app.request('/bff/v0/referrals?statuss=SENT', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(400);
+    /* Zod reports an unrecognised key with an empty `path` and the key names in
+       the message, so the parameter is named in `message` rather than in
+       `path`. Pre-existing and true of all forty-seven schemas, not something
+       this change introduced - asserted as it is rather than as it reads. */
+    const body = (await res.json()) as { errors?: { path: string; message: string }[] };
+    expect(body.errors?.map((issue) => issue.message).join(' ')).toContain('statuss');
+  });
+
+  it('refuses a repeated parameter here too, on a route that is not patients', async () => {
+    /* `parseQuery` is the only internal query door, so the refusal reaches all
+       nineteen call sites from one place. A second route is the cheapest proof
+       that it is the helper doing it and not something local to `/patients`. */
+    const { app } = createTestApp();
+
+    const res = await app.request('/bff/v0/referrals?status=SENT&status=DRAFT', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors?: { path: string; message: string }[] };
+    expect(body.errors).toEqual([{ path: 'status', message: 'sent more than once' }]);
+  });
+
   /**
    * Both filters at once. They used to write the same `where` key from two
    * spreads, so the second won at construction and the explicit status vanished

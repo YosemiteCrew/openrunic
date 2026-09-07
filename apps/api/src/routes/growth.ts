@@ -50,7 +50,7 @@ const LOINC_TO_MEASURE: Readonly<Record<string, Measure>> = {
   '59576-9': 'bmi-for-age',
 };
 
-const growthQuerySchema = z.object({
+const growthQuerySchema = z.strictObject({
   /** Which charts to draw. Absent means every measure the readings cover. */
   measure: z.string().optional(),
 });

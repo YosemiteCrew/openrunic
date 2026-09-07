@@ -2,7 +2,7 @@ import { createPrismaClient, withTenantSession, type PrismaClient } from '@openr
 import { z } from 'zod';
 
 import { createPrismaAuditSink, type StandaloneAuditWork } from '../audit/prisma-sink.js';
-import type { AuditEventDelegate } from '../repositories/db-port.js';
+import { lockAuditChain, type AuditEventDelegate } from '../repositories/db-port.js';
 import type { AuditSink } from '../audit/types.js';
 import type { PrincipalResolver } from '../auth/principal.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
@@ -224,6 +224,12 @@ function standaloneAuditWork(prisma: PrismaClient): StandaloneAuditWork {
             return row === null ? null : { seq: row.seq, hash: row.hash };
           },
         },
+        // The same lock the mutation path takes, on this transaction. Without
+        // it here the two paths serialise against themselves and not against
+        // each other, which is the half of the race a per-path fix would miss:
+        // a chart read and a registration in the same tenant collide exactly
+        // as two chart reads do.
+        lockAuditChain: (tenant) => lockAuditChain(tx, tenant),
       });
     });
 }

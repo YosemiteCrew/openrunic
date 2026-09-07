@@ -16,15 +16,30 @@ import type { AuditEvent, AuditSink, AuditUnitOfWork } from './types.js';
 /** The slice of a transaction this sink needs. */
 export interface AuditWriteScope {
   auditEvent: AuditEventDelegate;
+  /**
+   * Serialises this tenant's chain for the rest of the surrounding
+   * transaction. `DbTransaction.lockAuditChain` in `repositories/db-port.ts`
+   * carries the reasoning; `append` below is the only caller.
+   */
+  lockAuditChain(tenantId: string): Promise<void>;
 }
 
 /** Recognises a unit of work this sink can write through. */
 export function isAuditWriteScope(value: AuditUnitOfWork | undefined): value is AuditWriteScope {
   if (value === undefined) return false;
-  const candidate = value as { auditEvent?: { create?: unknown; findFirst?: unknown } };
+  const candidate = value as {
+    auditEvent?: { create?: unknown; findFirst?: unknown };
+    lockAuditChain?: unknown;
+  };
   return (
     typeof candidate.auditEvent?.create === 'function' &&
-    typeof candidate.auditEvent.findFirst === 'function'
+    typeof candidate.auditEvent.findFirst === 'function' &&
+    // Checked here rather than assumed from the caller's type, for the same
+    // reason the two delegate methods are: this narrows an `object`, and a
+    // scope that cannot take the lock would append without it and reintroduce
+    // the race that `lockAuditChain` exists to remove. Refusing is loud;
+    // appending unserialised is silent until two clinicians read at once.
+    typeof candidate.lockAuditChain === 'function'
   );
 }
 
@@ -64,6 +79,19 @@ export function createPrismaAuditSink(options: PrismaAuditSinkOptions): AuditSin
     event: AuditEvent,
     scope: AuditWriteScope
   ): Promise<void> => {
+    // BEFORE the tail read, and that ordering is the whole fix. The read and
+    // the write below have to be atomic against every other appender for this
+    // tenant; they were not, and `@@unique([tenantId, seq])` caught the
+    // collision by failing the insert - which kept the chain honest and cost
+    // the caller their response. Two concurrent chart reads answered 500 about
+    // half the time on Postgres, and four concurrent registrations left five
+    // patients of twenty in the database. The lock turns those races into a
+    // queue; the constraint stays as the backstop it was written to be.
+    //
+    // Every appender takes this lock last - the mutation repositories write
+    // their rows and then their audit event - so no transaction holds it while
+    // waiting for a data lock, and there is no cycle to deadlock on.
+    await scope.lockAuditChain(tenantId);
     const tail = await scope.auditEvent.findFirst({
       // The tenant, stated. It used to be left to whatever narrowing the scope
       // happened to carry - RLS inside a tenant session, the tenant extension

@@ -90,13 +90,27 @@ jobs:
 
   migration:
     needs: core
-    # Only when the database workspace is affected - that is what carries
-    # schema.prisma and prisma/migrations. No other workspace can change what
-    # `prisma migrate deploy` does, so this stays off the critical path for the
-    # majority of pull requests.
+    # The database workspace, because it carries schema.prisma and
+    # prisma/migrations and no other workspace can change what
+    # `prisma migrate deploy` does.
+    #
+    # AND `api`, which is newer and is about the OTHER thing this stage owns:
+    # it is the only stage with a Postgres, so it is the only place the API's
+    # `DATABASE_URL`-gated suites can run at all. Those suites had never run in
+    # CI - `describe.skipIf` makes a failing case indistinguishable from an
+    # absent one, and `repositories.database.test.ts` was red on `dev` at
+    # c12b5a8 with nobody able to see it. Gating this stage on the database
+    # workspace alone would have kept it that way: the defect they guard
+    # (#399, a per-tenant audit chain racing itself under concurrency) lives in
+    # `apps/api`, so an `apps/api` change has to be able to fire them.
+    #
+    # Matched on `"workspace":"api"` rather than on `api`, because the matrix
+    # JSON also carries `"dir":"apps/api"` and a bare substring would be true
+    # for reasons that have nothing to do with which workspace was affected.
     if: >
       needs.core.outputs.has-any == 'true' &&
-      contains(needs.core.outputs.matrix, '@openrunic/database')
+      (contains(needs.core.outputs.matrix, '@openrunic/database') ||
+       contains(needs.core.outputs.matrix, '"workspace":"api"'))
     uses: ./.github/workflows/_migration.yaml
 
   # Runs the artefacts an operator runs: the migration-safety linter, the

@@ -107,15 +107,19 @@ export function routeKey(routePath) {
  * Returns an empty array when the route root itself is absent, which is the
  * genuinely-no-surface case rather than an error.
  *
- * **This is the one function here that keeps a route-root parameter, and the
- * reason is that its second argument is evidence.** `classify` and `inspect`
- * lost theirs because a second, underived route root is a second answer to
- * "which root are we reading" and this file's whole subject is two such answers
- * disagreeing silently. Here there is no comparison to disagree with - it is a
- * walk - and the parameter carries the cases that prove `resolveWithin` refuses
- * a hostile or mis-rooted root: `'../..'`, `'/etc'`, `'.'`. Deleting it would
- * delete that evidence, so the next person tidying the module should know it is
- * a deliberate exception rather than one that was missed.
+ * **Two functions here keep a route-root parameter - this one and
+ * `findRouteRoot` - and in both cases the second argument is evidence.**
+ * `classify` and `inspect` lost theirs because a second, underived route root
+ * is a second answer to "which root are we reading" and this file's whole
+ * subject is two such answers disagreeing silently. In these two there is no
+ * comparison for a second root to disagree with - they are a walk and a
+ * resolve - and the parameter carries the cases that prove `resolveWithin`
+ * refuses a hostile or mis-rooted root: `findPages` takes `'../..'`, `'/etc'`
+ * and `'.'`; `findRouteRoot` takes the `APP_DIR-no-such-suffix` control that
+ * proves a root which is not there returns `null` rather than something
+ * walkable. Deleting either parameter deletes that evidence, so the next person
+ * tidying the module should know both are deliberate exceptions rather than
+ * ones that were missed.
  *
  * The cost, stated rather than left to be found: `classify(findPages(root,
  * someOtherRoot))` is still expressible by hand and still answers `absent` over

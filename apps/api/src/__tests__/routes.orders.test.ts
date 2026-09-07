@@ -3082,6 +3082,13 @@ describe('a patch cannot make a chartless thread claim to be a patient thread', 
       body: { kind: 'PATIENT', patientId: PATIENT },
     });
 
+    /* The status is NOT the half that inverts, and it looks like it is. Add
+       `patientId` to the schema and this still answers 422 - the row-aware
+       guard refuses `kind: 'PATIENT'` on a chartless row whatever the body
+       carried, so the status is satisfied by the mechanism this case exists to
+       stop relying on. Measured: under that mutation the failure is `expected
+       false to be true` here and nowhere else. The message assertion is the
+       whole case; deleting it as redundant leaves a case that cannot fail. */
     expect(res.status).toBe(422);
     // The path is the ROOT rather than the field: Zod reports an unrecognised
     // key against the object, not against a key it has no schema for. So the

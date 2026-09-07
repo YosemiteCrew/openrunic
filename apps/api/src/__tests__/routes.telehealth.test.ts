@@ -702,6 +702,15 @@ describe('a portal token and the telehealth routes', () => {
  * control - it answers 201 with the chart present, and an arm that reads 201 on
  * both columns has measured the relationship source, not the gate.
  *
+ * The generalisation is narrower than "the caller's own facility", and it is
+ * the half worth carrying to the next collection: `facility-activity` reads
+ * `encounters` and `appointments` and NOTHING else (`care-relationship.ts`,
+ * the two `list` calls under `name: 'facility-activity'`). So the trap is not
+ * that the row is facility-scoped - most of them are - it is that an
+ * appointment row is itself the evidence that authorises reading it. A
+ * `Payment` or a `StockPosting` case needs no extra control; an `Encounter`
+ * one does. Raised in review.
+ *
  * The 2x2, driven at c636835, is what separates them:
  *
  *     status      chart      clinician A   clinician B (other tenant)

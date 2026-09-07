@@ -87,16 +87,16 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
       <div className="portal-actions">
         {appointment.joinUrl ? (
           <Button href={appointment.joinUrl} iconLeft="video">
-            Join the video call
+            {t('portal.appointments.join')}
           </Button>
         ) : null}
         {appointment.directionsUrl ? (
           <Button href={appointment.directionsUrl} iconLeft="map-pin">
-            Get directions
+            {t('portal.appointments.directions')}
           </Button>
         ) : null}
         <Button href="/appointments" variant="secondary">
-          See all appointments
+          {t('portal.home.appointment.seeAll')}
         </Button>
       </div>
     </Card>

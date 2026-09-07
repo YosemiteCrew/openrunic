@@ -104,7 +104,7 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1781 of 2518 messages (71%).
+**es**: 1782 of 2519 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
@@ -123,7 +123,7 @@ These cannot be started inside this repository. Each needs an external body, and
 | nav       |  44 |  44 | `██████████████████` |
 | orders    | 143 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | patients  | 131 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| portal    | 294 | 294 | `██████████████████` |
+| portal    | 295 | 295 | `██████████████████` |
 | reports   |  84 |  84 | `██████████████████` |
 | results   |  82 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | schedule  | 147 | 147 | `██████████████████` |

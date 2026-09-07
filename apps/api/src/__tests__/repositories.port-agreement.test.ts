@@ -787,6 +787,37 @@ function constrained(where: Readonly<Record<string, unknown>>): string[] {
 }
 
 /**
+ * Every range bound the emitted `where` names, as `[column, bound]`.
+ *
+ * Records the bound's value and not its operator, which is the whole of why the
+ * pass it feeds can see anything. `satisfy` reads the operator to build its row:
+ * `gte` gives it the bound itself and `gt` the bound plus a millisecond, so
+ * flipping the operator moves the synthesised row along with it and both ports
+ * go on agreeing. That is the hazard this file states at the top - a mutation
+ * can remove its own detection - holding for its own row builder, which nothing
+ * here had applied it to. A row placed at the bound value is fixed while the
+ * operator varies, so it is the one row the four spellings disagree about.
+ *
+ * `NOT` is skipped for the reason `constrained` skips it: a negated range is not
+ * a bound either port is being asked to stand on, and no spec emits one today.
+ */
+function bounds(where: Readonly<Record<string, unknown>>): [string, Date | number][] {
+  const found: [string, Date | number][] = [];
+  for (const [key, clause] of Object.entries(where)) {
+    if (key === 'AND' || key === 'OR') {
+      for (const inner of asArray(clause)) found.push(...bounds(inner as never));
+      continue;
+    }
+    if (key === 'NOT' || !isRecord(clause) || clause instanceof Date) continue;
+    for (const operator of ['gte', 'gt', 'lt', 'lte'] as const) {
+      const bound: unknown = clause[operator];
+      if (bound instanceof Date || typeof bound === 'number') found.push([key, bound]);
+    }
+  }
+  return found;
+}
+
+/**
  * The field lines of every `model` block in `schema.prisma`.
  *
  * Split out because two tables below are read off the same file, and a second
@@ -1034,6 +1065,47 @@ describe('every spec answers the same question through both ports', () => {
     expect(Object.keys(FILTERS)).toHaveLength(SPECS.length);
   });
 
+  it('reads a bound out of every position one can appear in', () => {
+    // The walker on a shape assembled by hand, because a `bounds` that looked
+    // in the wrong place would report an empty sweep over every spec and pass
+    // for it. The last two entries are the negative half: a scalar clause and a
+    // bare `Date` are not ranges, and a walker that counted them would put a
+    // row "on the bound" of a column that has none.
+    expect(
+      bounds({
+        start: {
+          gte: new Date('2026-08-01T00:00:00.000Z'),
+          lt: new Date('2026-09-01T00:00:00.000Z'),
+        },
+        AND: [{ quantity: { gt: 4 } }],
+        OR: [{ expiresOn: { lte: new Date('2026-10-01T00:00:00.000Z') } }],
+        NOT: { withdrawnAt: { gte: new Date('2026-08-01T00:00:00.000Z') } },
+        status: 'BOOKED',
+        birthDate: new Date('1985-03-14T00:00:00.000Z'),
+      }).map(
+        ([column, bound]) => `${column}=${bound instanceof Date ? bound.toISOString() : bound}`
+      )
+    ).toEqual([
+      'start=2026-08-01T00:00:00.000Z',
+      'start=2026-09-01T00:00:00.000Z',
+      'quantity=4',
+      'expiresOn=2026-10-01T00:00:00.000Z',
+    ]);
+  });
+
+  it('finds bounds to stand on across the specs', () => {
+    // A per-spec floor cannot go in the pass below, because most specs declare
+    // no range at all and would fail a floor for having nothing to measure. So
+    // the guard is over the whole set: a walker that stopped matching would
+    // otherwise turn the pass into a sweep of nothing that reports no
+    // disagreements, which is what a clean run looks like.
+    const total = SPECS.reduce(
+      (sum, [key, spec]) => sum + bounds(spec.where(FILTERS[key] as never)).length,
+      0
+    );
+    expect(total).toBeGreaterThan(20);
+  });
+
   describe.each(SPECS)('%s', (key, spec) => {
     const query = FILTERS[key] as never;
 
@@ -1192,6 +1264,53 @@ describe('every spec answers the same question through both ports', () => {
           if (memory !== prisma) {
             disagreements.push(`${param} alone, ${label}: memory=${memory} prisma=${prisma}`);
           }
+        }
+      }
+
+      expect(disagreements).toEqual([]);
+    });
+
+    /**
+     * The row both ports have to place on the same side of a bound.
+     *
+     * `windowFilter` emits `{ gte: from, lt: to }` and the memory side answers
+     * with `<` at each end. Four spellings of that pair are available, one is
+     * right, and three of the four wrong ones shipped green over the whole api
+     * suite before this existed. Measured on `dev` at `6befdc8`, mutating the
+     * appointment window one flip at a time:
+     *
+     * ```
+     * memory `<` -> `<=` on the lower bound    3 failed   caught, all in this file
+     * memory `<` -> `<=` on the upper bound    4083 passed
+     * Prisma `gte` -> `gt`                     4083 passed
+     * Prisma `lt`  -> `lte`                    4083 passed
+     * ```
+     *
+     * The one that was caught is caught by accident: `satisfy` happens to build
+     * its row at exactly `from`, so a memory side that stops accepting `from`
+     * disagrees with a `where` that still does. Move the same flip to the other
+     * end and the row is a month away from it.
+     *
+     * Nothing else here can reach the other three. Every row this file builds is
+     * derived from the emitted operator, so a flipped operator carries its own
+     * witness with it, and the `+ 400 days` mutant lands far outside both ends
+     * where all four spellings agree.
+     */
+    it('agrees on a row sitting exactly on each bound the filter names', () => {
+      const where = spec.where(query);
+      const row = complete(spec, satisfy(where));
+
+      const disagreements: string[] = [];
+      for (const [column, bound] of bounds(where)) {
+        const candidate = {
+          ...row,
+          [column]: bound instanceof Date ? new Date(bound.getTime()) : bound,
+        };
+        const memory = spec.matches(candidate as never, query);
+        const prisma = matchesWhere(candidate, where);
+        if (memory !== prisma) {
+          const at = bound instanceof Date ? bound.toISOString() : bound;
+          disagreements.push(`${column} exactly on ${at}: memory=${memory} prisma=${prisma}`);
         }
       }
 

@@ -44,6 +44,12 @@ permissions: {}
 jobs:
   zizmor:
     name: Audit workflow security (zizmor)
+    # TEMPORARY PROBE - DO NOT MERGE. Forces this job to conclude `skipped` so we can
+    # read whether a required context that concludes `skipped` blocks a merge or
+    # satisfies it. GitHub's docs say `success`, `skipped` and `neutral` all pass;
+    # this repository has no instance of a required context concluding `skipped`
+    # across 120 pull requests, so the claim is documentation rather than measurement.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

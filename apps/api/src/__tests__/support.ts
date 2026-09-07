@@ -18,9 +18,10 @@ import {
   createEmptyDataset,
   createMemoryRepositoryRegistry,
   type MemoryDataset,
+  type MemoryRepositoryRegistry,
 } from '../repositories/memory.js';
 import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
-import type { AppointmentRow, PatientRow } from '../repositories/types.js';
+import type { AppointmentRow, PatientRow, RepositoryRegistry } from '../repositories/types.js';
 
 /**
  * Fixtures and harness for the API suite.
@@ -270,6 +271,17 @@ export interface TestApp {
 
 export interface TestAppOptions extends Omit<CreateAppOptions, 'repositories' | 'auditSink'> {
   dataset?: MemoryDataset;
+  /**
+   * Wraps the in-memory registry before the app is built, for the few cases
+   * that need a repository call to fail or to be observed.
+   *
+   * It has to happen here rather than on `TestApp.repositories`, because the
+   * app closes over the registry it was given and a later replacement would be
+   * a second object nothing reads. Reach for it only where the failure cannot
+   * be produced through the port - the race between two real requests is a
+   * better test than a double, and is already written as one.
+   */
+  decorateRepositories?: (repositories: MemoryRepositoryRegistry) => RepositoryRegistry;
 }
 
 /**
@@ -445,6 +457,7 @@ export function testPrincipalResolver(): PrincipalResolver {
 
 /** Builds the real app over the in-memory store, with a deterministic clock and ids. */
 export function createTestApp(options: TestAppOptions = {}): TestApp {
+  const { decorateRepositories, ...appOptions } = options;
   const dataset = options.dataset ?? createEmptyDataset();
   const auditStore = createAuditChainStore();
   const sink = createMemoryAuditSink({ store: auditStore, now: () => FIXED_NOW });
@@ -459,8 +472,8 @@ export function createTestApp(options: TestAppOptions = {}): TestApp {
 
   const app = createApp({
     principalResolver: testPrincipalResolver(),
-    ...options,
-    repositories,
+    ...appOptions,
+    repositories: decorateRepositories?.(repositories) ?? repositories,
     auditSink: sink,
     now: () => FIXED_NOW,
   });

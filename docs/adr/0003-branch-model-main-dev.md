@@ -230,13 +230,18 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   every count taken from it. Same result set, only `per_page` changed:
 
   ```
-  ?ref=refs/heads/dev --paginate  per_page=100   1 page    51 rows · 51 distinct · bypass 3
-  ?ref=refs/heads/dev --paginate  per_page=50    2 pages  101 rows · 51 distinct · bypass 5
-  CONTROL  labels --paginate per_page=5, 4 pages           16 rows · 16 distinct · no repeat
+  ?ref=refs/heads/dev --paginate per_page=100  1 page    51 rows · 51 distinct
+                                                bypass rows 3 · bypass ids 3
+  ?ref=refs/heads/dev --paginate per_page=50   2 pages  101 rows · 51 distinct
+                                                bypass rows 5 · bypass ids 3   <- the diagnosis
+  CONTROL  labels --paginate per_page=5, 4 pages          16 rows · 16 distinct · no repeat
   ```
 
-  The control matters: `--paginate` is not broken generally, and the second row is this ADR's own
-  headline number reading `5 of 51` instead of `3 of 51` from a flag alone. Read it with explicit
+  `bypass rows 5` beside `bypass ids 3` is the whole diagnosis in two numbers: it separates _five
+  bypasses_ from _three bypasses counted twice_, which is the reading the inflation produces and the
+  one a reader would otherwise act on. The control matters too: `--paginate` is not broken generally,
+  and the second row is this ADR's own headline number reading `5 of 51` instead of `3 of 51` from a
+  flag alone. Read it with explicit
   `page=` and deduplicate by `id`. There is no `total_count` on this endpoint to catch it with.
 
   **The trigger is `rows > per_page`, and the duplication is bounded rather than a loop.** A
@@ -377,6 +382,26 @@ check run in place**, keeping the id and the original `completed_at` and replaci
 so any run that concluded `neutral` and was later rewritten to `success` leaves no trace at all.
 A sweep sees where each aggregate stopped, never where it passed through. Treat `neutral` as
 passing, and treat the nine as evidence that an analysis can fail while its aggregate does not.
+
+**And the aggregate reads terminal while its own analysis is still running, so this is a live
+hazard rather than only a historical one.** Watched on one head, `aac1a4d`, both writes observed:
+
+```
+07:05:19Z  CodeQL                          completed/NEUTRAL   <- terminal status AND conclusion
+           Analyze (javascript-typescript) in_progress         <- while its leg is still running
+07:05:50Z  CodeQL                          completed/success
+after settling, one row each, same id 101652505485:
+  CodeQL                           started 07:04:41Z  completed 07:04:43Z
+  Analyze (javascript-typescript)  started 07:04:10Z  completed 07:05:47Z   <- 64s LATER
+```
+
+So `status: completed` on the aggregate is **not a statement about the analysis**, and its
+`completed_at` is frozen at the first write and precedes its own leg by sixty-four seconds - the
+rewrite does not touch it. Checking `status` before believing a `conclusion` is therefore not
+sufficient here: the field says `completed` and is wrong about the analysis rather than about
+itself. **The only reliable predicate is the legs:** `CodeQL completed/*` is safe to read exactly
+when every `Analyze` leg on that head is also `completed`, which is a condition the aggregate's own
+fields cannot express.
 
 **Which of ours can reach `skipped`: none, as of this commit.** Each required context mapped to
 the job whose `name:` produces it - five carry a job-level `if:` (`always()` twice,

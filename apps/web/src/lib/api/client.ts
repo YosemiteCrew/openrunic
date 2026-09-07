@@ -10,11 +10,13 @@ import type {
   FacilityDto,
   FormDefinitionDto,
   ListResponse,
+  MedicationStatementDto,
   NoteAddendumDto,
   Patient,
   PatientCreateBody,
   PatientUpdateBody,
   PaymentDto,
+  PrincipalCapabilities,
   ProblemDocument,
   RemittanceParseResult,
   RemittancePostResult,
@@ -22,7 +24,6 @@ import type {
   StatementDto,
   TaskDto,
   UserDto,
-  PrincipalCapabilities,
 } from './types';
 
 /**
@@ -227,6 +228,13 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
         post<Appointment>('/appointments', body, signal),
       update: (id, body: AppointmentUpdateBody, signal) =>
         patch<Appointment>(`/appointments/${segment(id)}`, body, signal),
+    },
+    medicationStatements: {
+      list: (query, signal) =>
+        get<ListResponse<MedicationStatementDto>>(
+          `/medications/statements${toSearchParams(query)}`,
+          signal
+        ),
     },
     encounters: {
       list: (query, signal) =>

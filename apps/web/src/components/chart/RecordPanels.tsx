@@ -16,7 +16,12 @@ import type {
 import { calendarDay, formatDate, formatVital } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
-import { CARE_TEAM_LABELS, MEDICATION_SOURCE_LABELS, NOTE_STATE_LABELS } from './labels';
+import {
+  CARE_TEAM_LABELS,
+  medicationSourceLabelKey,
+  medicationStatusLabelKey,
+  NOTE_STATE_LABELS,
+} from './labels';
 
 /**
  * The five record tabs behind the chart's summary.
@@ -180,6 +185,7 @@ export function ResultsPanel({
 const MEDICATION_COLUMNS: readonly ColumnSpec[] = [
   { key: 'drug', headerKey: 'chart.medications.column.drug' },
   { key: 'sig', headerKey: 'chart.medications.column.sig' },
+  { key: 'status', headerKey: 'chart.medications.column.status' },
   { key: 'prescriber', headerKey: 'chart.medications.column.prescriber' },
   { key: 'started', headerKey: 'chart.medications.column.started' },
   { key: 'source', headerKey: 'chart.medications.column.source' },
@@ -195,10 +201,17 @@ function medicationRow(t: Translator, med: Medication): Record<string, ReactNode
   return {
     id: med.id,
     drug: med.drug,
-    sig: med.sig,
-    prescriber: med.prescriber,
+    /* Absent is rendered as absent rather than as an empty cell, which reads as
+       "there are no directions" and is the same sentence a blank makes about a
+       missing prescriber. `refills` has always done this; `sig` and `prescriber`
+       can now be absent too and need it here. The two dates do not: `formatDate`
+       answers `common.notRecorded` for a null of its own accord, and writing the
+       check again here would be a guard no test could tell from its absence. */
+    sig: med.sig ?? t('common.notRecorded'),
+    status: t(medicationStatusLabelKey(med.status)),
+    prescriber: med.prescriber ?? t('common.notRecorded'),
     started: formatDate(t, med.startedOn),
-    source: t(MEDICATION_SOURCE_LABELS[med.source].labelKey),
+    source: t(medicationSourceLabelKey(med.source)),
     refills: med.refillsRemaining === null ? t('common.notRecorded') : String(med.refillsRemaining),
   };
 }
@@ -209,8 +222,19 @@ export function MedicationsPanel({
   medications: readonly Medication[];
 }>): ReactElement {
   const t = useTranslator();
+  /*
+   * Two tables, and the partition is total by construction.
+   *
+   * It used to be `=== 'ACTIVE'` against `=== 'DISCONTINUED'`, which was
+   * exhaustive only while those were the two states there were. There are eight
+   * now, and enumerating seven of them here would drop a row silently the day a
+   * ninth arrives - a medication absent from a chart, which is the worst thing
+   * this panel can do. So the second list is the complement of the first, and
+   * every row carries its own status in a column rather than being described by
+   * the card it landed in.
+   */
   const active = medications.filter((med) => med.status === 'ACTIVE');
-  const discontinued = medications.filter((med) => med.status === 'DISCONTINUED');
+  const notActive = medications.filter((med) => med.status !== 'ACTIVE');
 
   return (
     <>
@@ -221,12 +245,12 @@ export function MedicationsPanel({
           rows={active.map((med) => medicationRow(t, med))}
         />
       </Card>
-      {discontinued.length > 0 ? (
-        <Card title={t('chart.medications.discontinued.title')}>
+      {notActive.length > 0 ? (
+        <Card title={t('chart.medications.notActive.title')}>
           <Table
-            caption={t('chart.medications.discontinued.caption')}
+            caption={t('chart.medications.notActive.caption')}
             columns={columns([...MEDICATION_COLUMNS, STOPPED_COLUMN], t)}
-            rows={discontinued.map((med) => ({
+            rows={notActive.map((med) => ({
               ...medicationRow(t, med),
               stopped: formatDate(t, med.stoppedOn),
             }))}

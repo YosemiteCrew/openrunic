@@ -77,7 +77,9 @@ describe('PatientChartScreen', () => {
 
     expect(await screen.findByRole('table', { name: 'Active medications' })).toBeInTheDocument();
     expect(screen.getByText('Take 1 tablet by mouth each morning')).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: 'Discontinued medications' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('table', { name: 'Medications that are not active, with the state of each' })
+    ).toBeInTheDocument();
   });
 
   it('moves between tabs with the arrow keys, one tab stop for the strip', async () => {

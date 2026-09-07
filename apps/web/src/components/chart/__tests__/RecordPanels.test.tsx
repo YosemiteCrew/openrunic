@@ -10,7 +10,7 @@ import {
   VisitsPanel,
 } from '@/components/chart/RecordPanels';
 import { MOCK_NOW } from '@/lib/api';
-import type { ChartSummary } from '@/lib/api/chart';
+import type { ChartSummary, Medication } from '@/lib/api/chart';
 import { MOCK_CHARTS } from '@/lib/api/mock/chart';
 
 /**
@@ -113,13 +113,142 @@ describe('a patient who has never stopped a medication', () => {
     render(<MedicationsPanel medications={NEVER_STOPPED.medications} />);
 
     expect(screen.getByText('Current medications')).toBeInTheDocument();
-    expect(screen.queryByText('Discontinued')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not currently active')).not.toBeInTheDocument();
   });
 
   it('still gets the table once something has been stopped', () => {
     render(<MedicationsPanel medications={CHART.medications} />);
 
-    expect(screen.getByText('Discontinued')).toBeInTheDocument();
+    expect(screen.getByText('Not currently active')).toBeInTheDocument();
+  });
+});
+
+describe('a medication in a state this build has no word for', () => {
+  /*
+   * The panel's two tables partition on `=== 'ACTIVE'` against its complement,
+   * so a state added to the API tomorrow lands in the second table rather than
+   * in neither. That makes the *row* total and it did not make the *cell* total:
+   * the status and source columns read a `Record` keyed on this build's unions,
+   * and `requestJson` casts the response body rather than parsing it, so the
+   * value in that key is whatever the server sent. Before this, the read was
+   * indexed - `undefined.labelKey` - so one unrecognised row threw during
+   * render. `DowntimeBoundary` catches that, and it wraps `SessionGate` rather
+   * than this panel, so what the reader lost was the whole screen: tabs, rail
+   * and navigation replaced by "this screen could not be displayed".
+   *
+   * The status is cast rather than picked from the union on purpose. A member
+   * the fixture lacks is a fixture arm; only a member the TYPE lacks reaches the
+   * fallback these cases exist for.
+   */
+  const WIRE_STATUS = 'DRAFT' as unknown as Medication['status'];
+  const WIRE_SOURCE = 'MAIL_ORDER' as unknown as Medication['source'];
+
+  const FROM_A_NEWER_API: Medication = {
+    id: 'md-newer',
+    drug: 'Apixaban 5 mg tablet',
+    sig: null,
+    prescriber: null,
+    status: WIRE_STATUS,
+    source: WIRE_SOURCE,
+    startedOn: null,
+    stoppedOn: null,
+    refillsRemaining: null,
+  };
+
+  const KNOWN: Medication = {
+    id: 'md-known',
+    drug: 'Metformin 500 mg tablet',
+    sig: 'Take 1 tablet twice daily',
+    prescriber: null,
+    status: 'ACTIVE',
+    source: 'REPORTED',
+    startedOn: '2026-01-04',
+    stoppedOn: null,
+    refillsRemaining: 2,
+  };
+
+  it('renders rather than throwing the render away', () => {
+    render(<MedicationsPanel medications={[FROM_A_NEWER_API]} />);
+
+    expect(screen.getByText('Apixaban 5 mg tablet')).toBeInTheDocument();
+  });
+
+  it('says the state is unrecognised rather than that it is unknown', () => {
+    /* `UNKNOWN` is a state the API records and it means nobody knows whether
+       the patient takes this. "Unrecognised" means the API knows and this build
+       does not have the word. A prescriber reads those differently, so they must
+       not share a cell. */
+    render(<MedicationsPanel medications={[FROM_A_NEWER_API]} />);
+
+    const row = screen.getByRole('row', { name: /Apixaban/ });
+    expect(within(row).getByText('Unrecognised state')).toBeInTheDocument();
+    expect(within(row).getByText('Unrecognised source')).toBeInTheDocument();
+    expect(within(row).queryByText('Unknown')).not.toBeInTheDocument();
+  });
+
+  it('does not take the rows this build can read down with it', () => {
+    /* The failure this replaces was not one bad cell. The throw reached the
+       boundary above every signed-in screen, so the medication a clinician
+       could have read went with the one nobody could - and so did the tabs. */
+    render(<MedicationsPanel medications={[KNOWN, FROM_A_NEWER_API]} />);
+
+    expect(screen.getByText('Metformin 500 mg tablet')).toBeInTheDocument();
+    expect(screen.getByText('Apixaban 5 mg tablet')).toBeInTheDocument();
+  });
+});
+
+describe('a medication in a state the old pair had no room for', () => {
+  const HELD: Medication = {
+    id: 'md-hold',
+    drug: 'Warfarin 5 mg tablet',
+    sig: null,
+    prescriber: null,
+    status: 'ON_HOLD',
+    source: 'IMPORTED',
+    startedOn: null,
+    stoppedOn: null,
+    refillsRemaining: null,
+  };
+
+  it('is shown at all, rather than falling between the two tables', () => {
+    /*
+     * The panel used to split on `=== 'ACTIVE'` against `=== 'DISCONTINUED'`,
+     * which was exhaustive while those were the only two states. A medication
+     * that is neither would have been rendered by neither card - absent from
+     * the chart with nothing to say it had been dropped, which is the worst
+     * thing this panel can do. The second list is the complement of the first
+     * now, so this cannot recur for a state added later either.
+     */
+    render(<MedicationsPanel medications={[HELD]} />);
+
+    expect(screen.getByText('Warfarin 5 mg tablet')).toBeInTheDocument();
+  });
+
+  it('says which state it is in rather than being described by the card it landed in', () => {
+    /* "Not currently active" covers six states that mean different things to a
+       prescriber. On hold is not stopped, and neither is not taken. */
+    render(<MedicationsPanel medications={[HELD]} />);
+
+    const row = screen.getByRole('row', { name: /Warfarin/ });
+    expect(within(row).getByText('On hold')).toBeInTheDocument();
+    expect(within(row).getByText('Imported')).toBeInTheDocument();
+  });
+
+  it('describes an absent direction, prescriber and start as absent', () => {
+    /*
+     * A statement is what somebody says the patient takes; it carries no
+     * prescriber and often no directions. A blank cell reads as "there are
+     * none" rather than "nobody recorded one", and the two are answers to
+     * different questions.
+     */
+    render(<MedicationsPanel medications={[HELD]} />);
+
+    const row = screen.getByRole('row', { name: /Warfarin/ });
+    /* Five: directions, prescriber, started, refills and stopped. The last is
+       right - a medication on hold has not been stopped - and `refills` is the
+       one cell that already read this way, which is where the idiom came
+       from. */
+    expect(within(row).getAllByText('Not recorded')).toHaveLength(5);
   });
 });
 

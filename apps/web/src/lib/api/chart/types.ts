@@ -87,21 +87,60 @@ export interface Problem {
   lastAddressedOn: string | null;
 }
 
-export type MedicationStatus = 'ACTIVE' | 'DISCONTINUED';
+/**
+ * Every state a medication statement can be in, as the API records them.
+ *
+ * Deliberately all eight rather than an active/discontinued pair. `ACTIVE` is
+ * the one the pair got right and `STOPPED` and `COMPLETED` are its discontinued
+ * analogues, which leaves FIVE the pair gets wrong: `ON_HOLD` is not stopped and
+ * not being taken, `NOT_TAKEN` is a statement that the patient is not taking it,
+ * `INTENDED` has not started, `ENTERED_IN_ERROR` is a record to disregard, and
+ * `UNKNOWN` is the API saying nobody knows - which a pair has to answer as one
+ * or the other and is wrong either way. Folding any of the five into `ACTIVE` is
+ * a chart asserting a patient takes something they do not, and folding them into
+ * a discontinued list asserts they once did.
+ */
+export type MedicationStatus =
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'ENTERED_IN_ERROR'
+  | 'INTENDED'
+  | 'NOT_TAKEN'
+  | 'ON_HOLD'
+  | 'STOPPED'
+  | 'UNKNOWN';
 
-export type MedicationSource = 'PRESCRIBED_HERE' | 'PATIENT_REPORTED' | 'RECONCILED';
+/**
+ * Where the statement came from, in the API's own words.
+ *
+ * Named for the API rather than for the screen. The previous
+ * `PRESCRIBED_HERE` claimed locality the record does not carry - the API says
+ * only that it was prescribed - and `IMPORTED` had no member at all, so an
+ * imported statement would have had to be rendered as one of the other three.
+ */
+export type MedicationSource = 'REPORTED' | 'PRESCRIBED' | 'RECONCILED' | 'IMPORTED';
 
 export interface Medication {
   id: string;
   drug: string;
-  /** Plain language, as the patient would be told it: "Take 1 tablet by mouth each morning". */
-  sig: string;
-  prescriber: string;
+  /**
+   * Plain language, as the patient would be told it: "Take 1 tablet by mouth
+   * each morning". Null where the statement records no directions; a statement
+   * is what somebody says the patient takes, and it often has none.
+   */
+  sig: string | null;
+  /**
+   * Null wherever the statement is the source, which is every statement: a
+   * prescriber belongs to a prescription and this record is not one. Kept in
+   * the model because the fixture chart has prescriptions behind its rows and
+   * the column is worth having when a row can fill it.
+   */
+  prescriber: string | null;
   status: MedicationStatus;
   source: MedicationSource;
-  /** ISO date. */
-  startedOn: string;
-  /** ISO date, set only once discontinued. */
+  /** ISO date, or null where the statement records no effective start. */
+  startedOn: string | null;
+  /** ISO date, set only once it has an end. */
   stoppedOn: string | null;
   refillsRemaining: number | null;
 }

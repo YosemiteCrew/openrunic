@@ -210,11 +210,48 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   `rulesets/rule-suites?ref=refs/heads/dev` is GitHub's own evaluation record, and in a
   twenty-four hour window it showed **3 of 49 pushes with `result: bypass`** - one over
   `Required status check "CI Required" is expected`, two over the approving-review requirement.
-  The other 46 are `pass`, so the field is not defaulting.
+  The other 46 are `pass`, so the field is not defaulting. **Every count of this window below is an
+  as-of reading of a set that grows** - 49 rows here, 51 an hour later, 178 then 180 unfiltered, all
+  taken on 2026-09-07. Nine lines apart a reader cannot otherwise tell growth from a mistake, in a
+  section whose subject is a window that moves.
 
-  That endpoint retains roughly a day, so 3 is a floor rather than a total, and its `pushed_at`
-  is the one GitHub time that is **not** `Z` - it carries a local offset, as does
-  `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
+  That endpoint keeps a bounded window, so 3 is a floor rather than a total. **The bound is a span
+  that was measured, not a cap that was observed to fire:** two reads ninety seconds apart across
+  two merges went from 178 rows to 180 with the oldest row unchanged, so nothing has been seen to
+  drop and time-cap and count-cap are not separated here. The units decide what the number means -
+  under a count cap a busy hour retires a row and the clock says nothing about it. **`ref=` is a
+  view on one window rather than a per-ref window:** `ref=refs/heads/dev` returned 49 rows and the
+  unfiltered 178-row window contained the same 49, so a row's survival is priced in pushes to every
+  ref, not its own branch's traffic.
+
+  **Do not read this endpoint with `gh api --paginate`, and the reason is the endpoint rather than
+  the flag.** Its page-1 `Link` header advertises `rel="next"` pointing at **`page=1`** - itself -
+  where a correct one points at `page=2`, so a paginated read re-emits the first page and inflates
+  every count taken from it. Same result set, only `per_page` changed:
+
+  ```
+  ?ref=refs/heads/dev --paginate per_page=100  1 page    51 rows · 51 distinct
+                                                bypass rows 3 · bypass ids 3
+  ?ref=refs/heads/dev --paginate per_page=50   2 pages  101 rows · 51 distinct
+                                                bypass rows 5 · bypass ids 3   <- the diagnosis
+  CONTROL  labels --paginate per_page=5, 4 pages          16 rows · 16 distinct · no repeat
+  ```
+
+  `bypass rows 5` beside `bypass ids 3` is the whole diagnosis in two numbers: it separates _five
+  bypasses_ from _three bypasses counted twice_, which is the reading the inflation produces and the
+  one a reader would otherwise act on. The control matters too: `--paginate` is not broken generally,
+  and the second row is this ADR's own headline number reading `5 of 51` instead of `3 of 51` from a
+  flag alone. Read it with explicit
+  `page=` and deduplicate by `id`. There is no `total_count` on this endpoint to catch it with.
+
+  **The trigger is `rows > per_page`, and the duplication is bounded rather than a loop.** A
+  complete single page carries **no `Link` header at all**, and page two carries `rel="first"` and
+  `rel="prev"` but no `rel="next"` - so only the first hop is wrong, page one is emitted exactly
+  twice and the read terminates normally. That is the dangerous shape rather than the harmless one:
+  a hang gets noticed, and a read that returns promptly with 56% more rows than exist does not.
+
+  Its `pushed_at` is also the one GitHub time that is **not** `Z` - it carries a local offset, as
+  does `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
   time into a false UTC.
 
   The bypass is deliberately retained for now: it is the only recovery path from a ruleset write
@@ -249,6 +286,25 @@ when a required context never posts. #258 then **merged**, over that failed rule
 bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
 and this repository has no instance of a merge actually being stopped by it. Read the row as: the
 rule fails, and the bypass decides whether that is the end of the matter.
+
+**That evaluation is addressable by id, and the list does not contain it.** The row lives at
+`rulesets/rule-suites/3963149730`; the listing it came from carries ten fields, **none of them a
+rule evaluation**, and its verdict is `bypass`:
+
+```
+LIST    id · actor_id · actor_name · before_sha · after_sha · ref · repository_id ·
+        repository_name · pushed_at · result=bypass          no rule_evaluations key
+DETAIL  rulesets/rule-suites/3963149730
+          evaluation_result null · result bypass
+          rule_evaluations[0]  result=fail
+            details "Required status check \"CI Required\" is expected."
+```
+
+`bypass` says the push landed; it does not say the rule failed. So a reader re-deriving this claim
+from the window gets a row that **agrees with the conclusion while carrying none of the evidence** -
+which is worse than an expired window, because an empty result is legibly empty and an agreeing row
+is not. The id is recorded here for that reason, and because whether the detail outlives the listing
+can only be tested with an id captured before it leaves.
 
 **`ABSENT` has no transient form, and the two readings are far apart.** `mergeStateStatus` says
 `BLOCKED` both for a required context whose producing workflow is still running and for one that
@@ -326,6 +382,26 @@ check run in place**, keeping the id and the original `completed_at` and replaci
 so any run that concluded `neutral` and was later rewritten to `success` leaves no trace at all.
 A sweep sees where each aggregate stopped, never where it passed through. Treat `neutral` as
 passing, and treat the nine as evidence that an analysis can fail while its aggregate does not.
+
+**And the aggregate reads terminal while its own analysis is still running, so this is a live
+hazard rather than only a historical one.** Watched on one head, `aac1a4d`, both writes observed:
+
+```
+07:05:19Z  CodeQL                          completed/NEUTRAL   <- terminal status AND conclusion
+           Analyze (javascript-typescript) in_progress         <- while its leg is still running
+07:05:50Z  CodeQL                          completed/success
+after settling, one row each, same id 101652505485:
+  CodeQL                           started 07:04:41Z  completed 07:04:43Z
+  Analyze (javascript-typescript)  started 07:04:10Z  completed 07:05:47Z   <- 64s LATER
+```
+
+So `status: completed` on the aggregate is **not a statement about the analysis**, and its
+`completed_at` is frozen at the first write and precedes its own leg by sixty-four seconds - the
+rewrite does not touch it. Checking `status` before believing a `conclusion` is therefore not
+sufficient here: the field says `completed` and is wrong about the analysis rather than about
+itself. **The only reliable predicate is the legs:** `CodeQL completed/*` is safe to read exactly
+when every `Analyze` leg on that head is also `completed`, which is a condition the aggregate's own
+fields cannot express.
 
 **Which of ours can reach `skipped`: none, as of this commit.** Each required context mapped to
 the job whose `name:` produces it - five carry a job-level `if:` (`always()` twice,

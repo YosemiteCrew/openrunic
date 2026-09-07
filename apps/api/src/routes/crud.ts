@@ -409,9 +409,11 @@ function crudRoutes<
     // and cannot be got wrong, while a comparison would have to decide what
     // `undefined` means on a nullable chart column. Runs before the update, so
     // a refused move never reaches the collection.
-    if (resource.chartFrom !== undefined) {
-      await gateCharts(c, resource.chartFrom, [{ ...existing, ...stamped }]);
-    }
+    //
+    // Through `guardChart` and not its body inlined: the `chartFrom === undefined`
+    // decision belongs in one place, or a condition added there later reaches the
+    // read and the list and not this door, with nothing failing when they part.
+    await guardChart(c, resource, { ...existing, ...stamped });
     const row = required(await collection.update(id, stamped), missing);
     return c.json(resource.toDto(row));
   });

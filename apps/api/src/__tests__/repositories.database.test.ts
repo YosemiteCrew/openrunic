@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuditCollector } from '../audit/collector.js';
-import { createMemoryAuditSink } from '../audit/memory-sink.js';
+import { buildServerWiring } from '../server/wiring.js';
 import { createDbPort } from '../repositories/db-port.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
 import type { Repositories } from '../repositories/types.js';
@@ -49,11 +49,32 @@ async function connect(): Promise<Live> {
     createDbPort(createTenantClient(prisma, { tenantId }))
   );
 
+  /*
+   * The real Prisma sink, taken from the production wiring, and NOT the memory
+   * one this fixture used to build.
+   *
+   * `appends the audit event in the mutation transaction, and chains it` reads
+   * the AuditEvent table back out of Postgres. With the memory sink in front of
+   * it that table was necessarily empty, so the assertion was `0 > 0` and the
+   * case was red - on `dev`, at c12b5a8, unmodified. Nobody knew, because no
+   * workflow ran this file with a `DATABASE_URL`: `describe.skipIf` made a
+   * failing test indistinguishable from an absent one. Both halves are fixed,
+   * this one and the missing CI leg.
+   *
+   * Taken from `buildServerWiring` rather than assembled here for the reason
+   * the sibling suite gives: a local reconstruction tests this file's idea of
+   * how the sink is wired, and the wiring is what these suites are for.
+   */
+  const auditSink = buildServerWiring(
+    { DATABASE_URL: DATABASE_URL ?? '', OPENRUNIC_AUTH_MODE: 'demo-tokens' },
+    prisma
+  ).auditSink;
+
   return {
     repositories(tenantId: string): Repositories {
       return registry.forRequest({
         tenantId,
-        audit: new AuditCollector(createMemoryAuditSink(), {
+        audit: new AuditCollector(auditSink, {
           tenantId,
           actorType: 'user',
           actorId: testId(900),

@@ -1,11 +1,13 @@
 import type { Prisma, PrismaClient } from '@openrunic/database';
 import { describe, expect, it } from 'vitest';
 
+import { lockAuditChain } from '../repositories/db-port.js';
 import type { DbPort, DbTransaction, ModelDelegate } from '../repositories/db-port.js';
 import type { PrismaModelName } from '../repositories/rows.js';
 import {
   createRlsDbPortFactory,
   createSessionBoundPortFactory,
+  toDbTransaction,
   tenantTransactionSatisfiesPort,
   type TenantSessionRunner,
 } from '../repositories/rls-port.js';
@@ -96,6 +98,7 @@ function recorder(): Recorder {
       create: () => note('AuditEvent', 'create')({ id: testId(5) }),
       findFirst: () => note('AuditEvent', 'findFirst')({ seq: 1n, hash: 'f'.repeat(64) }),
     },
+    lockAuditChain: () => note('AuditEvent', 'lockAuditChain')(undefined),
   };
 
   return {
@@ -205,5 +208,90 @@ describe('the RLS-bound port', () => {
     expect(typeof port.$transaction).toBe('function');
     expect(typeof port.model('Patient').findMany).toBe('function');
     expect(tenantTransactionSatisfiesPort).toBe(true);
+  });
+});
+
+/**
+ * The audit chain lock, at the level the SQL is written. #399.
+ *
+ * The database suite proves the lock WORKS; this proves it is asked for on the
+ * right key. The two are different failures: a lock taken on a constant key
+ * serialises every tenant on the deployment behind every other one and passes
+ * every concurrency test there is, because a global queue answers all of them.
+ * Nothing measurable distinguishes it from a per-tenant lock except reading the
+ * argument, so the argument is what is asserted.
+ */
+describe('the audit chain lock', () => {
+  function recordingTx(): {
+    tx: { $executeRaw(query: TemplateStringsArray, ...values: unknown[]): Promise<number> };
+    sql: string[];
+    values: unknown[][];
+  } {
+    const sql: string[] = [];
+    const values: unknown[][] = [];
+    return {
+      sql,
+      values,
+      tx: {
+        $executeRaw(query: TemplateStringsArray, ...bound: unknown[]): Promise<number> {
+          sql.push(query.join('?'));
+          values.push(bound);
+          return Promise.resolve(1);
+        },
+      },
+    };
+  }
+
+  it('takes a transaction-scoped advisory lock keyed on the tenant', async () => {
+    const recorder = recordingTx();
+
+    await lockAuditChain(recorder.tx, DEMO_TENANT_A);
+
+    expect(recorder.sql).toHaveLength(1);
+    expect(recorder.sql[0]).toContain('pg_advisory_xact_lock');
+    expect(recorder.values[0]).toContain(DEMO_TENANT_A);
+  });
+
+  /**
+   * `pg_advisory_lock` - the session-scoped sibling - is one character
+   * different, takes the same arguments, and is held until the connection is
+   * released rather than until COMMIT. On a pooled connection that is a lock
+   * leak that ends the deployment's ability to write audit events at all, so it
+   * is named here rather than left to a reviewer to notice.
+   */
+  it('is the transaction-scoped lock and not the session-scoped one', async () => {
+    const recorder = recordingTx();
+
+    await lockAuditChain(recorder.tx, DEMO_TENANT_A);
+
+    expect(recorder.sql[0]).not.toContain('pg_advisory_lock(');
+  });
+
+  it('binds the tenant rather than interpolating it into the statement', async () => {
+    const recorder = recordingTx();
+
+    await lockAuditChain(recorder.tx, DEMO_TENANT_A);
+
+    expect(recorder.sql[0]).not.toContain(DEMO_TENANT_A);
+  });
+});
+
+describe('the transaction adapter', () => {
+  it('binds the chain lock to the transaction it was handed', async () => {
+    const bound: unknown[][] = [];
+    const tx = {
+      auditEvent: { create: () => Promise.resolve({ id: testId(1) }), findFirst: () => null },
+      $executeRaw(_query: TemplateStringsArray, ...values: unknown[]): Promise<number> {
+        bound.push(values);
+        return Promise.resolve(1);
+      },
+    };
+
+    await toDbTransaction(tx as never).lockAuditChain(DEMO_TENANT_A);
+
+    // On this transaction client, and carrying this tenant. A lock taken on any
+    // other handle is released at that handle's COMMIT, not at this one's.
+    expect(bound).toHaveLength(1);
+    expect(bound[0]).toContain(DEMO_TENANT_A);
   });
 });

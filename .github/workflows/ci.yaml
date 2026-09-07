@@ -94,6 +94,15 @@ jobs:
     # schema.prisma and prisma/migrations. No other workspace can change what
     # `prisma migrate deploy` does, so this stays off the critical path for the
     # majority of pull requests.
+    #
+    # This ALSO covers `apps/api`, which is not obvious and was got wrong once.
+    # `_core.yaml` builds the matrix from `turbo ... --filter="...[BASE]"`, and
+    # the leading `...` includes a package's DEPENDENCIES - so an apps/api-only
+    # change puts `@openrunic/database` in the matrix and fires this stage
+    # already. Measured, not reasoned: a one-line change under apps/api reports
+    # 17 affected packages and `@openrunic/database` is one of them. The API's
+    # DATABASE_URL-gated suites had never run for a different reason entirely -
+    # this workflow had no step that ran them.
     if: >
       needs.core.outputs.has-any == 'true' &&
       contains(needs.core.outputs.matrix, '@openrunic/database')

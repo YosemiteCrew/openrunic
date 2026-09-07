@@ -172,3 +172,67 @@ jobs:
           pnpm --filter @openrunic/database exec vitest run \
             src/rls.integration.test.ts \
             --coverage.enabled=false
+
+      # apps/api resolves its workspace dependencies from their BUILD output, so
+      # without this the suites below run new tests against whatever `dist` the
+      # install left behind - or fail to import at all.
+      - name: Build what the API resolves
+        run: pnpm turbo run build --filter=api^...
+
+      # The API's own database-gated suites, which have no other home: this is
+      # the only stage with a Postgres, and `describe.skipIf(DATABASE_URL ===
+      # undefined)` makes them silently absent everywhere else.
+      #
+      # They had never run in CI, and the reason is simply that no step ran
+      # them - this stage did reach an apps/api change all along, because the
+      # affected matrix is built with `--filter="...[BASE]"` and the leading
+      # dots pull in dependencies. `repositories.database.test.ts` was red on
+      # `dev` at c12b5a8 - its fixture handed the repositories the MEMORY audit
+      # sink and then read the audit table out of Postgres, so the assertion was
+      # `0 > 0` - and nothing anywhere could report it, because a stage that
+      # does not run the file and a file whose cases all skip both look exactly
+      # like success.
+      - name: Prove the API against the migrated database
+        run: |
+          set -euo pipefail
+          pnpm --filter api exec vitest run \
+            src/__tests__/repositories.database.test.ts \
+            src/__tests__/audit-chain.database.test.ts \
+            --coverage.enabled=false \
+            --reporter=json --outputFile=vitest-database.json
+
+      # The step above exits 0 when every case SKIPS, which is precisely how
+      # these suites went unrun for as long as they did. Measured both ways
+      # before this was written: with DATABASE_URL, 5 passed and 0 pending;
+      # without it, rc=0 with 0 passed and 5 pending. So the discriminator is
+      # the passed count, not the exit code.
+      #
+      # A floor rather than an exact number, because it must not need editing
+      # every time a case is added - but it is a floor on the quantity that
+      # actually distinguishes the two outcomes.
+      - name: Check those suites ran rather than skipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            const report = JSON.parse(
+              await (await import("node:fs/promises")).readFile("apps/api/vitest-database.json", "utf8")
+            );
+            const { numPassedTests: passed, numPendingTests: pending } = report;
+            // Concatenation rather than a JS template literal. This whole
+            // script is a single-quoted shell argument, and shellcheck reads a
+            // brace-substitution inside one as a shell expansion that will not
+            // expand (SC2016) - right about the shell, wrong about the
+            // language. The cheapest honest answer is to not write the
+            // construct, and that includes not naming it here: the first
+            // version of this comment spelled it out and kept the check red.
+            console.log("api database suites: " + passed + " passed, " + pending + " pending");
+            if (passed === 0 || pending > 0) {
+              console.error(
+                "::error::The API database suites did not run. They gate themselves on DATABASE_URL, " +
+                  "so a skip here means this job stopped supplying one - and a skipped suite reports " +
+                  "success. Fix the Postgres service or the environment; do not delete this check."
+              );
+              process.exit(1);
+            }
+          '

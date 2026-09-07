@@ -67,9 +67,58 @@ export interface AuditEventDelegate {
 export interface DbTransaction {
   model<M extends PrismaModelName>(name: M): ModelDelegate<M>;
   auditEvent: AuditEventDelegate;
+  /**
+   * Serialises this tenant's audit chain against every other appender, for the
+   * duration of the surrounding transaction.
+   *
+   * The chain is a total order, so an append has to read the tail and write the
+   * next `seq` with nothing between them. `@@unique([tenantId, seq])` was doing
+   * that on its own, and it does it by failing: two concurrent appenders both
+   * read the same tail, both write the same `seq`, and the loser gets `P2002`.
+   * That refusal is correct - the chain never forks - but it reaches the caller
+   * as a 500, and the caller is a clinician opening a chart or registering a
+   * patient. Measured on Postgres before this existed: two concurrent chart
+   * reads in one tenant answered 500 about half the time, and four concurrent
+   * registrations kept five rows out of twenty.
+   *
+   * Taking the lock first turns the race into a queue. The constraint stays
+   * exactly where it was, as the backstop it was written to be, rather than as
+   * the mechanism.
+   *
+   * The queue is bounded, and the bound is worth stating rather than leaving to
+   * be found. `pg_advisory_xact_lock` blocks, and Prisma's interactive
+   * transactions expire after 5000 ms, so an append that waits longer than that
+   * fails its caller. Measured with a second connection holding the lock:
+   *
+   *     hold 1000 ms  ->  appended after 1057 ms
+   *     hold 6000 ms  ->  failed   after 6029 ms, at the tail read
+   *
+   * Note WHERE the second one fails. The transaction expires at 5000 ms but
+   * nothing notices until the lock is released and the next statement runs, so
+   * the caller waits out the whole block and only then gets an error - it is
+   * not a five-second cutoff, it is a five-second budget checked late.
+   *
+   * Reaching it needs one tenant's queue to exceed five seconds of appends, on
+   * the order of a thousand queued in one organisation - three orders of
+   * magnitude past the widths that produced the defect. Strictly better than
+   * what it replaces, which failed at a burst of two, and it blocks rather than
+   * losing a row. But it is a fuse, not the absence of one. Found in review,
+   * while building the independence arm in `audit-chain.database.test.ts`.
+   *
+   * On {@link DbTransaction} and deliberately NOT on {@link DbPort}: an
+   * advisory lock scoped to a transaction is released at COMMIT, so one taken
+   * outside a transaction is released before the statement that needed it runs.
+   * A method that cannot do what its name says is worse than an absent one, so
+   * the port that has no transaction does not offer it.
+   */
+  lockAuditChain(tenantId: string): Promise<void>;
 }
 
-export interface DbPort extends DbTransaction {
+/**
+ * The same surface without {@link DbTransaction.lockAuditChain}: see that
+ * method for why a port with no transaction of its own must not offer it.
+ */
+export interface DbPort extends Omit<DbTransaction, 'lockAuditChain'> {
   $transaction<R>(fn: (tx: DbTransaction) => Promise<R>): Promise<R>;
 }
 
@@ -116,7 +165,42 @@ export function createDbPort(client: TenantClient): DbPort {
               delegateKey(name)
             ] as ModelDelegate<M>,
           auditEvent: tx.auditEvent,
+          lockAuditChain: (tenantId) => lockAuditChain(tx, tenantId),
         })
       ),
   };
+}
+
+/**
+ * The `pg_advisory_xact_lock` class this project takes audit-chain locks under.
+ *
+ * Advisory locks share one flat space per cluster, so the two-argument form is
+ * used rather than the one-argument one: the class narrows the key to this
+ * subsystem, and a collision would otherwise be with anything else in the
+ * database that happened to hash a string the same way.
+ */
+export const AUDIT_CHAIN_LOCK_CLASS = 0x0a4d17;
+
+/** The slice of a transaction client the lock needs. */
+interface RawExecutor {
+  $executeRaw(query: TemplateStringsArray, ...values: unknown[]): Promise<number>;
+}
+
+/**
+ * Takes the per-tenant audit chain lock on `tx`.
+ *
+ * `pg_advisory_xact_lock` blocks rather than failing, and Postgres releases it
+ * at COMMIT or ROLLBACK, so no caller can leak one by throwing. `hashtext`
+ * narrows the tenant to the `int` the two-argument form takes; a collision
+ * between two tenants costs one of them a short wait and nothing else, because
+ * the lock is a serialiser and not an identity.
+ *
+ * The cast on the class id is what picks the `(int, int)` overload. Without it
+ * the bound parameter arrives untyped and Postgres cannot choose between that
+ * and `(bigint)`.
+ */
+export function lockAuditChain(tx: RawExecutor, tenantId: string): Promise<void> {
+  return tx.$executeRaw`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_CLASS}::int, hashtext(${tenantId}))`.then(
+    () => undefined
+  );
 }

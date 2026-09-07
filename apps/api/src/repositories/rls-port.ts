@@ -1,7 +1,13 @@
 import { withTenantSession } from '@openrunic/database';
 import type { PrismaClient, TenantTransactionClient } from '@openrunic/database';
 
-import { delegateKey, type DbPort, type DbTransaction, type ModelDelegate } from './db-port.js';
+import {
+  delegateKey,
+  lockAuditChain,
+  type DbPort,
+  type DbTransaction,
+  type ModelDelegate,
+} from './db-port.js';
 import type { PrismaModelName } from './rows.js';
 import type { DbPortFactory } from './prisma.js';
 
@@ -60,12 +66,22 @@ export type TenantSessionRunner = <R>(
  * implements one method rather than forty-seven. This is the same adapter
  * `createDbPort` applies, and it is applied here for the same reason: what
  * `withTenantSession` hands back is a Prisma client, not a `DbTransaction`.
+ *
+ * Exported for the suite, and for one property that is worth pinning directly:
+ * `lockAuditChain` has to close over THIS transaction client. Bound to any
+ * other handle it would take the lock on a different connection, which Postgres
+ * releases at that connection's COMMIT rather than at this one's - so the
+ * append it is meant to serialise runs unprotected while the call looks right.
+ * Reaching it through `createRlsDbPortFactory` needs a real PrismaClient,
+ * because `createTenantClient` is a Prisma extension; a fake gets no further
+ * than `$extends`.
  */
-function toDbTransaction(tx: TenantTransactionClient): DbTransaction {
+export function toDbTransaction(tx: TenantTransactionClient): DbTransaction {
   return {
     model: <M extends PrismaModelName>(name: M): ModelDelegate<M> =>
       (tx as unknown as Record<string, ModelDelegate<M>>)[delegateKey(name)] as ModelDelegate<M>,
     auditEvent: tx.auditEvent,
+    lockAuditChain: (tenantId) => lockAuditChain(tx, tenantId),
   };
 }
 

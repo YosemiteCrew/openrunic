@@ -313,7 +313,17 @@ export function createFakePort(options: FakePortOptions): FakePort {
     },
   };
 
-  const transaction: DbTransaction = { model: delegateFor, auditEvent };
+  const transaction: DbTransaction = {
+    model: delegateFor,
+    auditEvent,
+    // Recorded on `calls` like every delegate call, so a test can assert it was
+    // taken AND that it was taken before the tail read. Order is the property
+    // that matters: a lock acquired after `findFirst` serialises nothing.
+    lockAuditChain(tenantId: string): Promise<void> {
+      calls.push({ model: 'AuditEvent', operation: 'lockAuditChain', args: { tenantId } });
+      return Promise.resolve();
+    },
+  };
 
   return {
     calls,

@@ -126,20 +126,34 @@ describe('the port', () => {
     // A structural stand-in for the generated client. The compile-time
     // assertion above is what proves the real one fits; this only exercises the
     // property-name arithmetic and the transaction hand-off.
+    const locked: unknown[][] = [];
     const client = {
       patient: delegate,
       auditEvent: { create: () => Promise.resolve({ id: testId(1) }), findFirst: () => null },
       $transaction: (fn: (tx: unknown) => unknown) =>
-        fn({ patient: inner, auditEvent: { create: () => null, findFirst: () => null } }),
+        fn({
+          patient: inner,
+          auditEvent: { create: () => null, findFirst: () => null },
+          $executeRaw: (_query: TemplateStringsArray, ...values: unknown[]) => {
+            locked.push(values);
+            return Promise.resolve(1);
+          },
+        }),
     };
     const port: DbPort = createDbPort(client as unknown as Parameters<typeof createDbPort>[0]);
 
     await port.model('Patient').findFirst({});
     await port.$transaction(async (tx) => {
       await tx.model('Patient').findFirst({});
+      // The chain lock reaches the TRANSACTION's client, not the outer one.
+      // Bound to the outer client it would be released immediately, and the
+      // append it serialises would run alone; nothing about the call site would
+      // look different.
+      await tx.lockAuditChain(testId(9));
     });
 
     expect(seen).toEqual(['outer', 'inner']);
+    expect(locked).toEqual([[expect.anything(), testId(9)]]);
   });
 });
 

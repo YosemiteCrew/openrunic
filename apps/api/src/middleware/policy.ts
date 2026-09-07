@@ -88,9 +88,28 @@ export async function assertCareRelationship(c: Context<AppEnv>, patientId: stri
 
   const policy = c.get('policy');
   const repositories = c.get('repositories');
-  if (policy === undefined || repositories === undefined) {
-    /* Mounted outside the chain. Refuse rather than expose, the same way a
-       missing policy context is a 403 above. */
+  /*
+   * `receivedAt` is here for a sharper reason than the other two, and it is the
+   * reason this condition is worth reading rather than skimming.
+   *
+   * All three are set by the chain, so all three are absent only when this runs
+   * mounted outside it - refuse rather than expose, the same way a missing
+   * policy context is a 403 above. But an absent `policy` or `repositories`
+   * cannot decide anything, while an absent instant DECIDES WRONGLY: it reaches
+   * `findCareRelationship` as `at: undefined`, and `unexpiredAt === undefined`
+   * is no expiry filter at all on both ports, so an EXPIRED break-glass grant
+   * authorises the read and is written as `chart.access.breakGlass` (#436).
+   *
+   * The two time-bounded sources that would throw on `at.getTime()` sit AFTER
+   * break-glass in `RELATIONSHIP_SOURCES`, so the source that fails open answers
+   * before the ones that fail loudly are reached. The loud half protects a
+   * different population from the silent half and therefore protects nothing.
+   *
+   * `AppVariables` declares `receivedAt: Date` rather than `receivedAt?: Date`,
+   * so nothing here is a type error and the type was doing the work of a check.
+   */
+  const receivedAt = c.get('receivedAt');
+  if (policy === undefined || repositories === undefined || receivedAt === undefined) {
     throw ApiError.notFound('No such patient.');
   }
 
@@ -99,7 +118,7 @@ export async function assertCareRelationship(c: Context<AppEnv>, patientId: stri
   // audit. The decision below is what gets recorded.
   const audit = c.get('audit');
   const decide = (): Promise<string | undefined> =>
-    findCareRelationship(repositories, { principal, policy, patientId, at: c.get('receivedAt') });
+    findCareRelationship(repositories, { principal, policy, patientId, at: receivedAt });
   const source = audit === undefined ? await decide() : await audit.suppressReads(decide);
 
   if (source === undefined) {

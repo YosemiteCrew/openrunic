@@ -256,10 +256,12 @@ will never post at all, and the distance between them is _wait four minutes_ and
 The discriminator is cheap and belongs here rather than in anyone's notes:
 
 ```
-gh api "repos/O/R/actions/runs?head_sha=<the full 40 characters>"
+gh api "repos/O/R/actions/runs?head_sha=<the full 40 characters>"    # read total_count too
 
-required context ABSENT + its producing workflow's RUN is queued or in_progress -> transient
-required context ABSENT + that run is completed, or has no run on this head      -> permanent
+no run at all on this head                       -> TOO EARLY. Poll again; decide nothing.
+runs exist and the producing workflow has none   -> permanent
+the producing run's status != "completed"        -> transient
+that run completed and the context never posted  -> permanent
 ```
 
 **Read the workflow _run_, not its check runs.** A run creates its downstream jobs as its upstream
@@ -270,8 +272,34 @@ it meant the thirty jobs that would block had not been created yet. Keying the t
 check runs makes the empty case - nothing from that workflow on the head - read as **permanent**
 during exactly the window when nothing has started, which is the wrong answer in the direction that
 sends someone to edit a ruleset. The run exists from the moment it is queued and is `in_progress`
-while its jobs are still appearing. `head_sha` needs all forty characters; a short sha silently
-returns nothing, which is the same false permanent.
+while its jobs are still appearing.
+
+**The same defect exists one level up, so the empty case is its own answer.** Runs are not created
+instantaneously either: for a few seconds after a push `actions/runs?head_sha=` returns nothing for
+a workflow that is about to start. Moving from check runs to runs shrinks that window from minutes
+to seconds without closing it, and a rule that reads _no run_ as _permanent_ is wrong in the same
+direction. `total_count` is what separates the two - if fifteen runs exist on this head and the
+producing workflow is not among them, it is **missing**; if nothing at all is there, the
+measurement is early. An empty list is the one state that cannot be told from a dead instrument,
+so it must never be a verdict.
+
+**And the transient test is a complement, not a list.** `queued or in_progress` enumerates two
+non-terminal states, and GitHub documents others (`waiting`, `requested`, `pending`); a run in any
+of them would read permanent under an allowlist. Neither desk that wrote this paragraph has an
+instance - a 300-run sample on this repository returned `completed` 292 and `in_progress` 8 and
+nothing else - which is precisely why the rule is written as `status != "completed"`: it is immune
+to a state we cannot enumerate from evidence.
+
+`head_sha` needs all forty characters; a short sha silently returns `total_count: 0` with no error,
+which is the same false permanent by a second route - one about timing and one about the query, and
+both failing toward _edit a ruleset_. (Measured independently on a sibling repository, where ten
+merge commits queried with nine-character shas returned a uniform, plausible "no CI run".)
+
+One assumption worth naming, because it is currently true and need not stay so: **one run per
+workflow per head**, so _the producing run_ is unambiguous. On this document's own head all fifteen
+runs are `event: pull_request`, `run_attempt: 1`, with no workflow appearing twice. A re-run or a
+`merge_group` head is where that stops holding and the rule needs the newest attempt rather than
+the only one.
 
 `neutral` is **not measurable from history**, which is a stronger statement than "not yet
 measured". The `CodeQL` aggregate has concluded `neutral` on nine pull requests here - seven on

@@ -2009,7 +2009,7 @@ describe('every advertised search parameter narrows', () => {
    * Every row above was re-run on the commit that added the repeat refusal,
    * against `createTestApp` with that five-patient fixture. The two 400 rows
    * are additionally asserted by the two named cases, so those cannot go stale
-   * without a test going red; the seven 200 rows can, and are the ones to
+   * without a test going red; the five 200 rows can, and are the ones to
    * re-run rather than trust.
    *
    * The OR half of #381 stays open and stays a bound rather than a test.

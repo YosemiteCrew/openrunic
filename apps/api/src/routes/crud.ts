@@ -347,6 +347,49 @@ function crudRoutes<
     await gateCharts(c, res.chartFrom, [row]);
   };
 
+  /**
+   * The update and the chart gate on what it will write, as one expression.
+   *
+   * Written this way because the two were adjacent statements and the gate's
+   * value was used by nothing, so swapping them compiled, type-checked and
+   * answered the same 404 while the row had already moved into a chart the
+   * caller cannot read. That is measured rather than supposed: the suite was
+   * green through exactly that reordering until #421 added a read-back
+   * assertion, and an assertion is a thing a later change can delete.
+   *
+   * This does not make the unpaired write unspellable - `collection.update` is
+   * still in scope, as `findById` is beside `requiredParentChart`. What it
+   * removes is the two-statement form: there is no longer an ordering here to
+   * get wrong, so producing the defect means editing this function rather than
+   * moving a line, which is a different and much more visible change. That is
+   * `requiredParentChart`'s property - *no way to spell the read that omits the
+   * guard* - applied to the write path instead of the read one.
+   *
+   * The gate asks about the row AS PATCHED, so a patch naming a chart the
+   * caller has no relationship with is refused before the collection sees it.
+   */
+  const updateGated = async (
+    c: Context<AppEnv>,
+    id: string,
+    existing: TRow,
+    patch: TPatch
+  ): Promise<TRow> => {
+    await guardChart(c, resource, { ...existing, ...patch });
+    // Derived from `resource` rather than taken as a parameter, which is a
+    // tidiness change and not a safety one. The argument at the one call site
+    // was literally `resource.collection(repositories(c))`, so the parameter
+    // restated a value this closure already reaches.
+    //
+    // It was raised in review as a pair that must agree - gate on
+    // `resource.chartFrom`, write to a collection somebody else chose - and
+    // measured, which refuted it. Inside this factory the four generics are
+    // already bound to the resource's own types, so the only assignable
+    // collection is the one carrying exactly them: passing a concrete other one
+    // with no cast is `TS2345`, not a silent disagreement. Written down because
+    // the first version of this comment claimed the hazard.
+    return required(await resource.collection(repositories(c)).update(id, patch), missing);
+  };
+
   router.get(base, requirePermission(resource.readPermission), async (c) => {
     const query = resource.toQuery(parseQuery(c, resource.listQuerySchema));
     // Only when the caller named one. The rows themselves are narrowed to the
@@ -410,11 +453,9 @@ function crudRoutes<
     // `undefined` means on a nullable chart column. Runs before the update, so
     // a refused move never reaches the collection.
     //
-    // Through `guardChart` and not its body inlined: the `chartFrom === undefined`
-    // decision belongs in one place, or a condition added there later reaches the
-    // read and the list and not this door, with nothing failing when they part.
-    await guardChart(c, resource, { ...existing, ...stamped });
-    const row = required(await collection.update(id, stamped), missing);
+    // Through `updateGated`, which pairs the write with that gate so the two
+    // are one expression rather than two statements in an order nothing holds.
+    const row = await updateGated(c, id, existing, stamped);
     return c.json(resource.toDto(row));
   });
 

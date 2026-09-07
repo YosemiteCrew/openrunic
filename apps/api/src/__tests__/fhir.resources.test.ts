@@ -1938,7 +1938,7 @@ describe('every advertised search parameter refuses an empty value', () => {
      * put a value in a parameter this server does not have.
      */
     const accepted = new Set(['family']);
-    expect(() => rejectUnsupportedParams('Patient', { telecom: '' }, accepted)).toThrow(
+    expect(() => rejectUnsupportedParams('Patient', { telecom: [''] }, accepted)).toThrow(
       /Unsupported search parameter/u
     );
   });

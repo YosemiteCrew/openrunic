@@ -1,3 +1,4 @@
+import type { OperationOutcome } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
 import type { Principal } from '../auth/principal.js';
@@ -419,6 +420,29 @@ describe('_type', () => {
     const { manifest } = await exportAndPoll(app, '/fhir/$export?_type=Patient&_type=Encounter');
 
     expect(manifest.output.map((file) => file.type).sort()).toEqual(['Encounter', 'Patient']);
+  });
+
+  it('refuses a repeated parameter that is not _type', async () => {
+    /*
+     * The pair with the test above, differing only in the parameter name.
+     * Every repeated search parameter on this server is refused; `_type` is
+     * exempt because it means a list and `parseTypeFilter` reads all of it.
+     * `_since` sent twice is two answers to one question, and answering it
+     * with either one is the guess this boundary refuses to make.
+     */
+    const { app } = harness();
+
+    const res = await app.request(
+      '/fhir/$export?_since=2026-01-01T00:00:00Z&_since=2026-06-01T00:00:00Z',
+      { headers: asyncHeaders }
+    );
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as OperationOutcome).issue[0]).toMatchObject({
+      code: 'not-supported',
+      diagnostics: 'sent more than once',
+      expression: ['_since'],
+    });
   });
 
   /**

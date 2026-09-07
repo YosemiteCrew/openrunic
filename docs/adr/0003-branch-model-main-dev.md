@@ -87,10 +87,33 @@ Protection and gating:
     `Audit workflow security (zizmor)` (`workflow-audit.yml`) and
     `Validate PR title` (`pr-governance.yml`).
 
+  And one context that is posted by neither a workflow job nor a third-party app:
+  - `CodeQL`, added 2026-09-07. **This is not one of the two `Analyze (...)` legs**, and the
+    distinction is the reason it was missed: `codeql.yml` declares a single job named
+    `Analyze (${{ matrix.language }})`, so the matrix produces `Analyze (actions)` and
+    `Analyze (javascript-typescript)` and there is **no job whose `name:` produces `CodeQL`**.
+    That context is the Code Scanning aggregate, posted by the Advanced Security app once the
+    analyses upload, and it is the one that carries the verdict: on #409 the two `Analyze` legs
+    were `success` while `CodeQL` was `failure`, on a `high` severity `js/redos` alert in a
+    regular expression added by that pull request.
+
+    An earlier version of this document excluded "CodeQL" by naming the two `Analyze` legs and
+    citing #283 as holding it unrequired on purpose. Both halves were wrong: the legs are not the
+    context that fails, and #283 is `ci(repo): gate named external products on every pull
+request` - the forbidden-terms work, merged, and required here as of the same change. The
+    citation was carried from an issue body into this document without being opened. **A stated
+    reason with an issue number in it reads as checked**, which is what made it survive.
+
+    Requiring it needed a different disqualifier from the rest, because the method that made the
+    rest safe - read the `if:` of the job whose `name:` produces the context - has nothing to
+    read. So it is empirical: `codeql.yml` has `pull_request` on `[dev, main]` with no `paths`
+    filter and its one job has no `if:`, and the context is `success` on **fifteen of fifteen**
+    pull requests examined - thirteen human ones spanning `ts`-only, `md`+`yml`-only, `css`/`mjs`
+    and mixed shapes, plus **both Dependabot pull requests**, which is the shape that disqualified
+    `Validate commit messages`.
+
   **Deliberately not required, each for a stated reason** - this is the part that goes stale
   silently, so it is written down rather than left as an absence:
-  - `Analyze (actions)` and `Analyze (javascript-typescript)`, CodeQL. Held unrequired on purpose;
-    #283 turns on exactly that distinction.
   - `React Doctor score`. It answers _is the aggregate above a number_ rather than _did a thing
     happen_, and the number moves for reasons that are not defects: a two-pass `.flatMap().map()`
     written for readability cost six points of the three available above the floor of 95, measured
@@ -128,10 +151,10 @@ Protection and gating:
   Rulesets cannot express "only `dev` may be the source branch", so that constraint is expressed as
   a status check instead. It is required on `main` alone because it only runs on pull requests
   targeting `main`.
-- The live lists are therefore **fifteen required contexts on `dev`** and **five on `main`**
+- The live lists are therefore **sixteen required contexts on `dev`** and **five on `main`**
   (`CI Required`, `Detect secrets (Gitleaks)`, `GitGuardian Security Checks`,
   `Aikido Security: check code`, `Promotion source`). `No named external product` was added to
-  `dev` on 2026-09-06 and the ten above on 2026-09-07, and deliberately none of them to `main`:
+  `dev` on 2026-09-06, the ten above and `CodeQL` on 2026-09-07, and deliberately none of them to `main`:
   a promotion carries content already checked on `dev`, so the marginal value is lower and the
   blast radius is a release.
 

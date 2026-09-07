@@ -2,7 +2,8 @@ name: Storybook
 
 # The component library's own gate, kept out of ci.yaml on purpose: it needs a real
 # browser, so it is the slowest thing in the repository per changed file, and it is the
-# only stage that publishes anything. Its aggregate below is a separate required check.
+# only stage that publishes anything. Its aggregate below, `Storybook Required`, is required on
+# the `dev` ruleset and not on `main` - see ADR-0003 for why the `main` list is shorter.
 #
 # What runs here:
 #   1. `storybook build`, which is both the compile check and the artifact that Pages

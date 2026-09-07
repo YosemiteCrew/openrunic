@@ -62,28 +62,95 @@ Protection and gating:
 - **Checks that `ci.yaml` cannot observe are required by name, because nothing else can hold
   them.** An aggregate can only depend on jobs its own workflow calls. A check produced somewhere
   else is invisible to it, and leaving it unrequired would mean it could fail without blocking a
-  merge. Three fall in that class:
-  - `Detect secrets (Gitleaks)`, from `.github/workflows/secret-scan.yml`. It is a separate
-    workflow rather than a leg of `ci.yaml` because a push run scans only its own commit range,
-    which needs concurrency behaviour opposite to the rest of CI: superseding a push run would
-    leave those commits unscanned.
-  - `GitGuardian Security Checks` and `Aikido Security: check code`, posted by GitHub Apps. There
-    is no workflow in this repository for either, so there is nothing for the aggregate to depend
-    on even in principle.
+  merge. This document named three of them and there were seventeen, which is what #317 was filed
+  about: the rule was stated, applied to three, and fourteen more sat in its stated class being
+  read by reviewers rather than blocking anything. Ten were added to `dev` on 2026-09-07.
+
+  The ones with no workflow in this repository at all, so the aggregate could not depend on them
+  even in principle:
+  - `GitGuardian Security Checks` and `Aikido Security: check code`, posted by GitHub Apps.
+
+  The ones from standalone workflows, which `ci.yaml` does not call and therefore cannot observe:
+  - `Detect secrets (Gitleaks)` and `Detect secrets (secretlint)`, from `secret-scan.yml`. That
+    workflow is separate from `ci.yaml` because a push run scans only its own commit range, which
+    needs concurrency behaviour opposite to the rest of CI: superseding a push run would leave
+    those commits unscanned. It has two jobs and for a year only one of them was required.
+  - `Cited advisories exist` (`advisory-ids.yml`) and `Accepted findings are still current`
+    (`exception-expiry.yml`). Each is the sole enforcement of a rule written down in this
+    repository, and each enforced it by being read.
+  - `Synthetic data only` (`phi-guard.yml`).
+  - `Storybook Required` (`storybook.yml`) and `Supply Chain Required` (`supply-chain.yml`). Both
+    were written as aggregates _to be_ required and their own comments said they were. Supply
+    Chain has been required on Yosemite Crew since before this.
+  - `Scan infrastructure files (Trivy config + Compose guard)` (`iac-scan.yml`),
+    `Review dependency changes` (`dependency-review.yml`),
+    `Audit workflow security (zizmor)` (`workflow-audit.yml`) and
+    `Validate PR title` (`pr-governance.yml`).
+
+  **Deliberately not required, each for a stated reason** - this is the part that goes stale
+  silently, so it is written down rather than left as an absence:
+  - `Analyze (actions)` and `Analyze (javascript-typescript)`, CodeQL. Held unrequired on purpose;
+    #283 turns on exactly that distinction.
+  - `React Doctor score`. It answers _is the aggregate above a number_ rather than _did a thing
+    happen_, and the number moves for reasons that are not defects: a two-pass `.flatMap().map()`
+    written for readability cost six points of the three available above the floor of 95, measured
+    on #404. Requiring it converts "a refactor annotated the build" into "a refactor blocks the
+    merge". If it is ever required, the floor wants deciding at the same time.
+  - `Vulnerability scan (grype)` and `License compliance (grant)`. Both are legs of
+    `Supply Chain Required`, which fails on any leg that failed, was cancelled **or was skipped**.
+    Requiring the aggregate covers them; requiring the legs as well would be a second list to keep
+    in step with the first.
+  - `Scan container images (grype) (...)`, twice. The context name embeds the Dockerfile path from
+    a matrix, so **the name changes when a Dockerfile is added or renamed** and a required entry
+    would become permanently absent - which fails closed and deadlocks the branch. That workflow
+    has no aggregate; giving it one is a code change rather than a settings change, and is the
+    prerequisite for requiring this class at all.
+  - `Validate commit messages`. Its job carries
+    `github.event.pull_request.user.login != 'dependabot[bot]'`, so on a Dependabot pull request
+    it is **skipped**, and a skipped context never becomes success. `dependabot.yml` sets
+    `target-branch: dev` for all three ecosystems, so every Dependabot pull request lands on the
+    branch this ruleset protects. Measured: `skipped` on #232 and #171, `success` on a
+    human-authored one as the control.
+
+    This one was required for four minutes on 2026-09-07 and removed. It is the case an
+    empirical sweep cannot find - eleven pull requests across five change shapes were all
+    human-authored, so the shape that deadlocks was not in the sample - and that a scan of
+    workflow-level `on:` blocks also cannot find, because the condition is on the **job**. The
+    check that finds it is: for each context, read the `if:` of the job whose `name:` produces
+    it, and then test the shape that condition excludes.
+
+    Requiring it needs the carve-out resolved first. Dropping the carve-out makes Dependabot's
+    commit messages a merge gate, which is a decision about a bot nobody writes messages for;
+    keeping it means this context can never be required. Neither is obvious and it is not a
+    settings change.
+
 - `main` requires one more, `Promotion source`, from `.github/workflows/promotion-guard.yaml`.
   Rulesets cannot express "only `dev` may be the source branch", so that constraint is expressed as
   a status check instead. It is required on `main` alone because it only runs on pull requests
   targeting `main`.
-- The live lists are therefore **five required contexts on `dev`** (`CI Required`,
-  `Detect secrets (Gitleaks)`, `GitGuardian Security Checks`, `Aikido Security: check code`,
-  `No named external product`) and **five on `main`** (the first four plus `Promotion source`).
-  `No named external product` was added to `dev` on 2026-09-06 and deliberately not to `main`: a
-  promotion carries content already checked on `dev`, so the marginal value is lower and the blast
-  radius is a release. Read the live lists with
+- The live lists are therefore **fifteen required contexts on `dev`** and **five on `main`**
+  (`CI Required`, `Detect secrets (Gitleaks)`, `GitGuardian Security Checks`,
+  `Aikido Security: check code`, `Promotion source`). `No named external product` was added to
+  `dev` on 2026-09-06 and the ten above on 2026-09-07, and deliberately none of them to `main`:
+  a promotion carries content already checked on `dev`, so the marginal value is lower and the
+  blast radius is a release.
+
+  One entry cannot be promoted to `main` even in principle today. `forbidden-terms.yml` checks out
+  the **base** ref and reads three files from it, and neither the workflow nor those files exists
+  on `main`; required there, every promotion would exit 2 as "a guard that could not run", and the
+  files can only reach `main` through a promotion. The order is forced - a release carries them
+  first, then the context is added - and a release should not be scheduled to satisfy a gate.
+  Absence from `main` is not by itself a blocker: `advisory-ids.yml` is also absent there and is
+  unaffected, because its default checkout gives it the merge ref. It is the **base-reading**
+  pattern that makes a check unpromotable, so it is worth checking per workflow rather than
+  assuming either way.
+
+  Read the live lists with
   `gh api repos/YosemiteCrew/openrunic/rulesets/<id> --jq '.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context'`
   rather than trusting this sentence - it has been stale before. The exception to the single-aggregate
   rule is deliberately narrow: a check earns its own entry only when the aggregate is structurally
   incapable of covering it, never because a job feels important enough to name.
+
 - Branch protection is implemented with **repository rulesets**, not classic branch protection:
   rulesets are auditable, exportable as JSON, can layer, and apply consistently to admins.
 

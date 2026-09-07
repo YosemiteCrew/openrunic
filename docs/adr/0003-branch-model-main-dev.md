@@ -16,6 +16,15 @@ carries everything sitting on `dev`, so an urgent fix ships the rest with it), i
 [Hotfixes](../../RELEASING.md#hotfixes) section of RELEASING.md, which also records the one
 deliberate, reviewed way to widen the guard.
 
+Amended 2026-09-07, in the gating bullets only, after two sentences in this document were
+measured false. It said a `skipped` context "never becomes success" - it passes, and the
+consequence is that the `Validate commit messages` carve-out would have exempted Dependabot rather
+than deadlocking it. And it said rulesets "apply consistently to admins" - both rulesets carry an
+always-bypass for repository admin, which GitHub's own evaluation record shows being used. Both
+sentences read as settled reasoning and neither had an instrument behind it. The corrections are in
+place below, alongside a new _What a required context guarantees_ section that states which
+conclusions pass, which of those are measured here, and which are not measurable at all.
+
 Decisions are immutable history, so the hotfix clause is left standing below and read as history,
 along with the Bad consequence that follows from it ("hotfixes must be back-merged promptly"), which
 describes work the single-route model removed. The protection and gating bullets, and the
@@ -130,10 +139,16 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
     prerequisite for requiring this class at all.
   - `Validate commit messages`. Its job carries
     `github.event.pull_request.user.login != 'dependabot[bot]'`, so on a Dependabot pull request
-    it is **skipped**, and a skipped context never becomes success. `dependabot.yml` sets
-    `target-branch: dev` for all three ecosystems, so every Dependabot pull request lands on the
-    branch this ruleset protects. Measured: `skipped` on #232 and #171, `success` on a
-    human-authored one as the control.
+    it is **skipped**. `dependabot.yml` sets `target-branch: dev` for all three ecosystems, so
+    every Dependabot pull request lands on the branch this ruleset protects. Measured: `skipped`
+    on #232 and #171, `success` on a human-authored one as the control.
+
+    **This bullet originally said "a skipped context never becomes success" and that is false** -
+    see _What a required context guarantees_ below, where it is measured. The removal was right
+    and the reason was backwards: requiring this context would not have deadlocked Dependabot, it
+    would have **silently exempted** it, leaving a commit-message gate required, green, and never
+    run on the author that opens the most pull requests here. A deadlock is loud and an exemption
+    is not, so the defect the carve-out would have created is the worse of the two.
 
     This one was required for four minutes on 2026-09-07 and removed. It is the case an
     empirical sweep cannot find - eleven pull requests across five change shapes were all
@@ -175,7 +190,93 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   incapable of covering it, never because a job feels important enough to name.
 
 - Branch protection is implemented with **repository rulesets**, not classic branch protection:
-  rulesets are auditable, exportable as JSON, can layer, and apply consistently to admins.
+  rulesets are auditable, exportable as JSON, and can layer.
+
+  **They do not apply to admins here, and an earlier version of this sentence said they did.**
+  Both rulesets carry a bypass, present on every version since the first on 2026-08-12:
+
+  ```
+  rules/branches/dev    bypass_actors  [RepositoryRole 5, bypass_mode: always]
+  rules/branches/main   bypass_actors  [OrganizationAdmin always, RepositoryRole 5 always]
+  ```
+
+  Role 5 is repository admin, and both accounts that merge here hold it. It is not theoretical:
+  `rulesets/rule-suites?ref=refs/heads/dev` is GitHub's own evaluation record, and in a
+  twenty-four hour window it showed **3 of 49 pushes with `result: bypass`** - one over
+  `Required status check "CI Required" is expected`, two over the approving-review requirement.
+  The other 46 are `pass`, so the field is not defaulting.
+
+  That endpoint retains roughly a day, so 3 is a floor rather than a total, and its `pushed_at`
+  is the one GitHub time that is **not** `Z` - it carries a local offset, as does
+  `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
+  time into a false UTC.
+
+  The bypass is deliberately retained for now: it is the only recovery path from a ruleset write
+  that deadlocks the branch, which has happened. Removing it is an owner's decision, not a
+  cleanup, and it is tracked in #411. Until then, **sixteen required contexts on `dev` are a
+  strong default and not an enforced boundary**, and any statement that a gate "cannot be
+  merged past" is wrong as written.
+
+### What a required context guarantees
+
+Enumerating required contexts measures the list, not the enforcement. Three conclusions and one
+absence decide what "required" buys, and only two of the four are measured here:
+
+| the context ...     | effect on the merge | status                                        |
+| ------------------- | ------------------- | --------------------------------------------- |
+| concludes `success` | passes              | measured, continuously                        |
+| concludes `skipped` | **passes**          | **measured**, #412, this ruleset, 2026-09-07  |
+| concludes `neutral` | passes              | **inferred** - see the bound below            |
+| never posts at all  | **blocks**          | measured, #258's `is expected` evaluation row |
+
+`skipped` was settled by manufacturing it: a throwaway pull request gave one required job a
+never-true event condition, and with the other fifteen `success` and that one `skipped`,
+`mergeStateStatus` reached `CLEAN`/`MERGEABLE` under an approval and returned to `BLOCKED` the
+moment the review was dismissed. Controls: a fully green pull request reaching `CLEAN` on the same
+ruleset the same day, the dismissal as a reversibility arm, and a context name nothing reports
+returning zero rows.
+
+`neutral` is **not measurable from history**, which is a stronger statement than "not yet
+measured". The `CodeQL` aggregate has concluded `neutral` on nine pull requests here - seven on
+2026-08-12 where **both `Analyze` legs were `failure`** and the SARIF could not be processed, two
+on 2026-08-23 where both legs were green and the base branch's recorded configuration was missing.
+All nine predate `CodeQL` becoming a required context, so none of them measures what a ruleset
+does with the state. And they cannot be supplemented: the Advanced Security app **rewrites its
+check run in place**, keeping the id and the original `completed_at` and replacing the conclusion,
+so any run that concluded `neutral` and was later rewritten to `success` leaves no trace at all.
+A sweep sees where each aggregate stopped, never where it passed through. Treat `neutral` as
+passing, and treat the nine as evidence that an analysis can fail while its aggregate does not.
+
+**Which of ours can reach `skipped`: none, as of this commit.** Each required context mapped to
+the job whose `name:` produces it - five carry a job-level `if:` (`always()` twice,
+`always() && github.event_name != 'release'`, `github.event_name != 'schedule'` twice) and all
+five evaluate true on a `pull_request`; eight carry no condition and no `paths` filter; three have
+no job at all because an app posts them. So the general hazard is real and currently unexercised,
+and **one added `if:` converts any of the eight silently**. That is why the condition, not the
+trigger, is what has to be read before a context is required - and why the check is per context
+rather than per workflow.
+
+### The three app-posted contexts are a fourth class
+
+`CodeQL`, `GitGuardian Security Checks` and `Aikido Security: check code` have no job in this
+repository. Two of them - GitGuardian and Aikido - depend on no workflow here at all, so their
+silence modes are entirely external: an app disabled, uninstalled, or out of credits. `Aikido
+Security: check code` is protection rather than decoration and has posted `failure` six times on
+real findings; its sibling `Aikido Deep Review` has been `skipped` for want of credits on every
+run since the app was installed, and that residual is tracked in #408.
+
+`CodeQL` is the fourth class and the one worth naming separately: **posted by an app _and_
+downstream of a workflow this repository owns.** It has both silence modes.
+
+- _App side_, invisible from here: code scanning turned off at repository or organisation level.
+- _Repository side_: `codeql.yml` stops uploading. A `paths:` filter on its `on:` block or an
+  `if:` on its one job leaves the aggregate unposted, and a context that never posts blocks
+  every pull request into `dev`. One line, in this repository, with nothing recording the link.
+
+That coupling is now a comment at the top of `codeql.yml`'s `jobs:` block, following the
+convention `forbidden-terms.yml` already uses for the mirror hazard. `.github/codeql/codeql-config.yml`
+reads `paths-ignore: []`, so the scan is not narrowed there either; both files have to stay that
+way for the required context to keep meaning what it says.
 
 ## Consequences
 

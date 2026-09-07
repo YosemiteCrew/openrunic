@@ -1,32 +1,41 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 /**
- * Every tracked `next-env.d.ts` must be the one `next build` writes, not the one
- * `next dev` writes.
+ * No Next app's `next-env.d.ts` is in the index, and each one is ignored.
  *
  * Next generates this file and the two commands disagree about it: `build` emits
- * `./.next/types/…` and `dev` emits `./.next/dev/types/…`. Both lines flip
- * together. The file is tracked and its own header says it should not be edited,
- * so the dev variant rides into a diff about something else — it reached `dev`
- * twice already, in `2abc8ce` (a font-face removal) and back out in `19ae465`
- * (an unrelated refactor), fifteen commits apart (#301).
+ * `./.next/types/…` and `dev` emits `./.next/dev/types/…`. While it was tracked,
+ * whichever command ran last rewrote it and the hunk rode into a diff about
+ * something else - it reached `dev` in `2abc8ce` (a font-face removal) and back
+ * out in `19ae465` (a refactor), fifteen commits apart, and its own header says
+ * it should not be edited, which is what makes such a hunk easy to wave through
+ * (#301).
  *
- * REPO-WIDE, and that is the whole of the change from the first version. That
- * one resolved `process.cwd()`, so it guarded `apps/web` and nothing else — and
- * `apps/portal` holds the identical tracked file. Running the portal's dev
- * server reproduced the flip on it within minutes of the first guard merging:
- * the instance was fixed and the class was left, which is this repository's
- * named failure mode.
+ * The previous form of this guard pinned the tracked copy to the build variant.
+ * That held the ground while the question of whether to track it at all was
+ * open; #301 answered it by measurement, so the invariant moved from *the
+ * tracked copy is the right one* to *there is no tracked copy*. Measured at
+ * `e896012` before the change: `tsc --noEmit` is clean without the file both
+ * scoped to the app and repo-wide with no `.next` present, and `next build`
+ * regenerates it byte-identically and leaves the tree clean.
  *
- * It lives under `apps/web` because that is where it started and there is no
- * repo-level suite to move it to. It is not about `apps/web`.
+ * REPO-WIDE, which is the property the previous version had to be corrected to
+ * acquire and the one worth keeping: `apps/portal` holds the identical file and
+ * running its dev server reproduced the flip within minutes of the first,
+ * app-scoped guard merging. It lives under `apps/web` because that is where it
+ * started and there is no repo-level suite to move it to. It is not about
+ * `apps/web`.
  *
- * Asserted positively as well as negatively: a case that only forbids the dev
- * spelling is equally green on a file that has lost the import altogether, which
- * is a different broken state with the same output.
+ * Both halves are asserted because they fail differently. An untracked file that
+ * is NOT ignored shows up as `??` in every `git status`, which is how it gets
+ * `git add -A`-ed back into the index by somebody staging a change; an ignored
+ * file that IS tracked is worse, because `.gitignore` has no effect on a path
+ * already in the index and the guard would read as passing on the ignore rule
+ * alone.
  */
 
 /** The workspace root, found by the file that only the root has. */
@@ -36,7 +45,7 @@ function repoRoot(): string {
     if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
     dir = dirname(dir);
   }
-  throw new Error('next-env drift guard: no pnpm-workspace.yaml above the vitest root');
+  throw new Error('next-env guard: no pnpm-workspace.yaml above the vitest root');
 }
 
 const ROOT = repoRoot();
@@ -47,53 +56,121 @@ const APPS = join(ROOT, 'apps');
    stray FILE there throws `ENOTDIR` at module scope - which takes the whole
    guard with it and reports `no tests`. `.DS_Store` is gitignored so CI cannot
    meet it; a desk that has opened `apps/` in Finder can, and would get a
-   baffling local failure rather than a drift report. */
+   baffling local failure rather than a tracking report. */
 const nextApps = readdirSync(APPS, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
   .filter((app) => readdirSync(join(APPS, app)).some((f) => f.startsWith('next.config.')));
 
-const guarded = nextApps.map((app) => [app, join(APPS, app, 'next-env.d.ts')] as const);
+/** `apps/<app>/next-env.d.ts`, repo-relative and POSIX-spelled, as git reports paths. */
+const guarded = nextApps.map(
+  (app) =>
+    [
+      app,
+      relative(ROOT, join(APPS, app, 'next-env.d.ts'))
+        .split('\\')
+        .join('/'),
+    ] as const
+);
 
-describe('every next-env.d.ts is the build variant', () => {
+/* argv form rather than a shell string, so a path never reaches a shell, and
+   `cwd: ROOT` rather than an assembled `-C` argument for the same reason. */
+function git(...args: readonly string[]): string {
+  return execFileSync('git', [...args], { cwd: ROOT, encoding: 'utf8' }).trim();
+}
+
+/** Whether git's ignore rules cover `path`, ignoring whether it is tracked. */
+function ignored(path: string): boolean {
+  try {
+    git('check-ignore', '-q', '--no-index', '--', path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe('no next-env.d.ts is tracked', () => {
   /**
-   * The canary, on an input the guard below does not derive.
+   * The canary.
    *
-   * A discovery that stopped matching would leave the cases sweeping nothing and
-   * reporting no drift, which is what a clean run looks like. Counted against
-   * `next.config.*` rather than against the same glob: a Next app must have one,
-   * so the two counts are independent statements about the same set and can
-   * disagree. Zero is not the threshold — a MISMATCH is, because a new app whose
-   * `next-env.d.ts` is missing is exactly the case this has to name.
+   * A discovery that stopped matching would leave the cases below sweeping
+   * nothing and reporting no tracked file, which is what a clean run looks like.
+   *
+   * It is NOT an independent second count: `guarded` is `nextApps.map(...)`, so
+   * the two lengths are equal by construction and cannot disagree. The previous
+   * form of this guard did have an independent statement - an `existsSync` per
+   * discovered app - and that went with the invariant it served. What makes this
+   * line load-bearing is narrower and is the reason it must stay: `it.each` over
+   * an empty array generates no cases at all, so an empty `nextApps` is reported
+   * as a pass by every other case in the file.
    */
-  it('finds one next-env.d.ts per Next app', () => {
-    /* DO NOT DELETE AS REDUNDANT. This line is the entire difference between a
-       red run and a green one that checked nothing. `it.each` over an empty
-       array generates no cases, so if discovery stops matching the two
-       `%s references…` rows do not fail — they cease to exist, and the suite
-       reports `1 passed` at rc=0. Measured on this file:
+  it('finds the Next apps to check', () => {
+    /* DO NOT DELETE AS REDUNDANT. `it.each` over an empty array generates no
+       cases, so if discovery stops matching, the rows below do not fail - they
+       cease to exist, and the suite reports `1 passed` at rc=0. Measured on the
+       previous form of this file:
 
          discovery broken, this line present   1 failed (1)   <- the canary alone
          discovery broken, this line removed   1 passed (1)   <- nothing checked
-         discovery intact, this line removed   5 passed (5)   <- inert, which is
+         discovery intact, this line removed   4 passed (4)   <- inert, which is
                                                                  why it looks removable */
     expect(nextApps.length).toBeGreaterThan(0);
-    expect(guarded.filter(([, path]) => !existsSync(path)).map(([app]) => app)).toEqual([]);
   });
 
-  /* Read through a helper that answers '' for a missing file: the canary above
-     already names that case, and letting these throw `ENOENT` buries its message
-     under stack traces from cases reading a file it just reported absent. */
-  const read = (path: string): string => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+  it.each(guarded)('%s has no next-env.d.ts in the index', (_app, path) => {
+    /* `ls-files <path>` prints the path when tracked and nothing when not, so an
+       empty answer is the passing one and a WRONG path fails open. Measured on
+       this branch:
 
-  it.each(guarded)('%s references the build type paths', (_app, path) => {
-    const source = read(path);
-    expect(source).toContain('import "./.next/types/routes.d.ts";');
-    expect(source).toContain('import "./.next/types/root-params.d.ts";');
+         apps/web/next-env.d.ts       ls-files ''  passes   check-ignore  ignored
+         apps/web/next-env.d.tsX      ls-files ''  passes   check-ignore  NOT ignored
+         apps/web/src/next-env.d.ts   ls-files ''  passes   check-ignore  NOT ignored
+
+       So the case below is what validates the path, and the canary is not - it
+       counts apps and never evaluates one. */
+    expect(git('ls-files', '--', path)).toBe('');
   });
 
-  it.each(guarded)('%s references no dev-server type path', (_app, path) => {
-    // The two lines flip together, so either spelling is the whole failure.
-    expect(read(path)).not.toContain('.next/dev/types/');
+  it.each(guarded)('%s ignores next-env.d.ts', (_app, path) => {
+    /* `--no-index` because `check-ignore` otherwise reports a TRACKED path as
+       un-ignored whatever the rules say - which would make this case a second,
+       weaker copy of the one above rather than the independent half it is.
+
+       Answered as a boolean rather than asserted through `not.toThrow()`: a
+       missing rule surfaces as `Error: Command failed: git check-ignore` there,
+       and the first move on that message is to suspect the harness rather than
+       the rule.
+
+       This case also carries the whole of the path validation, and it does so
+       only because the ignore rule is ANCHORED under `apps/`. A bare `next-env.d.ts`
+       matches at any depth - measured: it ignores `apps/web/src/next-env.d.ts`
+       too - so broadening the rule, which reads as a harmless simplification,
+       silently removes the typo protection while both cases here stay green. */
+    expect(
+      ignored(path),
+      `${path} is not ignored, so it shows as ?? in every status and returns to the index on the next \`git add -A\``
+    ).toBe(true);
+  });
+
+  it.each(guarded)('%s ignore rule is anchored, not a bare filename', (_app, path) => {
+    /* The tracking case above is the only thing that validates the path it is
+       handed, and `git ls-files` answers empty for a path that does not exist -
+       which is its PASSING value - so it cannot notice a typo in its own input.
+       What actually catches one is not in this file: it is the specificity of
+       the rule in `.gitignore`, added as repo hygiene with nothing marking it
+       load-bearing.
+
+       Derived from each guarded path rather than written out, so a third Next
+       app is covered the day it appears rather than the day someone remembers.
+
+       Broadening the rule to a bare filename matches at any depth. It reads as a
+       harmless simplification, and it would leave every other case in this file
+       green while the tracking case silently stopped validating its path -
+       measured: 2 failed here, 5 passed elsewhere. */
+    const wrongDepth = path.replace('/next-env.d.ts', '/src/next-env.d.ts');
+    expect(
+      ignored(wrongDepth),
+      `${wrongDepth} is ignored, so the next-env rule is no longer anchored and the tracking case above has stopped validating its path`
+    ).toBe(false);
   });
 });

@@ -16,6 +16,15 @@ carries everything sitting on `dev`, so an urgent fix ships the rest with it), i
 [Hotfixes](../../RELEASING.md#hotfixes) section of RELEASING.md, which also records the one
 deliberate, reviewed way to widen the guard.
 
+Amended 2026-09-07, in the gating bullets only, after two sentences in this document were
+measured false. It said a `skipped` context "never becomes success" - it passes, and the
+consequence is that the `Validate commit messages` carve-out would have exempted Dependabot rather
+than deadlocking it. And it said rulesets "apply consistently to admins" - both rulesets carry an
+always-bypass for repository admin, which GitHub's own evaluation record shows being used. Both
+sentences read as settled reasoning and neither had an instrument behind it. The corrections are in
+place below, alongside a new _What a required context guarantees_ section that states which
+conclusions pass, which of those are measured here, and which are not measurable at all.
+
 Decisions are immutable history, so the hotfix clause is left standing below and read as history,
 along with the Bad consequence that follows from it ("hotfixes must be back-merged promptly"), which
 describes work the single-route model removed. The protection and gating bullets, and the
@@ -130,10 +139,22 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
     prerequisite for requiring this class at all.
   - `Validate commit messages`. Its job carries
     `github.event.pull_request.user.login != 'dependabot[bot]'`, so on a Dependabot pull request
-    it is **skipped**, and a skipped context never becomes success. `dependabot.yml` sets
-    `target-branch: dev` for all three ecosystems, so every Dependabot pull request lands on the
-    branch this ruleset protects. Measured: `skipped` on #232 and #171, `success` on a
-    human-authored one as the control.
+    it is **skipped**. `dependabot.yml` sets `target-branch: dev` for all three ecosystems, so
+    every Dependabot **version** pull request lands on the branch this ruleset protects. Measured:
+    `skipped` on #232 and #171, `success` on a human-authored one as the control.
+
+    That "every" is conditional on a repository **setting**, not on this file: Dependabot
+    _security_ updates ignore `target-branch` entirely and open against the default branch, and
+    `dependabot.yml` records that they are deliberately disabled and must stay disabled. Turning
+    them back on puts Dependabot pull requests on `main`, where this ruleset does not apply and a
+    different list of five does.
+
+    **This bullet originally said "a skipped context never becomes success" and that is false** -
+    see _What a required context guarantees_ below, where it is measured. The removal was right
+    and the reason was backwards: requiring this context would not have deadlocked Dependabot, it
+    would have **silently exempted** it, leaving a commit-message gate required, green, and never
+    run on the author that opens the most pull requests here. A deadlock is loud and an exemption
+    is not, so the defect the carve-out would have created is the worse of the two.
 
     This one was required for four minutes on 2026-09-07 and removed. It is the case an
     empirical sweep cannot find - eleven pull requests across five change shapes were all
@@ -175,7 +196,202 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   incapable of covering it, never because a job feels important enough to name.
 
 - Branch protection is implemented with **repository rulesets**, not classic branch protection:
-  rulesets are auditable, exportable as JSON, can layer, and apply consistently to admins.
+  rulesets are auditable, exportable as JSON, and can layer.
+
+  **They do not apply to admins here, and an earlier version of this sentence said they did.**
+  Both rulesets carry a bypass, present on every version since the first on 2026-08-12:
+
+  ```
+  rules/branches/dev    bypass_actors  [RepositoryRole 5, bypass_mode: always]
+  rules/branches/main   bypass_actors  [OrganizationAdmin always, RepositoryRole 5 always]
+  ```
+
+  Role 5 is repository admin, and both accounts that merge here hold it. It is not theoretical:
+  `rulesets/rule-suites?ref=refs/heads/dev` is GitHub's own evaluation record, and in a
+  twenty-four hour window it showed **3 of 49 pushes with `result: bypass`** - one over
+  `Required status check "CI Required" is expected`, two over the approving-review requirement.
+  The other 46 are `pass`, so the field is not defaulting.
+
+  That endpoint retains roughly a day, so 3 is a floor rather than a total, and its `pushed_at`
+  is the one GitHub time that is **not** `Z` - it carries a local offset, as does
+  `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
+  time into a false UTC.
+
+  The bypass is deliberately retained for now: it is the only recovery path from a ruleset write
+  that deadlocks the branch, which has happened. Removing it is an owner's decision, not a
+  cleanup, and it is tracked in #411. Until then, **sixteen required contexts on `dev` are a
+  strong default and not an enforced boundary**, and any statement that a gate "cannot be
+  merged past" is wrong as written.
+
+### What a required context guarantees
+
+Enumerating required contexts measures the list, not the enforcement. Three conclusions and one
+absence decide what "required" buys, and only two of the four are measured here:
+
+| the context ...     | effect on the merge | status                                                                    |
+| ------------------- | ------------------- | ------------------------------------------------------------------------- |
+| concludes `success` | passes              | measured, continuously                                                    |
+| concludes `skipped` | **passes**          | **measured**, #412, this ruleset, 2026-09-07                              |
+| concludes `neutral` | passes              | **inferred** - see the bound below                                        |
+| never posts at all  | **fails the rule**  | measured; whether it blocks the _merge_ depends on the bypass - see below |
+
+`skipped` was settled by manufacturing it: a throwaway pull request gave one required job a
+never-true event condition, and with the other fifteen `success` and that one `skipped`,
+`mergeStateStatus` reached `CLEAN`/`MERGEABLE` under an approval and returned to `BLOCKED` the
+moment the review was dismissed. Controls: a fully green pull request reaching `CLEAN` on the same
+ruleset the same day, the dismissal as a reversibility arm, and a context name nothing reports
+returning zero rows.
+
+**The blocking row is weaker than it looks and the distinction is the table's whole value.** The
+evidence is #258's rule evaluation, recorded `FAIL` with
+`Required status check "CI Required" is expected` - so what is measured is that the **rule** fails
+when a required context never posts. #258 then **merged**, over that failed rule, on the admin
+bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
+and this repository has no instance of a merge actually being stopped by it. Read the row as: the
+rule fails, and the bypass decides whether that is the end of the matter.
+
+**`ABSENT` has no transient form, and the two readings are far apart.** `mergeStateStatus` says
+`BLOCKED` both for a required context whose producing workflow is still running and for one that
+will never post at all, and the distance between them is _wait four minutes_ and _edit a ruleset_.
+The discriminator is cheap and belongs here rather than in anyone's notes:
+
+```
+gh api "repos/O/R/actions/runs?head_sha=<the full 40 characters>"    # read total_count too
+
+no run at all on this head                       -> TOO EARLY. Poll again; decide nothing.
+runs exist and the producing workflow has none   -> permanent
+the producing run's status != "completed"        -> transient
+that run completed and the context never posted  -> permanent
+```
+
+**Read the workflow _run_, not its check runs.** A run creates its downstream jobs as its upstream
+ones finish, so in the first minute after a push the check-run list under-reports: measured on this
+document's own head, the number of check runs not yet `completed` went `1` at t=60s, `31` at t=80s,
+`28` at t=100s and `8` at t=120s. At t=60s "one thing still running" did not mean nearly finished;
+it meant the thirty jobs that would block had not been created yet. Keying the transient reading on
+check runs makes the empty case - nothing from that workflow on the head - read as **permanent**
+during exactly the window when nothing has started, which is the wrong answer in the direction that
+sends someone to edit a ruleset. The run exists from the moment it is queued and is `in_progress`
+while its jobs are still appearing.
+
+**The same defect exists one level up, so the empty case is its own answer.** Runs are not created
+instantaneously either: for a few seconds after a push `actions/runs?head_sha=` returns nothing for
+a workflow that is about to start. Moving from check runs to runs shrinks that window from minutes
+to seconds without closing it, and a rule that reads _no run_ as _permanent_ is wrong in the same
+direction. `total_count` is what separates the two - if fifteen runs exist on this head and the
+producing workflow is not among them, it is **missing**; if nothing at all is there, the
+measurement is early. An empty list is the one state that cannot be told from a dead instrument,
+so it must never be a verdict.
+
+**And the transient test is a complement, not a list.** `queued or in_progress` enumerates two
+non-terminal states, and GitHub documents others (`waiting`, `requested`, `pending`); a run in any
+of them would read permanent under an allowlist.
+
+**A census cannot settle this, and finding that out is the reason the rule is a complement.** Two
+desks swept every workflow run this repository has ever produced - 11,238 rows on both, matching
+`total_count` - minutes apart:
+
+```
+sweep A   completed 11236 · in_progress 2
+sweep B   completed 11237 · queued      1
+```
+
+Same population, different answer, and neither `in_progress` nor `queued` appears in the other.
+**A run's non-terminal status exists only while the run is in flight**, so a sweep of eleven
+thousand rows enumerates the terminal state and _samples_ every other one - it has the denominator
+of a census and the reach of whatever happened to be running at that instant. Neither sweep saw
+`waiting`, `requested` or `pending`, and neither could have unless one was live as it read.
+
+So the rule is `status != "completed"` because the set it would otherwise have to list is not
+knowable from this endpoint at any sample size - not merely because no instance has turned up.
+
+`head_sha` needs all forty characters; a short sha silently returns `total_count: 0` with no error,
+which is the same false permanent by a second route - one about timing and one about the query, and
+both failing toward _edit a ruleset_. (Measured independently on a sibling repository, where ten
+merge commits queried with nine-character shas returned a uniform, plausible "no CI run".)
+
+One assumption worth naming, because it is currently true and need not stay so: **one run per
+workflow per head**, so _the producing run_ is unambiguous. On this document's own head all fifteen
+runs are `event: pull_request`, `run_attempt: 1`, with no workflow appearing twice. A re-run or a
+`merge_group` head is where that stops holding and the rule needs the newest attempt rather than
+the only one.
+
+`neutral` is **not measurable from history**, which is a stronger statement than "not yet
+measured". The `CodeQL` aggregate has concluded `neutral` on nine pull requests here - seven on
+2026-08-12 where **both `Analyze` legs were `failure`** and the SARIF could not be processed, two
+on 2026-08-23 where both legs were green and the base branch's recorded configuration was missing.
+All nine predate `CodeQL` becoming a required context, so none of them measures what a ruleset
+does with the state. And they cannot be supplemented: the Advanced Security app **rewrites its
+check run in place**, keeping the id and the original `completed_at` and replacing the conclusion,
+so any run that concluded `neutral` and was later rewritten to `success` leaves no trace at all.
+A sweep sees where each aggregate stopped, never where it passed through. Treat `neutral` as
+passing, and treat the nine as evidence that an analysis can fail while its aggregate does not.
+
+**Which of ours can reach `skipped`: none, as of this commit.** Each required context mapped to
+the job whose `name:` produces it - five carry a job-level `if:` (`always()` twice,
+`always() && github.event_name != 'release'`, `github.event_name != 'schedule'` twice) and all
+five evaluate true on a `pull_request`; eight carry neither a condition nor a `needs:` nor a
+`paths` filter; three have no job at all because an app posts them.
+
+**Two ways to convert one of those eight, not one.** An added `if:` is the obvious one. A `needs:`
+is the other: a job with a dependency and no `if:` is skipped when that dependency skips or fails,
+so the context goes green having not run. That is precisely why all three aggregates below carry
+`always()`, which means the repository already knows the mechanism - it is the sentence that was
+short, not the state. The check before requiring a context is therefore per context and on both
+axes: the `if:` of the job whose `name:` produces it, and whether it has a `needs:` without one.
+
+**And "none of the contexts can skip" is not "nothing can skip".** Three of the sixteen are
+aggregates over stage jobs, and the platform's own answer - `skipped` passes - is re-implemented
+one level down as a shell predicate, in two opposite ways:
+
+```
+CI Required          if: always()  needs: [core, repo, test, agent-disabled, migration, ops, sonar]
+Storybook Required   if: always()  needs: [stories, publish]
+  both:  contains(needs.*.result,'failure') || contains(needs.*.result,'cancelled') -> exit 1
+         a `skipped` stage falls through to GREEN, deliberately, with the reason in the file
+
+Supply Chain Required                                          <- the contrast, same repository
+  grep -qE '"result": *"(failure|cancelled|skipped)"' -> exit 1
+         a `skipped` stage FAILS the aggregate
+```
+
+Both policies are defensible where they stand - `publish` only runs on a push to `main`, and a
+packages-only change legitimately skips `test`'s app shards - and this is not hypothetical: on
+this document's own pull request `Storybook Required` is `success` with `Publish to GitHub Pages`
+`skipped`. The point is that a reader who takes "none of the sixteen can skip" as the guarantee
+has the wrong picture: the stages inside `CI Required` that can go quiet include `ops`, which is
+where the full-day clinical drill runs.
+
+Both files state their own reasoning, and quoting them exactly is the point:
+`ci.yaml` at its aggregate, _"Because `skipped` passes, a stage that can skip is a stage that can
+go quiet"_, and `supply-chain.yml` at its opposite one, _"Required checks treat a skipped job as
+satisfied, so a failed SBOM stage silently passing its dependents is exactly what this aggregate
+exists to prevent"_. Neither sentence had ever been written for the **context** level, which is
+what this section is for.
+
+### The three app-posted contexts are a fourth class
+
+`CodeQL`, `GitGuardian Security Checks` and `Aikido Security: check code` have no job in this
+repository. Two of them - GitGuardian and Aikido - depend on no workflow here at all, so their
+silence modes are entirely external: an app disabled, uninstalled, or out of credits. `Aikido
+Security: check code` is protection rather than decoration and has posted `failure` on real
+findings repeatedly, most recently on #413 (2026-09-07, a `MEDIUM` path traversal in a script
+added by that pull request, fixed rather than suppressed) - a running count is left out of this
+document deliberately, because it is a number somebody then has to keep; its sibling `Aikido Deep Review` has been `skipped` for want of credits on every
+run since the app was installed, and that residual is tracked in #408.
+
+`CodeQL` is the fourth class and the one worth naming separately: **posted by an app _and_
+downstream of a workflow this repository owns.** It has both silence modes.
+
+- _App side_, invisible from here: code scanning turned off at repository or organisation level.
+- _Repository side_: `codeql.yml` stops uploading. A `paths:` filter on its `on:` block or an
+  `if:` on its one job leaves the aggregate unposted, and a context that never posts blocks
+  every pull request into `dev`. One line, in this repository, with nothing recording the link.
+
+That coupling is now a comment at the top of `codeql.yml`'s `jobs:` block, following the
+convention `forbidden-terms.yml` already uses for the mirror hazard. `.github/codeql/codeql-config.yml`
+reads `paths-ignore: []`, so the scan is not narrowed there either; both files have to stay that
+way for the required context to keep meaning what it says.
 
 ## Consequences
 

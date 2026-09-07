@@ -16,6 +16,24 @@ permissions:
   contents: read
 
 jobs:
+  # THIS WORKFLOW IS COUPLED TO A REQUIRED STATUS CHECK THAT IT DOES NOT NAME.
+  # ---------------------------------------------------------------------------
+  # `CodeQL` is a required context on the `dev` ruleset. No job here produces
+  # that name - the matrix produces `Analyze (actions)` and
+  # `Analyze (javascript-typescript)`, and `CodeQL` is the code scanning
+  # aggregate the Advanced Security app posts once an analysis uploads.
+  #
+  # So the required context is downstream of this file with nothing recording
+  # the link. Adding a `paths:`/`paths-ignore:` filter to the `on:` block above,
+  # or an `if:` to the job below, stops the upload on the filtered shapes; the
+  # aggregate then never posts, and a context that never posts blocks forever.
+  # One line here deadlocks every pull request into `dev`.
+  #
+  # The mirror hazard is the one in forbidden-terms.yml: a `skipped` conclusion
+  # SATISFIES a required check, so a condition that makes a gate skip is a gate
+  # that passes hardest where it did not run. Neither failure is visible from
+  # this file alone. Change the `on:` block or add a job condition only together
+  # with the ruleset entry.
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest

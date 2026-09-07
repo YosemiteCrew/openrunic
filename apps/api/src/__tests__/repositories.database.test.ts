@@ -182,7 +182,14 @@ describe.skipIf(DATABASE_URL === undefined)('the Prisma repositories against Pos
     });
 
     expect(events.total).toBeGreaterThan(0);
-    await expect(repositories.audit.verifyChain()).resolves.toMatchObject({ valid: true });
+    // `verifyChain` returns the verdict AND whether the record of it landed
+    // (#427), so the verdict is nested. Both are asserted: a live recorder here
+    // means `recorded` is the true half, and a suite that only read `valid`
+    // would not notice the record silently failing against Postgres.
+    await expect(repositories.audit.verifyChain()).resolves.toMatchObject({
+      verification: { valid: true },
+      recorded: true,
+    });
   });
 
   it('pages against the real indexes', async () => {

@@ -475,6 +475,27 @@ describe('ending a visit', () => {
     expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
   });
 
+  it('refuses before the status check, so a 409 never leaks that the visit ended', async () => {
+    // The same assertion as the join case, on the route that carries the same
+    // seventeen-line promise. Without it the docblock above `end` is a claim
+    // held by nothing: reorder that gate below its status check and a lapsed
+    // caller is told `This visit is already ENDED`, with the suite green.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+    await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.adminA, { reasonCode: 'completed' })
+    );
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    // 404, not the 409 the ENDED status would otherwise produce.
+    expect(res.status).toBe(404);
+  });
+
   it('still ends a visit for a caller who kept the chart', async () => {
     // The must-not-fire arm. A gate that refused everyone would satisfy the case
     // above and take telehealth out of the product.

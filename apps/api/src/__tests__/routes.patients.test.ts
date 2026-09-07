@@ -99,6 +99,69 @@ describe('GET /bff/v0/patients', () => {
     expect(body.errors?.length).toBeGreaterThan(0);
   });
 
+  it('refuses a repeated parameter rather than answering the first value', async () => {
+    /*
+     * `c.req.query()` keeps the first occurrence, so the multiplicity was gone
+     * before any schema saw the request: `?family=A&family=B` answered with A's
+     * row and the reverse answered with B's. The two single-value rows are what
+     * make the pair mean anything - each name selects a different patient, so
+     * before this the two orders returned different rows rather than the same
+     * one twice.
+     *
+     * The assertion has to be made here rather than against the schema. A
+     * schema receives the already-flattened record and cannot tell one
+     * occurrence from three, which is why these send a real query string.
+     */
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ id: testId(1), mrn: 'OR-100482' }),
+      makePatientRow({ id: testId(2), mrn: 'OR-100999', familyName: 'Nobody' })
+    );
+    const get = async (query: string): Promise<Response> =>
+      app.request(`/bff/v0/patients?${query}`, { headers: bearer(TOKENS.frontDeskA) });
+
+    const one = (await (await get('family=Patientsson')).json()) as ListResponse<PatientDto>;
+    const other = (await (await get('family=Nobody')).json()) as ListResponse<PatientDto>;
+    expect(one.data[0]?.id).toBe(testId(1));
+    expect(other.data[0]?.id).toBe(testId(2));
+
+    for (const query of ['family=Patientsson&family=Nobody', 'family=Nobody&family=Patientsson']) {
+      const res = await get(query);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as ProblemDocument;
+      expect(body.errors).toEqual([{ path: 'family', message: 'sent more than once' }]);
+    }
+  });
+
+  it('refuses a repeat in the position the schema never reached', async () => {
+    /*
+     * The half of this that is not about filtering. A second occurrence
+     * bypassed validation as well: `?birthDate=<valid>&birthDate=nonsense`
+     * answered 200 while the reverse answered 400, so every regex, `z.enum` and
+     * coercion on this boundary was reachable in the first position only.
+     *
+     * Both orders now answer 400 and both name the REPETITION rather than the
+     * malformed value - which is what says the refusal runs in front of the
+     * parse rather than the parse happening to catch one of the two.
+     */
+    const { app } = createTestApp();
+    const get = async (query: string): Promise<Response> =>
+      app.request(`/bff/v0/patients?${query}`, { headers: bearer(TOKENS.frontDeskA) });
+
+    for (const query of [
+      'birthDate=1994-03-02&birthDate=openrunic-not-a-date',
+      'birthDate=openrunic-not-a-date&birthDate=1994-03-02',
+    ]) {
+      const res = await get(query);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ProblemDocument).errors).toEqual([
+        { path: 'birthDate', message: 'sent more than once' },
+      ]);
+    }
+  });
+
   it('denies a principal whose roles grant no permissions', async () => {
     const { app } = createTestApp();
     const res = await app.request('/bff/v0/patients', { headers: bearer(UNPRIVILEGED_TOKEN) });

@@ -101,7 +101,7 @@ const referralDtoSchema = z.object({
   updatedAt: z.string(),
 });
 
-const referralListQuerySchema = z.object({
+const referralListQuerySchema = z.strictObject({
   patientId: z.uuid().optional(),
   encounterId: z.uuid().optional(),
   referredById: z.uuid().optional(),

@@ -1979,10 +1979,25 @@ describe('every advertised search parameter narrows', () => {
    *   ?family=TestpersonA                       200   total 1
    *   ?family=TestpersonA&family=TestpersonB    200   total 1   TestpersonA
    *   ?family=TestpersonB&family=TestpersonA    200   total 1   TestpersonB
-   *   ?family=TestpersonA,TestpersonB           200   total 0
    *
-   * The first value wins and the second is dropped without a word, and the
-   * comma form is read as one literal value that no row carries. `fhir/index.ts`
+   * Reversing the order returns the other patient, which is what makes it
+   * FIRST-wins rather than the fixture happening to match one of the two: both
+   * rows say `total 1` and on their own they would prove nothing.
+   *
+   * The comma form needs its own arm for the same reason - a zero cannot say
+   * why it is a zero. So a fifth patient, whose family name is literally
+   * `TestpersonA,TestpersonB`:
+   *
+   *   ?family=TestpersonA,TestpersonB           200   total 1   the literal row, alone
+   *   ?family=TestpersonZ,TestpersonB           200   total 0   first half matches nothing
+   *
+   * The comma is part of one value rather than a list separator, shown by what
+   * it DOES match and not only by what it does not. (`family` is a prefix
+   * match, so `?family=TestpersonA` returns two rows once that fifth patient
+   * exists; the four-row table above is the four-patient fixture.)
+   *
+   * So the first value wins and the second is dropped without a word, and a
+   * comma list is one value. `fhir/index.ts`
    * reads `c.req.query()` - the single-value form - for every FHIR search, while
    * the all-values `queries()` is used once in that file, for `_type` on
    * `$export`. So the distinction is available and this path does not take it.

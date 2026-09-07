@@ -165,3 +165,35 @@ export function classify(pages, requiredRoutes = REQUIRED_ROUTES) {
 
   return { verdict, present, moved, missing };
 }
+
+/**
+ * The resolved route root, or null when it is not there.
+ *
+ * Separated out because `findPages` returning `[]` has two causes and they are
+ * the same two this whole file exists to tell apart: the root holds no pages,
+ * or **the root is not where `APP_DIR` says**. The eleven route paths are
+ * proved against the tree; `APP_DIR` is the one literal that finds them and
+ * nothing proved it. Move `apps/web/src/app` to `apps/web/app` - a documented
+ * Next layout, and the same class of move as the one that cost fifteen days -
+ * and every page is still present, `findPages` is still `[]`, and `classify`
+ * still says `absent`, which is the verdict that exits zero.
+ *
+ * So the root gets the same treatment as the routes: found, or reported.
+ */
+export function findRouteRoot(repoRoot, appDir = APP_DIR) {
+  const root = resolveWithin(repoRoot, appDir);
+  return root !== null && existsSync(root) ? root : null;
+}
+
+/**
+ * The whole check: read the tree, then decide. A fourth verdict, `unrooted`,
+ * for a route root that is not there - which is a stale constant rather than a
+ * branch with no clinical surface, because every branch that builds has this
+ * directory. It fails, like `stale`.
+ */
+export function inspect(repoRoot, appDir = APP_DIR) {
+  if (findRouteRoot(repoRoot, appDir) === null) {
+    return { verdict: 'unrooted', appDir, present: [], moved: [], missing: [...REQUIRED_ROUTES] };
+  }
+  return { ...classify(findPages(repoRoot, appDir)), appDir };
+}

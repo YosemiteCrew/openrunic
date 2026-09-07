@@ -15,7 +15,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { APP_DIR, classify, findPages, REQUIRED_ROUTES, routeKey } from './required-routes.mjs';
+import { fileURLToPath } from 'node:url';
+
+import {
+  APP_DIR,
+  classify,
+  findPages,
+  findRouteRoot,
+  inspect,
+  REQUIRED_ROUTES,
+  routeKey,
+} from './required-routes.mjs';
+
+/** This checkout, from this file's own location - three levels up from apps/e2e/scripts. */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 /** Build a repository root containing exactly the given files. */
 function treeWith(files) {
@@ -200,5 +213,51 @@ test('walk and classify together, on a tree rather than on a list', () => {
     assert.equal(result.moved.length, REQUIRED_ROUTES.length);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('APP_DIR names a route root that exists in THIS checkout and holds pages', () => {
+  // The eleven route paths are proved against the tree by every case above.
+  // APP_DIR is the one literal that finds them and nothing proved it, so a move
+  // of the route root itself - `src/app` to `app`, a documented Next layout and
+  // the same class of move as the one that cost fifteen days - leaves every
+  // fixture consistent with every other fixture and with nothing else. Two
+  // constants pinned to each other are pinned to nothing.
+  //
+  // This is the only case in the file that reads the real repository, and that
+  // is the point: it is the pin against the tree.
+  const pages = findPages(REPO_ROOT);
+
+  assert.notEqual(findRouteRoot(REPO_ROOT), null, `APP_DIR does not exist: ${APP_DIR}`);
+  assert.ok(pages.length > 0, `no page.tsx under ${APP_DIR} - APP_DIR is stale`);
+  // control: a root that does not exist returns the same empty array, so the
+  // assertion above is only meaningful next to this one.
+  assert.equal(findRouteRoot(REPO_ROOT, 'apps/web/src/no-such-app'), null);
+  assert.deepEqual(findPages(REPO_ROOT, 'apps/web/src/no-such-app'), []);
+});
+
+test('a route root that is not there is unrooted, not absent', () => {
+  // `findPages` returns [] for "no pages here" and for "no root here", and
+  // `absent` is the verdict that exits zero. They have to be different answers.
+  const moved = treeWith(['apps/web/app/(app)/schedule/page.tsx']);
+  try {
+    assert.equal(inspect(moved).verdict, 'unrooted');
+    // control: the same tree with the root where APP_DIR says gets a real
+    // classification rather than `unrooted`.
+    const here = treeWith([`${APP_DIR}/(app)/schedule/page.tsx`]);
+    try {
+      assert.equal(inspect(here).verdict, 'stale');
+    } finally {
+      rmSync(here, { recursive: true, force: true });
+    }
+    // control: an empty route root that DOES exist is `absent`, which still exits zero.
+    const empty = treeWith([`${APP_DIR}/layout.tsx`]);
+    try {
+      assert.equal(inspect(empty).verdict, 'absent');
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(moved, { recursive: true, force: true });
   }
 });

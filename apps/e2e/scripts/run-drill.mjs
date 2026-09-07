@@ -25,7 +25,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { classify, findPages } from './required-routes.mjs';
+import { inspect } from './required-routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -38,7 +38,7 @@ const repoRoot = path.resolve(here, '../../..');
  * same notice and the same exit code. It now distinguishes them, and only one
  * of the two exits zero.
  */
-const { verdict, moved, missing, present } = classify(findPages(repoRoot));
+const { verdict, moved, missing, present, appDir } = inspect(repoRoot);
 
 if (verdict === 'absent') {
   const lines = [
@@ -62,6 +62,30 @@ if (verdict === 'absent') {
   ];
   process.stdout.write(`${lines.join('\n')}\n`);
   process.exit(0);
+}
+
+if (verdict === 'unrooted') {
+  const lines = [
+    '',
+    '  ============================================================',
+    '  THE DRILL CANNOT TELL WHETHER IT DROVE THE DAY',
+    '  ============================================================',
+    '',
+    `  The route root this script looks under does not exist:`,
+    `    ${appDir}`,
+    '',
+    '  That is a stale constant, not a branch without a clinical',
+    '  surface - every branch that builds has this directory, and the',
+    '  public pages live under it too. Reporting "no screens here"',
+    '  from a root that is not there is the same silence one level up',
+    '  from the one this check was written to remove.',
+    '',
+    '  Fix APP_DIR in apps/e2e/scripts/required-routes.mjs.',
+    '  ============================================================',
+    '',
+  ];
+  process.stdout.write(`${lines.join('\n')}\n`);
+  process.exit(1);
 }
 
 if (verdict === 'stale') {

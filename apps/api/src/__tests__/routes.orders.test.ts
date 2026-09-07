@@ -2716,6 +2716,14 @@ describe('a write on a chart is not a way round the gate', () => {
     });
 
     expect(res.status).toBe(404);
+    // The status alone does not say the write was refused, only that the reply
+    // was. Move the gate below `collection.update` and every assertion above
+    // still passes while the document has already left this reader's chart -
+    // same status, same body, row gone. Raised in review, measured: the suite
+    // was green under that reordering until this line existed.
+    expect(harness.dataset.table('Document').find((row) => row.id === DOCUMENT_A)?.patientId).toBe(
+      PATIENT
+    );
   });
 
   it('PATCH /documents/:id still answers when both charts are reachable', async () => {

@@ -57,6 +57,23 @@ async function json<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Moves the seeded appointment outside every `facility-activity` window, which
+ * is what removes the care relationship a visit was opened under. Chosen to sit
+ * outside the bound under the frozen fixture clock AND the wall clock, because
+ * the derivation reads `new Date()` (#426).
+ */
+function lapse(dataset: ReturnType<typeof createTestApp>['dataset']): void {
+  const row = dataset
+    .table('Appointment')
+    .find((candidate: { id: string }) => candidate.id === APPOINTMENT) as {
+    start: Date;
+    end: Date;
+  };
+  row.start = new Date('2025-07-09T15:00:00.000Z');
+  row.end = new Date('2025-07-09T15:30:00.000Z');
+}
+
 async function openVisit(
   app: ReturnType<typeof createTestApp>['app']
 ): Promise<TelehealthVisitDto> {
@@ -249,6 +266,79 @@ describe('letting somebody in', () => {
     expect(join?.permission).toBe('telehealth.join');
   });
 
+  /**
+   * The chart gate on `join`, and the lapse is the only way to reach it.
+   *
+   * A visit can only exist because `POST /appointments/{id}/telehealth` allowed
+   * it, and that route asks the same chart question - so a caller who never had
+   * the relationship has no visit to join. What is reachable is a caller who
+   * HAD it and lost it: `facility-activity` grants from a live appointment and
+   * excludes one whose start is more than a year past, so moving the row is the
+   * whole lapse.
+   *
+   * The date is outside the window under both clocks. `FACILITY_ACTIVITY_STALE_MS`
+   * is measured from `new Date()` and the fixture's clock is frozen (#426), so a
+   * date chosen against `FIXED_NOW` alone drifts into and out of being true as
+   * the calendar moves.
+   */
+  it("refuses a join once the caller has lost the appointment's chart", async () => {
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.frontDeskA, {
+        participantId: PATIENT,
+        role: 'guest',
+      })
+    );
+
+    // The same 404 an unreachable appointment gives, and before the 409 the
+    // status check would raise - a caller who may not open this chart must not
+    // learn whether the visit is open.
+    expect(res.status).toBe(404);
+    expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+  });
+
+  it('refuses before the status check, so a 409 never leaks the visit state', async () => {
+    // The ordering, asserted rather than assumed. This caller would get a 409
+    // "this visit is ENDED and cannot be joined" if the chart gate ran after the
+    // status check - which tells them the visit exists and what state it is in.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+    await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.adminA, { reasonCode: 'completed' })
+    );
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.frontDeskA, {
+        participantId: PATIENT,
+        role: 'guest',
+      })
+    );
+
+    // 404, not the 409 the ENDED status would otherwise produce.
+    expect(res.status).toBe(404);
+  });
+
+  it('proves the lapse is what refused it, by refusing a new room too', async () => {
+    // The discriminator. Without it the case above is also satisfied by a join
+    // route that refuses everyone, and by a lapse that never took effect.
+    const { app, dataset } = harness();
+    await openVisit(app);
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    expect(res.status).toBe(404);
+  });
+
   it('lets reception admit a participant', async () => {
     const { app } = harness();
     const visit = await openVisit(app);
@@ -368,6 +458,57 @@ describe('letting somebody in', () => {
 });
 
 describe('ending a visit', () => {
+  it("refuses an end once the caller has lost the appointment's chart", async () => {
+    // The same gate as `join`, on the route that closes the visit rather than
+    // the one that admits to it. Both write to a visit whose only chart is the
+    // appointment's, and neither asked before #337.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    expect(res.status).toBe(404);
+    expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+  });
+
+  it('refuses before the status check, so a 409 never leaks that the visit ended', async () => {
+    // The same assertion as the join case, on the route that carries the same
+    // seventeen-line promise. Without it the docblock above `end` is a claim
+    // held by nothing: reorder that gate below its status check and a lapsed
+    // caller is told `This visit is already ENDED`, with the suite green.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+    await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.adminA, { reasonCode: 'completed' })
+    );
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    // 404, not the 409 the ENDED status would otherwise produce.
+    expect(res.status).toBe(404);
+  });
+
+  it('still ends a visit for a caller who kept the chart', async () => {
+    // The must-not-fire arm. A gate that refused everyone would satisfy the case
+    // above and take telehealth out of the product.
+    const { app } = harness();
+    const visit = await openVisit(app);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    expect(res.status).toBe(200);
+  });
+
   it('keeps when it ended and how long it ran', async () => {
     const { app } = harness();
     const visit = await openVisit(app);

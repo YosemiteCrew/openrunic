@@ -2340,10 +2340,18 @@ fieldset {
   min-width: 0;
 }
 
+/* Free text a person typed, so whatever arrives has to render inside the box it
+   is given. `anywhere` rather than `break-word` because only `anywhere` shrinks
+   the intrinsic min-content size, and this sits in a flex row whose track is
+   sized from content - `break-word` breaks the text and still pushes the row
+   wide. Same declaration and same reasoning as the portal's message bodies;
+   this is one property of free-text rendering across both applications rather
+   than one component's bug. */
 .or-inbox__summary {
   font-family: var(--font-text);
   font-size: var(--text-body);
   color: var(--text-ink);
+  overflow-wrap: anywhere;
 }
 
 /* Unread is weight, not a coloured dot on its own. */

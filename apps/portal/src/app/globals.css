@@ -680,6 +680,30 @@ output {
   color: var(--text-secondary);
 }
 
+/* Free text a person typed, in both directions: a patient writes into a box the
+   practice reads, and a clinician writes into a box the patient reads. Whatever
+   arrives has to render inside the box it is given.
+
+   `anywhere` rather than `break-word`: both break the run at the box edge, but
+   only `anywhere` shrinks the intrinsic min-content size, and these bubbles sit
+   in a grid whose track is sized from content - so `break-word` breaks the text
+   and still pushes the layout wide, which looks fixed and is not.
+
+   Not `overflow-x: auto` on the bubble: that keeps the run intact behind a
+   horizontal scroll region nested inside a vertical one, which on a phone is
+   text the reader cannot tell is there. For a clinical message, nothing hidden
+   and nothing clipped is the property that matters.
+
+   Scoped to the free-text bodies rather than set globally, so deliberately
+   unbreakable content - a code, an identifier in a monospace cell - is not swept
+   up with it. */
+.portal-message__body,
+.portal-notice__text,
+.portal-assistant__question,
+.portal-assistant__answer {
+  overflow-wrap: anywhere;
+}
+
 .portal-message__body {
   margin: 0;
 }

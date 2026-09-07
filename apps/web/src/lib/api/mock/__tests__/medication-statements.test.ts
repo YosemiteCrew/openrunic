@@ -94,6 +94,30 @@ describe('the medication statement mock', () => {
   });
 
   /**
+   * THE STEP, WHICH NOTHING GUARDED.
+   *
+   * `reportedAt` is what `sort: 'reportedAt'` orders by, and the sort case
+   * above passes over a column of identical values - an all-equal column is
+   * trivially sorted in both directions. So the assertion that the ORDER is
+   * right cannot see the values collapsing, and removing the step entirely
+   * left the whole web suite green.
+   *
+   * Distinctness is the property that separates them, and it fails in both
+   * directions the step can break: remove it and every instant is `MOCK_NOW`;
+   * index per chart instead of per response and the charts collide with each
+   * other. #403 was the second one - 7 of 8 rows tied.
+   */
+  it('gives every row in one response a distinct reportedAt', async () => {
+    const page = await createMockClient().medicationStatements.list({ pageSize: 200 });
+
+    expect(page.data.length).toBeGreaterThan(1);
+    // Across charts, not within one: the per-chart case cannot see a collision
+    // between two patients, which is exactly the shape the defect had.
+    expect(new Set(page.data.map((row) => row.patientId)).size).toBeGreaterThan(1);
+    expect(new Set(page.data.map((row) => row.reportedAt)).size).toBe(page.data.length);
+  });
+
+  /**
    * The live DTO serialises all three with `toISOString()`. These used to be
    * `startedOn ?? MOCK_NOW`, so a date-only `2022-02-18` reached a consumer
    * formatting an instant, which renders midnight UTC or the day before it.

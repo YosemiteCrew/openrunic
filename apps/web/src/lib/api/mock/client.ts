@@ -223,8 +223,10 @@ export function filterNotes(
  * reported and stored on the day it was started, and `startedOn` is a date with
  * no time, so a consumer formatting an instant rendered midnight UTC - or the
  * previous calendar day, east of it - where the live route serialises a real
- * `toISOString()`. Stepped by index so `sort: 'reportedAt'` has a defined order
- * to produce rather than a column of equal values.
+ * `toISOString()`. Stepped by the caller's index so `sort: 'reportedAt'` has a
+ * defined order to produce rather than a column of equal values - which means
+ * the caller owes a unique index PER RESPONSE, not per chart. It did not, once:
+ * see the call site and #403.
  */
 function toMedicationStatementDto(
   patientId: string,
@@ -813,11 +815,44 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
           // the per-patient case was written to avoid, one level up.
           const charts =
             query.patientId === undefined ? MOCK_CHARTS : [mockChartFor(query.patientId)];
-          const rows = charts.flatMap((chart) =>
-            chart.medications.map((med, index) =>
-              toMedicationStatementDto(chart.patientId, med, index)
-            )
-          );
+          // `offset` carries the index ACROSS charts. A bare `map((med, i))`
+          // restarts at 0 for every chart, which made `reportedAt` unique
+          // within a patient and tied across them - 7 of 8 rows shared an
+          // instant with another row, so `sort: 'reportedAt'` had no defined
+          // order over most of this response. #403.
+          //
+          // The running offset rather than `.flatMap(...).map(...)`: the
+          // two-pass version reads better and costs 6 points of the react-doctor
+          // floor (`js-combine-iterations`, web 98 -> 92). That job is NOT on
+          // the dev ruleset's required list, which is the reason to keep this
+          // shape rather than a reason to ignore it - a red check that cannot
+          // block a merge is the one nobody has to look at. One pass, one
+          // counter.
+          //
+          // What this buys is a TOTAL order, not a correct one. There is no
+          // reported-at anywhere in the fixtures, so any value here is invented;
+          // what the mock owes is a distinct instant per row and the same shape
+          // the live DTO serialises, not agreement with a clock nobody wrote
+          // down.
+          //
+          // And the index is scoped to the RESPONSE, not to the row, which has
+          // a consequence worth stating rather than leaving to be found: the
+          // same statement carries a different `reportedAt` when it arrives in
+          // the all-patients list than when it is fetched with its own
+          // `patientId`. Measured in review: 4 of 8 rows move. A real server
+          // would not - `reportedAt` is a column, not a function of the query.
+          // Nothing correlates a row across the two shapes today, because
+          // `chart/live.ts` is the only consumer and always sends a
+          // `patientId`; a caller that did would need a row-scoped instant
+          // here.
+          let offset = 0;
+          const rows = charts.flatMap((chart) => {
+            const mapped = chart.medications.map((med, i) =>
+              toMedicationStatementDto(chart.patientId, med, offset + i)
+            );
+            offset += mapped.length;
+            return mapped;
+          });
           return paginate(filterMedicationStatements(rows, query), query.page, query.pageSize);
         }),
     },

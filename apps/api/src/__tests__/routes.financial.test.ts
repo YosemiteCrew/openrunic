@@ -614,6 +614,50 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
     });
   });
 
+  it('stamps the determination with the clock the app was given', async () => {
+    /*
+     * The seam, proved by consuming it and by varying it.
+     *
+     * `CreateAppOptions.now` has been declared, defaulted and injected for as
+     * long as `fhirRoutes` has taken it, and no BFF router was ever passed it -
+     * so every handler under `/bff/v0` read the wall clock and no test could
+     * name the instant one of them stamped. The case below asserts eleven
+     * fields with `toMatchObject` and steps around this one, because before
+     * this there was nothing to assert.
+     *
+     * A clock supplied by the caller rather than the harness default, because
+     * `FIXED_NOW` alone would pass whether or not `createTestApp` respected
+     * what it was given - and until this change it did not: `now` sat after the
+     * spread and silently won. Measured rather than read: with the clock varied
+     * from `FIXED_NOW` to 2001, exactly one of the fourteen response fields
+     * moves, which is `determinedAt` and nothing else. That is what makes this
+     * the site the seam was proved on - `now` decides the stamp here and the
+     * four eligibility reasons turn on the service date and the row.
+     */
+    const WHEN = new Date('2001-02-03T04:05:06.000Z');
+    const { app, dataset } = createTestApp({ now: () => WHEN });
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
+    seed(dataset, 'Coverage', makeCoverageRow());
+
+    const body = await json<EligibilityResult>(
+      await app.request(...check(testId(10), '2026-06-15'))
+    );
+
+    expect(body.determinedAt).toBe(WHEN.toISOString());
+    /* And the default still is the harness clock, so the line above is not
+       passing because a caller's clock is the only one that reaches here. */
+    const fallback = createTestApp();
+    authorise(fallback.dataset, PATIENT_ID, OTHER_PATIENT_ID);
+    seed(fallback.dataset, 'Coverage', makeCoverageRow());
+    expect(
+      (
+        await json<EligibilityResult>(
+          await fallback.app.request(...check(testId(10), '2026-06-15'))
+        )
+      ).determinedAt
+    ).toBe(FIXED_NOW.toISOString());
+  });
+
   it('gives a reason for a cancelled policy, a draft one, and a date outside the window', async () => {
     const { app, dataset } = createTestApp();
     authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);

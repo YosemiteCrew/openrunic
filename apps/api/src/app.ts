@@ -222,7 +222,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     fhirRoutes({ softwareVersion: SOFTWARE_VERSION, now, smartLaunch: options.smartLaunch })
   );
   app.route(CDS_BASE_PATH, cdsRoutes());
-  app.route(BFF_BASE_PATH, internalRoutes({ adapters, quality: options.quality }));
+  app.route(BFF_BASE_PATH, internalRoutes({ adapters, quality: options.quality, now }));
 
   if (agent.status === 'enabled') {
     app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));

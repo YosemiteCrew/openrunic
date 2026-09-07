@@ -472,10 +472,15 @@ export function createTestApp(options: TestAppOptions = {}): TestApp {
 
   const app = createApp({
     principalResolver: testPrincipalResolver(),
+    /* Before the spread, not after it. `repositories` and `auditSink` are built
+       here and a caller cannot supply them, so they override; the clock is not
+       like that - a test that passes `now` means it, and this line silently
+       won. Found by a probe that varied `now` and got an identical response
+       both times, which is what a dead arm looks like from outside. */
+    now: () => FIXED_NOW,
     ...appOptions,
     repositories: decorateRepositories?.(repositories) ?? repositories,
     auditSink: sink,
-    now: () => FIXED_NOW,
   });
 
   return { app, dataset, sink, auditStore };

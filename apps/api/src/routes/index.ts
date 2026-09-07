@@ -34,6 +34,18 @@ export interface InternalRouteOptions {
   /** Quality reporting limits; see `routes/quality.ts`. */
   quality?: QualityRouteOptions;
   /**
+   * The clock, threaded from `createApp` exactly as `fhirRoutes` already takes
+   * it. `CreateAppOptions.now` has existed and been injected by every test for
+   * as long as the FHIR routes have consumed it; the BFF routers were never
+   * passed it, so every handler under this mount reads the wall clock and no
+   * test can say when "now" is.
+   *
+   * Threading it is not the same as consuming it, and a router that takes this
+   * and ignores it is worse than one that never had it - so only the handlers
+   * that read it take it, and each one is a change with a test behind it.
+   */
+  now: () => Date;
+  /**
    * Partner seams. Passed in rather than resolved here because the routes that
    * use one are the only routes that should know a registry exists.
    */
@@ -47,7 +59,7 @@ export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
   router.route('/', appointmentRoutes());
   router.route('/', clinicalRoutes(options.adapters));
   router.route('/', orderRoutes());
-  router.route('/', financialRoutes());
+  router.route('/', financialRoutes({ now: options.now }));
   router.route('/', inventoryRoutes());
   router.route('/', platformRoutes());
   router.route('/', qualityRoutes(options.quality));

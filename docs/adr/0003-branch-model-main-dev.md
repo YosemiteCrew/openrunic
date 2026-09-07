@@ -285,10 +285,25 @@ so it must never be a verdict.
 
 **And the transient test is a complement, not a list.** `queued or in_progress` enumerates two
 non-terminal states, and GitHub documents others (`waiting`, `requested`, `pending`); a run in any
-of them would read permanent under an allowlist. Neither desk that wrote this paragraph has an
-instance - a 300-run sample on this repository returned `completed` 292 and `in_progress` 8 and
-nothing else - which is precisely why the rule is written as `status != "completed"`: it is immune
-to a state we cannot enumerate from evidence.
+of them would read permanent under an allowlist.
+
+**A census cannot settle this, and finding that out is the reason the rule is a complement.** Two
+desks swept every workflow run this repository has ever produced - 11,238 rows on both, matching
+`total_count` - minutes apart:
+
+```
+sweep A   completed 11236 · in_progress 2
+sweep B   completed 11237 · queued      1
+```
+
+Same population, different answer, and neither `in_progress` nor `queued` appears in the other.
+**A run's non-terminal status exists only while the run is in flight**, so a sweep of eleven
+thousand rows enumerates the terminal state and _samples_ every other one - it has the denominator
+of a census and the reach of whatever happened to be running at that instant. Neither sweep saw
+`waiting`, `requested` or `pending`, and neither could have unless one was live as it read.
+
+So the rule is `status != "completed"` because the set it would otherwise have to list is not
+knowable from this endpoint at any sample size - not merely because no instance has turned up.
 
 `head_sha` needs all forty characters; a short sha silently returns `total_count: 0` with no error,
 which is the same false permanent by a second route - one about timing and one about the query, and

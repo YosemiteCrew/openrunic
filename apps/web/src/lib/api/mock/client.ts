@@ -823,14 +823,28 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
           //
           // The running offset rather than `.flatMap(...).map(...)`: the
           // two-pass version reads better and costs 6 points of the react-doctor
-          // floor (`js-combine-iterations`, web 98 -> 92), which is a required
-          // job. One pass, one counter.
+          // floor (`js-combine-iterations`, web 98 -> 92). That job is NOT on
+          // the dev ruleset's required list, which is the reason to keep this
+          // shape rather than a reason to ignore it - a red check that cannot
+          // block a merge is the one nobody has to look at. One pass, one
+          // counter.
           //
           // What this buys is a TOTAL order, not a correct one. There is no
           // reported-at anywhere in the fixtures, so any value here is invented;
           // what the mock owes is a distinct instant per row and the same shape
           // the live DTO serialises, not agreement with a clock nobody wrote
           // down.
+          //
+          // And the index is scoped to the RESPONSE, not to the row, which has
+          // a consequence worth stating rather than leaving to be found: the
+          // same statement carries a different `reportedAt` when it arrives in
+          // the all-patients list than when it is fetched with its own
+          // `patientId`. Measured in review: 4 of 8 rows move. A real server
+          // would not - `reportedAt` is a column, not a function of the query.
+          // Nothing correlates a row across the two shapes today, because
+          // `chart/live.ts` is the only consumer and always sends a
+          // `patientId`; a caller that did would need a row-scoped instant
+          // here.
           let offset = 0;
           const rows = charts.flatMap((chart) => {
             const mapped = chart.medications.map((med, i) =>

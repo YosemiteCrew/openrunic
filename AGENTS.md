@@ -187,9 +187,9 @@ Before declaring a task finished, run and pass, scoped to what you changed:
     PR 0 of 7 bodies named their own author, while 4 of 7 wrote the shared login meaning one
     particular agent - a name that resolves to everyone at once.
   - **The marker must not be an internal name for the author, and the body must not cite an
-    internal document by path.** This repository is public, and a roster of who works on it and
-    where is exactly the sort of internal detail that does not belong in it - a marker that
-    identifies a row is not the same thing as a marker that describes the fleet writing it. Both
+    internal document by path.** This repository is public, and how the people working on it are
+    organised is internal detail that does not belong in it - a marker that identifies a row is
+    not the same thing as a marker that describes its author. Both
     mistakes were made on this PR's own predecessor before the rule was written, which is why the
     form is pinned rather than left to judgement: it had already drifted into two shapes ten
     seconds apart.

@@ -815,16 +815,30 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
           // the per-patient case was written to avoid, one level up.
           const charts =
             query.patientId === undefined ? MOCK_CHARTS : [mockChartFor(query.patientId)];
-          // Indexed over the FLATTENED list rather than per chart. Indexing
-          // inside the `map` restarts at 0 for every chart, which made
-          // `reportedAt` unique within a patient and tied across them - 7 of 8
-          // rows shared an instant with another row, so `sort: 'reportedAt'`
-          // had no defined order over most of this response. #403.
-          const rows = charts
-            .flatMap((chart) =>
-              chart.medications.map((med) => ({ patientId: chart.patientId, med }))
-            )
-            .map(({ patientId, med }, index) => toMedicationStatementDto(patientId, med, index));
+          // `offset` carries the index ACROSS charts. A bare `map((med, i))`
+          // restarts at 0 for every chart, which made `reportedAt` unique
+          // within a patient and tied across them - 7 of 8 rows shared an
+          // instant with another row, so `sort: 'reportedAt'` had no defined
+          // order over most of this response. #403.
+          //
+          // The running offset rather than `.flatMap(...).map(...)`: the
+          // two-pass version reads better and costs 6 points of the react-doctor
+          // floor (`js-combine-iterations`, web 98 -> 92), which is a required
+          // job. One pass, one counter.
+          //
+          // What this buys is a TOTAL order, not a correct one. There is no
+          // reported-at anywhere in the fixtures, so any value here is invented;
+          // what the mock owes is a distinct instant per row and the same shape
+          // the live DTO serialises, not agreement with a clock nobody wrote
+          // down.
+          let offset = 0;
+          const rows = charts.flatMap((chart) => {
+            const mapped = chart.medications.map((med, i) =>
+              toMedicationStatementDto(chart.patientId, med, offset + i)
+            );
+            offset += mapped.length;
+            return mapped;
+          });
           return paginate(filterMedicationStatements(rows, query), query.page, query.pageSize);
         }),
     },

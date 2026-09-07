@@ -456,6 +456,62 @@ test('a malformed placeholder is reported as malformed, not as one that appears 
 });
 
 /**
+ * The two halves on ONE tree, because each test above exercises only one.
+ *
+ * `scan` is tested with an injected map and a real tree; `scanProblems` with an
+ * injected map and a hand-built scanned object. Neither says the pair agree
+ * about which map they are reading, and threading it into `scan` alone is not
+ * a lost finding - it is three confident problems, two of them false:
+ *
+ * ```
+ * BOTH threaded   the malformed entry named                         <- correct
+ * HALF threaded   the malformed identifier is NOT among them, and BOTH real
+ *                 placeholders are reported as appearing nowhere
+ * ```
+ *
+ * Which is the defect this pair of functions was changed to remove, one level
+ * up: one cause, the wrong message, and the wrong one is louder. Production
+ * threads neither and there is one caller, so the invariant today is that the
+ * defaults agree - and this is what says so.
+ *
+ * It also holds the coupling between the two well-formedness questions. `scan`
+ * asks whether the citation's OWN scheme could have issued it, since a citation
+ * carries the `kind` it was recognised as; `scanProblems` has only a map key
+ * and asks whether ANY scheme could have. Those are the same answer only
+ * because `findCitations` assigns `kind` from the pattern that matched, and a
+ * scheme whose pattern overlapped another's would separate them.
+ */
+test('scan and scanProblems agree about the placeholder map on one tree', () => {
+  const malformed = ghsa('aa-bb-cc');
+  const placeholders = new Map([
+    [malformed, { where: /^notes\.md$/u, why: 'the case under test' }],
+  ]);
+  // The fixture file is exempt by path, so `excludedByPath` is non-empty and
+  // the unused-exclusion problem does not fire - which is what lets the count
+  // below be exact rather than a filter over a longer list.
+  const root = gitRepo({
+    'notes.md': `${malformed}\n`,
+    'scripts/ci/fixture.test.mjs': `// ${malformed}\n`,
+  });
+
+  try {
+    const scanned = scan(root, trackedFiles(root), placeholders);
+    const problems = scanProblems(scanned, placeholders);
+
+    assert.deepEqual(
+      scanned.cited.map((citation) => citation.id),
+      [malformed],
+      'the malformed identifier did not reach the resolver'
+    );
+    assert.equal(problems.length, 1);
+    assert.match(problems[0].reason, /no register could have issued/u);
+    assert.doesNotMatch(problems[0].reason, /appears nowhere/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
  * Zero and not a threshold. A guard reporting clean having read nothing is
  * byte-identical to one reporting clean having read everything, and every
  * failure of the walk - a changed pattern, a broken `git ls-files`, a rename -

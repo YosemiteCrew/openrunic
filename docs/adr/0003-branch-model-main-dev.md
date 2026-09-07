@@ -221,6 +221,21 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   unfiltered 178-row window contained the same 49, so a row's survival is priced in pushes to every
   ref, not its own branch's traffic.
 
+  **Do not read this endpoint with `gh api --paginate`, and the reason is the endpoint rather than
+  the flag.** Its page-1 `Link` header advertises `rel="next"` pointing at **`page=1`** - itself -
+  where a correct one points at `page=2`, so a paginated read re-emits the first page and inflates
+  every count taken from it. Same result set, only `per_page` changed:
+
+  ```
+  ?ref=refs/heads/dev --paginate  per_page=100   1 page    51 rows · 51 distinct · bypass 3
+  ?ref=refs/heads/dev --paginate  per_page=50    2 pages  101 rows · 51 distinct · bypass 5
+  CONTROL  labels --paginate per_page=5, 4 pages           16 rows · 16 distinct · no repeat
+  ```
+
+  The control matters: `--paginate` is not broken generally, and the second row is this ADR's own
+  headline number reading `5 of 51` instead of `3 of 51` from a flag alone. Read it with explicit
+  `page=` and deduplicate by `id`. There is no `total_count` on this endpoint to catch it with.
+
   Its `pushed_at` is also the one GitHub time that is **not** `Z` - it carries a local offset, as
   does `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
   time into a false UTC.

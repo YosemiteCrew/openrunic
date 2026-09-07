@@ -40,11 +40,31 @@ const OTHER_PROVIDER = testId(3_002);
 const CARE_TEAM = testId(3_003);
 
 /**
- * Older than the facility-activity window (365 days), computed against the real
- * clock because the boundary reads `new Date()` and cannot be handed a fixed
- * one. Relative rather than a literal so it stays stale whenever the suite runs.
+ * Outside the facility-activity window, computed from the clock the harness
+ * injects.
+ *
+ * This was a 400-day margin against `Date.now()`, with a comment saying the
+ * boundary "reads `new Date()` and cannot be handed a fixed one". That stopped
+ * being true when the care-relationship decision moved to the request's own
+ * instant (#426), and a margin against the real calendar is a case whose
+ * correctness depends on when it runs: bump `FIXED_NOW` past today and the two
+ * clocks stop disagreeing, so cases resting on the margin pass whatever the
+ * boundary does. Measured on the version this replaces - the bump reddens
+ * eighteen tests across six files and NOT the case that has quietly stopped
+ * being able to fail, which is the reading that sends the next person looking
+ * anywhere but there.
+ *
+ * An hour either side, not a day. A day was the first attempt and it is too
+ * coarse in one direction: narrow the window by a day and an appointment placed
+ * a day inside the old edge lands exactly ON the new one, which `from:` accepts
+ * - so the case stayed green under the mutation it exists to catch. An hour
+ * either side reddens a one-day move in both directions, which is the property
+ * a boundary pair is for.
  */
-const STALE_AGO_MS = 400 * 24 * 60 * 60 * 1000;
+const FACILITY_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const JUST_INSIDE = new Date(FIXED_NOW.getTime() - FACILITY_WINDOW_MS + HOUR_MS);
+const JUST_OUTSIDE = new Date(FIXED_NOW.getTime() - FACILITY_WINDOW_MS - HOUR_MS);
 
 /** Both addressed reads of the same chart. A rule has to answer them alike. */
 const BOUNDARIES = [
@@ -281,7 +301,7 @@ const GRANTED: readonly GrantedCase[] = [
       anEncounter(dataset, {
         id: testId(3_030),
         providerId: SUBJECTS.clinicianA,
-        startedAt: new Date(Date.now() - STALE_AGO_MS),
+        startedAt: JUST_OUTSIDE,
       });
     },
   },
@@ -349,7 +369,7 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
       anEncounter(dataset, {
         id: testId(3_031),
         providerId: OTHER_PROVIDER,
-        startedAt: new Date(Date.now() - STALE_AGO_MS),
+        startedAt: JUST_OUTSIDE,
       });
     },
   },
@@ -367,8 +387,8 @@ const REFUSED: readonly { readonly why: string; readonly seedIt: Seeder }[] = [
           patientId: PATIENT,
           providerId: OTHER_PROVIDER,
           facilityId: DEMO_FACILITY_A,
-          start: new Date(Date.now() - STALE_AGO_MS),
-          end: new Date(Date.now() - STALE_AGO_MS + 30 * 60 * 1000),
+          start: JUST_OUTSIDE,
+          end: new Date(JUST_OUTSIDE.getTime() + 30 * 60 * 1000),
         })
       );
     },
@@ -2362,5 +2382,53 @@ describe('every chart on a page is decided at the same instant', () => {
     // firing leaves both arms at 200 and the case tests nothing.
     expect(advanced.fired).toBe(true);
     expect(advanced.status).toBe(200);
+  });
+});
+
+/**
+ * The facility-activity window, at the edge rather than a margin away from it.
+ *
+ * This pair is only expressible because the decision reads the request's own
+ * instant (#426): before that it took `new Date()`, so a case could only be
+ * placed relative to the real calendar and the suite used a 400-day margin to
+ * stay clear of it. A margin proves the window exists somewhere; it cannot
+ * catch the window moving by a day, and it cannot catch the comparison being
+ * inclusive where it should be exclusive.
+ *
+ * One day either side of 365. Both cases seed the same shape and differ only in
+ * the appointment's date, so a failure names the direction the boundary moved.
+ */
+describe('the facility-activity window is checked at its edge', () => {
+  const seedFacilityActivity = (dataset: Dataset, start: Date): void => {
+    baseChart(dataset);
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        id: testId(9_500),
+        patientId: PATIENT,
+        providerId: OTHER_PROVIDER,
+        facilityId: DEMO_FACILITY_A,
+        start,
+        end: new Date(start.getTime() + 30 * 60 * 1000),
+      })
+    );
+  };
+
+  const read = async (start: Date): Promise<number> => {
+    const { app, dataset } = createTestApp();
+    seedFacilityActivity(dataset, start);
+    const res = await app.request(BOUNDARIES[0].path(PATIENT), {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    return res.status;
+  };
+
+  it('authorises activity an hour inside the window', async () => {
+    expect(await read(JUST_INSIDE)).toBe(200);
+  });
+
+  it('refuses activity an hour outside it', async () => {
+    expect(await read(JUST_OUTSIDE)).toBe(404);
   });
 });

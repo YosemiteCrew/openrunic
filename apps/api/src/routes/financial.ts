@@ -694,7 +694,7 @@ async function allocationForLine(
 
 /* ------------------------------------------------------------------- routes */
 
-function transitionRoutes(): Hono<AppEnv> {
+function transitionRoutes(options: FinancialRouteOptions): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
 
   router.post('/coverage/:id/eligibility', requirePermission('coverage.read'), async (c) => {
@@ -724,7 +724,12 @@ function transitionRoutes(): Hono<AppEnv> {
     }
 
     const serviceDate = new Date(`${body.serviceDate}T00:00:00.000Z`);
-    return c.json(determineEligibility(row, serviceDate, new Date()));
+    /* The injected clock rather than the wall one, so `determinedAt` is a value
+       a test can name. It is the only thing `now` decides here - the four
+       reasons above turn on the service date and the row - which is why this is
+       the site the seam was proved on rather than one where converting a clock
+       would also have moved a boundary. */
+    return c.json(determineEligibility(row, serviceDate, options.now()));
   });
 
   router.post('/charges/:id/void', requirePermission('charge.write'), async (c) => {
@@ -1594,13 +1599,18 @@ const TRANSITION_CONTRACTS: RouteContract[] = [
   },
 ];
 
-export function financialRoutes(): Hono<AppEnv> {
+export interface FinancialRouteOptions {
+  /** The clock. See `InternalRouteOptions.now`. */
+  now: () => Date;
+}
+
+export function financialRoutes(options: FinancialRouteOptions): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
 
   // The literal sub-paths go on first. Hono matches in registration order, so
   // registering `/claims/:id/scrub` ahead of the generated `/claims/:id` is
   // what keeps a route named after a verb from ever being read as an id.
-  router.route('/', transitionRoutes());
+  router.route('/', transitionRoutes(options));
 
   for (const module of financialModules()) {
     router.route('/', module.routes);

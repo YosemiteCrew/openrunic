@@ -614,6 +614,37 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
     });
   });
 
+  it('stamps the determination with the clock the app was given', async () => {
+    /*
+     * The seam, proved by consuming it.
+     *
+     * `CreateAppOptions.now` has been declared, defaulted and injected by every
+     * test for as long as `fhirRoutes` has taken it, and no BFF router was ever
+     * passed it - so every handler under `/bff/v0` read the wall clock and no
+     * test could name the instant one of them stamped. Asserting `determinedAt`
+     * at all was impossible before this; the case above asserts eleven fields
+     * with `toMatchObject` and steps around this one.
+     *
+     * This is the site rather than a more interesting one on purpose. `now`
+     * decides only the stamp here - the four reasons turn on the service date
+     * and the row - so converting it moves a value a test can name and nothing
+     * else. On `routes/patients.ts:268` the same conversion turns seven tests
+     * red across two files, because a break-glass window is written by one
+     * clock read and judged by two others in `middleware/policy.ts` and
+     * `policy/care-relationship.ts`. A clock is not converted one site at a
+     * time; the unit is the set of reads compared against each other.
+     */
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
+    seed(dataset, 'Coverage', makeCoverageRow());
+
+    const body = await json<EligibilityResult>(
+      await app.request(...check(testId(10), '2026-06-15'))
+    );
+
+    expect(body.determinedAt).toBe(FIXED_NOW.toISOString());
+  });
+
   it('gives a reason for a cancelled policy, a draft one, and a date outside the window', async () => {
     const { app, dataset } = createTestApp();
     authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);

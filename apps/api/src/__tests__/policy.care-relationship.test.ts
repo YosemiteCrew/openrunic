@@ -2307,6 +2307,32 @@ describe('every chart on a page is decided at the same instant', () => {
     }
   };
 
+  /**
+   * The instant is the one the application was HANDED, not the one the process
+   * reads.
+   *
+   * The two cases below cover `receivedAt` being stamped once and read. They do
+   * not reach the threading itself - `createApp`'s `now`, the chain forwarding
+   * it, stage 1 stamping from it - because they run with the fake clock set TO
+   * `FIXED_NOW`, and a faked clock at the injected instant is the same value as
+   * the injected one.
+   *
+   * What separates them is a DISAGREEMENT between the two, not the absence of a
+   * fake clock: set the fake one past the memberships' `periodEnd` while the
+   * harness injects `FIXED_NOW` from before it. Read the injected instant and
+   * the teams hold; read `Date.now()` and they lapsed a minute ago.
+   *
+   * Both instants are arguments, which is the point. An earlier version put the
+   * lapse between `FIXED_NOW` and the real calendar - that works today and stops
+   * working the moment `FIXED_NOW` is bumped past the wall clock, which is a
+   * fixture change nobody would think of as touching authorisation.
+   */
+  it('decides on the clock the application was given, not the system clock', async () => {
+    vi.setSystemTime(new Date(BOUNDARY.getTime() + 60_000));
+
+    expect((await listDocuments(null)).status).toBe(200);
+  });
+
   it('records every chart on a page under one compliance classification', async () => {
     const control = await listDocuments(null, grantAndTeamPerChart);
     expect(control.status).toBe(200);
@@ -2336,46 +2362,5 @@ describe('every chart on a page is decided at the same instant', () => {
     // firing leaves both arms at 200 and the case tests nothing.
     expect(advanced.fired).toBe(true);
     expect(advanced.status).toBe(200);
-  });
-});
-
-/**
- * The instant is the one the application was handed (#426).
- *
- * The arms above cover `receivedAt` being stamped once and read. They do not
- * reach the threading itself - `createApp`'s `now`, the chain forwarding it,
- * and stage 1 stamping from it - because they run under a faked clock set TO
- * `FIXED_NOW`, and a faked wall clock at the injected instant is the same value
- * as the injected one.
- *
- * What is needed is a disagreement between the two clocks, not the absence of a
- * fake one. This case gets it by putting the membership's period between the
- * clock the test supplies and the real one: read `receivedAt` and the team
- * holds, read `new Date()` and it lapsed weeks ago. Setting a fake clock PAST
- * the period would do the same job inside the block above, which is worth
- * saying because an earlier attempt at this case lived there, meant to run
- * without fake timers, and got the block's frozen clock anyway - so there was
- * no disagreement for it to find and it passed under every revert.
- */
-describe('a chart decision reads the clock the application was given', () => {
-  it('holds a membership that the wall clock would call expired', async () => {
-    const { app, dataset } = createTestApp();
-    const chart = testId(9_480);
-    seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: 'OR-109480' }));
-    aTeamWithMember(dataset, {
-      patientId: chart,
-      teamId: testId(9_481),
-      memberId: testId(9_482),
-      /* One week after FIXED_NOW and long before any wall clock this suite will
-         run at. In force at the injected instant, lapsed at the real one. */
-      teamPeriodEnd: new Date(FIXED_NOW.getTime() + 7 * 24 * 60 * 60_000),
-      periodEnd: null,
-    });
-
-    const res = await app.request(BOUNDARIES[0].path(chart), {
-      headers: bearer(TOKENS.clinicianA),
-    });
-
-    expect(res.status).toBe(200);
   });
 });

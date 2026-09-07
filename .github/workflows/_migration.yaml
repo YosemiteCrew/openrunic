@@ -216,7 +216,14 @@ jobs:
               await (await import("node:fs/promises")).readFile("apps/api/vitest-database.json", "utf8")
             );
             const { numPassedTests: passed, numPendingTests: pending } = report;
-            console.log(`api database suites: ${passed} passed, ${pending} pending`);
+            // Concatenation rather than a JS template literal. This whole
+            // script is a single-quoted shell argument, and shellcheck reads a
+            // brace-substitution inside one as a shell expansion that will not
+            // expand (SC2016) - right about the shell, wrong about the
+            // language. The cheapest honest answer is to not write the
+            // construct, and that includes not naming it here: the first
+            // version of this comment spelled it out and kept the check red.
+            console.log("api database suites: " + passed + " passed, " + pending + " pending");
             if (passed === 0 || pending > 0) {
               console.error(
                 "::error::The API database suites did not run. They gate themselves on DATABASE_URL, " +

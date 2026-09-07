@@ -2395,8 +2395,11 @@ describe('every chart on a page is decided at the same instant', () => {
  * catch the window moving by a day, and it cannot catch the comparison being
  * inclusive where it should be exclusive.
  *
- * One day either side of 365. Both cases seed the same shape and differ only in
- * the appointment's date, so a failure names the direction the boundary moved.
+ * An hour either side of 365 days, plus one exactly ON it. The pair catches the
+ * window moving; neither of its two points sits on the boundary, so neither can
+ * say which side a row landing there falls, and the inclusive/exclusive half of
+ * the claim above needs its own case. All three seed the same shape and differ
+ * only in the appointment's date, so a failure names what moved.
  */
 describe('the facility-activity window is checked at its edge', () => {
   const seedFacilityActivity = (dataset: Dataset, start: Date): void => {
@@ -2430,5 +2433,21 @@ describe('the facility-activity window is checked at its edge', () => {
 
   it('refuses activity an hour outside it', async () => {
     expect(await read(JUST_OUTSIDE)).toBe(404);
+  });
+
+  it('authorises activity exactly on the edge', async () => {
+    /*
+     * The half the pair above cannot answer. Both of its points are an hour
+     * clear of the boundary, so both keep their verdict when the comparison
+     * flips between `<` and `<=`, and only a row landing exactly on the edge
+     * separates them.
+     *
+     * The window is closed at the lower end: `row.start < query.from` refuses,
+     * so a start equal to the cutoff is inside. Measured, not assumed - the
+     * first version of this case asserted 404 on the reasoning that a window
+     * ought to be half-open, and it is not. Which side the edge falls is the
+     * fact this case exists to pin, so it had to come from a run.
+     */
+    expect(await read(new Date(FIXED_NOW.getTime() - FACILITY_WINDOW_MS))).toBe(200);
   });
 });

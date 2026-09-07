@@ -1,51 +1,78 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 /**
- * The tracked `next-env.d.ts` must be the one `next build` writes, not the one
+ * Every tracked `next-env.d.ts` must be the one `next build` writes, not the one
  * `next dev` writes.
  *
- * Next generates this file and the two commands disagree about it: `build`
- * emits `./.next/types/…` and `dev` emits `./.next/dev/types/…`. Both lines
- * flip together. The file is tracked and its own header says it should not be
- * edited, so the dev variant rides into a diff about something else and is
- * waved through — it has reached `dev` twice already, in `2abc8ce` (a font-face
- * removal) and back out in `19ae465` (an unrelated refactor), fifteen commits
- * apart (#301).
+ * Next generates this file and the two commands disagree about it: `build` emits
+ * `./.next/types/…` and `dev` emits `./.next/dev/types/…`. Both lines flip
+ * together. The file is tracked and its own header says it should not be edited,
+ * so the dev variant rides into a diff about something else — it reached `dev`
+ * twice already, in `2abc8ce` (a font-face removal) and back out in `19ae465`
+ * (an unrelated refactor), fifteen commits apart (#301).
  *
- * This does not decide whether the file should stay tracked. That is the
- * question #301 asks and it is open. Under the option the repository is
- * currently on, this makes the state that actually merged twice unmergeable;
- * under the other, the file stops being tracked and this case goes with it.
+ * REPO-WIDE, and that is the whole of the change from the first version. That
+ * one resolved `process.cwd()`, so it guarded `apps/web` and nothing else — and
+ * `apps/portal` holds the identical tracked file. Running the portal's dev
+ * server reproduced the flip on it within minutes of the first guard merging:
+ * the instance was fixed and the class was left, which is this repository's
+ * named failure mode.
  *
- * Asserted positively rather than as an absence: a case that only forbids the
- * dev spelling passes just as happily on a file that has lost the import
- * altogether, which is a different broken state with the same green.
+ * It lives under `apps/web` because that is where it started and there is no
+ * repo-level suite to move it to. It is not about `apps/web`.
+ *
+ * Asserted positively as well as negatively: a case that only forbids the dev
+ * spelling is equally green on a file that has lost the import altogether, which
+ * is a different broken state with the same output.
  */
-/* Resolved from the vitest root rather than from `import.meta.url`: under this
-   app's transform that is not a `file:` URL, and `readFileSync` rejects it with
-   `The URL must be of scheme file` - which surfaces as `Tests no tests`, a
-   count a crash cannot forge but also cannot explain. */
-const NEXT_ENV = resolve(process.cwd(), 'next-env.d.ts');
 
-describe('the tracked next-env.d.ts is the build variant', () => {
-  /* Named before it is read, so a wrong root fails as "this file is not here"
-     rather than as an assertion about content nobody loaded. */
-  it('is where this case expects it', () => {
-    expect(existsSync(NEXT_ENV)).toBe(true);
+/** The workspace root, found by the file that only the root has. */
+function repoRoot(): string {
+  let dir = process.cwd();
+  for (let up = 0; up < 8; up += 1) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
+    dir = dirname(dir);
+  }
+  throw new Error('next-env drift guard: no pnpm-workspace.yaml above the vitest root');
+}
+
+const ROOT = repoRoot();
+const APPS = join(ROOT, 'apps');
+
+/** Every Next app, by the config file each one must have. */
+const nextApps = readdirSync(APPS).filter((app) =>
+  readdirSync(join(APPS, app)).some((f) => f.startsWith('next.config.'))
+);
+
+const guarded = nextApps.map((app) => [app, join(APPS, app, 'next-env.d.ts')] as const);
+
+describe('every next-env.d.ts is the build variant', () => {
+  /**
+   * The canary, on an input the guard below does not derive.
+   *
+   * A discovery that stopped matching would leave the cases sweeping nothing and
+   * reporting no drift, which is what a clean run looks like. Counted against
+   * `next.config.*` rather than against the same glob: a Next app must have one,
+   * so the two counts are independent statements about the same set and can
+   * disagree. Zero is not the threshold — a MISMATCH is, because a new app whose
+   * `next-env.d.ts` is missing is exactly the case this has to name.
+   */
+  it('finds one next-env.d.ts per Next app', () => {
+    expect(nextApps.length).toBeGreaterThan(0);
+    expect(guarded.filter(([, path]) => !existsSync(path)).map(([app]) => app)).toEqual([]);
   });
 
-  const source = existsSync(NEXT_ENV) ? readFileSync(NEXT_ENV, 'utf8') : '';
-
-  it('references the build type paths', () => {
+  it.each(guarded)('%s references the build type paths', (_app, path) => {
+    const source = readFileSync(path, 'utf8');
     expect(source).toContain('import "./.next/types/routes.d.ts";');
     expect(source).toContain('import "./.next/types/root-params.d.ts";');
   });
 
-  it('references no dev-server type path', () => {
+  it.each(guarded)('%s references no dev-server type path', (_app, path) => {
     // The two lines flip together, so either spelling is the whole failure.
-    expect(source).not.toContain('.next/dev/types/');
+    expect(readFileSync(path, 'utf8')).not.toContain('.next/dev/types/');
   });
 });

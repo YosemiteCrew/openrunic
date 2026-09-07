@@ -223,8 +223,10 @@ export function filterNotes(
  * reported and stored on the day it was started, and `startedOn` is a date with
  * no time, so a consumer formatting an instant rendered midnight UTC - or the
  * previous calendar day, east of it - where the live route serialises a real
- * `toISOString()`. Stepped by index so `sort: 'reportedAt'` has a defined order
- * to produce rather than a column of equal values.
+ * `toISOString()`. Stepped by the caller's index so `sort: 'reportedAt'` has a
+ * defined order to produce rather than a column of equal values - which means
+ * the caller owes a unique index PER RESPONSE, not per chart. It did not, once:
+ * see the call site and #403.
  */
 function toMedicationStatementDto(
   patientId: string,
@@ -813,11 +815,16 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
           // the per-patient case was written to avoid, one level up.
           const charts =
             query.patientId === undefined ? MOCK_CHARTS : [mockChartFor(query.patientId)];
-          const rows = charts.flatMap((chart) =>
-            chart.medications.map((med, index) =>
-              toMedicationStatementDto(chart.patientId, med, index)
+          // Indexed over the FLATTENED list rather than per chart. Indexing
+          // inside the `map` restarts at 0 for every chart, which made
+          // `reportedAt` unique within a patient and tied across them - 7 of 8
+          // rows shared an instant with another row, so `sort: 'reportedAt'`
+          // had no defined order over most of this response. #403.
+          const rows = charts
+            .flatMap((chart) =>
+              chart.medications.map((med) => ({ patientId: chart.patientId, med }))
             )
-          );
+            .map(({ patientId, med }, index) => toMedicationStatementDto(patientId, med, index));
           return paginate(filterMedicationStatements(rows, query), query.page, query.pageSize);
         }),
     },

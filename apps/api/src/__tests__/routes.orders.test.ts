@@ -2592,6 +2592,34 @@ describe('a write on a chart is not a way round the gate', () => {
     return harness;
   }
 
+  /**
+   * The tables whose rows differ from a snapshot taken earlier.
+   *
+   * Named tables rather than a whole-dataset comparison, because a red case
+   * has to say WHICH table moved: comparing the serialised dataset prints four
+   * kilobytes twice and the changed field is somewhere inside it.
+   *
+   * Empty tables are dropped. Reading a table CREATES it, so the
+   * care-relationship lookup every gate performs turns four absent tables into
+   * four empty ones on any refused request - a difference in the map and not in
+   * a row. Comparing those made all fourteen cases fail on an unmodified tree,
+   * which is a control failing rather than a finding.
+   */
+  const tablesOf = (dataset: MemoryDataset): Map<string, string> =>
+    new Map(
+      dataset
+        .models()
+        .map((model) => [model, JSON.stringify(dataset.table(model))] as const)
+        .filter(([, rows]) => rows !== '[]')
+    );
+
+  const changedSince = (before: Map<string, string>, dataset: MemoryDataset): string[] => {
+    const after = tablesOf(dataset);
+    return [...new Set([...before.keys(), ...after.keys()])]
+      .filter((model) => before.get(model) !== after.get(model))
+      .sort();
+  };
+
   const DOORS = [
     ['POST /orders/:id/sign', `/bff/v0/orders/${ORDER_A}/sign`, {}],
     ['POST /orders/:id/transmit', `/bff/v0/orders/${ORDER_A}/transmit`, {}],
@@ -2628,11 +2656,19 @@ describe('a write on a chart is not a way round the gate', () => {
   it.each(DOORS)(
     '%s is refused on a chart nothing connects the writer to',
     async (_l, path, body) => {
-      const { app } = strangerApp();
+      const { app, dataset } = strangerApp();
+      const before = tablesOf(dataset);
 
       // 404 and not 403, the same as every read: a 403 confirms the row exists to
       // somebody who may not see it.
       expect((await call(app, 'post', path, { body })).status).toBe(404);
+      // The status says the REPLY was refused. It does not say the WRITE was.
+      // Measured on the order transitions: with the chart gate moved below its
+      // update, `transmit` wrote `TRANSMITTED` with a `transmittedAt` stamp and
+      // `cancel` wrote `CANCELLED`, and both still answered 404 with every
+      // assertion above green. Fourteen doors share this line, so the ordering
+      // each of them relies on is asserted here rather than trusted.
+      expect(changedSince(before, dataset)).toEqual([]);
     }
   );
 

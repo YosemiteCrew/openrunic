@@ -2342,19 +2342,20 @@ describe('every chart on a page is decided at the same instant', () => {
 /**
  * The instant is the one the application was handed (#426).
  *
- * A separate block on purpose. The suite above installs `vi.useFakeTimers` in a
- * `beforeEach`, so a case written there runs under a faked `Date` however it is
- * spelled - and a faked wall clock and the injected clock are then the same
- * value, which is why an arm inside that block cannot tell them apart. An
- * earlier attempt at this case lived there, passed under every revert, and was
- * deleted.
+ * The arms above cover `receivedAt` being stamped once and read. They do not
+ * reach the threading itself - `createApp`'s `now`, the chain forwarding it,
+ * and stage 1 stamping from it - because they run under a faked clock set TO
+ * `FIXED_NOW`, and a faked wall clock at the injected instant is the same value
+ * as the injected one.
  *
- * No decorator and no timers here. The membership's period ends BETWEEN the
- * clock the test supplies and the real one, so the two disagree about whether it
- * is in force: read `receivedAt` and the team holds, read `new Date()` and it
- * lapsed weeks ago. That is what covers the threading - `createApp`'s `now`,
- * the chain forwarding it, and stage 1 stamping from it - which the arms above
- * do not reach.
+ * What is needed is a disagreement between the two clocks, not the absence of a
+ * fake one. This case gets it by putting the membership's period between the
+ * clock the test supplies and the real one: read `receivedAt` and the team
+ * holds, read `new Date()` and it lapsed weeks ago. Setting a fake clock PAST
+ * the period would do the same job inside the block above, which is worth
+ * saying because an earlier attempt at this case lived there, meant to run
+ * without fake timers, and got the block's frozen clock anyway - so there was
+ * no disagreement for it to find and it passed under every revert.
  */
 describe('a chart decision reads the clock the application was given', () => {
   it('holds a membership that the wall clock would call expired', async () => {

@@ -12,47 +12,35 @@
  * drill switches itself on the moment the screens land, with nobody having to
  * remember to enable it.
  *
+ * That exemption is narrow on purpose, and it used not to be: exiting zero for
+ * "the screens are not here yet" also exited zero for "I am looking in the
+ * wrong place", which is what this repository was actually in for fifteen days.
+ * A surface that is present but not where this script expects it now FAILS.
+ *
  * When the surface IS present, a failure here fails the build. This is the
  * acceptance test for the product; it is not advisory.
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { classify, findPages } from './required-routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 
 /**
- * One route per clinical area. All of them have to exist: a partial surface
- * would produce a drill that passes having skipped half the day.
- *
- * Under `(app)`, which is a Next route group: a directory whose name is in
- * parentheses groups files without appearing in the URL. These paths were the
- * bare ones until the screens moved into that group, and this list did not move
- * with them - so the check below reported `Missing 11 of 11` and exited zero,
- * and the acceptance test for the product did not run for fifteen days while
- * its job stayed green. See #407 for the harder half: nothing here can tell
- * "the screens are not here yet" from "I am looking in the wrong place".
+ * Which screens the drill needs, and whether this branch has them, live in
+ * required-routes.mjs - with the reasoning and the tests. The short version is
+ * that this check used to answer `existsSync` on eleven literal paths, so a
+ * list that went out of date and a branch with no clinical surface produced the
+ * same notice and the same exit code. It now distinguishes them, and only one
+ * of the two exits zero.
  */
-const REQUIRED_ROUTES = [
-  'apps/web/src/app/(app)/schedule/page.tsx',
-  'apps/web/src/app/(app)/schedule/flow-board/page.tsx',
-  'apps/web/src/app/(app)/patients/[id]/page.tsx',
-  'apps/web/src/app/(app)/encounters/[id]/page.tsx',
-  'apps/web/src/app/(app)/orders/new/page.tsx',
-  'apps/web/src/app/(app)/results/page.tsx',
-  'apps/web/src/app/(app)/billing/charges/page.tsx',
-  'apps/web/src/app/(app)/billing/claims/page.tsx',
-  'apps/web/src/app/(app)/billing/remittance/page.tsx',
-  'apps/web/src/app/(app)/billing/payments/page.tsx',
-  'apps/web/src/app/(app)/admin/audit/page.tsx',
-];
+const { verdict, moved, missing, present } = classify(findPages(repoRoot));
 
-const missing = REQUIRED_ROUTES.filter((route) => !existsSync(path.join(repoRoot, route)));
-
-if (missing.length > 0) {
+if (verdict === 'absent') {
   const lines = [
     '',
     '  ============================================================',
@@ -63,7 +51,9 @@ if (missing.length > 0) {
     '  there is nothing for the drill to drive. It has not passed;',
     '  it has not run.',
     '',
-    `  Missing ${String(missing.length)} of ${String(REQUIRED_ROUTES.length)} required routes, including:`,
+    `  None of the ${String(missing.length)} required routes exists under any route`,
+    '  grouping, which is what makes this an empty branch rather than a',
+    '  stale list. Checked, and absent:',
     ...missing.slice(0, 4).map((route) => `    ${route}`),
     '',
     '  This check switches itself on as soon as those screens merge.',
@@ -72,6 +62,44 @@ if (missing.length > 0) {
   ];
   process.stdout.write(`${lines.join('\n')}\n`);
   process.exit(0);
+}
+
+if (verdict === 'stale') {
+  const lines = [
+    '',
+    '  ============================================================',
+    '  THE DRILL CANNOT TELL WHETHER IT DROVE THE DAY',
+    '  ============================================================',
+    '',
+    '  The clinical surface is present on this branch, but not where',
+    '  this script expects it. That is a stale list, not an empty',
+    '  branch, so it fails rather than exempting itself - the failure',
+    '  this replaces was fifteen days of a green job over a drill that',
+    '  never ran.',
+    '',
+    ...(moved.length > 0
+      ? [
+          `  ${String(moved.length)} route(s) exist somewhere else:`,
+          ...moved.map((route) => `    expected  ${route.expected}\n    found     ${route.found}`),
+          '',
+        ]
+      : []),
+    ...(missing.length > 0
+      ? [
+          `  ${String(missing.length)} route(s) do not exist under any grouping, while`,
+          `  ${String(present.length + moved.length)} of the others do - a half-present surface would`,
+          '  produce a drill that passes having skipped part of the day:',
+          ...missing.map((route) => `    ${route}`),
+          '',
+        ]
+      : []),
+    '  Fix REQUIRED_ROUTES in apps/e2e/scripts/required-routes.mjs to name',
+    '  where the screens actually are, then run this again.',
+    '  ============================================================',
+    '',
+  ];
+  process.stdout.write(`${lines.join('\n')}\n`);
+  process.exit(1);
 }
 
 /**

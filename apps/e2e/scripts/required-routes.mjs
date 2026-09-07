@@ -1,0 +1,158 @@
+#!/usr/bin/env node
+// Which clinical screens the drill needs, and whether this branch has them.
+//
+// The drill exercises the practice EMR surface. That surface is built by its
+// own workstream and not every branch carries it, so run-drill.mjs checks for
+// the screens first and exits zero with a loud notice when they are absent -
+// which keeps a branch with nothing to drive from failing on a drill it cannot
+// run, and switches the drill on by itself the moment the screens land.
+//
+// That exemption is the whole subject of this file, because for fifteen days it
+// was not an exemption at all. #26 wrote the list against the bare paths; #160
+// moved every screen into the `(app)` route group and the list did not move
+// with it. So the check reported `Missing 11 of 11 required routes` and exited
+// zero on a branch that carried all eleven, the acceptance test for the product
+// did not run from 2026-08-23 to 2026-09-07, and its job was green throughout.
+//
+// The path list was wrong, and fixing it was one commit. What made that cost
+// fifteen days rather than one run is here: `existsSync` on a list of literal
+// paths answers ONE question, and the notice printed for a `false` answered a
+// different one. "The screens are not here yet" and "I am looking in the wrong
+// place" produced the same output and the same exit code, and only one of them
+// is a reason not to fail. An early return is an unlogged exemption unless
+// something can distinguish it from a broken probe.
+//
+// So the exemption is now something the check PROVES rather than assumes. It
+// looks at the whole route tree, not at eleven literal strings, and it has
+// three answers instead of one:
+//
+//   run        every required screen is where the list says. Drive the day.
+//   absent     no required screen exists under ANY route grouping. The branch
+//              genuinely has no clinical surface: exempt, exit zero.
+//   stale      a required screen exists, but not at the listed path - or some
+//              are present and some are not. The list is wrong, or the surface
+//              is half here. Either way the drill cannot be trusted to have
+//              driven the day, so this FAILS.
+//
+// `absent` is the only one that exits zero, and it now means what it says.
+//
+// Deliberately dependency-free and importable without side effects: its tests
+// run in the `CI scripts (node --test)` job, which installs nothing.
+
+import { existsSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
+/**
+ * The Next application's route root, relative to the repository root. Every
+ * path below is relative to the repository root too, so the two can be
+ * compared without either side knowing where the checkout lives.
+ */
+export const APP_DIR = 'apps/web/src/app';
+
+/**
+ * One route per clinical area. All of them have to exist: a partial surface
+ * would produce a drill that passes having skipped half the day, which is why
+ * `stale` covers "some present, some missing" as well as "moved".
+ */
+export const REQUIRED_ROUTES = [
+  'apps/web/src/app/(app)/schedule/page.tsx',
+  'apps/web/src/app/(app)/schedule/flow-board/page.tsx',
+  'apps/web/src/app/(app)/patients/[id]/page.tsx',
+  'apps/web/src/app/(app)/encounters/[id]/page.tsx',
+  'apps/web/src/app/(app)/orders/new/page.tsx',
+  'apps/web/src/app/(app)/results/page.tsx',
+  'apps/web/src/app/(app)/billing/charges/page.tsx',
+  'apps/web/src/app/(app)/billing/claims/page.tsx',
+  'apps/web/src/app/(app)/billing/remittance/page.tsx',
+  'apps/web/src/app/(app)/billing/payments/page.tsx',
+  'apps/web/src/app/(app)/admin/audit/page.tsx',
+];
+
+/**
+ * The URL a route file serves, expressed as a path with the route groups taken
+ * out. A directory whose name is in parentheses groups files without appearing
+ * in the URL, so `(app)/schedule/page.tsx` and `schedule/page.tsx` are the same
+ * screen and `(clinical)/schedule/page.tsx` is that screen regrouped.
+ *
+ * Only a fully parenthesised segment is a group. `[id]` is a dynamic segment
+ * and DOES appear in the URL, so it must survive - dropping it would make
+ * `patients/[id]/page.tsx` and `patients/page.tsx` the same key and let a
+ * missing patient chart pass as a present one.
+ */
+export function routeKey(routePath) {
+  return routePath
+    .split('/')
+    .filter((segment) => !(segment.startsWith('(') && segment.endsWith(')') && segment.length > 2))
+    .join('/');
+}
+
+/**
+ * Every `page.tsx` under the route root, as repository-relative paths.
+ *
+ * Returns an empty array when the route root itself is absent, which is the
+ * genuinely-no-surface case rather than an error.
+ */
+export function findPages(repoRoot, appDir = APP_DIR) {
+  const root = path.join(repoRoot, appDir);
+  if (!existsSync(root)) return [];
+
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name === 'page.tsx') found.push(path.relative(repoRoot, full));
+    }
+  };
+  walk(root);
+  return found;
+}
+
+/**
+ * Decide whether the drill can run, given the pages that exist.
+ *
+ * `pages` is repository-relative paths, as findPages returns. The comparison is
+ * on route keys rather than on literal strings, so a screen that has been
+ * regrouped is found and reported as MOVED rather than counted as missing -
+ * which is the whole point, and is the state this repository was in.
+ */
+export function classify(pages, requiredRoutes = REQUIRED_ROUTES) {
+  const literal = new Set(pages);
+  const byKey = new Map();
+  for (const page of pages) {
+    // First writer wins, so a second file with the same key cannot displace the
+    // one already reported. Ordering is the walk's, which is deterministic.
+    if (!byKey.has(routeKey(page))) byKey.set(routeKey(page), page);
+  }
+
+  const present = [];
+  const moved = [];
+  const missing = [];
+
+  for (const route of requiredRoutes) {
+    if (literal.has(route)) {
+      present.push(route);
+      continue;
+    }
+    const found = byKey.get(routeKey(route));
+    if (found) moved.push({ expected: route, found });
+    else missing.push(route);
+  }
+
+  // `present`, `moved` and `missing` partition the required list - each route
+  // lands in exactly one - so these three tests are mutually exclusive and the
+  // order they are written in is not load-bearing. That is worth saying because
+  // the first draft of this comment claimed the opposite, on the reasoning that
+  // a fully regrouped branch has eleven missing literal paths: it does, and none
+  // of them reaches `missing`, because a route found under another grouping is
+  // `moved`. An arm that swapped these two lines was GREEN, which is what said
+  // so. What stops a regrouped branch being read as an empty one is the key
+  // lookup above, not the sequence here.
+  let verdict;
+  if (moved.length > 0) verdict = 'stale';
+  else if (missing.length > 0 && missing.length === requiredRoutes.length) verdict = 'absent';
+  else if (missing.length > 0) verdict = 'stale';
+  else verdict = 'run';
+
+  return { verdict, present, moved, missing };
+}

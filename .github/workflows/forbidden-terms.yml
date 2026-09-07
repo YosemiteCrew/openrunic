@@ -426,6 +426,18 @@ jobs:
             > "${RUNNER_TEMP}/surfaces/diff"
           git diff --name-only --diff-filter=ACMRT "${MERGE_BASE}" refs/remotes/origin/gate-head \
             > "${RUNNER_TEMP}/surfaces/names"
+          # `messages` is the only surface the AI-attribution arm reads, and the
+          # reason is that this range is what the pull request INTRODUCES. The
+          # same trailer in a pull-request BODY quoting an upstream changelog is
+          # somebody else's commit being described, not ours being merged, so
+          # scoping to this range separates the two structurally instead of by
+          # triage.
+          #
+          # RESIDUAL, stated rather than glossed: a branch that merges upstream
+          # commits puts THEIR messages into this range as well, and the arm
+          # would flag them. Feature branches here do not do that and bot
+          # dependency pull requests are single-commit, so it is small - but it
+          # is not zero, and this surface is not pure.
           git log --format=%B "${MERGE_BASE}..refs/remotes/origin/gate-head" \
             > "${RUNNER_TEMP}/surfaces/messages"
           # Through env and never interpolated into the script: the title and

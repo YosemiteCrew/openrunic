@@ -1992,9 +1992,19 @@ describe('every advertised search parameter narrows', () => {
    *   ?family=TestpersonZ,TestpersonB           200   total 0   first half matches nothing
    *
    * The comma is part of one value rather than a list separator, shown by what
-   * it DOES match and not only by what it does not. (`family` is a prefix
-   * match, so `?family=TestpersonA` returns two rows once that fifth patient
-   * exists; the four-row table above is the four-patient fixture.)
+   * it DOES match and not only by what it does not.
+   *
+   * `family` is a prefix match, which is why `?family=TestpersonA` returns two
+   * rows once that fifth patient exists and the four-row table above is the
+   * four-patient fixture. Two more arms, because `?family=Testperson`
+   * returning all five is equally true of a *contains* match and cannot tell
+   * the two apart - and `containsFold` sits in the same file as
+   * `startsWithFold`, serving the general `q` parameter:
+   *
+   *   ?family=personA                           200   total 0   prefix, not contains
+   *   ?family=testpersona                       200   total 2   and case-folded
+   *
+   * Every row here was re-run against `dev` after this landed.
    *
    * So the first value wins and the second is dropped without a word, and a
    * comma list is one value. `fhir/index.ts`

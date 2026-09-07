@@ -766,7 +766,10 @@ describe('the Prisma audit query', () => {
     seedChain(h);
     const query = createPrismaAuditQuery(h.port, h.scope);
 
-    await expect(query.verifyChain()).resolves.toMatchObject({ valid: true, checked: 3 });
+    await expect(query.verifyChain()).resolves.toMatchObject({
+      verification: { valid: true, checked: 3 },
+      recorded: true,
+    });
   });
 
   it('reports where a tampered chain first breaks', async () => {
@@ -776,9 +779,8 @@ describe('the Prisma audit query', () => {
     tampered.action = 'patient.definitely-not-deleted';
 
     await expect(createPrismaAuditQuery(h.port, h.scope).verifyChain()).resolves.toMatchObject({
-      valid: false,
-      brokenAtSeq: 2n,
-      reason: 'hash-mismatch',
+      verification: { valid: false, brokenAtSeq: 2n, reason: 'hash-mismatch' },
+      recorded: true,
     });
   });
 });

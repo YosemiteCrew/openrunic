@@ -2174,6 +2174,9 @@ describe('GET /bff/v0/audit/verify', () => {
       tailSeq: null,
       brokenAtSeq: null,
       reason: null,
+      // The verification of an empty chain is still a verification somebody
+      // asked for, and it is recorded like any other.
+      recorded: true,
     });
   });
 

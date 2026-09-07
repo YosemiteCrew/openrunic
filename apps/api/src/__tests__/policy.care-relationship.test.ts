@@ -2338,3 +2338,43 @@ describe('every chart on a page is decided at the same instant', () => {
     expect(advanced.status).toBe(200);
   });
 });
+
+/**
+ * The instant is the one the application was handed (#426).
+ *
+ * A separate block on purpose. The suite above installs `vi.useFakeTimers` in a
+ * `beforeEach`, so a case written there runs under a faked `Date` however it is
+ * spelled - and a faked wall clock and the injected clock are then the same
+ * value, which is why an arm inside that block cannot tell them apart. An
+ * earlier attempt at this case lived there, passed under every revert, and was
+ * deleted.
+ *
+ * No decorator and no timers here. The membership's period ends BETWEEN the
+ * clock the test supplies and the real one, so the two disagree about whether it
+ * is in force: read `receivedAt` and the team holds, read `new Date()` and it
+ * lapsed weeks ago. That is what covers the threading - `createApp`'s `now`,
+ * the chain forwarding it, and stage 1 stamping from it - which the arms above
+ * do not reach.
+ */
+describe('a chart decision reads the clock the application was given', () => {
+  it('holds a membership that the wall clock would call expired', async () => {
+    const { app, dataset } = createTestApp();
+    const chart = testId(9_480);
+    seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: 'OR-109480' }));
+    aTeamWithMember(dataset, {
+      patientId: chart,
+      teamId: testId(9_481),
+      memberId: testId(9_482),
+      /* One week after FIXED_NOW and long before any wall clock this suite will
+         run at. In force at the injected instant, lapsed at the real one. */
+      teamPeriodEnd: new Date(FIXED_NOW.getTime() + 7 * 24 * 60 * 60_000),
+      periodEnd: null,
+    });
+
+    const res = await app.request(BOUNDARIES[0].path(chart), {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+});

@@ -2681,6 +2681,70 @@ describe('a write on a chart is not a way round the gate', () => {
     expect(res.status).toBe(404);
   });
 
+  /**
+   * The generated seam, and the door the transition routes above do not cover.
+   *
+   * `defineCrud`'s PATCH gates the chart of the row it FOUND, which is the one
+   * the caller is reading out of. A patch body carrying the chart column moves
+   * the row into a different chart, and until #330 nothing asked about that
+   * one: a caller with a relationship to the origin could take a document out
+   * of a chart they can open and put it into one they cannot, in one request,
+   * and then be unable to read back what they had done.
+   *
+   * `documentPatchSchema` is the only one of the twenty-three `*PatchSchema`
+   * exports that carries `patientId`, so this is the only shape that reaches
+   * it today - which is a fact about the schemas rather than about the seam,
+   * and the gate is on the seam.
+   *
+   * Both halves of the supersede case's hard-won setup apply here. The document
+   * in the PATH is one the reader may open, or the gate that already existed
+   * answers first with the same 404 and hides whether the new one fired at all.
+   * And the destination chart is a real one the reader cannot reach rather than
+   * `null`: `Document.patientId` is nullable, and a null destination makes
+   * `chartIdOf` `undefined` and `gateCharts` iterate an empty set, so the case
+   * would pass with the gate deleted.
+   */
+  it('PATCH /documents/:id gates the chart the patch names, not only the row it found', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    // The origin only. The destination is a chart nothing connects this reader
+    // to, so the only thing that can refuse is the gate on the patch body.
+    authorise(harness.dataset, PATIENT);
+
+    const res = await call(harness.app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
+      body: { patientId: OTHER_PATIENT },
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('PATCH /documents/:id still answers when both charts are reachable', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    authorise(harness.dataset, PATIENT, OTHER_PATIENT);
+
+    const res = await call(harness.app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
+      body: { patientId: OTHER_PATIENT },
+    });
+
+    expect(res.status).not.toBe(404);
+  });
+
+  it('PATCH /documents/:id is unaffected when the patch names no chart', async () => {
+    // The must-not-fire arm. A patch that carries no chart column re-asks the
+    // question the row gate already answered, and must not start refusing the
+    // ordinary edit that every other resource's PATCH is.
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    authorise(harness.dataset, PATIENT);
+
+    const res = await call(harness.app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
+      body: { title: 'A retitled document' },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
   it('POST /documents/:id/supersede still answers when both charts are reachable', async () => {
     const harness = createTestApp();
     seed(harness.dataset, 'Document', makeDocumentRow());

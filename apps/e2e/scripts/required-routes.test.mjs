@@ -41,11 +41,16 @@ function treeWith(files) {
   return root;
 }
 
-/** The same eleven screens, with the `(app)` group replaced by `group`. */
+/**
+ * The same eleven screens, with the `(app)` group replaced by `group`.
+ *
+ * Built from `APP_DIR` rather than from a copy of it. A hardcoded prefix here
+ * writes fixtures under one root while the walker reads another the moment
+ * `APP_DIR` moves, and the two cases that then fail say `'absent' !== 'stale'`
+ * without naming why.
+ */
 function regrouped(group) {
-  return REQUIRED_ROUTES.map((route) =>
-    route.replace('apps/web/src/app/(app)/', `apps/web/src/app/${group}`)
-  );
+  return REQUIRED_ROUTES.map((route) => route.replace(`${APP_DIR}/(app)/`, `${APP_DIR}/${group}`));
 }
 
 test('a route group is dropped from the key and a dynamic segment is not', () => {
@@ -147,8 +152,8 @@ test('the 2026-08-23 regression: every screen at the bare path is stale, not abs
   // The report has to name both ends, because the fix is to edit the list and
   // a message that only says "missing" sends the reader to the wrong file.
   assert.deepEqual(result.moved[0], {
-    expected: 'apps/web/src/app/(app)/schedule/page.tsx',
-    found: 'apps/web/src/app/schedule/page.tsx',
+    expected: `${APP_DIR}/(app)/schedule/page.tsx`,
+    found: `${APP_DIR}/schedule/page.tsx`,
   });
 });
 
@@ -157,7 +162,7 @@ test('screens regrouped under a different name are stale, not absent', () => {
 
   assert.equal(result.verdict, 'stale');
   assert.equal(result.moved.length, REQUIRED_ROUTES.length);
-  assert.equal(result.moved[0].found, 'apps/web/src/app/(clinical)/schedule/page.tsx');
+  assert.equal(result.moved[0].found, `${APP_DIR}/(clinical)/schedule/page.tsx`);
 });
 
 test('a half-present surface is stale rather than exempt', () => {
@@ -177,12 +182,12 @@ test('a missing dynamic route is not found as a moved one', () => {
   // dropped `[id]` these two would share a key and the chart would be reported
   // as merely moved, which is the same silence in a new place.
   const withoutChart = REQUIRED_ROUTES.filter(
-    (route) => route !== 'apps/web/src/app/(app)/patients/[id]/page.tsx'
-  ).concat('apps/web/src/app/(app)/patients/page.tsx');
+    (route) => route !== `${APP_DIR}/(app)/patients/[id]/page.tsx`
+  ).concat(`${APP_DIR}/(app)/patients/page.tsx`);
   const result = classify(withoutChart);
 
   assert.equal(result.verdict, 'stale');
-  assert.deepEqual(result.missing, ['apps/web/src/app/(app)/patients/[id]/page.tsx']);
+  assert.deepEqual(result.missing, [`${APP_DIR}/(app)/patients/[id]/page.tsx`]);
   assert.deepEqual(result.moved, []);
 });
 
@@ -191,9 +196,9 @@ test('unrelated screens alongside the required ones do not change the verdict', 
   // turn `run` into anything else.
   const result = classify([
     ...REQUIRED_ROUTES,
-    'apps/web/src/app/(marketing)/pricing/page.tsx',
-    'apps/web/src/app/(app)/settings/page.tsx',
-    'apps/web/src/app/page.tsx',
+    `${APP_DIR}/(marketing)/pricing/page.tsx`,
+    `${APP_DIR}/(app)/settings/page.tsx`,
+    `${APP_DIR}/page.tsx`,
   ]);
 
   assert.equal(result.verdict, 'run');
@@ -232,14 +237,17 @@ test('APP_DIR names a route root that exists in THIS checkout and holds pages', 
   assert.ok(pages.length > 0, `no page.tsx under ${APP_DIR} - APP_DIR is stale`);
   // control: a root that does not exist returns the same empty array, so the
   // assertion above is only meaningful next to this one.
-  assert.equal(findRouteRoot(REPO_ROOT, 'apps/web/src/no-such-app'), null);
-  assert.deepEqual(findPages(REPO_ROOT, 'apps/web/src/no-such-app'), []);
+  assert.equal(findRouteRoot(REPO_ROOT, `${APP_DIR}-no-such-suffix`), null);
+  assert.deepEqual(findPages(REPO_ROOT, `${APP_DIR}-no-such-suffix`), []);
 });
 
 test('a route root that is not there is unrooted, not absent', () => {
   // `findPages` returns [] for "no pages here" and for "no root here", and
   // `absent` is the verdict that exits zero. They have to be different answers.
-  const moved = treeWith(['apps/web/app/(app)/schedule/page.tsx']);
+  // A route root that is deliberately NOT APP_DIR, whatever APP_DIR happens to
+  // be - deriving this one from APP_DIR would make the two collide the moment
+  // the route root moves, which is the fault this case exists to catch.
+  const moved = treeWith(['apps/web/elsewhere/(app)/schedule/page.tsx']);
   try {
     assert.equal(inspect(moved).verdict, 'unrooted');
     // control: the same tree with the root where APP_DIR says gets a real
@@ -260,4 +268,17 @@ test('a route root that is not there is unrooted, not absent', () => {
   } finally {
     rmSync(moved, { recursive: true, force: true });
   }
+});
+
+test('every required route is under APP_DIR, so fixing one fixes both', () => {
+  // The `unrooted` notice says "fix APP_DIR". Doing exactly that, and only
+  // that, used to leave eleven required paths carrying the OLD root - so the
+  // found keys and the required keys could never meet again, and thirty served
+  // pages read as `absent` and exited zero. The original defect, reached by
+  // following the remedy. `REQUIRED_ROUTES` is derived from `APP_DIR` now; this
+  // is the assertion that says so if anyone writes them out again.
+  for (const route of REQUIRED_ROUTES) {
+    assert.ok(route.startsWith(`${APP_DIR}/`), `${route} is not under ${APP_DIR}`);
+  }
+  assert.equal(REQUIRED_ROUTES.length, 11);
 });

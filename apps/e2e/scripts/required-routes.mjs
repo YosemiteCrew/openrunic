@@ -56,19 +56,32 @@ export const APP_DIR = 'apps/web/src/app';
  * would produce a drill that passes having skipped half the day, which is why
  * `stale` covers "some present, some missing" as well as "moved".
  */
-export const REQUIRED_ROUTES = [
-  'apps/web/src/app/(app)/schedule/page.tsx',
-  'apps/web/src/app/(app)/schedule/flow-board/page.tsx',
-  'apps/web/src/app/(app)/patients/[id]/page.tsx',
-  'apps/web/src/app/(app)/encounters/[id]/page.tsx',
-  'apps/web/src/app/(app)/orders/new/page.tsx',
-  'apps/web/src/app/(app)/results/page.tsx',
-  'apps/web/src/app/(app)/billing/charges/page.tsx',
-  'apps/web/src/app/(app)/billing/claims/page.tsx',
-  'apps/web/src/app/(app)/billing/remittance/page.tsx',
-  'apps/web/src/app/(app)/billing/payments/page.tsx',
-  'apps/web/src/app/(app)/admin/audit/page.tsx',
+const CLINICAL_ROUTES = [
+  '(app)/schedule/page.tsx',
+  '(app)/schedule/flow-board/page.tsx',
+  '(app)/patients/[id]/page.tsx',
+  '(app)/encounters/[id]/page.tsx',
+  '(app)/orders/new/page.tsx',
+  '(app)/results/page.tsx',
+  '(app)/billing/charges/page.tsx',
+  '(app)/billing/claims/page.tsx',
+  '(app)/billing/remittance/page.tsx',
+  '(app)/billing/payments/page.tsx',
+  '(app)/admin/audit/page.tsx',
 ];
+
+/**
+ * Derived from `APP_DIR` rather than written out, so the two cannot drift.
+ *
+ * They could, and following this file's own advice was the way in: the
+ * `unrooted` notice says "fix APP_DIR", and doing exactly that - and only that -
+ * used to leave eleven required paths still carrying the OLD root, so the found
+ * keys and the required keys could never meet again. Thirty served pages,
+ * verdict `absent`, exit zero: the original defect, reached by following the
+ * remedy. Deriving one from the other makes that unreachable rather than
+ * asserted.
+ */
+export const REQUIRED_ROUTES = CLINICAL_ROUTES.map((route) => `${APP_DIR}/${route}`);
 
 /**
  * The URL a route file serves, expressed as a path with the route groups taken

@@ -256,9 +256,22 @@ will never post at all, and the distance between them is _wait four minutes_ and
 The discriminator is cheap and belongs here rather than in anyone's notes:
 
 ```
-required context ABSENT + any check run from its producing workflow queued or in_progress -> transient
-required context ABSENT + nothing from that workflow on the head at all                   -> permanent
+gh api "repos/O/R/actions/runs?head_sha=<the full 40 characters>"
+
+required context ABSENT + its producing workflow's RUN is queued or in_progress -> transient
+required context ABSENT + that run is completed, or has no run on this head      -> permanent
 ```
+
+**Read the workflow _run_, not its check runs.** A run creates its downstream jobs as its upstream
+ones finish, so in the first minute after a push the check-run list under-reports: measured on this
+document's own head, the number of check runs not yet `completed` went `1` at t=60s, `31` at t=80s,
+`28` at t=100s and `8` at t=120s. At t=60s "one thing still running" did not mean nearly finished;
+it meant the thirty jobs that would block had not been created yet. Keying the transient reading on
+check runs makes the empty case - nothing from that workflow on the head - read as **permanent**
+during exactly the window when nothing has started, which is the wrong answer in the direction that
+sends someone to edit a ruleset. The run exists from the moment it is queued and is `in_progress`
+while its jobs are still appearing. `head_sha` needs all forty characters; a short sha silently
+returns nothing, which is the same false permanent.
 
 `neutral` is **not measurable from history**, which is a stronger statement than "not yet
 measured". The `CodeQL` aggregate has concluded `neutral` on nine pull requests here - seven on

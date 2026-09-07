@@ -20,6 +20,8 @@ export interface RequestIdOptions {
    * be too late to say so.
    */
   responseFormatFor?: (path: string) => AppEnv['Variables']['responseFormat'];
+  /** The application's clock, so a test can choose the request's instant. */
+  now?: () => Date;
 }
 
 /**
@@ -36,6 +38,10 @@ export function requestId(options: RequestIdOptions = {}) {
   const generate = options.generate ?? uuidv7;
   const header = options.header ?? 'x-request-id';
   const responseFormatFor = options.responseFormatFor ?? ((): 'problem' => 'problem');
+  // Read here because this stage runs first: "correlation exists before
+  // anything can fail" applies to the instant for the same reason it applies to
+  // the id, and a later stage would already have decisions behind it.
+  const now = options.now ?? ((): Date => new Date());
 
   return createMiddleware<AppEnv>(async (c, next) => {
     const inbound = c.req.header(header);
@@ -47,6 +53,7 @@ export function requestId(options: RequestIdOptions = {}) {
         : generate();
 
     c.set('requestId', id);
+    c.set('receivedAt', now());
     c.set('responseFormat', responseFormatFor(c.req.path));
     await next();
     c.res.headers.set(header, id);

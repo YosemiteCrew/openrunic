@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RELATIONSHIP_SOURCES } from '../policy/care-relationship.js';
+import type { RepositoryRegistry } from '../repositories/types.js';
 import type { ScopedRow } from '../repositories/rows.js';
 import type { RemittanceStatus } from '../repositories/specs/financial.js';
 
@@ -2090,5 +2091,129 @@ describe('a task is evidence only when somebody else produced it', () => {
     expect(res.status).toBe(422);
 
     expect((await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) })).status).toBe(404);
+  });
+});
+
+/**
+ * One request, one instant (#426).
+ *
+ * `gateCharts` is the only thing here that takes more than one chart decision
+ * per request: it asks once per distinct chart on a page, sequentially. Every
+ * addressed read gates exactly one chart, so no `{id}` route can show this -
+ * the case has to be a LIST spanning two charts.
+ *
+ * Three of the seven relationship sources are bounded by a period or a window,
+ * so before this the second gate could read a later clock than the first. That
+ * splits one page: a membership authorises the first chart and has lapsed by
+ * the second. Worse where it does not split the status - `middleware/policy.ts`
+ * derives the `breakglass` compliance column from WHICH source authorised, so a
+ * grant expiring mid-response records half a page as emergency access and half
+ * as ordinary, with a `200` either way.
+ *
+ * Nothing waits for real time. `vi.useFakeTimers` freezes the clock and the
+ * decorator advances it at an ordered position in that loop - a place rather
+ * than an interval, the same technique `routes.patients.test.ts:737` uses.
+ */
+describe('every chart on a page is decided at the same instant', () => {
+  const BOUNDARY = new Date(FIXED_NOW.getTime() + 60 * 60_000);
+  const CHART_ONE = testId(9_410);
+  const CHART_TWO = testId(9_411);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(BOUNDARY.getTime() - 60_000));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Advances past the boundary the first time the deciding collection is read.
+   *
+   * `decorateRepositories` hands over `{ dataset, forRequest }` and not the
+   * collections, so a decorator that looks for anything with a `.list` finds
+   * nothing and passes through in silence - which reads exactly like a system
+   * with no defect. Wrap `forRequest` and proxy what it returns.
+   */
+  const advanceOnFirstTeamRead = () => {
+    let fired = false;
+    return (registry: RepositoryRegistry): RepositoryRegistry => ({
+      forRequest: (scope) => {
+        const real = registry.forRequest(scope);
+        return {
+          ...real,
+          careTeams: {
+            ...real.careTeams,
+            list: async (query: Parameters<typeof real.careTeams.list>[0]) => {
+              if (!fired) {
+                fired = true;
+                vi.setSystemTime(new Date(BOUNDARY.getTime() + 60_000));
+              }
+              return real.careTeams.list(query);
+            },
+          },
+        };
+      },
+    });
+  };
+
+  const twoChartsOnePage = (dataset: Dataset): void => {
+    let n = 9_420;
+    for (const chart of [CHART_ONE, CHART_TWO]) {
+      seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: `OR-10${n}` }));
+      /* The team's period is the only thing that can answer. No encounter, no
+         appointment, no task: those sources never read the clock, and seeding
+         one would authorise the chart whatever the instant. */
+      aTeamWithMember(dataset, {
+        patientId: chart,
+        teamId: testId((n += 1)),
+        memberId: testId((n += 1)),
+        teamPeriodEnd: BOUNDARY,
+        periodEnd: null,
+      });
+      seed(dataset, 'Document', {
+        ...storageColumns(testId((n += 1))),
+        patientId: chart,
+        encounterId: null,
+        category: '11488-4',
+        title: 'Consult note',
+        storageKey: `documents/${chart}.pdf`,
+        contentType: 'application/pdf',
+        sha256: 'a'.repeat(64),
+        byteSize: 20_480,
+        source: 'FAX',
+        status: 'INBOX',
+        sensitivityClass: 'NORMAL',
+        receivedAt: FIXED_NOW,
+        filedAt: null,
+        filedById: null,
+        expiresAt: null,
+        supersededById: null,
+        errorReason: null,
+      });
+    }
+  };
+
+  const listDocuments = async (advance: boolean): Promise<number> => {
+    const { app, dataset } = createTestApp(
+      advance ? { decorateRepositories: advanceOnFirstTeamRead() } : {}
+    );
+    twoChartsOnePage(dataset);
+    const res = await app.request('/bff/v0/documents?pageSize=10', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    return res.status;
+  };
+
+  it('does not refuse the second chart because the clock moved after the first', async () => {
+    /* The control. Both memberships are in force at the request's instant, so
+       the page is readable and the case below is not measuring a refusal that
+       would have happened anyway. */
+    expect(await listDocuments(false)).toBe(200);
+
+    /* The arm. The clock crosses the teams' `periodEnd` between the two gates.
+       Reading `receivedAt` makes both decisions at the instant the request
+       arrived; taking a fresh `new Date()` per chart refuses the second. */
+    expect(await listDocuments(true)).toBe(200);
   });
 });

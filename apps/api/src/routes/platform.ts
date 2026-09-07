@@ -865,8 +865,8 @@ export function platformRoutes(): Hono<AppEnv> {
   });
 
   router.get('/audit/verify', requirePermission('audit.read'), async (c) => {
-    const result = await repositories(c).audit.verifyChain();
-    return c.json(toAuditVerificationDto(result));
+    const outcome = await repositories(c).audit.verifyChain();
+    return c.json(toAuditVerificationDto(outcome));
   });
 
   router.get('/audit/:id', requirePermission('audit.read'), async (c) => {

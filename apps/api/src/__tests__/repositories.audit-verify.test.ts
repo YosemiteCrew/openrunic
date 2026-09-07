@@ -72,12 +72,36 @@ describe.each(SUBJECTS)('verifyChain on the %s repositories', (_name, build) => 
     const sink = createMemoryAuditSink();
     const repositories = auditedRegistry(build(), sink);
 
-    const result = await repositories.audit.verifyChain();
+    const outcome = await repositories.audit.verifyChain();
 
-    expect(result.valid).toBe(true);
+    expect(outcome.verification.valid).toBe(true);
+    expect(outcome.recorded).toBe(true);
     const verifications = sink.writes().filter((entry) => entry.event.action === 'audit.verified');
     expect(verifications).toHaveLength(1);
     expect(verifications[0]?.event.metadata).toMatchObject({ valid: true, checked: 0 });
+  });
+
+  /**
+   * The verdict survives a recorder that cannot write.
+   *
+   * Before this, the walk completed, `recordVerification` threw, and the
+   * computed `{ valid, brokenAtSeq }` was discarded - so the same access that
+   * stops the audit sink writing also stopped the tamper report answering, and
+   * on this endpoint the sink and the chain are ONE store. Fail closed on the
+   * record and report it; do not fail closed on the answer.
+   */
+  it('keeps the verdict when the recorder is unavailable, and says so', async () => {
+    const sink = createMemoryAuditSink();
+    const rejecting = {
+      ...sink,
+      recordWrite: () => Promise.reject(new Error('audit sink unavailable')),
+    } as MemoryAuditSink;
+    const repositories = auditedRegistry(build(), rejecting);
+
+    const outcome = await repositories.audit.verifyChain();
+
+    expect(outcome.verification.valid).toBe(true);
+    expect(outcome.recorded).toBe(false);
   });
 
   it('records nothing when the chain is never verified', () => {

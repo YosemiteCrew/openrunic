@@ -85,10 +85,15 @@ export const MEDICATION_STATUS_LABELS: Record<MedicationStatus, { labelKey: stri
  * response body instead of parsing it, so the `status` and `source` on a
  * medication row are whatever the API sent: a member added to the Prisma enum
  * before this build knows the word for it reaches these lookups, and an indexed
- * read of it is `undefined`. `undefined.labelKey` is a `TypeError` thrown
- * during render, and `apps/web` has no error boundary, so one unrecognised row
- * would take the whole patient chart down rather than one cell - the eight rows
- * this build *can* name disappearing along with it.
+ * read of it is `undefined`. `undefined.labelKey` is a `TypeError` thrown during
+ * render, which `DowntimeBoundary` in `app/_shell/AppShell.tsx` catches - it
+ * wraps `SessionGate`, so it is above every signed-in screen rather than around
+ * this panel. Caught is not contained: the boundary replaces everything inside
+ * it, so one row this build has no word for costs the reader the whole screen -
+ * no tabs, no patient rail, no navigation, and the seven medications the build
+ * *can* name gone with the one it cannot. Measured on a running chart at
+ * `/patients/<id>`, not inferred: the page renders "this screen could not be
+ * displayed" and a reference code, and `getByRole('tab')` counts zero.
  *
  * So the read is widened to a string key deliberately, which is what the value
  * actually is at this boundary, and the fallback is load-bearing rather than

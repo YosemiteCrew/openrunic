@@ -131,9 +131,10 @@ describe('a medication in a state this build has no word for', () => {
    * the status and source columns read a `Record` keyed on this build's unions,
    * and `requestJson` casts the response body rather than parsing it, so the
    * value in that key is whatever the server sent. Before this, the read was
-   * indexed - `undefined.labelKey` - and `apps/web` has no error boundary, so
-   * one unrecognised row threw during render and took the whole chart with it,
-   * including the eight states this build can name.
+   * indexed - `undefined.labelKey` - so one unrecognised row threw during
+   * render. `DowntimeBoundary` catches that, and it wraps `SessionGate` rather
+   * than this panel, so what the reader lost was the whole screen: tabs, rail
+   * and navigation replaced by "this screen could not be displayed".
    *
    * The status is cast rather than picked from the union on purpose. A member
    * the fixture lacks is a fixture arm; only a member the TYPE lacks reaches the
@@ -186,9 +187,9 @@ describe('a medication in a state this build has no word for', () => {
   });
 
   it('does not take the rows this build can read down with it', () => {
-    /* The failure this replaces was not one bad cell. With no error boundary
-       above it, the throw removed the whole chart, so the medication a
-       clinician could have read went with the one nobody could. */
+    /* The failure this replaces was not one bad cell. The throw reached the
+       boundary above every signed-in screen, so the medication a clinician
+       could have read went with the one nobody could - and so did the tabs. */
     render(<MedicationsPanel medications={[KNOWN, FROM_A_NEWER_API]} />);
 
     expect(screen.getByText('Metformin 500 mg tablet')).toBeInTheDocument();

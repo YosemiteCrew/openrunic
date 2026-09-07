@@ -68,6 +68,29 @@ name: Forbidden Terms
 # immediately below, and they stopped being hypothetical on that date.
 #
 # ---------------------------------------------------------------------------
+# DEPENDABOT IS A SECOND WITHHOLDING RULE, AND IT IS NOT A FORK
+# ---------------------------------------------------------------------------
+#
+# Everything above reasons about forks because that was the only way a run
+# could arrive without the pattern. It is not. GitHub serves a Dependabot pull
+# request the DEPENDABOT secret store, not the Actions one, so a repository
+# secret that exists is empty in that run while `head.repo.fork` is false.
+#
+# Two different rules, one symptom, and the only thing separating them is the
+# actor - which is why the Preconditions step reads it. The diagnostic used to
+# have two branches for three cases, so a Dependabot run was told the secrets
+# were missing from the repository and that the gate had never run on any pull
+# request. Both false, and provably so from the run history of the same day.
+#
+# Measured 2026-09-07: #414 is the first Dependabot pull request since this
+# context became required, and it cannot be merged without an admin overriding
+# a failing required check. The remedy is to set the same two values a second
+# time in the Dependabot store, which ARMS the gate for Dependabot rather than
+# exempting it. Do not make this job skip for Dependabot: an unscanned actor is
+# exactly what the gate exists to prevent, and Dependabot writes branch names
+# and pull-request text like anyone else.
+
+# ---------------------------------------------------------------------------
 # THIS CONTEXT IS REQUIRED ON `dev` AS OF 2026-09-06, AND THAT CHANGED THE COST
 # OF EVERY SENTENCE ABOVE
 # ---------------------------------------------------------------------------
@@ -262,6 +285,10 @@ jobs:
           FORBIDDEN_TERMS_CORPUS_B64: ${{ secrets.FORBIDDEN_TERMS_CORPUS_B64 }}
           # The script cannot tell an empty secret from a fork; this job can.
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          # Nor from a Dependabot run, which is NOT a fork and still gets no
+          # repository secret - see the header. Two withholding rules, one
+          # symptom, and only the actor separates them.
+          IS_DEPENDABOT: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           set -uo pipefail
           missing=0
@@ -289,11 +316,19 @@ jobs:
               echo "turn this green - a maintainer has to review the named-product rule by" >&2
               echo "hand before merging. Do not go looking for a word: the other red this job" >&2
               echo "produces names the surface, the file and the line." >&2
+            elif [ "${IS_DEPENDABOT:-}" = "true" ]; then
+              echo "CAUSE: this pull request is Dependabot's. It is not a fork, but GitHub" >&2
+              echo "serves it the DEPENDABOT secret store rather than the Actions one, so a" >&2
+              echo "repository secret that exists is still empty here. Nothing on the branch" >&2
+              echo "turns this green. A maintainer sets the same two values a second time" >&2
+              echo "with 'gh secret set --app dependabot'; that ARMS the gate for Dependabot" >&2
+              echo "rather than exempting it. Do not conclude the secrets are missing -" >&2
+              echo "check 'gh secret list --app actions' before creating anything." >&2
             else
-              echo "CAUSE: this is not a fork, so the secret is missing from the repository" >&2
-              echo "itself. A maintainer has to create both FORBIDDEN_TERMS_* repository" >&2
-              echo "secrets; until then this gate has never run, on any pull request. Do not" >&2
-              echo "work around it by making this job skip - see the header." >&2
+              echo "CAUSE: not a fork and not Dependabot, so the secret is missing from the" >&2
+              echo "repository itself. A maintainer has to create both FORBIDDEN_TERMS_*" >&2
+              echo "repository secrets. Do not work around it by making this job skip - see" >&2
+              echo "the header." >&2
             fi
           fi
 

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditCollector } from '../audit/collector.js';
 import type { AuditEvent, AuditSink } from '../audit/types.js';
 import type { RepositoryRegistry } from '../repositories/types.js';
+import { AUDIT_CHAIN_LOCK_CLASS } from '../repositories/db-port.js';
 import { buildServerWiring } from '../server/wiring.js';
 
 /**
@@ -231,12 +232,126 @@ describe.skipIf(DATABASE_URL === undefined)('the audit chain under concurrency',
   });
 
   /**
+   * A second connection holding one tenant's chain lock open.
+   *
+   * `acquired` resolves only AFTER the lock statement has returned, and the
+   * caller must await it. Without that the probe races the holder's own setup:
+   * `$transaction` returns as soon as it is called, so the lock may not be
+   * taken yet when the probe runs, and the probe then succeeds because nothing
+   * was locked. That is not a hypothetical - it is what the first version of
+   * this helper did, and only the must-block control below caught it.
+   */
+  async function holdChainLock(tenantId: string): Promise<{ release: () => Promise<void> }> {
+    const { createPrismaClient } = await import('@openrunic/database');
+    const holder = createPrismaClient();
+    let signalAcquired = (): void => {};
+    let signalRelease = (): void => {};
+    const acquired = new Promise<void>((resolve) => {
+      signalAcquired = resolve;
+    });
+    const releasedWhen = new Promise<void>((resolve) => {
+      signalRelease = resolve;
+    });
+
+    // Held well inside Prisma's 5000 ms interactive-transaction timeout, which
+    // is the queue's own ceiling and is documented on `lockAuditChain`.
+    const held = holder.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_CLASS}::int, hashtext(${tenantId}))`;
+      signalAcquired();
+      await releasedWhen;
+    });
+
+    await acquired;
+    return {
+      release: async (): Promise<void> => {
+        signalRelease();
+        await held;
+        await holder.$disconnect();
+      },
+    };
+  }
+
+  /**
+   * Per tenant, and DETERMINISTICALLY so - `@Claude L2 Dunexploration`'s arm,
+   * taken into the suite because it closes the one property the concurrency
+   * cases structurally cannot reach.
+   *
+   * Every other case here varies concurrency, and a lock on a constant key
+   * answers all of them: a global queue serialises correctly, it just
+   * serialises far too much. Independence is not a throughput claim, so it does
+   * not need load or a clock to measure. Hold one tenant's lock open on a
+   * second connection and ask for a different tenant; per tenant it returns,
+   * global it blocks.
+   *
+   * The failure mode is a BLOCK, not a wrong answer, so a constant key makes
+   * this case time out rather than assert. A timeout here is a real red and not
+   * a flake - do not raise the timeout to make it pass.
+   *
+   * One thing this case CANNOT do, measured rather than assumed: it does not
+   * fire when the production key derivation is mutated. The helper below
+   * derives the key the same way the production code does, so changing the
+   * production side makes the two disagree and the probe stops blocking for a
+   * reason that has nothing to do with the property. Mutating
+   * `hashtext(tenantId)` to a constant leaves this case GREEN and turns the
+   * control below RED. The pair catches it; this half alone does not.
+   */
+  it("does not make one tenant wait on another tenant's lock", async () => {
+    const lock = await holdChainLock(TENANT);
+    try {
+      await live.sink.recordReadBatch(OTHER_TENANT, event('phi.read', 'across-tenants'));
+    } finally {
+      // In `finally`, so a failed assertion cannot leave the lock held. It was
+      // not, once, and the next case then failed at 5005 ms against a holder
+      // that was still open - one broken case reading as two.
+      await lock.release();
+    }
+
+    const other = await chainOf(live.client, OTHER_TENANT);
+    expect(other.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The control for the case above, and it is what makes it worth anything.
+   *
+   * A probe that silently failed to take the lock at all - wrong class, wrong
+   * connection, a statement that had not run yet - lets the case above pass for
+   * entirely the wrong reason and reads as proof of per-tenant-ness. So the
+   * SAME tenant is asked for while its lock is held, and it must NOT complete
+   * until the holder lets go. This is the case that caught exactly that bug in
+   * the helper above.
+   */
+  it('does make the same tenant wait, which is what proves the lock is held', async () => {
+    const lock = await holdChainLock(TENANT);
+    const queued = live.sink.recordReadBatch(TENANT, event('phi.read', 'behind-the-lock'));
+    const stillWaiting = Symbol('still-waiting');
+
+    try {
+      const raced = await Promise.race([
+        queued.then(() => 'completed' as const),
+        new Promise<typeof stillWaiting>((resolve) => setTimeout(() => resolve(stillWaiting), 750)),
+      ]);
+      expect(raced).toBe(stillWaiting);
+    } finally {
+      await lock.release();
+    }
+
+    await expect(queued).resolves.toBeUndefined();
+  });
+
+  /**
    * The lock is per tenant, not global. A single lock would make every
    * organisation on a deployment queue behind every other one, which is a
    * throughput ceiling nothing asks for - the chain is per tenant, so the
    * serialisation is too.
    */
   it('keeps two tenants on their own chains', async () => {
+    // Measured as a DELTA rather than as an absolute count. The independence
+    // arm above appends one row to this tenant, so a case asserting
+    // `toHaveLength(APPENDERS)` here is asserting the order the file's cases
+    // happen to run in - it went red for exactly that reason, which is a
+    // coupling and not a defect.
+    const before = (await chainOf(live.client, OTHER_TENANT)).length;
+
     const results = await Promise.allSettled([
       ...Array.from({ length: APPENDERS }, (_, i) =>
         live.sink.recordReadBatch(TENANT, event('phi.read', `both-a-${i}`))
@@ -249,6 +364,6 @@ describe.skipIf(DATABASE_URL === undefined)('the audit chain under concurrency',
     expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
     const other = await chainOf(live.client, OTHER_TENANT);
     expect(other.map((row) => row.seq)).toEqual(other.map((_, i) => BigInt(i + 1)));
-    expect(other).toHaveLength(APPENDERS);
+    expect(other).toHaveLength(before + APPENDERS);
   });
 });

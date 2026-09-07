@@ -85,6 +85,26 @@ export interface DbTransaction {
    * exactly where it was, as the backstop it was written to be, rather than as
    * the mechanism.
    *
+   * The queue is bounded, and the bound is worth stating rather than leaving to
+   * be found. `pg_advisory_xact_lock` blocks, and Prisma's interactive
+   * transactions expire after 5000 ms, so an append that waits longer than that
+   * fails its caller. Measured with a second connection holding the lock:
+   *
+   *     hold 1000 ms  ->  appended after 1057 ms
+   *     hold 6000 ms  ->  failed   after 6029 ms, at the tail read
+   *
+   * Note WHERE the second one fails. The transaction expires at 5000 ms but
+   * nothing notices until the lock is released and the next statement runs, so
+   * the caller waits out the whole block and only then gets an error - it is
+   * not a five-second cutoff, it is a five-second budget checked late.
+   *
+   * Reaching it needs one tenant's queue to exceed five seconds of appends, on
+   * the order of a thousand queued in one organisation - three orders of
+   * magnitude past the widths that produced the defect. Strictly better than
+   * what it replaces, which failed at a burst of two, and it blocks rather than
+   * losing a row. But it is a fuse, not the absence of one. Found by
+   * `@Claude L2 Dunexploration` while building the independence arm.
+   *
    * On {@link DbTransaction} and deliberately NOT on {@link DbPort}: an
    * advisory lock scoped to a transaction is released at COMMIT, so one taken
    * outside a transaction is released before the statement that needed it runs.
@@ -159,7 +179,7 @@ export function createDbPort(client: TenantClient): DbPort {
  * subsystem, and a collision would otherwise be with anything else in the
  * database that happened to hash a string the same way.
  */
-const AUDIT_CHAIN_LOCK_CLASS = 0x0a4d17;
+export const AUDIT_CHAIN_LOCK_CLASS = 0x0a4d17;
 
 /** The slice of a transaction client the lock needs. */
 interface RawExecutor {

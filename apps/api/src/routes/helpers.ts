@@ -93,9 +93,17 @@ export function required<T>(value: T | null, message: string): T {
  * every chartless one, and the other tenant is refused on both. So the
  * exemption is real and bounded by tenancy. The cases live beside the fixtures
  * they need - `routes.orders.test.ts` for tasks and threads,
- * `routes.financial.test.ts` for payments - and each door carries all three
- * arms, because a charted refusal alone cannot tell a working gate from a route
- * that refuses everyone.
+ * `routes.financial.test.ts` for payments, `routes.telehealth.test.ts` for
+ * appointments - and each door carries all three arms, because a charted
+ * refusal alone cannot tell a working gate from a route that refuses everyone.
+ *
+ * `Appointment` needs a fourth arm the others do not, and it is worth reading
+ * before writing a case for any collection with a `facilityColumn`: on a BOOKED
+ * appointment at the caller's own facility `facility-activity` authorises them,
+ * so the gate refuses nobody and BOTH columns answer 201. Only a row that
+ * source excludes - CANCELLED, ENTERED_IN_ERROR, a start over a year past -
+ * puts the gate in the deciding position. An arm without that control measures
+ * the relationship source and reports about the gate.
  *
  * The consequence for anyone adding a nullable chart column: the row is outside
  * this gate for its whole life, and no status and no state machine can put it

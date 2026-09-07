@@ -685,3 +685,120 @@ describe('a portal token and the telehealth routes', () => {
     expect(((await list.json()) as { data: unknown[] }).data).toHaveLength(1);
   });
 });
+
+/* ---------------------------------------- an appointment that names no chart (#336) */
+
+/**
+ * `Appointment.patientId` is nullable - a held slot, a block with no patient on
+ * it yet - and `gateCharts` skips a row whose chart column is null, so
+ * `chartIdOf` answers `undefined` and the id never reaches
+ * `assertCareRelationship`. #336 asked what protects such a row.
+ *
+ * Answering it here needs a control the other collections do not, and getting
+ * that wrong is what a first version of this block did. On a BOOKED appointment
+ * at the caller's own facility the gate refuses NOBODY: `facility-activity`
+ * authorises any clinician there, which is what the route's own comment says
+ * two lines above the `gateCharts` call. So a BOOKED row cannot be the charted
+ * control - it answers 201 with the chart present, and an arm that reads 201 on
+ * both columns has measured the relationship source, not the gate.
+ *
+ * The 2x2, driven at c636835, is what separates them:
+ *
+ *     status      chart      clinician A   clinician B (other tenant)
+ *     BOOKED      named          201            404
+ *     BOOKED      none           201            404
+ *     CANCELLED   named          404            404
+ *     CANCELLED   none           201            404
+ *
+ * CANCELLED is one of the rows `facility-activity` excludes, so it is the only
+ * cell where the gate is the thing deciding - and it is where the exemption
+ * shows: same status, same principal, one field different, 404 becomes 201.
+ * The BOOKED row stays as the second control, because without it the CANCELLED
+ * pair cannot say whether the gate is inert on a chartless row or simply absent.
+ *
+ * This is the door #334 measured it on, and it is the one that matters:
+ * opening a room mints the visit that `join` and `end` then act on, so an inert
+ * gate here is inert for everything downstream.
+ */
+describe('the chart gate is inert on an appointment that names no chart, and bounded by the tenant', () => {
+  const CHARTED = testId(9_101);
+  const CHARTLESS = testId(9_102);
+
+  function exemptionApp(status: 'BOOKED' | 'CANCELLED'): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    seed(
+      created.dataset,
+      'Appointment',
+      makeAppointmentRow({ id: CHARTED, patientId: PATIENT, status }),
+      makeAppointmentRow({ id: CHARTLESS, patientId: null, status })
+    );
+    return created;
+  }
+
+  const open = async (
+    app: ReturnType<typeof createTestApp>['app'],
+    id: string,
+    token: string
+  ): Promise<number> =>
+    (await app.request(...post(`/bff/v0/appointments/${id}/telehealth`, token))).status;
+
+  it('refuses a clinician with no relationship on a CANCELLED appointment that NAMES a chart', async () => {
+    const { app } = exemptionApp('CANCELLED');
+
+    expect(await open(app, CHARTED, TOKENS.clinicianA)).toBe(404);
+  });
+
+  it('admits the same clinician on the CANCELLED appointment that names NONE - the exemption', async () => {
+    const { app } = exemptionApp('CANCELLED');
+
+    // 201 rather than `not.toBe(404)`: the point is that the room OPENS. A 409
+    // from the appointment state machine would satisfy a not-404 while saying
+    // nothing about the gate.
+    expect(await open(app, CHARTLESS, TOKENS.clinicianA)).toBe(201);
+  });
+
+  /**
+   * The control that stops the pair above being read as "the gate is missing".
+   * On a BOOKED row the gate is present and cannot refuse this caller, because
+   * `facility-activity` authorises them - so both columns are 201 for a reason
+   * that has nothing to do with the chart being null.
+   */
+  it('opens a room on a BOOKED appointment whether or not it names a chart', async () => {
+    const { app } = exemptionApp('BOOKED');
+
+    expect(await open(app, CHARTED, TOKENS.clinicianA)).toBe(201);
+    expect(await open(app, CHARTLESS, TOKENS.clinicianA)).toBe(201);
+  });
+
+  it('still refuses the other tenant on the chartless appointment, both statuses', async () => {
+    expect(await open(exemptionApp('CANCELLED').app, CHARTLESS, TOKENS.clinicianB)).toBe(404);
+    expect(await open(exemptionApp('BOOKED').app, CHARTLESS, TOKENS.clinicianB)).toBe(404);
+  });
+
+  /**
+   * The READ is a different question and it is not answered here.
+   *
+   * `GET /bff/v0/appointments/:id` is hand-registered in `appointments.ts` and
+   * carries `assertFacilityAccess` and no chart gate at all, so it answers 200
+   * for any caller holding `appointment.read` in the row's facility, whether or
+   * not the appointment names a chart. That is a gate that is ABSENT rather
+   * than one that is inert, and the two are only distinguishable by driving
+   * both rows: an exemption is only meaningful where a gate exists to be
+   * exempted from.
+   *
+   * Whether the scheduling read should require a care relationship is a product
+   * question - the front desk needs the day's list and holds no relationship to
+   * anybody on it - and #336 does not decide it. Pinned so the difference is on
+   * the record rather than inferred from the absence of a case.
+   */
+  it('the appointment READ has no chart gate on either row, which is a different fact', async () => {
+    const { app } = exemptionApp('CANCELLED');
+
+    for (const id of [CHARTED, CHARTLESS]) {
+      expect(
+        (await app.request(`/bff/v0/appointments/${id}`, { headers: bearer(TOKENS.clinicianA) }))
+          .status
+      ).toBe(200);
+    }
+  });
+});

@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RELATIONSHIP_SOURCES } from '../policy/care-relationship.js';
+import type { RepositoryRegistry } from '../repositories/types.js';
 import type { ScopedRow } from '../repositories/rows.js';
 import type { RemittanceStatus } from '../repositories/specs/financial.js';
 
@@ -2090,5 +2091,276 @@ describe('a task is evidence only when somebody else produced it', () => {
     expect(res.status).toBe(422);
 
     expect((await app.request(chart(CHART), { headers: bearer(TOKENS.billerA) })).status).toBe(404);
+  });
+});
+
+/**
+ * One request, one instant (#426).
+ *
+ * `gateCharts` is the only thing here that takes more than one chart decision
+ * per request: it asks once per distinct chart on a page, sequentially. Every
+ * addressed read gates exactly one chart, so no `{id}` route can show this -
+ * the case has to be a LIST spanning two charts.
+ *
+ * Three of the seven relationship sources are bounded by a period or a window,
+ * so before this the second gate could read a later clock than the first. That
+ * splits one page: a membership authorises the first chart and has lapsed by
+ * the second. Worse where it does not split the status - `middleware/policy.ts`
+ * derives the `breakglass` compliance column from WHICH source authorised, so a
+ * grant expiring mid-response records half a page as emergency access and half
+ * as ordinary, with a `200` either way.
+ *
+ * Nothing waits for real time. `vi.useFakeTimers` freezes the clock and the
+ * decorator advances it at an ordered position in that loop - a place rather
+ * than an interval, the same technique `routes.patients.test.ts:737` uses.
+ */
+describe('every chart on a page is decided at the same instant', () => {
+  const BOUNDARY = new Date(FIXED_NOW.getTime() + 60 * 60_000);
+  const CHART_ONE = testId(9_410);
+  const CHART_TWO = testId(9_411);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(BOUNDARY.getTime() - 60_000));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Advances past the boundary the first time the deciding collection is read.
+   *
+   * `decorateRepositories` hands over `{ dataset, forRequest }` and not the
+   * collections, so a decorator that looks for anything with a `.list` finds
+   * nothing and passes through in silence - which reads exactly like a system
+   * with no defect. Wrap `forRequest` and proxy what it returns.
+   */
+  /**
+   * Reports whether it fired, and the cases assert it. A decorator that never
+   * ran leaves both arms at the same status, which reads exactly like a system
+   * with no defect - the failure that ate three arms before this one landed.
+   */
+  const advanceOnFirstRead = (collection: 'careTeams' | 'breakGlassGrants') => {
+    const state = { fired: false };
+    const decorate = (registry: RepositoryRegistry): RepositoryRegistry => ({
+      forRequest: (scope) => {
+        const real = registry.forRequest(scope);
+        /* One branch per collection rather than an index, because the two
+           list queries are different types and a union parameter is not
+           assignable to either of them. */
+        const advance = (): void => {
+          if (state.fired) return;
+          state.fired = true;
+          vi.setSystemTime(new Date(BOUNDARY.getTime() + 60_000));
+        };
+        if (collection === 'careTeams') {
+          const target = real.careTeams;
+          return {
+            ...real,
+            careTeams: {
+              ...target,
+              list: async (query: Parameters<typeof target.list>[0]) => {
+                advance();
+                return target.list(query);
+              },
+            },
+          };
+        }
+        const target = real.breakGlassGrants;
+        return {
+          ...real,
+          breakGlassGrants: {
+            ...target,
+            list: async (query: Parameters<typeof target.list>[0]) => {
+              advance();
+              return target.list(query);
+            },
+          },
+        };
+      },
+    });
+    return { decorate, state };
+  };
+
+  const aDocumentFor = (chart: string, id: string): ScopedRow<'Document'> => ({
+    ...storageColumns(id),
+    patientId: chart,
+    encounterId: null,
+    category: '11488-4',
+    title: 'Consult note',
+    storageKey: `documents/${chart}.pdf`,
+    contentType: 'application/pdf',
+    sha256: 'a'.repeat(64),
+    byteSize: 20_480,
+    source: 'FAX',
+    status: 'INBOX',
+    sensitivityClass: 'NORMAL',
+    receivedAt: FIXED_NOW,
+    filedAt: null,
+    filedById: null,
+    expiresAt: null,
+    supersededById: null,
+    errorReason: null,
+  });
+
+  const twoChartsOnePage = (dataset: Dataset): void => {
+    let n = 9_420;
+    for (const chart of [CHART_ONE, CHART_TWO]) {
+      seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: `OR-10${n}` }));
+      /* The team's period is the only thing that can answer. No encounter, no
+         appointment, no task: those sources never read the clock, and seeding
+         one would authorise the chart whatever the instant. */
+      aTeamWithMember(dataset, {
+        patientId: chart,
+        teamId: testId((n += 1)),
+        memberId: testId((n += 1)),
+        teamPeriodEnd: BOUNDARY,
+        periodEnd: null,
+      });
+      seed(dataset, 'Document', {
+        ...storageColumns(testId((n += 1))),
+        patientId: chart,
+        encounterId: null,
+        category: '11488-4',
+        title: 'Consult note',
+        storageKey: `documents/${chart}.pdf`,
+        contentType: 'application/pdf',
+        sha256: 'a'.repeat(64),
+        byteSize: 20_480,
+        source: 'FAX',
+        status: 'INBOX',
+        sensitivityClass: 'NORMAL',
+        receivedAt: FIXED_NOW,
+        filedAt: null,
+        filedById: null,
+        expiresAt: null,
+        supersededById: null,
+        errorReason: null,
+      });
+    }
+  };
+
+  const listDocuments = async (
+    advance: null | 'careTeams' | 'breakGlassGrants',
+    seedFixture: (dataset: Dataset) => void = twoChartsOnePage
+  ): Promise<{
+    status: number;
+    fired: boolean;
+    relationships: unknown[];
+    breakglass: unknown[];
+  }> => {
+    const advancer = advance === null ? null : advanceOnFirstRead(advance);
+    const { app, dataset, sink } = createTestApp(
+      advancer === null ? {} : { decorateRepositories: advancer.decorate }
+    );
+    seedFixture(dataset);
+    const res = await app.request('/bff/v0/documents?pageSize=10', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    const accesses = sink.events.filter((entry) => entry.event.action.startsWith('chart.access'));
+    return {
+      status: res.status,
+      fired: advancer?.state.fired ?? false,
+      relationships: accesses.map((entry) => entry.event.metadata['relationship']),
+      breakglass: accesses.map((entry) => entry.event.breakglass),
+    };
+  };
+
+  /**
+   * A grant, an unbounded team behind it, and two charts.
+   *
+   * `break-glass` sits above `care-team` in `RELATIONSHIP_SOURCES`, so while the
+   * grant holds it is what answers - and `middleware/policy.ts` derives both the
+   * action name and the `breakglass` compliance column from WHICH source
+   * answered. Let the grant expire between the two gates and the second chart
+   * falls through to the team, which authorises it perfectly properly and
+   * records it as an ordinary read.
+   *
+   * The status is `200` on both sides, which is what makes this the worse half:
+   * a refused page is a bug report, and half an emergency access missing from
+   * "list every emergency access this quarter" is nothing at all until somebody
+   * audits the auditor. Which charts land on which side is decided by `Set`
+   * iteration order.
+   */
+  const grantAndTeamPerChart = (dataset: Dataset): void => {
+    let n = 9_460;
+    for (const chart of [CHART_ONE, CHART_TWO]) {
+      seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: `OR-10${n}` }));
+      seed(dataset, 'BreakGlassGrant', {
+        ...storageColumns(testId((n += 1))),
+        userId: SUBJECTS.clinicianA,
+        patientId: chart,
+        reason: 'Collapsed in reception, no record at this site.',
+        grantedAt: new Date(BOUNDARY.getTime() - 60 * 60_000),
+        expiresAt: BOUNDARY,
+      });
+      /* Unbounded, so it catches the fall-through rather than refusing. That is
+         what makes the split silent instead of a 404. */
+      aTeamWithMember(dataset, {
+        patientId: chart,
+        teamId: testId((n += 1)),
+        memberId: testId((n += 1)),
+        teamPeriodEnd: null,
+        periodEnd: null,
+      });
+      seed(dataset, 'Document', { ...aDocumentFor(chart, testId((n += 1))) });
+    }
+  };
+
+  /**
+   * The instant is the one the application was HANDED, not the one the process
+   * reads.
+   *
+   * The two cases below cover `receivedAt` being stamped once and read. They do
+   * not reach the threading itself - `createApp`'s `now`, the chain forwarding
+   * it, stage 1 stamping from it - because they run with the fake clock set TO
+   * `FIXED_NOW`, and a faked clock at the injected instant is the same value as
+   * the injected one.
+   *
+   * What separates them is a DISAGREEMENT between the two, not the absence of a
+   * fake clock: set the fake one past the memberships' `periodEnd` while the
+   * harness injects `FIXED_NOW` from before it. Read the injected instant and
+   * the teams hold; read `Date.now()` and they lapsed a minute ago.
+   *
+   * Both instants are arguments, which is the point. An earlier version put the
+   * lapse between `FIXED_NOW` and the real calendar - that works today and stops
+   * working the moment `FIXED_NOW` is bumped past the wall clock, which is a
+   * fixture change nobody would think of as touching authorisation.
+   */
+  it('decides on the clock the application was given, not the system clock', async () => {
+    vi.setSystemTime(new Date(BOUNDARY.getTime() + 60_000));
+
+    expect((await listDocuments(null)).status).toBe(200);
+  });
+
+  it('records every chart on a page under one compliance classification', async () => {
+    const control = await listDocuments(null, grantAndTeamPerChart);
+    expect(control.status).toBe(200);
+    expect(control.relationships).toEqual(['break-glass', 'break-glass']);
+    expect(control.breakglass).toEqual([true, true]);
+
+    const advanced = await listDocuments('breakGlassGrants', grantAndTeamPerChart);
+    expect(advanced.fired).toBe(true);
+    expect(advanced.status).toBe(200);
+    // Both, not one of each. Before this the second chart fell through to the
+    // care team and was written as an ordinary read on the same page.
+    expect(advanced.relationships).toEqual(['break-glass', 'break-glass']);
+    expect(advanced.breakglass).toEqual([true, true]);
+  });
+
+  it('does not refuse the second chart because the clock moved after the first', async () => {
+    /* The control. Both memberships are in force at the request's instant, so
+       the page is readable and the case below is not measuring a refusal that
+       would have happened anyway. */
+    expect((await listDocuments(null)).status).toBe(200);
+
+    /* The arm. The clock crosses the teams' `periodEnd` between the two gates.
+       Reading `receivedAt` makes both decisions at the instant the request
+       arrived; taking a fresh `new Date()` per chart refuses the second. */
+    const advanced = await listDocuments('careTeams');
+    // The decorator ran. Without this, a decoration that silently stopped
+    // firing leaves both arms at 200 and the case tests nothing.
+    expect(advanced.fired).toBe(true);
+    expect(advanced.status).toBe(200);
   });
 });

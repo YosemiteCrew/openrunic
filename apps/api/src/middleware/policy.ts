@@ -99,7 +99,7 @@ export async function assertCareRelationship(c: Context<AppEnv>, patientId: stri
   // audit. The decision below is what gets recorded.
   const audit = c.get('audit');
   const decide = (): Promise<string | undefined> =>
-    findCareRelationship(repositories, { principal, policy, patientId, at: new Date() });
+    findCareRelationship(repositories, { principal, policy, patientId, at: c.get('receivedAt') });
   const source = audit === undefined ? await decide() : await audit.suppressReads(decide);
 
   if (source === undefined) {

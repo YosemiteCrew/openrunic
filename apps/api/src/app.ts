@@ -156,6 +156,10 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     principalResolver,
     repositories,
     auditSink,
+    // The same clock `fhirRoutes` and `internalRoutes` already receive. Before
+    // this it stopped at the router boundary and the care-relationship decision
+    // read `new Date()` directly, so a request could take one reading per chart.
+    now,
     responseFormatFor: (path) => (isFhirPath(path) ? 'fhir' : 'problem'),
     // Which boundary hides an ungranted facility's row and which refuses it.
     // The FHIR boundary answers 404, so a read cannot be used to enumerate the

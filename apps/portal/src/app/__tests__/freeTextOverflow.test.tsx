@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MessagesScreen } from '@/app/messages/MessagesScreen';
 import { AssistantTurnView } from '@/components/assistant';
+import { Notice } from '@/components/Notice';
 import { stubApi } from '@/__tests__/support';
 
 /**
@@ -91,23 +92,43 @@ describe('free-text bodies wrap anywhere', () => {
  *
  * Rendered rather than grepped, because a class name in a comment or a dead
  * branch would satisfy a grep. And each case asserts the element CONTAINS the
- * free text, not merely that an element with the name exists - moving the class
- * to an outer wrapper would leave the text unwrapped and satisfy a presence
- * check.
+ * free text, not merely that an element with the name exists: move the class
+ * onto a SIBLING - `portal-notice__title` beside the text it labels - and the
+ * element still renders, still carries the name, and styles nothing, which is
+ * the exact state the declaration exists to prevent.
+ *
+ * Containment and not identity, deliberately. Moving the class to a wrapper
+ * AROUND the text is not a defect - `overflow-wrap` inherits, so an ancestor
+ * carrying it still wraps the words - and a test asserting the exact element
+ * would fail on that harmless move. The sibling arm is the one that separates
+ * them; the wrapper arm must stay green.
  */
 describe('the styled classes are the ones the components render', () => {
   const containing = (selector: string, text: string) =>
     [...document.querySelectorAll(selector)].filter((node) => node.textContent?.includes(text));
 
-  it('the message body and the notice text render under the classes the stylesheet targets', async () => {
+  it('the message body renders under the class the stylesheet targets', async () => {
     render(<MessagesScreen api={stubApi()} />);
     const body = await screen.findByText(/Your thyroid result is a little above the usual range\./);
 
     expect(containing('.portal-message__body', body.textContent ?? '')).not.toHaveLength(0);
-    expect(document.querySelectorAll('.portal-notice__text').length).toBeGreaterThan(0);
     // CONTROL: a name the stylesheet does not target finds nothing, or the
-    // queries above would pass against any markup at all.
+    // query above would pass against any markup at all.
     expect(document.querySelectorAll('.portal-no-such-body')).toHaveLength(0);
+  });
+
+  it('the notice text renders under the class the stylesheet targets', () => {
+    // `Notice` directly rather than through the screen that happens to use it:
+    // the pair that must agree is the class in `globals.css` and the class in
+    // `Notice.tsx`, and the caution's own words are the free text at risk.
+    const caution = 'A message is not the way to reach anyone urgently.';
+
+    render(<Notice title="Before you send">{caution}</Notice>);
+
+    expect(containing('.portal-notice__text', caution)).not.toHaveLength(0);
+    // CONTROL: the title is a SIBLING of the text and does not contain it, so
+    // this is the assertion that goes red when the class moves onto it.
+    expect(containing('.portal-notice__title', caution)).toHaveLength(0);
   });
 
   it('the assistant question and answer render under the classes the stylesheet targets', () => {

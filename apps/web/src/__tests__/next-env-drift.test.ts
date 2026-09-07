@@ -67,6 +67,16 @@ describe('every next-env.d.ts is the build variant', () => {
    * `next-env.d.ts` is missing is exactly the case this has to name.
    */
   it('finds one next-env.d.ts per Next app', () => {
+    /* DO NOT DELETE AS REDUNDANT. This line is the entire difference between a
+       red run and a green one that checked nothing. `it.each` over an empty
+       array generates no cases, so if discovery stops matching the two
+       `%s references…` rows do not fail — they cease to exist, and the suite
+       reports `1 passed` at rc=0. Measured on this file:
+
+         discovery broken, this line present   1 failed (1)   <- the canary alone
+         discovery broken, this line removed   1 passed (1)   <- nothing checked
+         discovery intact, this line removed   5 passed (5)   <- inert, which is
+                                                                 why it looks removable */
     expect(nextApps.length).toBeGreaterThan(0);
     expect(guarded.filter(([, path]) => !existsSync(path)).map(([app]) => app)).toEqual([]);
   });

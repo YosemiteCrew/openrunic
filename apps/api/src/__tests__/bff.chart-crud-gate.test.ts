@@ -42,6 +42,13 @@ interface CrudDecl {
   readonly file: string;
   readonly key: string;
   readonly chartFrom: string | undefined;
+  /**
+   * The URL segment the resource mounts on, so `/bff/v0/${segment}` is its
+   * base. Read here rather than in a second scan because it comes out of the
+   * same chunk as the key: the two describe one `defineCrud` call, and a scan
+   * that found one and not the other would be describing two different lists.
+   */
+  readonly segment: string | undefined;
 }
 
 /**
@@ -65,7 +72,8 @@ function crudDeclarations(): CrudDecl[] {
       const key = /collection:\s*\(repos[^)]*\)\s*=>\s*repos\.(\w+)/.exec(chunk)?.[1];
       if (key === undefined) continue;
       const chartFrom = /chartFrom:\s*'(\w+)'/.exec(chunk)?.[1];
-      decls.push({ file: name, key, chartFrom });
+      const segment = /segment:\s*'([^']+)'/.exec(chunk)?.[1];
+      decls.push({ file: name, key, chartFrom, segment });
     }
   }
   return decls;
@@ -330,6 +338,214 @@ describe('every hand-registered sub-resource route is accounted for', () => {
       (entry) => entry.parent !== undefined && specs[entry.parent]?.patientColumn !== undefined
     );
     expect(chartBearing.length).toBeGreaterThan(INVENTORY.length / 2);
+  });
+});
+
+/**
+ * The third shape, and the one that fell between the two guards above: a route
+ * addressed by a parameter with NOTHING after it, registered by hand.
+ *
+ * `GET /bff/v0/appointments/:id` is served from `appointments.ts` rather than
+ * generated, so `crudDeclarations` produces no chunk for it and the first guard
+ * has no opinion. `isSubResource` is keyed on `/:<param>/` - a parameter with a
+ * further segment - so a path that ENDS at the parameter is not in the second
+ * inventory either. The route was therefore exempt from the care-relationship
+ * gate by omission from two lists rather than by anybody's decision, which is
+ * what #431 asks about.
+ *
+ * `isAddressed` is the same filter one character shorter: the parameter at the
+ * END of the path instead of followed by a segment. Keyed on the shape and not
+ * on `:id` for the reason `isSubResource` is - every one of these spells it
+ * `:id` today and nothing makes that true.
+ *
+ * The exclusion is the only new machinery, and its failure directions are not
+ * symmetric, which is why both are asserted:
+ *
+ * - A `defineCrud` the scan MISSES leaves its two addressed routes outside
+ *   `crudAddressed`, so they land in the inventory below unclassified and the
+ *   set equality fails. Fail-closed, and it reads as "classify this route".
+ * - A segment the scan INVENTS would silently excuse a hand-registered route of
+ *   the same name. That is fail-OPEN and nothing about the inventory could see
+ *   it - so it is caught on the other side instead: every route the exclusion
+ *   claims is CRUD-generated must actually be served by the app, and a segment
+ *   nobody mounts is not.
+ *
+ * SCOPE, in the same terms as above: this asserts the inventory is COMPLETE.
+ * It asserts nothing about whether a row runs the gate - `parent`
+ * puts the chart-bearing status of the row's collection in front of whoever
+ * adds the route, and the driven refusals live in the route files' own tests.
+ * The one thing it does pin is WHICH of these routes address chart data, as a
+ * set derived from `COLLECTION_SPECS` rather than as a field somebody types:
+ * hand-registering an addressed route on a chart-bearing aggregate cannot be
+ * done without editing that literal.
+ */
+describe('every hand-registered addressed route is accounted for', () => {
+  interface AddressedRoute {
+    /** `METHOD /path`, exactly as Hono reports it. */
+    readonly route: string;
+    /**
+     * The collection whose row the parameter names, or `undefined` when it is
+     * not a repository collection at all.
+     */
+    readonly parent: string | undefined;
+  }
+
+  const INVENTORY: readonly AddressedRoute[] = [
+    { route: 'GET /bff/v0/appointments/:id', parent: 'appointments' },
+    { route: 'GET /bff/v0/audit/:id', parent: undefined },
+    { route: 'GET /bff/v0/patients/:id', parent: 'patients' },
+    { route: 'GET /bff/v0/referrals/:id', parent: 'referrals' },
+    { route: 'GET /bff/v0/telehealth/:id', parent: 'telehealthVisits' },
+    { route: 'PATCH /bff/v0/appointments/:id', parent: 'appointments' },
+    { route: 'PATCH /bff/v0/patients/:id', parent: 'patients' },
+  ];
+
+  /**
+   * The rows whose parent collection declares a `patientColumn`, so the route
+   * addresses chart data and the care-relationship gate is the question.
+   *
+   * Written out rather than computed into the assertion, because the whole
+   * point is that the list changes when the app does: the check compares this
+   * literal against the same predicate applied to `COLLECTION_SPECS`, so
+   * neither half can drift without the other being edited to match.
+   *
+   * `patients` is absent on purpose and is not an omission - the patient spec
+   * carries no `patientColumn` because the row IS the patient, and both its
+   * routes gate on `assertCareRelationship` directly. `telehealthVisits` and
+   * the audit log are absent because neither names a patient.
+   */
+  const CHART_BEARING: readonly string[] = [
+    'GET /bff/v0/appointments/:id',
+    'GET /bff/v0/referrals/:id',
+    'PATCH /bff/v0/appointments/:id',
+  ];
+
+  /**
+   * A route addressed by a named parameter with no further segment.
+   *
+   * The `$` is the whole difference from `isSubResource`, and the two are
+   * disjoint by construction: a parameter cannot both end the path and be
+   * followed by a segment.
+   */
+  function isAddressed(route: string): boolean {
+    return route.includes(' /bff/v0/') && /\/:[A-Za-z0-9_]+$/u.test(route);
+  }
+
+  function bffRoutes(): string[] {
+    const { app } = createTestApp();
+    const rows = (app as unknown as { routes: readonly { method: string; path: string }[] }).routes;
+    return [
+      ...new Set(
+        rows.map((row) => `${row.method} ${row.path}`).filter((row) => row.includes(' /bff/v0/'))
+      ),
+    ].sort();
+  }
+
+  /**
+   * The addressed routes the CRUD seam generates, derived from the segments the
+   * `defineCrud` scan found. `crudRoutes` registers `GET` and `PATCH` on
+   * `${base}/:id` unconditionally, so a segment implies exactly these two.
+   */
+  function crudAddressed(): string[] {
+    const segments = [
+      ...new Set(
+        crudDeclarations()
+          .map((decl) => decl.segment)
+          .filter((segment): segment is string => segment !== undefined)
+      ),
+    ];
+    return segments
+      .flatMap((segment) => [`GET /bff/v0/${segment}/:id`, `PATCH /bff/v0/${segment}/:id`])
+      .sort();
+  }
+
+  function handRegistered(): string[] {
+    const generated = new Set(crudAddressed());
+    return bffRoutes()
+      .filter(isAddressed)
+      .filter((route) => !generated.has(route));
+  }
+
+  it('the CRUD exclusion names routes the app actually serves', () => {
+    /*
+     * The fail-OPEN direction, and the only one the inventory below cannot
+     * report. A `segment:` matched out of the wrong place in a chunk would
+     * subtract a hand-registered route from the set that has to be classified,
+     * silently and in the dangerous direction. A segment nobody mounts is the
+     * signature of that, because every real one is served.
+     *
+     * Also the scan's canary, and unlike `decls.length > 15` it is not derived
+     * from the scan alone: it is the scan checked against the route table.
+     */
+    const generated = crudAddressed();
+    const served = new Set(bffRoutes());
+    expect(generated.length, 'the defineCrud scan found no segments at all').toBeGreaterThan(0);
+    expect(
+      generated.filter((route) => !served.has(route)),
+      'the exclusion claims these are CRUD-generated, but the app serves no such route - a `segment:` was read out of the wrong place and is excusing a hand-registered route of that name'
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['GET /bff/v0/notes/:id', true],
+    ['GET /bff/v0/notes/:noteId', true],
+    ['POST /bff/v0/notes/:id/sign', false],
+    ['POST /bff/v0/medications/screen', false],
+    ['GET /fhir/Patient/:id', false],
+  ] as const)('classifies %s as addressed: %s', (route, expected) => {
+    /*
+     * Asked of strings for `isSubResource`'s reason: the `:noteId` row is a
+     * route the app does not serve, so a live-table assertion could not tell a
+     * filter keyed on the shape from one keyed on the literal `:id`. The
+     * `/sign` row is the boundary between this guard and the one above, and
+     * `/fhir` is a different boundary with its own gate.
+     */
+    expect(isAddressed(route)).toBe(expected);
+  });
+
+  it('the inventory names exactly the hand-registered addressed routes', () => {
+    const live = handRegistered();
+    const declared = INVENTORY.map((entry) => entry.route).sort();
+
+    expect(
+      live.filter((route) => !declared.includes(route)),
+      'these routes are served and are in no inventory: a hand-registered route addressed by :id reads or writes a row the CRUD seam did not generate, so no chartFrom runs on it - classify each one, and if its parent is chart data give it a driven case in that route file’s tests'
+    ).toEqual([]);
+    expect(
+      declared.filter((route) => !live.includes(route)),
+      'these inventory rows name routes the app no longer serves by hand - either the route is gone, or it moved into the CRUD seam and the guard above now covers it'
+    ).toEqual([]);
+  });
+
+  it.each(INVENTORY.map((entry) => [entry.route, entry] as const))(
+    '%s names a parent the spec table knows',
+    (_label, entry) => {
+      if (entry.parent === undefined) return;
+      const spec = (COLLECTION_SPECS as Record<string, { patientColumn?: string } | undefined>)[
+        entry.parent
+      ];
+      expect(
+        spec,
+        `${entry.route} names parent collection '${entry.parent}', which is not in COLLECTION_SPECS`
+      ).toBeDefined();
+    }
+  );
+
+  it('the chart-bearing rows are the ones the spec table says they are', () => {
+    /*
+     * Both directions, against `COLLECTION_SPECS` rather than against a typed
+     * field. A row appearing here is the sentence "this hand-registered route
+     * addresses chart data", which is #431's subject; a row leaving is a spec
+     * that stopped declaring a `patientColumn`, which is worth stopping for on
+     * its own.
+     */
+    const specs = COLLECTION_SPECS as Record<string, { patientColumn?: string } | undefined>;
+    const derived = INVENTORY.filter(
+      (entry) => entry.parent !== undefined && specs[entry.parent]?.patientColumn !== undefined
+    )
+      .map((entry) => entry.route)
+      .sort();
+    expect(derived).toEqual([...CHART_BEARING].sort());
   });
 });
 

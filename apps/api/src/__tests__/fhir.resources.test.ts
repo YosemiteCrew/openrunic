@@ -1966,6 +1966,52 @@ describe('every advertised search parameter narrows', () => {
    * their value set rather than answering with an empty bundle.
    */
 
+  /*
+   * What these cases cannot see, by construction rather than by oversight.
+   *
+   * Every one of them sends ONE value for ONE parameter. FHIR gives a repeated
+   * parameter and a comma-separated one meanings of their own - AND across
+   * repeats, OR within a list - and neither shape ever reaches a case here, so
+   * nothing below says whether either is applied, ignored, or refused.
+   *
+   * It is not hypothetical. Four patients seeded, against the served app:
+   *
+   *   ?family=TestpersonA                       200   total 1
+   *   ?family=TestpersonA&family=TestpersonB    200   total 1   TestpersonA
+   *   ?family=TestpersonB&family=TestpersonA    200   total 1   TestpersonB
+   *
+   * Reversing the order returns the other patient, which is what makes it
+   * FIRST-wins rather than the fixture happening to match one of the two: both
+   * rows say `total 1` and on their own they would prove nothing.
+   *
+   * The comma form needs its own arm for the same reason - a zero cannot say
+   * why it is a zero. So a fifth patient, whose family name is literally
+   * `TestpersonA,TestpersonB`:
+   *
+   *   ?family=TestpersonA,TestpersonB           200   total 1   the literal row, alone
+   *   ?family=TestpersonZ,TestpersonB           200   total 0   first half matches nothing
+   *
+   * The comma is part of one value rather than a list separator, shown by what
+   * it DOES match and not only by what it does not. (`family` is a prefix
+   * match, so `?family=TestpersonA` returns two rows once that fifth patient
+   * exists; the four-row table above is the four-patient fixture.)
+   *
+   * So the first value wins and the second is dropped without a word, and a
+   * comma list is one value. `fhir/index.ts`
+   * reads `c.req.query()` - the single-value form - for every FHIR search, while
+   * the all-values `queries()` is used once in that file, for `_type` on
+   * `$export`. So the distinction is available and this path does not take it.
+   * That is issue #381, and it is open.
+   *
+   * This is a bound and deliberately not a test. Pinning any of those four rows
+   * would pin a semantics nobody has chosen - whether a repeat should narrow,
+   * widen, or be refused is the decision #381 exists to make, and a test written
+   * now is one whoever makes it would have to delete. Asserting instead that
+   * each case sends a single value would only restate the line below that builds
+   * the URL, which is a check that can agree with nothing but itself.
+   *
+   * So: re-run those four requests rather than trusting this table.
+   */
   /** A value of the right shape that no seeded row can carry. */
   const absentValue = (param: SearchParamDefinition): string => {
     if (param.type === 'reference') {

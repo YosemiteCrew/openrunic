@@ -629,7 +629,7 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
      * `FIXED_NOW` alone would pass whether or not `createTestApp` respected
      * what it was given - and until this change it did not: `now` sat after the
      * spread and silently won. Measured rather than read: with the clock varied
-     * from `FIXED_NOW` to 2001, exactly one of the fifteen response fields
+     * from `FIXED_NOW` to 2001, exactly one of the fourteen response fields
      * moves, which is `determinedAt` and nothing else. That is what makes this
      * the site the seam was proved on - `now` decides the stamp here and the
      * four eligibility reasons turn on the service date and the row.

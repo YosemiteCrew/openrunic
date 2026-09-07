@@ -28,6 +28,7 @@ import test from 'node:test';
 
 import {
   addedLines,
+  ATTRIBUTION_SURFACE,
   compilePattern,
   corpusLines,
   scanSurface,
@@ -1038,6 +1039,172 @@ test("this repository's own prose passes every surface", () => {
   const result = run(['scan', '--dir', dir], { FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC) });
   assert.equal(result.code, 0);
   assert.match(result.stdout, /clean/);
+});
+
+// ---------------------------------------------------------------------------
+// The AI-attribution arm, which reads ONE surface
+// ---------------------------------------------------------------------------
+
+/**
+ * The assistant name a trailer has to carry, assembled rather than written.
+ *
+ * MEASURED rather than defensive: the local pre-commit hook that has been the
+ * only enforcement of this rule scans the STAGED DIFF for the same shape, so a
+ * verbatim trailer in this file cannot be committed from a machine we
+ * provision - `BLOCKED: an AI-attribution line appears in this commit`, exit 1.
+ * The hook is right and the fixture is what bends. The collision is also the
+ * issue's own argument arriving on its test file: the hook reaches this commit
+ * and cannot reach one made anywhere else, which is why the arm belongs in CI
+ * as well as in the hook.
+ */
+const ASSISTANT = 'cla' + 'ude';
+const AI_TRAILER = `Co-authored-by: ${ASSISTANT} <assistant@example.invalid>`;
+const HUMAN_TRAILER = 'Co-authored-by: A Human <human@example.invalid>';
+
+/** Scans with the synthetic term pattern, so only the attribution arm can fire. */
+function scanWith(overrides) {
+  return run(['scan', '--dir', surfaceDir(overrides)], {
+    FORBIDDEN_TERMS_PATTERN_B64: b64(SYNTHETIC),
+  });
+}
+
+test('an attribution trailer in an introduced commit message blocks the run', () => {
+  const messages = ['feat(api): add the thing', '', AI_TRAILER, ''].join('\n');
+  const result = scanWith({ messages });
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /BLOCKED - an AI-attribution trailer/);
+  // The number is the LINE within the concatenated messages surface, counted
+  // before blanks are dropped - `entriesFor` numbers and then filters, so a
+  // blank line still advances the count. Subject 1, blank 2, trailer 3. Written
+  // out because the label says `entry` and the value is a line number: an
+  // author counting non-blank entries lands one line short.
+  assert.match(result.stderr, /\[messages\] entry 3/);
+});
+
+test('the same trailer in the pull-request BODY is not an attribution finding', () => {
+  // The false positive this scoping exists for. A body quoting an upstream
+  // project's changelog carries a byte-identical trailer, and the only thing
+  // separating it from ours is which repository the commit belongs to. The
+  // scope is what makes that structural instead of a triage step - so this is
+  // the case that would be re-litigated every week if the arm read every
+  // surface.
+  const result = scanWith({ body: `Upstream release notes:\n\n${AI_TRAILER}\n` });
+
+  assert.equal(result.code, 0);
+  assert.doesNotMatch(result.stdout, /BLOCKED/);
+});
+
+test('the same trailer in the DIFF is not an attribution finding', () => {
+  // Separate from the body case rather than redundant with it. The body is text
+  // somebody typed; the diff is the tree, and a fixture in a test file is
+  // exactly where this string legitimately appears - including in this file.
+  // An arm that read the diff would fail every pull request that touches it.
+  const diff = [
+    '--- /dev/null',
+    '+++ b/some.test.ts',
+    '@@ -0,0 +1,1 @@',
+    `+${AI_TRAILER}`,
+    '',
+  ].join('\n');
+  const result = scanWith({ diff });
+
+  assert.equal(result.code, 0);
+  assert.doesNotMatch(result.stdout, /BLOCKED/);
+});
+
+test('a HUMAN co-author trailer is not an attribution finding', () => {
+  // Every arm requires an assistant name. Matching a bare `Co-authored-by:`
+  // would refuse the ordinary way a project records a collaborator, and a guard
+  // that refuses the correct case is the one that gets deleted.
+  const result = scanWith({ messages: `feat(api): add the thing\n\n${HUMAN_TRAILER}\n` });
+
+  assert.equal(result.code, 0);
+});
+
+test('Signed-off-by is untouched', () => {
+  const result = scanWith({
+    messages: 'feat(api): add the thing\n\nSigned-off-by: A Human <human@example.invalid>\n',
+  });
+
+  assert.equal(result.code, 0);
+});
+
+test('a clean run says the attribution surface was clean too', () => {
+  // A sentence that reports one of two checks reads as a full pass. The count
+  // of surfaces was added for that reason once already; this is the same
+  // sentence gaining a second check and having to say so.
+  const result = scanWith({});
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /6 surfaces read/);
+  assert.match(result.stdout, /no AI-attribution trailer on the 'messages' surface/);
+});
+
+test('both checks failing in one run name themselves separately', () => {
+  // They are fixed in different places - one is a word in the text, the other
+  // is a trailer in a commit that has to be amended. A single BLOCKED line
+  // sends the author to the wrong remedy for one of them.
+  //
+  // The term comes OUT of SYNTHETIC rather than being written again. A fresh
+  // literal here is an added line in this pull request's own diff surface, so
+  // the gate would be scanning a new spelling of the stand-in against the real
+  // list - and a stand-in is only safe because it is the one already in the
+  // tree. Derived, it cannot drift from the constant the rest of the file arms.
+  const term = SYNTHETIC.split('|')[0];
+  const result = scanWith({ messages: `feat(api): ${term} import\n\n${AI_TRAILER}\n` });
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /BLOCKED - a named external product/);
+  assert.match(result.stderr, /BLOCKED - an AI-attribution trailer/);
+});
+
+test('the messages surface is still built from what this pull request introduces', () => {
+  // The attribution arm's whole false-positive argument is that `messages` is
+  // the range the pull request INTRODUCES, so a trailer found there belongs to
+  // a commit we are about to merge. That argument lives in a comment and in
+  // this file; the workflow is what makes it true, and nothing pinned it.
+  //
+  // Widening the range - to `origin/dev..head`, to a fixed depth, to the whole
+  // branch - would silently start flagging commits this pull request did not
+  // introduce, and every test above would stay green because they feed the
+  // surface directly rather than build it.
+  //
+  // Keyed on the RANGE rather than the whole command, because the format flag
+  // and the redirection may legitimately change.
+  const workflow = readFileSync(WORKFLOW, 'utf8');
+  const body = workflow
+    .split('\n')
+    .filter((line) => !/^\s*#/u.test(line))
+    .join('\n');
+
+  const collectors = [...body.matchAll(/git log[^\n]*?"\$\{([A-Z_]+)\}\.\.([^"]+)"/gu)];
+
+  // An empty list is the canary: a rename, a move into a script, or a rewritten
+  // command all land here, and an empty list satisfies a `for` loop in silence.
+  assert.notEqual(
+    collectors.length,
+    0,
+    'no `git log <base>..<head>` found in the job: this test is reading nothing, and a messages ' +
+      'surface built some other way is a different defect than the one below'
+  );
+
+  for (const [, base, head] of collectors) {
+    assert.equal(base, 'MERGE_BASE', `messages is built from \${${base}}, not the merge base`);
+    assert.match(
+      head,
+      /gate-head$/u,
+      `messages is built up to ${head}, not the head this pull request proposes`
+    );
+  }
+});
+
+test('the attribution arm names the surface it is scoped to, and it is a real surface', () => {
+  // Guards the scope as a value rather than as a comment: pointing the arm at a
+  // surface the collector never writes is an unreadable file and exit 2, and
+  // pointing it at a name outside the set would be an arm that never runs.
+  assert.equal(SURFACES.has(ATTRIBUTION_SURFACE), true);
+  assert.equal(ATTRIBUTION_SURFACE, 'messages');
 });
 
 // ---------------------------------------------------------------------------

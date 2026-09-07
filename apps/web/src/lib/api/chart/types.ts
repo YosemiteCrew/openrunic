@@ -90,13 +90,15 @@ export interface Problem {
 /**
  * Every state a medication statement can be in, as the API records them.
  *
- * Deliberately all eight rather than an active/discontinued pair. The four that
- * are neither are the ones a pair gets wrong: `ON_HOLD` is not stopped and not
- * being taken, `NOT_TAKEN` is a statement that the patient is not taking it,
- * `INTENDED` has not started, and `ENTERED_IN_ERROR` is a record to disregard.
- * Folding any of those into `ACTIVE` is a chart asserting a patient takes
- * something they do not, and folding them into a discontinued list asserts they
- * once did.
+ * Deliberately all eight rather than an active/discontinued pair. `ACTIVE` is
+ * the one the pair got right and `STOPPED` and `COMPLETED` are its discontinued
+ * analogues, which leaves FIVE the pair gets wrong: `ON_HOLD` is not stopped and
+ * not being taken, `NOT_TAKEN` is a statement that the patient is not taking it,
+ * `INTENDED` has not started, `ENTERED_IN_ERROR` is a record to disregard, and
+ * `UNKNOWN` is the API saying nobody knows - which a pair has to answer as one
+ * or the other and is wrong either way. Folding any of the five into `ACTIVE` is
+ * a chart asserting a patient takes something they do not, and folding them into
+ * a discontinued list asserts they once did.
  */
 export type MedicationStatus =
   | 'ACTIVE'

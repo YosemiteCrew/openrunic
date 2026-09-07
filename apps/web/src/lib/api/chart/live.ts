@@ -248,16 +248,26 @@ async function readMedications(
 }
 
 /**
- * The chart summary, from the four routes that exist.
+ * The chart summary, from the routes that exist and are mapped.
  *
- * Allergies, problems, medications, results and documents each have a segment
- * in `apps/api` already; mapping those payloads into this screen's view types
- * is a change of its own. Care gaps, the care team and the account balance have
- * no segment at all, and the last of those is a derivation over charges and
- * payments rather than a row anywhere. Until each is done they are reported as
- * absent: `NOT_RECORDED` for allergies, and empty lists elsewhere, which the
- * chart tabs already render as "nothing recorded" rather than as "nothing
- * wrong".
+ * Read rather than counted, because a count here goes stale the moment a part
+ * is wired and nothing fails when it does. What this function actually reads is
+ * the `Promise.all` below, plus the `patients.get` above it.
+ *
+ * MAPPED TODAY: the patient, visits (encounters joined to notes through the
+ * user directory), and medications.
+ *
+ * HAS A SEGMENT IN `apps/api` BUT IS NOT MAPPED YET: allergies, problems,
+ * results and documents. Mapping each payload into this screen's view types is
+ * a change of its own.
+ *
+ * HAS NO SEGMENT AT ALL: care gaps, the care team and the account balance - and
+ * the last of those is a derivation over charges and payments rather than a row
+ * anywhere.
+ *
+ * Everything in the last two groups is reported as absent: `NOT_RECORDED` for
+ * allergies, and empty lists elsewhere, which the chart tabs already render as
+ * "nothing recorded" rather than as "nothing wrong".
  */
 export async function readChartSummary(
   client: ApiClient,

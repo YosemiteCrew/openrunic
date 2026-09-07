@@ -394,7 +394,6 @@ export interface NoteListQuery extends PaginationQuery {
   order?: 'asc' | 'desc';
 }
 
-/** Mirrors `encounterListQuerySchema`. */
 /**
  * A medication statement, as `/bff/v0/medications/statements` returns it.
  *
@@ -440,6 +439,7 @@ export interface MedicationStatementListQuery extends PaginationQuery {
   order?: 'asc' | 'desc';
 }
 
+/** Mirrors `encounterListQuerySchema`. */
 export interface EncounterListQuery extends PaginationQuery {
   patientId?: string;
   facilityId?: string;

@@ -22,6 +22,7 @@ import type {
   FacilityListQuery,
   FormDefinitionDto,
   MedicationStatementDto,
+  MedicationStatementListQuery,
   NoteListQuery,
   Patient,
   PatientCreateBody,
@@ -38,7 +39,8 @@ import type {
   UserListQuery,
 } from '../types';
 
-import { mockChartFor } from './chart';
+import { MOCK_CHARTS, mockChartFor } from './chart';
+import type { Medication } from '../chart/types';
 import {
   MOCK_APPOINTMENTS,
   MOCK_DIRECTORY_FACILITIES,
@@ -210,6 +212,71 @@ export function filterNotes(
     );
   }
   return [...matched].sort((a, b) => a.createdAt.localeCompare(b.createdAt) * direction);
+}
+
+/**
+ * One fixture medication in DTO shape.
+ *
+ * `reportedAt`, `createdAt` and `updatedAt` are synthetic INSTANTS stepped back
+ * from `MOCK_NOW`, and deliberately not `startedOn`. They used to be
+ * `startedOn ?? MOCK_NOW`, which is wrong twice: it asserts a medication was
+ * reported and stored on the day it was started, and `startedOn` is a date with
+ * no time, so a consumer formatting an instant rendered midnight UTC - or the
+ * previous calendar day, east of it - where the live route serialises a real
+ * `toISOString()`. Stepped by index so `sort: 'reportedAt'` has a defined order
+ * to produce rather than a column of equal values.
+ */
+function toMedicationStatementDto(
+  patientId: string,
+  med: Medication,
+  index: number
+): MedicationStatementDto {
+  const reportedAt = new Date(Date.parse(MOCK_NOW) - index * 3_600_000).toISOString();
+  return {
+    id: med.id,
+    patientId,
+    encounterId: null,
+    rxnormCode: null,
+    display: med.drug,
+    sigText: med.sig,
+    status: med.status,
+    source: med.source,
+    effectiveStart: med.startedOn,
+    effectiveEnd: med.stoppedOn,
+    reportedAt,
+    note: null,
+    createdAt: reportedAt,
+    updatedAt: reportedAt,
+  };
+}
+
+/**
+ * The medication-statement query, applied.
+ *
+ * `encounterId`, `status`, `sort` and `order` are on the contract and were
+ * accepted and dropped here, so `readMedications` - which sends
+ * `sort: 'reportedAt', order: 'desc'` on every call - got fixture order in demo
+ * mode and newest-first against a real server. A difference that renders
+ * correctly in both and disagrees about which medication is at the top.
+ */
+export function filterMedicationStatements(
+  rows: readonly MedicationStatementDto[],
+  query: MedicationStatementListQuery = {}
+): readonly MedicationStatementDto[] {
+  const matched = rows.filter((row) => {
+    if (query.patientId && row.patientId !== query.patientId) return false;
+    if (query.encounterId && row.encounterId !== query.encounterId) return false;
+    if (query.status && row.status !== query.status) return false;
+    return true;
+  });
+
+  // Ascending by default, for the reason given in `filterEncounters`.
+  const direction = query.order === 'desc' ? -1 : 1;
+  const sort = query.sort ?? 'reportedAt';
+  return [...matched].sort((a, b) => {
+    if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
+    return a.reportedAt.localeCompare(b.reportedAt) * direction;
+  });
 }
 
 export function filterFacilities(
@@ -740,24 +807,18 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     medicationStatements: {
       list: (query = {}) =>
         answer(() => {
-          const chart = query.patientId === undefined ? undefined : mockChartFor(query.patientId);
-          const rows: MedicationStatementDto[] = (chart?.medications ?? []).map((med) => ({
-            id: med.id,
-            patientId: chart?.patientId ?? '',
-            encounterId: null,
-            rxnormCode: null,
-            display: med.drug,
-            sigText: med.sig,
-            status: med.status,
-            source: med.source,
-            effectiveStart: med.startedOn,
-            effectiveEnd: med.stoppedOn,
-            reportedAt: med.startedOn ?? MOCK_NOW,
-            note: null,
-            createdAt: med.startedOn ?? MOCK_NOW,
-            updatedAt: med.startedOn ?? MOCK_NOW,
-          }));
-          return paginate(rows, query.page, query.pageSize);
+          // Every accessible statement when no patient is named, which is what
+          // the live route does. Answering an empty page there said this
+          // deployment records no medications at all - the same wrong sentence
+          // the per-patient case was written to avoid, one level up.
+          const charts =
+            query.patientId === undefined ? MOCK_CHARTS : [mockChartFor(query.patientId)];
+          const rows = charts.flatMap((chart) =>
+            chart.medications.map((med, index) =>
+              toMedicationStatementDto(chart.patientId, med, index)
+            )
+          );
+          return paginate(filterMedicationStatements(rows, query), query.page, query.pageSize);
         }),
     },
 

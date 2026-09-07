@@ -197,6 +197,42 @@ test.describe('the full clinical day', () => {
         'true'
       );
     });
+
+    await clinicalStep('4a. A scrolled row keeps the drug it is about', context, async () => {
+      await page.getByRole('tab', { name: /^Medications/ }).click();
+      const scroller = page.locator('.or-table__scroll').first();
+      await expect(scroller).toBeVisible();
+
+      // Only a real browser can answer this. jsdom does no layout, so a table
+      // that carries the drug name off the left edge and a table that pins it
+      // are the same DOM; the unit tests can assert the stylesheet and nothing
+      // more. Here the row is actually scrolled and the cell is actually
+      // measured, at all three viewports - which is the axis that was wrong:
+      // the pin was released above 768px, so this assertion would have passed
+      // on phone-375 and failed on tablet-768 and desktop-1440. Run against the
+      // released pin it did exactly that: 2 failed, 31 passed, both failures
+      // this step. No pixel width is quoted here on purpose - the rail's width
+      // is a property of the shell and moves; what the assertion is about is
+      // that the cell stays with the box whatever that width turns out to be.
+      const drug = scroller.locator('.or-table__row .or-table__td').first();
+      const before = await drug.boundingBox();
+      const box = await scroller.boundingBox();
+      if (!before || !box) throw new Error('the medications table did not render a row');
+
+      const moved = await scroller.evaluate((el) => {
+        const max = el.scrollWidth - el.clientWidth;
+        el.scrollLeft = max;
+        return max;
+      });
+      // A table that fits proves nothing about a pin, so the fixture has to be
+      // able to exhibit the defect before the assertion below means anything.
+      expect(moved).toBeGreaterThan(0);
+
+      const after = await drug.boundingBox();
+      if (!after) throw new Error('the first cell left the layout when scrolled');
+      expect(Math.abs(after.x - box.x)).toBeLessThan(2);
+      await expect(drug).toBeVisible();
+    });
   });
 
   test('the clinician writes and signs a note', async ({ page }, testInfo) => {

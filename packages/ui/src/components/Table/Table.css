@@ -25,6 +25,24 @@
   /* Named so the caption can size itself to the visible width rather than the full table
      width; without this the caption is as wide as the widest row and scrolls out of sight. */
   container-type: inline-size;
+  /* Says there is more to the right, and says it only while there is.
+     `overflow-x: auto` makes the rest of the row reachable but announces nothing: on a
+     platform with overlay scrollbars there is no bar until the reader already knows to
+     scroll, so the last visible column is simply guillotined mid-word and reads as a
+     rendering fault rather than as an edge.
+     Two layers, and the pair is what makes it conditional without JavaScript. The COVER
+     is attached `local`, so it travels with the content and sits over this edge only when
+     the content is scrolled to its end; the EDGE beneath it is attached `scroll`, so it
+     stays with the box and is revealed exactly when the cover has moved away. No
+     measurement, no resize observer, and nothing to keep in sync with the row count.
+     Espresso-tinted per the elevation tokens, and only on the right: the left is answered
+     by the pinned first column below, whose own opaque paper would cover a gradient there
+     anyway. */
+  background:
+    linear-gradient(to left, var(--surface-data) 40%, transparent) 100% 0 / 44px 100% no-repeat
+      local,
+    linear-gradient(to left, rgba(46, 33, 26, 0.14), transparent) 100% 0 / 24px 100% no-repeat
+      scroll;
 }
 
 .or-table__grid {
@@ -105,9 +123,20 @@
 
 /* Responsive ------------------------------------------------------------- */
 
-/* Below md the first column is pinned, so a value scrolled into view still belongs to a
-   visible test name. The pinned cells carry their own opaque paper rather than a vertical
-   rule or a shadow: this system separates columns with space, not lines. */
+/* The first column is pinned whenever the row scrolls, so a value scrolled into view still
+   belongs to a visible test name. The pinned cells carry their own opaque paper rather than
+   a vertical rule or a shadow: this system separates columns with space, not lines.
+
+   Unconditional, and that is the fix rather than an oversight. This used to be released
+   above 768px, which put the pin on the VIEWPORT while overflow is a property of the
+   CONTAINER: the chart rail leaves the records table 743px of a 1440px page, so the widest
+   table on the patient chart overflowed by 537px at the desktop width with the pin
+   switched off, and scrolling to the last column carried the drug name 242px off the left
+   edge. A row that has lost the thing it is about is the case this rule exists for, and it
+   was released exactly where clinicians read.
+   Nothing is needed to switch it back off when the table fits: `position: sticky` has no
+   effect until its scroll container actually scrolls, so on a table that fits this
+   declaration is inert and the cell renders where it always did. */
 .or-table__th:first-child,
 .or-table__td:first-child {
   position: sticky;
@@ -128,14 +157,4 @@
 .or-table__td:first-child {
   z-index: 1;
   background: var(--surface-data);
-}
-
-@media (min-width: 768px) {
-  .or-table__th:first-child {
-    left: auto;
-  }
-
-  .or-table__td:first-child {
-    position: static;
-  }
 }

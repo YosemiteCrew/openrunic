@@ -106,6 +106,25 @@ export function routeKey(routePath) {
  *
  * Returns an empty array when the route root itself is absent, which is the
  * genuinely-no-surface case rather than an error.
+ *
+ * **This is the one function here that keeps a route-root parameter, and the
+ * reason is that its second argument is evidence.** `classify` and `inspect`
+ * lost theirs because a second, underived route root is a second answer to
+ * "which root are we reading" and this file's whole subject is two such answers
+ * disagreeing silently. Here there is no comparison to disagree with - it is a
+ * walk - and the parameter carries the cases that prove `resolveWithin` refuses
+ * a hostile or mis-rooted root: `'../..'`, `'/etc'`, `'.'`. Deleting it would
+ * delete that evidence, so the next person tidying the module should know it is
+ * a deliberate exception rather than one that was missed.
+ *
+ * The cost, stated rather than left to be found: `classify(findPages(root,
+ * someOtherRoot))` is still expressible by hand and still answers `absent` over
+ * a complete surface. Nothing in this repository does it, and `inspect` is the
+ * only composition of the two - so the invariant is now **go through
+ * `inspect`**, held by there being one composition rather than by a signature.
+ * That is weaker than unrepresentable and stronger than what it replaced, and
+ * it is written down here because a decision with no record is one that gets
+ * re-litigated.
  */
 export function findPages(repoRoot, appDir = APP_DIR) {
   // `resolveWithin` refuses a route root that escapes the repository and returns

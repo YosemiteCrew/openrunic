@@ -247,7 +247,13 @@ test('a route root that is not there is unrooted, not absent', () => {
   // A route root that is deliberately NOT APP_DIR, whatever APP_DIR happens to
   // be - deriving this one from APP_DIR would make the two collide the moment
   // the route root moves, which is the fault this case exists to catch.
-  const moved = treeWith(['apps/web/elsewhere/(app)/schedule/page.tsx']);
+  const OTHER_ROOT = 'apps/web/elsewhere';
+  // The last literal in this file whose correctness is not derived, and it is
+  // deliberate: deriving it would make the two collide the moment the route
+  // root moves, which is the fault this case exists to catch. This assertion
+  // keeps the deliberate non-derivation from quietly becoming a coincidence.
+  assert.notEqual(APP_DIR, OTHER_ROOT);
+  const moved = treeWith([`${OTHER_ROOT}/(app)/schedule/page.tsx`]);
   try {
     assert.equal(inspect(moved).verdict, 'unrooted');
     // control: the same tree with the root where APP_DIR says gets a real

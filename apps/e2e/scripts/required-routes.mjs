@@ -203,10 +203,36 @@ export function findRouteRoot(repoRoot, appDir = APP_DIR) {
  * for a route root that is not there - which is a stale constant rather than a
  * branch with no clinical surface, because every branch that builds has this
  * directory. It fails, like `stale`.
+ *
+ * **It deliberately takes no route root.** An earlier version accepted one,
+ * passed it to `findPages` for the walk, and compared the result against the
+ * module `REQUIRED_ROUTES` - so the found keys carried the argument and the
+ * required keys carried `APP_DIR`, and they could never meet. Pointed at a
+ * complete eleven-route surface under any other root it answered `absent`, the
+ * verdict that exits zero, having just walked and counted those eleven files.
+ * `unrooted` had the quiet version of the same thing: it enumerated paths under
+ * one root while `appDir` in the same object named another.
+ *
+ * That is #26/#160 again inside the function whose subject is #26/#160, and no
+ * arm anyone had could reach it: they all mutate `APP_DIR` or the list derived
+ * from it, which is exactly what the derivation covers. **A fix that closes a
+ * hole is the best available cover for the same hole one argument to the left.**
+ *
+ * Both halves were two lines to patch. The parameter is gone instead, because a
+ * function that cannot be pointed at a second route root cannot disagree with
+ * itself about which one it read - there is nothing left to assert. `findPages`
+ * and `findRouteRoot` keep theirs: theirs is a walk with no comparison to
+ * disagree with, and it carries the arms that prove a hostile root is refused.
  */
-export function inspect(repoRoot, appDir = APP_DIR) {
-  if (findRouteRoot(repoRoot, appDir) === null) {
-    return { verdict: 'unrooted', appDir, present: [], moved: [], missing: [...REQUIRED_ROUTES] };
+export function inspect(repoRoot) {
+  if (findRouteRoot(repoRoot) === null) {
+    return {
+      verdict: 'unrooted',
+      appDir: APP_DIR,
+      present: [],
+      moved: [],
+      missing: [...REQUIRED_ROUTES],
+    };
   }
-  return { ...classify(findPages(repoRoot, appDir)), appDir };
+  return { ...classify(findPages(repoRoot)), appDir: APP_DIR };
 }

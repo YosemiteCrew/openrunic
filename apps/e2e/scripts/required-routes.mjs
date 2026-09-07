@@ -137,8 +137,14 @@ export function findPages(repoRoot, appDir = APP_DIR) {
  * on route keys rather than on literal strings, so a screen that has been
  * regrouped is found and reported as MOVED rather than counted as missing -
  * which is the whole point, and is the state this repository was in.
+ *
+ * It takes no route list, for the reason `inspect` takes no route root: a
+ * second, underived list is a second answer to "which root are we reading",
+ * and this file's whole subject is two such answers disagreeing silently. With
+ * both parameters gone there is exactly one route root in the module and the
+ * disagreement is unrepresentable rather than enforced by having one caller.
  */
-export function classify(pages, requiredRoutes = REQUIRED_ROUTES) {
+export function classify(pages) {
   const literal = new Set(pages);
   const byKey = new Map();
   for (const page of pages) {
@@ -151,7 +157,7 @@ export function classify(pages, requiredRoutes = REQUIRED_ROUTES) {
   const moved = [];
   const missing = [];
 
-  for (const route of requiredRoutes) {
+  for (const route of REQUIRED_ROUTES) {
     if (literal.has(route)) {
       present.push(route);
       continue;
@@ -172,7 +178,7 @@ export function classify(pages, requiredRoutes = REQUIRED_ROUTES) {
   // lookup above, not the sequence here.
   let verdict;
   if (moved.length > 0) verdict = 'stale';
-  else if (missing.length > 0 && missing.length === requiredRoutes.length) verdict = 'absent';
+  else if (missing.length > 0 && missing.length === REQUIRED_ROUTES.length) verdict = 'absent';
   else if (missing.length > 0) verdict = 'stale';
   else verdict = 'run';
 

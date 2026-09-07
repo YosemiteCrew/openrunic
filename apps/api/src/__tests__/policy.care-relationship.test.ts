@@ -2135,27 +2135,73 @@ describe('every chart on a page is decided at the same instant', () => {
    * nothing and passes through in silence - which reads exactly like a system
    * with no defect. Wrap `forRequest` and proxy what it returns.
    */
-  const advanceOnFirstTeamRead = () => {
-    let fired = false;
-    return (registry: RepositoryRegistry): RepositoryRegistry => ({
+  /**
+   * Reports whether it fired, and the cases assert it. A decorator that never
+   * ran leaves both arms at the same status, which reads exactly like a system
+   * with no defect - the failure that ate three arms before this one landed.
+   */
+  const advanceOnFirstRead = (collection: 'careTeams' | 'breakGlassGrants') => {
+    const state = { fired: false };
+    const decorate = (registry: RepositoryRegistry): RepositoryRegistry => ({
       forRequest: (scope) => {
         const real = registry.forRequest(scope);
+        /* One branch per collection rather than an index, because the two
+           list queries are different types and a union parameter is not
+           assignable to either of them. */
+        const advance = (): void => {
+          if (state.fired) return;
+          state.fired = true;
+          vi.setSystemTime(new Date(BOUNDARY.getTime() + 60_000));
+        };
+        if (collection === 'careTeams') {
+          const target = real.careTeams;
+          return {
+            ...real,
+            careTeams: {
+              ...target,
+              list: async (query: Parameters<typeof target.list>[0]) => {
+                advance();
+                return target.list(query);
+              },
+            },
+          };
+        }
+        const target = real.breakGlassGrants;
         return {
           ...real,
-          careTeams: {
-            ...real.careTeams,
-            list: async (query: Parameters<typeof real.careTeams.list>[0]) => {
-              if (!fired) {
-                fired = true;
-                vi.setSystemTime(new Date(BOUNDARY.getTime() + 60_000));
-              }
-              return real.careTeams.list(query);
+          breakGlassGrants: {
+            ...target,
+            list: async (query: Parameters<typeof target.list>[0]) => {
+              advance();
+              return target.list(query);
             },
           },
         };
       },
     });
+    return { decorate, state };
   };
+
+  const aDocumentFor = (chart: string, id: string): ScopedRow<'Document'> => ({
+    ...storageColumns(id),
+    patientId: chart,
+    encounterId: null,
+    category: '11488-4',
+    title: 'Consult note',
+    storageKey: `documents/${chart}.pdf`,
+    contentType: 'application/pdf',
+    sha256: 'a'.repeat(64),
+    byteSize: 20_480,
+    source: 'FAX',
+    status: 'INBOX',
+    sensitivityClass: 'NORMAL',
+    receivedAt: FIXED_NOW,
+    filedAt: null,
+    filedById: null,
+    expiresAt: null,
+    supersededById: null,
+    errorReason: null,
+  });
 
   const twoChartsOnePage = (dataset: Dataset): void => {
     let n = 9_420;
@@ -2194,26 +2240,101 @@ describe('every chart on a page is decided at the same instant', () => {
     }
   };
 
-  const listDocuments = async (advance: boolean): Promise<number> => {
-    const { app, dataset } = createTestApp(
-      advance ? { decorateRepositories: advanceOnFirstTeamRead() } : {}
+  const listDocuments = async (
+    advance: null | 'careTeams' | 'breakGlassGrants',
+    seedFixture: (dataset: Dataset) => void = twoChartsOnePage
+  ): Promise<{
+    status: number;
+    fired: boolean;
+    relationships: unknown[];
+    breakglass: unknown[];
+  }> => {
+    const advancer = advance === null ? null : advanceOnFirstRead(advance);
+    const { app, dataset, sink } = createTestApp(
+      advancer === null ? {} : { decorateRepositories: advancer.decorate }
     );
-    twoChartsOnePage(dataset);
+    seedFixture(dataset);
     const res = await app.request('/bff/v0/documents?pageSize=10', {
       headers: bearer(TOKENS.clinicianA),
     });
-    return res.status;
+    const accesses = sink.events.filter((entry) => entry.event.action.startsWith('chart.access'));
+    return {
+      status: res.status,
+      fired: advancer?.state.fired ?? false,
+      relationships: accesses.map((entry) => entry.event.metadata['relationship']),
+      breakglass: accesses.map((entry) => entry.event.breakglass),
+    };
   };
+
+  /**
+   * A grant, an unbounded team behind it, and two charts.
+   *
+   * `break-glass` sits above `care-team` in `RELATIONSHIP_SOURCES`, so while the
+   * grant holds it is what answers - and `middleware/policy.ts` derives both the
+   * action name and the `breakglass` compliance column from WHICH source
+   * answered. Let the grant expire between the two gates and the second chart
+   * falls through to the team, which authorises it perfectly properly and
+   * records it as an ordinary read.
+   *
+   * The status is `200` on both sides, which is what makes this the worse half:
+   * a refused page is a bug report, and half an emergency access missing from
+   * "list every emergency access this quarter" is nothing at all until somebody
+   * audits the auditor. Which charts land on which side is decided by `Set`
+   * iteration order.
+   */
+  const grantAndTeamPerChart = (dataset: Dataset): void => {
+    let n = 9_460;
+    for (const chart of [CHART_ONE, CHART_TWO]) {
+      seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: `OR-10${n}` }));
+      seed(dataset, 'BreakGlassGrant', {
+        ...storageColumns(testId((n += 1))),
+        userId: SUBJECTS.clinicianA,
+        patientId: chart,
+        reason: 'Collapsed in reception, no record at this site.',
+        grantedAt: new Date(BOUNDARY.getTime() - 60 * 60_000),
+        expiresAt: BOUNDARY,
+      });
+      /* Unbounded, so it catches the fall-through rather than refusing. That is
+         what makes the split silent instead of a 404. */
+      aTeamWithMember(dataset, {
+        patientId: chart,
+        teamId: testId((n += 1)),
+        memberId: testId((n += 1)),
+        teamPeriodEnd: null,
+        periodEnd: null,
+      });
+      seed(dataset, 'Document', { ...aDocumentFor(chart, testId((n += 1))) });
+    }
+  };
+
+  it('records every chart on a page under one compliance classification', async () => {
+    const control = await listDocuments(null, grantAndTeamPerChart);
+    expect(control.status).toBe(200);
+    expect(control.relationships).toEqual(['break-glass', 'break-glass']);
+    expect(control.breakglass).toEqual([true, true]);
+
+    const advanced = await listDocuments('breakGlassGrants', grantAndTeamPerChart);
+    expect(advanced.fired).toBe(true);
+    expect(advanced.status).toBe(200);
+    // Both, not one of each. Before this the second chart fell through to the
+    // care team and was written as an ordinary read on the same page.
+    expect(advanced.relationships).toEqual(['break-glass', 'break-glass']);
+    expect(advanced.breakglass).toEqual([true, true]);
+  });
 
   it('does not refuse the second chart because the clock moved after the first', async () => {
     /* The control. Both memberships are in force at the request's instant, so
        the page is readable and the case below is not measuring a refusal that
        would have happened anyway. */
-    expect(await listDocuments(false)).toBe(200);
+    expect((await listDocuments(null)).status).toBe(200);
 
     /* The arm. The clock crosses the teams' `periodEnd` between the two gates.
        Reading `receivedAt` makes both decisions at the instant the request
        arrived; taking a fresh `new Date()` per chart refuses the second. */
-    expect(await listDocuments(true)).toBe(200);
+    const advanced = await listDocuments('careTeams');
+    // The decorator ran. Without this, a decoration that silently stopped
+    // firing leaves both arms at 200 and the case tests nothing.
+    expect(advanced.fired).toBe(true);
+    expect(advanced.status).toBe(200);
   });
 });

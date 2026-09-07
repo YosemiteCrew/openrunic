@@ -22,18 +22,83 @@ export interface FhirPaging {
 /** The raw query string, as Hono hands it over. */
 export type SearchParams = Record<string, string>;
 
+/**
+ * The same query string with its multiplicity intact, as `c.req.queries()`
+ * gives it.
+ *
+ * `SearchParams` cannot express a repeated parameter: `c.req.query()` keeps the
+ * first occurrence of each name and discards the rest. Every check below has to
+ * run on this form instead, because a check that reads the flattened record
+ * cannot see the occurrence it is meant to refuse.
+ */
+export type SearchOccurrences = Record<string, readonly string[]>;
+
+/** No parameter may repeat unless a call site names one. */
+const NONE_REPEATABLE: ReadonlySet<string> = new Set();
+
 export function rejectUnsupportedParams(
   resourceType: string,
-  query: SearchParams,
-  accepted: ReadonlySet<string>
+  query: SearchOccurrences,
+  accepted: ReadonlySet<string>,
+  repeatable: ReadonlySet<string> = NONE_REPEATABLE
 ): void {
   rejectUnknown(resourceType, query, accepted);
+  rejectRepeated(resourceType, query, repeatable);
   rejectEmpty(resourceType, query);
+}
+
+/**
+ * A parameter sent twice is refused, not answered with one of its values.
+ *
+ * FHIR reads `?code=A&code=B` as AND - resources carrying both - which for a
+ * single-valued element is the empty set. This server applied the first value
+ * and dropped the second, so the response was *wider* than the question, which
+ * is the failure the header of this file exists to prevent. It was also
+ * order-dependent: reversing the two changed the answer.
+ *
+ * The second value bypassed every guard as well as every filter. `?patient=
+ * <uuid>&patient=nonsense` answered 200 while the reverse answered 400, so the
+ * UUID check, the empty-value refusal and the value-set checks were reachable
+ * only in the first position. Refusing here makes that unreachable rather than
+ * merely unlikely - the guards below never see a second occurrence at all.
+ *
+ * Refusing rather than implementing AND, which is the other honest answer.
+ * Every descriptor's query type takes a scalar where AND needs a set, so that
+ * is a change to fifty-odd `toQuery` implementations and to both ports; and it
+ * is the same change the comma form (`?code=A,B`, OR) would need, so the two
+ * belong in one piece of work rather than half of one. Until then a refusal
+ * costs the client one round trip and names the parameter, and a silent
+ * widening costs somebody a privacy incident.
+ *
+ * `repeatable` is for the parameter that means a list on purpose. `$export`'s
+ * `_type` is the only one: `?_type=Patient&_type=Encounter` is a legal way to
+ * send a list and `parseTypeFilter` reads every occurrence.
+ */
+function rejectRepeated(
+  resourceType: string,
+  query: SearchOccurrences,
+  repeatable: ReadonlySet<string>
+): void {
+  const repeated = Object.entries(query)
+    .filter(([name, values]) => values.length > 1 && !repeatable.has(name))
+    .map(([name]) => name);
+  if (repeated.length === 0) return;
+
+  throw ApiError.malformed(
+    `Repeated search ${repeated.length === 1 ? 'parameter' : 'parameters'} for ${resourceType}: ${repeated.join(', ')}. Send each parameter once; this server does not combine two values for the same parameter.`,
+    {
+      fhirIssueCode: 'not-supported',
+      issues: repeated.map((name) => ({
+        path: name,
+        message: 'sent more than once',
+      })),
+    }
+  );
 }
 
 function rejectUnknown(
   resourceType: string,
-  query: SearchParams,
+  query: SearchOccurrences,
   accepted: ReadonlySet<string>
 ): void {
   const unsupported = Object.keys(query).filter((name) => !accepted.has(name));
@@ -54,10 +119,12 @@ function rejectUnknown(
 /**
  * A parameter that is present and empty is refused, not answered.
  *
- * `SearchParams` is `Record<string, string>`, so `?family=` arrives as
- * present-and-empty rather than absent, and every parameter on this boundary
- * therefore has a degenerate case. Before this, they answered it three
- * different ways: thirteen date parameters and seven closed-value-set tokens
+ * A query string carries `?family=` as present-and-empty rather than as
+ * absent, so every parameter on this boundary has a degenerate case. It is
+ * refused in any position - `?_type=Patient&_type=` is refused too, on the one
+ * parameter allowed to repeat, because a blank occurrence is a client sending
+ * a blank field rather than asking for anything. Before this, they answered it
+ * three different ways: thirteen date parameters and seven closed-value-set tokens
  * refused it, because an empty string is not a date and is not a member of a
  * value set; forty-one selected nothing, because an equality against an empty
  * string matches no row; and seven answered with EVERY row - `Patient?name=`,
@@ -89,9 +156,9 @@ function rejectUnknown(
  * `_count` and `_offset` need no exception: `Number('')` is 0, which is outside
  * both bounds, so they already refuse.
  */
-function rejectEmpty(resourceType: string, query: SearchParams): void {
+function rejectEmpty(resourceType: string, query: SearchOccurrences): void {
   const empty = Object.entries(query)
-    .filter(([, value]) => value === '')
+    .filter(([, values]) => values.includes(''))
     .map(([name]) => name);
   if (empty.length === 0) return;
 

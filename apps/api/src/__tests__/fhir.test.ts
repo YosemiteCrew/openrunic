@@ -322,10 +322,10 @@ describe('search parameter handling', () => {
   it('refuses an unsupported parameter rather than ignoring it', () => {
     const accepted = acceptedSearchParams(servedResources(), 'Patient');
 
-    expect(() => rejectUnsupportedParams('Patient', { telecom: 'x' }, accepted)).toThrow(
+    expect(() => rejectUnsupportedParams('Patient', { telecom: ['x'] }, accepted)).toThrow(
       /Unsupported search/
     );
-    expect(() => rejectUnsupportedParams('Patient', { family: 'x' }, accepted)).not.toThrow();
+    expect(() => rejectUnsupportedParams('Patient', { family: ['x'] }, accepted)).not.toThrow();
   });
 
   it('refuses a supported parameter that is present and empty', () => {
@@ -337,15 +337,71 @@ describe('search parameter handling', () => {
      * row, so a client that filtered received everything and could not tell.
      */
     const accepted = new Set(['family']);
-    expect(() => rejectUnsupportedParams('Patient', { family: '' }, accepted)).toThrow(
+    expect(() => rejectUnsupportedParams('Patient', { family: [''] }, accepted)).toThrow(
       /Empty search parameter/u
+    );
+  });
+
+  it('refuses a parameter sent more than once', () => {
+    /*
+     * FHIR reads `?family=A&family=B` as AND. This server applied A and
+     * discarded B, so the answer was wider than the question and reversing the
+     * two changed it. The values arrive here as an array precisely so this can
+     * be seen: `c.req.query()` keeps the first occurrence, and a check reading
+     * that record cannot tell one occurrence from three.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { family: ['a', 'b'] }, accepted)).toThrow(
+      /Repeated search parameter/u
+    );
+    expect(() => rejectUnsupportedParams('Patient', { family: ['a'] }, accepted)).not.toThrow();
+  });
+
+  it('permits a repeat only for a parameter a call site names', () => {
+    /*
+     * `$export`'s `_type` means a list on purpose and `parseTypeFilter` reads
+     * every occurrence. The exemption is per parameter rather than per route:
+     * `_since` sent twice is still two answers to one question.
+     */
+    const accepted = new Set(['_type', '_since']);
+    const repeatable = new Set(['_type']);
+    expect(() =>
+      rejectUnsupportedParams('$export', { _type: ['Patient', 'Encounter'] }, accepted, repeatable)
+    ).not.toThrow();
+    expect(() =>
+      rejectUnsupportedParams('$export', { _since: ['a', 'b'] }, accepted, repeatable)
+    ).toThrow(/Repeated search parameter/u);
+  });
+
+  it('refuses an empty occurrence of a parameter that is allowed to repeat', () => {
+    /*
+     * The exemption is from the repetition rule alone. `?_type=Patient&_type=`
+     * is a client sending a blank field, and the reason the empty rule exists
+     * is that a blank field must not be read as an absent parameter.
+     */
+    const accepted = new Set(['_type']);
+    expect(() =>
+      rejectUnsupportedParams('$export', { _type: ['Patient', ''] }, accepted, new Set(['_type']))
+    ).toThrow(/Empty search parameter/u);
+  });
+
+  it('reports a repeated parameter as unknown when it is also unsupported', () => {
+    /*
+     * Order matters and is asserted, for the same reason the empty case is:
+     * "not a supported search parameter" tells the client what to fix, where
+     * "sent more than once" would send them to send an unsupported parameter
+     * once.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: ['a', 'b'] }, accepted)).toThrow(
+      /Unsupported search parameter/u
     );
   });
 
   it('reports an unknown empty parameter as unknown rather than as empty', () => {
     /* Both rules match; only one of them tells the client what to fix. */
     const accepted = new Set(['family']);
-    expect(() => rejectUnsupportedParams('Patient', { telecom: '' }, accepted)).toThrow(
+    expect(() => rejectUnsupportedParams('Patient', { telecom: [''] }, accepted)).toThrow(
       /Unsupported search parameter/u
     );
   });
@@ -359,7 +415,7 @@ describe('search parameter handling', () => {
      * parser's. A space is a legal character in a name.
      */
     const accepted = new Set(['family']);
-    expect(() => rejectUnsupportedParams('Patient', { family: ' ' }, accepted)).not.toThrow();
+    expect(() => rejectUnsupportedParams('Patient', { family: [' '] }, accepted)).not.toThrow();
   });
 
   it('reads the value half of a token, and a bare value whole', () => {
@@ -578,6 +634,77 @@ describe('GET /fhir/Patient', () => {
     expect(await total('birthdate=1980-01-01')).toBe(1);
     expect(await total('gender=male')).toBe(1);
     expect(await total('given=Test')).toBe(1);
+  });
+
+  it('refuses a repeated parameter instead of answering the first value', async () => {
+    /*
+     * The defect this replaces was invisible from every other seat. Both
+     * repository ports receive an already-flattened `Record<string, string>`,
+     * so a port-agreement test finds them agreeing on the same wrong answer,
+     * and every `toQuery` sees one value because one value is all that
+     * survives. Only a request carrying a real query string reaches the
+     * flattening, which is why this test sends a URL rather than calling the
+     * check.
+     *
+     * The two rows below are what makes the pair meaningful: each family name
+     * selects a different patient on its own, so before this the two orders
+     * answered with different single rows - first-wins, and the second
+     * constraint dropped without a word.
+     */
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ id: testId(1) }),
+      makePatientRow({ id: testId(2), mrn: 'OR-100999', familyName: 'Nobody' })
+    );
+    const search = async (query: string): Promise<Response> =>
+      app.request(`/fhir/Patient?${query}`, { headers: bearer(TOKENS.clinicianA) });
+
+    expect(((await (await search('family=Patientsson')).json()) as Bundle<Patient>).total).toBe(1);
+    expect(((await (await search('family=Nobody')).json()) as Bundle<Patient>).total).toBe(1);
+
+    for (const query of ['family=Patientsson&family=Nobody', 'family=Nobody&family=Patientsson']) {
+      const res = await search(query);
+      expect(res.status).toBe(400);
+      const outcome = (await res.json()) as OperationOutcome;
+      expect(outcome.issue[0]).toMatchObject({
+        severity: 'error',
+        code: 'not-supported',
+        expression: ['family'],
+      });
+    }
+  });
+
+  it('refuses a repeated parameter in the order where the guards never looked', async () => {
+    /*
+     * The half of this that is not about filtering. A second occurrence
+     * bypassed validation as well as narrowing: `?_id=<uuid>&_id=nonsense`
+     * answered 200 with the valid patient's row while the reverse answered
+     * 400, so the UUID refusal was reachable only in the first position. The
+     * assertion is that the two orders now agree - not merely that one of them
+     * fails.
+     */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.clinicianA });
+    const search = async (query: string): Promise<Response> =>
+      app.request(`/fhir/Patient?${query}`, { headers: bearer(TOKENS.clinicianA) });
+
+    const valid = await search(`_id=${testId(1)}`);
+    expect(valid.status).toBe(200);
+
+    for (const query of [
+      `_id=${testId(1)}&_id=openrunic-not-a-uuid`,
+      `_id=openrunic-not-a-uuid&_id=${testId(1)}`,
+    ]) {
+      const res = await search(query);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as OperationOutcome).issue[0]).toMatchObject({
+        code: 'not-supported',
+        expression: ['_id'],
+      });
+    }
   });
 
   it.each([

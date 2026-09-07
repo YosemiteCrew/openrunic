@@ -1972,55 +1972,52 @@ describe('every advertised search parameter narrows', () => {
    * Every one of them sends ONE value for ONE parameter. FHIR gives a repeated
    * parameter and a comma-separated one meanings of their own - AND across
    * repeats, OR within a list - and neither shape ever reaches a case here, so
-   * nothing below says whether either is applied, ignored, or refused.
+   * nothing below says what happens to either.
    *
-   * It is not hypothetical. Four patients seeded, against the served app:
+   * The two shapes have different answers, so they are stated separately.
    *
-   *   ?family=TestpersonA                       200   total 1
-   *   ?family=TestpersonA&family=TestpersonB    200   total 1   TestpersonA
-   *   ?family=TestpersonB&family=TestpersonA    200   total 1   TestpersonB
+   * A REPEAT is refused. `rejectRepeated` in `fhir/params.ts` answers a 400
+   * before any case here is reached, and both orders are pinned by
+   * `fhir.test.ts` - `refuses a repeated parameter instead of answering the
+   * first value`, and `... in the order where the guards never looked` for the
+   * second occurrence that used to bypass the UUID check. It was FIRST-wins and
+   * order-dependent before that, which is what issue #381 measured.
    *
-   * Reversing the order returns the other patient, which is what makes it
-   * FIRST-wins rather than the fixture happening to match one of the two: both
-   * rows say `total 1` and on their own they would prove nothing.
+   * A COMMA LIST is still one value, and that half is neither implemented nor
+   * pinned. It is not hypothetical - five patients seeded against the served
+   * app, one of whose family name is literally `TestpersonA,TestpersonB`,
+   * because a zero cannot say why it is a zero:
    *
-   * The comma form needs its own arm for the same reason - a zero cannot say
-   * why it is a zero. So a fifth patient, whose family name is literally
-   * `TestpersonA,TestpersonB`:
-   *
-   *   ?family=TestpersonA,TestpersonB           200   total 1   the literal row, alone
+   *   ?family=TestpersonA                       200   total 2   prefix, so two rows
+   *   ?family=TestpersonA,TestpersonB           200   total 1   the literal row, ALONE
    *   ?family=TestpersonZ,TestpersonB           200   total 0   first half matches nothing
+   *   ?family=TestpersonA&family=TestpersonB    400   sent more than once
+   *   ?family=TestpersonB&family=TestpersonA    400   sent more than once
    *
    * The comma is part of one value rather than a list separator, shown by what
    * it DOES match and not only by what it does not.
    *
    * `family` is a prefix match, which is why `?family=TestpersonA` returns two
-   * rows once that fifth patient exists and the four-row table above is the
-   * four-patient fixture. Two more arms, because `?family=Testperson`
-   * returning all five is equally true of a *contains* match and cannot tell
-   * the two apart - and `containsFold` sits in the same file as
-   * `startsWithFold`, serving the general `q` parameter:
+   * rows. Two more arms, because `?family=Testperson` returning all five is
+   * equally true of a *contains* match and cannot tell the two apart - and
+   * `containsFold` sits in the same file as `startsWithFold`, serving the
+   * general `q` parameter:
    *
    *   ?family=personA                           200   total 0   prefix, not contains
    *   ?family=testpersona                       200   total 2   and case-folded
    *
-   * Every row here was re-run against `dev` after this landed.
+   * Every row above was re-run on the commit that added the repeat refusal,
+   * against `createTestApp` with that five-patient fixture. The two 400 rows
+   * are additionally asserted by the two named cases, so those cannot go stale
+   * without a test going red; the seven 200 rows can, and are the ones to
+   * re-run rather than trust.
    *
-   * So the first value wins and the second is dropped without a word, and a
-   * comma list is one value. `fhir/index.ts`
-   * reads `c.req.query()` - the single-value form - for every FHIR search, while
-   * the all-values `queries()` is used once in that file, for `_type` on
-   * `$export`. So the distinction is available and this path does not take it.
-   * That is issue #381, and it is open.
-   *
-   * This is a bound and deliberately not a test. Pinning any of those four rows
-   * would pin a semantics nobody has chosen - whether a repeat should narrow,
-   * widen, or be refused is the decision #381 exists to make, and a test written
+   * The OR half of #381 stays open and stays a bound rather than a test.
+   * Pinning any comma row would pin a semantics nobody has chosen - whether
+   * `?code=A,B` should widen is the decision still to make, and a test written
    * now is one whoever makes it would have to delete. Asserting instead that
-   * each case sends a single value would only restate the line below that builds
-   * the URL, which is a check that can agree with nothing but itself.
-   *
-   * So: re-run those four requests rather than trusting this table.
+   * each case sends a single value would only restate the line below that
+   * builds the URL, which is a check that can agree with nothing but itself.
    */
   /** A value of the right shape that no seeded row can carry. */
   const absentValue = (param: SearchParamDefinition): string => {

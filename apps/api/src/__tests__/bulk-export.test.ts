@@ -425,7 +425,8 @@ describe('_type', () => {
   it('refuses a repeated parameter that is not _type', async () => {
     /*
      * The pair with the test above, differing only in the parameter name.
-     * Every repeated search parameter on this server is refused; `_type` is
+     * Every repeated search parameter at the FHIR boundary is refused - the
+     * internal routes still flatten, which `http/validate.ts` says; `_type` is
      * exempt because it means a list and `parseTypeFilter` reads all of it.
      * `_since` sent twice is two answers to one question, and answering it
      * with either one is the guess this boundary refuses to make.

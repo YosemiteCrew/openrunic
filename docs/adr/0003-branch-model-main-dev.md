@@ -210,7 +210,10 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   `rulesets/rule-suites?ref=refs/heads/dev` is GitHub's own evaluation record, and in a
   twenty-four hour window it showed **3 of 49 pushes with `result: bypass`** - one over
   `Required status check "CI Required" is expected`, two over the approving-review requirement.
-  The other 46 are `pass`, so the field is not defaulting.
+  The other 46 are `pass`, so the field is not defaulting. **Every count of this window below is an
+  as-of reading of a set that grows** - 49 rows here, 51 an hour later, 178 then 180 unfiltered, all
+  taken on 2026-09-07. Nine lines apart a reader cannot otherwise tell growth from a mistake, in a
+  section whose subject is a window that moves.
 
   That endpoint keeps a bounded window, so 3 is a floor rather than a total. **The bound is a span
   that was measured, not a cap that was observed to fire:** two reads ninety seconds apart across
@@ -235,6 +238,12 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   The control matters: `--paginate` is not broken generally, and the second row is this ADR's own
   headline number reading `5 of 51` instead of `3 of 51` from a flag alone. Read it with explicit
   `page=` and deduplicate by `id`. There is no `total_count` on this endpoint to catch it with.
+
+  **The trigger is `rows > per_page`, and the duplication is bounded rather than a loop.** A
+  complete single page carries **no `Link` header at all**, and page two carries `rel="first"` and
+  `rel="prev"` but no `rel="next"` - so only the first hop is wrong, page one is emitted exactly
+  twice and the read terminates normally. That is the dangerous shape rather than the harmless one:
+  a hang gets noticed, and a read that returns promptly with 56% more rows than exist does not.
 
   Its `pushed_at` is also the one GitHub time that is **not** `Z` - it carries a local offset, as
   does `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
@@ -268,7 +277,10 @@ returning zero rows.
 **The blocking row is weaker than it looks and the distinction is the table's whole value.** The
 evidence is #258's rule evaluation, recorded `FAIL` with
 `Required status check "CI Required" is expected` - so what is measured is that the **rule** fails
-when a required context never posts.
+when a required context never posts. #258 then **merged**, over that failed rule, on the admin
+bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
+and this repository has no instance of a merge actually being stopped by it. Read the row as: the
+rule fails, and the bypass decides whether that is the end of the matter.
 
 **That evaluation is addressable by id, and the list does not contain it.** The row lives at
 `rulesets/rule-suites/3963149730`; the listing it came from carries ten fields, **none of them a
@@ -287,10 +299,7 @@ DETAIL  rulesets/rule-suites/3963149730
 from the window gets a row that **agrees with the conclusion while carrying none of the evidence** -
 which is worse than an expired window, because an empty result is legibly empty and an agreeing row
 is not. The id is recorded here for that reason, and because whether the detail outlives the listing
-can only be tested with an id captured before it leaves. #258 then **merged**, over that failed rule, on the admin
-bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
-and this repository has no instance of a merge actually being stopped by it. Read the row as: the
-rule fails, and the bypass decides whether that is the end of the matter.
+can only be tested with an id captured before it leaves.
 
 **`ABSENT` has no transient form, and the two readings are far apart.** `mergeStateStatus` says
 `BLOCKED` both for a required context whose producing workflow is still running and for one that

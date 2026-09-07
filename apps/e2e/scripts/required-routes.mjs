@@ -42,6 +42,8 @@
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
+import { resolveWithin } from '../../../scripts/ci/safe-path.mjs';
+
 /**
  * The Next application's route root, relative to the repository root. Every
  * path below is relative to the repository root too, so the two can be
@@ -93,13 +95,20 @@ export function routeKey(routePath) {
  * genuinely-no-surface case rather than an error.
  */
 export function findPages(repoRoot, appDir = APP_DIR) {
-  const root = path.join(repoRoot, appDir);
-  if (!existsSync(root)) return [];
+  // `resolveWithin` refuses a route root that escapes the repository and returns
+  // null, which is treated as "no surface here" rather than as a directory to
+  // walk - the same helper and the same convention as the other ci scripts.
+  // `path.join` alone would happily resolve `../..` and hand it to the walk.
+  const root = resolveWithin(repoRoot, appDir);
+  if (root === null || !existsSync(root)) return [];
 
   const found = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
+      // `isDirectory()` is false for a symbolic link, so the walk cannot be led
+      // out of the route root by one - which is why the guard above only has to
+      // hold for the entry point.
       if (entry.isDirectory()) walk(full);
       else if (entry.name === 'page.tsx') found.push(path.relative(repoRoot, full));
     }

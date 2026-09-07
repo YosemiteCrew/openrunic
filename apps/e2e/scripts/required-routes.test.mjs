@@ -79,6 +79,23 @@ test('findPages returns every page.tsx under the route root and nothing else', (
   }
 });
 
+test('findPages refuses a route root that escapes the repository', () => {
+  // The route root is a parameter, so it is worth one guard: `path.join` would
+  // resolve `../..` and hand a directory outside the checkout to the walk. Two
+  // controls, because "returns []" is also what a broken walker returns.
+  const root = treeWith([`${APP_DIR}/(app)/schedule/page.tsx`]);
+  try {
+    assert.deepEqual(findPages(root, '../..'), []);
+    assert.deepEqual(findPages(root, '/etc'), []);
+    // control: the real route root still resolves and still finds the page.
+    assert.deepEqual(findPages(root), [`${APP_DIR}/(app)/schedule/page.tsx`]);
+    // control: the repository root itself is within itself, so it is allowed.
+    assert.deepEqual(findPages(root, '.'), [`${APP_DIR}/(app)/schedule/page.tsx`]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('findPages returns nothing rather than throwing when there is no route root', () => {
   const root = treeWith(['package.json']);
   try {

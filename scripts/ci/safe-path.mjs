@@ -4,8 +4,9 @@
 // resolveWithin(root, target) returns the absolute resolved path when the
 // target lies within `root` (or is `root` itself), and null otherwise.
 // Callers treat null as "hostile or mis-rooted input" and fail or skip
-// accordingly - affected-matrix.mjs, exception-expiry.mjs, lcov-check.mjs and
-// merge-coverage.mjs, which are all of them. git-blobs.mjs names this file to
+// accordingly - affected-matrix.mjs, exception-expiry.mjs, lcov-check.mjs,
+// merge-coverage.mjs and apps/e2e/scripts/required-routes.mjs, which are all of
+// them. git-blobs.mjs names this file to
 // explain why it does NOT use it: a string-only helper cannot see a tracked
 // symlink, so it reads blobs instead.
 //

@@ -21,7 +21,15 @@ import {
 } from '../schemas/telehealth.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { gateCharts, idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
+import {
+  gateCharts,
+  idParam,
+  idParamSchema,
+  policyOf,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * TELEHEALTH: A ROOM FOR ONE VISIT, AND A TOKEN PER PERSON WHO MAY ENTER IT.
@@ -247,6 +255,30 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     const repos = repositories(c);
     const visit = required(await repos.telehealthVisits.findById(id), NO_VISIT);
 
+    /**
+     * The visit's chart, which is the appointment's chart - a telehealth visit
+     * has no chart column of its own, so it reaches one only through the
+     * appointment it names (#337). The same shape as `messages/{id}/read`,
+     * which gates on the thread for the same reason.
+     *
+     * Before the status check, not after. A caller who may not open this chart
+     * must not learn from a `409` whether the visit is open, closed or already
+     * ended; `requiredParentChart` refuses with the same `404` an unreachable
+     * appointment would give, and only a caller who may see the visit at all
+     * reaches the conflict below.
+     *
+     * `requiredParentChart` rather than a read and a `gateCharts` three lines
+     * apart: this route has no reason to order the facility check first, unlike
+     * `POST /appointments/{id}/telehealth`, so the read and the gate can be the
+     * one call that cannot be spelled apart.
+     */
+    await requiredParentChart(
+      c,
+      'appointments',
+      await repos.appointments.findById(visit.appointmentId),
+      NO_APPOINTMENT
+    );
+
     if (visit.status !== 'OPEN') {
       throw ApiError.conflict(`This visit is ${visit.status} and cannot be joined.`);
     }
@@ -281,6 +313,30 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     const body = await parseJsonBody(c, telehealthEndSchema);
     const repos = repositories(c);
     const visit = required(await repos.telehealthVisits.findById(id), NO_VISIT);
+
+    /**
+     * The visit's chart, which is the appointment's chart - a telehealth visit
+     * has no chart column of its own, so it reaches one only through the
+     * appointment it names (#337). The same shape as `messages/{id}/read`,
+     * which gates on the thread for the same reason.
+     *
+     * Before the status check, not after. A caller who may not open this chart
+     * must not learn from a `409` whether the visit is open, closed or already
+     * ended; `requiredParentChart` refuses with the same `404` an unreachable
+     * appointment would give, and only a caller who may see the visit at all
+     * reaches the conflict below.
+     *
+     * `requiredParentChart` rather than a read and a `gateCharts` three lines
+     * apart: this route has no reason to order the facility check first, unlike
+     * `POST /appointments/{id}/telehealth`, so the read and the gate can be the
+     * one call that cannot be spelled apart.
+     */
+    await requiredParentChart(
+      c,
+      'appointments',
+      await repos.appointments.findById(visit.appointmentId),
+      NO_APPOINTMENT
+    );
 
     if (visit.status !== 'OPEN') {
       throw ApiError.conflict(`This visit is already ${visit.status}.`);

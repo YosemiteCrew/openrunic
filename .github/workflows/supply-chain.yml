@@ -81,7 +81,7 @@ jobs:
           SYFT_SHA256: 2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" \
+          curl -sSfL --retry 5 --retry-delay 2 --retry-all-errors "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" \
             -o "$RUNNER_TEMP/syft.tar.gz"
           echo "${SYFT_SHA256}  ${RUNNER_TEMP}/syft.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
@@ -150,7 +150,7 @@ jobs:
           GRYPE_SHA256: 38525dab1e06f162ebaa02f94d82d1f807076b011a44180cf2777edf1a7b9c26
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
+          curl -sSfL --retry 5 --retry-delay 2 --retry-all-errors "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
             -o "$RUNNER_TEMP/grype.tar.gz"
           echo "${GRYPE_SHA256}  ${RUNNER_TEMP}/grype.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
@@ -211,7 +211,7 @@ jobs:
           GRANT_SHA256: 6500f8bbf0f20fb993de8084686e199f0ba1eb494769ff75454286d5ef63f919
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/anchore/grant/releases/download/v${GRANT_VERSION}/grant_${GRANT_VERSION}_linux_amd64.tar.gz" \
+          curl -sSfL --retry 5 --retry-delay 2 --retry-all-errors "https://github.com/anchore/grant/releases/download/v${GRANT_VERSION}/grant_${GRANT_VERSION}_linux_amd64.tar.gz" \
             -o "$RUNNER_TEMP/grant.tar.gz"
           echo "${GRANT_SHA256}  ${RUNNER_TEMP}/grant.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/grant.tar.gz" -C "$RUNNER_TEMP" grant
@@ -273,14 +273,21 @@ jobs:
 
   # Aggregate for THIS workflow (same fail-closed pattern as ci.yaml's
   # CI Required). "CI Required" is the only check ci.yaml contributes to the
-  # required list; it is NOT the only required context - `dev` requires five as
-  # of 2026-09-06 (see ADR-0003, and read the ruleset rather than either
-  # sentence). Promoting this aggregate to required remains a deliberate
-  # follow-up once the supply-chain gate has a track record, and 2026-09-06 is
-  # one data point against: it failed on `curl: (35)` downloading `grant` from a
-  # release, on one pull request and not its sibling minutes earlier. A gate
-  # whose stage fetches a binary over the network fails transiently, and that is
-  # exactly what a track record is for. Required checks
+  # required list; it is NOT the only required context - read the ruleset
+  # rather than any sentence in this file, including this one (see ADR-0003).
+  # This aggregate IS required on `dev`, so a red stage here blocks a merge:
+  # asking whether a leaf job is in the required list answers about the leaf's
+  # own name, not about whether it can block, because `needs:` carries it.
+  #
+  # The transient-failure worry that once argued against promoting it was
+  # real and is now addressed at the cause rather than tolerated: every pinned
+  # tool download in this repository retries transient HTTP and connection
+  # errors. Measured before the change, the same `grant` fetch failed on
+  # `curl: (35)` on 2026-09-06 and on `curl: (22) ... 504` three times over
+  # 2026-09-06 and 2026-09-07 - the last of them red on `dev` itself.
+  # Retrying does not weaken the gate: the checksum comparison below each
+  # download is unchanged and still fails closed on a payload that arrives
+  # intact but wrong. Required checks
   # treat a skipped job as satisfied, so a failed SBOM stage silently passing
   # its dependents is exactly what this aggregate exists to prevent.
   supply-chain-required:

@@ -134,7 +134,7 @@ jobs:
           GRYPE_SHA256: 38525dab1e06f162ebaa02f94d82d1f807076b011a44180cf2777edf1a7b9c26
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
+          curl -sSfL --retry 5 --retry-delay 2 --retry-all-errors "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
             -o "$RUNNER_TEMP/grype.tar.gz"
           echo "${GRYPE_SHA256}  ${RUNNER_TEMP}/grype.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype

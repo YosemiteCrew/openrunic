@@ -121,7 +121,7 @@ jobs:
           TRIVY_SHA256: 2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+          curl -sSfL --retry 5 --retry-delay 2 --retry-all-errors "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
             -o "$RUNNER_TEMP/trivy.tar.gz"
           echo "${TRIVY_SHA256}  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
@@ -188,7 +188,7 @@ jobs:
           YQ_SHA256: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
+          curl -sSfL --retry 5 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
             -o "$RUNNER_TEMP/yq"
           echo "${YQ_SHA256}  ${RUNNER_TEMP}/yq" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/yq"

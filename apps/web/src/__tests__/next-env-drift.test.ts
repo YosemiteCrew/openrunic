@@ -43,9 +43,15 @@ const ROOT = repoRoot();
 const APPS = join(ROOT, 'apps');
 
 /** Every Next app, by the config file each one must have. */
-const nextApps = readdirSync(APPS).filter((app) =>
-  readdirSync(join(APPS, app)).some((f) => f.startsWith('next.config.'))
-);
+/* `withFileTypes`, because the alternative scans every entry in `apps/` and a
+   stray FILE there throws `ENOTDIR` at module scope - which takes the whole
+   guard with it and reports `no tests`. `.DS_Store` is gitignored so CI cannot
+   meet it; a desk that has opened `apps/` in Finder can, and would get a
+   baffling local failure rather than a drift report. */
+const nextApps = readdirSync(APPS, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .filter((app) => readdirSync(join(APPS, app)).some((f) => f.startsWith('next.config.')));
 
 const guarded = nextApps.map((app) => [app, join(APPS, app, 'next-env.d.ts')] as const);
 
@@ -65,14 +71,19 @@ describe('every next-env.d.ts is the build variant', () => {
     expect(guarded.filter(([, path]) => !existsSync(path)).map(([app]) => app)).toEqual([]);
   });
 
+  /* Read through a helper that answers '' for a missing file: the canary above
+     already names that case, and letting these throw `ENOENT` buries its message
+     under stack traces from cases reading a file it just reported absent. */
+  const read = (path: string): string => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+
   it.each(guarded)('%s references the build type paths', (_app, path) => {
-    const source = readFileSync(path, 'utf8');
+    const source = read(path);
     expect(source).toContain('import "./.next/types/routes.d.ts";');
     expect(source).toContain('import "./.next/types/root-params.d.ts";');
   });
 
   it.each(guarded)('%s references no dev-server type path', (_app, path) => {
     // The two lines flip together, so either spelling is the whole failure.
-    expect(readFileSync(path, 'utf8')).not.toContain('.next/dev/types/');
+    expect(read(path)).not.toContain('.next/dev/types/');
   });
 });

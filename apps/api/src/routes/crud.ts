@@ -375,11 +375,18 @@ function crudRoutes<
     patch: TPatch
   ): Promise<TRow> => {
     await guardChart(c, resource, { ...existing, ...patch });
-    // The collection is derived from `resource` rather than passed in. Taking it
-    // as a parameter while closing over `resource` is two things that have to
-    // agree with nothing making them: a caller handing a different collection
-    // would gate on `resource.chartFrom` and write to another table. That is the
-    // pair-that-must-agree shape this seam exists to remove, one level in.
+    // Derived from `resource` rather than taken as a parameter, which is a
+    // tidiness change and not a safety one. The argument at the one call site
+    // was literally `resource.collection(repositories(c))`, so the parameter
+    // restated a value this closure already reaches.
+    //
+    // It was raised in review as a pair that must agree - gate on
+    // `resource.chartFrom`, write to a collection somebody else chose - and
+    // measured, which refuted it. Inside this factory the four generics are
+    // already bound to the resource's own types, so the only assignable
+    // collection is the one carrying exactly them: passing a concrete other one
+    // with no cast is `TS2345`, not a silent disagreement. Written down because
+    // the first version of this comment claimed the hazard.
     return required(await resource.collection(repositories(c)).update(id, patch), missing);
   };
 

@@ -36,8 +36,8 @@ import { buildServerWiring } from '../server/wiring.js';
  *     pnpm --filter @openrunic/database exec prisma migrate deploy
  *   DATABASE_URL=postgresql://localhost/openrunic_test pnpm --filter api test
  *
- * Without `DATABASE_URL` the file is skipped, exactly like the other two
- * database suites. CI sets the variable.
+ * Without `DATABASE_URL` - or with an empty one - the file is skipped, exactly
+ * like the other two database suites. CI sets the variable.
  */
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -139,7 +139,7 @@ async function chainOf(
   return rows as unknown as { seq: bigint; prevHash: string; hash: string }[];
 }
 
-describe.skipIf(DATABASE_URL === undefined)('the audit chain under concurrency', () => {
+describe.skipIf(!DATABASE_URL)('the audit chain under concurrency', () => {
   let live: Live;
 
   beforeAll(async () => {

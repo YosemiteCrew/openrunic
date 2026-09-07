@@ -103,7 +103,7 @@ async function connect(): Promise<Live> {
   };
 }
 
-describe.skipIf(DATABASE_URL === undefined)('the Prisma repositories against Postgres', () => {
+describe.skipIf(!DATABASE_URL)('the Prisma repositories against Postgres', () => {
   let live: Live;
 
   beforeAll(async () => {

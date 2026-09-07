@@ -395,10 +395,26 @@ function crudRoutes<
     guardRow(c, existing);
     await guardChart(c, resource, existing);
     const patch = resource.toPatch(body, existing);
-    const row = required(
-      await collection.update(id, resource.stampPatch?.(patch, c) ?? patch),
-      missing
-    );
+    const stamped = resource.stampPatch?.(patch, c) ?? patch;
+    // The chart the patch NAMES, and not only the one the row is already in.
+    // `guardChart` above asked about the origin, which is the chart the caller
+    // is reading out of; a patch that carries the chart column moves the row
+    // into a different one, and nothing asked about that. The caller ends up
+    // having written into a chart they have no relationship with, and the row
+    // leaves their own view in the same request - so the write cannot be read
+    // back, reviewed or undone by the person who made it.
+    //
+    // Merged rather than checked for a difference: a patch that names no chart
+    // re-asks the question `guardChart` just answered, which costs one lookup
+    // and cannot be got wrong, while a comparison would have to decide what
+    // `undefined` means on a nullable chart column. Runs before the update, so
+    // a refused move never reaches the collection.
+    //
+    // Through `guardChart` and not its body inlined: the `chartFrom === undefined`
+    // decision belongs in one place, or a condition added there later reaches the
+    // read and the list and not this door, with nothing failing when they part.
+    await guardChart(c, resource, { ...existing, ...stamped });
+    const row = required(await collection.update(id, stamped), missing);
     return c.json(resource.toDto(row));
   });
 

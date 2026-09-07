@@ -67,6 +67,7 @@ export const portal: Messages = {
     'Pida una hora a la consulta y se la confirmarán por mensaje.',
   'portal.home.appointment.request': 'Pedir una cita',
   'portal.home.appointment.videoLocation': 'Una videollamada. El enlace se abre en este navegador.',
+  'portal.home.appointment.seeAll': 'Ver todas las citas',
   'portal.home.page.title': 'Inicio',
   'portal.home.page.description':
     'Su próxima cita, su saldo, sus mensajes y todo lo que está pendiente de usted.',

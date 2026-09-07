@@ -111,6 +111,7 @@ export const portal: Messages = {
     'Ask the practice for a slot and they will confirm it by message.',
   'portal.home.appointment.request': 'Request an appointment',
   'portal.home.appointment.videoLocation': 'A video call. The link opens in this browser.',
+  'portal.home.appointment.seeAll': 'See all appointments',
   'portal.home.page.title': 'Home',
   'portal.home.page.description':
     'Your next appointment, your balance, your messages and anything waiting on you.',

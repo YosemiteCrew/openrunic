@@ -304,9 +304,14 @@ packages-only change legitimately skips `test`'s app shards - and this is not hy
 this document's own pull request `Storybook Required` is `success` with `Publish to GitHub Pages`
 `skipped`. The point is that a reader who takes "none of the sixteen can skip" as the guarantee
 has the wrong picture: the stages inside `CI Required` that can go quiet include `ops`, which is
-where the full-day clinical drill runs. `ci.yaml` states the hazard at its aggregate
-(_"a stage that can skip is a stage that can silently pass"_); the same sentence had never been
-written for the context level, which is what this section is for.
+where the full-day clinical drill runs.
+
+Both files state their own reasoning, and quoting them exactly is the point:
+`ci.yaml` at its aggregate, _"Because `skipped` passes, a stage that can skip is a stage that can
+go quiet"_, and `supply-chain.yml` at its opposite one, _"Required checks treat a skipped job as
+satisfied, so a failed SBOM stage silently passing its dependents is exactly what this aggregate
+exists to prevent"_. Neither sentence had ever been written for the **context** level, which is
+what this section is for.
 
 ### The three app-posted contexts are a fourth class
 

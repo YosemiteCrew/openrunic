@@ -24,6 +24,10 @@ out/
 # is clean without it both scoped and repo-wide with no `.next` present, and
 # `next build` regenerates it byte-identically and leaves the tree clean. So a
 # fresh clone has it the moment anything runs, and nothing in the index can flip.
+# ANCHORED on purpose. A bare `next-env.d.ts` would match at any depth, which
+# reads as a harmless simplification and silently removes the only check on the
+# path the guard uses - `git ls-files` answers empty for a path that does not
+# exist, so a typo passes it, and only this rule's specificity catches it.
 apps/*/next-env.d.ts
 
 # Test coverage

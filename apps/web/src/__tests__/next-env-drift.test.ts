@@ -79,14 +79,30 @@ function git(...args: readonly string[]): string {
   return execFileSync('git', [...args], { cwd: ROOT, encoding: 'utf8' }).trim();
 }
 
+/** Whether git's ignore rules cover `path`, ignoring whether it is tracked. */
+function ignored(path: string): boolean {
+  try {
+    git('check-ignore', '-q', '--no-index', '--', path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('no next-env.d.ts is tracked', () => {
   /**
-   * The canary, on an input the cases below do not derive.
+   * The canary.
    *
-   * A discovery that stopped matching would leave the cases sweeping nothing and
-   * reporting no tracked file, which is what a clean run looks like. Counted
-   * against `next.config.*` rather than against the same list the cases use, so
-   * the two are independent statements about the same set and can disagree.
+   * A discovery that stopped matching would leave the cases below sweeping
+   * nothing and reporting no tracked file, which is what a clean run looks like.
+   *
+   * It is NOT an independent second count: `guarded` is `nextApps.map(...)`, so
+   * the two lengths are equal by construction and cannot disagree. The previous
+   * form of this guard did have an independent statement - an `existsSync` per
+   * discovered app - and that went with the invariant it served. What makes this
+   * line load-bearing is narrower and is the reason it must stay: `it.each` over
+   * an empty array generates no cases at all, so an empty `nextApps` is reported
+   * as a pass by every other case in the file.
    */
   it('finds the Next apps to check', () => {
     /* DO NOT DELETE AS REDUNDANT. `it.each` over an empty array generates no
@@ -102,18 +118,59 @@ describe('no next-env.d.ts is tracked', () => {
   });
 
   it.each(guarded)('%s has no next-env.d.ts in the index', (_app, path) => {
-    // `ls-files <path>` prints the path when tracked and nothing when not, so an
-    // empty answer is the passing one and a typo'd path fails open. That is why
-    // the canary above counts the apps from `next.config.*` instead.
+    /* `ls-files <path>` prints the path when tracked and nothing when not, so an
+       empty answer is the passing one and a WRONG path fails open. Measured on
+       this branch:
+
+         apps/web/next-env.d.ts       ls-files ''  passes   check-ignore  ignored
+         apps/web/next-env.d.tsX      ls-files ''  passes   check-ignore  NOT ignored
+         apps/web/src/next-env.d.ts   ls-files ''  passes   check-ignore  NOT ignored
+
+       So the case below is what validates the path, and the canary is not - it
+       counts apps and never evaluates one. */
     expect(git('ls-files', '--', path)).toBe('');
   });
 
   it.each(guarded)('%s ignores next-env.d.ts', (_app, path) => {
-    /* `check-ignore -q` exits 1 when the path is NOT ignored, which
-       `execFileSync` raises, so the assertion is on the call not throwing.
-       `--no-index` because `check-ignore` otherwise reports a TRACKED path as
+    /* `--no-index` because `check-ignore` otherwise reports a TRACKED path as
        un-ignored whatever the rules say - which would make this case a second,
-       weaker copy of the one above rather than the independent half it is. */
-    expect(() => git('check-ignore', '-q', '--no-index', '--', path)).not.toThrow();
+       weaker copy of the one above rather than the independent half it is.
+
+       Answered as a boolean rather than asserted through `not.toThrow()`: a
+       missing rule surfaces as `Error: Command failed: git check-ignore` there,
+       and the first move on that message is to suspect the harness rather than
+       the rule.
+
+       This case also carries the whole of the path validation, and it does so
+       only because the ignore rule is ANCHORED under `apps/`. A bare `next-env.d.ts`
+       matches at any depth - measured: it ignores `apps/web/src/next-env.d.ts`
+       too - so broadening the rule, which reads as a harmless simplification,
+       silently removes the typo protection while both cases here stay green. */
+    expect(
+      ignored(path),
+      `${path} is not ignored, so it shows as ?? in every status and returns to the index on the next \`git add -A\``
+    ).toBe(true);
+  });
+
+  it.each(guarded)('%s ignore rule is anchored, not a bare filename', (_app, path) => {
+    /* The tracking case above is the only thing that validates the path it is
+       handed, and `git ls-files` answers empty for a path that does not exist -
+       which is its PASSING value - so it cannot notice a typo in its own input.
+       What actually catches one is not in this file: it is the specificity of
+       the rule in `.gitignore`, added as repo hygiene with nothing marking it
+       load-bearing.
+
+       Derived from each guarded path rather than written out, so a third Next
+       app is covered the day it appears rather than the day someone remembers.
+
+       Broadening the rule to a bare filename matches at any depth. It reads as a
+       harmless simplification, and it would leave every other case in this file
+       green while the tracking case silently stopped validating its path -
+       measured: 2 failed here, 5 passed elsewhere. */
+    const wrongDepth = path.replace('/next-env.d.ts', '/src/next-env.d.ts');
+    expect(
+      ignored(wrongDepth),
+      `${wrongDepth} is ignored, so the next-env rule is no longer anchored and the tracking case above has stopped validating its path`
+    ).toBe(false);
   });
 });

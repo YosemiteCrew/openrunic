@@ -179,8 +179,10 @@ export function createMemoryAuditQuery(
       return Promise.resolve(row);
     },
 
-    verifyChain(): Promise<AuditChainVerification> {
-      return Promise.resolve(store.verify(scope.tenantId));
+    async verifyChain(): Promise<AuditChainVerification> {
+      const result = store.verify(scope.tenantId);
+      await recordVerification(scope, result);
+      return result;
     },
   };
 }
@@ -266,11 +268,63 @@ export function createPrismaAuditQuery(port: DbPort, scope: RequestScope): Audit
       // the hash covers whatever is there either way, so the narrowing is safe
       // and the alternative would be to re-validate every stored event before
       // checking whether it had been tampered with.
-      return verifyAuditChain(
+      const result = verifyAuditChain(
         records.map((record) => toPlainRow<'AuditEvent'>(record)) as AuditChainedEvent[]
       );
+      await recordVerification(scope, result);
+      return result;
     },
   };
+}
+
+/**
+ * The verification itself, recorded as one event.
+ *
+ * `list` and `findById` are audited by {@link recordReads}; `verifyChain` was
+ * not, so the widest read of this table was the one audit read that left no
+ * trace - while a REFUSED verify was recorded every time, through the denial
+ * path. A privileged check whose failures are audited and whose successes are
+ * not is backwards under either reading of the principle above: the row an
+ * investigation needs is the one naming who asked whether the tamper detection
+ * had fired.
+ *
+ * Not {@link recordReads}. That emits a `phi.read` naming up to 500 walked
+ * `AuditEvent` ids and every distinct patient in the range, as rows this reader
+ * ACCESSED - the inflation `AuditCollector.read`'s suppression comment exists
+ * to prevent. The verifier hashed a sequence; it opened no chart.
+ *
+ * So the event carries the verdict and no row content, which is also what
+ * answers the other half of the argument: `toAuditVerificationDto` discloses
+ * nothing about the rows, and neither does this.
+ *
+ * Written after the walk, so the event it appends is not one it just checked -
+ * the next verification covers it, which is the property that makes a run of
+ * these readable as a sequence.
+ */
+async function recordVerification(
+  scope: RequestScope,
+  result: AuditChainVerification
+): Promise<void> {
+  await scope.audit.write({
+    action: 'audit.verified',
+    targetType: 'AuditChain',
+    // Branched on the discriminant rather than reaching for both halves: the
+    // verification is a union, and `brokenAtSeq` exists only on the broken
+    // side. Serialised as strings because `seq` is a bigint and this metadata
+    // is stored as JSON.
+    metadata: result.valid
+      ? {
+          valid: true,
+          checked: result.checked,
+          tailSeq: result.tail === null ? null : String(result.tail.seq),
+        }
+      : {
+          valid: false,
+          checked: result.checked,
+          brokenAtSeq: String(result.brokenAtSeq),
+          reason: result.reason,
+        },
+  });
 }
 
 /**

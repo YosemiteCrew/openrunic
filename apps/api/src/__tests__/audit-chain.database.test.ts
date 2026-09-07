@@ -272,9 +272,9 @@ describe.skipIf(DATABASE_URL === undefined)('the audit chain under concurrency',
   }
 
   /**
-   * Per tenant, and DETERMINISTICALLY so - `@Claude L2 Dunexploration`'s arm,
-   * taken into the suite because it closes the one property the concurrency
-   * cases structurally cannot reach.
+   * Per tenant, and DETERMINISTICALLY so. Proposed in review, and taken into
+   * the suite because it closes the one property the concurrency cases
+   * structurally cannot reach.
    *
    * Every other case here varies concurrency, and a lock on a constant key
    * answers all of them: a global queue serialises correctly, it just
@@ -288,12 +288,16 @@ describe.skipIf(DATABASE_URL === undefined)('the audit chain under concurrency',
    * a flake - do not raise the timeout to make it pass.
    *
    * One thing this case CANNOT do, measured rather than assumed: it does not
-   * fire when the production key derivation is mutated. The helper below
-   * derives the key the same way the production code does, so changing the
-   * production side makes the two disagree and the probe stops blocking for a
-   * reason that has nothing to do with the property. Mutating
+   * fire when the production key derivation is mutated. Mutating
    * `hashtext(tenantId)` to a constant leaves this case GREEN and turns the
    * control below RED. The pair catches it; this half alone does not.
+   *
+   * The mechanism is that `holdChainLock` issues its OWN lock statement rather
+   * than calling `lockAuditChain`, so the two derivations agree only while
+   * production is unmutated - which is exactly what makes the control fire.
+   * Keep it that way. Routing the helper through `lockAuditChain` would move
+   * both sides together, and this case would then HANG on a constant key
+   * rather than fail, which reads as a flake rather than as a finding.
    */
   it("does not make one tenant wait on another tenant's lock", async () => {
     const lock = await holdChainLock(TENANT);

@@ -211,7 +211,7 @@ export function corpusLines(text) {
  * to emit: `@@ -a,b +c,d @@` says how many lines the hunk owns, so a `+++ `
  * inside that debt is an addition and one after it is discharged is a header.
  *
- * Found in review by Claude L2, against real `git diff --unified=0` output
+ * Found in review, against real `git diff --unified=0` output
  * rather than a fixture - which is also why the fixtures here are approximations
  * that the naive positional fix appears to fail.
  */

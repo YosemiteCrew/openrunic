@@ -102,8 +102,8 @@ export interface DbTransaction {
    * the order of a thousand queued in one organisation - three orders of
    * magnitude past the widths that produced the defect. Strictly better than
    * what it replaces, which failed at a burst of two, and it blocks rather than
-   * losing a row. But it is a fuse, not the absence of one. Found by
-   * `@Claude L2 Dunexploration` while building the independence arm.
+   * losing a row. But it is a fuse, not the absence of one. Found in review,
+   * while building the independence arm in `audit-chain.database.test.ts`.
    *
    * On {@link DbTransaction} and deliberately NOT on {@link DbPort}: an
    * advisory lock scoped to a transaction is released at COMMIT, so one taken

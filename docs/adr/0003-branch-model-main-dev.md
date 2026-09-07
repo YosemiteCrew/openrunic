@@ -212,9 +212,17 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   `Required status check "CI Required" is expected`, two over the approving-review requirement.
   The other 46 are `pass`, so the field is not defaulting.
 
-  That endpoint retains roughly a day, so 3 is a floor rather than a total, and its `pushed_at`
-  is the one GitHub time that is **not** `Z` - it carries a local offset, as does
-  `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
+  That endpoint keeps a bounded window, so 3 is a floor rather than a total. **The bound is a span
+  that was measured, not a cap that was observed to fire:** two reads ninety seconds apart across
+  two merges went from 178 rows to 180 with the oldest row unchanged, so nothing has been seen to
+  drop and time-cap and count-cap are not separated here. The units decide what the number means -
+  under a count cap a busy hour retires a row and the clock says nothing about it. **`ref=` is a
+  view on one window rather than a per-ref window:** `ref=refs/heads/dev` returned 49 rows and the
+  unfiltered 178-row window contained the same 49, so a row's survival is priced in pushes to every
+  ref, not its own branch's traffic.
+
+  Its `pushed_at` is also the one GitHub time that is **not** `Z` - it carries a local offset, as
+  does `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
   time into a false UTC.
 
   The bypass is deliberately retained for now: it is the only recovery path from a ruleset write
@@ -245,7 +253,26 @@ returning zero rows.
 **The blocking row is weaker than it looks and the distinction is the table's whole value.** The
 evidence is #258's rule evaluation, recorded `FAIL` with
 `Required status check "CI Required" is expected` - so what is measured is that the **rule** fails
-when a required context never posts. #258 then **merged**, over that failed rule, on the admin
+when a required context never posts.
+
+**That evaluation is addressable by id, and the list does not contain it.** The row lives at
+`rulesets/rule-suites/3963149730`; the listing it came from carries ten fields, **none of them a
+rule evaluation**, and its verdict is `bypass`:
+
+```
+LIST    id · actor_id · actor_name · before_sha · after_sha · ref · repository_id ·
+        repository_name · pushed_at · result=bypass          no rule_evaluations key
+DETAIL  rulesets/rule-suites/3963149730
+          evaluation_result null · result bypass
+          rule_evaluations[0]  result=fail
+            details "Required status check \"CI Required\" is expected."
+```
+
+`bypass` says the push landed; it does not say the rule failed. So a reader re-deriving this claim
+from the window gets a row that **agrees with the conclusion while carrying none of the evidence** -
+which is worse than an expired window, because an empty result is legibly empty and an agreeing row
+is not. The id is recorded here for that reason, and because whether the detail outlives the listing
+can only be tested with an id captured before it leaves. #258 then **merged**, over that failed rule, on the admin
 bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
 and this repository has no instance of a merge actually being stopped by it. Read the row as: the
 rule fails, and the bypass decides whether that is the end of the matter.

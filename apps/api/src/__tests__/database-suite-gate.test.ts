@@ -13,6 +13,10 @@ import { describe, expect, it } from 'vitest';
  * was supplied and empty, which sends the reader looking for the wrong thing
  * (#433).
  *
+ * The two names are listed rather than globbed, and that is load-bearing: this
+ * file contains the needles it searches for. A scan over `__tests__/*.test.ts`
+ * would read itself and report on itself instead of on the suites (#433).
+ *
  * Guarded here rather than by a case, because the difference between the two
  * spellings is invisible to every run that sets a real URL and to every run that
  * sets none: only the empty string separates them, and a suite cannot re-evaluate
@@ -30,5 +34,26 @@ describe('the database suites gate on a falsy DATABASE_URL', () => {
     expect(source).toContain('describe.skipIf(');
 
     expect(source).toMatch(/describe\.skipIf\(!DATABASE_URL\)/);
+  });
+
+  /**
+   * Why `GATED` is a list and not a glob, as an assertion rather than a claim.
+   *
+   * The two needles behave differently on this file and the difference decides
+   * the failure mode. The canary's needle is a STRING literal, so it appears
+   * here verbatim; the pattern's is a REGEX literal, whose source carries `\.`
+   * and `\(` escapes and therefore does NOT contain what it matches. A glob
+   * would satisfy the canary on this file and fail the pattern - loud rather
+   * than silent, but still a guard reporting on itself.
+   *
+   * Both directions are pinned, because a later rewrite of either needle into
+   * the other form changes which of those it is.
+   */
+  it('names its files rather than globbing, because its own needles are here', () => {
+    const self = readFileSync(new URL(import.meta.url), 'utf8');
+
+    expect(self).toContain('describe.skipIf(');
+    expect(/describe\.skipIf\(!DATABASE_URL\)/.test(self)).toBe(false);
+    expect([...GATED]).not.toContain('database-suite-gate.test.ts');
   });
 });

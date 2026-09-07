@@ -3060,6 +3060,38 @@ describe('a patch cannot make a chartless thread claim to be a patient thread', 
   });
 
   /**
+   * The premise the refusal rests on, asserted so it cannot stop being true
+   * quietly.
+   *
+   * Refusing `kind: 'PATIENT'` on a chartless row is the right answer only
+   * because the patch schema cannot carry `patientId` - the state is
+   * unreachable rather than merely unset, so there is nothing the caller could
+   * have sent instead. If `patientId` were added to `messageThreadPatchSchema`
+   * later, the guard would start refusing a patch that legitimately supplies
+   * the chart, and nothing above would notice: every case there would still
+   * pass. Raised in review.
+   *
+   * This inverts on its own. `messageThreadPatchSchema` is a `strictObject`, so
+   * an unknown key is a 422 today; adding the field turns this case red rather
+   * than leaving the guard silently wrong in the other direction.
+   */
+  it('rejects patientId on the patch schema, which is why refusing the kind is right', async () => {
+    const { app } = threadApp();
+
+    const res = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { kind: 'PATIENT', patientId: PATIENT },
+    });
+
+    expect(res.status).toBe(422);
+    // The path is the ROOT rather than the field: Zod reports an unrecognised
+    // key against the object, not against a key it has no schema for. So the
+    // assertion is on the message, which names it.
+    expect((await problem(res)).errors?.some((issue) => issue.message.includes('patientId'))).toBe(
+      true
+    );
+  });
+
+  /**
    * The must-not-fire, and it is the one that separates "a chartless row was
    * refused" from "the route stopped accepting `kind` at all". A thread that
    * DOES name a chart may be moved to PATIENT by a caller in that chart.

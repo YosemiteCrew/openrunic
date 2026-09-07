@@ -1096,9 +1096,21 @@ describe('every spec answers the same question through both ports', () => {
   it('finds bounds to stand on across the specs', () => {
     // A per-spec floor cannot go in the pass below, because most specs declare
     // no range at all and would fail a floor for having nothing to measure. So
-    // the guard is over the whole set: a walker that stopped matching would
-    // otherwise turn the pass into a sweep of nothing that reports no
-    // disagreements, which is what a clean run looks like.
+    // the guard is over the whole set.
+    //
+    // What it uniquely catches is the CORPUS losing its ranges while the walker
+    // still works - a `windowFilter` that stopped emitting one, say - which the
+    // case above cannot see, because that case walks a shape written by hand
+    // here rather than anything a spec produced. The reverse is also true and is
+    // why both are kept: a walker that lost its `AND`/`OR` recursion fails the
+    // case above and leaves this line green, because no spec puts a range inside
+    // a disjunction today. Measured, one arm each:
+    //
+    //   walker loses AND/OR recursion    positional case 1 failed, floor green
+    //   windowFilter emits no range      floor 1 failed, positional case green
+    //
+    // The number is 43 against a floor of 20, so this is headroom and not a
+    // threshold sitting on its own current value.
     const total = SPECS.reduce(
       (sum, [key, spec]) => sum + bounds(spec.where(FILTERS[key] as never)).length,
       0

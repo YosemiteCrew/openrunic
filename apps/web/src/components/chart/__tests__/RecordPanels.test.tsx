@@ -123,6 +123,79 @@ describe('a patient who has never stopped a medication', () => {
   });
 });
 
+describe('a medication in a state this build has no word for', () => {
+  /*
+   * The panel's two tables partition on `=== 'ACTIVE'` against its complement,
+   * so a state added to the API tomorrow lands in the second table rather than
+   * in neither. That makes the *row* total and it did not make the *cell* total:
+   * the status and source columns read a `Record` keyed on this build's unions,
+   * and `requestJson` casts the response body rather than parsing it, so the
+   * value in that key is whatever the server sent. Before this, the read was
+   * indexed - `undefined.labelKey` - and `apps/web` has no error boundary, so
+   * one unrecognised row threw during render and took the whole chart with it,
+   * including the eight states this build can name.
+   *
+   * The status is cast rather than picked from the union on purpose. A member
+   * the fixture lacks is a fixture arm; only a member the TYPE lacks reaches the
+   * fallback these cases exist for.
+   */
+  const WIRE_STATUS = 'DRAFT' as unknown as Medication['status'];
+  const WIRE_SOURCE = 'MAIL_ORDER' as unknown as Medication['source'];
+
+  const FROM_A_NEWER_API: Medication = {
+    id: 'md-newer',
+    drug: 'Apixaban 5 mg tablet',
+    sig: null,
+    prescriber: null,
+    status: WIRE_STATUS,
+    source: WIRE_SOURCE,
+    startedOn: null,
+    stoppedOn: null,
+    refillsRemaining: null,
+  };
+
+  const KNOWN: Medication = {
+    id: 'md-known',
+    drug: 'Metformin 500 mg tablet',
+    sig: 'Take 1 tablet twice daily',
+    prescriber: null,
+    status: 'ACTIVE',
+    source: 'REPORTED',
+    startedOn: '2026-01-04',
+    stoppedOn: null,
+    refillsRemaining: 2,
+  };
+
+  it('renders rather than throwing the render away', () => {
+    render(<MedicationsPanel medications={[FROM_A_NEWER_API]} />);
+
+    expect(screen.getByText('Apixaban 5 mg tablet')).toBeInTheDocument();
+  });
+
+  it('says the state is unrecognised rather than that it is unknown', () => {
+    /* `UNKNOWN` is a state the API records and it means nobody knows whether
+       the patient takes this. "Unrecognised" means the API knows and this build
+       does not have the word. A prescriber reads those differently, so they must
+       not share a cell. */
+    render(<MedicationsPanel medications={[FROM_A_NEWER_API]} />);
+
+    const row = screen.getByRole('row', { name: /Apixaban/ });
+    expect(within(row).getByText('Unrecognised state')).toBeInTheDocument();
+    expect(within(row).getByText('Unrecognised source')).toBeInTheDocument();
+    expect(within(row).queryByText('Unknown')).not.toBeInTheDocument();
+  });
+
+  it('does not take the rows this build can read down with it', () => {
+    /* The failure this replaces was not one bad cell. With no error boundary
+       above it, the throw removed the whole chart, so the medication a
+       clinician could have read went with the one nobody could. */
+    render(<MedicationsPanel medications={[KNOWN, FROM_A_NEWER_API]} />);
+
+    expect(screen.getByText('Metformin 500 mg tablet')).toBeInTheDocument();
+    expect(screen.getByText('Apixaban 5 mg tablet')).toBeInTheDocument();
+  });
+});
+
 describe('a medication in a state the old pair had no room for', () => {
   const HELD: Medication = {
     id: 'md-hold',

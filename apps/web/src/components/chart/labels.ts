@@ -61,9 +61,10 @@ export const MEDICATION_SOURCE_LABELS: Record<MedicationSource, { labelKey: stri
 /**
  * Every medication state, each with its own words.
  *
- * A `Record` over the union rather than a lookup with a fallback, so adding a
- * state to `MedicationStatus` fails to compile here instead of rendering as a
- * raw enum name or, worse, as the wrong neighbour.
+ * A `Record` over the union, so adding a state to `MedicationStatus` fails to
+ * compile here instead of rendering as a raw enum name or, worse, as the wrong
+ * neighbour. `medicationStatusLabelKey` below reads it with a fallback, and
+ * says why that is not the same thing as typing it with one.
  */
 export const MEDICATION_STATUS_LABELS: Record<MedicationStatus, { labelKey: string }> = {
   ACTIVE: { labelKey: 'chart.medicationStatus.active' },
@@ -75,6 +76,42 @@ export const MEDICATION_STATUS_LABELS: Record<MedicationStatus, { labelKey: stri
   STOPPED: { labelKey: 'chart.medicationStatus.stopped' },
   UNKNOWN: { labelKey: 'chart.medicationStatus.unknown' },
 };
+
+/**
+ * A word for a medication enum member that arrived over the wire.
+ *
+ * The two `Record`s here are exhaustive over the unions above, and that is a
+ * claim about this build rather than about the server. `requestJson` casts the
+ * response body instead of parsing it, so the `status` and `source` on a
+ * medication row are whatever the API sent: a member added to the Prisma enum
+ * before this build knows the word for it reaches these lookups, and an indexed
+ * read of it is `undefined`. `undefined.labelKey` is a `TypeError` thrown
+ * during render, and `apps/web` has no error boundary, so one unrecognised row
+ * would take the whole patient chart down rather than one cell - the eight rows
+ * this build *can* name disappearing along with it.
+ *
+ * So the read is widened to a string key deliberately, which is what the value
+ * actually is at this boundary, and the fallback is load-bearing rather than
+ * defensive: the type cannot see the case, so nothing but this stops it. The
+ * `Record` type is unchanged, so adding a member to `MedicationStatus` still
+ * fails to compile above rather than silently landing on the fallback here.
+ *
+ * `unrecognised` is deliberately not `UNKNOWN`. `UNKNOWN` is a state the API
+ * records, and it means nobody knows whether the patient takes the medication.
+ * This means the API knows the state and this build has no word for it. They are
+ * different sentences to a prescriber and folding one into the other is the same
+ * defect the panel's complement exists to prevent.
+ */
+const WIDENED_STATUS: Record<string, { labelKey: string } | undefined> = MEDICATION_STATUS_LABELS;
+const WIDENED_SOURCE: Record<string, { labelKey: string } | undefined> = MEDICATION_SOURCE_LABELS;
+
+export function medicationStatusLabelKey(status: MedicationStatus): string {
+  return WIDENED_STATUS[status]?.labelKey ?? 'chart.medicationStatus.unrecognised';
+}
+
+export function medicationSourceLabelKey(source: MedicationSource): string {
+  return WIDENED_SOURCE[source]?.labelKey ?? 'chart.medicationSource.unrecognised';
+}
 
 export const CARE_TEAM_LABELS: Record<CareTeamRelationship, { labelKey: string }> = {
   PRIMARY: { labelKey: 'chart.careTeam.primary' },

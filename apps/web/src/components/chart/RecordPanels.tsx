@@ -18,8 +18,8 @@ import { useTranslator } from '@/lib/i18n/messages';
 
 import {
   CARE_TEAM_LABELS,
-  MEDICATION_SOURCE_LABELS,
-  MEDICATION_STATUS_LABELS,
+  medicationSourceLabelKey,
+  medicationStatusLabelKey,
   NOTE_STATE_LABELS,
 } from './labels';
 
@@ -203,13 +203,15 @@ function medicationRow(t: Translator, med: Medication): Record<string, ReactNode
     drug: med.drug,
     /* Absent is rendered as absent rather than as an empty cell, which reads as
        "there are no directions" and is the same sentence a blank makes about a
-       missing prescriber. `refills` has always done this; the other three can
-       now be absent too. */
+       missing prescriber. `refills` has always done this; `sig` and `prescriber`
+       can now be absent too and need it here. The two dates do not: `formatDate`
+       answers `common.notRecorded` for a null of its own accord, and writing the
+       check again here would be a guard no test could tell from its absence. */
     sig: med.sig ?? t('common.notRecorded'),
-    status: t(MEDICATION_STATUS_LABELS[med.status].labelKey),
+    status: t(medicationStatusLabelKey(med.status)),
     prescriber: med.prescriber ?? t('common.notRecorded'),
-    started: med.startedOn === null ? t('common.notRecorded') : formatDate(t, med.startedOn),
-    source: t(MEDICATION_SOURCE_LABELS[med.source].labelKey),
+    started: formatDate(t, med.startedOn),
+    source: t(medicationSourceLabelKey(med.source)),
     refills: med.refillsRemaining === null ? t('common.notRecorded') : String(med.refillsRemaining),
   };
 }

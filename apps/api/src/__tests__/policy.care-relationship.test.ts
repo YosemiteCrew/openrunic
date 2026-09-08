@@ -1362,11 +1362,9 @@ describe('a write on a chart is not a way round the gate', () => {
     /**
      * What the SAME request answers for a reader who is in this patient's care.
      *
-     * Not always 200: `transmit` reaches the prescribing-network seam and this
-     * build registers no eRx adapter, so its control is the 501 that says so
-     * (#311). A control that expected 200 there would have to be deleted or
-     * weakened the day someone read it, and the point of the control is that
-     * the gate is not what refused.
+     * Not always 200: `transmit` reaches the development prescribing seam, then
+     * refuses this deliberately incomplete prescription. The point of the
+     * control is that the care-relationship gate is not what refused it.
      */
     readonly reachable: number;
   }
@@ -1401,7 +1399,7 @@ describe('a write on a chart is not a way round the gate', () => {
       door: 'POST /medications/prescriptions/:id/transmit',
       seedIt: (dataset) => aPrescription(dataset, 'SIGNED'),
       path: `/bff/v0/medications/prescriptions/${W_RX}/transmit`,
-      reachable: 501,
+      reachable: 409,
     },
     {
       door: 'POST /medications/prescriptions/:id/cancel',

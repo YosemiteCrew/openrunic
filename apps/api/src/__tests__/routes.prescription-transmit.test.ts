@@ -704,6 +704,24 @@ describe('cancelling a prescription', () => {
     expect((await dto(read)).status).not.toBe('CANCELLED');
   });
 
+  it('repeats an unconfirmed recall instead of treating the transmission reference as recall state', async () => {
+    /*
+     * `erxRef` proves that a transmission exists, not that a recall was sent.
+     * The network makes recalling that reference idempotent, so a retry repeats
+     * the request. Polling first would make the mock advance again and would
+     * leave the route's immediate-cancellation outcome unreachable.
+     */
+    const h = await harness(new MockErxAdapter());
+    await post(h, 'transmit');
+    await post(h, 'transmit');
+
+    expect((await post(h, 'cancel')).status).toBe(409);
+    expect((await post(h, 'cancel')).status).toBe(409);
+
+    expect(operations(h, 'cancelPrescription')).toHaveLength(2);
+    expect(operations(h, 'getTransmissionStatus')).toHaveLength(1);
+  });
+
   it('is not undone by a later status poll', async () => {
     /*
      * Also found in review. A network that cannot recall leaves its own state at

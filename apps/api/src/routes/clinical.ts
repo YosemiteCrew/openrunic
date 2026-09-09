@@ -1301,7 +1301,7 @@ export function clinicalRouteContracts(): RouteContract[] {
       operationId: 'cancelPrescription',
       summary: 'Cancel a prescription, recalling it from the network where possible.',
       description:
-        'Allowed from any state that is not already terminal. A cancelled prescription stays on the chart: it is a fact about what was intended. A prescription that reached the network is recalled from it first, and the cancellation is not recorded if that recall fails - a chart saying cancelled while the pharmacy holds a live prescription is the outcome this refuses. A prescription that never reached a network, or one on a network that does not offer recall, is cancelled here alone; nothing in the response says the pharmacy was told, because it was not, and somebody has to telephone.',
+        'Allowed from any state that is not already terminal. A cancelled prescription stays on the chart: it is a fact about what was intended. A prescription that reached the network is recalled from it first, and the cancellation is not recorded if that recall fails - a chart saying cancelled while the pharmacy holds a live prescription is the outcome this refuses. Retrying an unconfirmed cancellation repeats the idempotent recall against the same transmission reference; the stored reference proves a transmission exists, but does not prove a recall was already requested. A prescription that never reached a network, or one on a network that does not offer recall, is cancelled here alone; nothing in the response says the pharmacy was told, because it was not, and somebody has to telephone.',
       tag: 'medications',
       subject: 'Prescription',
       response: prescriptionDtoSchema,

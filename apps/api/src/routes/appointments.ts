@@ -16,7 +16,7 @@ import {
 } from '../schemas/appointments.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { gateCharts, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * Appointments. Same pattern as patients, plus the facility check.
@@ -128,7 +128,23 @@ export function appointmentRoutes(): Hono<AppEnv> {
   router.get('/appointments/:id', requirePermission('appointment.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const row = required(await repositories(c).appointments.findById(id), 'No such appointment.');
+    // The appointment's own site, checked before the chart for the same reason
+    // the telehealth door checks it first (`telehealth.ts`): a principal not
+    // granted this site gets 403, and asking the chart first would turn that
+    // into a 404 that reveals the row's existence.
     assertFacilityAccess(policyOf(c), row.facilityId);
+    /*
+     * And then the chart, because the addressed read of a chart-bearing
+     * aggregate is where #247/#300/#315 bit. `gateCharts` skips a row with no
+     * patient at all - a booking that names no chart carries nothing to gate,
+     * the same stated exemption #336 applied - and `facility-activity` admits
+     * any booked row at the caller's own facility, so for the live schedule the
+     * gate refuses nobody the facility check let through. It bites only on the
+     * rows `facility-activity` excludes: CANCELLED, ENTERED_IN_ERROR, a start
+     * more than a year past, and only when they name a chart the caller has no
+     * relationship to.
+     */
+    await gateCharts(c, 'appointments', [row]);
     return c.json(toAppointmentDto(row));
   });
 
@@ -147,6 +163,7 @@ export function appointmentRoutes(): Hono<AppEnv> {
       'No such appointment.'
     );
     assertFacilityAccess(policyOf(c), existing.facilityId);
+    await gateCharts(c, 'appointments', [existing]);
     const row = await repositories(c).appointments.update(id, toAppointmentUpdateInput(body));
     return c.json(toAppointmentDto(required(row, 'No such appointment.')));
   });

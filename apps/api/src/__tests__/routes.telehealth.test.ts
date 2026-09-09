@@ -785,23 +785,40 @@ describe('the chart gate is inert on an appointment that names no chart, and bou
   });
 
   /**
-   * The READ is a different question and it is not answered here.
+   * The READ, answered here now that #431 is decided.
    *
-   * `GET /bff/v0/appointments/:id` is hand-registered in `appointments.ts` and
-   * carries `assertFacilityAccess` and no chart gate at all, so it answers 200
-   * for any caller holding `appointment.read` in the row's facility, whether or
-   * not the appointment names a chart. That is a gate that is ABSENT rather
-   * than one that is inert, and the two are only distinguishable by driving
-   * both rows: an exemption is only meaningful where a gate exists to be
-   * exempted from.
+   * `GET /bff/v0/appointments/:id` is hand-registered in `appointments.ts`.
+   * The facility check runs first and answers 403 for a caller not granted the
+   * appointment's site; the chart gate then runs - the same order as the
+   * telehealth door above, so the chart refusal stays a 404 and reveals
+   * nothing the facility check would already have hidden (#431).
    *
-   * Whether the scheduling read should require a care relationship is a product
-   * question - the front desk needs the day's list and holds no relationship to
-   * anybody on it - and #336 does not decide it. Pinned so the difference is on
-   * the record rather than inferred from the absence of a case.
+   * The gate's bite is bounded by `facility-activity` exactly as the write
+   * door's is: on a BOOKED appointment at the caller's own facility the caller
+   * is already authorised, so the read refuses nobody the facility check let
+   * through. It refuses only the rows `facility-activity` excludes - CANCELLED,
+   * ENTERED_IN_ERROR, a start more than a year past - and only when they name a
+   * chart the caller has no relationship to. The chartless row stays readable:
+   * a booking with no patient carries no chart to gate (#336's exemption).
    */
-  it('the appointment READ has no chart gate on either row, which is a different fact', async () => {
+  it('gates the READ of a charted CANCELLED row and admits the chartless one', async () => {
     const { app } = exemptionApp('CANCELLED');
+
+    expect(
+      (await app.request(`/bff/v0/appointments/${CHARTED}`, { headers: bearer(TOKENS.clinicianA) }))
+        .status
+    ).toBe(404);
+    expect(
+      (
+        await app.request(`/bff/v0/appointments/${CHARTLESS}`, {
+          headers: bearer(TOKENS.clinicianA),
+        })
+      ).status
+    ).toBe(200);
+  });
+
+  it('cannot refuse the READ of a BOOKED row at the caller own facility', async () => {
+    const { app } = exemptionApp('BOOKED');
 
     for (const id of [CHARTED, CHARTLESS]) {
       expect(

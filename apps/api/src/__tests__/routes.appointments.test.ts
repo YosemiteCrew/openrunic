@@ -151,6 +151,28 @@ describe('GET /bff/v0/appointments/:id', () => {
     });
   });
 
+  it('404s a charted appointment without a care relationship', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101), status: 'CANCELLED' }));
+
+    const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
+      headers: bearer(TOKENS.frontDeskA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('reads an appointment that names no chart', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101), patientId: null }));
+
+    const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
+      headers: bearer(TOKENS.frontDeskA),
+    });
+
+    expect(res.status).toBe(200);
+  });
+
   it('404s an appointment that does not exist', async () => {
     const { app } = createTestApp();
 
@@ -311,6 +333,34 @@ describe('PATCH /bff/v0/appointments/:id', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+
+  it('404s without changing a charted appointment when no care relationship exists', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101), status: 'CANCELLED' }));
+
+    const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.frontDeskA),
+      body: JSON.stringify({ room: '3' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(dataset.table('Appointment')[0]?.room).toBeNull();
+  });
+
+  it('changes an appointment that names no chart', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(101), patientId: null }));
+
+    const res = await app.request(`/bff/v0/appointments/${testId(101)}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.frontDeskA),
+      body: JSON.stringify({ room: '3' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(dataset.table('Appointment')[0]?.room).toBe('3');
   });
 
   it('403s a patch to an appointment in an ungranted facility', async () => {

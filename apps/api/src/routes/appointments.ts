@@ -16,7 +16,7 @@ import {
 } from '../schemas/appointments.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { idParamSchema, policyOf, repositories, required, requiredParentChart } from './helpers.js';
 
 /**
  * Appointments. Same pattern as patients, plus the facility check.
@@ -70,7 +70,7 @@ export const appointmentRouteContracts: RouteContract[] = [
       ...ERROR_RESPONSES,
       {
         status: 404,
-        description: 'No such appointment in this organisation.',
+        description: "No such appointment in the caller's chart scope.",
         schema: problemDocumentSchema,
       },
     ],
@@ -105,7 +105,7 @@ export const appointmentRouteContracts: RouteContract[] = [
       ...ERROR_RESPONSES,
       {
         status: 404,
-        description: 'No such appointment in this organisation.',
+        description: "No such appointment in the caller's chart scope.",
         schema: problemDocumentSchema,
       },
       { status: 422, description: 'The body failed validation.', schema: problemDocumentSchema },
@@ -127,8 +127,9 @@ export function appointmentRoutes(): Hono<AppEnv> {
 
   router.get('/appointments/:id', requirePermission('appointment.read'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
-    const row = required(await repositories(c).appointments.findById(id), 'No such appointment.');
-    assertFacilityAccess(policyOf(c), row.facilityId);
+    const found = required(await repositories(c).appointments.findById(id), 'No such appointment.');
+    assertFacilityAccess(policyOf(c), found.facilityId);
+    const row = await requiredParentChart(c, 'appointments', found, 'No such appointment.');
     return c.json(toAppointmentDto(row));
   });
 
@@ -147,7 +148,16 @@ export function appointmentRoutes(): Hono<AppEnv> {
       'No such appointment.'
     );
     assertFacilityAccess(policyOf(c), existing.facilityId);
-    const row = await repositories(c).appointments.update(id, toAppointmentUpdateInput(body));
+    const permitted = await requiredParentChart(
+      c,
+      'appointments',
+      existing,
+      'No such appointment.'
+    );
+    const row = await repositories(c).appointments.update(
+      permitted.id,
+      toAppointmentUpdateInput(body)
+    );
     return c.json(toAppointmentDto(required(row, 'No such appointment.')));
   });
 

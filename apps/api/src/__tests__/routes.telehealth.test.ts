@@ -785,29 +785,27 @@ describe('the chart gate is inert on an appointment that names no chart, and bou
   });
 
   /**
-   * The READ is a different question and it is not answered here.
-   *
-   * `GET /bff/v0/appointments/:id` is hand-registered in `appointments.ts` and
-   * carries `assertFacilityAccess` and no chart gate at all, so it answers 200
-   * for any caller holding `appointment.read` in the row's facility, whether or
-   * not the appointment names a chart. That is a gate that is ABSENT rather
-   * than one that is inert, and the two are only distinguishable by driving
-   * both rows: an exemption is only meaningful where a gate exists to be
-   * exempted from.
-   *
-   * Whether the scheduling read should require a care relationship is a product
-   * question - the front desk needs the day's list and holds no relationship to
-   * anybody on it - and #336 does not decide it. Pinned so the difference is on
-   * the record rather than inferred from the absence of a case.
+   * The addressed appointment read uses the same chart gate as the telehealth
+   * write above. A chartless held slot remains facility-scoped, while a charted
+   * row outside the caller's care relationships is indistinguishable from a
+   * missing appointment. The schedule collection remains facility-scoped.
    */
-  it('the appointment READ has no chart gate on either row, which is a different fact', async () => {
+  it('applies the chartless exemption to the addressed appointment read', async () => {
     const { app } = exemptionApp('CANCELLED');
 
-    for (const id of [CHARTED, CHARTLESS]) {
-      expect(
-        (await app.request(`/bff/v0/appointments/${id}`, { headers: bearer(TOKENS.clinicianA) }))
-          .status
-      ).toBe(200);
-    }
+    expect(
+      (
+        await app.request(`/bff/v0/appointments/${CHARTED}`, {
+          headers: bearer(TOKENS.clinicianA),
+        })
+      ).status
+    ).toBe(404);
+    expect(
+      (
+        await app.request(`/bff/v0/appointments/${CHARTLESS}`, {
+          headers: bearer(TOKENS.clinicianA),
+        })
+      ).status
+    ).toBe(200);
   });
 });

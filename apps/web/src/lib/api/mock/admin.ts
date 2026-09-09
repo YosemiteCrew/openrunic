@@ -242,6 +242,12 @@ function allow(...roles: StaffRole[]): Record<StaffRole, 'ALLOW' | 'DENY'> {
   return row;
 }
 
+/**
+ * Product-language fixtures for the mock-only role editor, not API permission ids.
+ * None of these ids maps directly to the enforced `ROLE_PERMISSIONS` vocabulary in
+ * `apps/api/src/policy/permissions.ts`. A live AdminClient must define that mapping
+ * deliberately instead of sending these values as grants that the API would ignore.
+ */
 export const MOCK_PERMISSIONS: readonly PermissionRow[] = [
   {
     id: 'chart.view',

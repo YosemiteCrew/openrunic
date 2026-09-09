@@ -313,6 +313,23 @@ describe('PATCH /bff/v0/appointments/:id', () => {
     expect(res.status).toBe(404);
   });
 
+  it('refuses a charted appointment with no care relationship before persistence', async () => {
+    const { app, dataset } = createTestApp();
+    const id = testId(110);
+    seed(dataset, 'Appointment', makeAppointmentRow({ id, status: 'CANCELLED' }));
+
+    const res = await app.request(`/bff/v0/appointments/${id}`, {
+      method: 'PATCH',
+      headers: jsonBearer(TOKENS.clinicianA),
+      body: JSON.stringify({ room: '9' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(dataset.table('Appointment').find((row: { id: string }) => row.id === id)).toMatchObject(
+      { room: null }
+    );
+  });
+
   it('403s a patch to an appointment in an ungranted facility', async () => {
     const { app, dataset } = createTestApp();
     seed(

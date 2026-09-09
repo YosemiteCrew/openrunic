@@ -1079,6 +1079,13 @@ async function transmit(
  * or the row says the pharmacy was told, because it was not. Somebody has to
  * telephone, and a chart that implied otherwise would be the reason they did
  * not.
+ *
+ * A retry deliberately asks the network to cancel again instead of polling.
+ * The stored transmission reference proves that a transmission exists, but the
+ * row carries no durable fact saying that a recall is pending. The network's
+ * cancel operation is idempotent, so repeating it is safer than persisting a
+ * local recall flag that can disagree with the network about whether the
+ * pharmacy still needs to act.
  */
 async function cancel(
   c: Context<AppEnv>,

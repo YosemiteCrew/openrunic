@@ -521,6 +521,31 @@ describe('VXU', () => {
       )
     ).toThrow(/Expected a VXU/);
   });
+
+  it.each(['2oops', '1e1', '0', '-1', '9007199254740992'])(
+    'refuses invalid RXA-2 sequence %s instead of changing its meaning',
+    (sequence) => {
+      const raw = [
+        'MSH|^~\\&|S|F|R|F|20260814093000||VXU^V04^VXU_V04|C1|P|2.5.1',
+        'PID|1||MRN||Nullsson^Placeholder',
+        `RXA|0|${sequence}|20251012|150^Influenza^CVX|999`,
+      ].join('\r');
+
+      expect(() => parseVxu(raw)).toThrow(/RXA-2 must be a positive safe integer/);
+    }
+  );
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses outbound RXA-2 sequence %s before emitting an invalid VXU',
+    (sequence) => {
+      expect(() =>
+        buildVxu({
+          ...vxu,
+          immunisations: [{ ...vxu.immunisations[0]!, sequence }],
+        })
+      ).toThrow(/RXA-2 must be a positive safe integer/);
+    }
+  );
 });
 
 describe('acknowledgements', () => {

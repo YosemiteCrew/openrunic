@@ -629,6 +629,12 @@ describe('timestamps', () => {
     expect(() => hl7Date('March 2nd')).toThrow(Hl7Error);
   });
 
+  it('refuses impossible calendar dates instead of normalising them', () => {
+    expect(() => hl7Date('2026-02-30')).toThrow(/out of range/);
+    expect(() => hl7Date('1994-03-02T00:00:00Z')).toThrow(Hl7Error);
+    expect(() => hl7Instant('2026-02-30T09:30:00Z')).toThrow(Hl7Error);
+  });
+
   it('reads a timestamp at whatever precision it was written', () => {
     expect(fromHl7('20260814093000+0000')).toBe('2026-08-14T09:30:00.000Z');
     expect(fromHl7('20260814093000')).toBe('2026-08-14T09:30:00.000Z');
@@ -649,6 +655,11 @@ describe('timestamps', () => {
   it('refuses a timestamp it cannot read, and one whose fields are impossible', () => {
     expect(() => fromHl7('yesterday')).toThrow(/Cannot read/);
     expect(() => fromHl7('20261345000000')).toThrow(/out of range/);
+  });
+
+  it('refuses impossible calendar dates at date and instant precision', () => {
+    expect(() => fromHl7('20260230')).toThrow(/out of range/);
+    expect(() => fromHl7('20260230093000+0000')).toThrow(/out of range/);
   });
 });
 

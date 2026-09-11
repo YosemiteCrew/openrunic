@@ -40,7 +40,7 @@ anyway. A build pointed at a real deployment can never open the door, whatever t
 is already serving invented records to everyone who reaches it, so the door opens onto a room that
 
 # docs/quality-gates.md
-| OpenSSF Scorecard                      | `scorecard.yml`                      | Supply-chain posture, published                     |
+| OpenSSF Scorecard                      | `scorecard.yml`                       | Supply-chain posture, published                     |
 project as a whole must sit at 95% coverage, zero duplication and zero open issues.
 that failed, and writes the answer into one tracking issue. It opens no pull request: a green result
 

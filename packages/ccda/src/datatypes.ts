@@ -1,6 +1,6 @@
 import type { Address, CodedValue, ClinicalStatus } from './domain.js';
 import { CODE_SYSTEMS, type TemplateId } from './oids.js';
-import { hl7Instant } from './time.js';
+import { hl7Date, hl7Instant } from './time.js';
 import { attr, childNamed, element, textOf, type XmlElement } from './xml/tree.js';
 
 /**
@@ -117,7 +117,7 @@ export function effectiveTime(
 
 /** Writes a date as a date and an instant as an instant. See time.ts. */
 export function writeTime(value: string): string {
-  return value.length === 10 ? value.replaceAll('-', '') : hl7Instant(value);
+  return value.length === 10 ? hl7Date(value) : hl7Instant(value);
 }
 
 /** `<statusCode code="active"/>` and the rest of the act status vocabulary. */

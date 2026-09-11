@@ -123,9 +123,9 @@ export function parseDate8(value: string, at: X12Location): Result<string, X12Er
   const year = value.slice(0, 4);
   const month = value.slice(4, 6);
   const day = value.slice(6, 8);
-  const monthNumber = Number(month);
-  const dayNumber = Number(day);
-  if (monthNumber < 1 || monthNumber > 12 || dayNumber < 1 || dayNumber > 31) {
+  const isoDate = `${year}-${month}-${day}`;
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== isoDate) {
     return err({
       kind: 'invalid_element',
       message: 'the date is not a real calendar date',
@@ -134,7 +134,7 @@ export function parseDate8(value: string, at: X12Location): Result<string, X12Er
       expected: 'CCYYMMDD',
     });
   }
-  return ok(`${year}-${month}-${day}`);
+  return ok(isoDate);
 }
 
 /**

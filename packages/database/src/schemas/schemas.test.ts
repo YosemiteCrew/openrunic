@@ -92,7 +92,7 @@ describe('common primitives', () => {
     expect(accepts(localDate, date)).toStrictEqual(date);
   });
 
-  it.each(['17/04/1991', '1991-4-7', 'yesterday', '', 19910417])(
+  it.each(['17/04/1991', '1991-4-7', '1991-02-29', 'yesterday', '', 19910417])(
     'rejects %s as a local date',
     (value) => {
       rejects(localDate, value);
@@ -105,9 +105,12 @@ describe('common primitives', () => {
     );
   });
 
-  it('rejects an unparsable instant', () => {
-    rejects(timestamp, 'half past nine');
-  });
+  it.each(['half past nine', '2025-02-29T09:30:00.000Z', '2025-02-28T09:30:00.000'])(
+    'rejects %s as an instant',
+    (value) => {
+      rejects(timestamp, value);
+    }
+  );
 });
 
 // ---------------------------------------------------------------------------

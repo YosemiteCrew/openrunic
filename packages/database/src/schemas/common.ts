@@ -21,9 +21,13 @@ import { z } from 'zod';
 /** A UUIDv7 primary key or foreign key. */
 export const uuid = z.uuid();
 
+const isoInstant = z.iso.datetime({ offset: true });
+const isoDate = z.iso.date();
+
 /** An instant. Accepts a Date or an ISO 8601 string; rejects anything else. */
 export const timestamp = z.preprocess(
-  (value) => (typeof value === 'string' ? new Date(value) : value),
+  (value) =>
+    typeof value === 'string' && isoInstant.safeParse(value).success ? new Date(value) : value,
   z.date()
 );
 
@@ -43,7 +47,7 @@ export const timestamp = z.preprocess(
 export const localDate = z
   .preprocess(
     (value) =>
-      typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      typeof value === 'string' && isoDate.safeParse(value).success
         ? new Date(`${value}T00:00:00.000Z`)
         : value,
     z.date()

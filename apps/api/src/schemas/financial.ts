@@ -48,7 +48,7 @@ import { parseLocalDate, toDateOnly } from './patients.js';
 /* ------------------------------------------------------------------- pieces */
 
 /** A `@db.Date` column on the wire: a calendar date with no time and no zone. */
-const dateOnlyField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
+const dateOnlyField = z.iso.date('expected YYYY-MM-DD');
 const instantField = z.iso.datetime({ offset: true });
 const shortTextField = z.string().min(1).max(256);
 const codeField = z.string().min(1).max(64);

@@ -308,6 +308,8 @@ export interface DateWindow {
 }
 
 const PREFIXES = ['eq', 'ne', 'gt', 'lt', 'ge', 'le'] as const;
+const dateOnlyParam = z.iso.date();
+const instantParam = z.iso.datetime({ offset: true });
 
 type DatePrefix = (typeof PREFIXES)[number];
 
@@ -335,13 +337,14 @@ export function dateWindow(raw: string, param: string): DateWindow {
     });
   }
 
-  const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(rest);
-  const start = new Date(dayOnly ? `${rest}T00:00:00.000Z` : rest);
-  if (Number.isNaN(start.getTime())) {
+  const dayOnly = dateOnlyParam.safeParse(rest).success;
+  const instant = instantParam.safeParse(rest).success;
+  if (!dayOnly && !instant) {
     throw ApiError.malformed(`${param} must be an ISO 8601 date or instant.`, {
       issues: [{ path: param, message: 'expected YYYY-MM-DD or an ISO 8601 instant' }],
     });
   }
+  const start = new Date(dayOnly ? `${rest}T00:00:00.000Z` : rest);
   const end = dayOnly ? new Date(start.getTime() + 86_400_000) : new Date(start.getTime() + 1);
 
   if (prefix === 'eq') return { from: start, to: end };
@@ -353,7 +356,7 @@ export function dateWindow(raw: string, param: string): DateWindow {
 
 /** Reads a bare `YYYY-MM-DD` as UTC midnight, never as local midnight. */
 export function parseDateOnly(value: string, param: string): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+  if (!dateOnlyParam.safeParse(value).success) {
     throw ApiError.malformed(`${param} must be YYYY-MM-DD.`, {
       issues: [{ path: param, message: 'expected YYYY-MM-DD' }],
     });

@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 import { ApiError } from '../errors.js';
 import { parseParam } from '../http/validate.js';
+import { problemPatchSchema } from '../schemas/clinical.js';
+import { eligibilityCheckSchema } from '../schemas/financial.js';
 import {
   appointmentListQuerySchema,
   appointmentUpdateSchema,
@@ -109,6 +111,12 @@ describe('the patient query contract', () => {
 
     expect(parsed.toISOString()).toBe('1994-03-02T00:00:00.000Z');
     expect(toDateOnly(parsed)).toBe('1994-03-02');
+  });
+
+  it('refuses impossible calendar dates at every internal API date seam', () => {
+    expect(patientListQuerySchema.safeParse({ birthDate: '1994-02-29' }).success).toBe(false);
+    expect(problemPatchSchema.safeParse({ abatementDate: '1994-02-29' }).success).toBe(false);
+    expect(eligibilityCheckSchema.safeParse({ serviceDate: '1994-02-29' }).success).toBe(false);
   });
 });
 

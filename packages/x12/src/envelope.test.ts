@@ -192,10 +192,20 @@ describe('money and dates', () => {
 
   it('reads a D8 date as a calendar string, never a Date', () => {
     expect(expectOk(parseDate8('20260312', AT))).toBe('2026-03-12');
+    expect(expectOk(parseDate8('20240229', AT))).toBe('2024-02-29');
   });
 
   it('rejects a malformed or impossible date', () => {
-    for (const value of ['2026031', '', 'CCYYMMDD', '20261301', '20260300']) {
+    for (const value of [
+      '2026031',
+      '',
+      'CCYYMMDD',
+      '20261301',
+      '20260300',
+      '20260229',
+      '20260230',
+      '20260431',
+    ]) {
       expect(expectErr(parseDate8(value, AT)).kind).toBe('invalid_element');
     }
   });

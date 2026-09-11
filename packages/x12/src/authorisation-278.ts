@@ -43,7 +43,7 @@ import { writeInterchange } from './writer.js';
  */
 
 /** The 005010X217 implementation convention both halves declare. */
-const IMPLEMENTATION_278 = '005010X217';
+export const IMPLEMENTATION_278 = '005010X217';
 
 /** The requester: the practice asking for the authorisation. */
 export interface AuthorisationRequester {

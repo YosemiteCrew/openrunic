@@ -144,6 +144,16 @@ describe('refusing a document that cannot be vouched for', () => {
     expect(Number.isNaN((error as { declared: number }).declared)).toBe(true);
   });
 
+  it.each([
+    ['IEA01', 'IEA*1*', 'IEA*1e0*'],
+    ['GE01', 'GE*1*1~', 'GE*1e0*1~'],
+    ['SE01', 'SE*29*', 'SE*29e0*'],
+  ] as const)('rejects JavaScript numeric syntax in %s', (counter, valid, invalid) => {
+    const error = expectErr(readInterchange(base.replace(valid, invalid)));
+    expect(error).toMatchObject({ kind: 'count_mismatch', counter });
+    expect(Number.isNaN((error as { declared: number }).declared)).toBe(true);
+  });
+
   it('rejects a stray segment at the interchange level', () => {
     const error = expectErr(readInterchange(base.replace('GS*HC*', 'ZZZ*1~GS*HC*')));
     expect(error).toMatchObject({

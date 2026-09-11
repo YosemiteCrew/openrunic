@@ -6,8 +6,8 @@ import type { Delimiters } from './delimiters.js';
 import type { NamedParty, PersonName, SubscriberRelationship, X12Gender } from './domain.js';
 import { toRelationshipCode } from './domain.js';
 import type { X12Error } from './errors.js';
-import { formatDate8, formatTime4 } from './format.js';
-import { segment, simpleAt } from './segments.js';
+import { formatDate8, formatTime4, parseNumber } from './format.js';
+import { locate, segment, simpleAt } from './segments.js';
 import type { Segment } from './segments.js';
 import { writeInterchange } from './writer.js';
 
@@ -492,8 +492,11 @@ export function decode278(segments: readonly Segment[]): Result<AuthorisationRes
 
     if (current.tag === 'HSD') {
       pending.certifiedUnit = simpleAt(current, 1);
-      const quantity = Number.parseFloat(simpleAt(current, 2));
-      if (!Number.isNaN(quantity)) pending.certifiedQuantity = quantity;
+      const quantity = parseNumber(
+        simpleAt(current, 2),
+        locate(current, segments.indexOf(current), 2)
+      );
+      if (quantity.ok) pending.certifiedQuantity = quantity.value;
       continue;
     }
 

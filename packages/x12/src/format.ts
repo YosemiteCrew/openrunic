@@ -57,6 +57,9 @@ export function parseAmount(
     return err({ kind: 'invalid_element', message: `expected ${expected}`, at, value, expected });
   }
   const numeric = Number(value) * 100;
+  if (!Number.isFinite(numeric)) {
+    return err({ kind: 'invalid_element', message: `expected ${expected}`, at, value, expected });
+  }
   const rounded = numeric < 0 ? -Math.round(-numeric) : Math.round(numeric);
   return ok(rounded);
 }
@@ -79,7 +82,10 @@ export function parseNumber(
   if (value === '' || !/^-?(\d+(\.\d+)?|\.\d+)$/.test(value)) {
     return err({ kind: 'invalid_element', message: `expected ${expected}`, at, value, expected });
   }
-  return ok(Number(value));
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? ok(numeric)
+    : err({ kind: 'invalid_element', message: `expected ${expected}`, at, value, expected });
 }
 
 /** CCYYMMDD, the D8 date format used everywhere except ISA09. */

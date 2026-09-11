@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pending, proposalResultSchema } from '../proposal.js';
 import { defineTool } from '../registry.js';
 
-import { codedValueSchema, sourceRefSchema } from './shared.js';
+import { codedValueSchema, dateOnlySchema, sourceRefSchema } from './shared.js';
 
 /**
  * Tool 10. Pre-highlights candidate values from an imported outside record so a
@@ -27,10 +27,7 @@ const candidateSchema = z.strictObject({
   /** Numeric result, when the concept has one. Never a range the model inferred. */
   value: z.string().max(64).optional(),
   unit: z.string().max(32).optional(),
-  effectiveDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD.')
-    .optional(),
+  effectiveDate: dateOnlySchema.optional(),
   /** Where in the document it came from. Required: a candidate without one is a guess. */
   source: sourceRefSchema,
 });

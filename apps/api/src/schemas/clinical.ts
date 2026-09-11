@@ -76,7 +76,7 @@ import { toDateOnly } from './patients.js';
 const instantField = z.iso.datetime({ offset: true });
 
 /** A `@db.Date` column on the wire: a bare calendar date, no time, no zone. */
-const dateOnlyField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
+const dateOnlyField = z.iso.date('expected YYYY-MM-DD');
 
 /** A block of a note document. Its shape is the editor's, not storage's. */
 const blockField = z.record(z.string(), z.unknown());

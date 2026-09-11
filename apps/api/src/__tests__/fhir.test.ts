@@ -468,6 +468,8 @@ describe('search parameter handling', () => {
     // A negation cannot be expressed as one window, so it is refused rather
     // than answered approximately.
     expect(() => dateWindow('ne2026-08-14', 'date')).toThrow(/does not support the ne prefix/);
+    expect(() => dateWindow('2025-02-29', 'date')).toThrow(/ISO 8601/);
+    expect(() => dateWindow('2026-08-14T09:30:00', 'date')).toThrow(/ISO 8601/);
     expect(() => dateWindow('not-a-date', 'date')).toThrow(/ISO 8601/);
   });
 
@@ -479,6 +481,7 @@ describe('search parameter handling', () => {
 
   it('refuses a date-only parameter that is not a calendar date', () => {
     expect(parseDateOnly('1994-03-02', 'birthdate').toISOString()).toBe('1994-03-02T00:00:00.000Z');
+    expect(() => parseDateOnly('1994-02-29', 'birthdate')).toThrow(/YYYY-MM-DD/);
     expect(() => parseDateOnly('1994-03', 'birthdate')).toThrow(/YYYY-MM-DD/);
   });
 });

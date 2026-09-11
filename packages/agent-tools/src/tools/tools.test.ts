@@ -74,6 +74,15 @@ describe('chart.search', () => {
     });
   });
 
+  it('refuses an impossible patient birth date before calling the API', async () => {
+    const api = recordingApiClient(() => PATIENT_PAGE);
+
+    await expect(
+      chartSearch.run({ resource: 'patient', birthDate: '2025-02-29' }, stubToolContext({ api }))
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
+    expect(api.calls).toHaveLength(0);
+  });
+
   it('carries a source reference on every row', async () => {
     const api = recordingApiClient(() => PATIENT_PAGE);
     const result = (await chartSearch.run({ resource: 'patient' }, stubToolContext({ api }))) as {
@@ -246,6 +255,24 @@ describe('priorauth.assemblePacket', () => {
     expect(proposal.commit.path).toBe('/bff/v0/forms');
     expect(proposal.commit.body['justification']).toBeTypeOf('string');
     expect(proposal.effect[0]).toEqual({ label: 'Payer', value: 'Example Health Plan' });
+  });
+
+  it('refuses an impossible service start date', async () => {
+    await expect(
+      priorauthAssemblePacket.run(
+        {
+          payer: { system: 'payer', code: 'PAYER-1', display: 'Example Health Plan' },
+          memberId: 'M-1',
+          serviceCode: { system: 'CPT', code: '97110' },
+          diagnosisCodes: [{ system: 'ICD-10-CM', code: 'M54.5' }],
+          requestedUnits: 12,
+          startDate: '2025-02-29',
+          renderingProviderId: PROVIDER_ID,
+          justification: 'Conservative management has been documented for six weeks.',
+        },
+        stubToolContext()
+      )
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
   });
 });
 
@@ -625,6 +652,25 @@ describe('documents.extractCandidates', () => {
           encounterId: ENCOUNTER_ID,
           documentId: DOCUMENT_ID,
           candidates: [{ concept: { system: 'LOINC', code: '4548-4' } }],
+        },
+        stubToolContext()
+      )
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
+  });
+
+  it('refuses an impossible effective date', async () => {
+    await expect(
+      documentsExtractCandidates.run(
+        {
+          encounterId: ENCOUNTER_ID,
+          documentId: DOCUMENT_ID,
+          candidates: [
+            {
+              concept: { system: 'LOINC', code: '4548-4' },
+              effectiveDate: '2025-02-29',
+              source: { resourceType: 'Document', resourceId: DOCUMENT_ID, field: 'page1' },
+            },
+          ],
         },
         stubToolContext()
       )

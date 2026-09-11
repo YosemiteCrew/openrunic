@@ -4,7 +4,7 @@ import type { JsonObject } from '../json.js';
 import { pending, proposalResultSchema } from '../proposal.js';
 import { defineTool } from '../registry.js';
 
-import { authoredText, codedValueSchema } from './shared.js';
+import { authoredText, codedValueSchema, dateOnlySchema } from './shared.js';
 
 /**
  * Tool 4. Builds the prior-authorisation packet.
@@ -53,7 +53,7 @@ export const priorauthAssemblePacket = defineTool({
     serviceCode: codedValueSchema,
     diagnosisCodes: z.array(codedValueSchema).min(1).max(12),
     requestedUnits: z.int().min(1).max(999),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD.'),
+    startDate: dateOnlySchema,
     renderingProviderId: z.uuid(),
     /** The only field the model authors. Everything else above is a coded value. */
     justification: authoredText(MAX_JUSTIFICATION),

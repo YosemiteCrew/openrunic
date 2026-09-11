@@ -1,10 +1,10 @@
-import { ok } from '@openrunic/types';
+import { err, ok } from '@openrunic/types';
 import type { Result } from '@openrunic/types';
 
 import type { X12Error } from './errors.js';
 import { firstTransactionOfType, readInterchange } from './reader.js';
 import type { X12Transaction } from './reader.js';
-import { componentAt, simpleAt } from './segments.js';
+import { componentAt, locate, simpleAt } from './segments.js';
 import type { Segment } from './segments.js';
 
 /**
@@ -119,9 +119,10 @@ export function decode999(raw: string): Result<AckReport999, X12Error> {
   if (!transaction.ok) return transaction;
 
   const report = mapAck(transaction.value);
+  if (!report.ok) return report;
 
   return ok({
-    ...report,
+    ...report.value,
     controlNumbers: {
       interchange: interchange.value.controlNumber,
       transaction: transaction.value.controlNumber,
@@ -131,7 +132,7 @@ export function decode999(raw: string): Result<AckReport999, X12Error> {
 
 type PartialAck = Omit<AckReport999, 'controlNumbers'>;
 
-function mapAck(transaction: X12Transaction): PartialAck {
+function mapAck(transaction: X12Transaction): Result<PartialAck, X12Error> {
   let identifier = '';
   let controlNumber = '';
   let version: string | undefined;
@@ -169,7 +170,7 @@ function mapAck(transaction: X12Transaction): PartialAck {
     current = undefined;
   };
 
-  for (const source of transaction.segments) {
+  for (const [index, source] of transaction.segments.entries()) {
     switch (source.tag) {
       case 'AK1': {
         identifier = simpleAt(source, 1);
@@ -192,9 +193,11 @@ function mapAck(transaction: X12Transaction): PartialAck {
       case 'IK3': {
         finishSegmentError();
         if (current === undefined) break;
+        const segmentPosition = parsePosition(simpleAt(source, 2), source, index, 2);
+        if (!segmentPosition.ok) return segmentPosition;
         currentSegmentError = {
           segmentId: simpleAt(source, 1),
-          segmentPosition: Number(simpleAt(source, 2)),
+          segmentPosition: segmentPosition.value,
           loopIdentifier: emptyToUndefined(simpleAt(source, 3)),
           errorCode: emptyToUndefined(simpleAt(source, 4)),
           elementErrors: [],
@@ -203,7 +206,9 @@ function mapAck(transaction: X12Transaction): PartialAck {
       }
       case 'IK4': {
         if (currentSegmentError === undefined) break;
-        currentSegmentError.elementErrors.push(readElementError(source));
+        const elementError = readElementError(source, index);
+        if (!elementError.ok) return elementError;
+        currentSegmentError.elementErrors.push(elementError.value);
         break;
       }
       case 'IK5': {
@@ -231,12 +236,12 @@ function mapAck(transaction: X12Transaction): PartialAck {
 
   finishTransaction();
 
-  return {
+  return ok({
     functionalGroup: { identifier, controlNumber, version },
     transactions,
     group,
     accepted: ACCEPTED_ACK_CODES.includes(group.acknowledgementCode),
-  };
+  });
 }
 
 interface MutableTransactionAck {
@@ -256,17 +261,42 @@ interface MutableSegmentError {
   elementErrors: ElementError[];
 }
 
-function readElementError(source: Segment): ElementError {
+function readElementError(source: Segment, index: number): Result<ElementError, X12Error> {
   const component = componentAt(source, 1, 2);
   const repeat = componentAt(source, 1, 3);
-  return {
-    elementPosition: Number(componentAt(source, 1, 1)),
-    componentPosition: component === '' ? undefined : Number(component),
-    repeatPosition: repeat === '' ? undefined : Number(repeat),
+  const elementPosition = parsePosition(componentAt(source, 1, 1), source, index, 1);
+  if (!elementPosition.ok) return elementPosition;
+  const componentPosition =
+    component === '' ? ok(undefined) : parsePosition(component, source, index, 1);
+  if (!componentPosition.ok) return componentPosition;
+  const repeatPosition = repeat === '' ? ok(undefined) : parsePosition(repeat, source, index, 1);
+  if (!repeatPosition.ok) return repeatPosition;
+  return ok({
+    elementPosition: elementPosition.value,
+    componentPosition: componentPosition.value,
+    repeatPosition: repeatPosition.value,
     referenceNumber: emptyToUndefined(simpleAt(source, 2)),
     errorCode: simpleAt(source, 3),
     badValue: emptyToUndefined(simpleAt(source, 4)),
-  };
+  });
+}
+
+function parsePosition(
+  value: string,
+  source: Segment,
+  index: number,
+  elementPosition: number
+): Result<number, X12Error> {
+  const position = Number(value);
+  return /^\d+$/.test(value) && Number.isSafeInteger(position) && position > 0
+    ? ok(position)
+    : err({
+        kind: 'invalid_element',
+        message: 'expected a positive integer position',
+        at: locate(source, index, elementPosition),
+        value,
+        expected: 'a positive integer position',
+      });
 }
 
 function collectCodes(source: Segment, from: number, to: number): readonly string[] {

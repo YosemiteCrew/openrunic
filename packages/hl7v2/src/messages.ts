@@ -390,7 +390,7 @@ function buildRxa(immunisation: Immunisation, delimiters: Delimiters): Segment {
       // RXA-1 and RXA-2 are the give sub-id pair; a single administration is 0/1,
       // which is what every registry expects and what nothing else parses.
       1: '0',
-      2: String(immunisation.sequence),
+      2: String(rxaSequence(immunisation.sequence)),
       3: writeTime(immunisation.administeredAt),
       5: writeCoded(immunisation.vaccine),
       // `999` is the code for "amount not recorded". A registry reading an empty
@@ -430,10 +430,12 @@ function readRxa(segment: Segment, fallbackSequence: number, delimiters: Delimit
   const units = field(segment, 7, delimiters);
   const lot = field(segment, 15, delimiters);
   const provider = component(segment, 10, 1, delimiters);
-  const sequence = Number.parseInt(field(segment, 2, delimiters), 10);
+  const encodedSequence = field(segment, 2, delimiters);
 
   return {
-    sequence: Number.isInteger(sequence) ? sequence : fallbackSequence,
+    // A missing sub-id can be reconstructed from position. A present malformed
+    // one cannot: silently changing it breaks reconciliation with the registry.
+    sequence: encodedSequence === '' ? fallbackSequence : rxaSequence(encodedSequence),
     vaccine: readCoded(segment, 5, delimiters) ?? { code: '' },
     administeredAt: fromHl7(field(segment, 3, delimiters)) ?? '',
     // `999` means the sender did not record an amount, so it comes back absent
@@ -453,6 +455,17 @@ function readRxa(segment: Segment, fallbackSequence: number, delimiters: Delimit
     completionStatus: field(segment, 20, delimiters) === '' ? 'CP' : field(segment, 20, delimiters),
     ...(provider === '' ? {} : { administeringProviderId: provider }),
   };
+}
+
+const DECIMAL_INTEGER = /^[0-9]+$/;
+
+function rxaSequence(value: number | string): number {
+  const encoded = String(value);
+  const sequence = Number(encoded);
+  if (!DECIMAL_INTEGER.test(encoded) || !Number.isSafeInteger(sequence) || sequence < 1) {
+    throw new Hl7Error('RXA-2 must be a positive safe integer.', { segmentId: 'RXA' });
+  }
+  return sequence;
 }
 
 /* ------------------------------------------------------------------ ACK -- */

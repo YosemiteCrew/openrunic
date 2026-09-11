@@ -172,7 +172,7 @@ describe('money and dates', () => {
   });
 
   it('fails rather than reading a non-amount as zero', () => {
-    for (const value of ['', 'abc', '12.3.4', '1,200']) {
+    for (const value of ['', 'abc', '12.3.4', '1,200', '9'.repeat(400)]) {
       expect(expectErr(parseAmount(value, AT)).kind).toBe('invalid_element');
     }
   });
@@ -181,6 +181,7 @@ describe('money and dates', () => {
     expect(expectOk(parseNumber('3', AT))).toBe(3);
     expect(expectOk(parseNumber('-1.5', AT))).toBe(-1.5);
     expect(expectErr(parseNumber('n/a', AT)).kind).toBe('invalid_element');
+    expect(expectErr(parseNumber('9'.repeat(400), AT)).kind).toBe('invalid_element');
   });
 
   it('formats dates and times in UTC, so a clinic timezone cannot shift a service date', () => {

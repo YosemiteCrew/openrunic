@@ -126,12 +126,57 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
+  story-coverage:
+    name: Story coverage
+    # scripts/ci/story-coverage.mjs fails a PR that adds a new packages/ui
+    # component with no sibling Storybook story. This workflow has no `core`
+    # job of its own to gate on (unlike ci.yaml) - `stories` above runs
+    # unconditionally for the same reason, so this does too. Pure
+    # node:fs/path/child_process, no pnpm install needed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # story-coverage.mjs diffs added files against the merge base, so
+          # full history must be present.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Compute base SHA
+        id: base
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: ./scripts/ci/compute-base-sha.sh >> "$GITHUB_OUTPUT"
+
+      - name: Every new component needs a story
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Fail closed, matching compute-base-sha.sh's own contract: an empty
+          # sha means no trustworthy base was found, not "nothing changed".
+          if [ -z "$BASE_SHA" ]; then
+            echo "::error::No trustworthy base SHA to diff against - cannot verify story coverage."
+            exit 1
+          fi
+          node scripts/ci/story-coverage.mjs --base "$BASE_SHA" --head HEAD
+
   storybook-required:
     name: Storybook Required
     # The one check to mark required on the branch rulesets for this workflow, following
     # the same fail-closed shape as `CI Required` in ci.yaml.
     if: always()
-    needs: [stories, publish]
+    needs: [stories, publish, story-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

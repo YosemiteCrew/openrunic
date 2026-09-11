@@ -184,6 +184,16 @@ If a stylelint rule is wrong for this codebase, say so in your PR and turn it of
 every other entry in that file does. Do not scatter `stylelint-disable` comments. A single
 `stylelint-disable-next-line` with a `--` reason attached is fine for a genuine one-off exception.
 
+**Every new `packages/ui` component needs a Storybook story.** A pull request that adds
+`packages/ui/src/components/Foo/Foo.tsx` with no sibling `Foo.stories.tsx` fails CI
+(`scripts/ci/story-coverage.mjs`, folded into `Storybook Required`) - a required, blocking gate. It
+only judges files the PR _adds_, not the pre-existing library. If a file genuinely doesn't need a
+story (a trivial wrapper, something only ever exercised inside a parent's story), mark it explicitly:
+
+```tsx
+// no-story: thin wrapper, only ever rendered inside Badge's own story
+```
+
 CI also holds the React surface to a **React Doctor score of 95**. Run `pnpm run doctor` to see
 where you stand, or `pnpm run doctor:json` for the full report. Note that the score is calculated
 by a remote service while the diagnostics are computed locally; `docs/quality-gates.md` explains

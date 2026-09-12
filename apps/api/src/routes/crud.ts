@@ -416,6 +416,21 @@ function crudRoutes<
     return c.json(resource.toDto(row));
   });
 
+  // No `guardChart` on create, and this is the settled half of #330 rather
+  // than an omission. Unlike a patch moving a row between charts (below), a
+  // create's chart is not gated by care relationship: the person triaging an
+  // inbox of unclaimed faxes has, by definition, no relationship with the
+  // chart the fax turns out to belong to, and `care-relationship.ts` already
+  // accepts that shape of argument for reception and billing. `POST
+  // /documents/:id/file` already relies on exactly this - naming a chart with
+  // no prior relationship is the triage action, not a bypass of one - and
+  // `records every optional column a full document carries` /
+  // `POST /documents may name a chart the writer has no relationship with
+  // (#330)` in `routes.orders.test.ts` are the coverage for it. `write`
+  // grants no `read` back - the one relationship-establishing source is
+  // `assigned-task`, stamped from the token rather than the body - so a
+  // create the writer cannot then read is one-directional and audited, not an
+  // escalation.
   router.post(base, requirePermission(resource.writePermission), async (c) => {
     const parsed = resource.toCreate(await parseJsonBody(c, resource.createSchema));
     const input = resource.stampCreate?.(parsed, c) ?? parsed;

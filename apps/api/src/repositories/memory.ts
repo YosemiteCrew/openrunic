@@ -150,9 +150,28 @@ export function createMemoryCollection<
    * the scope says to hide it rather than let the route refuse it. */
   const hideAddressed = scope.hideFacilityRows === true && spec.facilityHidesAddressed !== false;
 
+  /**
+   * Whether this read is a compartment-pinned principal reading their OWN
+   * chart, as opposed to a chart-carrying row a staff caller reaches through
+   * `facilityIds`.
+   *
+   * `facilityIds` is a staff coverage grant - which sites a worker is rostered
+   * at - and it means nothing for a patient reading their own record: they are
+   * the subject, not somebody covering a site. #329 found this the hard way on
+   * `MedicationDispense`: a patient's own dispense at the practice's second
+   * site was invisible, not because the compartment refused it (the row's
+   * `patientId` matches) but because the facility narrowing - written for a
+   * staff reader - ran first and excluded it anyway. `spec.compartment ===
+   * 'open'` is excluded here on purpose: an open-compartment row (the facility
+   * list itself, say) is not the caller's own chart, so the ordinary staff
+   * narrowing still applies to it even when the token also carries a
+   * compartment.
+   */
+  const ownChart = compartment !== undefined && spec.compartment !== 'open';
+
   const inScope = (row: ScopedRow<M>, narrowFacility: boolean): boolean => {
     if (row.tenantId !== tenantId) return false;
-    if (narrowFacility && !inFacility(row)) return false;
+    if (!ownChart && narrowFacility && !inFacility(row)) return false;
     if (compartment === undefined || spec.compartment === 'open') return true;
     if (spec.compartment === 'closed') return false;
     return readColumn(row, spec.compartment.column) === compartment;

@@ -218,6 +218,14 @@ export const medicationRequestInput = z.strictObject({
   intent: z.enum(MEDICATION_REQUEST_INTENTS).optional(),
 });
 
+/** A completed fill, recorded from the stock posting that moved the medicine. */
+export const prescriptionFillInput = z.strictObject({
+  patientId: uuid,
+  prescriptionId: uuid,
+  stockPostingId: uuid,
+  filledOn: localDate,
+});
+
 export const immunizationInput = z.strictObject({
   patientId: uuid,
   encounterId: uuid.optional(),
@@ -320,6 +328,7 @@ export type ProcedureInput = z.infer<typeof procedureInput>;
 export type AllergyIntoleranceInput = z.infer<typeof allergyIntoleranceInput>;
 export type MedicationStatementInput = z.infer<typeof medicationStatementInput>;
 export type MedicationRequestInput = z.infer<typeof medicationRequestInput>;
+export type PrescriptionFillInput = z.infer<typeof prescriptionFillInput>;
 export type ImmunizationInput = z.infer<typeof immunizationInput>;
 export type ReferralInput = z.infer<typeof referralInput>;
 export type ObservationInput = z.infer<typeof observationInput>;

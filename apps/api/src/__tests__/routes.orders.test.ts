@@ -2789,6 +2789,27 @@ describe('a write on a chart is not a way round the gate', () => {
     expect(res.status).toBe(200);
   });
 
+  /**
+   * The other half of #330, now settled the other way: unlike PATCH above,
+   * CREATE does not gate the chart it names. Deliberate - the person triaging
+   * an inbox of unclaimed faxes has, by definition, no relationship with the
+   * chart the fax turns out to belong to, and `care-relationship.ts` already
+   * accepts that shape of argument for reception and billing. `createTestApp`
+   * seeds no relationship for anyone, so a 201 here is the writer having none
+   * to the named chart, not an unnoticed one. Locked in so a later change does
+   * not "fix" this into breaking that workflow without the question being
+   * reopened.
+   */
+  it('POST /documents may name a chart the writer has no relationship with (#330)', async () => {
+    const { app } = createTestApp();
+
+    const res = await call(app, 'post', '/bff/v0/documents', {
+      body: { ...VALID_DOCUMENT, patientId: OTHER_PATIENT },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
   it('POST /documents/:id/supersede still answers when both charts are reachable', async () => {
     const harness = createTestApp();
     seed(harness.dataset, 'Document', makeDocumentRow());

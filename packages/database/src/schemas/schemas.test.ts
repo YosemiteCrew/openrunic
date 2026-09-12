@@ -25,6 +25,7 @@ import {
   localDate,
   medicationRequestInput,
   medicationStatementInput,
+  prescriptionFillInput,
   noteAddendumInput,
   observationInput,
   patientCreateInput,
@@ -49,6 +50,7 @@ import {
 } from './index.js';
 
 const ID = {
+  tenant: '01920000-0000-7000-8000-000000000000',
   patient: '01920000-0000-7000-8000-000000000001',
   facility: '01920000-0000-7000-8000-000000000002',
   provider: '01920000-0000-7000-8000-000000000003',
@@ -60,6 +62,8 @@ const ID = {
   claim: '01920000-0000-7000-8000-000000000009',
   form: '01920000-0000-7000-8000-00000000000a',
   remittance: '01920000-0000-7000-8000-00000000000b',
+  medicationRequest: '01920000-0000-7000-8000-00000000000c',
+  stockPosting: '01920000-0000-7000-8000-00000000000d',
 } as const;
 
 /** Asserts a schema accepts `value`, surfacing the zod error when it does not. */
@@ -864,6 +868,27 @@ describe('medicationRequestInput', () => {
     ['a missing sig', { sigText: '' }],
   ])('rejects %s', (_label, patch) => {
     rejects(medicationRequestInput, { ...validRx, ...patch });
+  });
+});
+
+describe('prescriptionFillInput', () => {
+  const validFill = {
+    patientId: ID.patient,
+    prescriptionId: ID.medicationRequest,
+    stockPostingId: ID.stockPosting,
+    filledOn: '2026-08-17',
+  };
+
+  it('accepts a completed prescription fill', () => {
+    accepts(prescriptionFillInput, validFill);
+  });
+
+  it.each([
+    ['an invalid prescription id', { prescriptionId: 'prescription' }],
+    ['an instant where a calendar date belongs', { filledOn: '2026-08-17T09:00:00.000Z' }],
+    ['a caller-supplied tenant', { tenantId: ID.tenant }],
+  ])('rejects %s', (_label, patch) => {
+    rejects(prescriptionFillInput, { ...validFill, ...patch });
   });
 });
 

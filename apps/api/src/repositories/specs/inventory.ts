@@ -515,14 +515,32 @@ export const stockPostingSpec: CollectionSpec<
       ...statusChangeColumns(change),
     }));
     const history = [...openings, ...changes];
+    const batches =
+      lots.length === 0 && history.length === 0
+        ? [childBatch('StockMovement', movements)]
+        : [
+            childBatch('StockLot', lots),
+            childBatch('StockLotStatusChange', history),
+            childBatch('StockMovement', movements),
+          ];
 
-    return lots.length === 0 && history.length === 0
-      ? [childBatch('StockMovement', movements)]
-      : [
-          childBatch('StockLot', lots),
-          childBatch('StockLotStatusChange', history),
-          childBatch('StockMovement', movements),
-        ];
+    if (input.prescriptionId === undefined) return batches;
+    if (input.kind !== 'DISPENSE' || input.patientId === undefined) {
+      throw new Error('A prescription fill must be a dispense recorded on a patient chart.');
+    }
+
+    return [
+      ...batches,
+      childBatch('PrescriptionFill', [
+        {
+          id: context.nextId(),
+          patientId: input.patientId,
+          prescriptionId: input.prescriptionId,
+          stockPostingId: parent.id,
+          filledOn: input.occurredOn,
+        },
+      ]),
+    ];
   },
 
   /**

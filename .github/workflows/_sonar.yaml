@@ -142,6 +142,18 @@ jobs:
             sonar-${{ runner.os }}-${{ matrix.app_key }}-
             sonar-${{ runner.os }}-
 
+      # SonarCloud stopped serving the scanner's JRE-provisioning endpoint
+      # (api.sonarcloud.io/analysis/jres) for this organisation on 2026-09-12,
+      # so JRE auto-provisioning now dies with HTTP 403 before the scan starts -
+      # for every project, on every run. SonarQube Cloud has required a Java 21
+      # runtime for analysis since 2026-07-20, so instead of provisioning we put
+      # a fixed Java 21 on PATH and tell the scanner to use it.
+      #
+      # The version input pins the JDK major only; setup-java resolves the
+      # patch to a published Temurin build rather than whatever the runner image
+      # happens to ship. The action is pinned by SHA with a version comment, as
+      # every action in this repository is.
+      #
       # The scan step below names each secret statically instead of indexing the
       # secrets context with secrets[matrix.sonar_token]. A dynamic index makes
       # the entire context reachable from that one expression, which CodeQL
@@ -161,6 +173,12 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Install Java 21 for the scanner
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Sonar scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
@@ -185,6 +203,10 @@ jobs:
           args: >-
             -Dsonar.qualitygate.wait=true
             -Dsonar.host.url=https://sonarcloud.io
+            # The JRE-provisioning endpoint 403s for this org (see the Java
+            # step above), so provision nothing and run on the Java 21 that
+            # step put on PATH instead.
+            -Dsonar.scanner.skipJreProvisioning=true
         env:
           SONAR_TOKEN: ${{ (matrix.app_key == 'web' && secrets.SONAR_TOKEN_WEB) || (matrix.app_key == 'api' && secrets.SONAR_TOKEN_API) || (matrix.app_key == 'portal' && secrets.SONAR_TOKEN_PORTAL) || '' }}
 

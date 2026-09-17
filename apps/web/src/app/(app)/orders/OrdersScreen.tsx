@@ -16,7 +16,7 @@ import {
   OrderStatusBadge,
 } from '@/components/orders';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, isEmptyList } from '@/components/state';
+import { AsyncBoundary, FixtureDataNotice, isEmptyList } from '@/components/state';
 import { MOCK_NOW, mockPatientById, mockProviderName, ORDER_STATUSES, useOrders } from '@/lib/api';
 import type { ListResponse, Order, OrderStatus, WorklistClient } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
@@ -138,6 +138,7 @@ export function OrdersScreen({
       }
     >
       <ScreenCommands commands={commands} />
+      <FixtureDataNotice />
       <Card tone="cream" title={t('orders.list.card')}>
         <AsyncBoundary
           state={orders}

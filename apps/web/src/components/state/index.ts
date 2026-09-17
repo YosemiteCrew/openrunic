@@ -11,6 +11,7 @@ export type { EmptyStateProps } from '@openrunic/ui';
 export { isEmptyList } from './empty';
 export { AsyncBoundary } from './AsyncBoundary';
 export type { AsyncBoundaryEmpty, AsyncBoundaryProps } from './AsyncBoundary';
+export { FixtureDataNotice } from './FixtureDataNotice';
 export { explain } from './explain';
 export type { Explanation, ExplainableError } from './explain';
 export { ErrorState } from './ErrorState';

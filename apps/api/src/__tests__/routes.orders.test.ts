@@ -2356,7 +2356,10 @@ describe('the Prisma half of each filter, which Postgres would evaluate', () => 
       })
     ).toEqual({
       type: 'RESULT',
-      status: 'OPEN',
+      // One `status` clause, built from the scalar and the set together. A
+      // scalar alone still emits `in`, because both ports read the same
+      // resolved decision rather than two spellings of it.
+      status: { in: ['OPEN'] },
       priority: 'HIGH',
       patientId: PATIENT,
       assigneeUserId: CLINICIAN,
@@ -2364,6 +2367,39 @@ describe('the Prisma half of each filter, which Postgres would evaluate', () => 
       slaState: 'AGING',
       dueAt: { gte: EARLY, lt: LATE },
     });
+  });
+
+  /**
+   * `status` and `statusIn` over one column, which is the pair that has split
+   * the two ports four times in this file's history. The clause is one key
+   * however the pair arrives, and the impossible intersection narrows to
+   * nothing rather than losing its clause and widening to every row.
+   */
+  it('resolves a task query on both sides of `statusIn`', () => {
+    const query = { ...BASE_QUERY, sort: 'dueAt' } as const;
+
+    expect(taskSpec.where({ ...query, statusIn: ['OPEN', 'IN_PROGRESS'] })).toEqual({
+      status: { in: ['OPEN', 'IN_PROGRESS'] },
+    });
+    // The scalar inside the set is the intersection, not both clauses.
+    expect(taskSpec.where({ ...query, status: 'OPEN', statusIn: ['OPEN', 'ON_HOLD'] })).toEqual({
+      status: { in: ['OPEN'] },
+    });
+    // Outside it, nothing matches - and `in: []` says so to Postgres.
+    expect(taskSpec.where({ ...query, status: 'DONE', statusIn: ['OPEN'] })).toEqual({
+      status: { in: [] },
+    });
+
+    // The memory port answers each of the three the same way.
+    const open = makeTaskRow({ status: 'OPEN' });
+    const done = makeTaskRow({ status: 'DONE' });
+    expect(taskSpec.matches(open, { ...query, statusIn: ['OPEN', 'IN_PROGRESS'] })).toBe(true);
+    expect(taskSpec.matches(done, { ...query, statusIn: ['OPEN', 'IN_PROGRESS'] })).toBe(false);
+    expect(
+      taskSpec.matches(open, { ...query, status: 'OPEN', statusIn: ['OPEN', 'ON_HOLD'] })
+    ).toBe(true);
+    expect(taskSpec.matches(open, { ...query, status: 'DONE', statusIn: ['OPEN'] })).toBe(false);
+    expect(taskSpec.matches(done, { ...query, status: 'DONE', statusIn: ['OPEN'] })).toBe(false);
   });
 
   it('narrows a thread query on both sides of `open`', () => {

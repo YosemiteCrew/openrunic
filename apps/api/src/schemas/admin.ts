@@ -86,9 +86,30 @@ export const worklistWithheldSchema = z.strictObject({
   sources: z.array(worklistSourceSchema),
 });
 
-/** The envelope: one page of entries plus the withheld marker. */
+/**
+ * Which of the two sources had more outstanding work than the route read.
+ *
+ * The worklist is a merged, re-sorted list, so it cannot be paged at the
+ * sources: an entry's position depends on rows from the other source, which
+ * means assembling one page means reading both trays. Reading them without a
+ * bound makes a queue route a way to ask for every row in the practice, so the
+ * read is capped - and a cap has to be said out loud, because `total` counts
+ * what was assembled and would otherwise describe a partial tray as the whole
+ * one. A source named here has work past the end of this list.
+ *
+ * Distinct from `withheld`, which means the caller may not see a source at all.
+ * Withheld is about permission; truncated is about how much of a tray one page
+ * assembly can reach. The array names the source only, and no count, for the
+ * same reason `withheld` does: the marker exists to say the view is partial.
+ */
+export const worklistTruncatedSchema = z.strictObject({
+  sources: z.array(worklistSourceSchema),
+});
+
+/** The envelope: one page of entries plus the withheld and truncated markers. */
 export const worklistResponseSchema = listResponseSchema(worklistEntrySchema).extend({
   withheld: worklistWithheldSchema,
+  truncated: worklistTruncatedSchema,
 });
 
 export type WorklistResponse = z.infer<typeof worklistResponseSchema>;

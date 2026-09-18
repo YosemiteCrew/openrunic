@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { compareEntries } from '../routes/admin.js';
-import type { TaskRow } from '../repositories/specs/orders.js';
+import type { Repositories } from '../repositories/types.js';
+import type { TaskListQuery, TaskRow } from '../repositories/specs/orders.js';
 import type { ScopedRow } from '../repositories/rows.js';
 import type { WorklistEntry, WorklistResponse } from '../schemas/admin.js';
 
 import {
   bearer,
   createTestApp,
+  type TestAppOptions,
   DEMO_FACILITY_A,
   DEMO_TENANT_A,
   FIXED_NOW,
@@ -99,8 +101,8 @@ function makeReferralRow(
   };
 }
 
-function harness(): ReturnType<typeof createTestApp> {
-  const created = createTestApp();
+function harness(options: TestAppOptions = {}): ReturnType<typeof createTestApp> {
+  const created = createTestApp(options);
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
   /*
    * The admin reads the worklist, and every source row names a chart, so the
@@ -450,5 +452,183 @@ describe('the administrative worklist', () => {
     );
     expect(body.page).toMatchObject({ page: 2, pageSize: 2, total: 3, totalPages: 2 });
     expect(body.data).toHaveLength(1);
+  });
+});
+
+/**
+ * `WORKLIST_LIMIT` in `routes/admin.ts`, restated rather than imported.
+ *
+ * Imported, the boundary tests would move with the constant and stop being a
+ * boundary: a cap raised to 10,000 would leave them asserting that 10,000 rows
+ * are not truncated, which is true of any cap and pins none. Written here, a
+ * change to one of the two has to be a change to both.
+ */
+const WORKLIST_ROWS = 5000;
+
+/** One worklist read over `count` open tasks, all on the one seeded chart. */
+async function readWorklist(count: number): Promise<WorklistResponse> {
+  const { app, dataset } = harness();
+  seed(
+    dataset,
+    'Task',
+    ...Array.from({ length: count }, (_, index) => makeTaskRow({ id: testId(10_000 + index) }))
+  );
+  return json<WorklistResponse>(await worklist(app));
+}
+
+/**
+ * THE TWO WAYS THIS QUEUE CAN LIE ABOUT HOW MUCH WORK THERE IS.
+ *
+ * Both are failures of the same kind, and the reassuring answer is the wrong
+ * one in each: a task read three times over can be counted twice or not at all
+ * while it moves, and a tray read up to a cap describes itself as finished.
+ */
+describe('the worklist counts the work once, and says when it could not read all of it', () => {
+  /**
+   * The seam, confined to `tasks`. Everything else stays the real registry.
+   *
+   * `support.ts` says to reach for this only where the failure cannot be
+   * produced through the port, and neither of these can: the number of reads is
+   * not observable over HTTP, and an update landing between two of them has no
+   * spelling as a second request, because the two reads belong to one.
+   */
+  function decorateTasks(
+    decorate: (tasks: Repositories['tasks']) => Repositories['tasks']
+  ): TestAppOptions['decorateRepositories'] {
+    return (registry) => ({
+      forRequest: (scope) => {
+        const repos = registry.forRequest(scope);
+        return { ...repos, tasks: decorate(repos.tasks) };
+      },
+    });
+  }
+
+  it('reads the three open statuses in one query', async () => {
+    const queries: TaskListQuery[] = [];
+    const { app, dataset } = harness({
+      decorateRepositories: decorateTasks((tasks) => ({
+        ...tasks,
+        list: async (query) => {
+          queries.push(query);
+          return tasks.list(query);
+        },
+      })),
+    });
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({ id: testId(501), status: 'OPEN' }),
+      makeTaskRow({ id: testId(502), status: 'IN_PROGRESS' }),
+      makeTaskRow({ id: testId(503), status: 'ON_HOLD' })
+    );
+
+    const body = await json<WorklistResponse>(await worklist(app));
+
+    /*
+     * Counted by which reads narrow on task status, not by how many reads the
+     * request makes: the care-relationship gate reads tasks too, through the
+     * `assigned-task` source, and that read is nothing to do with assembling
+     * the queue. Narrowing on status is what the worklist's own read does and
+     * what the gate's read does not, in either implementation - three times
+     * with a scalar, or once with a set.
+     */
+    const statusReads = queries.filter(
+      (query) => query.status !== undefined || query.statusIn !== undefined
+    );
+    expect(statusReads).toHaveLength(1);
+    expect(statusReads[0]?.statusIn).toStrictEqual(['OPEN', 'IN_PROGRESS', 'ON_HOLD']);
+    expect(statusReads[0]?.status).toBeUndefined();
+    expect(entryIds(body)).toStrictEqual([testId(501), testId(502), testId(503)]);
+  });
+
+  it('cannot double-count a task that moves status while the worklist is being read', () => {
+    /*
+     * The interleaving a per-status read permits, forced rather than raced for.
+     *
+     * Read `OPEN`, then `IN_PROGRESS`, and let the task move from the first to
+     * the second in between: it is in both result sets, and the administrator
+     * sees one piece of work twice. Move it the other way and it is in neither,
+     * so live work disappears from the queue that exists to show it. Issue #475
+     * asks for this queue to be correct under concurrent task updates, and this
+     * is the update that breaks it.
+     *
+     * The double forces the order rather than hoping for it: a read for any
+     * status after `OPEN` waits until the `OPEN` read has returned and the task
+     * has moved. Under three reads that is a duplicate every time rather than
+     * on an unlucky schedule. Under one read there is no second read to hold
+     * back and no interval to move in, which is why `moved` stays false - the
+     * assertion is that the window does not exist, not that it is handled.
+     */
+    let releaseOpen: () => void = () => {};
+    const afterOpenRead = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    let moved = false;
+
+    const run = async (): Promise<WorklistResponse> => {
+      const { app, dataset } = harness({
+        decorateRepositories: decorateTasks((tasks) => ({
+          ...tasks,
+          list: async (query) => {
+            const { status } = query;
+            if (status !== undefined && status !== 'OPEN') await afterOpenRead;
+            const page = await tasks.list(query);
+            if (status === 'OPEN') {
+              const row = dataset
+                .table('Task')
+                .find((candidate) => (candidate as TaskRow).id === testId(501));
+              if (row !== undefined) (row as TaskRow).status = 'IN_PROGRESS';
+              moved = true;
+              releaseOpen();
+            }
+            return page;
+          },
+        })),
+      });
+      seed(dataset, 'Task', makeTaskRow({ id: testId(501), status: 'OPEN' }));
+      return json<WorklistResponse>(await worklist(app));
+    };
+
+    return run().then((body) => {
+      // One task, one entry. Three reads return it twice: [501, 501].
+      expect(entryIds(body)).toStrictEqual([testId(501)]);
+      expect(body.page.total).toBe(1);
+      expect(moved).toBe(false);
+    });
+  });
+
+  it('reports a source it could not read to the end, at the row past the cap', async () => {
+    /*
+     * The boundary, from both sides, because only one of them is a lie.
+     *
+     * A tray holding exactly the cap was read to its end: the list is complete
+     * and saying otherwise would send an administrator looking for work that is
+     * already on the screen. One row further and `total` counts what was
+     * assembled rather than what is outstanding, so the marker is the only
+     * thing standing between a partial tray and a pager describing it as whole.
+     */
+    const atTheCap = await readWorklist(WORKLIST_ROWS);
+    expect(atTheCap.page.total).toBe(WORKLIST_ROWS);
+    expect(atTheCap.truncated).toStrictEqual({ sources: [] });
+
+    const oneOver = await readWorklist(WORKLIST_ROWS + 1);
+    expect(oneOver.truncated).toStrictEqual({ sources: ['task'] });
+    // Exact about what this list reaches, and silent about the rest - the
+    // marker is what speaks for the rest.
+    expect(oneOver.page.total).toBe(WORKLIST_ROWS);
+  });
+
+  it('names the referral half when that is the tray with more in it', async () => {
+    const { app, dataset } = harness();
+    seed(
+      dataset,
+      'Referral',
+      ...Array.from({ length: WORKLIST_ROWS + 1 }, (_, index) =>
+        makeReferralRow(testId(100_000 + index))
+      )
+    );
+
+    const body = await json<WorklistResponse>(await worklist(app));
+    expect(body.truncated).toStrictEqual({ sources: ['referral'] });
   });
 });

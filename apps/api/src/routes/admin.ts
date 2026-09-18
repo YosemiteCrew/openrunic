@@ -11,6 +11,7 @@ import {
   worklistQuerySchema,
   worklistResponseSchema,
   type WorklistEntry,
+  type WorklistSource,
 } from '../schemas/admin.js';
 import { windowOf } from '../schemas/pagination.js';
 import { CRUD_ERRORS } from './crud.js';
@@ -40,7 +41,16 @@ import { awaiting } from './referrals.js';
  * they were created outside a window would hide work the caller asked to see.
  */
 
-/** Cap on the statements and referrals read to assemble one page. */
+/**
+ * Cap on the rows read from each source to assemble one page.
+ *
+ * The list is merged and re-sorted across both sources, so an entry's page
+ * depends on rows from the other tray and the sources cannot be paged
+ * individually. That leaves a bound as the only thing between a queue route and
+ * a request for every open row in the practice. A source with more than this is
+ * reported in `truncated` rather than silently cut, because a partial tray
+ * counted as a whole one is the failure worth avoiding here.
+ */
 const WORKLIST_LIMIT = 5000;
 
 /** The task statuses that mean the work is still in flight. */
@@ -114,14 +124,15 @@ const ADMIN_WORKLIST_CONTRACT: RouteContract = {
   operationId: 'getAdminWorklist',
   summary: 'The administrative worklist.',
   description:
-    'Open tasks and outstanding referrals across the practice, one entry per source, ordered by due date and owner. The window narrows tasks by due date; the referral half is the whole open tray. Callers holding `task.read` but not `order.read` receive the task half with the referral source withheld explicitly rather than shown empty.',
+    'Open tasks and outstanding referrals across the practice, one entry per source, ordered by due date and owner. The window narrows tasks by due date; the referral half is the whole open tray. Callers holding `task.read` but not `order.read` receive the task half with the referral source withheld explicitly rather than shown empty. A source with more outstanding work than one assembly reads is named in `truncated`, so `total` is never read as the whole tray.',
   tags: ['admin'],
   permission: 'task.read',
   query: worklistQuerySchema,
   responses: [
     {
       status: 200,
-      description: 'One page of the worklist, plus which sources were withheld.',
+      description:
+        'One page of the worklist, plus which sources were withheld and which were truncated.',
       schema: worklistResponseSchema,
     },
     ...CRUD_ERRORS,
@@ -142,19 +153,22 @@ export function adminRoutes(options: AdminRouteOptions): Hono<AppEnv> {
     const repos = repositories(c);
     const maySeeOrders = policyOf(c)?.can('order.read') ?? false;
 
-    const taskPages = await Promise.all(
-      OPEN_TASK_STATUSES.map((status) =>
-        repos.tasks.list({
-          page: 1,
-          pageSize: WORKLIST_LIMIT,
-          sort: 'dueAt',
-          order: 'asc',
-          status,
-          ...windowOf(query),
-        })
-      )
-    );
-    const taskRows = taskPages.flatMap((page) => page.rows);
+    /*
+     * ONE read over the three open statuses, not one read each. Read
+     * separately, a task moving from `OPEN` to `IN_PROGRESS` between two of
+     * the reads appears in both result sets or in neither, so the worklist
+     * duplicates a task or briefly loses live work - and it does so under
+     * exactly the concurrent task updates this queue exists to show.
+     */
+    const taskPage = await repos.tasks.list({
+      page: 1,
+      pageSize: WORKLIST_LIMIT,
+      sort: 'dueAt',
+      order: 'asc',
+      statusIn: OPEN_TASK_STATUSES,
+      ...windowOf(query),
+    });
+    const taskRows = taskPage.rows;
 
     // The same care-relationship gate `GET /bff/v0/tasks` runs over the same
     // rows - this queue names no chart in the URL, which is exactly why it must
@@ -162,6 +176,7 @@ export function adminRoutes(options: AdminRouteOptions): Hono<AppEnv> {
     await gateCharts(c, 'tasks', taskRows);
 
     let referralRows: ScopedRow<'Referral'>[] = [];
+    let referralTotal = 0;
     if (maySeeOrders) {
       const reply = await repos.referrals.list({
         page: 1,
@@ -171,6 +186,7 @@ export function adminRoutes(options: AdminRouteOptions): Hono<AppEnv> {
         openOnly: true,
       });
       referralRows = reply.rows;
+      referralTotal = reply.total;
       // Referrals carry a chart (`patientId` on the row), so the same gate
       // applies as the addressed read. Refused as a whole rather than dropping
       // the row, exactly as `GET /bff/v0/referrals` behaves.
@@ -185,6 +201,18 @@ export function adminRoutes(options: AdminRouteOptions): Hono<AppEnv> {
     const offset = (query.page - 1) * query.pageSize;
     const data = entries.slice(offset, offset + query.pageSize);
 
+    /*
+     * `total` counts the rows assembled, so it is exact about what this list
+     * can reach and says nothing about what the cap left behind. The marker is
+     * what says that, per source, and it is read from the repository's own
+     * total rather than by comparing the row count to WORKLIST_LIMIT: a tray
+     * holding exactly the cap is complete, and a fixture built from the
+     * constant could not tell the two apart.
+     */
+    const truncated: WorklistSource[] = [];
+    if (taskPage.total > taskRows.length) truncated.push('task');
+    if (referralTotal > referralRows.length) truncated.push('referral');
+
     return c.json({
       data,
       page: {
@@ -195,6 +223,7 @@ export function adminRoutes(options: AdminRouteOptions): Hono<AppEnv> {
         totalPages: Math.max(1, Math.ceil(entries.length / query.pageSize)),
       },
       withheld: { sources: maySeeOrders ? [] : ['referral'] },
+      truncated: { sources: truncated },
     });
   });
 

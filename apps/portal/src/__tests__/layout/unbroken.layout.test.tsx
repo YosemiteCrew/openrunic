@@ -104,15 +104,31 @@ describe('what must not break', () => {
   const DIGITS = '1234567890'.repeat(9);
   const LETTERS = 'M'.repeat(90);
 
-  /** Renders markup too narrow for its content and returns the height of `selector`. */
-  function heightOf(html: string, selector: string): number {
+  /** Renders markup too narrow for its content and returns the element `selector` matches. */
+  function narrow(html: string, selector: string): HTMLElement {
     const main = mainElement();
     // Narrow enough that 90 characters cannot fit at any of these type sizes.
     main.style.width = '220px';
     main.innerHTML = html;
     const element = main.querySelector(selector);
     if (element === null) throw new Error(`nothing matched ${selector}`);
-    return (element as HTMLElement).clientHeight;
+    return element as HTMLElement;
+  }
+
+  /** The height of `selector`, for a box that has one. */
+  function heightOf(html: string, selector: string): number {
+    return narrow(html, selector).clientHeight;
+  }
+
+  /**
+   * How many lines `selector` is laid out on.
+   *
+   * An inline box reports `clientHeight` 0 whether it wrapped or not, so the number below -
+   * a plain `<span>` inside its reading - cannot be measured the way the figures above are.
+   * One client rect per line box is the property itself rather than a proxy for it.
+   */
+  function lineBoxes(html: string, selector: string): number {
+    return narrow(html, selector).getClientRects().length;
   }
 
   it('keeps a figure on one line rather than splitting the number', async () => {
@@ -139,6 +155,43 @@ describe('what must not break', () => {
     const long = heightOf(money(DIGITS), '.portal-money__figure');
 
     expect(long).toBe(short);
+  });
+
+  it('keeps a reading on one line, and lets the unit beside it wrap', async () => {
+    await page.viewport(1440, 900);
+
+    // The markup `HealthRecordScreen` renders for a result, with the number's class as a
+    // parameter so the same reading can be laid out without it.
+    const reading = (numberClass: string, value: string, unit: string) =>
+      `<p class="portal-record__reading"><span class="portal-record__value">` +
+      `<span class="${numberClass}">${value}</span> ${unit}</span></p>`;
+
+    expect(
+      lineBoxes(reading('portal-record__number', DIGITS, 'mg'), '.portal-record__number')
+    ).toBe(1);
+
+    // A number with a space in it: the reason the rule is `white-space: nowrap` and not
+    // `overflow-wrap: normal`, which holds for the separators `en` and `es` produce and
+    // breaks at a space. No locale here groups digits that way today, so this is the arm
+    // that decides between the two declarations rather than a comment claiming one.
+    const spaced = '1 234 567 890 123 456 789 012 345 678 901 234 567 890';
+    expect(
+      lineBoxes(reading('portal-record__number', spaced, 'mg'), '.portal-record__number')
+    ).toBe(1);
+
+    // CONTROL: the same digits at the same width under a class the stylesheet does not
+    // target. The page's inherited `overflow-wrap: anywhere` splits them between two digits,
+    // which is #508 itself and the only thing the rule above prevents.
+    expect(
+      lineBoxes(reading('portal-no-such-number', DIGITS, 'mg'), '.portal-no-such-number')
+    ).toBeGreaterThan(1);
+
+    // CONTROL: the unit is not covered by that rule and still wraps, so a reading that could
+    // not wrap at all would fail here rather than pass every assertion above it.
+    const short = heightOf(reading('portal-record__number', '12', 'mg'), '.portal-record__value');
+    const long = heightOf(reading('portal-record__number', '12', LETTERS), '.portal-record__value');
+
+    expect(long).toBeGreaterThan(short);
   });
 
   it('wraps body copy given the same treatment, which is what proves the check can see it', async () => {

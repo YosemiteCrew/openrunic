@@ -36,14 +36,17 @@ describe('HealthRecordScreen', () => {
   it('renders every value with its unit and a labelled range state', async () => {
     render(<HealthRecordScreen api={stubApi()} />);
 
-    // Number and unit are now separate elements; check both exist
-    expect(await screen.findByText('6.8')).toBeInTheDocument();
-    expect(screen.getByText('mIU/L')).toBeInTheDocument();
+    // The reading is one box the reader sees whole and two nodes the stylesheet treats
+    // differently, so both are asserted: the box still reads `6.8 mIU/L`, space included,
+    // and the number sits alone under the class the nowrap rule targets. `getByText` reads
+    // an element's own text, so an exact match on the unit alone is only possible while the
+    // number is in a child of its own - joining them back fails here.
+    expect(await screen.findByText('mIU/L')).toHaveTextContent('6.8 mIU/L');
+    expect(screen.getByText('6.8')).toHaveClass('portal-record__number');
     expect(screen.getByText('Outside the recorded range')).toBeInTheDocument();
     expect(screen.getByText('Usual range: 0.4 to 4.0 mIU/L')).toBeInTheDocument();
 
-    expect(screen.getByText('131')).toBeInTheDocument();
-    expect(screen.getByText('g/L')).toBeInTheDocument();
+    expect(screen.getByText('g/L')).toHaveTextContent('131 g/L');
     expect(screen.getByText('Within the recorded range')).toBeInTheDocument();
 
     // A result with no range says so rather than implying it is normal.
@@ -54,10 +57,18 @@ describe('HealthRecordScreen', () => {
   it('never states a medicine strength without its unit', async () => {
     render(<HealthRecordScreen api={stubApi()} />);
 
-    expect(await screen.findByText('75')).toBeInTheDocument();
-    expect(screen.getByText('micrograms')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
-    expect(screen.getByText('milligrams')).toBeInTheDocument();
+    expect(await screen.findByText('micrograms')).toHaveTextContent('75 micrograms');
+    expect(screen.getByText('milligrams')).toHaveTextContent('5 milligrams');
+  });
+
+  it('states an immunisation dose in the sentence, joined back into one string', async () => {
+    // The dose reads inside a translated line rather than in a value box of its own, and an
+    // interpolation takes a string: the reading has to be joined again on the way in. Without
+    // this the sentence renders the pair itself and says `[object Object]` to a reader.
+    render(<HealthRecordScreen api={stubApi()} />);
+
+    expect(await screen.findByText('Dose given: 0.5 millilitres')).toBeInTheDocument();
+    expect(screen.getByText('Dose given: 1 dose')).toBeInTheDocument();
   });
 
   it('renders missing live clinical detail as absent rather than guessed', async () => {

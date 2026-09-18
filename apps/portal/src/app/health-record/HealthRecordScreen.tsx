@@ -22,8 +22,14 @@ import { RangeBadge } from '@/components/RangeBadge';
 import { getPortalApi } from '@/lib/api';
 import type { HealthRecord, PortalApi, Result } from '@/lib/api/types';
 import { useTranslator } from '@/lib/i18n/messages';
-import type { DocumentKind } from '@/lib/format';
-import { documentKind, formatDate, formatFileSize, formatMeasurement } from '@/lib/format';
+import type { DocumentKind, Measurement } from '@/lib/format';
+import {
+  documentKind,
+  formatDate,
+  formatFileSize,
+  formatMeasurement,
+  measurementText,
+} from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 export interface HealthRecordScreenProps {
@@ -79,6 +85,22 @@ function isRecordEmpty(record: HealthRecord): boolean {
 }
 
 /**
+ * A reading, with its number in a node of its own.
+ *
+ * The two halves break differently and one node cannot be both: splitting `1,234.56` across
+ * two lines invents a figure that is not there, while the unit is free text the record does
+ * not bound and has to wrap or it widens the page (#508). The space between them is a real
+ * text node, so the reading may break there and so it survives being copied.
+ */
+function Reading({ measurement }: Readonly<{ measurement: Measurement }>) {
+  return (
+    <span className="portal-record__value">
+      <span className="portal-record__number">{measurement.value}</span> {measurement.unit}
+    </span>
+  );
+}
+
+/**
  * One result, with the way out of it.
  *
  * The explainer is a disclosure rather than a link straight to the message box: a patient
@@ -98,14 +120,7 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
       </div>
 
       <p className="portal-record__reading">
-        <span className="portal-record__value">
-          <span className="portal-record__number">
-            {formatMeasurement(t, result.value, result.unit).value}
-          </span>{' '}
-          <span className="portal-record__unit">
-            {formatMeasurement(t, result.value, result.unit).unit}
-          </span>
-        </span>
+        <Reading measurement={formatMeasurement(t, result.value, result.unit)} />
         <span className="portal-record__meta">
           {result.referenceRange === ''
             ? t('portal.healthRecord.results.noRange')
@@ -229,14 +244,9 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       <div className="portal-record__head">
                         <PlainTerm term={medication.name} plain={medication.plain} />
                         {medication.strength === null || medication.unit === null ? null : (
-                          <span className="portal-record__value">
-                            <span className="portal-record__number">
-                              {formatMeasurement(t, medication.strength, medication.unit).value}
-                            </span>{' '}
-                            <span className="portal-record__unit">
-                              {formatMeasurement(t, medication.strength, medication.unit).unit}
-                            </span>
-                          </span>
+                          <Reading
+                            measurement={formatMeasurement(t, medication.strength, medication.unit)}
+                          />
                         )}
                       </div>
                       {medication.instruction === null ? null : (
@@ -317,10 +327,8 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       immunisation.doseUnit === null ? null : (
                         <p className="portal-record__meta">
                           {t('portal.healthRecord.immunisations.dose', {
-                            dose: formatMeasurement(
-                              t,
-                              immunisation.doseQuantity,
-                              immunisation.doseUnit
+                            dose: measurementText(
+                              formatMeasurement(t, immunisation.doseQuantity, immunisation.doseUnit)
                             ),
                           })}
                         </p>

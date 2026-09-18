@@ -152,8 +152,11 @@ describe('wording helpers', () => {
   it('never renders a measurement without its unit', () => {
     // The unit arrives from the record already named, so only the number is the
     // reader's.
-    expect(formatMeasurement(english, 75, 'micrograms')).toBe('75 micrograms');
-    expect(formatMeasurement(english, 6.8, 'mIU/L')).toBe('6.8 mIU/L');
+    expect(formatMeasurement(english, 75, 'micrograms')).toEqual({
+      value: '75',
+      unit: 'micrograms',
+    });
+    expect(formatMeasurement(english, 6.8, 'mIU/L')).toEqual({ value: '6.8', unit: 'mIU/L' });
   });
 
   it('states progress in the reader’s words', () => {

@@ -36,11 +36,14 @@ describe('HealthRecordScreen', () => {
   it('renders every value with its unit and a labelled range state', async () => {
     render(<HealthRecordScreen api={stubApi()} />);
 
-    expect(await screen.findByText('6.8 mIU/L')).toBeInTheDocument();
+    // Number and unit are now separate elements; check both exist
+    expect(await screen.findByText('6.8')).toBeInTheDocument();
+    expect(screen.getByText('mIU/L')).toBeInTheDocument();
     expect(screen.getByText('Outside the recorded range')).toBeInTheDocument();
     expect(screen.getByText('Usual range: 0.4 to 4.0 mIU/L')).toBeInTheDocument();
 
-    expect(screen.getByText('131 g/L')).toBeInTheDocument();
+    expect(screen.getByText('131')).toBeInTheDocument();
+    expect(screen.getByText('g/L')).toBeInTheDocument();
     expect(screen.getByText('Within the recorded range')).toBeInTheDocument();
 
     // A result with no range says so rather than implying it is normal.
@@ -51,8 +54,10 @@ describe('HealthRecordScreen', () => {
   it('never states a medicine strength without its unit', async () => {
     render(<HealthRecordScreen api={stubApi()} />);
 
-    expect(await screen.findByText('75 micrograms')).toBeInTheDocument();
-    expect(screen.getByText('5 milligrams')).toBeInTheDocument();
+    expect(await screen.findByText('75')).toBeInTheDocument();
+    expect(screen.getByText('micrograms')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('milligrams')).toBeInTheDocument();
   });
 
   it('renders missing live clinical detail as absent rather than guessed', async () => {

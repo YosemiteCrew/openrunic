@@ -573,6 +573,18 @@ output {
   font-size: var(--text-body-lg);
   font-variant-numeric: tabular-nums;
   color: var(--text-heading);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.portal-record__number {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.portal-record__unit {
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------- caution notice */

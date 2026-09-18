@@ -698,6 +698,21 @@ describe('patient portal messages', () => {
     expect(response.status).toBe(404);
     expect(dataset.table('Message')).toHaveLength(0);
   });
+
+  it('does not let a patient reply to a staff thread', async () => {
+    const { app, dataset } = createTestApp();
+    enablePortal(dataset);
+    seed(dataset, 'MessageThread', makeThreadRow({ kind: 'STAFF' }));
+
+    const response = await app.request(`/bff/v0/portal/messages/${testId(400)}/replies`, {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.portalA),
+      body: JSON.stringify({ body: 'This must stay in patient conversations.' }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(dataset.table('Message')).toHaveLength(0);
+  });
 });
 
 describe('patient portal forms and statements', () => {

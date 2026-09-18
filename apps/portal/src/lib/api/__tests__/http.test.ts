@@ -30,30 +30,6 @@ describe('createHttpApi', () => {
     expect(String(url)).not.toMatch(/patient-/);
   });
 
-  it('sends the authorization header when one is supplied', async () => {
-    const fetchImpl = fetchStub();
-    const api = createHttpApi({
-      baseUrl: BASE,
-      authorization: () => 'Bearer token-value',
-      fetchImpl,
-    });
-
-    await api.getHome();
-
-    const init = vi.mocked(fetchImpl).mock.calls[0]?.[1];
-    expect(init?.headers).toMatchObject({ authorization: 'Bearer token-value' });
-  });
-
-  it('omits the header while signed out', async () => {
-    const fetchImpl = fetchStub();
-    const api = createHttpApi({ baseUrl: BASE, authorization: () => undefined, fetchImpl });
-
-    await api.getHealthRecord();
-
-    const init = vi.mocked(fetchImpl).mock.calls[0]?.[1];
-    expect(init?.headers).not.toHaveProperty('authorization');
-  });
-
   it('sets a json content type only when there is a body', async () => {
     const fetchImpl = fetchStub();
     const api = createHttpApi({ baseUrl: BASE, fetchImpl });

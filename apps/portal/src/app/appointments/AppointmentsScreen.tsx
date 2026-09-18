@@ -133,11 +133,11 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                     key={appointment.id}
                     headingLevel={3}
                     overline={t(
-                      appointment.mode === 'video'
-                        ? 'portal.appointments.mode.video'
-                        : appointment.mode === 'in-person'
-                          ? 'portal.appointments.mode.inPerson'
-                          : 'portal.appointments.mode.unknown'
+                      {
+                        video: 'portal.appointments.mode.video',
+                        'in-person': 'portal.appointments.mode.inPerson',
+                        unknown: 'portal.appointments.mode.unknown',
+                      }[appointment.mode ?? 'unknown']
                     )}
                     title={appointment.reason}
                   >

@@ -35,7 +35,7 @@ function fromBase64Url(value: string): Uint8Array<ArrayBuffer> | null {
     const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/'));
     const result = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
-      result[index] = binary.charCodeAt(index);
+      result[index] = binary.codePointAt(index) ?? 0;
     }
     return result;
   } catch {

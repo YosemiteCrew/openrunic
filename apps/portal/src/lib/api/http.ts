@@ -22,8 +22,6 @@ import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 export interface HttpApiOptions {
   /** API origin without a trailing slash, e.g. 'https://api.example.invalid'. */
   baseUrl: string;
-  /** Returns the current `Authorization` header value, or undefined while signed out. */
-  authorization?: () => string | undefined;
   /** Injected in tests; defaults to the platform fetch. */
   fetchImpl?: typeof fetch;
   /** Called after the server rejects the sealed patient session. */
@@ -41,18 +39,19 @@ export class HttpApiError extends Error {
   }
 }
 
+function unsupported(): Promise<never> {
+  return Promise.reject(new HttpApiError(405, 'This portal operation is read-only.'));
+}
+
 export function createHttpApi(options: HttpApiOptions): PortalApi {
   const doFetch = options.fetchImpl ?? fetch;
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const authorization = options.authorization?.();
     const headers: Record<string, string> = {
       accept: 'application/json',
       [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER,
     };
     if (init?.body !== undefined) headers['content-type'] = 'application/json';
-    if (authorization !== undefined) headers.authorization = authorization;
-
     const response = await doFetch(`${options.baseUrl}${path}`, { ...init, headers });
     if (!response.ok) {
       if (response.status === 401) options.onUnauthorized?.();
@@ -67,10 +66,6 @@ export function createHttpApi(options: HttpApiOptions): PortalApi {
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  }
-
-  function unsupported(): Promise<never> {
-    return Promise.reject(new HttpApiError(405, 'This portal operation is read-only.'));
   }
 
   return {

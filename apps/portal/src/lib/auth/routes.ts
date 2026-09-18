@@ -4,7 +4,7 @@ export const SESSION_FETCH_HEADER = 'x-openrunic-portal';
 export const SESSION_FETCH_MARKER = 'same-origin';
 
 export function safeReturnPath(value: string | null | undefined): string | null {
-  if (value === undefined || value === null || !value.startsWith('/')) return null;
+  if (!value?.startsWith('/')) return null;
   if (value.startsWith('//') || value.startsWith('/\\')) return null;
   for (const character of value) {
     if (character < ' ' || character === '\u007f') return null;

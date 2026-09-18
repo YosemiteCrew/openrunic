@@ -183,7 +183,7 @@ function portalPrincipal(c: Context<AppEnv>): Principal {
 async function portalPatient(c: Context<AppEnv>): Promise<ScopedRow<'Patient'>> {
   const principal = portalPrincipal(c);
   const patient = await repositories(c).patients.findById(principal.subject);
-  if (patient === null || !patient.portalEnabled) {
+  if (!patient?.portalEnabled) {
     throw ApiError.forbidden('Patient portal access is not enabled.');
   }
   return patient;
@@ -567,8 +567,7 @@ export function portalRoutes(options: { now: () => Date }): Hono<AppEnv> {
     const body = await parseJsonBody(c, portalMessageReplySchema);
     const repos = repositories(c);
     const thread = await repos.messageThreads.findById(id);
-    if (thread === null || thread.kind !== 'PATIENT')
-      throw ApiError.notFound('No such patient thread.');
+    if (thread?.kind !== 'PATIENT') throw ApiError.notFound('No such patient thread.');
     if (thread.closedAt !== null) throw ApiError.conflict('That patient thread is closed.');
     const row = await repos.messages.create({
       threadId: thread.id,

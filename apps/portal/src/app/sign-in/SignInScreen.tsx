@@ -43,6 +43,8 @@ export function SignInScreen({
     void submit(token);
   }
 
+  const notice = reason === 'idle' ? t('portal.auth.idle') : t('portal.auth.expired');
+
   return (
     <main className="portal-sign-in">
       <section className="portal-sign-in__panel" aria-labelledby="portal-sign-in-title">
@@ -53,8 +55,8 @@ export function SignInScreen({
         <p className="or-body">{t('portal.auth.lede')}</p>
 
         {reason === 'idle' || reason === 'expired' ? (
-          <p className="portal-sign-in__notice" role="status">
-            {t(reason === 'idle' ? 'portal.auth.idle' : 'portal.auth.expired')}
+          <p className="portal-sign-in__notice">
+            <output>{notice}</output>
           </p>
         ) : null}
 

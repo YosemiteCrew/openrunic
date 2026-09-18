@@ -38,15 +38,17 @@ export function AppointmentFacts({
   t,
   videoLocation,
 }: Readonly<AppointmentFactsProps>) {
-  const who =
-    appointment.clinician === null
-      ? (appointment.department ?? t('portal.appointment.careTeam'))
-      : appointment.department === null
-        ? appointment.clinician
-        : t('portal.appointment.whoWithValue', {
-            clinician: appointment.clinician,
-            department: appointment.department,
-          });
+  let who: string;
+  if (appointment.clinician === null) {
+    who = appointment.department ?? t('portal.appointment.careTeam');
+  } else if (appointment.department === null) {
+    who = appointment.clinician;
+  } else {
+    who = t('portal.appointment.whoWithValue', {
+      clinician: appointment.clinician,
+      department: appointment.department,
+    });
+  }
   /*
    * Both values are one message with two holes rather than two pieces joined by
    * a comma here. The comma is punctuation this language happens to use between

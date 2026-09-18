@@ -147,11 +147,13 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
                 overline={t('portal.home.balance.overline')}
                 title={t('portal.home.balance.title')}
               >
-                {home.balance.statementCount === 0 ? (
+                {home.balance.statementCount === 0 && (
                   <p className="or-body">{t('portal.home.balance.nothing')}</p>
-                ) : home.balance.outstanding === null ? (
+                )}
+                {home.balance.statementCount !== 0 && home.balance.outstanding === null && (
                   <p className="or-body">{t('portal.home.balance.multipleCurrencies')}</p>
-                ) : (
+                )}
+                {home.balance.statementCount !== 0 && home.balance.outstanding !== null && (
                   <>
                     <p className="portal-figure">
                       <Money value={home.balance.outstanding} showCode />

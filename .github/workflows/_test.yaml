@@ -161,7 +161,10 @@ jobs:
           name: coverage-${{ matrix.app_key }}-shard-${{ matrix.shard }}
           path: ${{ matrix.dir }}/coverage/coverage-final.json
           if-no-files-found: error
-          retention-days: 1
+          # GitHub permits a workflow job to be re-run for 30 days. Keep the
+          # inputs to the merge job for the same window so a failed-only re-run
+          # does not fail because its successful producer was not re-run.
+          retention-days: 30
 
   coverage-merge:
     name: Merge coverage (${{ matrix.app_key }})
@@ -227,4 +230,7 @@ jobs:
           name: coverage-${{ matrix.app_key }}
           path: merged/lcov.info
           if-no-files-found: error
-          retention-days: 1
+          # The Sonar job consumes this report without regenerating it. Match
+          # GitHub's 30-day job re-run window so a failed-only Sonar re-run can
+          # still consume the successful test stage's report.
+          retention-days: 30

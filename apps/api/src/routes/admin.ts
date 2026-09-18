@@ -5,6 +5,7 @@ import type { AppEnv } from '../context.js';
 import { parseQuery } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
+import { byIdentifier } from '../ordering.js';
 import type { ScopedRow } from '../repositories/rows.js';
 import {
   worklistQuerySchema,
@@ -90,31 +91,21 @@ function toReferralEntry(referral: ScopedRow<'Referral'>): WorklistEntry {
  * sorts by `dueAt`.
  */
 export function compareEntries(left: WorklistEntry, right: WorklistEntry): number {
-  if (left.dueAt !== null && right.dueAt !== null) {
-    const byDue = left.dueAt.localeCompare(right.dueAt);
-    if (byDue !== 0) return byDue;
-  } else if (left.dueAt === null && right.dueAt !== null) {
-    return 1;
-  } else if (left.dueAt !== null && right.dueAt === null) {
-    return -1;
-  }
-  if (left.owner.userId !== null && right.owner.userId !== null) {
-    const byUser = left.owner.userId.localeCompare(right.owner.userId);
-    if (byUser !== 0) return byUser;
-  } else if (left.owner.userId === null && right.owner.userId !== null) {
-    return 1;
-  } else if (left.owner.userId !== null && right.owner.userId === null) {
-    return -1;
-  }
-  if (left.owner.teamKey !== null && right.owner.teamKey !== null) {
-    const byTeam = left.owner.teamKey.localeCompare(right.owner.teamKey);
-    if (byTeam !== 0) return byTeam;
-  } else if (left.owner.teamKey === null && right.owner.teamKey !== null) {
-    return 1;
-  } else if (left.owner.teamKey !== null && right.owner.teamKey === null) {
-    return -1;
-  }
-  return left.id.localeCompare(right.id);
+  const comparisons = [
+    byNullableIdentifier(left.dueAt, right.dueAt),
+    byNullableIdentifier(left.owner.userId, right.owner.userId),
+    byNullableIdentifier(left.owner.teamKey, right.owner.teamKey),
+    byIdentifier(left.id, right.id),
+  ];
+  return comparisons.find((comparison) => comparison !== 0) ?? 0;
+}
+
+/** Machine identifiers sort by code unit, with absent values last. */
+function byNullableIdentifier(left: string | null, right: string | null): number {
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return byIdentifier(left, right);
 }
 
 const ADMIN_WORKLIST_CONTRACT: RouteContract = {

@@ -210,6 +210,16 @@ describe('the worklist comparator, directly', () => {
     });
     expect(compareEntries(tiedTeam, tiedTeamSecond)).toBeLessThan(0);
   });
+
+  it('uses locale-independent code-unit order for the promised tie breakers', () => {
+    const entries = ['entry.Write', 'entry.audit', 'entry.write'].map((id) => entry({ id }));
+
+    expect(entries.sort(compareEntries).map(({ id }) => id)).toEqual([
+      'entry.Write',
+      'entry.audit',
+      'entry.write',
+    ]);
+  });
 });
 
 describe('the administrative worklist', () => {

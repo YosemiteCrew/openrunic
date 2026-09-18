@@ -483,7 +483,16 @@ output {
 
 /* The exception the rule above asks for: a figure is one number and breaking it across two
    lines invents a reading that is not there - `1,234` over `.56` is a different amount at a
-   glance. It is also short, so it never needed the wrap. */
+   glance. It overflows instead, which is visible; a split number is not.
+
+   The other two numbers on these screens are deliberately NOT reset here, and both are checked
+   in `src/__tests__/layout/` rather than argued for in this comment:
+     - `.portal-money__figure` already cannot break, because `.portal-money` is
+       `white-space: nowrap` and `overflow-wrap` has nothing to act on where there are no wrap
+       opportunities. A reset would be a rule that never fires.
+     - `.portal-record__value` holds `${number} ${unit}`, and the unit is free text from the
+       record. `normal` there would stop the unit wrapping and widen the page, trading one
+       defect for another; splitting the value from its unit is the fix, and it is filed as #508. */
 .portal-figure {
   overflow-wrap: normal;
   font-family: var(--font-mono);

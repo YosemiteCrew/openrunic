@@ -91,6 +91,66 @@ describe.each(SCREENS)('$name', ({ mount }) => {
   });
 });
 
+/**
+ * The shell wraps text; a number is the exception, and an exception nobody measures is a
+ * comment. Rendered too narrow for its content and asserted to be the height it is with a
+ * short value - one line, whatever it costs in overflow.
+ *
+ * The control is the load-bearing half. `.or-body` gets the same treatment and must come out
+ * TALLER than its own short reference, so a measurement that cannot see wrapping at all fails
+ * here rather than passing every case above it.
+ */
+describe('what must not break', () => {
+  const DIGITS = '1234567890'.repeat(9);
+  const LETTERS = 'M'.repeat(90);
+
+  /** Renders markup too narrow for its content and returns the height of `selector`. */
+  function heightOf(html: string, selector: string): number {
+    const main = mainElement();
+    // Narrow enough that 90 characters cannot fit at any of these type sizes.
+    main.style.width = '220px';
+    main.innerHTML = html;
+    const element = main.querySelector(selector);
+    if (element === null) throw new Error(`nothing matched ${selector}`);
+    return (element as HTMLElement).clientHeight;
+  }
+
+  it('keeps a figure on one line rather than splitting the number', async () => {
+    await page.viewport(1440, 900);
+
+    const short = heightOf(`<p class="portal-figure">12</p>`, '.portal-figure');
+    const long = heightOf(`<p class="portal-figure">${DIGITS}</p>`, '.portal-figure');
+
+    expect(long).toBe(short);
+  });
+
+  it('keeps a money figure on one line without a rule of its own', async () => {
+    await page.viewport(1440, 900);
+
+    // `.portal-money` is `white-space: nowrap`, which suppresses every soft wrap opportunity
+    // inside it - and `overflow-wrap` has nothing to act on where there are none. So the
+    // figure is already safe and a reset on it would be a rule that never fires. The property
+    // is asserted here rather than argued in a comment, because the protection comes from the
+    // parent and would leave with it.
+    const money = (amount: string) =>
+      `<span class="portal-money"><span class="portal-money__figure">${amount}</span></span>`;
+
+    const short = heightOf(money('12'), '.portal-money__figure');
+    const long = heightOf(money(DIGITS), '.portal-money__figure');
+
+    expect(long).toBe(short);
+  });
+
+  it('wraps body copy given the same treatment, which is what proves the check can see it', async () => {
+    await page.viewport(1440, 900);
+
+    const short = heightOf(`<p class="or-body">12</p>`, '.or-body');
+    const long = heightOf(`<p class="or-body">${LETTERS}</p>`, '.or-body');
+
+    expect(long).toBeGreaterThan(short);
+  });
+});
+
 describe('what the walk leaves alone', () => {
   it('skips currency codes and nothing else', () => {
     const { exempt } = stuffEveryString(buildFixtures());

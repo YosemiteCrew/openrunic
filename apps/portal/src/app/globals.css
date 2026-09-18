@@ -490,9 +490,9 @@ output {
      - `.portal-money__figure` already cannot break, because `.portal-money` is
        `white-space: nowrap` and `overflow-wrap` has nothing to act on where there are no wrap
        opportunities. A reset would be a rule that never fires.
-     - `.portal-record__value` holds `${number} ${unit}`, and the unit is free text from the
-       record. `normal` there would stop the unit wrapping and widen the page, trading one
-       defect for another; splitting the value from its unit is the fix, and it is filed as #508. */
+     - `.portal-record__value` holds a number and a unit, and only the number is reset. They are
+       two nodes for that reason (#508): `.portal-record__number` below carries the exception,
+       and the unit keeps the inherited wrap because nothing in the record bounds its length. */
 .portal-figure {
   overflow-wrap: normal;
   font-family: var(--font-mono);
@@ -573,6 +573,16 @@ output {
   font-size: var(--text-body-lg);
   font-variant-numeric: tabular-nums;
   color: var(--text-heading);
+}
+
+/* The number of a reading, and the only part of it that must not break. `1,234.56` split over
+   two lines reads as a different figure, and the wrap this screen inherits breaks it between
+   any two digits. `nowrap` and not `overflow-wrap: normal`: both hold for the separators `en`
+   and `es` produce, and only `nowrap` holds for a number with a space in it. The unit is a
+   text node beside it, so it keeps the inherited wrap and the reading may still break between
+   the two. */
+.portal-record__number {
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- caution notice */

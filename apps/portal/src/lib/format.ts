@@ -192,13 +192,27 @@ export function formatMoneyWithCode(t: Translator, money: Money): string {
   return `${formatMoney(t, money)} ${money.currency}`;
 }
 
-/** '75 micrograms' - a measured value never renders without its unit. */
-export function formatMeasurement(t: Translator, value: number, unit: string): string {
+/** A reading as its two halves, because they wrap differently on the page. */
+export type Measurement = Readonly<{ value: string; unit: string }>;
+
+/**
+ * `{ value: '75', unit: 'micrograms' }` - a measured value never renders without its unit.
+ *
+ * Returned apart rather than joined: the number must not break across two lines, the unit is
+ * free text the record does not bound and has to wrap, and one element cannot be both (#508).
+ * A caller writing the reading into a sentence joins them with {@link measurementText}.
+ */
+export function formatMeasurement(t: Translator, value: number, unit: string): Measurement {
   // The unit arrives from the record already named, so only the number is the
   // reader's. `formatCount` rather than `String`, because Arabic writes its
   // numerals differently and a reading with the right unit and the wrong digits
   // is still wrong.
-  return `${formatCount(value, t.locale)} ${unit}`;
+  return { value: formatCount(value, t.locale), unit };
+}
+
+/** The same reading as one string, for a line of prose rather than a value on its own. */
+export function measurementText(measurement: Measurement): string {
+  return `${measurement.value} ${measurement.unit}`;
 }
 
 /**

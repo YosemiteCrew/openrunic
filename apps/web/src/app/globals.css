@@ -200,11 +200,27 @@ fieldset {
 
 /* The right rail becomes a column at 1280px, which is the same width the
    patient context rail collapses at. Below that it stacks under the content
-   rather than disappearing: nothing in the rail is unreachable on a laptop. */
+   rather than disappearing: nothing in the rail is unreachable on a laptop.
+
+   The column is created only when there IS a rail. `rightRail` is optional in
+   the shell - the form builder, the admin screens and the marketing-adjacent
+   pages pass none - and reserving its track anyway spent 320px of a 1440px
+   window on an element that was never rendered. Measured on the form builder:
+   the page had 795px of a 1147px landmark, and its middle pane, the canvas you
+   are actually building, was 203px while the two reference panes beside it had
+   260px and 300px. With the track conditional the page gets 1147px and the
+   canvas 555px, and a screen that does have a rail lays out exactly as before.
+
+   This is the same `:has()` the assistant panel below already uses, for the
+   same reason and in the same words: give the row a second column only when the
+   thing that fills it is actually present. */
 @media (min-width: 1280px) {
   .or-app__main {
-    grid-template-columns: minmax(0, 1fr) var(--shell-rail-w);
     gap: var(--space-6);
+  }
+
+  .or-app__main:has(> .or-app__rail) {
+    grid-template-columns: minmax(0, 1fr) var(--shell-rail-w);
   }
 }
 
@@ -2299,9 +2315,13 @@ fieldset {
   font-variant-numeric: tabular-nums;
 }
 
+/* The row below is sized against THIS box, not against the window, so this box
+   has to be the thing a container query can ask about. */
 .or-inbox__list {
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
+  container-name: inbox;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2319,9 +2339,29 @@ fieldset {
   border-bottom: 0;
 }
 
-@media (min-width: 1024px) {
+/* Four tracks once the LIST is wide enough for four tracks, which is not the
+   same question as whether the window is.
+
+   This was `@media (min-width: 1024px)` with `96px minmax(0, 1fr) 220px 260px`,
+   and the window is roughly 550px wider than the list inside it: the navigation
+   and the page-context rail take their width first, so a 1440px window leaves
+   this list 745px and a 1024px window leaves it 681px. Three of the four tracks
+   are fixed and total 576px, and the gaps take 36px more, so the one track that
+   carries the reading - patient, subject, preview, received - got whatever was
+   left: 133px at 1440 and 69px at 1024, where `overflow-wrap: anywhere` below
+   then broke patient names mid-word. The rule got WORSE as the window got
+   wider, because 1024px is where it switched on and no width in this shell ever
+   satisfied it. Below 1024px the row stacked and was fine.
+
+   So the query asks the list, and the threshold is the width at which the four
+   tracks actually fit: 96 + 272 + 184 + 144 + 36 = 732px. The two right-hand
+   tracks are sized to their own min-content instead of to a round number
+   (measured 179px and 138px across the streams), which buys the reading track
+   285px at 1440 - and below the threshold the row keeps the stacked layout that
+   already worked. */
+@container inbox (min-width: 736px) {
   .or-inbox__row {
-    grid-template-columns: 96px minmax(0, 1fr) 220px 260px;
+    grid-template-columns: 96px minmax(272px, 1fr) 184px 144px;
     align-items: start;
   }
 }
@@ -2347,9 +2387,9 @@ fieldset {
    shrink min-content - and `anywhere` 8.5px. That difference decides the outcome
    only where the track is sized from content, which is the portal's message
    grid. It is NOT this row, at any width: `.or-inbox__row` is `minmax(0, 1fr)`
-   in the base rule and `96px minmax(0, 1fr) 220px 260px` above 1024px, so the
-   text track has a zero floor at every breakpoint - and this column carries
-   `min-width: 0` besides. `break-word` is already enough here, measured clean at
+   in the base rule and `96px minmax(272px, 1fr) 184px 144px` once the list is
+   wide enough, so the text track is never sized from its content - and this
+   column carries `min-width: 0` besides. `break-word` is already enough here, measured clean at
    900px where `normal` overflowed 1118/900. The row is a grid and the flex is
    the child, which is what made the sentence this replaces read plausible.
    `anywhere` is kept anyway, because one property with one reason across both

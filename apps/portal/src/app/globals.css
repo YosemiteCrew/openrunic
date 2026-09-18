@@ -765,11 +765,17 @@ output {
 
    Scoped to the free-text bodies rather than set globally, so deliberately
    unbreakable content - a code, an identifier in a monospace cell - is not swept
-   up with it. */
+   up with it.
+
+   The record meta line belongs in the list for the same reason: a cancellation
+   reason is typed by a clinician and reaches the card verbatim, and the API
+   bounds `cancelReason` at 256 characters without saying anything about word
+   breaks (#501). */
 .portal-message__body,
 .portal-notice__text,
 .portal-assistant__question,
-.portal-assistant__answer {
+.portal-assistant__answer,
+.portal-record__meta {
   overflow-wrap: anywhere;
 }
 

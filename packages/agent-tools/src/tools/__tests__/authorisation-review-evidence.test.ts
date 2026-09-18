@@ -9,7 +9,7 @@ const PRINCIPAL = stubPrincipal({
   scopes: ['claim.read', 'form.read', 'patient.read'],
 });
 
-const CREDENTIAL = { authorization: 'Bearer test-token' };
+const CREDENTIAL = { authorization: 'Bearer synthetic-test-token' };
 
 const API_CLIENT = {
   call: vi.fn(),

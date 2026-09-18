@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../context.js';
 import type { RouteContract } from '../openapi/registry.js';
 
+import { adminRouteContracts, adminRoutes } from './admin.js';
 import { appointmentRouteContracts, appointmentRoutes } from './appointments.js';
 import { clinicalRouteContracts, clinicalRoutes } from './clinical.js';
 import { financialRouteContracts, financialRoutes } from './financial.js';
@@ -55,6 +56,7 @@ export interface InternalRouteOptions {
 export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
   const router = new Hono<AppEnv>();
 
+  router.route('/', adminRoutes({ now: options.now }));
   router.route('/', patientRoutes());
   router.route('/', appointmentRoutes());
   router.route('/', clinicalRoutes(options.adapters));
@@ -72,6 +74,7 @@ export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
 /** Every internal route contract, in the order the OpenAPI document lists them. */
 export function internalRouteContracts(): RouteContract[] {
   return [
+    ...adminRouteContracts(),
     ...patientRouteContracts,
     ...appointmentRouteContracts,
     ...clinicalRouteContracts(),

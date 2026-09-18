@@ -85,7 +85,12 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
 
       <p className="portal-record__reading">
         <span className="portal-record__value">
-          {formatMeasurement(t, result.value, result.unit)}
+          <span className="portal-record__number">
+            {formatMeasurement(t, result.value, result.unit).value}
+          </span>{' '}
+          <span className="portal-record__unit">
+            {formatMeasurement(t, result.value, result.unit).unit}
+          </span>
         </span>
         <span className="portal-record__meta">
           {result.referenceRange === ''
@@ -211,7 +216,12 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                         <PlainTerm term={medication.name} plain={medication.plain} />
                         {medication.strength === null || medication.unit === null ? null : (
                           <span className="portal-record__value">
-                            {formatMeasurement(t, medication.strength, medication.unit)}
+                            <span className="portal-record__number">
+                              {formatMeasurement(t, medication.strength, medication.unit).value}
+                            </span>{' '}
+                            <span className="portal-record__unit">
+                              {formatMeasurement(t, medication.strength, medication.unit).unit}
+                            </span>
                           </span>
                         )}
                       </div>

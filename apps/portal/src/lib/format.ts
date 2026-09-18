@@ -193,12 +193,16 @@ export function formatMoneyWithCode(t: Translator, money: Money): string {
 }
 
 /** '75 micrograms' - a measured value never renders without its unit. */
-export function formatMeasurement(t: Translator, value: number, unit: string): string {
+export function formatMeasurement(
+  t: Translator,
+  value: number,
+  unit: string
+): Readonly<{ value: string; unit: string }> {
   // The unit arrives from the record already named, so only the number is the
   // reader's. `formatCount` rather than `String`, because Arabic writes its
   // numerals differently and a reading with the right unit and the wrong digits
   // is still wrong.
-  return `${formatCount(value, t.locale)} ${unit}`;
+  return { value: formatCount(value, t.locale), unit };
 }
 
 /** '2 of 3 answered'. */

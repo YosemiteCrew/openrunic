@@ -137,7 +137,7 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                         video: 'portal.appointments.mode.video',
                         'in-person': 'portal.appointments.mode.inPerson',
                         unknown: 'portal.appointments.mode.unknown',
-                      }[appointment.mode ?? 'unknown']
+                      }[appointment.mode ?? 'unknown'] ?? 'portal.appointments.mode.unknown'
                     )}
                     title={appointment.reason}
                   >

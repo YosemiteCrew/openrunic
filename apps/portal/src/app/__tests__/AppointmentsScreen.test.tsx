@@ -282,18 +282,27 @@ describe('AppointmentsScreen', () => {
       cancellationSupported: false,
       rescheduleSupported: false,
     };
+    const unexpectedMode = {
+      ...appointment,
+      id: 'appt-unexpected-mode',
+      mode: 'home-visit' as Appointment['mode'],
+    };
 
     render(
       <AppointmentsScreen
         api={stubApi({
           getAppointments: () =>
-            Promise.resolve({ upcoming: [appointment], past: [], requestsSupported: false }),
+            Promise.resolve({
+              upcoming: [appointment, unexpectedMode],
+              past: [],
+              requestsSupported: false,
+            }),
         })}
       />
     );
 
-    expect(await screen.findByText('Your care team')).toBeInTheDocument();
-    expect(screen.getByText('Appointment')).toBeInTheDocument();
+    expect(await screen.findAllByText('Your care team')).toHaveLength(2);
+    expect(screen.getAllByText('Appointment')).toHaveLength(2);
     expect(
       screen.queryByRole('button', { name: 'Request an appointment' })
     ).not.toBeInTheDocument();

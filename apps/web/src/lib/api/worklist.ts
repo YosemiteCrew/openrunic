@@ -390,6 +390,25 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
 /** The app's client. Mock-backed until the aggregates exist in `apps/api`. */
 export const worklist: WorklistClient = createWorklistClient();
 
+/**
+ * Whether {@link worklist} is answering from fixtures, which today it always
+ * is - in live mode as much as in mock mode. `createWorklistClient()` above
+ * takes no api-mode branch because there is nothing to branch to: `apps/api`
+ * has no worklist aggregate yet.
+ *
+ * Exported rather than left as a fact about this file, because the shell's
+ * "Demo data" badge is gated on the api MODE and this is a property of the
+ * DATA, and the two disagree exactly where it matters. Set
+ * `NEXT_PUBLIC_API_MODE=live` and the badge goes - the shell has no session and
+ * therefore no facility to name - while the inbox, orders and results screens
+ * go on serving Testperson, Exampla and a critical potassium that belongs to
+ * nobody. The screen that reads this constant is the one that has to say so.
+ *
+ * It is a literal because the honest value is a literal: the day a route lands,
+ * this becomes a mode test and the screens reading it need no other change.
+ */
+export const WORKLIST_IS_FIXTURE_BACKED = true;
+
 export interface WorklistHookOptions {
   /** Injectable for tests. Defaults to the app's client. */
   client?: WorklistClient;

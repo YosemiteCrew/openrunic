@@ -104,7 +104,7 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1782 of 2519 messages (71%).
+**es**: 1784 of 2521 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
@@ -127,7 +127,7 @@ These cannot be started inside this repository. Each needs an external body, and
 | reports   |  84 |  84 | `██████████████████` |
 | results   |  82 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | schedule  | 147 | 147 | `██████████████████` |
-| shell     |  21 |  21 | `██████████████████` |
+| shell     |  23 |  23 | `██████████████████` |
 
 ## Workspace
 

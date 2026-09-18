@@ -10,7 +10,7 @@ import type { Command } from '@/components/command';
 import { ResultList, ResultReading, SignNoteModal } from '@/components/results';
 import type { SignedNote } from '@/components/results';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
+import { AsyncBoundary, FixtureDataNotice, Toast, isEmptyList } from '@/components/state';
 import { isBulkSignable, MOCK_NOW, mockPatientById, useResults } from '@/lib/api';
 import type { Assignment, ResultFlag, ResultReport, WorklistClient } from '@/lib/api';
 import { formatName } from '@/lib/format';
@@ -233,6 +233,7 @@ export function ResultsScreen({
       }
     >
       <ScreenCommands commands={commands} />
+      <FixtureDataNotice />
       <AsyncBoundary
         state={results}
         subject={t('results.list.subject')}

@@ -179,6 +179,7 @@ export {
   WARNING_TIERS,
   warningsFor,
   worklist,
+  WORKLIST_IS_FIXTURE_BACKED,
 } from './worklist';
 export type {
   Assignment,

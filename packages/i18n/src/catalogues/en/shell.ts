@@ -23,6 +23,14 @@ export const shell: Messages = {
   /* Mock mode says so, in the same place on every screen. */
   'shell.demoData': 'Demo data',
 
+  /* The worklist screens carry fixtures in every api mode, so the badge above
+     cannot speak for them - it is gated on the mode. Worded as what the reader
+     must not do with the rows, not as a fact about the build. */
+  'shell.fixtureNotice.title': 'These are not real patients',
+  'shell.fixtureNotice.message':
+    'This screen is showing built-in sample rows, not your practice\u2019s work. ' +
+    'Nothing here is a real person, and acting on one changes nothing.',
+
   'shell.palette.title': 'Command palette',
   'shell.palette.searchLabel': 'Search patients, screens and actions',
   'shell.palette.searchPlaceholder': 'Type a patient, a screen, or an action',

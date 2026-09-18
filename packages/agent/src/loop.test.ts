@@ -189,7 +189,11 @@ describe('the reader holds no write tool', () => {
     );
 
     const advertised = model.requests[0]?.tools.map((tool) => tool.name) ?? [];
-    expect(advertised).toEqual(['chart.search', 'appointments.findSlots']);
+    expect(advertised).toEqual([
+      'chart.search',
+      'authorisation.reviewEvidence',
+      'appointments.findSlots',
+    ]);
     expect(advertised).not.toContain('appointments.propose');
   });
 

@@ -118,6 +118,7 @@ export { chartSearch } from './tools/chart-search.js';
 export { codingSuggest } from './tools/coding-suggest.js';
 export { denialDraftAppeal } from './tools/denial-draft-appeal.js';
 export { categorise, denialTriage } from './tools/denial-triage.js';
+export { authorisationReviewEvidence } from './tools/authorisation-review-evidence.js';
 export { documentsExtractCandidates } from './tools/documents-extract-candidates.js';
 export { formsDraftDefinition } from './tools/forms-draft-definition.js';
 export { INBOX_CATEGORIES, inboxClassify } from './tools/inbox-classify.js';

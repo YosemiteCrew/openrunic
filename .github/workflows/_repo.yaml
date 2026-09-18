@@ -99,6 +99,27 @@ jobs:
       - name: Run the CI script tests
         run: pnpm run check:ci-scripts:test
 
+  empty-files:
+    name: Tracked files are not empty
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Reads the checkout and nothing else.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # No Setup step: the guard is dependency-free and runs on the runner's
+      # system Node, the way forbidden-terms.yml runs its own. `pnpm run
+      # check:empty-files` is the identical check locally.
+      - name: Check for empty tracked files
+        run: node scripts/ci/empty-files.mjs
+
   generated-docs:
     name: Generated docs (roadmap)
     runs-on: ubuntu-latest

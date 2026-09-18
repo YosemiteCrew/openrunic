@@ -184,6 +184,28 @@ describe('authorisation.reviewEvidence', () => {
     expect(missing.some((r) => r.field === 'justification')).toBe(true);
   });
 
+  it('rejects the review when the payer profile is not found', async () => {
+    API_CLIENT.call.mockResolvedValueOnce({ status: 'draft' }).mockResolvedValueOnce({ data: [] });
+
+    await expect(
+      authorisationReviewEvidence.run(
+        {
+          cases: [
+            {
+              caseId: '123e4567-e89b-12d3-a456-426614174000',
+              caseType: 'prior-authorisation',
+              payerProfile: {
+                system: 'test-payer-system',
+                code: 'missing-payer',
+              },
+            },
+          ],
+        },
+        { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
+      )
+    ).rejects.toThrow('Payer profile not found');
+  });
+
   it('reviews a denied-claim case', async () => {
     API_CLIENT.call
       .mockResolvedValueOnce({

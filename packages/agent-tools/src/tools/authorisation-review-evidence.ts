@@ -165,7 +165,11 @@ async function reviewCase(
     { principal: context.principal, credential: context.credential }
   );
   const profileData = payerProfileResponseSchema.parse(profileResponse);
-  const requiredFields = profileData.data[0]?.fields ?? [];
+  const payerProfile = profileData.data[0];
+  if (!payerProfile) {
+    throw new Error('Payer profile not found');
+  }
+  const requiredFields = payerProfile.fields;
 
   // Build the missing requirements checklist
   const missingRequirements = requiredFields.map((field) => {

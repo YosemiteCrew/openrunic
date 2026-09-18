@@ -17,6 +17,7 @@ import type {
   ObservationInput,
 } from '@openrunic/database';
 
+import { ApiError } from '../../errors.js';
 import {
   inWindow,
   jsonColumn,
@@ -83,6 +84,7 @@ export type NoteAddendumRow = ScopedRow<'NoteAddendum'>;
 export type ConditionRow = ScopedRow<'Condition'>;
 export type MedicationStatementRow = ScopedRow<'MedicationStatement'>;
 export type MedicationRequestRow = ScopedRow<'MedicationRequest'>;
+export type PrescriptionFillRow = ScopedRow<'PrescriptionFill'>;
 export type AllergyIntoleranceRow = ScopedRow<'AllergyIntolerance'>;
 export type ImmunizationRow = ScopedRow<'Immunization'>;
 export type ObservationRow = ScopedRow<'Observation'>;
@@ -953,6 +955,58 @@ export const medicationRequestSpec: CollectionSpec<
   ): Record<string, unknown> {
     if (before === null) return { status: row.status, intent: row.intent };
     return before.status === row.status ? {} : { statusFrom: before.status, statusTo: row.status };
+  },
+};
+
+/* --------------------------------------------------- prescription fills */
+
+export interface PrescriptionFillListQuery extends BaseQuery {
+  patientId?: string;
+  prescriptionId?: string;
+  sort: 'filledOn' | 'createdAt';
+}
+
+type PrescriptionFillPatch = Record<string, never>;
+
+export const prescriptionFillSpec: CollectionSpec<
+  'PrescriptionFill',
+  never,
+  PrescriptionFillPatch,
+  PrescriptionFillListQuery
+> = {
+  model: 'PrescriptionFill',
+  targetType: 'PrescriptionFill',
+  action: 'prescription.fill',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(): never {
+    throw ApiError.conflict('A prescription fill is written only with its stock posting.');
+  },
+
+  patchData(): never {
+    throw ApiError.conflict('A completed prescription fill is append-only.');
+  },
+
+  matches(row: PrescriptionFillRow, query: PrescriptionFillListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    return query.prescriptionId === undefined || row.prescriptionId === query.prescriptionId;
+  },
+
+  where(query: PrescriptionFillListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.prescriptionId === undefined ? {} : { prescriptionId: query.prescriptionId }),
+    };
+  },
+
+  sortValue(row: PrescriptionFillRow, sort: PrescriptionFillListQuery['sort']): number {
+    return (sort === 'createdAt' ? row.createdAt : row.filledOn).getTime();
+  },
+
+  orderBy(query: PrescriptionFillListQuery): OrderByFor<'PrescriptionFill'> {
+    const sort = query.sort === 'createdAt' ? 'createdAt' : 'filledOn';
+    return [{ [sort]: query.order }, { id: 'asc' as const }];
   },
 };
 
@@ -1931,6 +1985,7 @@ export const clinicalSpecs = {
   careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,
   prescriptions: medicationRequestSpec,
+  prescriptionFills: prescriptionFillSpec,
   allergies: allergySpec,
   immunisations: immunisationSpec,
   observations: observationSpec,

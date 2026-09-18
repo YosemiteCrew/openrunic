@@ -352,6 +352,14 @@ const FILTERS: {
     prescriberId: 'id-prescriberId',
     status: 'DRAFT',
   },
+  prescriptionFills: {
+    page: 1,
+    pageSize: 25,
+    sort: 'filledOn',
+    order: 'asc',
+    patientId: 'id-patientId',
+    prescriptionId: 'id-prescriptionId',
+  },
   carePlans: {
     page: 1,
     pageSize: 25,

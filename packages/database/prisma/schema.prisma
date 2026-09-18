@@ -778,6 +778,7 @@ model Organisation {
   careTeamParticipants  CareTeamParticipant[]
   medicationStatements  MedicationStatement[]
   medicationRequests    MedicationRequest[]
+  prescriptionFills     PrescriptionFill[]
   allergies             AllergyIntolerance[]
   immunizations         Immunization[]
   observations          Observation[]
@@ -1057,6 +1058,7 @@ model Patient {
   procedures           Procedure[]
   medicationStatements MedicationStatement[]
   medicationRequests   MedicationRequest[]
+  prescriptionFills    PrescriptionFill[]
   allergies            AllergyIntolerance[]
   immunizations        Immunization[]
   observations         Observation[]
@@ -1594,9 +1596,36 @@ model MedicationRequest {
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
   prescriber   User         @relation(fields: [prescriberId], references: [id], onDelete: Restrict)
 
+  fills PrescriptionFill[]
+
   @@index([tenantId, patientId, status])
   @@index([tenantId, status, writtenAt])
   @@index([tenantId, prescriberId, status])
+}
+
+/// One completed fill against a prescription.
+///
+/// This is the chart-side fact used to count fills. The stock posting remains
+/// the inventory record with its facility, lots and movements; keeping the
+/// count here prevents a clinician's facility grants from changing how many
+/// fills the same prescription appears to have.
+model PrescriptionFill {
+  id             String   @id @db.Uuid
+  tenantId       String   @db.Uuid
+  patientId      String   @db.Uuid
+  prescriptionId String   @db.Uuid
+  stockPostingId String   @unique @db.Uuid
+  filledOn       DateTime @db.Date
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  prescription MedicationRequest @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
+  stockPosting StockPosting      @relation(fields: [stockPostingId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, prescriptionId, filledOn])
+  @@index([tenantId, patientId, filledOn])
 }
 
 model AllergyIntolerance {
@@ -2834,7 +2863,8 @@ model StockPosting {
   patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter    Encounter?   @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
-  movements StockMovement[]
+  movements        StockMovement[]
+  prescriptionFill PrescriptionFill?
 
   /// The stockroom day book.
   @@index([tenantId, facilityId, occurredOn])

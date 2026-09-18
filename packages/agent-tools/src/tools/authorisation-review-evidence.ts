@@ -279,5 +279,3 @@ function determineStatus(
     }
   }
 }
-// Aikido scan trigger - ensures fresh analysis on latest commit
-// Trigger Aikido re-scan for latest commit

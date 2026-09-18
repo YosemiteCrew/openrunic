@@ -75,14 +75,14 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         // Form data
         status: 'draft',
-        payer: { system: 'payer-codes', code: 'payer-1', display: 'Test Payer' },
-        memberId: 'M123',
-        serviceCode: { system: 'cpt', code: '99213' },
-        diagnosisCodes: [{ system: 'icd10', code: 'E11.9' }],
+        payer: { system: 'test-payer-system', code: 'test-payer-1', display: 'Test Payer' },
+        memberId: 'test-member-1',
+        serviceCode: { system: 'test-code-system', code: 'test-code-1' },
+        diagnosisCodes: [{ system: 'test-diagnosis-system', code: 'test-diag-1' }],
         requestedUnits: 1,
         startDate: '2026-01-15',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'Patient needs follow-up',
+        justification: 'test-justification',
       })
       .mockResolvedValueOnce({
         // Payer profile
@@ -108,7 +108,11 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'payer-codes', code: 'payer-1', display: 'Test Payer' },
+            payerProfile: {
+              system: 'test-payer-system',
+              code: 'test-payer-1',
+              display: 'Test Payer',
+            },
           },
         ],
       },
@@ -130,8 +134,8 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         // Form data with missing fields
         status: 'draft',
-        payer: { system: 'payer-codes', code: 'payer-1', display: 'Test Payer' },
-        memberId: 'M123',
+        payer: { system: 'test-payer-system', code: 'test-payer-1', display: 'Test Payer' },
+        memberId: 'test-member-1',
         // serviceCode missing
         diagnosisCodes: [],
         requestedUnits: 1,
@@ -162,7 +166,11 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'payer-codes', code: 'payer-1', display: 'Test Payer' },
+            payerProfile: {
+              system: 'test-payer-system',
+              code: 'test-payer-1',
+              display: 'Test Payer',
+            },
           },
         ],
       },
@@ -182,7 +190,7 @@ describe('authorisation.reviewEvidence', () => {
         // Claim data
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'denied',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -196,7 +204,11 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'payer-codes', code: 'payer-1', display: 'Test Payer' },
+            payerProfile: {
+              system: 'test-payer-system',
+              code: 'test-payer-1',
+              display: 'Test Payer',
+            },
           },
         ],
       },
@@ -221,7 +233,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -242,7 +254,7 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'denied',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -256,12 +268,12 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -284,7 +296,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -309,7 +321,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -330,7 +342,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -355,7 +367,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -376,7 +388,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -401,7 +413,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -423,7 +435,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -448,7 +460,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -470,7 +482,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -495,7 +507,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -521,7 +533,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -546,7 +558,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -567,7 +579,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -592,7 +604,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -613,7 +625,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -638,7 +650,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -659,7 +671,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -684,7 +696,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -705,7 +717,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -730,7 +742,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -751,7 +763,7 @@ describe('authorisation.reviewEvidence', () => {
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
-        justification: 'j',
+        justification: 'test-j',
       })
       .mockResolvedValueOnce({
         data: [
@@ -776,7 +788,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174000',
             caseType: 'prior-authorisation',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -791,7 +803,7 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'appeal-draft',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -805,7 +817,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -820,7 +832,7 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'appeal-submitted',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -834,7 +846,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -849,7 +861,7 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'appeal-approved',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -863,7 +875,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -878,7 +890,7 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'appeal-denied',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -892,7 +904,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },
@@ -907,7 +919,7 @@ describe('authorisation.reviewEvidence', () => {
       .mockResolvedValueOnce({
         id: '123e4567-e89b-12d3-a456-426614174001',
         status: 'unknown-claim-status',
-        denialReasonCode: 'CO-16',
+        denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
       })
@@ -921,7 +933,7 @@ describe('authorisation.reviewEvidence', () => {
           {
             caseId: '123e4567-e89b-12d3-a456-426614174001',
             caseType: 'denied-claim',
-            payerProfile: { system: 'p', code: 'p1' },
+            payerProfile: { system: 'test-system', code: 'test-code' },
           },
         ],
       },

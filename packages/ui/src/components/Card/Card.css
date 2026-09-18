@@ -73,6 +73,7 @@
 
 .or-card__title {
   color: inherit;
+  overflow-wrap: anywhere;
 }
 
 .or-card__footer {

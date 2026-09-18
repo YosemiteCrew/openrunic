@@ -592,6 +592,10 @@ const FILTERS: {
     order: 'asc',
     type: 'RESULT',
     status: 'OPEN',
+    // Compatible with `status` on purpose, per the note above the table: the
+    // scalar is inside the set, so the pair intersects and is exercised rather
+    // than short-circuiting to "matches nothing".
+    statusIn: ['OPEN', 'IN_PROGRESS'],
     priority: 'NORMAL',
     patientId: 'id-patientId',
     assigneeUserId: 'id-assigneeUserId',

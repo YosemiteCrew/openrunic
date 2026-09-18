@@ -775,6 +775,17 @@ export const documentSpec: CollectionSpec<
 export interface TaskListQuery extends BaseQuery {
   type?: TaskType;
   status?: TaskStatus;
+  /**
+   * The statuses to narrow to, for a caller that wants several at once.
+   *
+   * A queue of open work is one query over three statuses, not three queries.
+   * Read as three, a task moving between them between the reads lands in two
+   * result sets or in neither, so the queue duplicates or briefly loses live
+   * work; one query is one snapshot and cannot.
+   *
+   * Resolved against `status` by `taskStatuses` - see the note there.
+   */
+  statusIn?: readonly TaskStatus[];
   priority?: TaskPriority;
   patientId?: string;
   assigneeUserId?: string;
@@ -821,6 +832,25 @@ export interface TaskPatchInput {
   completedAt?: Date;
   completedById?: string;
   outcome?: string;
+}
+
+/**
+ * The one status decision both ports read, from the scalar and the set.
+ *
+ * `status` and `statusIn` constrain the same column, and a spec's `where` is
+ * built from conditional spreads, so two clauses naming `status` do not merge -
+ * the later spread replaces the earlier. Resolving them here means `matches`
+ * and `where` read one decision rather than each making their own.
+ *
+ * `undefined` is no status filter. An empty array is one that matches nothing,
+ * which is the honest answer to a scalar asked for outside the set it was
+ * narrowed to - dropping the clause would widen the query to every row.
+ */
+function taskStatuses(query: TaskListQuery): readonly TaskStatus[] | undefined {
+  const { status, statusIn } = query;
+  if (statusIn === undefined) return status === undefined ? undefined : [status];
+  if (status === undefined) return statusIn;
+  return statusIn.includes(status) ? [status] : [];
 }
 
 export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, TaskListQuery> = {
@@ -871,7 +901,12 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
 
   matches(row: TaskRow, query: TaskListQuery): boolean {
     if (query.type !== undefined && row.type !== query.type) return false;
-    if (query.status !== undefined && row.status !== query.status) return false;
+    // The ONLY place this port reads the status decision. A scalar
+    // `row.status === query.status` test alongside it would be inert today and
+    // would hold the memory side together through any future widening here,
+    // which is how the two ports split apart last time.
+    const wanted = taskStatuses(query);
+    if (wanted !== undefined && !wanted.includes(row.status)) return false;
     if (query.priority !== undefined && row.priority !== query.priority) return false;
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.assigneeUserId !== undefined && row.assigneeUserId !== query.assigneeUserId) {
@@ -886,9 +921,10 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
 
   where(query: TaskListQuery) {
     const dueAt = windowFilter(query.from, query.to);
+    const wanted = taskStatuses(query);
     return {
       ...(query.type === undefined ? {} : { type: query.type }),
-      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(wanted === undefined ? {} : { status: { in: [...wanted] } }),
       ...(query.priority === undefined ? {} : { priority: query.priority }),
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.assigneeUserId === undefined ? {} : { assigneeUserId: query.assigneeUserId }),

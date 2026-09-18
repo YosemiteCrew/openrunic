@@ -143,7 +143,11 @@ const reportSchema = z.object({
  * timestamps rather than a fact of its own - and a stored copy is one that goes
  * stale the first time somebody backfills a date.
  */
-function awaiting(row: ScopedRow<'Referral'>): string | null {
+/**
+ * The blocking item a referral is waiting on, shared with the administrative
+ * worklist so the two doors never disagree about what "waiting" means.
+ */
+export function awaiting(row: ScopedRow<'Referral'>): string | null {
   if (row.status === 'DRAFT') return 'to be sent';
   if (row.status === 'DECLINED') return 'a new recipient';
   if (row.status === 'CANCELLED' || row.status === 'ENTERED_IN_ERROR') return null;

@@ -3,6 +3,7 @@ import { z } from 'zod';
 // Imported for its version and nothing else. See DEFAULT_INFO below.
 import pkg from '../../package.json' with { type: 'json' };
 
+import { byIdentifier } from '../policy/permissions.js';
 import type { RouteContract } from './registry.js';
 
 /**
@@ -278,26 +279,16 @@ export function buildOpenApiDocument(
  * two builds of the same commit on machines with different locales would emit
  * documents that differ in tag order. A published specification is diffed and
  * generated from; its byte order is part of what it promises. The full argument
- * and the measurements are beside `byPermissionId` in `policy/permissions.ts`.
- *
- * Duplicated rather than imported from there because tag names are not
- * permissions, and `openapi/` importing from `policy/` to borrow a string
- * comparator is a worse coupling than three lines. `capabilities.ts` carries a
- * third copy for its own reason.
- *
- * THE TRIGGER, WRITTEN DOWN NOW RATHER THAN ARGUED LATER: at three copies this
- * is coupling avoidance and is worth the duplication. **A fourth makes it a
- * missing module** - extract a shared `byIdentifier` then, rather than
- * relitigating the boundary each time. This is the copy a fourth would be
- * modelled on, which is why the trigger lives here.
+ * lives beside the shared `byIdentifier` comparator. This tag-specific alias
+ * remains exported because it names the OpenAPI contract at its call site and
+ * in its tests.
  *
  * `localeCompare` is correct at the other call sites in this package -
  * `errors.ts`, `memory.ts` - which order human-readable values for display
  * inside one runtime. This is not that.
  */
 export function byTagName(a: string, b: string): number {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
+  return byIdentifier(a, b);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

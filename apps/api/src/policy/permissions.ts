@@ -310,27 +310,23 @@ export function isPermission(value: string): value is Permission {
 }
 
 /**
- * Orders permission identifiers by UTF-16 code unit.
+ * Orders machine identifiers by UTF-16 code unit.
  *
- * DELIBERATELY NOT `localeCompare`, which is the idiom everywhere else in this
- * package - and is right everywhere else, because those call sites order dates
- * and human-readable names for display inside one runtime. This one does not.
- *
- * `/bff/v0/me` sorts on the API server and the browser's generated mirror sorts
- * in the viewer's browser, and the DTO promises the two are byte-identical so a
- * client may compare them. `localeCompare` with no locale reads the RUNTIME's
- * default locale, so those are two independently configured orderings; naming a
- * locale does not fix it either, because collation also moves with the ICU data
- * the runtime was built against. Measured: `['order.Write','order.audit',
+ * `localeCompare` reads the runtime's default locale, so it cannot provide the
+ * same promised order across independently configured API processes and
+ * clients. Naming a locale does not remove the dependency on the ICU data in
+ * that runtime either. Measured examples: `['order.Write', 'order.audit',
  * 'order.write']` sorts two different ways across eight locales, and
- * `['patient.Info','patient.index','patient.info']` three.
+ * `['patient.Info', 'patient.index', 'patient.info']` sorts three.
  *
- * Code-unit order is the same in every runtime and every version of one. It is
- * also what the default `.sort()` does - the comparator is written out because
- * `typescript:S2871` requires one, and because the next reader deserves to know
- * the plain form was rejected rather than forgotten.
+ * The default string comparison is stable across those runtimes. The
+ * comparator is written out because `typescript:S2871` requires one and so the
+ * next reader knows the plain form was rejected rather than forgotten.
  */
-export function byPermissionId(a: string, b: string): number {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
+export function byIdentifier(left: string, right: string): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
 }
+
+/** Permission-specific name retained for the public policy API. */
+export const byPermissionId = byIdentifier;

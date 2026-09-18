@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
+
 import {
   generateCcd,
-  parseCcd,
+  previewCcd,
   CcdaError,
   DEFAULT_XML_LIMITS,
+  type CcdPreview,
   type AllergyEntry,
   type CcdDocument,
   type CodedValue,
@@ -56,27 +59,29 @@ import { idParamSchema, repositories, required } from './helpers.js';
  * a person in front of it, and it will call the ordinary write endpoints.
  */
 
-const importBodySchema = z.object({
-  /**
-   * The document, as XML. Carried in a JSON field rather than posted as a raw
-   * `text/xml` body because this is the internal surface, where every other
-   * route is JSON and the client is our own. A partner posting XML directly
-   * belongs on a separate ingress with its own authentication.
-   */
-  document: z
-    .string()
-    .min(1, 'The document is empty.')
-    // Refused before a character is scanned. The parser carries its own ceiling
-    // - it is the property of parsing a document somebody else composed, not of
-    // this one route - but a body limit is cheaper still, and it answers 422
-    // naming the field rather than 400 naming the codec. `document.write` is a
-    // front-desk permission in the shipped role map, so the caller who can post
-    // here is an ordinary member of staff.
-    .max(
-      DEFAULT_XML_LIMITS.maxLength,
-      `A C-CDA larger than ${String(DEFAULT_XML_LIMITS.maxLength)} characters is a transport or export defect rather than a chart.`
-    ),
-});
+const importBodySchema = z
+  .object({
+    /**
+     * The document, as XML. Carried in a JSON field rather than posted as a raw
+     * `text/xml` body because this is the internal surface, where every other
+     * route is JSON and the client is our own. A partner posting XML directly
+     * belongs on a separate ingress with its own authentication.
+     */
+    document: z
+      .string()
+      .min(1, 'The document is empty.')
+      // Refused before a character is scanned. The parser carries its own ceiling
+      // - it is the property of parsing a document somebody else composed, not of
+      // this one route - but a body limit is cheaper still, and it answers 422
+      // naming the field rather than 400 naming the codec. `document.write` is a
+      // front-desk permission in the shipped role map, so the caller who can post
+      // here is an ordinary member of staff.
+      .max(
+        DEFAULT_XML_LIMITS.maxLength,
+        `A C-CDA larger than ${String(DEFAULT_XML_LIMITS.maxLength)} characters is a transport or export defect rather than a chart.`
+      ),
+  })
+  .strict();
 
 const codedValueSchema = z.object({
   code: z.string().optional(),
@@ -85,6 +90,15 @@ const codedValueSchema = z.object({
 });
 
 const importSummarySchema = z.object({
+  source: z.object({ sha256: z.string() }),
+  provenance: z.object({
+    documentId: z.string(),
+    custodianId: z.string(),
+    custodianName: z.string(),
+    authorId: z.string(),
+    authorName: z.string(),
+    effectiveAt: z.string(),
+  }),
   patient: z.object({
     mrn: z.string(),
     givenName: z.string(),
@@ -95,6 +109,50 @@ const importSummarySchema = z.object({
   /** The instant the sending system says the document describes. */
   effectiveAt: z.string(),
   counts: z.record(z.string(), z.number()),
+  totals: z.object({
+    sourceSections: z.number(),
+    supportedSections: z.number(),
+    absentSections: z.number(),
+    unsupportedSections: z.number(),
+    duplicateSections: z.number(),
+    sourceEntries: z.number(),
+    mappedEntries: z.number(),
+    rejectedEntries: z.number(),
+    unidentifiedEntries: z.number(),
+  }),
+  sections: z.array(
+    z.object({
+      name: z.string(),
+      title: z.string(),
+      code: z.string().optional(),
+      status: z.enum([
+        'absent',
+        'empty',
+        'mapped',
+        'partial',
+        'rejected',
+        'unsupported',
+        'duplicate',
+      ]),
+      sourceOffset: z.number().optional(),
+      sourceEntries: z.number(),
+      mappedEntries: z.number(),
+      rejectedEntries: z.number(),
+    })
+  ),
+  rejections: z.array(
+    z.object({
+      kind: z.enum(['section', 'entry']),
+      section: z.string(),
+      reason: z.enum(['unsupported-section', 'duplicate-section', 'unmapped-entry']),
+      sourceOffset: z.number().optional(),
+    })
+  ),
+  identity: z.object({
+    status: z.enum(['not-checked', 'insufficient', 'no-match', 'match', 'conflict', 'ambiguous']),
+    comparedBy: z.enum(['none', 'mrn']),
+    differences: z.array(z.enum(['givenName', 'familyName', 'birthDate'])),
+  }),
   allergies: z.array(
     z.object({ substance: codedValueSchema, reaction: z.string().optional(), status: z.string() })
   ),
@@ -106,7 +164,9 @@ const importSummarySchema = z.object({
    * Entries the codec could read structurally and could not identify. Named
    * rather than counted, because these are the rows a person has to look at.
    */
-  unidentified: z.array(z.object({ section: z.string(), display: z.string() })),
+  unidentified: z.array(
+    z.object({ section: z.string(), display: z.string(), sourceOffset: z.number().optional() })
+  ),
 });
 
 const ccdResponseSchema = z.object({
@@ -195,9 +255,9 @@ export function documentRoutes(router: Hono<AppEnv>): void {
   router.post('/ccd/import', requirePermission('document.write'), async (c) => {
     const { document } = await parseJsonBody(c, importBodySchema);
 
-    let parsed: CcdDocument;
+    let preview: CcdPreview;
     try {
-      parsed = parseCcd(document);
+      preview = previewCcd(document);
     } catch (error) {
       if (error instanceof CcdaError) {
         // The codec's own message names the offset and what it found there,
@@ -208,7 +268,8 @@ export function documentRoutes(router: Hono<AppEnv>): void {
       throw error;
     }
 
-    const summary = summarise(parsed);
+    const identity = await identityPreview(c, preview.document);
+    const summary = summarise(preview, sha256(document), identity);
 
     await c.get('audit')?.write({
       action: 'ccd.parsed',
@@ -217,6 +278,8 @@ export function documentRoutes(router: Hono<AppEnv>): void {
         custodian: summary.custodian,
         mrn: summary.patient.mrn,
         counts: summary.counts,
+        totals: summary.totals,
+        identity: summary.identity.status,
       },
     });
 
@@ -456,20 +519,22 @@ function encounterClassName(value: string): string {
  * reconciliation screen actually shows, because those are what a clinician has
  * to decide about one row at a time.
  */
-function summarise(document: CcdDocument): z.infer<typeof importSummarySchema> {
-  const unidentified: { section: string; display: string }[] = [];
-  const flag = (section: string, value: CodedValue): void => {
-    // The codec writes an explicit "Unknown" display where it could read an
-    // entry structurally and could not identify it. Those are exactly the rows a
-    // person has to look at, so they are named rather than counted.
-    if (value.display.startsWith('Unknown')) unidentified.push({ section, display: value.display });
-  };
-
-  for (const allergy of document.allergies) flag('allergies', allergy.substance);
-  for (const medication of document.medications) flag('medications', medication.medication);
-  for (const problem of document.problems) flag('problems', problem.problem);
-
+function summarise(
+  preview: CcdPreview,
+  sourceSha256: string,
+  identity: z.infer<typeof importSummarySchema>['identity']
+): z.infer<typeof importSummarySchema> {
+  const { document } = preview;
   return {
+    source: { sha256: sourceSha256 },
+    provenance: {
+      documentId: document.id,
+      custodianId: document.custodian.id,
+      custodianName: document.custodian.name,
+      authorId: document.author.id,
+      authorName: `${document.author.givenName} ${document.author.familyName}`.trim(),
+      effectiveAt: document.effectiveAt,
+    },
     patient: {
       mrn: document.patient.mrn,
       givenName: document.patient.givenName,
@@ -486,7 +551,13 @@ function summarise(document: CcdDocument): z.infer<typeof importSummarySchema> {
       vitals: document.vitals.length,
       immunisations: document.immunisations.length,
       encounters: document.encounters.length,
+      plan: document.plan.length,
+      socialHistory: document.socialHistory.length,
     },
+    totals: preview.totals,
+    sections: [...preview.sections],
+    rejections: [...preview.rejections],
+    identity,
     allergies: document.allergies.map((allergy) => ({
       substance: allergy.substance,
       ...(allergy.reaction === undefined ? {} : { reaction: allergy.reaction }),
@@ -501,8 +572,59 @@ function summarise(document: CcdDocument): z.infer<typeof importSummarySchema> {
       problem: problem.problem,
       status: problem.status,
     })),
-    unidentified,
+    unidentified: [...preview.unidentified],
   };
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+async function identityPreview(
+  c: Context<AppEnv>,
+  document: CcdDocument
+): Promise<z.infer<typeof importSummarySchema>['identity']> {
+  const mrn = document.patient.mrn.trim();
+  if (mrn === '') return { status: 'insufficient', comparedBy: 'none', differences: [] };
+  if (c.get('policy')?.can('patient.read') !== true) {
+    return { status: 'not-checked', comparedBy: 'none', differences: [] };
+  }
+
+  const matches = await repositories(c).patients.list({
+    page: 1,
+    pageSize: 2,
+    sort: 'familyName',
+    order: 'asc',
+    mrn,
+  });
+  if (matches.rows.length === 0) {
+    return { status: 'no-match', comparedBy: 'mrn', differences: [] };
+  }
+  if (matches.rows.length > 1) {
+    return { status: 'ambiguous', comparedBy: 'mrn', differences: [] };
+  }
+
+  const match = matches.rows[0];
+  if (match === undefined) return { status: 'no-match', comparedBy: 'mrn', differences: [] };
+  const differences: ('givenName' | 'familyName' | 'birthDate')[] = [];
+  if (normaliseName(match.givenName) !== normaliseName(document.patient.givenName)) {
+    differences.push('givenName');
+  }
+  if (normaliseName(match.familyName) !== normaliseName(document.patient.familyName)) {
+    differences.push('familyName');
+  }
+  if (match.birthDate.toISOString().slice(0, 10) !== document.patient.birthDate) {
+    differences.push('birthDate');
+  }
+  return {
+    status: differences.length === 0 ? 'match' : 'conflict',
+    comparedBy: 'mrn',
+    differences,
+  };
+}
+
+function normaliseName(value: string): string {
+  return value.trim().toLocaleLowerCase('en-US');
 }
 
 export function documentRouteContracts(): RouteContract[] {
@@ -538,14 +660,14 @@ export function documentRouteContracts(): RouteContract[] {
       operationId: 'importCcd',
       summary: 'Read a C-CDA another organisation sent, and report what is in it.',
       description:
-        'Parses a Continuity of Care Document and returns what it contains. Writes nothing: merging an arriving document is a clinical decision - which of these problems are already on our list, which of these medications did we stop, is this the same allergy under another name - and a machine that took that decision would produce a duplicate problem list on its best day. Entries the codec could read structurally and could not identify are named in `unidentified`, because those are the rows a person has to look at.',
+        'Parses a Continuity of Care Document and returns a deterministic, ephemeral migration preview. Every supported, absent, duplicate and unsupported section is accounted for; rejected and unidentified entries include source offsets, provenance stays attached, and an MRN match is reported only as a non-selecting identity status. Writes nothing: merging an arriving document is a clinical decision - which of these problems are already on our list, which of these medications did we stop, is this the same allergy under another name - and a machine that took that decision would produce a duplicate problem list on its best day.',
       tags: ['patients'],
       permission: 'document.write',
       body: importBodySchema,
       responses: [
         {
           status: 200,
-          description: 'What the document contains, for a person to reconcile.',
+          description: 'A reproducible read-only preview for a person to reconcile.',
           schema: importSummarySchema,
         },
         {

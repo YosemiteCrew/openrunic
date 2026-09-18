@@ -200,6 +200,17 @@ describe('what it must not refuse', () => {
     expect(childNamed(childNamed(root, 'c'), 'd')).toBeDefined();
   });
 
+  it('records where imported elements begin in the source', () => {
+    const source = '<root><first/><second><nested/></second></root>';
+    const root = parseXml(source);
+
+    expect(root.sourceOffset).toBe(source.indexOf('<root>'));
+    expect(childNamed(root, 'first')?.sourceOffset).toBe(source.indexOf('<first/>'));
+    expect(childNamed(childNamed(root, 'second'), 'nested')?.sourceOffset).toBe(
+      source.indexOf('<nested/>')
+    );
+  });
+
   it('resolves the five predefined entities and both numeric forms', () => {
     const root = parseXml('<a>&amp;&lt;&gt;&quot;&apos;&#65;&#x42;</a>');
 

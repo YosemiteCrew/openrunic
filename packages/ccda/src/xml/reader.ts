@@ -183,6 +183,7 @@ class Scanner {
     if (this.source[this.index] !== '<') {
       throw new CcdaError('Expected an element', this.index);
     }
+    const sourceOffset = this.index;
     this.index += 1;
 
     this.elements += 1;
@@ -198,7 +199,7 @@ class Scanner {
 
     if (this.source.startsWith('/>', this.index)) {
       this.index += 2;
-      return element(name, attributes);
+      return element(name, attributes, [], sourceOffset);
     }
     if (this.source[this.index] !== '>') {
       throw new CcdaError(`Malformed start tag for <${name}>`, this.index);
@@ -217,7 +218,7 @@ class Scanner {
     }
     const children = this.readChildren(name);
     this.depth -= 1;
-    return element(name, attributes, children);
+    return element(name, attributes, children, sourceOffset);
   }
 
   private readAttributes(): Record<string, string> {

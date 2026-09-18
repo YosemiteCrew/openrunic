@@ -94,14 +94,23 @@ export const portalImmunisationSchema = z.strictObject({
   ...portalTermFields,
   vaccine: z.string(),
   givenOn: z.string(),
-  doseLabel: z.string().nullable(),
+  // The dose as a number and a named unit rather than a composed string. Both are
+  // present or neither is: a quantity without its unit is not a reading, and the
+  // reader's locale decides how the number is written.
+  doseQuantity: z.number().nullable(),
+  doseUnit: z.string().nullable(),
 });
 
 export const portalDocumentSchema = z.strictObject({
   ...portalTermFields,
   title: z.string(),
   addedOn: z.string(),
-  format: z.string(),
+  // The media type and the size as they are stored, not a display string built here.
+  // This used to be `format: '<contentType>, <byteSize> bytes'`, which put a media
+  // type in front of a patient and put 71 unbroken characters of ordinary Word
+  // document type into a pill that is the size of its text (#507).
+  contentType: z.string(),
+  byteSize: z.int().nonnegative(),
 });
 
 export const portalResultSchema = z.strictObject({

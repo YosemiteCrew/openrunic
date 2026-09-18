@@ -83,7 +83,8 @@ describe('HealthRecordScreen', () => {
             {
               ...(record.immunisations[0] as (typeof record.immunisations)[number]),
               plain: null,
-              doseLabel: null,
+              doseQuantity: null,
+              doseUnit: null,
             },
           ],
         })}

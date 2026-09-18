@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AppointmentsScreen } from '@/app/appointments/AppointmentsScreen';
 import { BillsScreen } from '@/app/bills/BillsScreen';
 import { FormsScreen } from '@/app/forms/FormsScreen';
+import { HealthRecordScreen } from '@/app/health-record/HealthRecordScreen';
 import { HomeScreen } from '@/app/HomeScreen';
 import { MessagesScreen } from '@/app/messages/MessagesScreen';
 import { buildFixtures, createMockApi } from '@/lib/api';
@@ -39,21 +40,20 @@ const SCREENS = [
   { name: 'messages', mount: (api: PortalApi) => <MessagesScreen api={api} /> },
   { name: 'bills', mount: (api: PortalApi) => <BillsScreen api={api} /> },
   { name: 'forms', mount: (api: PortalApi) => <FormsScreen api={api} /> },
+  { name: 'health-record', mount: (api: PortalApi) => <HealthRecordScreen api={api} /> },
 ] as const;
 
 /*
- * The health record is deliberately not in that list yet, and it is the one screen that still
- * fails this check.
+ * The health record joined this list in #507, and what it took is the reason the list is
+ * worth reading. Two of its fields reached an `.or-badge`, which is `white-space: nowrap`
+ * because a status pill is the size of its text - so the wrap rule the assertion below
+ * relies on cannot reach them and should not. The API was composing both: a document's
+ * media type with its byte count, and a dose as a quantity joined to a free-text unit.
  *
- * Its badge carries `ClinicalDocument.format`, which the API builds at
- * `apps/api/src/routes/portal.ts` as a raw MIME type and a raw byte count - and the Word
- * document type alone is 71 unbroken characters of ordinary production data. `.or-badge` is
- * `white-space: nowrap` on purpose, because a status pill is the size of its text, so the
- * wrap rule this suite relies on cannot reach it and should not.
- *
- * That is a data-shape defect rather than a stylesheet one: the badge is right and its input
- * is wrong. Adding the screen here would mean either weakening the assertion or breaking the
- * badge, so it waits for the fix that gives the portal a bounded label to render.
+ * Neither was fixed in the stylesheet. The document badge now renders a label from a set
+ * the portal owns, and the dose moved to the meta line, where wrapping is the right answer
+ * for a value the record does not bound. A screen is in this list when its widths hold for
+ * a reason rather than because its fixture is short.
  */
 
 /** The element the chrome puts a screen inside, so the widths here are the app's widths. */

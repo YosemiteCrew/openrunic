@@ -22,7 +22,8 @@ import { RangeBadge } from '@/components/RangeBadge';
 import { getPortalApi } from '@/lib/api';
 import type { HealthRecord, PortalApi, Result } from '@/lib/api/types';
 import { useTranslator } from '@/lib/i18n/messages';
-import { formatDate, formatMeasurement } from '@/lib/format';
+import type { DocumentKind } from '@/lib/format';
+import { documentKind, formatDate, formatFileSize, formatMeasurement } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 export interface HealthRecordScreenProps {
@@ -33,6 +34,19 @@ const RANGE_LABEL_KEYS: Record<Result['range'], string> = {
   'in-range': 'portal.healthRecord.results.range.inRange',
   'out-of-range': 'portal.healthRecord.results.range.outOfRange',
   unknown: 'portal.healthRecord.results.range.unknown',
+};
+
+/**
+ * Every kind has a label, and `documentKind` answers with one of these and nothing else, so
+ * a media type the practice starts storing tomorrow renders as `File` rather than as itself.
+ */
+const DOCUMENT_KIND_KEYS: Record<DocumentKind, string> = {
+  pdf: 'portal.healthRecord.documents.kind.pdf',
+  image: 'portal.healthRecord.documents.kind.image',
+  document: 'portal.healthRecord.documents.kind.document',
+  spreadsheet: 'portal.healthRecord.documents.kind.spreadsheet',
+  text: 'portal.healthRecord.documents.kind.text',
+  other: 'portal.healthRecord.documents.kind.other',
 };
 
 const PROBLEM_STATUS_KEYS: Record<HealthRecord['problems'][number]['status'], string> = {
@@ -282,10 +296,25 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                     <li className="portal-record" key={immunisation.id}>
                       <div className="portal-record__head">
                         <PlainTerm term={immunisation.vaccine} plain={immunisation.plain} />
-                        {immunisation.doseLabel === null ? null : (
-                          <Badge tone="success">{immunisation.doseLabel}</Badge>
-                        )}
                       </div>
+                      {/*
+                        The dose reads on the meta line rather than in a badge. A badge is
+                        `white-space: nowrap` because a status pill is the size of its text,
+                        and a dose is not a status: its unit is free text on the record, so
+                        `0.5 millilitre per dose` in a pill widens the page (#507).
+                      */}
+                      {immunisation.doseQuantity === null ||
+                      immunisation.doseUnit === null ? null : (
+                        <p className="portal-record__meta">
+                          {t('portal.healthRecord.immunisations.dose', {
+                            dose: formatMeasurement(
+                              t,
+                              immunisation.doseQuantity,
+                              immunisation.doseUnit
+                            ),
+                          })}
+                        </p>
+                      )}
                       <p className="portal-record__meta">
                         {t('portal.healthRecord.immunisations.givenOn', {
                           date: formatDate(t, immunisation.givenOn),
@@ -310,12 +339,13 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       <div className="portal-record__head">
                         <PlainTerm term={document.title} plain={document.plain} />
                         <Badge tone="ink" icon="file-text">
-                          {document.format}
+                          {t(DOCUMENT_KIND_KEYS[documentKind(document.contentType)])}
                         </Badge>
                       </div>
                       <p className="portal-record__meta">
                         {t('portal.healthRecord.documents.addedOn', {
                           date: formatDate(t, document.addedOn),
+                          size: formatFileSize(t, document.byteSize),
                         })}
                       </p>
                     </li>

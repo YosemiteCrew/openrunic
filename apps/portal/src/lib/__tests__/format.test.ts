@@ -2,10 +2,12 @@ import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import {
+  documentKind,
   formatDate,
   formatDateTime,
   formatDateWithWeekday,
   formatDuration,
+  formatFileSize,
   formatMeasurement,
   formatMoney,
   formatMoneyWithCode,
@@ -159,5 +161,87 @@ describe('wording helpers', () => {
   it('states progress in the reader’s words', () => {
     expect(formatProgress(english, 2, 3)).toBe('2 of 3 answered');
     expect(formatProgress(spanish, 2, 3)).toBe('2 de 3 respondidas');
+  });
+});
+
+/**
+ * A document's badge used to carry what the API composed - the stored media type and the
+ * stored byte count - into an `.or-badge`, which is `white-space: nowrap` because a status
+ * pill is the size of its text. The Word document type alone is 71 characters with nothing a
+ * browser may break after, so one ordinary file widened the page (#507).
+ *
+ * These are the two halves of the replacement: a label from a closed set, and a size written
+ * for a reader rather than in bytes.
+ */
+describe('documentKind', () => {
+  it('names the types worth naming', () => {
+    expect(documentKind('application/pdf')).toBe('pdf');
+    expect(
+      documentKind('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    ).toBe('document');
+    expect(documentKind('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe(
+      'spreadsheet'
+    );
+  });
+
+  it('falls to a family for anything the table does not hold', () => {
+    expect(documentKind('image/heic')).toBe('image');
+    expect(documentKind('text/csv')).toBe('text');
+  });
+
+  it('answers with a kind and never with its input', () => {
+    // The whole point of the mapping: a media type the practice starts storing tomorrow
+    // reaches the badge as a short word, so the label is bounded by construction rather
+    // than because the fixture that was measured happened to be short.
+    const unknown = 'application/vnd.ms-outlook';
+    expect(documentKind(unknown)).toBe('other');
+    expect(documentKind('M'.repeat(256))).toBe('other');
+  });
+
+  it('reads a media type by its essence, not by its bytes', () => {
+    // Parameters and case are not part of the identity. A stored
+    // `TEXT/PLAIN; charset=utf-8` is the same type as `text/plain`, and answering `other`
+    // for it would be the mapping quietly not working on real stored values.
+    expect(documentKind('TEXT/PLAIN; charset=utf-8')).toBe('text');
+    expect(documentKind('Application/PDF')).toBe('pdf');
+  });
+});
+
+describe('formatFileSize', () => {
+  it('climbs a tier at a thousand and writes at most one decimal', () => {
+    expect(formatFileSize(english, 512)).toBe('512 bytes');
+    expect(formatFileSize(english, 20_480)).toBe('20.5 kB');
+    expect(formatFileSize(english, 2_400_000)).toBe('2.4 MB');
+    expect(formatFileSize(english, 1_200_000_000)).toBe('1.2 GB');
+  });
+
+  it('stops climbing rather than reaching for a unit it does not have', () => {
+    // The tiers end at gigabytes, so a larger file has to stay in gigabytes. Walking off
+    // the end of the array would format against `undefined` and throw on a page that is
+    // only trying to say how big a letter is.
+    expect(formatFileSize(english, 4_000_000_000_000)).toBe('4,000 GB');
+  });
+
+  it('is the reader’s number, not en-GB’s', () => {
+    expect(formatFileSize(spanish, 20_480)).toBe('20,5 kB');
+    expect(formatFileSize(spanish, 2_400_000)).toBe('2,4 MB');
+  });
+
+  it('writes bytes long and everything above them short, for a reason Intl decides', () => {
+    // This is the exemption in `sizeFormatter`, asserted rather than argued. CLDR's short
+    // form for `byte` in English is the singular noun, so a `short` byte tier would render
+    // `512 byte` on a patient's page; `kB` and `MB` are symbols and are right at any count.
+    // If CLDR ever changes that, this fails here rather than in front of a reader.
+    const shortByte = new Intl.NumberFormat('en', {
+      style: 'unit',
+      unit: 'byte',
+      unitDisplay: 'short',
+    });
+    expect(shortByte.format(512)).toBe('512 byte');
+    expect(formatFileSize(english, 512)).toBe('512 bytes');
+  });
+
+  it('never writes a negative size', () => {
+    expect(formatFileSize(english, -1)).toBe('0 bytes');
   });
 });

@@ -160,7 +160,26 @@ output {
   overflow-wrap: anywhere;
 }
 
+/*
+ * Nothing a record holds may widen the page.
+ *
+ * The scoped list further down was the earlier answer to this and it is still right about
+ * its own sites; it was wrong that naming them was enough. Measured with an unbroken run in
+ * every string the portal renders, all six screens pushed the document past the viewport at
+ * both 1440px and 375px - twelve sites, of which #501 had found one and #504 a second.
+ * Enumeration loses that race: the screens outnumber the people remembering the rule, and a
+ * missed one is only visible to the patient it happens to.
+ *
+ * So the default inverts here. Text inside the application shell wraps rather than overflows,
+ * and anything that must NOT break says so for itself below. `anywhere` rather than
+ * `break-word` for the reason the free-text rule gives: only `anywhere` lowers the intrinsic
+ * min-content size, which is what lets the grid column holding the text be narrow at all.
+ *
+ * `src/__tests__/layout/` holds this to it in a real browser, so a seventh screen cannot
+ * arrive without the property.
+ */
 .portal__main {
+  overflow-wrap: anywhere;
   flex: 1 1 auto;
   width: 100%;
   max-width: var(--content-max);
@@ -462,7 +481,11 @@ output {
   color: var(--status-success);
 }
 
+/* The exception the rule above asks for: a figure is one number and breaking it across two
+   lines invents a reading that is not there - `1,234` over `.56` is a different amount at a
+   glance. It is also short, so it never needed the wrap. */
 .portal-figure {
+  overflow-wrap: normal;
   font-family: var(--font-mono);
   font-size: var(--text-h2);
   font-variant-numeric: tabular-nums;

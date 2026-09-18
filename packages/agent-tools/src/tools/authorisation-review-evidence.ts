@@ -117,6 +117,14 @@ export const authorisationReviewEvidence = defineTool({
   },
 });
 
+const formResponseSchema = z.object({ status: z.string().optional() }).passthrough();
+const claimResponseSchema = z
+  .object({ status: z.string().optional(), id: z.string().optional() })
+  .passthrough();
+const payerProfileResponseSchema = z.object({
+  data: z.array(z.object({ fields: z.array(z.string()) })),
+});
+
 async function reviewCase(
   caseRef: { caseId: string; caseType: string; payerProfile: CodedValue },
   context: { api: ApiClient; principal: AgentPrincipal; credential: AgentCredential }
@@ -131,7 +139,7 @@ async function reviewCase(
       },
       { principal: context.principal, credential: context.credential }
     );
-    caseData = response as Record<string, unknown>;
+    caseData = formResponseSchema.parse(response);
   } else {
     const response = await context.api.call(
       {
@@ -140,7 +148,7 @@ async function reviewCase(
       },
       { principal: context.principal, credential: context.credential }
     );
-    caseData = response as Record<string, unknown>;
+    caseData = claimResponseSchema.parse(response);
   }
 
   // Get the payer profile specification (from configured payer profiles)
@@ -152,7 +160,7 @@ async function reviewCase(
     },
     { principal: context.principal, credential: context.credential }
   );
-  const profileData = profileResponse as { data: Array<{ fields: string[] }> };
+  const profileData = payerProfileResponseSchema.parse(profileResponse);
   const requiredFields = profileData.data[0]?.fields ?? [];
 
   // Build the missing requirements checklist

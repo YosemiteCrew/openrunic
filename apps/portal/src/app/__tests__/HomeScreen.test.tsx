@@ -89,7 +89,7 @@ describe('HomeScreen', () => {
     await userEvent.tab();
     expect(screen.getByRole('link', { name: 'See all appointments' })).toHaveFocus();
     await userEvent.tab();
-    expect(screen.getByRole('link', { name: 'Pay a bill' })).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'See your bills' })).toHaveFocus();
   });
 
   it('stays calm when there is nothing booked, nothing owed and nothing to do', async () => {
@@ -140,6 +140,50 @@ describe('HomeScreen', () => {
     );
 
     expect(await screen.findByText(/Ask the practice when this is due\./)).toBeInTheDocument();
+  });
+
+  it('explains a multi-currency balance without inventing a total or request action', async () => {
+    render(
+      <HomeScreen
+        api={stubApi({
+          getHome: () =>
+            Promise.resolve(
+              homeWith({
+                nextAppointment: null,
+                appointmentRequestsSupported: false,
+                balance: { outstanding: null, dueOn: null, statementCount: 2 },
+              })
+            ),
+        })}
+      />
+    );
+
+    expect(
+      await screen.findByText(/outstanding statements in more than one currency/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Request an appointment' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not call an empty balance multi-currency when another home card is present', async () => {
+    render(
+      <HomeScreen
+        api={stubApi({
+          getHome: () =>
+            Promise.resolve(
+              homeWith({
+                balance: { outstanding: null, dueOn: null, statementCount: 0 },
+                unreadMessages: 1,
+                actionItems: [],
+              })
+            ),
+        })}
+      />
+    );
+
+    expect(await screen.findByText('There is nothing to pay.')).toBeInTheDocument();
+    expect(screen.queryByText(/more than one currency/)).not.toBeInTheDocument();
   });
 
   it('states the loading fact while the summary is on its way', () => {

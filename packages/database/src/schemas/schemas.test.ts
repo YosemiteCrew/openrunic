@@ -1341,6 +1341,14 @@ describe('statementInput', () => {
     accepts(statementInput, validStatement);
   });
 
+  it('accepts an ISO currency', () => {
+    accepts(statementInput, { ...validStatement, currency: 'EUR' });
+  });
+
+  it('rejects a malformed currency', () => {
+    rejects(statementInput, { ...validStatement, currency: 'EURO' });
+  });
+
   it('rejects a pay link with no expiry', () => {
     rejects(statementInput, { ...validStatement, payLinkToken: 'a'.repeat(43) });
   });

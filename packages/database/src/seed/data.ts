@@ -1540,6 +1540,7 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
       id: nextId(),
       tenantId,
       threadId,
+      patientId: String(firstPatient.id),
       senderType: 'PATIENT',
       senderPatientId: String(firstPatient.id),
       body: 'Should I keep using the spacer with the new inhaler?',

@@ -189,6 +189,7 @@ describe('every hand-registered sub-resource route is accounted for', () => {
     { route: 'POST /bff/v0/medications/prescriptions/:id/sign', parent: 'prescriptions' },
     { route: 'POST /bff/v0/medications/prescriptions/:id/transmit', parent: 'prescriptions' },
     { route: 'POST /bff/v0/messages/:id/read', parent: 'messages' },
+    { route: 'POST /bff/v0/portal/messages/:id/replies', parent: 'messageThreads' },
     { route: 'POST /bff/v0/messages/threads/:id/close', parent: 'messageThreads' },
     { route: 'POST /bff/v0/messages/threads/:id/messages', parent: 'messageThreads' },
     { route: 'POST /bff/v0/notes/:id/addenda', parent: 'notes' },

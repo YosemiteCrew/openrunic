@@ -131,6 +131,8 @@ export const statementInput = z
     patientId: uuid,
     status: z.enum(STATEMENT_STATUSES).optional(),
     balanceCents: cents,
+    /** ISO 4217. */
+    currency: z.string().length(3).optional(),
     // Zero is the starting state and has to be expressible: a statement that
     // has never been sent has had no notice, and a minimum of one made that
     // unsayable while the column defaulted to it.

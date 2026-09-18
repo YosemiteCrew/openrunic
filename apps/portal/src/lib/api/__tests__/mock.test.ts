@@ -161,14 +161,14 @@ describe('createMockApi writes', () => {
     expect(receipt.cardLast4).toBe('4242');
     expect(statements[0]?.balance.amountMinor).toBe(0);
     expect(statements[0]?.status).toBe('paid');
-    expect(home.balance.outstanding.amountMinor).toBe(0);
+    expect(home.balance.outstanding?.amountMinor).toBe(0);
   });
 
   it('never drives the account balance below zero when paying a credit statement', async () => {
     await api.payStatement('stmt-2');
     const home = await api.getHome();
 
-    expect(home.balance.outstanding.amountMinor).toBeGreaterThanOrEqual(0);
+    expect(home.balance.outstanding?.amountMinor).toBeGreaterThanOrEqual(0);
   });
 
   it('refuses to pay a statement that is gone', async () => {

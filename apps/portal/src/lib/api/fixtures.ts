@@ -93,7 +93,7 @@ const HEALTH_RECORD: HealthRecord = {
       code: 'E03.9',
       plain: 'Underactive thyroid',
       recordedOn: '2023-11-04',
-      status: 'Being treated',
+      status: 'active',
     },
     {
       id: 'prob-2',
@@ -101,7 +101,7 @@ const HEALTH_RECORD: HealthRecord = {
       code: 'I10',
       plain: 'High blood pressure with no single known cause',
       recordedOn: '2024-05-19',
-      status: 'Being treated',
+      status: 'active',
     },
     {
       id: 'prob-3',
@@ -109,7 +109,7 @@ const HEALTH_RECORD: HealthRecord = {
       code: 'D50.9',
       plain: 'Low iron, which can leave you tired',
       recordedOn: '2022-01-27',
-      status: 'Resolved',
+      status: 'resolved',
     },
   ],
   medications: [
@@ -140,7 +140,7 @@ const HEALTH_RECORD: HealthRecord = {
       substance: 'Penicillin',
       plain: 'A common antibiotic',
       reaction: 'Rash and swelling',
-      severity: 'Severe',
+      severity: 'severe',
       recordedOn: '2016-08-02',
     },
     {
@@ -148,7 +148,7 @@ const HEALTH_RECORD: HealthRecord = {
       substance: 'Pollen',
       plain: 'Grass and tree pollen in spring and summer',
       reaction: 'Sneezing and itchy eyes',
-      severity: 'Mild',
+      severity: 'mild',
       recordedOn: '2015-04-30',
     },
   ],
@@ -193,7 +193,6 @@ const HEALTH_RECORD: HealthRecord = {
       unit: 'mIU/L',
       referenceRange: '0.4 to 4.0 mIU/L',
       range: 'out-of-range',
-      rangeLabel: 'Above the usual range',
       takenOn: '2026-06-09',
     },
     {
@@ -204,7 +203,6 @@ const HEALTH_RECORD: HealthRecord = {
       unit: 'g/L',
       referenceRange: '120 to 150 g/L',
       range: 'in-range',
-      rangeLabel: 'In the usual range',
       takenOn: '2026-06-09',
     },
     {
@@ -215,7 +213,6 @@ const HEALTH_RECORD: HealthRecord = {
       unit: 'nmol/L',
       referenceRange: '',
       range: 'unknown',
-      rangeLabel: 'No usual range recorded',
       takenOn: '2026-06-09',
     },
   ],
@@ -387,6 +384,7 @@ export function buildHomeSummary(fixtures: Fixtures): HomeSummary {
     nextAppointment: copy(fixtures.appointments.upcoming[0] ?? null),
     balance: copy(fixtures.balance),
     unreadMessages,
+    appointmentRequestsSupported: true,
     actionItems: outstandingForms.map((form) => ({
       id: `action-${form.id}`,
       title: form.title,

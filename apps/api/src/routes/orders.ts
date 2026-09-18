@@ -824,6 +824,7 @@ function transitionRoutes(): Hono<AppEnv> {
 
     const row = await repos.messages.create({
       threadId: id,
+      ...(thread.patientId === null ? {} : { patientId: thread.patientId }),
       // The sender comes off the verified principal and never off the body: a
       // message whose author a client could choose is a message the audit
       // trail cannot attribute.
@@ -852,9 +853,9 @@ function transitionRoutes(): Hono<AppEnv> {
     const repos = repositories(c);
     const messages = repos.messages;
     const before = required(await messages.findById(id), NO_MESSAGE);
-    // A message reaches a chart only through its thread - `messageSpec` says so
-    // and declines to perform that join - so the gate is asked about the
-    // thread, in the one place that already has the message in hand.
+    // The message's patient id narrows the repository to the launch
+    // compartment. The thread remains the authoritative parent for the staff
+    // care-relationship gate, so an addressed transition checks it as well.
     //
     // `NO_MESSAGE` decides the refusal where the thread row is genuinely
     // absent, and not the one where the gate refuses: `assertCareRelationship`

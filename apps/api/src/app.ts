@@ -9,11 +9,16 @@ import pkg from '../package.json' with { type: 'json' };
 
 import { agentRouteContracts, agentRoutes } from './agent/routes.js';
 import { createAuditBridge, loadAgentRuntime, type AuditBridge } from './agent/runtime.js';
-import { createAuditChainStore } from './audit/chain-store.js';
+import { createAuditChainStore, type AuditChainStore } from './audit/chain-store.js';
 import { createMemoryAuditSink } from './audit/memory-sink.js';
 import type { AuditSink } from './audit/types.js';
 import type { PrincipalResolver } from './auth/principal.js';
-import { DEMO_PRINCIPALS, createStaticPrincipalResolver } from './auth/static-resolver.js';
+import {
+  DEMO_PORTAL_PATIENT,
+  DEMO_PRINCIPALS,
+  DEMO_TENANT_A,
+  createStaticPrincipalResolver,
+} from './auth/static-resolver.js';
 import type { AdapterRegistry } from '@openrunic/adapters';
 
 import { createDevelopmentAdapters } from './adapters/development.js';
@@ -27,7 +32,8 @@ import { operationOutcomeResponse } from './http/fhir.js';
 import { problemResponse } from './http/problem.js';
 import { buildMiddlewareChain } from './middleware/chain.js';
 import { buildOpenApiDocument } from './openapi/spec.js';
-import { createMemoryRepositoryRegistry } from './repositories/memory.js';
+import { createEmptyDataset, createMemoryRepositoryRegistry } from './repositories/memory.js';
+import { patientSpec } from './repositories/specs/core.js';
 import type { RepositoryRegistry } from './repositories/types.js';
 import { BFF_BASE_PATH, internalRouteContracts, internalRoutes } from './routes/index.js';
 
@@ -138,11 +144,11 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
   // database-less development run can read back the events it just wrote. A
   // second, plausible-looking copy of the audit log would be worse than none.
   const auditStore = createAuditChainStore();
-  const repositories = options.repositories ?? createMemoryRepositoryRegistry({ auditStore });
+  const now = options.now ?? ((): Date => new Date());
+  const repositories = options.repositories ?? createDevelopmentRepositories(auditStore, now);
   const principalResolver =
     options.principalResolver ?? createStaticPrincipalResolver(DEMO_PRINCIPALS);
   const auditSink = options.auditSink ?? createMemoryAuditSink({ store: auditStore });
-  const now = options.now ?? ((): Date => new Date());
   const adapters = options.adapters ?? createDevelopmentAdapters();
 
   const app = new Hono<AppEnv>();
@@ -265,6 +271,31 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
   });
 
   return app;
+}
+
+function createDevelopmentRepositories(
+  auditStore: AuditChainStore,
+  now: () => Date
+): RepositoryRegistry {
+  const dataset = createEmptyDataset();
+  const createdAt = now();
+  dataset.table('Patient').push({
+    ...patientSpec.newRow(
+      {
+        mrn: 'OR-100482',
+        givenName: 'Testina',
+        familyName: 'Patientsson',
+        birthDate: new Date('1994-03-02T00:00:00.000Z'),
+        portalEnabled: true,
+      },
+      { tenantId: DEMO_TENANT_A, now: createdAt, nextId: () => DEMO_PORTAL_PATIENT }
+    ),
+    id: DEMO_PORTAL_PATIENT,
+    tenantId: DEMO_TENANT_A,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  return createMemoryRepositoryRegistry({ dataset, auditStore, clock: { now } });
 }
 
 /**

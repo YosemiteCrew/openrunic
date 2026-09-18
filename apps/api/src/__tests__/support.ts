@@ -44,8 +44,12 @@ export const TOKENS = {
   portalA: 'dev-portal-a',
   /** A patient principal with no launch context, so no compartment is pinned. */
   portalNoCompartmentA: 'test-portal-no-compartment',
-  /** A portal role whose actor_type defaulted to user, and carries no compartment. */
+  /** A portal role whose actor type is user despite an otherwise valid launch compartment. */
   portalUserActorA: 'test-portal-user-actor',
+  /** A patient actor with a launch compartment but without the portal role. */
+  portalNoRoleA: 'test-portal-no-role',
+  /** A patient principal whose subject and launch compartment disagree. */
+  portalMismatchedCompartmentA: 'test-portal-mismatched-compartment',
   adminA: 'test-admin-a',
   /** A second administrator in the same organisation as `adminA`. */
   secondAdminA: 'test-second-admin-a',
@@ -354,13 +358,26 @@ export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
 };
 
 /**
- * The same portal identity again, but with the actor type set to `user`. The
- * OIDC resolver refuses this shape too; an injected resolver can still supply
- * it, so the route-level role backstop stays independently exercised.
+ * The same portal identity again, but with the actor type set to `user`. Every
+ * other portal predicate is satisfied so this exercises the actor check alone.
  */
 export const PORTAL_USER_ACTOR_PRINCIPAL: Principal = {
   ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
   actorType: 'user',
+  compartmentPatientId: DEMO_PORTAL_PATIENT,
+};
+
+/** A patient launch with no portal role, exercising the role check alone. */
+export const PORTAL_NO_ROLE_PRINCIPAL: Principal = {
+  ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
+  roles: ['admin'],
+  compartmentPatientId: DEMO_PORTAL_PATIENT,
+};
+
+/** A patient-shaped principal whose asserted identity and launch chart disagree. */
+export const PORTAL_MISMATCHED_COMPARTMENT_PRINCIPAL: Principal = {
+  ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
+  compartmentPatientId: testId(2),
 };
 
 /**
@@ -447,6 +464,8 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
       [TOKENS.portalNoCompartmentA, PORTAL_NO_COMPARTMENT_PRINCIPAL],
       [TOKENS.portalUserActorA, PORTAL_USER_ACTOR_PRINCIPAL],
+      [TOKENS.portalNoRoleA, PORTAL_NO_ROLE_PRINCIPAL],
+      [TOKENS.portalMismatchedCompartmentA, PORTAL_MISMATCHED_COMPARTMENT_PRINCIPAL],
       [TOKENS.siteReaderA, SITE_READER_PRINCIPAL],
       [TOKENS.auditorA, AUDITOR_PRINCIPAL],
     ])

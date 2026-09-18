@@ -229,13 +229,6 @@ export function createMemoryCollection<
     },
 
     async create(input: TCreate): Promise<ScopedRow<M>> {
-      const unique = spec.uniqueBy;
-      if (unique !== undefined && mine(false).some((row) => unique.matches(row, input))) {
-        // Mirrors the table's unique constraint. Raised here rather than left
-        // to the handler so both implementations fail the same way.
-        throw ApiError.conflict(unique.message(input));
-      }
-
       const now = clock.now();
       const context: RowContext = { tenantId, now, nextId };
       const columns = spec.newRow(input, context);
@@ -249,6 +242,20 @@ export function createMemoryCollection<
         createdAt: now,
         updatedAt: now,
       } as ScopedRow<M>;
+
+      if (!inScope(row, false)) {
+        throw ApiError.notFound('No such patient.');
+      }
+
+      const unique = spec.uniqueBy;
+      if (
+        unique !== undefined &&
+        mine(false).some((candidate) => unique.matches(candidate, input))
+      ) {
+        // Mirrors the table's unique constraint. Raised here rather than left
+        // to the handler so both implementations fail the same way.
+        throw ApiError.conflict(unique.message(input));
+      }
 
       // Every amendment's target is resolved before anything is written, which
       // is what makes a refused patch leave nothing behind. There is no

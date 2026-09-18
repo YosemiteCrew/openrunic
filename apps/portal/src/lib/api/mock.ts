@@ -145,10 +145,12 @@ export function createMockApi(fixtures: Fixtures = buildFixtures()): PortalApi {
       const paid = statement.balance.amountMinor;
       statement.balance = { ...statement.balance, amountMinor: 0 };
       statement.status = 'paid';
-      fixtures.balance.outstanding = {
-        ...fixtures.balance.outstanding,
-        amountMinor: Math.max(0, fixtures.balance.outstanding.amountMinor - paid),
-      };
+      if (fixtures.balance.outstanding !== null) {
+        fixtures.balance.outstanding = {
+          ...fixtures.balance.outstanding,
+          amountMinor: Math.max(0, fixtures.balance.outstanding.amountMinor - paid),
+        };
+      }
 
       receiptCounter += 1;
       return Promise.resolve({

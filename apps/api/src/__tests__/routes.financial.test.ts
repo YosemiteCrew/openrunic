@@ -289,6 +289,7 @@ function makeStatementRow(overrides: Partial<StatementRow> = {}): StatementRow {
     patientId: PATIENT_ID,
     status: 'DRAFT',
     balanceCents: 2_500,
+    currency: 'USD',
     dunningCycle: 0,
     lastNoticeAt: null,
     holdUntil: null,

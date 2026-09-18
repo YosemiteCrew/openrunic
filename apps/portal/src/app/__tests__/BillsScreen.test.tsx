@@ -62,7 +62,7 @@ describe('BillsScreen', () => {
     const statements = await stubApi().getStatements();
     const inEuros = statements.map((statement) => ({
       ...statement,
-      total: { ...statement.total, currency: 'EUR' },
+      total: statement.total === null ? null : { ...statement.total, currency: 'EUR' },
       balance: { ...statement.balance, currency: 'EUR' },
       lines: statement.lines.map((line) => ({
         ...line,
@@ -156,6 +156,23 @@ describe('BillsScreen', () => {
     await userEvent.click(second as HTMLElement);
 
     expect(screen.queryByRole('button', { name: 'Pay this statement' })).not.toBeInTheDocument();
+  });
+
+  it('lists a read-only statement without invented total, due date, or detail action', async () => {
+    const statements = await stubApi().getStatements();
+    const summary = {
+      ...(statements[0] as (typeof statements)[number]),
+      dueOn: null,
+      total: null,
+      detailsAvailable: false,
+      paymentAvailable: false,
+    };
+
+    render(<BillsScreen api={stubApi({ getStatements: () => Promise.resolve([summary]) })} />);
+
+    expect(await screen.findByText('No due date recorded')).toBeInTheDocument();
+    expect(screen.queryByText('Total')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'See what this was for' })).not.toBeInTheDocument();
   });
 
   it('goes back to the list from the detail', async () => {

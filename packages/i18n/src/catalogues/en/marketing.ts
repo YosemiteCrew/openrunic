@@ -206,7 +206,7 @@ export const marketing: Messages = {
     'The home screen answers the two questions a patient actually opens a portal with: what is next, and is anything waiting on me. Appointments, upcoming and past, sit on their own screen.',
   'marketing.patients.portal.record.title': 'Your health record, in words',
   'marketing.patients.portal.record.body':
-    'Results, conditions, medicines, allergies, vaccinations and documents. A coded term never appears on its own: the plain-language wording sits beside it, so a diagnosis code is read as the thing it means. A measured value never appears on its own either, but with its unit, its usual range and a labelled verdict.',
+    'Results, conditions, medicines, allergies, vaccinations and documents. When the record carries patient-friendly wording, it sits beside the clinical term. A measured value never appears on its own, but with its unit, its recorded range and a labelled range state.',
   'marketing.patients.portal.messages.title': 'Messages, forms and bills',
   'marketing.patients.portal.messages.body':
     'Secure messaging with the practice, intake and consent forms to complete, and balances and statements. A result you do not understand opens a way to ask about it rather than leaving you to find the message box yourself.',
@@ -218,7 +218,7 @@ export const marketing: Messages = {
     'The service speaks FHIR R4, the interoperability standard the regulatory work in both the United States and the European Union is written around. A record kept that way can be read by any other system that speaks it, which is the difference between holding your data and holding a printout of it.',
   'marketing.patients.ownership.interpretation.title': 'Nothing is interpreted for you',
   'marketing.patients.ownership.interpretation.body':
-    'The project has already decided, in writing and before building the feature, that plain-language wording comes from a curated mapping of the codes already in your record, and never from a model deciding what a value means for you. Software here explains a term. It does not tell you how worried to be.',
+    'The project has already decided, in writing and before building the feature, that patient-friendly wording must come from the record or a curated mapping, never from a model deciding what a value means for you. Missing wording stays missing rather than being invented, and the software does not tell you how worried to be.',
   'marketing.patients.ownership.product.title': 'You are not the product',
   'marketing.patients.ownership.product.body':
     'openrunic transmits nothing to the project or its maintainers. There is no analytics pipeline reading a chart, and the project has committed that any future telemetry must be opt-in, documented, and structurally incapable of carrying health data.',

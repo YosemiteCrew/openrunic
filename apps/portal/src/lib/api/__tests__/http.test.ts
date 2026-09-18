@@ -64,7 +64,7 @@ describe('createHttpApi', () => {
     expect(withBody?.body).toBe(JSON.stringify({ body: 'Hello.' }));
 
     vi.mocked(fetchImpl).mockClear();
-    await api.cancelAppointment('appt-1');
+    await api.getPatient();
     const withoutBody = vi.mocked(fetchImpl).mock.calls[0]?.[1];
     expect(withoutBody?.headers).not.toHaveProperty('content-type');
   });
@@ -73,10 +73,10 @@ describe('createHttpApi', () => {
     const fetchImpl = fetchStub();
     const api = createHttpApi({ baseUrl: BASE, fetchImpl });
 
-    await api.payStatement('../../admin');
+    await api.sendMessage('../../admin', 'Hello.');
 
     const [url] = vi.mocked(fetchImpl).mock.calls[0] ?? [];
-    expect(url).toBe(`${BASE}/portal/statements/..%2F..%2Fadmin/payment`);
+    expect(url).toBe(`${BASE}/portal/messages/..%2F..%2Fadmin/replies`);
   });
 
   it('throws with the status when the response is not ok', async () => {
@@ -93,26 +93,43 @@ describe('createHttpApi', () => {
     const fetchImpl = fetchStub(() => new Response(null, { status: 204 }));
     const api = createHttpApi({ baseUrl: BASE, fetchImpl });
 
-    await expect(api.submitForm('form-1', { 'q-1': 'Yes' })).resolves.toBeUndefined();
+    await expect(api.sendMessage('thread-1', 'Hello.')).resolves.toBeUndefined();
   });
 
-  it('covers the remaining reads and writes', async () => {
+  it('covers the remaining reads and refuses unsupported live writes locally', async () => {
     const fetchImpl = fetchStub();
     const api = createHttpApi({ baseUrl: BASE, fetchImpl });
 
     await api.getAppointments();
     await api.getForms();
     await api.getStatements();
-    await api.saveForm('form-1', { 'q-1': 'Yes' });
-    await api.requestAppointment({ reason: 'Cough', preferredTimes: 'Mornings' });
 
     expect(vi.mocked(fetchImpl).mock.calls.map(([url]) => url)).toEqual([
       `${BASE}/portal/appointments`,
       `${BASE}/portal/forms`,
       `${BASE}/portal/statements`,
-      `${BASE}/portal/forms/form-1/draft`,
-      `${BASE}/portal/appointment-requests`,
     ]);
+
+    for (const operation of [
+      api.cancelAppointment('appt-1'),
+      api.saveForm('form-1', {}),
+      api.submitForm('form-1', {}),
+      api.payStatement('stmt-1'),
+      api.requestAppointment({ reason: 'Cough', preferredTimes: 'Mornings' }),
+    ]) {
+      await expect(operation).rejects.toMatchObject({ status: 405 });
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('marks every request as same-origin application traffic', async () => {
+    const fetchImpl = fetchStub();
+
+    await createHttpApi({ baseUrl: BASE, fetchImpl }).getHome();
+
+    expect(vi.mocked(fetchImpl).mock.calls[0]?.[1]?.headers).toMatchObject({
+      'x-openrunic-portal': 'same-origin',
+    });
   });
 
   it('falls back to the platform fetch when none is injected', async () => {

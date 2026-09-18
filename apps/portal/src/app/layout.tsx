@@ -3,8 +3,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import '@openrunic/ui/styles.css';
 import './globals.css';
-import { PortalChrome } from '@/components/PortalChrome';
-import { AssistantProvider } from '@/components/assistant/AssistantProvider';
+import { PortalFrame } from '@/components/PortalFrame';
 import { resolveLocale } from '@/lib/i18n/locale';
 import { MessagesProvider } from '@/lib/i18n/messages';
 
@@ -44,9 +43,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang={locale}>
       <body>
         <MessagesProvider locale={locale}>
-          <AssistantProvider>
-            <PortalChrome>{children}</PortalChrome>
-          </AssistantProvider>
+          <PortalFrame>{children}</PortalFrame>
         </MessagesProvider>
       </body>
     </html>

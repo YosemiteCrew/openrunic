@@ -37,14 +37,14 @@ describe('HealthRecordScreen', () => {
     render(<HealthRecordScreen api={stubApi()} />);
 
     expect(await screen.findByText('6.8 mIU/L')).toBeInTheDocument();
-    expect(screen.getByText('Above the usual range')).toBeInTheDocument();
+    expect(screen.getByText('Outside the recorded range')).toBeInTheDocument();
     expect(screen.getByText('Usual range: 0.4 to 4.0 mIU/L')).toBeInTheDocument();
 
     expect(screen.getByText('131 g/L')).toBeInTheDocument();
-    expect(screen.getByText('In the usual range')).toBeInTheDocument();
+    expect(screen.getByText('Within the recorded range')).toBeInTheDocument();
 
     // A result with no range says so rather than implying it is normal.
-    expect(screen.getByText('No usual range recorded')).toBeInTheDocument();
+    expect(screen.getByText('Range status not recorded')).toBeInTheDocument();
     expect(screen.getByText('No usual range was recorded for this test.')).toBeInTheDocument();
   });
 
@@ -53,6 +53,47 @@ describe('HealthRecordScreen', () => {
 
     expect(await screen.findByText('75 micrograms')).toBeInTheDocument();
     expect(screen.getByText('5 milligrams')).toBeInTheDocument();
+  });
+
+  it('renders missing live clinical detail as absent rather than guessed', async () => {
+    const record = await stubApi().getHealthRecord();
+    render(
+      <HealthRecordScreen
+        api={recordWith({
+          problems: [{ ...(record.problems[0] as (typeof record.problems)[number]), plain: null }],
+          medications: [
+            {
+              ...(record.medications[0] as (typeof record.medications)[number]),
+              plain: null,
+              strength: null,
+              unit: null,
+              instruction: null,
+              prescribedBy: null,
+            },
+          ],
+          allergies: [
+            {
+              ...(record.allergies[0] as (typeof record.allergies)[number]),
+              plain: null,
+              reaction: null,
+              severity: null,
+            },
+          ],
+          immunisations: [
+            {
+              ...(record.immunisations[0] as (typeof record.immunisations)[number]),
+              plain: null,
+              doseLabel: null,
+            },
+          ],
+        })}
+      />
+    );
+
+    expect(await screen.findByText('Hypothyroidism, E03.9')).toBeInTheDocument();
+    expect(screen.queryByText('Underactive thyroid')).not.toBeInTheDocument();
+    expect(screen.getByText(/^Started /)).toBeInTheDocument();
+    expect(screen.queryByText(/^Prescribed by /)).not.toBeInTheDocument();
   });
 
   it('offers a way out of every result, and opens it', async () => {

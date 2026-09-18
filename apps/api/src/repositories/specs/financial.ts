@@ -116,6 +116,7 @@ const REMITTANCE_LINE_DEFAULTS = {
 
 const STATEMENT_DEFAULTS = {
   status: 'DRAFT',
+  currency: 'USD',
   // Zero notices, because none has been sent. This used to be 1, which claimed
   // a notice for every statement ever created, including ones still in draft.
   dunningCycle: 0,
@@ -1271,6 +1272,7 @@ export const statementSpec: CollectionSpec<
       patientId: input.patientId,
       status: input.status ?? STATEMENT_DEFAULTS.status,
       balanceCents: input.balanceCents,
+      currency: input.currency ?? STATEMENT_DEFAULTS.currency,
       dunningCycle: input.dunningCycle ?? STATEMENT_DEFAULTS.dunningCycle,
       periodStart: input.periodStart ?? null,
       periodEnd: input.periodEnd ?? null,

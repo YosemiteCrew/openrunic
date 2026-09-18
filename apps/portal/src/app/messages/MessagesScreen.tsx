@@ -47,7 +47,7 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
           <li className={`portal-message portal-message--${message.author}`} key={message.id}>
             <p className="portal-message__who">
               {t('portal.messages.conversation.who', {
-                author: message.authorName,
+                author: message.authorName ?? t('portal.messages.careTeam'),
                 when: formatDateTime(t, message.sentAt),
               })}
             </p>
@@ -56,42 +56,50 @@ function Conversation({ thread, api }: Readonly<ConversationProps>) {
         ))}
       </ul>
 
-      {/* Above the box, always. */}
-      <Notice title={t('portal.messages.notice.title')}>{t('portal.messages.notice.body')}</Notice>
+      {thread.replySupported === false ? (
+        <p className="portal-record__meta">{t('portal.messages.conversation.closed')}</p>
+      ) : (
+        <>
+          {/* Above the box, always. */}
+          <Notice title={t('portal.messages.notice.title')}>
+            {t('portal.messages.notice.body')}
+          </Notice>
 
-      <div className="portal-compose">
-        <label className="portal-field-label" htmlFor="compose-body">
-          {t('portal.messages.compose.label')}
-        </label>
-        <textarea
-          className="portal-textarea"
-          id="compose-body"
-          name="body"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={t('portal.messages.compose.placeholder')}
-        />
+          <div className="portal-compose">
+            <label className="portal-field-label" htmlFor="compose-body">
+              {t('portal.messages.compose.label')}
+            </label>
+            <textarea
+              className="portal-textarea"
+              id="compose-body"
+              name="body"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={t('portal.messages.compose.placeholder')}
+            />
 
-        <div className="portal-actions">
-          <Button iconLeft="send" disabled={draft.trim() === ''} onClick={submit}>
-            {t(
-              send.status === 'pending'
-                ? 'portal.messages.compose.sending'
-                : 'portal.messages.compose.send'
-            )}
-          </Button>
-        </div>
+            <div className="portal-actions">
+              <Button iconLeft="send" disabled={draft.trim() === ''} onClick={submit}>
+                {t(
+                  send.status === 'pending'
+                    ? 'portal.messages.compose.sending'
+                    : 'portal.messages.compose.send'
+                )}
+              </Button>
+            </div>
 
-        {send.status === 'done' ? (
-          <output className="portal-record__meta">{t('portal.messages.compose.sent')}</output>
-        ) : null}
+            {send.status === 'done' ? (
+              <output className="portal-record__meta">{t('portal.messages.compose.sent')}</output>
+            ) : null}
 
-        {send.status === 'failed' ? (
-          <p className="portal-record__meta" role="alert">
-            {t('portal.messages.compose.failed')}
-          </p>
-        ) : null}
-      </div>
+            {send.status === 'failed' ? (
+              <p className="portal-record__meta" role="alert">
+                {t('portal.messages.compose.failed')}
+              </p>
+            ) : null}
+          </div>
+        </>
+      )}
     </Card>
   );
 }
@@ -156,7 +164,7 @@ export function MessagesScreen({ api = getPortalApi() }: Readonly<MessagesScreen
                         </span>
                         <span className="portal-thread-button__meta">
                           {t('portal.messages.threads.meta', {
-                            correspondent: thread.correspondent,
+                            correspondent: thread.correspondent ?? t('portal.messages.careTeam'),
                             when: formatDateTime(t, thread.lastMessageAt),
                           })}
                         </span>

@@ -1069,6 +1069,7 @@ model Patient {
   resultObservations   ResultObservation[]
   tasks                Task[]
   messageThreads       MessageThread[]
+  messages             Message[]
   chargeItems          ChargeItem[]
   claims               Claim[]
   payments             Payment[]
@@ -1977,6 +1978,7 @@ model Message {
   id              String            @id @db.Uuid
   tenantId        String            @db.Uuid
   threadId        String            @db.Uuid
+  patientId       String?           @db.Uuid
   senderType      MessageSenderType @default(USER)
   senderUserId    String?           @db.Uuid
   senderPatientId String?           @db.Uuid
@@ -1988,9 +1990,11 @@ model Message {
 
   organisation Organisation  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread       MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  patient      Patient?      @relation(fields: [patientId], references: [id], onDelete: Restrict)
   senderUser   User?         @relation(fields: [senderUserId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, threadId, sentAt])
+  @@index([tenantId, patientId, sentAt])
   @@index([tenantId, senderUserId, sentAt])
 }
 
@@ -2290,6 +2294,8 @@ model Statement {
   patientId        String             @db.Uuid
   status           StatementStatus    @default(DRAFT)
   balanceCents     Int
+  /// ISO 4217 currency for every amount on this statement.
+  currency         String             @default("USD")
   /// How many notices have gone out. Zero until the first one does.
   dunningCycle     Int                @default(0)
   /// When the last notice went out, which is what the interval is measured from.

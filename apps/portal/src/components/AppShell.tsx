@@ -13,7 +13,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Icon } from '@openrunic/ui';
+import { Button, Icon } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
 import { isActiveRoute, navItemsFor } from '@/lib/nav';
 import type { Patient } from '@/lib/api/types';
@@ -30,10 +30,16 @@ export interface AppShellProps {
    * portal renders before anything has been asked is the one it has always had.
    */
   assistantEnabled?: boolean;
+  onSignOut?: () => void;
   children: ReactNode;
 }
 
-export function AppShell({ patient, assistantEnabled = false, children }: Readonly<AppShellProps>) {
+export function AppShell({
+  patient,
+  assistantEnabled = false,
+  onSignOut,
+  children,
+}: Readonly<AppShellProps>) {
   const t = useTranslator();
   const pathname = usePathname();
   const items = navItemsFor(assistantEnabled);
@@ -56,6 +62,11 @@ export function AppShell({ patient, assistantEnabled = false, children }: Readon
             </span>
           </p>
         ) : null}
+        {onSignOut === undefined ? null : (
+          <Button variant="ghost" type="button" onClick={onSignOut}>
+            {t('portal.auth.signOut')}
+          </Button>
+        )}
       </header>
 
       <nav className="portal__nav" aria-label={t('portal.navLabel')}>

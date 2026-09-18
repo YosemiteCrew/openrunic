@@ -196,7 +196,10 @@ jobs:
           name: dist-packages
           path: dist-packages.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          # Static and test jobs consume this archive without rebuilding it.
+          # Match GitHub's 30-day job re-run window so a failed-only consumer
+          # re-run can still download the successful build job's output.
+          retention-days: 30
 
   static:
     name: Static (${{ matrix.workspace }})

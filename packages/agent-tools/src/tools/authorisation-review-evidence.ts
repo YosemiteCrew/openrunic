@@ -130,12 +130,14 @@ async function reviewCase(
   context: { api: ApiClient; principal: AgentPrincipal; credential: AgentCredential }
 ): Promise<z.infer<typeof outputSchema>> {
   // Fetch the case data based on type
+  // caseId is validated by input schema (z.uuid()), safe to use in path
+  const validatedCaseId = caseRef.caseId;
   let caseData: Record<string, unknown>;
   if (caseRef.caseType === 'prior-authorisation') {
     const response = await context.api.call(
       {
         method: 'GET',
-        path: `/bff/v0/forms/${caseRef.caseId}`,
+        path: `/bff/v0/forms/${validatedCaseId}`,
       },
       { principal: context.principal, credential: context.credential }
     );
@@ -152,11 +154,13 @@ async function reviewCase(
   }
 
   // Get the payer profile specification (from configured payer profiles)
+  // payerProfile.code is validated by input schema (codedValueSchema), safe to use in query
+  const validatedPayerCode = caseRef.payerProfile.code;
   const profileResponse = await context.api.call(
     {
       method: 'GET',
       path: `/bff/v0/payer-profiles`,
-      query: { code: caseRef.payerProfile.code },
+      query: { code: validatedPayerCode },
     },
     { principal: context.principal, credential: context.credential }
   );

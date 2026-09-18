@@ -2,6 +2,18 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Button } from '../Button';
 import { Card } from './Card';
 
+/**
+ * Regression guard for #501/#503: a single unbroken token longer than the card's
+ * width must not overflow. The wrapper is 320px (narrower than any supported
+ * viewport), and the title is a 500-character unbroken string. With
+ * `overflow-wrap: anywhere` the title wraps and `scrollWidth === clientWidth`.
+ * Without it, the title pushes the card wide and the assertion fails.
+ *
+ * Mutation check: remove `overflow-wrap: anywhere` from `.or-card__title` in
+ * Card.css and this story will fail in Chromium (real layout).
+ */
+const UNBROKEN_TITLE = 'x'.repeat(500);
+
 const meta = {
   title: 'Surfaces/Card',
   component: Card,
@@ -75,6 +87,42 @@ export const NestedDataSurface: Story = {
       </Card>
     </Card>
   ),
+};
+
+/**
+ * Regression guard for #501/#503: the title is a 500-character unbroken string
+ * inside a 320px wrapper. With `overflow-wrap: anywhere` the title wraps and
+ * `scrollWidth <= clientWidth`. Without it, the card overflows and the assertion
+ * fails in Chromium.
+ *
+ * Mutation check: remove `overflow-wrap: anywhere` from `.or-card__title` in
+ * Card.css and this story will fail.
+ */
+export const NoOverflowOnLongUnbrokenTitle: Story = {
+  parameters: { layout: 'fullscreen' },
+  render: () => (
+    <div
+      style={{
+        width: '320px',
+        margin: 'var(--space-4) auto',
+        border: '1px solid red',
+      }}
+      data-testid="overflow-wrapper"
+    >
+      <Card title={UNBROKEN_TITLE} overline="Overflow guard" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const wrapper = canvasElement.querySelector('[data-testid="overflow-wrapper"]');
+    const title = wrapper?.querySelector('.or-card__title');
+    if (!wrapper || !title) {
+      throw new Error('Test elements not found');
+    }
+    // The card's content (title) must not overflow the wrapper
+    expect(wrapper.scrollWidth).toBeLessThanOrEqual(wrapper.clientWidth);
+    // The title itself must not overflow its container
+    expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth);
+  },
 };
 
 /**

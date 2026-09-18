@@ -25,6 +25,7 @@ export const TOOL_ALLOWLIST: ToolAllowlist = {
     clinician: [
       'chart.search',
       'priorauth.assemblePacket',
+      'authorisation.reviewEvidence',
       'inbox.classify',
       'appointments.findSlots',
       'appointments.propose',
@@ -35,6 +36,7 @@ export const TOOL_ALLOWLIST: ToolAllowlist = {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
       'coding.suggest',
     ],

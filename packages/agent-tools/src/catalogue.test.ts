@@ -35,6 +35,12 @@ const EXPECTED: Readonly<Record<string, Expected>> = {
     approval: 'always',
     roles: ['biller'],
   },
+  'authorisation.reviewEvidence': {
+    tier: 'READ',
+    trustClass: 'reader',
+    approval: 'never',
+    roles: ['biller', 'clinician'],
+  },
   'priorauth.assemblePacket': {
     tier: 'DRAFT',
     trustClass: 'writer',
@@ -108,6 +114,7 @@ describe('the v1 catalogue', () => {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
       'forms.draftDefinition',
       'inbox.classify',

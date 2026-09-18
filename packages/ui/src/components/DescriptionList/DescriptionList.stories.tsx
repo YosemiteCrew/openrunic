@@ -1,9 +1,28 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { expect } from 'storybook/test';
 import { Badge } from '../Badge';
 import { Card } from '../Card';
 import { Tag } from '../Tag';
 import { DescriptionList } from './DescriptionList';
 import type { DescriptionListItem } from './DescriptionList';
+
+/**
+ * Regression guard for #503: a single unbroken mono value longer than the
+ * description list's width must not overflow. The wrapper is 320px, and the
+ * value is a 500-character unbroken string. With `overflow-wrap: anywhere` on
+ * `.or-description-list__pair > *` the value wraps and `scrollWidth ===
+ * clientWidth`. Without it, the value pushes the list wide and the assertion
+ * fails.
+ *
+ * Mutation check: remove `overflow-wrap: anywhere` from
+ * `.or-description-list__pair > *` in DescriptionList.css and this story will
+ * fail in Chromium (real layout).
+ */
+const UNBROKEN_VALUE = 'x'.repeat(500);
+
+const overflowItems: DescriptionListItem[] = [
+  { term: 'Long identifier', value: UNBROKEN_VALUE, mono: true },
+];
 
 const patientHeader: DescriptionListItem[] = [
   { term: 'Name', value: 'Testina Patientsson' },
@@ -94,4 +113,42 @@ export const Responsive: Story = {
       <DescriptionList {...args} />
     </div>
   ),
+};
+
+/**
+ * Regression guard for #503: the value is a 500-character unbroken string
+ * inside a 320px wrapper. With `overflow-wrap: anywhere` on
+ * `.or-description-list__pair > *` the value wraps and
+ * `scrollWidth <= clientWidth`. Without it, the list overflows and the assertion
+ * fails in Chromium.
+ *
+ * Mutation check: remove `overflow-wrap: anywhere` from
+ * `.or-description-list__pair > *` in DescriptionList.css and this story will fail.
+ */
+export const NoOverflowOnLongUnbrokenValue: Story = {
+  parameters: { layout: 'fullscreen' },
+  args: { items: overflowItems },
+  render: (args) => (
+    <div
+      style={{
+        width: '320px',
+        margin: 'var(--space-4) auto',
+        border: '1px solid red',
+      }}
+      data-testid="overflow-wrapper"
+    >
+      <DescriptionList {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const wrapper = canvasElement.querySelector('[data-testid="overflow-wrapper"]');
+    const value = wrapper?.querySelector('.or-description-list__value');
+    if (!wrapper || !value) {
+      throw new Error('Test elements not found');
+    }
+    // The wrapper must not overflow
+    expect(wrapper.scrollWidth).toBeLessThanOrEqual(wrapper.clientWidth);
+    // The value cell must not overflow its container
+    expect(value.scrollWidth).toBeLessThanOrEqual(value.clientWidth);
+  },
 };

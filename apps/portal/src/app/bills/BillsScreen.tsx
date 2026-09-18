@@ -20,7 +20,13 @@ import { AsyncBoundary } from '@/components/AsyncBoundary';
 import { Money } from '@/components/Money';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
-import type { PortalApi, Receipt, Statement, StatementStatus } from '@/lib/api/types';
+import type {
+  Money as MoneyValue,
+  PortalApi,
+  Receipt,
+  Statement,
+  StatementStatus,
+} from '@/lib/api/types';
 import { useTranslator } from '@/lib/i18n/messages';
 import { formatDate, formatDateTime, formatMoney, formatMoneyWithCode } from '@/lib/format';
 import { useAction, useAsync } from '@/lib/useAsync';
@@ -68,7 +74,7 @@ function lineColumns(t: Translator, currency: string): TableColumn[] {
 }
 
 interface StatementDetailProps {
-  statement: Statement;
+  statement: Statement & { total: MoneyValue };
   api: PortalApi;
   onClose: () => void;
 }
@@ -145,7 +151,9 @@ function StatementDetail({ statement, api, onClose }: Readonly<StatementDetailPr
       ) : null}
 
       <div className="portal-actions">
-        {statement.status === 'due' && receipt === undefined ? (
+        {statement.status === 'due' &&
+        statement.paymentAvailable !== false &&
+        receipt === undefined ? (
           <Button iconLeft="credit-card" onClick={() => setConfirming(true)}>
             {t('portal.bills.pay.action')}
           </Button>
@@ -212,7 +220,12 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
         }
       >
         {(statements) => {
-          const open = statements.find((statement) => statement.id === openId);
+          const open = statements.find(
+            (statement): statement is Statement & { total: MoneyValue } =>
+              statement.id === openId &&
+              statement.detailsAvailable !== false &&
+              statement.total !== null
+          );
 
           if (open) {
             return (
@@ -255,7 +268,11 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
                       <dt className="portal-data-list__term">
                         {t('portal.bills.statement.dueBy')}
                       </dt>
-                      <dd className="portal-data-list__value">{formatDate(t, statement.dueOn)}</dd>
+                      <dd className="portal-data-list__value">
+                        {statement.dueOn === null
+                          ? t('portal.bills.statement.noDueDate')
+                          : formatDate(t, statement.dueOn)}
+                      </dd>
                     </div>
                     <div className="portal-data-list__row">
                       <dt className="portal-data-list__term">
@@ -267,15 +284,17 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
                     </div>
                   </dl>
 
-                  <div className="portal-actions">
-                    <Button
-                      iconLeft="receipt"
-                      variant={statement.status === 'due' ? 'primary' : 'secondary'}
-                      onClick={() => setOpenId(statement.id)}
-                    >
-                      {t('portal.bills.statement.open')}
-                    </Button>
-                  </div>
+                  {statement.detailsAvailable !== false && statement.total !== null ? (
+                    <div className="portal-actions">
+                      <Button
+                        iconLeft="receipt"
+                        variant={statement.status === 'due' ? 'primary' : 'secondary'}
+                        onClick={() => setOpenId(statement.id)}
+                      >
+                        {t('portal.bills.statement.open')}
+                      </Button>
+                    </div>
+                  ) : null}
                 </Card>
               ))}
             </div>

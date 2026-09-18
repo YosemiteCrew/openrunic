@@ -4,6 +4,12 @@
 
 Accepted
 
+Amended 2026-09-18 in two implementation facts only. Statements now persist an ISO 4217 currency,
+so `bills.list` names the code beside every amount rather than returning a bare figure. The live
+portal shows patient-friendly wording when the record stores it and otherwise preserves the
+recorded term rather than inventing a gloss. Neither change widens the assistant's three grants or
+allows it to retrieve measured results.
+
 Discharges [ADR-0005](0005-agentic-layer.md) rule 7, which reserved this decision for its own
 record. ADR-0005 is not amended and remains Accepted in full.
 

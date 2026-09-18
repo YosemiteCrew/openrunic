@@ -14,7 +14,9 @@ import { useCallback } from 'react';
 import { AppShell } from './AppShell';
 import { useAssistant } from './assistant/AssistantProvider';
 import { getPortalApi } from '@/lib/api';
+import { isLiveMode } from '@/lib/api/config';
 import type { PortalApi } from '@/lib/api/types';
+import { endSession, returnToSignIn } from '@/lib/auth/client';
 import { useAsync } from '@/lib/useAsync';
 
 export interface PortalChromeProps {
@@ -27,13 +29,20 @@ export function PortalChrome({ children, api = getPortalApi() }: Readonly<Portal
   const load = useCallback(() => api.getPatient(), [api]);
   const { state } = useAsync(load);
   const { availability } = useAssistant();
+  const signOut = useCallback(() => {
+    void endSession().finally(() => returnToSignIn());
+  }, []);
 
   /* A failed identity read must not blank the portal: the sections still work, they just
      go unnamed, so this reads the ready state and ignores the other two. */
   const patient = state.status === 'ready' ? state.data : undefined;
 
   return (
-    <AppShell assistantEnabled={availability.status === 'enabled'} patient={patient}>
+    <AppShell
+      assistantEnabled={availability.status === 'enabled'}
+      patient={patient}
+      onSignOut={isLiveMode() ? signOut : undefined}
+    >
       {children}
     </AppShell>
   );

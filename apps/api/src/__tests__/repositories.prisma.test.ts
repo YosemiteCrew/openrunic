@@ -465,6 +465,35 @@ describe('the patient compartment', () => {
     // not be sent at all.
     expect(h.port.calls).toEqual([]);
   });
+
+  it('confines creates to the launch context before writing', async () => {
+    const h = harness(testId(1));
+    const collection = createPrismaCollection(appointmentSpec, h.port, h.scope);
+
+    await expect(
+      collection.create({
+        facilityId: DEMO_FACILITY_A,
+        patientId: testId(2),
+        providerId: testId(900),
+        typeCode: 'OFFICE-30',
+        typeDisplay: 'Office visit, 30 minutes',
+        start: new Date('2026-08-14T15:00:00.000Z'),
+        end: new Date('2026-08-14T15:30:00.000Z'),
+        durationMinutes: 30,
+      })
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(h.dataset.table('Appointment')).toHaveLength(0);
+    expect(h.port.calls).toEqual([]);
+  });
+
+  it('refuses closed-compartment creates without querying', async () => {
+    const h = harness(testId(1));
+    const collection = createPrismaCollection(closedSpec(), h.port, h.scope);
+
+    await expect(collection.create(undefined as never)).rejects.toMatchObject({ status: 404 });
+    expect(h.port.calls).toEqual([]);
+  });
 });
 
 describe('composite writes', () => {

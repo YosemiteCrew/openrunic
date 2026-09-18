@@ -94,6 +94,7 @@ function pageOfOneForeignRow(): unknown {
         sigText: null,
         effectiveStart: null,
         balanceCents: 4200,
+        currency: 'USD',
         type: { display: 'Follow-up' },
         start: '2026-03-04T09:00:00.000Z',
         durationMinutes: 20,

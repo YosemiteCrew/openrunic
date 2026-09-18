@@ -1062,6 +1062,7 @@ export const messageThreadSpec: CollectionSpec<
 
 export interface MessageCreateInput {
   threadId: string;
+  patientId?: string;
   senderType: MessageSenderType;
   senderUserId?: string;
   senderPatientId?: string;
@@ -1090,20 +1091,13 @@ export const messageSpec: CollectionSpec<
   model: 'Message',
   targetType: 'Message',
   action: 'message',
-  // No `patientColumn`: `senderPatientId` names who wrote a message, not the
-  // chart it belongs to, and stamping it on the audit event would file a
-  // patient's reply under their own chart while filing the clinician's reply
-  // under nothing.
-  //
-  // A message reaches a chart only through its thread, which is a join this
-  // layer does not perform, so a compartment-restricted principal is refused
-  // the table wholesale rather than served one nobody narrowed. Threads are
-  // narrowed properly, and the nested route below reads through one.
-  compartment: 'closed',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
 
   newRow(input: MessageCreateInput, context: RowContext): Writable<'Message'> {
     return {
       threadId: input.threadId,
+      patientId: input.patientId ?? null,
       senderType: input.senderType,
       senderUserId: input.senderUserId ?? null,
       senderPatientId: input.senderPatientId ?? null,

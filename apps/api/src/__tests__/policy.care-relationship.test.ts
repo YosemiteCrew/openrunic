@@ -753,6 +753,7 @@ describe('a collection inside a chart is not a way round the gate', () => {
     seed(dataset, 'Message', {
       ...storageColumns(testId(3_621)),
       threadId: THREAD,
+      patientId: PATIENT,
       senderType: 'PATIENT',
       senderUserId: null,
       senderPatientId: PATIENT,

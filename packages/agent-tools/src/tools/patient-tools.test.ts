@@ -340,6 +340,7 @@ describe('bills.list', () => {
           patientId: CHART,
           status: 'SENT',
           balanceCents: 4250,
+          currency: 'EUR',
           generatedAt: '2026-04-01T00:00:00.000Z',
           paidAt: null,
         },
@@ -352,7 +353,7 @@ describe('bills.list', () => {
       type: 'Bill',
       label: 'Bill dated 2026-04-01',
       fields: [
-        { name: 'Still to pay', value: '42.50' },
+        { name: 'Still to pay', value: '42.50 EUR' },
         { name: 'Status', value: 'Sent to you' },
       ],
     });
@@ -366,6 +367,7 @@ describe('bills.list', () => {
           patientId: CHART,
           status: 'PAID',
           balanceCents: 0,
+          currency: 'USD',
           generatedAt: '2026-02-01T00:00:00.000Z',
           paidAt: '2026-02-09T16:40:00.000Z',
         },

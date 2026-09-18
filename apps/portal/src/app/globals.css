@@ -78,7 +78,7 @@ output {
 
 .portal__identity-mrn {
   font-family: var(--font-mono);
-  font-size: var(--text-caption);
+  font-size: calc(var(--text-caption) * 0.8);
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
@@ -118,11 +118,12 @@ output {
   gap: var(--space-1);
   /* Comfortably past the 44px floor once the two-line labels are accounted for. */
   min-height: 60px;
-  padding: var(--space-2) var(--space-1);
+  padding: var(--space-2) 0;
   color: var(--text-ink);
   text-decoration: none;
   font-size: var(--text-caption);
   line-height: 1.15;
+  letter-spacing: var(--track-tight);
   text-align: center;
   hyphens: auto;
   transition: background var(--dur-fast) var(--ease-out);
@@ -151,6 +152,12 @@ output {
 
 .portal__nav-icon {
   flex: none;
+}
+
+.portal__nav-label {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .portal__main {
@@ -284,6 +291,58 @@ output {
   }
 }
 
+/* ---------------------------------------------------------------- sign-in */
+
+.portal-sign-in,
+.portal-session-check {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+}
+
+.portal-sign-in__panel {
+  width: min(100%, 32rem);
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--surface-card);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.portal-sign-in__form,
+.portal-sign-in__development {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-sign-in__notice,
+.portal-sign-in__error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: var(--hairline) solid var(--border-hairline);
+  border-radius: var(--radius-md);
+}
+
+.portal-sign-in__notice {
+  background: var(--status-neutral-wash);
+}
+
+.portal-sign-in__error {
+  background: var(--status-danger-wash);
+}
+
+.portal-sign-in__development {
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.portal-session-check {
+  color: var(--text-secondary);
+}
+
 /* ---------------------------------------------------------------- touch floor
 
    @openrunic/ui grows every control to a 44px touch target below its md breakpoint and
@@ -296,8 +355,10 @@ output {
    lives in the consuming app, where the decision belongs. */
 
 .portal .or-btn,
+.portal-sign-in .or-btn,
 .portal .or-icon-btn,
 .portal .or-input__control,
+.portal-sign-in .or-input__control,
 .portal .or-select__control {
   min-height: 44px;
 }

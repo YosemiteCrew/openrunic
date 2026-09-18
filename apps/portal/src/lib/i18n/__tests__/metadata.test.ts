@@ -26,7 +26,7 @@ describe('pageMetadata', () => {
       })
     ).resolves.toEqual({
       title: 'Facturas',
-      description: 'Sus facturas, el motivo de cada cargo y cómo pagarlas.',
+      description: 'Sus facturas y el motivo de cada cargo.',
     });
   });
 

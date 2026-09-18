@@ -249,6 +249,17 @@ export function createPrismaCollection<
   /** The create itself, in its transaction. Wrapped by `create` below. */
   const write = (input: TCreate): Promise<ScopedRow<M>> =>
     port.$transaction(async (tx) => {
+      const now = new Date();
+      const context: RowContext = { tenantId: scope.tenantId, now, nextId: uuidv7 };
+      const columns = spec.newRow(input, context);
+      if (
+        compartment !== undefined &&
+        typeof spec.compartment === 'object' &&
+        (columns as Record<string, unknown>)[spec.compartment.column] !== compartment
+      ) {
+        throw ApiError.notFound('No such patient.');
+      }
+
       if (unique !== undefined) {
         // `NoInfer` keeps the spec's `where` from re-deriving the model, so
         // its result reads back as the union of every model's filter. It is
@@ -259,9 +270,6 @@ export function createPrismaCollection<
         if (clash !== null) throw ApiError.conflict(unique.message(input));
       }
 
-      const now = new Date();
-      const context: RowContext = { tenantId: scope.tenantId, now, nextId: uuidv7 };
-      const columns = spec.newRow(input, context);
       const record = await tx.model(spec.model).create({
         data: {
           ...omitNulls(columns),
@@ -324,6 +332,7 @@ export function createPrismaCollection<
     },
 
     async create(input: TCreate): Promise<ScopedRow<M>> {
+      if (closed) throw ApiError.notFound('No such patient.');
       /*
        * A natural key is refused twice, and only the second refusal is true.
        *

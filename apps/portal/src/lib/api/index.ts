@@ -2,23 +2,17 @@
  * Picks the data source. Mock is the default, so the portal renders, builds and tests with
  * no database and no API running.
  *
- * Set `NEXT_PUBLIC_API_MODE=live` and `NEXT_PUBLIC_API_URL` to talk to the real API.
+ * Set `NEXT_PUBLIC_API_MODE=live` to use the same-origin authenticated proxy.
  */
 
 import { createHttpApi } from './http';
 import { createMockApi } from './mock';
 import type { PortalApi } from './types';
-
-export type ApiMode = 'mock' | 'live';
-
-/** Anything other than the exact string 'live' means mock; a typo must never leak data. */
-export function resolveApiMode(value: string | undefined): ApiMode {
-  return value === 'live' ? 'live' : 'mock';
-}
+import { API_MODE, resolveApiMode } from './config';
+import { returnToSignIn } from '@/lib/auth/client';
 
 export interface ApiEnv {
   mode?: string;
-  baseUrl?: string;
 }
 
 /**
@@ -29,13 +23,15 @@ export interface ApiEnv {
  * in the browser bundle there would be nothing left to read from.
  */
 export const API_ENV: ApiEnv = {
-  mode: process.env.NEXT_PUBLIC_API_MODE,
-  baseUrl: process.env.NEXT_PUBLIC_API_URL,
+  mode: API_MODE,
 };
 
 export function createPortalApi(env: ApiEnv = {}): PortalApi {
   if (resolveApiMode(env.mode) === 'live') {
-    return createHttpApi({ baseUrl: env.baseUrl ?? '' });
+    return createHttpApi({
+      baseUrl: '/api',
+      onUnauthorized: () => returnToSignIn('expired'),
+    });
   }
   return createMockApi();
 }
@@ -54,4 +50,6 @@ export function getPortalApi(): PortalApi {
 export { createHttpApi, HttpApiError } from './http';
 export { createMockApi, MockDataError } from './mock';
 export { buildEmptyFixtures, buildFixtures } from './fixtures';
+export { API_MODE, isLiveMode, resolveApiMode } from './config';
+export type { ApiMode } from './config';
 export type * from './types';

@@ -281,6 +281,7 @@ function makeMessageRow(overrides: Partial<MessageRow> = {}): MessageRow {
   return {
     ...storageColumns(MESSAGE_A),
     threadId: THREAD_A,
+    patientId: PATIENT,
     senderType: 'USER',
     senderUserId: CLINICIAN,
     senderPatientId: null,
@@ -1990,18 +1991,26 @@ describe('the messages inside a thread', () => {
     expect(res.status).toBe(404);
   });
 
-  it('serves a compartment-restricted principal no messages at all', async () => {
-    // `Message` reaches a chart only through its thread, which the repository
-    // layer does not join, so a portal token is refused the table wholesale
-    // rather than served one nobody narrowed.
-    const { app } = seededApp();
-    const page = await body<ListResponse<MessageDto>>(
+  it('serves a compartment-restricted principal only its own thread messages', async () => {
+    const { app, dataset } = seededApp();
+    seed(dataset, 'MessageThread', makeThreadRow({ id: THREAD_B, patientId: OTHER_PATIENT }));
+    seed(
+      dataset,
+      'Message',
+      makeMessageRow({ id: testId(272), threadId: THREAD_B, patientId: OTHER_PATIENT })
+    );
+
+    const own = await body<ListResponse<MessageDto>>(
       await call(app, 'get', `/bff/v0/messages/threads/${THREAD_A}/messages`, {
         token: TOKENS.portalA,
       })
     );
+    const other = await call(app, 'get', `/bff/v0/messages/threads/${THREAD_B}/messages`, {
+      token: TOKENS.portalA,
+    });
 
-    expect(page.data).toEqual([]);
+    expect(own.data.map((message) => message.id)).toEqual([MESSAGE_A]);
+    expect(other.status).toBe(404);
   });
 });
 
@@ -2173,7 +2182,7 @@ describe('audit', () => {
     });
   });
 
-  it('files a message event under no chart, because a message names a sender and not a chart', async () => {
+  it('files a message event under the thread chart', async () => {
     const { app, sink } = seededApp();
     await call(app, 'post', `/bff/v0/messages/threads/${THREAD_A}/messages`, {
       body: { body: 'Noted, thank you.' },
@@ -2181,7 +2190,7 @@ describe('audit', () => {
 
     const created = sink.writes().find((entry) => entry.event.action === 'message.created');
     expect(created?.event.targetType).toBe('Message');
-    expect(created?.event.patientId).toBeUndefined();
+    expect(created?.event.patientId).toBe(PATIENT);
   });
 });
 
@@ -2864,8 +2873,9 @@ describe('a write on a chart is not a way round the gate', () => {
   });
 
   /**
-   * A message reaches a chart only through its thread, which `messageSpec`
-   * declines to join, so the gate is asked about the thread.
+   * The message's patient id narrows the launch compartment. The thread is
+   * still the authoritative parent for the staff care-relationship gate, so
+   * the transition asks about it too.
    *
    * The refusal is `No such patient.` and not the route's own `NO_MESSAGE`,
    * because `assertCareRelationship` raises its own before the parent read's

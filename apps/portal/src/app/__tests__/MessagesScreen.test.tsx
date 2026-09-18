@@ -113,6 +113,25 @@ describe('MessagesScreen', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Message sent.'));
   });
 
+  it('shows a closed live conversation without a reply form or invented names', async () => {
+    const threads = await stubApi().getThreads();
+    const closed = {
+      ...(threads[0] as (typeof threads)[number]),
+      correspondent: null,
+      replySupported: false,
+      messages: (threads[0]?.messages ?? []).map((message) => ({
+        ...message,
+        authorName: null,
+      })),
+    };
+
+    render(<MessagesScreen api={stubApi({ getThreads: () => Promise.resolve([closed]) })} />);
+
+    expect(await screen.findByText('This conversation is closed to replies.')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Care team,/).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument();
+  });
+
   it('states the loading fact while the messages are on their way', () => {
     render(<MessagesScreen api={stubApi({ getThreads: never })} />);
 

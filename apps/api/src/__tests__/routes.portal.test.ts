@@ -529,6 +529,35 @@ describe('GET /bff/v0/portal/health-record', () => {
     });
   });
 
+  it('drops a half-recorded dose rather than sending a number with no unit', async () => {
+    // The DTO says both halves are present or neither is, and the naive mapping - passing
+    // each column through on its own - satisfies every other test in this file, because
+    // `makeImmunisationRow` has both. This is the row that separates them.
+    const { app, dataset } = createTestApp();
+    enablePortal(dataset);
+    seed(
+      dataset,
+      'Immunization',
+      makeImmunisationRow({ id: testId(342), doseUnit: null }),
+      makeImmunisationRow({ id: testId(343), doseQuantity: null })
+    );
+
+    const response = await app.request('/bff/v0/portal/health-record', {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as {
+      immunisations: { id: string; doseQuantity: number | null; doseUnit: string | null }[];
+    };
+    // A quantity with no unit is not a reading: `5` with the unit missing is a number the
+    // reader would have to guess at, and guessing is what a dose must never invite.
+    expect(body.immunisations).toEqual([
+      expect.objectContaining({ id: testId(342), doseQuantity: null, doseUnit: null }),
+      expect.objectContaining({ id: testId(343), doseQuantity: null, doseUnit: null }),
+    ]);
+  });
+
   it('derives reference labels without diagnosing a result', async () => {
     const { app, dataset } = createTestApp();
     enablePortal(dataset);

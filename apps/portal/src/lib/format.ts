@@ -205,6 +205,96 @@ export function formatMeasurement(
   return { value: formatCount(value, t.locale), unit };
 }
 
+/**
+ * What a document is, as a closed set.
+ *
+ * The API used to send the badge its text directly, as `'<contentType>, <byteSize> bytes'`.
+ * That is a media type and a byte count in front of a reader with no technical training, and
+ * it is also unbounded: the Word document type alone is 71 characters with nothing a browser
+ * may break after, inside an `.or-badge` that is `white-space: nowrap` because a status pill
+ * is the size of its text (#507).
+ *
+ * The fix is not a wider rule on the badge. It is that the badge's input comes from a set the
+ * portal owns, so the label is bounded by construction rather than because the fixture that
+ * was measured happened to be short.
+ */
+export type DocumentKind = 'pdf' | 'image' | 'document' | 'spreadsheet' | 'text' | 'other';
+
+/**
+ * The media types worth naming individually. Everything else falls to a prefix rule or to
+ * `other`, which is why an unmapped type is a plainer label rather than a defect.
+ */
+const DOCUMENT_KINDS = new Map<string, DocumentKind>([
+  ['application/pdf', 'pdf'],
+  ['application/msword', 'document'],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'document'],
+  ['application/vnd.oasis.opendocument.text', 'document'],
+  ['application/rtf', 'document'],
+  ['application/vnd.ms-excel', 'spreadsheet'],
+  ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'spreadsheet'],
+  ['application/vnd.oasis.opendocument.spreadsheet', 'spreadsheet'],
+]);
+
+/** 'application/pdf' -> 'pdf'. Anything unrecognised is 'other', never the input. */
+export function documentKind(contentType: string): DocumentKind {
+  // Parameters and case are not part of a media type's identity, so
+  // `TEXT/PLAIN; charset=utf-8` has to reach the same answer as `text/plain`.
+  const essence = (contentType.split(';')[0] ?? contentType).trim().toLowerCase();
+
+  const named = DOCUMENT_KINDS.get(essence);
+  if (named !== undefined) return named;
+  if (essence.startsWith('image/')) return 'image';
+  if (essence.startsWith('text/')) return 'text';
+  return 'other';
+}
+
+/**
+ * The size tiers, smallest first, and the divisor between them.
+ *
+ * 1000 rather than 1024 because these are the SI-prefixed unit names `Intl` writes: a value
+ * divided by 1024 and labelled `kB` is off by 2.4% and says so to anybody who checks.
+ */
+const SIZE_UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte'] as const;
+const SIZE_STEP = 1000;
+
+const SIZE_FORMATTERS = new Map<string, Intl.NumberFormat>();
+
+function sizeFormatter(locale: string, unit: string): Intl.NumberFormat {
+  const key = `${locale}|${unit}`;
+  const found = SIZE_FORMATTERS.get(key);
+  if (found !== undefined) return found;
+
+  const built = new Intl.NumberFormat(locale, {
+    style: 'unit',
+    unit,
+    // `short` everywhere except bytes. CLDR's short form for `byte` in English is the
+    // singular noun - `512 byte` - because the abbreviation and the word are the same
+    // string, while `kB`, `MB` and `GB` are symbols and read correctly at every count.
+    // `format.test.ts` asserts that difference rather than trusting this paragraph.
+    unitDisplay: unit === 'byte' ? 'long' : 'short',
+    // A whole number of bytes, one decimal above that: `20.5 kB` is the useful precision
+    // and `20.48 kB` is a number nobody reading their own record asked for.
+    maximumFractionDigits: unit === 'byte' ? 0 : 1,
+  });
+  SIZE_FORMATTERS.set(key, built);
+  return built;
+}
+
+/** '512 bytes' / '20.5 kB'. A file size, written for the reader rather than in bytes. */
+export function formatFileSize(t: Translator, bytes: number): string {
+  let value = Math.max(0, bytes);
+  // Walked over the tiers rather than indexed by a counter: the largest one is terminal,
+  // and a loop that can run off the end of the list formats against `undefined` and throws
+  // on a page that is only trying to say how big a letter is.
+  let unit: (typeof SIZE_UNITS)[number] = SIZE_UNITS[0];
+  for (const larger of SIZE_UNITS.slice(1)) {
+    if (value < SIZE_STEP) break;
+    value /= SIZE_STEP;
+    unit = larger;
+  }
+  return sizeFormatter(t.locale, unit).format(value);
+}
+
 /** '2 of 3 answered'. */
 export function formatProgress(t: Translator, done: number, total: number): string {
   return t('portal.progress', {

@@ -362,10 +362,11 @@ async function healthRecordFor(repos: Repositories) {
         vaccine: row.display,
         plain: null,
         givenOn: row.administeredAt.toISOString(),
-        doseLabel:
-          row.doseQuantity === null || row.doseUnit === null
-            ? null
-            : `${row.doseQuantity} ${row.doseUnit}`,
+        // Both halves or neither, which is the rule the composed string used to carry.
+        // A quantity with no unit is not a reading, and the portal writes the number
+        // in the reader's locale rather than receiving it already written here.
+        doseQuantity: row.doseUnit === null ? null : row.doseQuantity,
+        doseUnit: row.doseQuantity === null ? null : row.doseUnit,
       })),
     documents: documents
       .filter((row) => row.status === 'FILED' && row.sensitivityClass === 'NORMAL')
@@ -374,7 +375,8 @@ async function healthRecordFor(repos: Repositories) {
         title: row.title,
         plain: null,
         addedOn: (row.filedAt ?? row.receivedAt).toISOString(),
-        format: `${row.contentType}, ${row.byteSize} bytes`,
+        contentType: row.contentType,
+        byteSize: row.byteSize,
       })),
     results: observations
       .filter(

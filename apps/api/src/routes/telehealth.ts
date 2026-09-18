@@ -113,11 +113,9 @@ async function assertStaff(c: Context<AppEnv>): Promise<void> {
   const principal = c.get('principal');
   // Three ways a patient reaches here, and any one of them is refused, because
   // no single signal is reliable on its own. A portal token bound to a chart
-  // carries `compartmentPatientId`. A patient principal issued without a patient
-  // scope carries none, so the actor type is checked too - but `actor_type` is
-  // an optional OIDC claim that `readActorType` defaults to `user` when it is
-  // absent, so a portal token that omits it would still read as staff. The role
-  // is what the issuer always sets, so `patient-portal` is the backstop.
+  // carries `compartmentPatientId`. The OIDC resolver refuses a patient
+  // identity without one, but this route also accepts injected resolvers, so
+  // the actor type and role remain independent backstops here.
   // `service` is left through on all three: a trusted integration is not a
   // patient, and telehealth rooms are opened by machines as well as people.
   const isPatient =

@@ -45,6 +45,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+    // The layout guard runs in a real browser from vitest.layout.config.mts. Collected
+    // here it would report every width as 0 and pass without checking anything, which is
+    // worse than not running it: a green row nobody reads twice.
+    exclude: ['**/node_modules/**', 'src/__tests__/layout/**'],
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'json', 'lcov'],

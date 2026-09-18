@@ -33,6 +33,11 @@ apps/*/next-env.d.ts
 # Test coverage
 coverage/
 
+# Screenshots and page dumps the browser-mode layout suite writes beside a failing test.
+# Useful while reading a failure locally, never part of the record.
+.vitest-attachments/
+**/__screenshots__/
+
 # The JSON report the migration workflow reads to prove its DATABASE_URL-gated
 # suites actually ran rather than skipped. Written into the workspace by
 # `vitest --outputFile`, never committed.

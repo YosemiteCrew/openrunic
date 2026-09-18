@@ -16,6 +16,10 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "test:layout": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "dev": {
       "dependsOn": ["^build"],
       "persistent": true,

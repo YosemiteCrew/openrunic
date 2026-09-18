@@ -139,7 +139,9 @@ export interface Immunisation {
   vaccine: string;
   plain: string | null;
   givenOn: string;
-  doseLabel: string | null;
+  /** The dose as a number and its named unit. Both are present or neither is. */
+  doseQuantity: number | null;
+  doseUnit: string | null;
 }
 
 export interface ClinicalDocument {
@@ -147,8 +149,10 @@ export interface ClinicalDocument {
   title: string;
   plain: string | null;
   addedOn: string;
-  /** Human-sized description of the file, e.g. 'PDF, 2 pages'. */
-  format: string;
+  /** The stored media type, e.g. 'application/pdf'. Never rendered; `documentKind` names it. */
+  contentType: string;
+  /** The stored size in bytes. `formatFileSize` writes it for the reader. */
+  byteSize: number;
 }
 
 /** A measured result. Never rendered without its unit and its labelled range state. */

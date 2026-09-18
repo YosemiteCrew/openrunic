@@ -316,10 +316,24 @@ export const portal: Messages = {
   'portal.healthRecord.immunisations.title': 'Immunisations you have had',
   'portal.healthRecord.immunisations.none': 'No vaccinations are recorded.',
   'portal.healthRecord.immunisations.givenOn': 'Given on {date}',
+  'portal.healthRecord.immunisations.dose': 'Dose given: {dose}',
   'portal.healthRecord.documents.overline': 'Documents',
   'portal.healthRecord.documents.title': 'Letters and reports',
   'portal.healthRecord.documents.none': 'No documents have been added.',
-  'portal.healthRecord.documents.addedOn': 'Added on {date}',
+  'portal.healthRecord.documents.addedOn': 'Added on {date}, {size}',
+  /*
+   * What a document is, named rather than typed.
+   *
+   * The badge used to carry the media type the file was stored with. These are the
+   * labels the portal maps it onto, and `other` is the answer for anything unmapped,
+   * so the set is closed and the pill stays the size of a word.
+   */
+  'portal.healthRecord.documents.kind.pdf': 'PDF',
+  'portal.healthRecord.documents.kind.image': 'Image',
+  'portal.healthRecord.documents.kind.document': 'Document',
+  'portal.healthRecord.documents.kind.spreadsheet': 'Spreadsheet',
+  'portal.healthRecord.documents.kind.text': 'Text',
+  'portal.healthRecord.documents.kind.other': 'File',
   /*
    * BILLS.
    *

@@ -514,14 +514,16 @@ describe('GET /bff/v0/portal/health-record', () => {
         {
           id: testId(340),
           vaccine: 'Influenza vaccine, quadrivalent',
-          doseLabel: '1 dose',
+          doseQuantity: 1,
+          doseUnit: 'dose',
         },
       ],
       documents: [
         {
           id: testId(350),
           title: 'Consult note',
-          format: 'application/pdf, 20480 bytes',
+          contentType: 'application/pdf',
+          byteSize: 20_480,
         },
       ],
     });

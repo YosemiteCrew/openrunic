@@ -56,7 +56,12 @@ export function emptyBlobs(stdout) {
 }
 
 function main() {
-  const listed = spawnSync('git', ['ls-tree', '-r', '-l', 'HEAD'], {
+  // `--full-tree` is what makes this a whole-repository check. `ls-tree` is
+  // scoped to the CURRENT DIRECTORY by default, so without it the same command
+  // reads 36 records from `scripts/ci` and 1645 from the root, and a root file
+  // emptied by a pull request reports clean from anywhere but the top. Raised
+  // in review; `git-blobs.mjs` avoids the same trap by passing `-C root`.
+  const listed = spawnSync('git', ['ls-tree', '--full-tree', '-r', '-l', 'HEAD'], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });

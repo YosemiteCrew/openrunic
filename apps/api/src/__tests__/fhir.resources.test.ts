@@ -23,6 +23,7 @@ import {
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
+  DEMO_FACILITY_B,
   FIXED_NOW,
   makeAppointmentRow,
   makePatientRow,
@@ -3577,6 +3578,8 @@ describe('a patient reading their own MedicationDispense', () => {
    * it is the one `kind: 'DISPENSE'` alone does not exclude.
    */
   const WARD_POSTING = testId(6106);
+  /** The portal patient's own dispense, but recorded at the practice's other site. */
+  const OTHER_SITE_POSTING = testId(6107);
   const ITEM = testId(6110);
   const LOT = testId(6111);
 
@@ -3585,12 +3588,13 @@ describe('a patient reading their own MedicationDispense', () => {
     dataset: MemoryDataset,
     posting: string,
     patientId: string | null,
-    kind: 'DISPENSE' | 'RECEIPT' = 'DISPENSE'
+    kind: 'DISPENSE' | 'RECEIPT' = 'DISPENSE',
+    facilityId: string = DEMO_FACILITY_A
   ): void {
     seed(dataset, 'StockPosting', {
       ...storageColumns(posting),
       kind,
-      facilityId: DEMO_FACILITY_A,
+      facilityId,
       patientId,
       encounterId: null,
       prescriptionId: null,
@@ -3745,6 +3749,38 @@ describe('a patient reading their own MedicationDispense', () => {
 
     expect(res.status).toBe(200);
     expect(((await res.json()) as Bundle).entry ?? []).toEqual([]);
+  });
+
+  /**
+   * #329. `patient-portal`'s demo grant is one facility
+   * (`PORTAL_PRINCIPAL.facilityIds`), and this dispense is the caller's own -
+   * `patientId` matches the compartment - recorded at the OTHER one. Before the
+   * fix, the facility narrowing (written for a staff reader covering a site)
+   * ran ahead of the compartment and excluded it anyway: same chart, same
+   * caller, wrong site, and the row was simply missing rather than refused.
+   *
+   * Seeded locally rather than in `world()`, because every other case in this
+   * describe enumerates the portal's whole dispense list and would have to
+   * change to accommodate a second one on the same chart - this is the one
+   * case that is about there being two.
+   */
+  it('reads its own dispense recorded at another site of the practice', async () => {
+    const { app, dataset } = world();
+    seedDispense(dataset, OTHER_SITE_POSTING, DEMO_PORTAL_PATIENT, 'DISPENSE', DEMO_FACILITY_B);
+
+    const byId = await app.request(`/fhir/MedicationDispense/${OTHER_SITE_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(byId.status).toBe(200);
+
+    const search = await app.request(`/fhir/MedicationDispense?patient=${DEMO_PORTAL_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(search.status).toBe(200);
+    const bundle = (await search.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id).sort()).toEqual(
+      [OWN_POSTING, OTHER_SITE_POSTING].sort()
+    );
   });
 
   it('reaches no posting that belongs to no chart, and neither does staff', async () => {

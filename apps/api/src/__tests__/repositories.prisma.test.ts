@@ -411,6 +411,37 @@ describe('the patient compartment', () => {
     ]);
   });
 
+  /**
+   * #329: `facilityIds` is a staff coverage grant, and it meant nothing for a
+   * patient reading their own chart until this was found reaching production -
+   * `MedicationDispense` at a second site was invisible to the portal, not
+   * because the compartment refused it but because the facility clause, ANDed
+   * on for a staff reader, excluded it regardless of whose chart it was.
+   *
+   * `appointmentSpec` reproduces the mechanism rather than the one resource:
+   * it is `facilityScoped` and compartment-columned the same way
+   * `stockPostingSpec` is, and the fixtures already live in this file.
+   */
+  it('is not additionally narrowed by facility when the row is the caller’s own chart', async () => {
+    const h = harness(testId(1));
+    const scope: RequestScope = { ...h.scope, facilityIds: [DEMO_FACILITY_A] };
+    h.dataset.table('Appointment').push(
+      makeAppointmentRow({ id: testId(10), patientId: testId(1), facilityId: DEMO_FACILITY_A }),
+      makeAppointmentRow({ id: testId(11), patientId: testId(1), facilityId: DEMO_FACILITY_B }),
+      // The control: another chart at the one facility this token IS granted.
+      // Without it, a compartment that failed open would pass every assertion
+      // above for the wrong reason.
+      makeAppointmentRow({ id: testId(12), patientId: testId(2), facilityId: DEMO_FACILITY_A })
+    );
+    const collection = createPrismaCollection(appointmentSpec, h.port, scope);
+
+    const page = await collection.list({ page: 1, pageSize: 25, sort: 'start', order: 'asc' });
+
+    expect(page.rows.map((row) => row.id).sort()).toEqual([testId(10), testId(11)]);
+    await expect(collection.findById(testId(11))).resolves.not.toBeNull();
+    await expect(collection.findById(testId(12))).resolves.toBeNull();
+  });
+
   it('refuses a collection that reaches a chart only through a join', async () => {
     const h = harness(testId(1));
     const spec = closedSpec();

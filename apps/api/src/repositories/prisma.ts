@@ -185,11 +185,24 @@ export function createPrismaCollection<
    */
   const hideAddressed = scope.hideFacilityRows === true && spec.facilityHidesAddressed !== false;
 
+  /**
+   * Whether this read is a compartment-pinned principal reading their OWN
+   * chart, as opposed to a chart-carrying row a staff caller reaches through
+   * `facilityIds`. See the memory port's identical `ownChart`, which this has
+   * to agree with - `facilityIds` is a staff coverage grant and means nothing
+   * for a patient reading their own record (#329: a patient's own dispense at
+   * the practice's second site was invisible because the facility clause,
+   * written for a staff reader, was ANDed on regardless of the compartment).
+   * `spec.compartment === 'open'` is excluded: that row is not the caller's
+   * own chart, so the ordinary staff narrowing still applies to it.
+   */
+  const ownChart = compartment !== undefined && spec.compartment !== 'open';
+
   const scoped = (
     where: Record<string, unknown> | undefined,
     narrowFacility: boolean
   ): Record<string, unknown> => {
-    const facility = narrowFacility ? facilityClause() : null;
+    const facility = narrowFacility && !ownChart ? facilityClause() : null;
     const compartmented =
       compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed'
         ? (where ?? {})

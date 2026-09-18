@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Imported for its version and nothing else. See DEFAULT_INFO below.
 import pkg from '../../package.json' with { type: 'json' };
 
-import { byIdentifier } from '../ordering.js';
+import { byIdentifier } from '../policy/permissions.js';
 import type { RouteContract } from './registry.js';
 
 /**

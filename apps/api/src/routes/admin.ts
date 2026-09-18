@@ -5,7 +5,7 @@ import type { AppEnv } from '../context.js';
 import { parseQuery } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
-import { byIdentifier } from '../ordering.js';
+import { byIdentifier } from '../policy/permissions.js';
 import type { ScopedRow } from '../repositories/rows.js';
 import {
   worklistQuerySchema,

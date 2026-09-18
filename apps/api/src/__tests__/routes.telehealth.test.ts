@@ -631,9 +631,8 @@ describe('a portal token and the telehealth routes', () => {
   });
 
   it('refuses a patient actor even with no compartment on the token', async () => {
-    // The OIDC shape Codex flagged: actor_type patient, no launch context, so no
-    // compartmentPatientId. It must be refused on the actor type, not just the
-    // compartment it happens not to carry.
+    // OIDC refuses this identity before routing. The injected test resolver
+    // deliberately reaches the route so its actor-type backstop stays live.
     const { app } = createTestApp({ adapters: new AdapterRegistry() });
     const list = await app.request('/bff/v0/telehealth?status=OPEN', {
       headers: bearer(TOKENS.portalNoCompartmentA),
@@ -642,8 +641,8 @@ describe('a portal token and the telehealth routes', () => {
   });
 
   it('refuses a portal role whose actor_type defaulted to user', async () => {
-    // The backstop: no compartment, actor_type read as user, only the role
-    // marks it a patient. Without the role check this would pass as staff.
+    // OIDC refuses this identity before routing. The injected test resolver
+    // deliberately reaches the route so its role backstop stays live.
     const { app } = createTestApp({ adapters: new AdapterRegistry() });
     const res = await app.request('/bff/v0/telehealth?status=OPEN', {
       headers: bearer(TOKENS.portalUserActorA),

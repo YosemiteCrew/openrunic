@@ -338,10 +338,9 @@ export const DANGLING_PATIENT_SCOPE_PRINCIPAL: Principal = {
 
 /**
  * A patient principal with no launch context, so no chart is pinned and no
- * `compartmentPatientId` is set - the shape an OIDC patient carries when its
- * `actor_type` claim is present but its scope is a user one. A staff-only route
- * must refuse it on the actor type and the role, not on a compartment it does
- * not have. Test-only, because a denial fixture does not ship in the resolver.
+ * `compartmentPatientId` is set. The OIDC resolver refuses this shape; the
+ * fixture remains so routes using an injected resolver prove their own
+ * staff-only backstops too.
  */
 export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
   subject: DEMO_PORTAL_PATIENT,
@@ -355,10 +354,9 @@ export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
 };
 
 /**
- * The same portal identity again, but with `actor_type` absent so the resolver
- * defaults it to `user`. The compartment and actor-type signals both read as
- * staff here; only the `patient-portal` role gives it away. This is the token
- * shape that made the role a necessary backstop rather than a belt.
+ * The same portal identity again, but with the actor type set to `user`. The
+ * OIDC resolver refuses this shape too; an injected resolver can still supply
+ * it, so the route-level role backstop stays independently exercised.
  */
 export const PORTAL_USER_ACTOR_PRINCIPAL: Principal = {
   ...PORTAL_NO_COMPARTMENT_PRINCIPAL,

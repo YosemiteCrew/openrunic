@@ -86,9 +86,7 @@ export function AssistantReadback({
         {/* Always in the document, empty most of the time. A live region added
             to the page at the moment it has something to say is a region
             several screen readers never announce. */}
-        <p className="portal-assistant__readback-status" role="status">
-          {status}
-        </p>
+        <output className="portal-assistant__readback-status">{status}</output>
 
         {state.speaking === null ? null : (
           <Button variant="secondary" iconLeft="square" onClick={onStop}>

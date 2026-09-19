@@ -348,6 +348,19 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
   'portal.assistant.compose.ask': 'Preguntar',
   'portal.assistant.compose.stop': 'Parar',
+
+  'portal.assistant.readback.label': 'Leer las respuestas en voz alta',
+  'portal.assistant.readback.hint':
+    'Su dispositivo lee en voz alta la respuesta que ya está en esta pantalla, y nada más. La lectura la hace el propio dispositivo, así que no se envía ninguna palabra a ningún sitio para ello.',
+  'portal.assistant.readback.stop': 'Dejar de leer',
+  'portal.assistant.readback.noVoice':
+    'Este dispositivo no tiene ninguna voz instalada, así que no se puede leer nada en voz alta.',
+  'portal.assistant.readback.noLanguage':
+    'Este dispositivo no tiene una voz para el idioma de esta página, así que no se lee nada en voz alta.',
+  'portal.assistant.readback.reading': 'Leyendo la respuesta en voz alta.',
+  'portal.assistant.readback.interrupted': 'Lectura detenida. La respuesta sigue en la pantalla.',
+  'portal.assistant.readback.failed':
+    'No se pudo leer la respuesta en voz alta. Está en la pantalla, más arriba.',
   'portal.assistant.turn.youAsked': 'Usted preguntó:',
   'portal.assistant.turn.stillLooking': 'Sigue buscando.',
   'portal.assistant.step.done': ', hecho',

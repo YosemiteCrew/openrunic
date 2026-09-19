@@ -6,6 +6,7 @@ import { AssistantScreen } from '@/app/assistant/AssistantScreen';
 import { AssistantProvider } from '@/components/assistant';
 import type { AssistantAvailability, AssistantEvent, TurnRequest } from '@/lib/assistant';
 import type { PortalApi } from '@/lib/api/types';
+import type { ReadbackPort, Utterance } from '@/lib/voice';
 import { fails, never, stubApi } from '@/__tests__/support';
 
 /**
@@ -77,6 +78,12 @@ interface MountOptions {
   events?: AssistantEvent[];
   onRequest?: (request: TurnRequest) => void;
   api?: PortalApi;
+  /**
+   * The voice. Left out, the page asks the device for one and jsdom has none,
+   * which is the same answer a browser without speech gives and the state every
+   * other case on this page is written in.
+   */
+  readback?: ReadbackPort | null;
 }
 
 function mount(options: MountOptions = {}) {
@@ -88,9 +95,26 @@ function mount(options: MountOptions = {}) {
 
   return render(
     <AssistantProvider probe={probe} runTurn={scripted(options.events ?? [], options.onRequest)}>
-      <AssistantScreen api={options.api ?? stubApi()} />
+      <AssistantScreen api={options.api ?? stubApi()} readback={options.readback} />
     </AssistantProvider>
   );
+}
+
+/** A voice that records what it was asked to say and never makes a sound. */
+function recordingVoice(): { port: ReadbackPort; said: Utterance[] } {
+  const said: Utterance[] = [];
+  return {
+    said,
+    port: {
+      capabilities: () => ({ languages: ['en-GB'], interruption: true }),
+      subscribe: () => () => undefined,
+      speak: (utterance, emit) => {
+        said.push(utterance);
+        emit({ type: 'started', id: utterance.id });
+      },
+      cancel: () => undefined,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -345,6 +369,69 @@ describe('a question that is for a person', () => {
     // The words of a question about somebody's own symptoms were not posted to
     // an inference endpoint in order to be declined there.
     expect(requests).toEqual([]);
+  });
+});
+
+describe('reading the answer aloud', () => {
+  const ANSWER: AssistantEvent[] = [
+    { type: 'text', text: 'You have one appointment booked.' },
+    { type: 'sources', entries: [APPOINTMENT_SOURCE] },
+    { type: 'finished', outcome: 'completed' },
+  ];
+
+  async function ask() {
+    await userEvent.type(await screen.findByLabelText('Your question'), 'When am I next in?');
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
+  }
+
+  it('offers nothing at all on a device with no speech', async () => {
+    mount({ availability: ENABLED, readback: null });
+
+    await screen.findByLabelText('Your question');
+    expect(screen.queryByRole('switch', { name: 'Read answers aloud' })).not.toBeInTheDocument();
+  });
+
+  it('says nothing until the reader asks for it', async () => {
+    const voice = recordingVoice();
+    mount({ availability: ENABLED, events: ANSWER, readback: voice.port });
+
+    await ask();
+
+    expect(await screen.findByText('You have one appointment booked.')).toBeInTheDocument();
+    expect(voice.said).toEqual([]);
+  });
+
+  it('reads out the answer on the screen, word for word', async () => {
+    const voice = recordingVoice();
+    mount({ availability: ENABLED, events: ANSWER, readback: voice.port });
+
+    await userEvent.click(await screen.findByRole('switch', { name: 'Read answers aloud' }));
+    await ask();
+
+    expect(await screen.findByText('Reading the answer aloud.')).toBeInTheDocument();
+    expect(voice.said.map((utterance) => utterance.text)).toEqual([
+      'You have one appointment booked.',
+    ]);
+  });
+
+  it('never reads out an answer whose records did not arrive', async () => {
+    /* The same rule as the screen, through the other output. The words arrived
+       and the surface shows none of them, so there is nothing to say. */
+    const voice = recordingVoice();
+    mount({
+      availability: ENABLED,
+      events: [
+        { type: 'text', text: 'You have one appointment booked.' },
+        { type: 'finished', outcome: 'completed' },
+      ],
+      readback: voice.port,
+    });
+
+    await userEvent.click(await screen.findByRole('switch', { name: 'Read answers aloud' }));
+    await ask();
+
+    expect(await screen.findByText(/no answer is shown/i)).toBeInTheDocument();
+    expect(voice.said).toEqual([]);
   });
 });
 

@@ -479,6 +479,21 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': 'What did the practice write down about my last visit?',
   'portal.assistant.compose.ask': 'Ask',
   'portal.assistant.compose.stop': 'Stop',
+
+  /* Reading the answer aloud. The copy says what is read and what is not sent,
+     because a control that starts speaking somebody's balance in a waiting room
+     has to be understood before it is flipped rather than after. */
+  'portal.assistant.readback.label': 'Read answers aloud',
+  'portal.assistant.readback.hint':
+    'Your device reads out the answer already on this screen, and nothing else. The device does the reading, so no words are sent anywhere for it.',
+  'portal.assistant.readback.stop': 'Stop reading',
+  'portal.assistant.readback.noVoice':
+    'This device has no voice installed, so nothing can be read aloud.',
+  'portal.assistant.readback.noLanguage':
+    'This device has no voice for the language this page is in, so nothing is read aloud.',
+  'portal.assistant.readback.reading': 'Reading the answer aloud.',
+  'portal.assistant.readback.interrupted': 'Stopped reading. The answer is still on screen.',
+  'portal.assistant.readback.failed': 'The answer could not be read aloud. It is on screen above.',
   'portal.assistant.turn.youAsked': 'You asked:',
   'portal.assistant.turn.stillLooking': 'Still looking.',
   'portal.assistant.step.done': ', done',

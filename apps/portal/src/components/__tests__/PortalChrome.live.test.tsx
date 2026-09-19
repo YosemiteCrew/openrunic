@@ -7,6 +7,7 @@ import { stubApi } from '@/__tests__/support';
 
 const auth = vi.hoisted(() => ({
   endSession: vi.fn(() => Promise.resolve()),
+  restoreSession: vi.fn(),
   returnToSignIn: vi.fn(),
 }));
 
@@ -25,9 +26,11 @@ vi.mock('@/components/assistant/AssistantProvider', () => ({
 }));
 
 import { PortalChrome } from '@/components/PortalChrome';
+import { PortalSessionBoundary } from '@/components/PortalSessionBoundary';
 
 beforeEach(() => {
   auth.endSession.mockClear();
+  auth.restoreSession.mockReset();
   auth.returnToSignIn.mockClear();
 });
 
@@ -43,5 +46,27 @@ describe('PortalChrome in live mode', () => {
 
     expect(auth.endSession).toHaveBeenCalledOnce();
     await waitFor(() => expect(auth.returnToSignIn).toHaveBeenCalledOnce());
+  });
+
+  it('takes the private pages down as it goes, rather than when the browser arrives', async () => {
+    auth.restoreSession.mockResolvedValue({
+      expiresAt: Date.now() + 120_000,
+      idleExpiresAt: Date.now() + 90_000,
+    });
+    render(
+      <PortalSessionBoundary>
+        <PortalChrome api={stubApi()}>
+          <p>Private record</p>
+        </PortalChrome>
+      </PortalSessionBoundary>
+    );
+    await screen.findByText('Private record');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    /* Signing out is a request and then a page load. Everything on this side of
+       the boundary keeps running for both, and on the assistant that includes
+       an open microphone. */
+    expect(screen.queryByText('Private record')).not.toBeInTheDocument();
   });
 });

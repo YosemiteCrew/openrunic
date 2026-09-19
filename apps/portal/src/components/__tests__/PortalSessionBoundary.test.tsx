@@ -12,7 +12,17 @@ vi.mock('@/lib/api/config', () => ({ isLiveMode: () => runtime.live }));
 vi.mock('next/navigation', () => ({ usePathname: () => runtime.pathname }));
 vi.mock('@/lib/auth/client', () => auth);
 
-import { PortalSessionBoundary } from '@/components/PortalSessionBoundary';
+import { PortalSessionBoundary, useClosePrivateContent } from '@/components/PortalSessionBoundary';
+
+/** Anything inside the boundary that can end the session, which is the sign-out control. */
+function SignOut() {
+  const close = useClosePrivateContent();
+  return (
+    <button type="button" onClick={close}>
+      Sign out
+    </button>
+  );
+}
 
 const NOON = Date.parse('2026-09-18T12:00:00Z');
 
@@ -106,6 +116,54 @@ describe('PortalSessionBoundary', () => {
 
     expect(auth.endSession).toHaveBeenCalledOnce();
     expect(auth.returnToSignIn).toHaveBeenCalledWith('idle', '/health-record');
+    /* Not merely on its way out. Leaving is a request and then a page load, and
+       everything in here keeps running until that lands. */
+    expect(screen.queryByText('Private record')).not.toBeInTheDocument();
+  });
+
+  it('takes the private page down when a session that was working is refused', async () => {
+    auth.restoreSession.mockResolvedValue({
+      expiresAt: NOON + 120_000,
+      idleExpiresAt: NOON + 90_000,
+    });
+    render(
+      <PortalSessionBoundary>
+        <p>Private record</p>
+      </PortalSessionBoundary>
+    );
+    await act(async () => Promise.resolve());
+    expect(screen.getByText('Private record')).toBeInTheDocument();
+
+    /* The refusal that matters is the second one. The first happens before
+       anything private is on the page, so it cannot show that this clears. */
+    auth.restoreSession.mockResolvedValueOnce(null);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    window.dispatchEvent(new Event('focus'));
+    await act(async () => Promise.resolve());
+
+    expect(auth.returnToSignIn).toHaveBeenCalledWith('expired', '/health-record');
+    expect(screen.queryByText('Private record')).not.toBeInTheDocument();
+  });
+
+  it('takes the private page down the moment the reader signs out', async () => {
+    auth.restoreSession.mockResolvedValue({
+      expiresAt: NOON + 120_000,
+      idleExpiresAt: NOON + 90_000,
+    });
+    render(
+      <PortalSessionBoundary>
+        <p>Private record</p>
+        <SignOut />
+      </PortalSessionBoundary>
+    );
+    await act(async () => Promise.resolve());
+    expect(screen.getByText('Private record')).toBeInTheDocument();
+
+    act(() => {
+      screen.getByRole('button', { name: 'Sign out' }).click();
+    });
+
+    expect(screen.queryByText('Private record')).not.toBeInTheDocument();
   });
 
   it('refreshes at most once per minute when the reader is active', async () => {

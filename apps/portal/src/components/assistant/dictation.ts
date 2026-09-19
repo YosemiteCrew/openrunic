@@ -38,7 +38,7 @@ export type DictationPhase =
   /** Audio is being captured, as reported by the thing capturing it. */
   | 'listening';
 
-/** How the last session ended. The surface says four of these five out loud. */
+/** How the last session ended. The surface says the five that are not `none` out loud. */
 export type DictationEnding =
   'none' | 'denied' | 'no-speech' | 'no-audio' | 'off-device' | 'failed';
 
@@ -147,7 +147,10 @@ export function appendDictation(current: string, dictated: string, limit: number
   const words = dictated.trim();
   if (words === '') return current;
 
-  const before = current.replace(/\s+$/u, '');
+  /* `trimEnd` rather than a trailing-whitespace pattern: the set of characters
+     is the same one, and a regex anchored at the end of an 8000-character box
+     is quadratic on the input that does not match it. */
+  const before = current.trimEnd();
   const joined = before === '' ? words : `${before} ${words}`;
   return joined.slice(0, limit);
 }

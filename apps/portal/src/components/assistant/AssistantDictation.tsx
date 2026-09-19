@@ -31,6 +31,7 @@
  * control could have that nobody would notice.
  */
 
+import type { MessageKey } from '@openrunic/i18n';
 import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
 import type { CaptureAvailability } from '@/lib/voice';
@@ -62,6 +63,18 @@ const PHASE_KEYS = {
   listening: 'portal.assistant.dictation.listening',
 } as const;
 
+/**
+ * The one sentence the status line has, or nothing.
+ *
+ * One at a time, and the microphone wins: while it is open, how the last
+ * attempt ended is history. A question that was heard says nothing at all - the
+ * words are in the box, which is the better answer.
+ */
+function statusKey(state: DictationState): MessageKey | null {
+  if (state.phase !== 'idle') return PHASE_KEYS[state.phase];
+  return state.ended === 'none' ? null : ENDING_KEYS[state.ended];
+}
+
 export function AssistantDictation({
   availability,
   state,
@@ -77,15 +90,8 @@ export function AssistantDictation({
       ? t(UNAVAILABLE_KEYS[availability.reason])
       : null;
 
-  /* One sentence at a time, and the microphone wins: while it is open, how the
-     last attempt ended is history. A question that was heard says nothing at all
-     - the words are in the box, which is the better answer. */
-  const status =
-    state.phase === 'idle'
-      ? state.ended !== 'none'
-        ? t(ENDING_KEYS[state.ended])
-        : ''
-      : t(PHASE_KEYS[state.phase]);
+  const sentence = statusKey(state);
+  const status = sentence === null ? '' : t(sentence);
 
   const open = state.session !== null;
 

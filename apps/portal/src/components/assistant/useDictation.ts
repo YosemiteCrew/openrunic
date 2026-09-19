@@ -97,9 +97,20 @@ export function useDictation(
        derivation stops an answer about one question being read as an answer to
        another. */
     let asking = true;
-    void port.available(language).then((value) => {
-      if (asking) setAnswer({ port, language, value });
-    });
+    void port
+      .available(language)
+      .then((value) => {
+        if (asking) setAnswer({ port, language, value });
+      })
+      /* A browser that throws the question has not answered it, and this
+         surface only ever opens a microphone on a yes - so a rejection is
+         recorded as the same no a missing adapter gets. Recorded rather than
+         swallowed: without it the rejection is unhandled, and the answer to
+         this question is the one that decides whether somebody's voice stays
+         on their device, so it is not left to a promise nobody is holding. */
+      .catch(() => {
+        if (asking) setAnswer({ port, language, value: NO_ADAPTER });
+      });
 
     return () => {
       asking = false;

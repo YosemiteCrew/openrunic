@@ -428,6 +428,104 @@ describe('a device that cannot do this on its own', () => {
     expect(result.current.availability).toEqual({ status: 'unavailable', reason: 'no-adapter' });
   });
 
+  /*
+   * A browser that throws the question has not answered it.
+   *
+   * The two assertions are for two different failures. The availability one is
+   * the behaviour: a rejection is the same no that a missing recogniser gets,
+   * so nothing draws and nothing opens. The unhandled-rejection one is the
+   * reason this has a `.catch` at all, and it is the only assertion here that
+   * can tell a handled rejection from an unhandled one - both leave the surface
+   * reporting `no-adapter`, because that is what this hook reports until it has
+   * a yes.
+   */
+  it('refuses, and handles the rejection, when the browser throws the question', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', record);
+
+    const opened: CaptureSession[] = [];
+    const port: CapturePort = {
+      available: () => Promise.reject(new Error('malformed language tag')),
+      onEvent: () => () => undefined,
+      start: (session) => {
+        opened.push(session);
+      },
+      stop: () => undefined,
+      abort: () => undefined,
+    };
+
+    try {
+      const { result } = renderHook(() => useDictation(port, 'en', 'patient-1', () => undefined));
+
+      /* A macrotask, not a microtask: Node decides a rejection is unhandled one
+         turn of the loop after it settles, so a test that only flushes
+         microtasks passes with no `.catch` at all. */
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      });
+
+      act(() => {
+        result.current.start();
+      });
+
+      expect(result.current.availability).toEqual({ status: 'unavailable', reason: 'no-adapter' });
+      expect(opened).toEqual([]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+  });
+
+  /*
+   * A refusal about the language the page has left cannot take the control away.
+   *
+   * This is the rejection half of the guard the resolved path already has, and
+   * it is the arm with a consequence: the stale answer here is a *no*, so
+   * without the guard a slow rejection about the previous language lands on top
+   * of a good answer about the current one and the microphone disappears from a
+   * device that can use it.
+   */
+  it('drops a rejection about a language the page has left', async () => {
+    let refuseEnglish: (reason: Error) => void = () => undefined;
+    const port: CapturePort = {
+      available: (language) =>
+        language === 'en'
+          ? new Promise<CaptureAvailability>((_resolve, reject) => {
+              refuseEnglish = reject;
+            })
+          : Promise.resolve<CaptureAvailability>({ status: 'available' }),
+      onEvent: () => () => undefined,
+      start: () => undefined,
+      stop: () => undefined,
+      abort: () => undefined,
+    };
+
+    const { result, rerender } = renderHook(
+      ({ language }: { language: string }) =>
+        useDictation(port, language, 'patient-1', () => undefined),
+      { initialProps: { language: 'en' } }
+    );
+
+    rerender({ language: 'es' });
+    await waitFor(() => {
+      expect(result.current.availability).toEqual({ status: 'available' });
+    });
+
+    await act(async () => {
+      refuseEnglish(new Error('asked too late'));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+
+    expect(result.current.availability).toEqual({ status: 'available' });
+  });
+
   it('asks about the language of the page, and asks again when it changes', async () => {
     const asked: string[] = [];
     const port: CapturePort = {

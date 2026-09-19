@@ -18,10 +18,11 @@
  * Depending on the turns would re-enter this effect on every token of the next
  * answer and say the previous one again from the top.
  *
- * **A stopped utterance can still report back.** An adapter's ending is passed
- * to the reducer as a claim about a named utterance, never as an instruction,
- * so an ending that arrives after the reader stopped finds nothing speaking and
- * changes nothing. Nothing is recorded as heard that the reader cut off.
+ * **A stopped utterance can still report back.** An adapter's event is handed
+ * to the reducer as a claim about a named utterance rather than as an
+ * instruction, so an ending that arrives after the reader stopped finds nothing
+ * speaking and changes nothing. Nothing is recorded as heard that the reader
+ * cut off.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
@@ -69,7 +70,7 @@ export function useReadback(
     };
 
     read();
-    return port === null ? undefined : port.subscribe(read);
+    return port === null ? undefined : port.onCapabilities(read);
   }, [port, language]);
 
   /* A device that cannot speak must not sit with the switch on: the switch
@@ -86,25 +87,7 @@ export function useReadback(
     if (chartRef.current === chartPatientId) return;
     chartRef.current = chartPatientId;
     dispatch({ kind: 'revoke' });
-    port?.cancel();
-  }, [chartPatientId, port]);
-
-  /* Leaving the page, or losing the voice, is not a quiet finish either: the
-     utterance would outlive the surface that authorised it and go on reading
-     into another screen.
-
-     The interruption is dispatched before the cancel for the same reason it is
-     below - a synthesiser reports the utterance it was told to cancel as ended,
-     and an ending that lands before the interruption would record an answer
-     nobody heard as heard. On an unmount the dispatch is a no-op; on a voice
-     that was swapped out under a speaking utterance it is the whole of it. */
-  useEffect(
-    () => () => {
-      dispatch({ kind: 'interrupt' });
-      port?.cancel();
-    },
-    [port]
-  );
+  }, [chartPatientId]);
 
   /* Every settled turn is offered exactly once. With the switch off that is a
      no-op that records it, which is what stops turning the switch on from
@@ -113,46 +96,62 @@ export function useReadback(
     for (const turn of turns) {
       const text = speakableAnswer(turn);
       if (text === null) continue;
-      if (state.attempted.includes(turn.id)) continue;
+      if (state.attempted.has(turn.id)) continue;
       dispatch({ kind: 'speak', turnId: turn.id, text });
     }
   }, [turns, state.attempted]);
 
+  /*
+   * One utterance, for as long as it is the utterance.
+   *
+   * Written as a connection rather than as a pair of calls, because the thing
+   * being managed is the lifetime of a sound: it begins when this utterance
+   * becomes the one being spoken and it must end the moment it stops being
+   * that, however it stopped - read to the end, stopped by the reader, the
+   * switch turned off, a different chart, the voice swapped out, or the page
+   * left behind. Six ways in, one way out.
+   *
+   * The subscription lives and dies with the utterance rather than with the
+   * voice, and it is torn down **before** the cancel. That order is the one
+   * thing in here worth reading twice: a synthesiser reports the utterance it
+   * was told to cancel as ended, with the same event it reports for one read to
+   * the last word. Cancelling while still listening would hand the reducer an
+   * ending for an utterance that is, at that moment, still the current one -
+   * and an answer the reader never heard would be recorded as heard.
+   *
+   * Every other way out is already settled in the state by the time React runs
+   * this cleanup, so this covers the one that is not: the voice itself being
+   * taken away underneath a speaking utterance.
+   */
   useEffect(() => {
     const speaking = state.speaking;
-    /* Nothing to say, or nothing to say it with. A port that goes away under a
-       speaking utterance leaves it here for the one commit it takes the
-       availability above to turn the switch off, which settles it as an
-       interruption. */
-    if (speaking === null || port === null) return;
+    if (speaking === null || port === null) return undefined;
 
-    port.speak({ id: speaking.turnId, text: speaking.text, language }, (event) => {
+    const unsubscribe = port.onEvent((event) => {
       /* `started` says the sound began, which the surface already draws from
-         `speaking`. Only the two endings change anything. */
+         `speaking`. Only the two endings carry anything new. */
       if (event.type === 'started') return;
       dispatch({ kind: event.type, turnId: event.id });
     });
+
+    port.speak({ id: speaking.turnId, text: speaking.text, language });
+
+    return () => {
+      unsubscribe();
+      port.cancel();
+    };
   }, [state.speaking, port, language]);
 
-  /* The dispatch goes in before the cancel, and the order is the whole of it.
-     A browser fires `end` when an utterance is cancelled, so cancelling first
-     would queue that ending ahead of the interruption and the reducer would
-     record a cut-off answer as heard. Queued the other way round, the
-     interruption lands first and the ending that follows it has nothing left to
-     match. */
+  /* Neither of these touches the voice. They change what the state says is
+     being spoken, and the effect above tears the sound down because of it,
+     which is one place that stops sound rather than four that have to agree. */
   const toggle = useCallback(() => {
-    if (state.on) {
-      dispatch({ kind: 'off' });
-      port?.cancel();
-      return;
-    }
-    dispatch({ kind: 'on' });
-  }, [state.on, port]);
+    dispatch({ kind: state.on ? 'off' : 'on' });
+  }, [state.on]);
 
   const stop = useCallback(() => {
     dispatch({ kind: 'interrupt' });
-    port?.cancel();
-  }, [port]);
+  }, []);
 
   return { availability, state, toggle, stop };
 }

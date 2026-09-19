@@ -74,15 +74,18 @@ export interface ReadbackState {
    * Turns settled while the switch was off are in here too, which is what stops
    * flipping it on from reading the whole conversation back at somebody who
    * asked for the next answer.
+   *
+   * A set rather than a list because it is read once per turn on screen every
+   * time the transcript changes, which is once per word of the answer arriving.
    */
-  attempted: readonly string[];
+  attempted: ReadonlySet<string>;
   ended: ReadbackEnding;
 }
 
 export const SILENT: ReadbackState = {
   on: false,
   speaking: null,
-  attempted: [],
+  attempted: new Set(),
   ended: 'none',
 };
 
@@ -139,7 +142,7 @@ export function readbackReducer(state: ReadbackState, action: ReadbackAction): R
       return stopped(state, 'interrupted');
 
     case 'speak': {
-      const attempted = [...state.attempted, action.turnId];
+      const attempted = new Set(state.attempted).add(action.turnId);
       if (!state.on) return { ...state, attempted };
       return {
         ...state,

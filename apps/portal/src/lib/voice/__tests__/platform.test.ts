@@ -101,7 +101,7 @@ describe('the device voice as a port', () => {
     const port = createPlatformReadback(speech);
     const listener = vi.fn();
 
-    const unsubscribe = port?.subscribe(listener);
+    const unsubscribe = port?.onCapabilities(listener);
     expect(listeners.size).toBe(1);
 
     for (const registered of listeners) registered();
@@ -114,7 +114,7 @@ describe('the device voice as a port', () => {
   it('clears anything already speaking rather than queueing behind it', () => {
     const { speech, spoken, cancel } = harness();
 
-    createPlatformReadback(speech)?.speak(UTTERANCE, vi.fn());
+    createPlatformReadback(speech)?.speak(UTTERANCE);
 
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(spoken).toHaveLength(1);
@@ -124,7 +124,7 @@ describe('the device voice as a port', () => {
   it('picks a voice for the language of the page rather than the device', () => {
     const { speech, spoken } = harness(['en-GB', 'es-ES']);
 
-    createPlatformReadback(speech)?.speak({ ...UTTERANCE, language: 'es-MX' }, vi.fn());
+    createPlatformReadback(speech)?.speak({ ...UTTERANCE, language: 'es-MX' });
 
     expect(spoken[0]?.lang).toBe('es-MX');
     expect(spoken[0]?.voice).toEqual({ lang: 'es-ES' });
@@ -133,7 +133,7 @@ describe('the device voice as a port', () => {
   it('leaves the voice unset when it has none for that language', () => {
     const { speech, spoken } = harness(['en-GB']);
 
-    createPlatformReadback(speech)?.speak({ ...UTTERANCE, language: 'fr' }, vi.fn());
+    createPlatformReadback(speech)?.speak({ ...UTTERANCE, language: 'fr' });
 
     expect(spoken[0]?.lang).toBe('fr');
     expect(spoken[0]?.voice).toBeNull();
@@ -142,8 +142,10 @@ describe('the device voice as a port', () => {
   it('reports the sound starting and the answer being read to the end', () => {
     const { speech, spoken } = harness();
     const emit = vi.fn();
+    const port = createPlatformReadback(speech);
 
-    createPlatformReadback(speech)?.speak(UTTERANCE, emit);
+    port?.onEvent(emit);
+    port?.speak(UTTERANCE);
     spoken[0]?.onstart?.();
     spoken[0]?.onend?.();
 
@@ -156,11 +158,26 @@ describe('the device voice as a port', () => {
   it('reports a voice that could not speak as a failure', () => {
     const { speech, spoken } = harness();
     const emit = vi.fn();
+    const port = createPlatformReadback(speech);
 
-    createPlatformReadback(speech)?.speak(UTTERANCE, emit);
+    port?.onEvent(emit);
+    port?.speak(UTTERANCE);
     spoken[0]?.onerror?.();
 
     expect(emit).toHaveBeenCalledWith({ type: 'failed', id: 'turn-1' });
+  });
+
+  it('stops reporting to a listener that unsubscribed', () => {
+    const { speech, spoken } = harness();
+    const emit = vi.fn();
+    const port = createPlatformReadback(speech);
+
+    const unsubscribe = port?.onEvent(emit);
+    unsubscribe?.();
+    port?.speak(UTTERANCE);
+    spoken[0]?.onend?.();
+
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('reports nothing for an utterance it was told to cancel', () => {
@@ -171,7 +188,8 @@ describe('the device voice as a port', () => {
     const emit = vi.fn();
     const port = createPlatformReadback(speech);
 
-    port?.speak(UTTERANCE, emit);
+    port?.onEvent(emit);
+    port?.speak(UTTERANCE);
     port?.cancel();
     spoken[0]?.onend?.();
 
@@ -181,13 +199,16 @@ describe('the device voice as a port', () => {
 
   it('reports nothing for an utterance a later one replaced', () => {
     const { speech, spoken } = harness();
-    const first = vi.fn();
+    const heard = vi.fn();
     const port = createPlatformReadback(speech);
 
-    port?.speak(UTTERANCE, first);
-    port?.speak({ ...UTTERANCE, id: 'turn-2' }, vi.fn());
+    port?.onEvent(heard);
+    port?.speak(UTTERANCE);
+    heard.mockClear();
+    port?.speak({ ...UTTERANCE, id: 'turn-2' });
+    heard.mockClear();
     spoken[0]?.onend?.();
 
-    expect(first).not.toHaveBeenCalled();
+    expect(heard).not.toHaveBeenCalled();
   });
 });

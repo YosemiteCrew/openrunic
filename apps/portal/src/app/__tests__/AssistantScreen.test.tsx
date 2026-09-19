@@ -6,7 +6,7 @@ import { AssistantScreen } from '@/app/assistant/AssistantScreen';
 import { AssistantProvider } from '@/components/assistant';
 import type { AssistantAvailability, AssistantEvent, TurnRequest } from '@/lib/assistant';
 import type { PortalApi } from '@/lib/api/types';
-import type { ReadbackPort, Utterance } from '@/lib/voice';
+import type { ReadbackEvent, ReadbackPort, Utterance } from '@/lib/voice';
 import { fails, never, stubApi } from '@/__tests__/support';
 
 /**
@@ -103,14 +103,21 @@ function mount(options: MountOptions = {}) {
 /** A voice that records what it was asked to say and never makes a sound. */
 function recordingVoice(): { port: ReadbackPort; said: Utterance[] } {
   const said: Utterance[] = [];
+  const listeners = new Set<(event: ReadbackEvent) => void>();
   return {
     said,
     port: {
       capabilities: () => ({ languages: ['en-GB'], interruption: true }),
-      subscribe: () => () => undefined,
-      speak: (utterance, emit) => {
+      onCapabilities: () => () => undefined,
+      onEvent: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      speak: (utterance) => {
         said.push(utterance);
-        emit({ type: 'started', id: utterance.id });
+        for (const listener of listeners) listener({ type: 'started', id: utterance.id });
       },
       cancel: () => undefined,
     },

@@ -14,7 +14,8 @@ function portWith(languages: readonly string[]): ReadbackPort {
   const capabilities: ReadbackCapabilities = { languages, interruption: true };
   return {
     capabilities: () => capabilities,
-    subscribe: () => () => undefined,
+    onCapabilities: () => () => undefined,
+    onEvent: () => () => undefined,
     speak: vi.fn(),
     cancel: vi.fn(),
   };

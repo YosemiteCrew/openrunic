@@ -25,6 +25,8 @@ interface Double {
   port: ReadbackPort;
   /** Everything the adapter was asked to say, in order. */
   said: Utterance[];
+  /** How many times the voice was told to stop. */
+  cancels: () => number;
   finish: (id: string) => void;
   fail: (id: string) => void;
   /** An ending for an utterance nobody asked about. Every adapter can produce one. */
@@ -34,33 +36,46 @@ interface Double {
 /** A single text-to-speech stage, called once per answer. It polices its own cancels. */
 function oneShot(): Double {
   const said: Utterance[] = [];
-  let live: { id: string; emit: (event: ReadbackEvent) => void } | null = null;
+  const listeners = new Set<(event: ReadbackEvent) => void>();
+  let live: string | null = null;
+  let cancels = 0;
+
+  const emit = (event: ReadbackEvent) => {
+    for (const listener of listeners) listener(event);
+  };
 
   const end = (type: 'finished' | 'failed') => (id: string) => {
-    if (live?.id !== id) return;
-    const { emit } = live;
+    if (live !== id) return;
     live = null;
     emit({ type, id });
   };
 
   return {
     said,
+    cancels: () => cancels,
     port: {
       capabilities: () => ({ languages: ['en-GB'], interruption: true }),
-      subscribe: () => () => undefined,
-      speak: (utterance, emit) => {
+      onCapabilities: () => () => undefined,
+      onEvent: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      speak: (utterance) => {
         said.push(utterance);
-        live = { id: utterance.id, emit };
+        live = utterance.id;
         emit({ type: 'started', id: utterance.id });
       },
       cancel: () => {
+        cancels += 1;
         live = null;
       },
     },
     finish: end('finished'),
     fail: end('failed'),
     ghost: () => {
-      live?.emit({ type: 'finished', id: 'an-utterance-nobody-asked-for' });
+      emit({ type: 'finished', id: 'an-utterance-nobody-asked-for' });
     },
   };
 }
@@ -75,8 +90,9 @@ function oneShot(): Double {
  */
 function duplexSession(): Double {
   const said: Utterance[] = [];
-  let emit: ((event: ReadbackEvent) => void) | null = null;
+  const listeners = new Set<(event: ReadbackEvent) => void>();
   let live: string | null = null;
+  let cancels = 0;
 
   const vendor = (kind: 'audio.begin' | 'audio.complete' | 'audio.error', ref: string) => {
     const translated = {
@@ -84,21 +100,28 @@ function duplexSession(): Double {
       'audio.complete': 'finished',
       'audio.error': 'failed',
     } as const;
-    emit?.({ type: translated[kind], id: ref });
+    for (const listener of listeners) listener({ type: translated[kind], id: ref });
   };
 
   return {
     said,
+    cancels: () => cancels,
     port: {
       capabilities: () => ({ languages: ['en-US', 'es-ES'], interruption: true }),
-      subscribe: () => () => undefined,
-      speak: (utterance, next) => {
+      onCapabilities: () => () => undefined,
+      onEvent: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      speak: (utterance) => {
         said.push(utterance);
-        emit = next;
         live = utterance.id;
         vendor('audio.begin', utterance.id);
       },
       cancel: () => {
+        cancels += 1;
         if (live === null) return;
         vendor('audio.complete', live);
         live = null;
@@ -217,6 +240,24 @@ describe.each([
     expect(result.current.state.ended).toBe('interrupted');
   });
 
+  it('tells the voice to stop, rather than only saying so on screen', () => {
+    /* Without this the surface could look interrupted while the device read the
+       rest of the answer out to a room. */
+    const { result, rerender } = drive(double.port);
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    expect(double.cancels()).toBe(0);
+
+    act(() => {
+      result.current.stop();
+    });
+
+    expect(double.cancels()).toBe(1);
+  });
+
   it('ignores an ending for an utterance it is not waiting on', () => {
     const { result, rerender } = drive(double.port);
 
@@ -270,7 +311,7 @@ describe.each([
     });
 
     expect(double.said).toEqual([]);
-    expect(result.current.state.attempted).toEqual(['turn-1']);
+    expect(result.current.state.attempted).toEqual(new Set(['turn-1']));
     expect(result.current.state.speaking).toBeNull();
   });
 
@@ -319,6 +360,6 @@ describe.each([
 
     expect(result.current.state.on).toBe(false);
     expect(result.current.state.speaking).toBeNull();
-    expect(result.current.state.attempted).toEqual([]);
+    expect(result.current.state.attempted).toEqual(new Set());
   });
 });

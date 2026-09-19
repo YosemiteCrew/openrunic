@@ -72,7 +72,7 @@ describe('the switch', () => {
 
     expect(SILENT.on).toBe(false);
     expect(state.speaking).toBeNull();
-    expect(state.attempted).toEqual(['turn-1']);
+    expect(state.attempted).toEqual(new Set(['turn-1']));
   });
 
   it('does not read the conversation so far back when it is turned on', () => {
@@ -81,7 +81,7 @@ describe('the switch', () => {
        it would be read every answer they had already read. */
     const state = reduce(SILENT, { kind: 'speak', turnId: 'turn-1', text: SAID }, { kind: 'on' });
 
-    expect(state.attempted).toEqual(['turn-1']);
+    expect(state.attempted).toEqual(new Set(['turn-1']));
     expect(state.speaking).toBeNull();
   });
 

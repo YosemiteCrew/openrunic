@@ -20,7 +20,7 @@
  * ordinary case rather than an error, and it renders as no readback at all.
  */
 
-import type { ReadbackPort, Utterance } from './ports';
+import type { ReadbackEvent, ReadbackPort, Utterance } from './ports';
 
 /** The two globals this adapter needs, taken as values so they can be faked. */
 export interface PlatformSpeech {
@@ -57,6 +57,8 @@ export function createPlatformReadback(
   if (speech === null) return null;
   const { synthesis } = speech;
 
+  const listeners = new Set<(event: ReadbackEvent) => void>();
+
   /**
    * The utterance whose events still count.
    *
@@ -72,20 +74,31 @@ export function createPlatformReadback(
    */
   let live: string | null = null;
 
+  const emit = (event: ReadbackEvent) => {
+    for (const listener of listeners) listener(event);
+  };
+
   return {
     capabilities: () => ({
       languages: synthesis.getVoices().map((voice) => voice.lang),
       interruption: true,
     }),
 
-    subscribe: (listener) => {
+    onCapabilities: (listener) => {
       synthesis.addEventListener('voiceschanged', listener);
       return () => {
         synthesis.removeEventListener('voiceschanged', listener);
       };
     },
 
-    speak: (utterance: Utterance, emit) => {
+    onEvent: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+
+    speak: (utterance: Utterance) => {
       /* Replacing rather than queueing. Two answers read over each other is
          worse than either, and a queue would keep speaking an answer the reader
          has already moved past. */

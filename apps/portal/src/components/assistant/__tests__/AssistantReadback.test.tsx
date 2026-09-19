@@ -86,7 +86,7 @@ describe('while an answer is being read', () => {
   const reading: ReadbackState = {
     on: true,
     speaking: { turnId: 'turn-1', text: 'You owe nothing.' },
-    attempted: ['turn-1'],
+    attempted: new Set(['turn-1']),
     ended: 'none',
   };
 
@@ -107,7 +107,12 @@ describe('while an answer is being read', () => {
 });
 
 describe('how the last answer ended', () => {
-  const settled: ReadbackState = { on: true, speaking: null, attempted: ['turn-1'], ended: 'none' };
+  const settled: ReadbackState = {
+    on: true,
+    speaking: null,
+    attempted: new Set(['turn-1']),
+    ended: 'none',
+  };
 
   it('says nothing at all about an answer that was read in full', () => {
     show({ ...settled, ended: 'heard' });

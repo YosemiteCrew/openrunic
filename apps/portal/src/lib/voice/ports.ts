@@ -13,11 +13,17 @@
  * one. An adapter therefore cannot widen what the reader hears, whatever it is
  * wired to, because it is never told that there is more.
  *
- * The three shapes below are the whole contract. `capabilities` is asked before
+ * The shapes below are the whole contract. `capabilities` is asked before
  * anything is spoken, so an adapter that cannot speak the language of the page
  * says so instead of mispronouncing somebody's appointment at them.
- * `subscribe` exists because the browser's own voice list arrives late and an
- * adapter that answered "no voices" once must be able to correct itself.
+ * `onCapabilities` exists because the browser's own voice list arrives late and
+ * an adapter that answered "no voices" once must be able to correct itself.
+ *
+ * Events arrive on one subscription rather than on a callback handed to each
+ * `speak`. An adapter that speaks is a thing that reports, continuously, and a
+ * callback per utterance would make every caller decide what to do with an
+ * event that arrives after the utterance it belonged to - which is a decision
+ * with one right answer, taken once, by the surface.
  */
 
 /** What an adapter can do, asked before it is asked to do anything. */
@@ -56,14 +62,16 @@ export type ReadbackEvent =
 export interface ReadbackPort {
   capabilities: () => ReadbackCapabilities;
   /** Called when the answer to `capabilities` may have changed. Returns an unsubscribe. */
-  subscribe: (listener: () => void) => () => void;
+  onCapabilities: (listener: () => void) => () => void;
+  /** Called for each {@link ReadbackEvent} the voice produces. Returns an unsubscribe. */
+  onEvent: (listener: (event: ReadbackEvent) => void) => () => void;
   /**
-   * Says one utterance and reports on it.
+   * Says one utterance.
    *
    * Contractually replaces anything already speaking, so a caller never has to
    * cancel first and no two answers can overlap.
    */
-  speak: (utterance: Utterance, emit: (event: ReadbackEvent) => void) => void;
+  speak: (utterance: Utterance) => void;
   /** Stops immediately and drops anything queued. Safe to call when silent. */
   cancel: () => void;
 }

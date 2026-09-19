@@ -141,3 +141,16 @@ export {
   unreachableModel,
 } from './testing/scripted-model.js';
 export type { ScriptedModel, ScriptedStep } from './testing/scripted-model.js';
+
+export { DeterministicTestSpeechAdapter, NoOpSpeechAdapter } from './speech.js';
+export type {
+  SpeechAdapter,
+  SpeechAdapterConfig,
+  SpeechAdapterFactory,
+  SpeechCapability,
+  SpeechEvent,
+  SpeechSessionConfig,
+  SpeechSessionHandle,
+  AudioFormat,
+  CapabilityCheckResult,
+} from './speech.js';

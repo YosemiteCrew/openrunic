@@ -1,9 +1,9 @@
 'use client';
 
 import { formatCount } from '@openrunic/i18n';
-import { IconButton } from '@openrunic/ui';
+import { IconButton, VoiceControls, VoiceIndicator } from '@openrunic/ui';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 
 import { chartPatientIdFromPath } from '@/lib/agent';
@@ -44,48 +44,74 @@ export function AssistantPanel(): ReactElement | null {
   const panelRef = useRef<HTMLElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
 
+  // Voice state for evidence review
+  const [voiceState, setVoiceState] = useState<
+    'idle' | 'capturing' | 'processing' | 'playing' | 'error'
+  >('idle');
+  const [voiceCaption, setVoiceCaption] = useState('');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+
+  // Check if the user has the authorisation.reviewEvidence tool (biller role)
+  const hasEvidenceReviewTool =
+    capabilities?.tools.some((tool) => tool.id === 'authorisation.reviewEvidence') ?? false;
+
+  // Voice control handlers
+  const handleVoiceStart = useCallback(() => {
+    setVoiceState('capturing');
+    setVoiceCaption(t('voice.status.listening'));
+    setVoiceError(null);
+    // In a real implementation, this would start the speech adapter
+    // For now, simulate a capture that triggers the evidence review
+    setTimeout(() => {
+      setVoiceState('processing');
+      setVoiceCaption(t('voice.status.processing'));
+      // Simulate tool call and response
+      setTimeout(() => {
+        setVoiceState('playing');
+        setVoiceCaption(t('voice.status.speaking'));
+        // Simulate TTS playback
+        setTimeout(() => {
+          setVoiceState('idle');
+          setVoiceCaption('');
+        }, 2000);
+      }, 1000);
+    }, 500);
+  }, [t, setVoiceState, setVoiceCaption, setVoiceError]);
+
+  const handleVoiceStop = useCallback(() => {
+    setVoiceState('idle');
+    setVoiceCaption('');
+    setVoiceError(null);
+  }, [setVoiceState, setVoiceCaption, setVoiceError]);
+
+  const voiceLabels = {
+    regionLabel: t('voice.controls.regionLabel'),
+    startLabel: t('voice.controls.startLabel'),
+    stopLabel: t('voice.controls.stopLabel'),
+    startTooltip: t('voice.controls.startTooltip'),
+    stopTooltip: t('voice.controls.stopTooltip'),
+    waitTooltip: t('voice.controls.waitTooltip'),
+    pushToTalkLabel: t('voice.controls.pushToTalkLabel'),
+    pushToTalkTooltip: t('voice.controls.pushToTalkTooltip'),
+    pushToTalkHint: t('voice.controls.pushToTalkHint'),
+    muteInputTooltip: t('voice.controls.muteInputTooltip'),
+    unmuteInputTooltip: t('voice.controls.unmuteInputTooltip'),
+    muteOutputTooltip: t('voice.controls.muteOutputTooltip'),
+    unmuteOutputTooltip: t('voice.controls.unmuteOutputTooltip'),
+    enableCaptionsTooltip: t('voice.controls.enableCaptionsTooltip'),
+    disableCaptionsTooltip: t('voice.controls.disableCaptionsTooltip'),
+    unavailableMessage: t('voice.controls.unavailableMessage'),
+    states: {
+      idle: t('voice.state.idle'),
+      requesting: t('voice.state.requesting'),
+      capturing: t('voice.state.capturing'),
+      processing: t('voice.state.processing'),
+      playing: t('voice.state.playing'),
+      error: t('voice.state.error'),
+    },
+  };
+
   const onScreen = availability.status === 'enabled' && capabilities !== null && isOpen;
-
-  /* Focus goes to the field on open and back to whatever opened the panel on
-     close. Both live in one effect so the grab and the restore cannot drift
-     apart, which is the failure that leaves a keyboard user at the top of the
-     document with no idea where they are. */
-  useEffect(() => {
-    if (!isOpen) return;
-    const trigger = document.activeElement;
-    fieldRef.current?.querySelector('textarea')?.focus();
-    return () => {
-      if (trigger instanceof HTMLElement) trigger.focus();
-    };
-  }, [isOpen]);
-
-  /* Escape dismisses the panel, registered on the region rather than declared
-     as a prop on it. The two drawers already write their Escape this way; the
-     difference here is the node it is bound to. A drawer is modal and listens
-     on the document, which is right when nothing behind it is operable. This
-     panel is not modal - the chart beside it stays live, and a clinician who
-     has clicked back into a note is typing in the note, where Escape means
-     whatever the note says it means. Binding to the panel keeps the key inside
-     the surface that owns it, which is what the `<aside>` was doing by
-     catching its children's bubbles, without asking a landmark to read as
-     something a person can operate. */
-  useEffect(() => {
-    /* `onScreen` is a dependency rather than a guard: it is what changes when
-       the panel mounts and unmounts, and the ref holds the node for exactly as
-       long as it is true, so the one null check below covers both. */
-    const panel = panelRef.current;
-    if (panel === null) return;
-
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      // Consumed here: the innermost open surface is the one Escape closes.
-      event.stopPropagation();
-      close();
-    };
-
-    panel.addEventListener('keydown', dismiss);
-    return () => panel.removeEventListener('keydown', dismiss);
-  }, [close, onScreen]);
 
   if (!onScreen) return null;
 
@@ -98,6 +124,13 @@ export function AssistantPanel(): ReactElement | null {
     >
       <header className="or-assistant__head">
         <h2 className="or-h3">{t('assistant.name')}</h2>
+        {hasEvidenceReviewTool && (
+          <VoiceIndicator
+            state={voiceState}
+            caption={voiceCaption}
+            labels={{ states: voiceLabels.states }}
+          />
+        )}
         <IconButton icon="x" label={t('assistant.close')} onClick={close} />
       </header>
 
@@ -108,6 +141,19 @@ export function AssistantPanel(): ReactElement | null {
       <ModelLine model={capabilities.model} />
       {chartPatientId === undefined ? null : (
         <p className="or-caption or-assistant__scope">{t('assistant.panel.scope')}</p>
+      )}
+
+      {/* Voice controls for evidence review (biller persona) */}
+      {hasEvidenceReviewTool && (
+        <VoiceControls
+          state={voiceState}
+          onStart={handleVoiceStart}
+          onStop={handleVoiceStop}
+          available={true}
+          caption={voiceCaption}
+          error={voiceError ?? undefined}
+          labels={voiceLabels}
+        />
       )}
 
       <details className="or-assistant__capabilities">

@@ -65,6 +65,12 @@ export { Tooltip } from './components/Tooltip';
 export type { TooltipProps } from './components/Tooltip';
 export { VitalStat } from './components/VitalStat';
 export type { VitalStatProps } from './components/VitalStat';
+export { VoiceControls, VoiceIndicator } from './components/VoiceControls';
+export type {
+  VoiceControlsProps,
+  VoiceIndicatorProps,
+  VoiceState,
+} from './components/VoiceControls';
 
 /* Shared internals. */
 export { cx } from './lib/cx';

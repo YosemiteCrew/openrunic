@@ -494,6 +494,29 @@ export const portal: Messages = {
   'portal.assistant.readback.reading': 'Reading the answer aloud.',
   'portal.assistant.readback.interrupted': 'Stopped reading. The answer is still on screen.',
   'portal.assistant.readback.failed': 'The answer could not be read aloud. It is on screen above.',
+  /* Asking by voice. The copy says where the words go before the microphone is
+     opened, because a person deciding whether to speak their own health question
+     out loud in a shared room is deciding on the strength of this sentence. */
+  'portal.assistant.dictation.speak': 'Speak your question',
+  'portal.assistant.dictation.stop': 'Stop the microphone',
+  'portal.assistant.dictation.hint':
+    'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the box above, where you can change them, and nothing is asked until you press Ask.',
+  'portal.assistant.dictation.starting': 'Opening the microphone.',
+  'portal.assistant.dictation.listening': 'The microphone is on. Your words go into the box above.',
+  'portal.assistant.dictation.noLanguage':
+    'This device cannot turn speech into writing in the language this page is in without sending the sound away, so you can only type here.',
+  'portal.assistant.dictation.notInstalled':
+    'This device could do this once its language pack for this page is installed, and nothing would be sent anywhere. Until then you can only type here.',
+  'portal.assistant.dictation.denied':
+    'The microphone was not allowed, so nothing was heard. You can allow it in your browser settings, or type your question.',
+  'portal.assistant.dictation.noSpeech':
+    'Nothing was heard. You can try again, or type your question.',
+  'portal.assistant.dictation.noAudio':
+    'No microphone could be opened, so nothing was heard. You can type your question instead.',
+  'portal.assistant.dictation.offDevice':
+    'This device would only have done this by sending the sound away, so nothing was heard. You can type your question instead.',
+  'portal.assistant.dictation.failed':
+    'The microphone stopped. You can try again, or type your question.',
   'portal.assistant.turn.youAsked': 'You asked:',
   'portal.assistant.turn.stillLooking': 'Still looking.',
   'portal.assistant.step.done': ', done',

@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { isLiveMode } from '@/lib/api/config';
@@ -11,6 +11,28 @@ import type { PortalSessionState } from '@/lib/auth/session';
 import { useTranslator } from '@/lib/i18n/messages';
 
 const REFRESH_INTERVAL_MS = 60_000;
+
+const ClosePrivateContent = createContext<() => void>(() => undefined);
+
+/**
+ * Takes every private screen off the page now, rather than when the browser
+ * finishes leaving it.
+ *
+ * Ending a session is a request to the server and then a page load, and until
+ * that lands everything inside the boundary is still mounted and still running.
+ * On most screens that is only stale reading. On the assistant it is a
+ * microphone that is still open and an answer that is still being read aloud,
+ * because the things that close those are the cleanups of the components that
+ * own them - and the only way to run a cleanup is to unmount. So a session that
+ * is over unmounts first and navigates second.
+ *
+ * Outside the boundary this does nothing, and that is the truth rather than a
+ * fallback: mock mode and the sign-in page render no private content for it to
+ * take down.
+ */
+export function useClosePrivateContent(): () => void {
+  return useContext(ClosePrivateContent);
+}
 
 function currentTarget(pathname: string): string {
   return `${pathname}${window.location.search}`;
@@ -35,6 +57,8 @@ export function PortalSessionBoundary({ children }: Readonly<{ children: ReactNo
   const publicPage = pathname === SIGN_IN_PATH;
   const [session, setSession] = useState<PortalSessionState | null>(null);
 
+  const close = useCallback(() => setSession(null), []);
+
   useEffect(() => {
     if (!live || publicPage || pathname === null) return;
     const controller = new AbortController();
@@ -44,6 +68,7 @@ export function PortalSessionBoundary({ children }: Readonly<{ children: ReactNo
     let nextRefreshAt = 0;
 
     const expire = (reason: 'idle' | 'expired') => {
+      setSession(null);
       void endSession().finally(() => returnToSignIn(reason, currentTarget(pathname)));
     };
 
@@ -60,6 +85,9 @@ export function PortalSessionBoundary({ children }: Readonly<{ children: ReactNo
       refreshing = false;
       if (!active) return;
       if (restored === null) {
+        /* Already null on the first refresh, and not on any later one: a session
+           refused after the reader has been reading is the case this clears. */
+        setSession(null);
         returnToSignIn('expired', currentTarget(pathname));
         return;
       }
@@ -88,6 +116,8 @@ export function PortalSessionBoundary({ children }: Readonly<{ children: ReactNo
   }, [live, pathname, publicPage]);
 
   if (!live || publicPage) return <>{children}</>;
-  if (session !== null) return <>{children}</>;
+  if (session !== null) {
+    return <ClosePrivateContent.Provider value={close}>{children}</ClosePrivateContent.Provider>;
+  }
   return <output className="portal-session-check">{t('portal.auth.checking')}</output>;
 }

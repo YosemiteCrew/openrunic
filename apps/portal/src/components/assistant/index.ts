@@ -13,6 +13,9 @@ export type { AssistantContextValue, AssistantProviderProps } from './AssistantP
 export { AssistantComposer } from './AssistantComposer';
 export type { AssistantComposerProps } from './AssistantComposer';
 
+export { AssistantDictation } from './AssistantDictation';
+export type { AssistantDictationProps } from './AssistantDictation';
+
 export { AssistantReadback } from './AssistantReadback';
 export type { AssistantReadbackProps } from './AssistantReadback';
 
@@ -47,3 +50,15 @@ export type { Conversation } from './useConversation';
 
 export { useReadback } from './useReadback';
 export type { Readback } from './useReadback';
+
+export { IDLE, appendDictation, dictationReducer } from './dictation';
+export type {
+  DictationAction,
+  DictationEnding,
+  DictationPhase,
+  DictationSession,
+  DictationState,
+} from './dictation';
+
+export { useDictation } from './useDictation';
+export type { Dictation } from './useDictation';

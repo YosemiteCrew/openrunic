@@ -10,6 +10,19 @@
 export { createPlatformReadback, platformSpeech } from './platform';
 export type { PlatformSpeech } from './platform';
 
+export { createPlatformCapture, platformRecognition } from './platform-capture';
+export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture';
+
+export { captureAvailability } from './capture';
+export type {
+  CaptureAvailability,
+  CaptureEvent,
+  CaptureFailure,
+  CapturePort,
+  CaptureSession,
+  CaptureUnavailable,
+} from './capture';
+
 export { readbackAvailability } from './ports';
 export type {
   ReadbackAvailability,

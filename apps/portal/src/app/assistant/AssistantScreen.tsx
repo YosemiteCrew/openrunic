@@ -47,8 +47,8 @@ import type { PortalApi } from '@/lib/api/types';
 import type { AssistantCapabilities } from '@/lib/assistant';
 import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
-import { createPlatformReadback } from '@/lib/voice';
-import type { ReadbackPort } from '@/lib/voice';
+import { createPlatformCapture, createPlatformReadback } from '@/lib/voice';
+import type { CapturePort, ReadbackPort } from '@/lib/voice';
 
 export interface AssistantScreenProps {
   api?: PortalApi;
@@ -58,11 +58,18 @@ export interface AssistantScreenProps {
    * in tests, where jsdom has no synthesiser to drive.
    */
   readback?: ReadbackPort | null;
+  /**
+   * The microphone a question may be dictated into. Absent means none, which is
+   * what the server render and every browser without an on-device recogniser
+   * both produce. Injected in tests, where jsdom has none to drive.
+   */
+  capture?: CapturePort | null;
 }
 
 export function AssistantScreen({
   api = getPortalApi(),
   readback,
+  capture,
 }: Readonly<AssistantScreenProps>) {
   const { availability, settled } = useAssistant();
 
@@ -77,7 +84,12 @@ export function AssistantScreen({
   }
 
   return (
-    <ConfiguredAssistant api={api} capabilities={availability.capabilities} readback={readback} />
+    <ConfiguredAssistant
+      api={api}
+      capabilities={availability.capabilities}
+      capture={capture}
+      readback={readback}
+    />
   );
 }
 
@@ -85,9 +97,15 @@ interface ConfiguredAssistantProps {
   api: PortalApi;
   capabilities: AssistantCapabilities;
   readback?: ReadbackPort | null;
+  capture?: CapturePort | null;
 }
 
-function ConfiguredAssistant({ api, capabilities, readback }: Readonly<ConfiguredAssistantProps>) {
+function ConfiguredAssistant({
+  api,
+  capabilities,
+  readback,
+  capture,
+}: Readonly<ConfiguredAssistantProps>) {
   const t = useTranslator();
   const load = useCallback(() => api.getPatient(), [api]);
   const { state, reload } = useAsync(load);
@@ -117,6 +135,7 @@ function ConfiguredAssistant({ api, capabilities, readback }: Readonly<Configure
         {(patient) => (
           <Conversation
             capabilities={capabilities}
+            capture={capture}
             chartPatientId={patient.id}
             readback={readback}
           />
@@ -130,9 +149,15 @@ interface ConversationProps {
   capabilities: AssistantCapabilities;
   chartPatientId: string;
   readback?: ReadbackPort | null;
+  capture?: CapturePort | null;
 }
 
-function Conversation({ capabilities, chartPatientId, readback }: Readonly<ConversationProps>) {
+function Conversation({
+  capabilities,
+  chartPatientId,
+  readback,
+  capture,
+}: Readonly<ConversationProps>) {
   const t = useTranslator();
   const { runTurn } = useAssistant();
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
@@ -147,6 +172,16 @@ function Conversation({ capabilities, chartPatientId, readback }: Readonly<Conve
     [readback]
   );
   const voice = useReadback(port, t.locale, state.turns, chartPatientId);
+
+  /* Built once, for the same reason the voice is: a new port every render would
+     re-ask the browser what it can recognise on every keystroke, and would tear
+     down an open microphone to do it. `undefined` means nobody injected one,
+     which is the device's own recogniser or nothing; `null` means a caller said
+     there is none, and is not the same answer. */
+  const microphone = useMemo(
+    () => (capture === undefined ? createPlatformCapture() : capture),
+    [capture]
+  );
 
   return (
     <section
@@ -194,7 +229,13 @@ function Conversation({ capabilities, chartPatientId, readback }: Readonly<Conve
         state={voice.state}
       />
 
-      <AssistantComposer answering={state.answering} onAsk={ask} onStop={stop} />
+      <AssistantComposer
+        answering={state.answering}
+        capture={microphone}
+        chartPatientId={chartPatientId}
+        onAsk={ask}
+        onStop={stop}
+      />
     </section>
   );
 }

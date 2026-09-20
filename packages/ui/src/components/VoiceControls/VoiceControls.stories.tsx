@@ -158,21 +158,9 @@ const indicatorMeta = {
   title: 'Assistant/VoiceIndicator',
   component: VoiceIndicator,
   parameters: { layout: 'padded' },
-  args: {
-    labels: { states: defaultLabels.states },
-  },
 } satisfies Meta<typeof VoiceIndicator>;
 
-const indicatorNoArgsMeta = {
-  title: 'Assistant/VoiceIndicator',
-  component: VoiceIndicator,
-  parameters: { layout: 'padded' },
-} satisfies Meta<typeof VoiceIndicator>;
-
-type IndicatorStory = StoryObj<typeof indicatorMeta>;
-type IndicatorNoArgsStory = StoryObj<typeof indicatorNoArgsMeta>;
-
-export const VoiceIndicatorStory: IndicatorNoArgsStory = {
+export const VoiceIndicatorStory: StoryObj<typeof indicatorMeta> = {
   render: () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <VoiceIndicator state="idle" labels={{ states: defaultLabels.states }} />

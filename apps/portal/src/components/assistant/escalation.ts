@@ -25,6 +25,31 @@
  * cannot interpret anything, and a false match sends somebody to their care
  * team, which is never the wrong place.
  *
+ * ## Two classes of question, one destination
+ *
+ * This began as speech acts alone - "should I", "is this normal" - and a reader
+ * with a result in front of them often asks in neither shape. "Is 5.9 potassium
+ * too high?" names a measurement and a magnitude and asks for nothing by name.
+ * "Do I keep taking the metformin with this result?" is a plan rather than a
+ * request for permission. Both belong on this route, so a second class sits
+ * beside the speech acts: a question that names a measured value, either as a
+ * number with a unit or by the name of the measurement.
+ *
+ * That class is a flat set of measurement names in alphabetical order. It has
+ * no weights, no ordering and no second outcome: every entry lands on the same
+ * words and the same route as "should I", and a set that cannot express a rank
+ * cannot apply one, which is what keeps it inside ADR-0004 rule 3. It is also
+ * the one place here that reads what a question names rather than only what it
+ * asks for, so the line is worth stating plainly. A list of measurements is not
+ * a list of things to worry about: there is no condition in it, no symptom, and
+ * nothing saying one measurement matters more than another. "Is my chest
+ * normal?" and "Is my knee normal?" still land in the same place for the same
+ * reason, and "How do I book a blood test?" is still answered from the record.
+ *
+ * ADR-0006 is the reason this is the honest route rather than a cautious one:
+ * no capability granted to this surface returns a measured value, so a question
+ * about one has no answer here to give.
+ *
  * ## Every language's patterns, against every question
  *
  * The portal renders in the reader's language, so a reader asks in it. This
@@ -63,7 +88,7 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /* "Is X normal", whatever X is. The judgement being asked for is in the verb
        and the adjective; what sits between them is not read and does not matter,
        which is what keeps this from becoming a list of things to worry about. */
-    /\b(is|are|was|were)\b[a-z0-9 ]{0,40}\b(normal|serious|safe|dangerous|harmful|bad|ok|okay|fine)\b/,
+    /\b(is|are|was|were)\b[a-z0-9 ]{0,40}\b(normal|abnormal|serious|safe|dangerous|harmful|bad|ok|okay|fine|high|higher|low|lower|raised|elevated|worse|better|out of range)\b/,
     /\bwhat does (it|this|that|the result|my result) mean\b/,
     /\bwhat do (my|these|the) results mean\b/,
     /\bwhat is wrong with me\b/,
@@ -73,6 +98,15 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bwhat would you\b/,
     /\bdiagnose\b/,
     /\bam i (ok|okay|alright|dying|ill)\b/,
+    /* A plan for a medicine or a dose, rather than a request for permission to
+       have one. "Can I stop the tablets" is already above; "Do I keep taking
+       the metformin with this result?" is the same question with the asking
+       taken out of it, and reads as a statement of what the reader is about to
+       do. The verb and the thing it acts on are both required, which is what
+       keeps "How do I change my address?" answerable: `change` on its own is
+       an ordinary word on this screen. No medicine is named here, only the
+       words for the kind of thing one is. */
+    /\b(keep|keeps|keeping|carry on|carrying on|continue|continuing|stop|stopping|pause|restart|change|changing|swap|switch|increase|decrease|reduce|double|halve|skip|split)\b[a-z0-9 ]{0,20}\b(taking|take|dose|doses|dosage|tablet|tablets|pill|pills|medicine|medicines|medication|medications|inhaler|insulin|injection|puff|puffs|statin|statins)\b/,
   ],
   /*
    * Spanish.
@@ -138,7 +172,7 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\btengo que\b/,
     /\bnecesito (que me|ir)\b/,
     /\bpuedo (dejar|empezar|tomar|saltarme|doblar|cambiar|parar)\b/,
-    /\b(es|son|era|eran|esta|estan)\b[a-z0-9 ]{0,40}\b(normal|normales|grave|graves|seguro|segura|peligroso|peligrosa|malo|mala|bien)\b/,
+    /\b(es|son|era|eran|esta|estan)\b[a-z0-9 ]{0,40}\b(normal|normales|anormal|anormales|grave|graves|seguro|segura|peligroso|peligrosa|malo|mala|bien|alto|alta|altos|altas|bajo|baja|bajos|bajas|elevado|elevada|elevados|elevadas|peor|mejor|fuera de rango)\b/,
     /\bque (significa|significan|quiere decir)\b/,
     /\bque me pasa\b/,
     /\bque tengo\s*$/,
@@ -146,10 +180,68 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bque haria usted\b/,
     /\b(diagnosticame|diagnosticar)\b/,
     /\bestoy (bien|mal|grave|enfermo|enferma|muriendo)\b/,
+    /* The same plan in Spanish. `sigo tomando` is the ordinary way to say
+       "am I carrying on with", and the conjugated forms are listed beside the
+       infinitives because that is how the question is actually typed. The verb
+       and its object are both required here too, so "¿Cómo cambio mi
+       dirección?" and "¿Cuántas pastillas me quedan?" are answered. */
+    /\b(dejar|dejo|seguir|sigo|continuar|continuo|parar|paro|suspender|suspendo|cambiar|cambio|doblar|duplicar|aumentar|subir|bajar|reducir|saltar|saltarme|partir)\b[a-z0-9 ]{0,20}\b(tomando|tomar|tomo|dosis|pastilla|pastillas|pildora|pildoras|medicamento|medicamentos|medicina|medicinas|comprimido|comprimidos|inhalador|insulina|inyeccion|estatina|estatinas)\b/,
   ],
 };
 
-const EVERY_PATTERN: readonly RegExp[] = Object.values(ASKS_FOR_A_JUDGEMENT).flat();
+/**
+ * Questions that name a measured value.
+ *
+ * A number with a unit, or the name of a measurement. Nothing here is a speech
+ * act, which is why it is a record of its own rather than more entries above:
+ * the name of that one says what it holds, and this would make it untrue.
+ *
+ * Read the note at the top of the file before adding to this. It is a flat set
+ * of names, ordered alphabetically because that is the order a maintainer can
+ * check, and every entry produces the same single outcome. There is no weight,
+ * no threshold and no second destination, so nothing here can express how
+ * worrying anything is. Adding a condition or a symptom would be a different
+ * kind of list and is not what this is for.
+ *
+ * `any` holds the forms that are spelled the same whatever the reader writes
+ * in: digits, SI units and the abbreviations a report prints. The language
+ * groups hold the words, and are kept separate for the same reason the speech
+ * acts are - a language with no entry is visible as an empty line rather than
+ * as silence.
+ */
+const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
+  any: [
+    /* A number with a unit. The normaliser turns punctuation into spaces, so
+       "5.9" arrives as "5 9" and "120/80 mmHg" as "120 80 mmhg"; the optional
+       second group of digits is that, not a second number. Longer units come
+       first so "mmol" is not read as "mm" followed by nothing. */
+    /\b\d+(?: \d+)? ?(mmhg|mmol|umol|nmol|pmol|mcg|percent|bpm|kpa|ng|ug|mg|iu|kg|ml|dl|cm|mm)\b/,
+    /* What a report prints where a word would be too long. `alt` is left out on
+       purpose: it is an ordinary English word and this is the one entry that
+       would fire on a question about something else entirely. */
+    /\b(a1c|alp|ast|bnp|cd4|crp|egfr|esr|ggt|gfr|hba1c|hdl|inr|ldl|mcv|o2|psa|spo2|tsh|wbc)\b/,
+  ],
+  en: [
+    /* "blood" is not here on its own, so "How do I book a blood test?" is
+       answered; the compounds that are the name of a measurement are. */
+    /\b(albumin|bicarbonate|bilirubin|blood count|blood pressure|blood sugar|calcium|chloride|cholesterol|creatinine|ferritin|folate|glucose|haemoglobin|heart rate|hemoglobin|magnesium|oxygen saturation|phosphate|platelets|potassium|pulse rate|sodium|triglycerides|troponin|urate|urea|uric acid|vitamin d|white cell count)\b/,
+  ],
+  es: [
+    /\b(acido urico|albumina|azucar en sangre|bicarbonato|bilirrubina|calcio|cloruro|colesterol|creatinina|ferritina|folato|fosfato|frecuencia cardiaca|glucosa|hemoglobina|hemograma|magnesio|plaquetas|potasio|presion arterial|saturacion de oxigeno|sodio|tension arterial|trigliceridos|troponina|urato|urea|vitamina d)\b/,
+  ],
+};
+
+/**
+ * Both classes, flattened once.
+ *
+ * The union is the whole point and is taken in one place: a pattern can only
+ * ever add a match here, never take one away, whichever record or language it
+ * was written in.
+ */
+const EVERY_PATTERN: readonly RegExp[] = [
+  ...Object.values(ASKS_FOR_A_JUDGEMENT),
+  ...Object.values(ABOUT_A_MEASURED_VALUE),
+].flat();
 
 /**
  * The question, reduced to the words a pattern is written against.

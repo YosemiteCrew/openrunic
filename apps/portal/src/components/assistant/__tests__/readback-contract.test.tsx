@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { hidePage, showPage } from '@/__tests__/support';
+import { hidePage, showPage } from '@/__tests__/visibility';
 import { useReadback } from '@/components/assistant';
 import type { AssistantTurn } from '@/components/assistant';
 import type { ReadbackEvent, ReadbackPort, Utterance } from '@/lib/voice';

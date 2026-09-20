@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { CaptureAvailability, CapturePort } from '@/lib/voice';
 import { IDLE, dictationReducer } from './dictation';
+import { usePageHidden } from './usePageHidden';
 import type { DictationState } from './dictation';
 
 export interface Dictation {
@@ -132,6 +133,14 @@ export function useDictation(
     chartRef.current = chartPatientId;
     dispatch({ kind: 'revoke' });
   }, [chartPatientId]);
+
+  /* The page going out of sight closes it too, for the same reason: the words
+     in flight belong to a question the reader is no longer looking at, and a
+     microphone open behind a screen nobody is watching is the one thing this
+     surface promised never to be. Nothing reopens it when they come back -
+     `continuous` is off in the adapter, and the next question is the next
+     press. */
+  usePageHidden(() => dispatch({ kind: 'revoke' }));
 
   /*
    * One microphone, for as long as it is the microphone.

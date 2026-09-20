@@ -29,6 +29,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { readbackAvailability } from '@/lib/voice';
 import type { ReadbackAvailability, ReadbackPort } from '@/lib/voice';
 import { SILENT, readbackReducer, speakableAnswer } from './readback';
+import { usePageHidden } from './usePageHidden';
 import type { ReadbackState } from './readback';
 import type { AssistantTurn } from './transcript';
 
@@ -88,6 +89,13 @@ export function useReadback(
     chartRef.current = chartPatientId;
     dispatch({ kind: 'revoke' });
   }, [chartPatientId]);
+
+  /* So does the page going out of sight, and the switch goes with it. An answer
+     becoming audible while the screen is dark is the single case where the
+     words are not on the screen beside the sound - which is the thing that
+     makes reading somebody's record aloud safe at all - so the consent that was
+     given for a page in front of them is not carried into a room they left. */
+  usePageHidden(() => dispatch({ kind: 'revoke' }));
 
   /* Every settled turn is offered exactly once. With the switch off that is a
      no-op that records it, which is what stops turning the switch on from

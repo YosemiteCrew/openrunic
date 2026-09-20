@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { hidePage, showPage } from '@/__tests__/support';
 import { useDictation } from '@/components/assistant';
 import type { CaptureAvailability, CaptureEvent, CapturePort, CaptureSession } from '@/lib/voice';
 
@@ -329,6 +330,42 @@ describe.each(ADAPTERS)('the microphone, through %s', (_label, build) => {
 
     expect(box).toEqual([]);
     expect(result.current.state.session).toBeNull();
+  });
+
+  it('closes the microphone and drops the words when the page goes out of sight', async () => {
+    const double = build();
+    const { result, box } = await ready(double);
+
+    act(() => {
+      result.current.start();
+    });
+    const session = double.opened[0]?.id ?? '';
+
+    act(() => {
+      hidePage();
+    });
+
+    expect(double.aborts()).toBe(1);
+    expect(result.current.state.session).toBeNull();
+
+    /* The one a real recogniser produces on the way out: a last settled result
+       for a session this surface has already abandoned. It must not land in a
+       box on a page nobody is looking at, to be sent when they come back. */
+    act(() => {
+      double.say(session, 'my date of birth is', true);
+      double.finish(session);
+    });
+
+    expect(box).toEqual([]);
+
+    /* Coming back does not reopen it. One press is one question, and the press
+       that opened this one was for a page the reader has since left. */
+    act(() => {
+      showPage();
+    });
+
+    expect(double.opened).toHaveLength(1);
+    expect(result.current.state.phase).toBe('idle');
   });
 
   it('closes the microphone when the page is left behind', async () => {

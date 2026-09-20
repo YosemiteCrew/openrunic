@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { hidePage, showPage } from '@/__tests__/support';
 import { useReadback } from '@/components/assistant';
 import type { AssistantTurn } from '@/components/assistant';
 import type { ReadbackEvent, ReadbackPort, Utterance } from '@/lib/voice';
@@ -347,6 +348,39 @@ describe.each([
     expect(result.current.state.speaking).toBeNull();
     expect(result.current.state.on).toBe(false);
     expect(result.current.state.ended).toBe('interrupted');
+  });
+
+  it('stops the voice and forgets the consent when the page goes out of sight', () => {
+    const { result, rerender } = drive(double.port);
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+
+    act(() => {
+      hidePage();
+    });
+
+    expect(double.cancels()).toBe(1);
+    expect(result.current.state.speaking).toBeNull();
+    expect(result.current.state.on).toBe(false);
+
+    /* The half that matters more than the silence. An answer that settles while
+       the screen is dark - which is exactly when one does, because the reader
+       asked and then put the phone down - must not become audible to the room
+       they are in. The switch being off is what stops it, and coming back does
+       not turn it on again. */
+    act(() => {
+      showPage();
+    });
+    rerender({
+      turns: [ANSWERED, { ...ANSWERED, id: 'turn-3' }],
+      chart: 'patient-1',
+      port: double.port,
+    });
+
+    expect(double.said.map((utterance) => utterance.id)).toEqual(['turn-1']);
   });
 
   it('forgets the voice and the consent when the record underneath changes', () => {

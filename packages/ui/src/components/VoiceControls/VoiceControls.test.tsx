@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { VoiceControls, VoiceIndicator } from './VoiceControls.js';
+import type { VoiceIndicatorProps } from './VoiceControls.js';
 
 const defaultLabels = {
   regionLabel: 'Voice controls',

@@ -1,6 +1,8 @@
 'use client';
 
-import { Button, IconButton, Tooltip } from '@openrunic/ui';
+import { Button } from '../Button';
+import { IconButton } from '../IconButton';
+import { Tooltip } from '../Tooltip';
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 

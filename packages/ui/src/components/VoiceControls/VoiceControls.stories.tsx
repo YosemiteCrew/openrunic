@@ -154,13 +154,13 @@ export const PushToTalkActive: Story = {
 };
 
 /** VoiceIndicator minimal variant for inline use. */
-const indicatorMeta = {
+const _indicatorMeta = {
   title: 'Assistant/VoiceIndicator',
   component: VoiceIndicator,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof VoiceIndicator>;
 
-export const VoiceIndicatorStory: StoryObj<typeof indicatorMeta> = {
+export const VoiceIndicatorStory: StoryObj<typeof _indicatorMeta> = {
   render: () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <VoiceIndicator state="idle" labels={{ states: defaultLabels.states }} />

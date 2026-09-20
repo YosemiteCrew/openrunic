@@ -154,13 +154,14 @@ export const PushToTalkActive: Story = {
 };
 
 /** VoiceIndicator minimal variant for inline use. */
-const _indicatorMeta = {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const indicatorMeta = {
   title: 'Assistant/VoiceIndicator',
   component: VoiceIndicator,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof VoiceIndicator>;
 
-export const VoiceIndicatorStory: StoryObj<typeof _indicatorMeta> = {
+export const VoiceIndicatorStory: StoryObj<typeof indicatorMeta> = {
   render: () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <VoiceIndicator state="idle" labels={{ states: defaultLabels.states }} />

@@ -102,6 +102,66 @@ describe('VoiceControls', () => {
     expect(defaultProps.onStop).toHaveBeenCalledTimes(1);
   });
 
+  it('activates push-to-talk on key down (Space)', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.keyDown(pttButton, { key: ' ' });
+    expect(defaultProps.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('activates push-to-talk on key down (Enter)', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.keyDown(pttButton, { key: 'Enter' });
+    expect(defaultProps.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('deactivates push-to-talk on key up (Space)', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.keyDown(pttButton, { key: ' ' });
+    fireEvent.keyUp(pttButton, { key: ' ' });
+    expect(defaultProps.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('deactivates push-to-talk on key up (Enter)', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.keyDown(pttButton, { key: 'Enter' });
+    fireEvent.keyUp(pttButton, { key: 'Enter' });
+    expect(defaultProps.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('deactivates push-to-talk on mouse leave', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.mouseDown(pttButton);
+    fireEvent.mouseLeave(pttButton);
+    expect(defaultProps.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('activates push-to-talk on touch start', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.touchStart(pttButton);
+    expect(defaultProps.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('deactivates push-to-talk on touch end', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.touchStart(pttButton);
+    fireEvent.touchEnd(pttButton);
+    expect(defaultProps.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not activate push-to-talk on other keys', () => {
+    render(<VoiceControls {...defaultProps} />);
+    const pttButton = screen.getByRole('button', { name: 'Push to talk' });
+    fireEvent.keyDown(pttButton, { key: 'a' });
+    expect(defaultProps.onStart).not.toHaveBeenCalled();
+  });
+
   it('shows mute input button when onMuteInput provided', () => {
     const onMuteInput = vi.fn();
     render(<VoiceControls {...defaultProps} onMuteInput={onMuteInput} />);

@@ -154,27 +154,29 @@ export const PushToTalkActive: Story = {
 };
 
 /** VoiceIndicator minimal variant for inline use. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const indicatorMeta = {
   title: 'Assistant/VoiceIndicator',
   component: VoiceIndicator,
   parameters: { layout: 'padded' },
+  args: {
+    state: 'capturing',
+    labels: { states: defaultLabels.states },
+  },
 } satisfies Meta<typeof VoiceIndicator>;
 
-export const VoiceIndicatorStory: StoryObj<typeof indicatorMeta> = {
-  render: () => (
+export { indicatorMeta as defaultIndicatorMeta };
+type IndicatorStory = StoryObj<typeof indicatorMeta>;
+
+export const VoiceIndicatorStory: IndicatorStory = {
+  render: (args) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      <VoiceIndicator state="idle" labels={{ states: defaultLabels.states }} />
-      <VoiceIndicator state="requesting" labels={{ states: defaultLabels.states }} />
-      <VoiceIndicator state="capturing" labels={{ states: defaultLabels.states }} />
-      <VoiceIndicator state="processing" labels={{ states: defaultLabels.states }} />
-      <VoiceIndicator state="playing" labels={{ states: defaultLabels.states }} />
-      <VoiceIndicator state="error" labels={{ states: defaultLabels.states }} />
-      <VoiceIndicator
-        state="playing"
-        caption="Reading evidence summary..."
-        labels={{ states: defaultLabels.states }}
-      />
+      <VoiceIndicator state="idle" labels={args.labels} />
+      <VoiceIndicator state="requesting" labels={args.labels} />
+      <VoiceIndicator state="capturing" labels={args.labels} />
+      <VoiceIndicator state="processing" labels={args.labels} />
+      <VoiceIndicator state="playing" labels={args.labels} />
+      <VoiceIndicator state="error" labels={args.labels} />
+      <VoiceIndicator state="playing" caption="Reading evidence summary..." labels={args.labels} />
     </div>
   ),
 };

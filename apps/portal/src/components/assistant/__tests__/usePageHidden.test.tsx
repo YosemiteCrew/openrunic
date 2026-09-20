@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { hidePage, showPage } from '@/__tests__/support';
 import { usePageHidden } from '@/components/assistant/usePageHidden';
 
@@ -12,10 +12,6 @@ import { usePageHidden } from '@/components/assistant/usePageHidden';
  * listener that outlives the component, and a listener re-registered often
  * enough to miss the event it exists for.
  */
-
-afterEach(() => {
-  showPage();
-});
 
 describe('the page going out of sight', () => {
   it('says so when the page is hidden', () => {
@@ -93,5 +89,23 @@ describe('the page going out of sight', () => {
 
     add.mockRestore();
     remove.mockRestore();
+  });
+});
+
+describe('the shadow the helper leaves', () => {
+  /* These two are a pair, and the order is the assertion. The first hides the
+     page and deliberately never shows it again - which is what a case that
+     fails an assertion after hiding does, and the reason `hidePage` registers
+     its own restore rather than trusting the case to reach its last line. The
+     second is every later test in any file that hides the page: it must not
+     inherit the first one's shadow. */
+  it('is set while the case that set it is running', () => {
+    hidePage();
+
+    expect(document.visibilityState).toBe('hidden');
+  });
+
+  it('is gone by the next case, with no showPage() in the one before', () => {
+    expect(document.visibilityState).toBe('visible');
   });
 });

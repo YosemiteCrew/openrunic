@@ -6,6 +6,7 @@
  * it cares about, so a screen test never has to hand-write eleven stubs to change one.
  */
 
+import { onTestFinished } from 'vitest';
 import { buildEmptyFixtures, buildFixtures, createMockApi } from '@/lib/api';
 import type { PortalApi } from '@/lib/api/types';
 
@@ -36,12 +37,21 @@ export function fails(): Promise<never> {
  * is deleted rather than set back - which leaves the real getter answering, so
  * a test that forgets to show the page again cannot leave a stale 'visible'
  * standing in for one.
+ *
+ * Hiding registers its own restore, because the shadow is on a document every
+ * test in the file shares. A case that hides the page and then fails an
+ * assertion never reaches its own `showPage()`, so without this the page stays
+ * hidden for every later test in that file and one broken assertion arrives as
+ * a cascade - with the one that actually broke the hardest to pick out.
+ * `onTestFinished` runs on the way out of a failing test as well as a passing
+ * one, which an inline call at the end of the case cannot do.
  */
 export function hidePage(): void {
   Object.defineProperty(document, 'visibilityState', {
     configurable: true,
     get: () => 'hidden',
   });
+  onTestFinished(showPage);
   document.dispatchEvent(new Event('visibilitychange'));
 }
 

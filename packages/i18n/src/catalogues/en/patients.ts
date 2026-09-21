@@ -113,7 +113,9 @@ export const patients: Messages = {
   'patients.duplicate.overrideHint':
     'Recorded with the registration, so the decision is auditable.',
   'patients.duplicate.sameFamilyName': 'Same family name',
+  'patients.duplicate.similarFamilyName': 'Family name one letter apart',
   'patients.duplicate.sameGivenName': 'Same given name',
+  'patients.duplicate.similarGivenName': 'Given name one letter apart',
   'patients.duplicate.sameBirthDate': 'Same date of birth',
   'patients.duplicate.samePhone': 'Same mobile number',
 

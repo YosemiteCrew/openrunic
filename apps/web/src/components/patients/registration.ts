@@ -216,7 +216,11 @@ export function validateRegistration(
 
 export interface DuplicateMatch {
   patient: Patient;
-  /** Higher is a stronger match. Compared against {@link BLOCKING_SCORE}. */
+  /**
+   * Higher is a stronger match. Read against the two bands:
+   * {@link CANDIDATE_SCORE} to be shown at all, {@link BLOCKING_SCORE} to hold
+   * the save.
+   */
   score: number;
   /**
    * Catalogue keys for the plain-language reasons shown next to the candidate,
@@ -225,26 +229,127 @@ export interface DuplicateMatch {
   reasonKeys: string[];
 }
 
-/** At or above this, the save is blocked until the front desk overrides it. */
-export const BLOCKING_SCORE = 5;
+/**
+ * The lowest score that puts a record in front of the registrar at all.
+ *
+ * Below it nothing is shown. The candidate list this runs over has already been
+ * searched by family name, so one weak signal describes most of the list and
+ * showing it would be showing the search back to the person who typed it.
+ */
+export const CANDIDATE_SCORE = 3;
 
-function same(a: string, b: string): boolean {
-  return a.trim().length > 0 && a.trim().toLowerCase() === b.trim().toLowerCase();
+/**
+ * At or above this, the save is blocked until the front desk overrides it.
+ *
+ * The gap between the two bands is deliberately wide. Offering a record that
+ * turns out to be somebody else costs a registrar a glance; holding up somebody
+ * standing at the desk costs them their appointment. So this band is reached
+ * only by agreement on the given name, the family name and a second fixed
+ * identifier, which is a combination relatives do not produce.
+ */
+export const BLOCKING_SCORE = 8;
+
+/** Trimmed, folded and composed, so a comparison is about letters and nothing else. */
+function normalise(value: string): string {
+  return value.trim().toLowerCase().normalize('NFC');
 }
 
-/** Ignores punctuation and spacing so "+1 555 0142 118" matches "555 0142 118". */
-function digits(value: string): string {
-  return value.replace(/\D/g, '');
+function same(a: string, b: string): boolean {
+  const left = normalise(a);
+  return left.length > 0 && left === normalise(b);
 }
 
 /**
- * Two numbers belong to the same person when one ends with the other, which
- * makes the country code optional. A front desk types the number the patient
- * says, and the patient rarely says "plus one".
+ * True when one string becomes the other with a single insertion, deletion,
+ * substitution or swap of neighbours: a Damerau-Levenshtein distance of one.
+ *
+ * Bounded rather than measured, because one is the only distance anything here
+ * asks about and a bounded answer needs a walk rather than a matrix. Matching
+ * characters are consumed from both ends; what is left in the middle is the
+ * edit, and the shape of what is left says which edit it was.
+ *
+ * The lengths are not compared first. The difference between them is exactly
+ * the difference between the two remainders, so a gap of two or more leaves a
+ * remainder of two or more on one side and fails both tests below on its own.
+ * A separate length guard would be a line no test could ever kill.
+ */
+export function withinOneEdit(a: string, b: string): boolean {
+  if (a === b) return true;
+
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head += 1;
+
+  let tail = 0;
+  while (
+    tail < a.length - head &&
+    tail < b.length - head &&
+    a[a.length - 1 - tail] === b[b.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+
+  const aLeft = a.length - head - tail;
+  const bLeft = b.length - head - tail;
+
+  /* One insertion, deletion or substitution leaves at most one unmatched
+     character on each side of the walk. */
+  if (aLeft <= 1 && bLeft <= 1) return true;
+
+  /* A swap of neighbours leaves exactly two on each side, each the other's. */
+  return aLeft === 2 && bLeft === 2 && a[head] === b[head + 1] && a[head + 1] === b[head];
+}
+
+/** A near miss between two names that are both actually there. */
+function nearlySame(a: string, b: string): boolean {
+  const left = normalise(a);
+  const right = normalise(b);
+  return left.length > 0 && right.length > 0 && left !== right && withinOneEdit(left, right);
+}
+
+/**
+ * How well the draft's given name matches, counting the preferred name.
+ *
+ * One answer rather than two predicates, because a draft can hold the preferred
+ * name exactly and the legal name nearly, and counting both would charge a
+ * single agreement twice.
+ */
+function givenMatch(draft: RegistrationDraft, patient: Patient): 'same' | 'near' | 'none' {
+  const known = [patient.name.given, patient.name.preferred ?? ''];
+  if (known.some((name) => same(draft.given, name))) return 'same';
+  return known.some((name) => nearlySame(draft.given, name)) ? 'near' : 'none';
+}
+
+/** The length of a national number, below which there is not enough to compare. */
+const NATIONAL_DIGITS = 10;
+
+/**
+ * A phone number as the digits that identify the line.
+ *
+ * Punctuation and spacing carry nothing, and neither does a country code the
+ * patient did not say: a desk types what it hears, and "plus one" is rarely
+ * part of that. Everything else is left as typed, so two numbers of different
+ * lengths stay two different numbers.
+ *
+ * Only the North American country code is folded, which is the one these
+ * numbers carry. A practice dialling internationally wants a fuller
+ * normalisation, and it belongs at the API, where the country is known.
+ */
+function phoneDigits(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  return digits.length === NATIONAL_DIGITS + 1 && digits.startsWith('1') ? digits.slice(1) : digits;
+}
+
+/**
+ * Two numbers are the same number when the whole of one equals the whole of the
+ * other.
+ *
+ * Not a shared ending: a seven-digit fragment ends a great many complete
+ * numbers, and reading that as agreement named strangers as each other. A value
+ * shorter than a national number is not enough of a number to compare, so it
+ * agrees with nothing.
  */
 function samePhone(a: string, b: string): boolean {
-  if (a.length < 7 || b.length < 7) return false;
-  return a.endsWith(b) || b.endsWith(a);
+  return a.length >= NATIONAL_DIGITS && a === b;
 }
 
 /** One thing that makes two records look like the same person. */
@@ -257,40 +362,60 @@ interface DuplicateSignal {
 }
 
 /**
- * The signals, in the order they are shown.
+ * The signals, in the order they are shown, weakest first.
  *
- * The weights encode what actually identifies a person at a front desk: a date
- * of birth is worth more than a family name, and a phone number that already
- * exists in the practice is the single strongest one. A mobile match alone
- * reaches {@link BLOCKING_SCORE}, because two people do not share a mobile
- * number by chance.
+ * The weights say what actually separates one person from another in a list
+ * that is already everybody sharing a family name. Inside such a list the
+ * family name is the least informative field in it and the given name is the
+ * one doing the work, which is why the given name is worth more. A date of
+ * birth is a fixed identifier and is worth as much again.
+ *
+ * A mobile number is worth less than either. Households share a line, siblings
+ * are registered against a parent's number, and a practice's own number is
+ * given by patients who have no other. So a number in common says two records
+ * belong to the same household, and it takes agreement on the name to say they
+ * belong to the same person.
+ *
+ * Names also match when they nearly match, for a smaller amount: one letter
+ * typed, dropped, swapped or mistaken is how a name arrives at a desk when it
+ * was heard rather than read. Near and exact are mutually exclusive by
+ * construction, so one name is only ever counted once.
  *
  * A table rather than a run of `if` blocks, so the reason keys sit next to the
  * weights they justify and the drift test can see every key.
  */
 const SIGNALS: readonly DuplicateSignal[] = [
   {
+    reasonKey: 'patients.duplicate.similarFamilyName',
+    weight: 1,
+    holds: (draft, patient) => nearlySame(draft.family, patient.name.family),
+  },
+  {
+    reasonKey: 'patients.duplicate.similarGivenName',
+    weight: 1,
+    holds: (draft, patient) => givenMatch(draft, patient) === 'near',
+  },
+  {
     reasonKey: 'patients.duplicate.sameFamilyName',
     weight: 2,
     holds: (draft, patient) => same(draft.family, patient.name.family),
   },
   {
-    reasonKey: 'patients.duplicate.sameGivenName',
+    reasonKey: 'patients.duplicate.samePhone',
     weight: 2,
     holds: (draft, patient) =>
-      same(draft.given, patient.name.given) || same(draft.given, patient.name.preferred ?? ''),
+      samePhone(phoneDigits(draft.phoneMobile), phoneDigits(patient.telecom.phoneMobile ?? '')),
+  },
+  {
+    reasonKey: 'patients.duplicate.sameGivenName',
+    weight: 3,
+    holds: (draft, patient) => givenMatch(draft, patient) === 'same',
   },
   {
     reasonKey: 'patients.duplicate.sameBirthDate',
     weight: 3,
     holds: (draft, patient) =>
       draft.birthDate.trim() !== '' && draft.birthDate.trim() === patient.birthDate,
-  },
-  {
-    reasonKey: 'patients.duplicate.samePhone',
-    weight: 5,
-    holds: (draft, patient) =>
-      samePhone(digits(draft.phoneMobile), digits(patient.telecom.phoneMobile ?? '')),
   },
 ];
 
@@ -311,7 +436,7 @@ export function findDuplicates(
   }
 
   return matches
-    .filter((match) => match.score >= 3)
+    .filter((match) => match.score >= CANDIDATE_SCORE)
     .sort((a, b) => b.score - a.score || a.patient.name.family.localeCompare(b.patient.name.family))
     .slice(0, limit);
 }

@@ -57,8 +57,8 @@ const SIMILAR_BODY = 'These records look close. Check them before registering a 
  * change to any of them fails here instead of quietly making this file fiction.
  *
  * The two drafts differ only in the birth date, which is what moves the score
- * across the threshold. `phoneMobile` stays empty in both: a phone match alone
- * is worth 5 and would block the weaker case.
+ * across the threshold. `phoneMobile` stays empty in both, so the only thing
+ * separating the two cases is the field they differ in.
  */
 function matchesFor(blocking: boolean): DuplicateMatch[] {
   if (PATIENT === undefined) throw new Error('fixture patient OR-101088 is missing');

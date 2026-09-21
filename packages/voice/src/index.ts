@@ -19,7 +19,7 @@ export type {
   Utterance,
 } from './ports.js';
 
-export { SILENT, readbackReducer } from './readback.js';
+export { SILENT, readbackReducer, speakableTurns } from './readback.js';
 export type { ReadbackAction, ReadbackEnding, ReadbackState, Speaking } from './readback.js';
 
 export { usePageHidden } from './usePageHidden.js';

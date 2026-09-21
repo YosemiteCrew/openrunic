@@ -22,7 +22,14 @@
  * an answer nobody may hear and that has to stay one sentence rather than two.
  */
 
-/** The utterance the voice is on. Nothing else's ending is believed. */
+/**
+ * A turn and the exact words it may be read aloud as.
+ *
+ * Two roles, one shape, deliberately: it is what a surface offers the voice and
+ * it is what the voice is on. Keeping them the same type is what makes "the
+ * text that was checked is the text that is spoken" a thing you can see rather
+ * than a thing you have to trace.
+ */
 export interface Speaking {
   turnId: string;
   /**
@@ -139,4 +146,25 @@ export function readbackReducer(state: ReadbackState, action: ReadbackAction): R
     case 'revoke':
       return SILENT;
   }
+}
+
+/**
+ * The turns a surface will have read aloud, in the words it shows for them.
+ *
+ * Stated once here rather than written out at each surface, because the shape
+ * of the answer is the contract - a turn id and the rendered string, and
+ * nothing else about the record - and the mapping is where a surface could
+ * quietly hand the voice something other than what it drew on screen.
+ *
+ * The rule itself stays with the surface: what a patient may be told and what a
+ * biller may be told are different sentences.
+ */
+export function speakableTurns<Turn extends { id: string }>(
+  turns: readonly Turn[],
+  rule: (turn: Turn) => string | null
+): readonly Speaking[] {
+  return turns.flatMap((turn) => {
+    const text = rule(turn);
+    return text === null ? [] : [{ turnId: turn.id, text }];
+  });
 }

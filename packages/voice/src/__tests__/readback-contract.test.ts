@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { hidePage, showPage } from './visibility.js';
+import { speakableTurns } from '../readback.js';
 import { useReadback } from '../useReadback.js';
 import type { ReadbackEvent, ReadbackPort, Utterance } from '../ports.js';
 
@@ -199,7 +200,11 @@ interface Props {
 
 function drive(port: ReadbackPort) {
   return renderHook(
-    ({ turns, scope, port: current }: Props) => useReadback(current, 'en', turns, speakable, scope),
+    /* Mapped here rather than in the hook, the way a surface does it: what
+       reaches the voice is a turn id and the string the screen shows, and the
+       rule that decided so has already run. */
+    ({ turns, scope, port: current }: Props) =>
+      useReadback(current, 'en', speakableTurns(turns, speakable), scope),
     {
       initialProps: {
         turns: [] as readonly Turn[],
@@ -420,7 +425,12 @@ describe.each([
        left the answer unread with the switch on and nothing to say why. */
     const { result, rerender } = renderHook(
       ({ turns, allow }: { turns: readonly Turn[]; allow: boolean }) =>
-        useReadback(double.port, 'en', turns, (turn) => (allow ? speakable(turn) : null), 'case-1'),
+        useReadback(
+          double.port,
+          'en',
+          speakableTurns(turns, (turn) => (allow ? speakable(turn) : null)),
+          'case-1'
+        ),
       { initialProps: { turns: [] as readonly Turn[], allow: false } }
     );
 

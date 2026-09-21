@@ -24,12 +24,12 @@
  * speaking and changes nothing. Nothing is recorded as heard that the reader
  * cut off.
  *
- * **Which answers may be read is not decided here.** `speakable` is the
- * surface's own test for what it is willing to show, handed in rather than
- * restated, and it returns the very string the turn renders. That is what keeps
- * "may this be shown" and "may this be heard" one sentence: a surface that
- * learns a new reason to withhold an answer does not have to remember to come
- * here and teach the voice the same reason.
+ * **Which answers may be read is not decided here.** The hook is handed the
+ * turns a surface has already found speakable, paired with the very strings it
+ * renders for them. That is what keeps "may this be shown" and "may this be
+ * heard" one sentence: a surface that learns a new reason to withhold an answer
+ * does not have to remember to come here and teach the voice the same reason,
+ * and nothing in this file could read a record even if it wanted to.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
@@ -37,7 +37,7 @@ import { readbackAvailability } from './ports.js';
 import type { ReadbackAvailability, ReadbackPort } from './ports.js';
 import { SILENT, readbackReducer } from './readback.js';
 import { usePageHidden } from './usePageHidden.js';
-import type { ReadbackState } from './readback.js';
+import type { ReadbackState, Speaking } from './readback.js';
 
 export interface Readback {
   availability: ReadbackAvailability;
@@ -55,11 +55,10 @@ function sameAvailability(left: ReadbackAvailability, right: ReadbackAvailabilit
   return left.reason === right.reason;
 }
 
-export function useReadback<Turn extends { id: string }>(
+export function useReadback(
   port: ReadbackPort | null,
   language: string,
-  turns: readonly Turn[],
-  speakable: (turn: Turn) => string | null,
+  speakable: readonly Speaking[],
   scope: string
 ): Readback {
   const [state, dispatch] = useReducer(readbackReducer, SILENT);
@@ -107,24 +106,21 @@ export function useReadback<Turn extends { id: string }>(
      given for a page in front of them is not carried into a room they left. */
   usePageHidden(() => dispatch({ kind: 'revoke' }));
 
-  /* Every settled turn is offered exactly once. With the switch off that is a
-     no-op that records it, which is what stops turning the switch on from
-     reading the conversation so far back at somebody.
+  /* Every turn the surface has found speakable is offered exactly once. With
+     the switch off that is a no-op that records it, which is what stops turning
+     the switch on from reading the conversation so far back at somebody.
 
-     `speakable` is a dependency like any other, and it is safe to be one
-     because what stops a turn being spoken twice is `attempted` rather than
-     anything about how often this runs. A caller that rebuilds its rule on
-     every render therefore costs a loop over the turns on screen and nothing
-     else - there is no correctness in holding the rule still, so it is not
-     held still behind a ref that would have to be kept in step. */
+     The list is the whole of what this hook is told. Which turns are on it is
+     the surface's decision, taken beside its decision about what to show - see
+     {@link ./index.ts}. What stops one being spoken twice is `attempted` rather
+     than anything about how often this runs, so a caller that rebuilds the list
+     costs a loop over what is on screen and nothing else. */
   useEffect(() => {
-    for (const turn of turns) {
-      const text = speakable(turn);
-      if (text === null) continue;
-      if (state.attempted.has(turn.id)) continue;
-      dispatch({ kind: 'speak', turnId: turn.id, text });
+    for (const item of speakable) {
+      if (state.attempted.has(item.turnId)) continue;
+      dispatch({ kind: 'speak', turnId: item.turnId, text: item.text });
     }
-  }, [turns, speakable, state.attempted]);
+  }, [speakable, state.attempted]);
 
   /*
    * One utterance, for as long as it is the utterance.

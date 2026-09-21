@@ -30,7 +30,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { useReadback } from '@openrunic/voice';
+import { speakableTurns, useReadback } from '@openrunic/voice';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
@@ -172,7 +172,10 @@ function Conversation({
     () => (readback === undefined ? createPlatformReadback() : readback),
     [readback]
   );
-  const voice = useReadback(port, t.locale, state.turns, speakableAnswer, chartPatientId);
+  /* The rule runs here, beside the rule about what this portal will show. What
+     reaches the voice is a turn id and the string on screen. */
+  const speakable = useMemo(() => speakableTurns(state.turns, speakableAnswer), [state.turns]);
+  const voice = useReadback(port, t.locale, speakable, chartPatientId);
 
   /* Built once, for the same reason the voice is: a new port every render would
      re-ask the browser what it can recognise on every keystroke, and would tear

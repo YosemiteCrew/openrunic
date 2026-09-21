@@ -2,7 +2,7 @@
 
 import { formatCount } from '@openrunic/i18n';
 import { IconButton } from '@openrunic/ui';
-import { createPlatformReadback, useReadback } from '@openrunic/voice';
+import { createPlatformReadback, speakableTurns, useReadback } from '@openrunic/voice';
 import type { ReadbackPort } from '@openrunic/voice';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef } from 'react';
@@ -85,7 +85,11 @@ export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): Rea
      scope of a conversation about no chart in particular, which is what a
      biller asking about an authorisation case has. Moving between the two stops
      the voice and asks again, the same as moving between two charts. */
-  const voice = useReadback(port, t.locale, state.turns, speakableAnswer, chartPatientId ?? '');
+  /* The rule runs here, beside the rule about what this surface will show. What
+     reaches the voice is a turn id and the string on screen, and nothing that
+     could be used to ask for another one. */
+  const speakable = useMemo(() => speakableTurns(state.turns, speakableAnswer), [state.turns]);
+  const voice = useReadback(port, t.locale, speakable, chartPatientId ?? '');
 
   /* Focus goes to the field on open and back to whatever opened the panel on
      close. Both live in one effect so the grab and the restore cannot drift

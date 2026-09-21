@@ -20,6 +20,11 @@
  * is the surface's own test for what it is willing to show, handed to
  * {@link ./useReadback.ts} as an argument, because an answer nobody may read is
  * an answer nobody may hear and that has to stay one sentence rather than two.
+ *
+ * That argument is one-way, and {@link endingFor} is what the other direction
+ * costs: an ending carries the turn it is about, so a surface can tell whether
+ * the answer it describes is still the one on screen without the voice ever
+ * learning about the turns that surface refused.
  */
 
 /**
@@ -63,6 +68,16 @@ export interface ReadbackState {
    */
   attempted: ReadonlySet<string>;
   ended: ReadbackEnding;
+  /**
+   * The turn `ended` is about, and null exactly when it is `none`.
+   *
+   * An ending is a fact about one answer, and a surface is where that answer
+   * either is or is not still the one being looked at. Carrying the id is what
+   * lets it say so: this hook cannot be told that a turn it was never offered
+   * has arrived - see {@link ./useReadback.ts} - so the ending has to be
+   * identifiable from the outside instead. {@link endingFor} is that reading.
+   */
+  endedTurnId: string | null;
 }
 
 export const SILENT: ReadbackState = {
@@ -70,6 +85,7 @@ export const SILENT: ReadbackState = {
   speaking: null,
   attempted: new Set(),
   ended: 'none',
+  endedTurnId: null,
 };
 
 export type ReadbackAction =
@@ -105,12 +121,18 @@ function isCurrent(state: ReadbackState, turnId: string): boolean {
   return state.speaking?.turnId === turnId;
 }
 
+/**
+ * The one place an utterance stops being the one being spoken.
+ *
+ * Every ending goes through here - read to the end, cut off, or failed - so
+ * `ended` and the turn it is about are written together and cannot drift.
+ */
 function stopped(state: ReadbackState, ending: ReadbackEnding): ReadbackState {
   /* Stopping when nothing is speaking leaves the last ending alone: there is no
      new fact about the voice, and overwriting it would wipe a failure sentence
      off the screen the moment somebody flipped the switch. */
   if (state.speaking === null) return state;
-  return { ...state, speaking: null, ended: ending };
+  return { ...state, speaking: null, ended: ending, endedTurnId: state.speaking.turnId };
 }
 
 export function readbackReducer(state: ReadbackState, action: ReadbackAction): ReadbackState {
@@ -132,20 +154,40 @@ export function readbackReducer(state: ReadbackState, action: ReadbackAction): R
         attempted,
         speaking: { turnId: action.turnId, text: action.text },
         ended: 'none',
+        endedTurnId: null,
       };
     }
 
     case 'finished':
-      return isCurrent(state, action.turnId) ? { ...state, speaking: null, ended: 'heard' } : state;
+      return isCurrent(state, action.turnId) ? stopped(state, 'heard') : state;
 
     case 'failed':
-      return isCurrent(state, action.turnId)
-        ? { ...state, speaking: null, ended: 'failed' }
-        : state;
+      return isCurrent(state, action.turnId) ? stopped(state, 'failed') : state;
 
     case 'revoke':
       return SILENT;
   }
+}
+
+/**
+ * How the last utterance ended, while the answer it is about is still the last
+ * one on screen. `none` once the conversation has moved past it.
+ *
+ * The sentence a surface draws from an ending - that an answer was stopped, or
+ * could not be read - is about one answer, and it stops being true of the
+ * screen the moment a later answer is the one under it. That happens without
+ * the voice hearing anything: a turn this surface refuses to read is a turn the
+ * hook is never told about, deliberately, so an ending cannot be retired from
+ * the inside.
+ *
+ * The reading is left here, with the rules, rather than written out at each
+ * surface: what the surface supplies is a fact it already has - the last turn
+ * it drew - and not a second thing it has to remember to keep in step.
+ *
+ * `null` for a conversation with nothing in it, which no ending can be about.
+ */
+export function endingFor(state: ReadbackState, lastTurnId: string | null): ReadbackEnding {
+  return state.endedTurnId === lastTurnId ? state.ended : 'none';
 }
 
 /**

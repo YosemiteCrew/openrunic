@@ -211,3 +211,49 @@ describe('hearing what a case is still missing', () => {
     expect(screen.queryByRole('switch', { name: 'Read answers aloud' })).not.toBeInTheDocument();
   });
 });
+
+describe('how the last answer ended, once the conversation has moved on', () => {
+  const STOPPED = 'Stopped reading. The answer is still on screen.';
+
+  /** A different script per turn, so a conversation can carry two unalike answers. */
+  function scripted(...turns: readonly (readonly AgentEvent[])[]): RunAgentTurn {
+    let asked = 0;
+    return function run(): AsyncGenerator<AgentEvent> {
+      const events = turns[asked] ?? [];
+      asked += 1;
+      return (async function* emit() {
+        for (const event of events) {
+          await Promise.resolve();
+          yield event;
+        }
+      })();
+    };
+  }
+
+  it('takes the sentence down when a later answer the screen withheld is the one on screen', async () => {
+    /* #530. The first answer was read and the reader stopped it, which is worth
+       a sentence. The second is withheld, so nothing is read and nothing new is
+       said about the voice - and the sentence about the first answer would sit
+       under the second one, describing an answer that is no longer the subject. */
+    const voice = recordingVoice();
+    await openPanel(
+      scripted(
+        [{ type: 'text-delta', text: GAP }, { type: 'sources', entries: [SOURCE] }, FINISHED],
+        [{ type: 'text-delta', text: 'The referral letter is still outstanding.' }, FINISHED]
+      ),
+      voice.port
+    );
+
+    readAloud();
+    askFor('what is still missing on this authorisation');
+    await waitFor(() => expect(voice.said).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop reading' }));
+    expect(screen.getByText(STOPPED)).toBeInTheDocument();
+
+    askFor('and the referral letter');
+    await screen.findByText(/arrived without the records it was drawn from/);
+
+    expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
+  });
+});

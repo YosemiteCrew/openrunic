@@ -228,6 +228,7 @@ function Conversation({
 
       <AssistantReadback
         availability={voice.availability}
+        lastTurnId={state.turns.at(-1)?.id ?? null}
         onStop={voice.stop}
         onToggle={voice.toggle}
         state={voice.state}

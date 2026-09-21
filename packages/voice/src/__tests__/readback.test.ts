@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SILENT, readbackReducer } from '../readback.js';
+import { SILENT, endingFor, readbackReducer } from '../readback.js';
 import type { ReadbackAction, ReadbackState } from '../readback.js';
 
 /**
@@ -132,6 +132,99 @@ describe('turning it off and being cut off', () => {
     const heard = reduce(speaking, { kind: 'finished', turnId: 'turn-1' });
 
     expect(reduce(heard, { kind: 'interrupt' })).toBe(heard);
+  });
+});
+
+describe('which answer an ending is about', () => {
+  const speaking = reduce(SILENT, { kind: 'on' }, { kind: 'speak', turnId: 'turn-1', text: SAID });
+
+  it('names the utterance it is about, whichever way that utterance ended', () => {
+    for (const [state, ending] of [
+      [reduce(speaking, { kind: 'interrupt' }), 'interrupted'],
+      [reduce(speaking, { kind: 'off' }), 'interrupted'],
+      [reduce(speaking, { kind: 'failed', turnId: 'turn-1' }), 'failed'],
+      [reduce(speaking, { kind: 'finished', turnId: 'turn-1' }), 'heard'],
+    ] as const) {
+      expect(state.ended).toBe(ending);
+      expect(state.endedTurnId).toBe('turn-1');
+    }
+  });
+
+  it('has nothing to be about until an utterance has ended', () => {
+    expect(SILENT.endedTurnId).toBeNull();
+    expect(speaking.endedTurnId).toBeNull();
+  });
+
+  it('forgets the last one when the next utterance begins', () => {
+    const state = reduce(
+      speaking,
+      { kind: 'interrupt' },
+      { kind: 'speak', turnId: 'turn-2', text: SAID }
+    );
+
+    expect(state.ended).toBe('none');
+    expect(state.endedTurnId).toBeNull();
+  });
+
+  it('is an ending about a turn or no ending at all, in every state these actions reach', () => {
+    /* The two fields are written together in one place. This is the assertion
+       that says so, over every state a sequence of actions can produce: an
+       `endedTurnId` beside `none`, or an ending about no turn, is a state the
+       surface below would read as a sentence about the wrong answer. */
+    const actions = [
+      { kind: 'on' },
+      { kind: 'off' },
+      { kind: 'speak', turnId: 'turn-1', text: SAID },
+      { kind: 'speak', turnId: 'turn-2', text: SAID },
+      { kind: 'interrupt' },
+      { kind: 'finished', turnId: 'turn-1' },
+      { kind: 'failed', turnId: 'turn-2' },
+      { kind: 'revoke' },
+    ] as const satisfies readonly ReadbackAction[];
+
+    /* Four deep, because the shortest sequence that could separate them is
+       four: on, speak, interrupt, speak again - the last of those is where an
+       ending is dropped and a turn id could be left behind it. */
+    const DEPTH = 4;
+    let seen = 0;
+
+    const walk = (state: ReadbackState, left: number): void => {
+      expect((state.ended === 'none') === (state.endedTurnId === null)).toBe(true);
+      seen += 1;
+      if (left === 0) return;
+      for (const action of actions) walk(readbackReducer(state, action), left - 1);
+    };
+    walk(SILENT, DEPTH);
+
+    /* The walk ran rather than the assertion being true of nothing. */
+    expect(seen).toBe([0, 1, 2, 3, 4].reduce((total, depth) => total + actions.length ** depth, 0));
+  });
+});
+
+describe('the ending a surface should say out loud', () => {
+  const speaking = reduce(SILENT, { kind: 'on' }, { kind: 'speak', turnId: 'turn-1', text: SAID });
+
+  it('says how the answer ended while that answer is the last one on screen', () => {
+    const stopped = reduce(speaking, { kind: 'interrupt' });
+
+    expect(endingFor(stopped, 'turn-1')).toBe('interrupted');
+  });
+
+  it('says nothing once a later answer is the one on screen', () => {
+    /* #530. The later turn is one the surface refused to read - a deferral, a
+       failure, a proposal - so the voice was never told it arrived, and the
+       sentence about the answer before it would sit under an answer it is not
+       about. */
+    const stopped = reduce(speaking, { kind: 'interrupt' });
+
+    expect(endingFor(stopped, 'turn-2')).toBe('none');
+  });
+
+  it('says nothing where there is no conversation for an ending to be about', () => {
+    const stopped = reduce(speaking, { kind: 'interrupt' });
+
+    expect(endingFor(stopped, null)).toBe('none');
+    expect(endingFor(SILENT, null)).toBe('none');
   });
 });
 

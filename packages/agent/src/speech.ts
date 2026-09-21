@@ -46,6 +46,13 @@ export interface AudioFormat {
 
 /**
  * Configuration for a speech session.
+ *
+ * SECURITY NOTE: This configuration combines a patient identifier (chartId)
+ * with audio capture settings. Implementations MUST ensure:
+ * - Audio data is encrypted in transit (TLS 1.2+) and at rest
+ * - Audio data containing PHI is never logged or persisted without encryption
+ * - Access to audio streams is scoped to the authenticated user and chartId
+ * - Session termination revokes access and clears queued audio (ADR-0005)
  */
 export interface SpeechSessionConfig {
   /** Product-owned session ID, never a vendor session ID. */
@@ -54,7 +61,7 @@ export interface SpeechSessionConfig {
   turnId: string;
   /** The surface this session belongs to (staff/patient). */
   surface: AgentSurface;
-  /** The chart/patient this session is scoped to. */
+  /** The chart/patient this session is scoped to. Used for access control and audit. */
   chartId: string;
   /** Input audio format from the client. */
   inputFormat: AudioFormat;
@@ -101,6 +108,14 @@ export type SpeechEvent =
  *
  * Adapters implement this to provide STT/TTS capabilities. The agent core
  * never imports vendor SDKs directly; all vendor-specific code lives here.
+ *
+ * SECURITY REQUIREMENTS for implementations (HIPAA-compliant PHI handling):
+ * - All audio data (input and output) MUST be encrypted in transit (TLS 1.2+)
+ * - Audio data containing PHI MUST NOT be logged, persisted, or cached unencrypted
+ * - The adapter MUST validate that the caller has access to the chartId in SpeechSessionConfig
+ * - Session termination (stopSession, interrupt) MUST immediately revoke access and clear buffers
+ * - Implementations MUST support the 'revoked' session end reason for logout/context-change
+ * - Vendor API keys/credentials MUST be injected at runtime, never hardcoded
  */
 export interface SpeechAdapter {
   /** Human-readable name for logging and capability disclosure. */
@@ -122,6 +137,7 @@ export interface SpeechAdapter {
    * Starts a speech session.
    * Returns an async iterator of speech events.
    * The adapter must validate permissions and scope before yielding any audio.
+   * The config.chartId identifies the patient record; adapter MUST enforce access control.
    */
   startSession(
     config: SpeechSessionConfig,
@@ -139,12 +155,14 @@ export interface SpeechAdapter {
 
   /**
    * Sends audio data for STT processing.
+   * The audio buffer may contain PHI (patient speech); implementations MUST encrypt in transit.
    */
   sendAudio(handle: SpeechSessionHandle, audio: Uint8Array): Promise<void>;
 
   /**
    * Requests TTS for the given text.
    * The text must be source-validated before this is called (ADR-0005 rule 8).
+   * The text may contain PHI; implementations MUST encrypt in transit and not log.
    */
   speak(handle: SpeechSessionHandle, text: string, turnId: string): Promise<void>;
 

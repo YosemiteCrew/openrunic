@@ -351,11 +351,14 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
  * the name of that one says what it holds, and this would make it untrue.
  *
  * Read the note at the top of the file before adding to this. It is a flat set
- * of names, ordered alphabetically because that is the order a maintainer can
- * check, and every entry produces the same single outcome. There is no weight,
- * no threshold and no second destination, so nothing here can express how
- * worrying anything is. Adding a condition or a symptom would be a different
- * kind of list and is not what this is for.
+ * of names, and every entry produces the same single outcome. There is no
+ * weight, no threshold and no second destination, so nothing here can express
+ * how worrying anything is. Adding a condition or a symptom would be a
+ * different kind of list and is not what this is for.
+ *
+ * The name lists are alphabetical, because that is the order a maintainer can
+ * check. The unit list is the one exception and is longest first, for the
+ * reason written where it sits.
  *
  * `any` holds the forms that are spelled the same whatever the reader writes
  * in: digits, SI units and the abbreviations a report prints. The language

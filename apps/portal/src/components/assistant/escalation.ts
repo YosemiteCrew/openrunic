@@ -208,7 +208,7 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
        "How do I change my address?" and "¿Cómo cambio mi dirección?"
        answerable: `change` and `cambio` are ordinary words on this screen. No
        medicine is named here, only the words for the kind of thing one is. */
-    new RegExp(`\\b${oneOf(PLAN_VERBS)}\\b[a-z0-9 ]{0,20}\\b${oneOf(PLAN_OBJECTS)}\\b`),
+    new RegExp(String.raw`\b${oneOf(PLAN_VERBS)}\b[a-z0-9 ]{0,20}\b${oneOf(PLAN_OBJECTS)}\b`),
   ],
   en: [
     /\bshould i\b/,
@@ -218,7 +218,7 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
        and the adjective; what sits between them is not read and does not matter,
        which is what keeps this from becoming a list of things to worry about. */
     new RegExp(
-      `\\b${oneOf(['is', 'are', 'was', 'were'])}\\b[a-z0-9 ]{0,40}\\b${oneOf([
+      String.raw`\b${oneOf(['is', 'are', 'was', 'were'])}\b[a-z0-9 ]{0,40}\b${oneOf([
         'abnormal',
         'bad',
         'better',
@@ -238,7 +238,7 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
         'safe',
         'serious',
         'worse',
-      ])}\\b`
+      ])}\b`
     ),
     /\bwhat does (it|this|that|the result|my result) mean\b/,
     /\bwhat do (my|these|the) results mean\b/,
@@ -315,36 +315,38 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bnecesito (que me|ir)\b/,
     /\bpuedo (dejar|empezar|tomar|saltarme|doblar|cambiar|parar)\b/,
     new RegExp(
-      `\\b${oneOf(['es', 'son', 'era', 'eran', 'esta', 'estan'])}\\b[a-z0-9 ]{0,40}\\b${oneOf([
-        'alta',
-        'altas',
-        'alto',
-        'altos',
-        'anormal',
-        'anormales',
-        'baja',
-        'bajas',
-        'bajo',
-        'bajos',
-        'bien',
-        'elevada',
-        'elevadas',
-        'elevado',
-        'elevados',
-        'fuera de rango',
-        'grave',
-        'graves',
-        'mala',
-        'malo',
-        'mejor',
-        'normal',
-        'normales',
-        'peligrosa',
-        'peligroso',
-        'peor',
-        'segura',
-        'seguro',
-      ])}\\b`
+      String.raw`\b${oneOf(['es', 'son', 'era', 'eran', 'esta', 'estan'])}\b[a-z0-9 ]{0,40}\b${oneOf(
+        [
+          'alta',
+          'altas',
+          'alto',
+          'altos',
+          'anormal',
+          'anormales',
+          'baja',
+          'bajas',
+          'bajo',
+          'bajos',
+          'bien',
+          'elevada',
+          'elevadas',
+          'elevado',
+          'elevados',
+          'fuera de rango',
+          'grave',
+          'graves',
+          'mala',
+          'malo',
+          'mejor',
+          'normal',
+          'normales',
+          'peligrosa',
+          'peligroso',
+          'peor',
+          'segura',
+          'seguro',
+        ]
+      )}\b`
     ),
     /\bque (significa|significan|quiere decir)\b/,
     /\bque me pasa\b/,
@@ -386,9 +388,8 @@ const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
        second group of digits is that, not a second number. Longer units come
        first so "mmol" is not read as "mm" followed by nothing. */
     new RegExp(
-      /* Longer units first so "mmol" is not read as "mm" followed by nothing,
-         and no boundary before the unit so "5mg" counts as well as "5 mg". */
-      `\\b\\d+(?: \\d+)? ?${oneOf([
+      /* No boundary before the unit, so "5mg" counts as well as "5 mg". */
+      String.raw`\b\d+(?: \d+)? ?${oneOf([
         'mmhg',
         'mmol',
         'umol',
@@ -407,13 +408,13 @@ const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
         'dl',
         'cm',
         'mm',
-      ])}\\b`
+      ])}\b`
     ),
     /* What a report prints where a word would be too long. `alt` is left out on
        purpose: it is an ordinary English word and this is the one entry that
        would fire on a question about something else entirely. */
     new RegExp(
-      `\\b${oneOf([
+      String.raw`\b${oneOf([
         'a1c',
         'alp',
         'ast',
@@ -434,14 +435,14 @@ const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
         'spo2',
         'tsh',
         'wbc',
-      ])}\\b`
+      ])}\b`
     ),
   ],
   en: [
     /* "blood" is not here on its own, so "How do I book a blood test?" is
        answered; the compounds that are the name of a measurement are. */
     new RegExp(
-      `\\b${oneOf([
+      String.raw`\b${oneOf([
         'albumin',
         'bicarbonate',
         'bilirubin',
@@ -472,12 +473,12 @@ const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
         'uric acid',
         'vitamin d',
         'white cell count',
-      ])}\\b`
+      ])}\b`
     ),
   ],
   es: [
     new RegExp(
-      `\\b${oneOf([
+      String.raw`\b${oneOf([
         'acido urico',
         'albumina',
         'azucar en sangre',
@@ -506,7 +507,7 @@ const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
         'urato',
         'urea',
         'vitamina d',
-      ])}\\b`
+      ])}\b`
     ),
   ],
 };

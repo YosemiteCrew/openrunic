@@ -164,7 +164,6 @@ const indicatorMeta = {
   },
 } satisfies Meta<typeof VoiceIndicator>;
 
-export { indicatorMeta as defaultIndicatorMeta };
 type IndicatorStory = StoryObj<typeof indicatorMeta>;
 
 export const VoiceIndicatorStory: IndicatorStory = {

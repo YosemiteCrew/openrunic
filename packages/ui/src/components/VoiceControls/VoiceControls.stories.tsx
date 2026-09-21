@@ -154,6 +154,7 @@ export const PushToTalkActive: Story = {
 };
 
 /** VoiceIndicator minimal variant for inline use. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used as type for IndicatorStory
 const indicatorMeta = {
   title: 'Assistant/VoiceIndicator',
   component: VoiceIndicator,

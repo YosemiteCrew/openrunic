@@ -307,7 +307,7 @@ export function formatEvidenceReviewForSpeech(review: {
   // Case type and status
   const caseTypeLabel =
     review.caseType === 'prior-authorisation' ? 'prior authorization' : 'denied claim';
-  parts.push(`Reviewing ${caseTypeLabel}. Status: ${review.status.replace(/-/g, ' ')}.`);
+  parts.push(`Reviewing ${caseTypeLabel}. Status: ${review.status.replaceAll('-', ' ')}.`);
 
   // Missing requirements
   const missing = review.missingRequirements.filter((r) => !r.satisfied);

@@ -623,14 +623,16 @@ describe('useSpeech teardown', () => {
 describe('formatEvidenceReviewForSpeech', () => {
   const evidence = [{ label: 'Chest x-ray report', resourceType: 'DiagnosticReport' }];
 
-  it('names the case type and reads the status as words', () => {
+  it('names the case type and reads every hyphen in the status as a space', () => {
+    // Two hyphens, not one: a status with a single separator cannot tell a
+    // global replacement from one that stops after the first match.
     const spoken = formatEvidenceReviewForSpeech({
       caseType: 'prior-authorisation',
-      status: 'awaiting-evidence',
+      status: 'awaiting-payer-response',
       missingRequirements: [],
       evidence: [],
     });
-    expect(spoken).toContain('Reviewing prior authorization. Status: awaiting evidence.');
+    expect(spoken).toContain('Reviewing prior authorization. Status: awaiting payer response.');
   });
 
   it('distinguishes a denied claim from a prior authorisation', () => {

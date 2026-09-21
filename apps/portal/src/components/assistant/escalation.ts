@@ -80,6 +80,17 @@
  * somebody adding a language works in and the grouping is what makes a missing
  * language visible. They are all applied regardless of what the reader chose.
  */
+/**
+ * One alternation, `(?:a|b|c)`, out of a list.
+ *
+ * The patterns below are a pattern wrapped around a vocabulary, and the
+ * vocabulary is the part a maintainer reads and adds to. Writing the list as a
+ * list keeps it sorted, diffable and countable, and keeps the pattern itself
+ * short enough to see at once. Non-capturing because nothing here reads a
+ * group; `needsCareTeam` asks only whether a pattern matched.
+ */
+const oneOf = (words: readonly string[]): string => `(?:${words.join('|')})`;
+
 const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
   en: [
     /\bshould i\b/,
@@ -88,7 +99,29 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /* "Is X normal", whatever X is. The judgement being asked for is in the verb
        and the adjective; what sits between them is not read and does not matter,
        which is what keeps this from becoming a list of things to worry about. */
-    /\b(is|are|was|were)\b[a-z0-9 ]{0,40}\b(normal|abnormal|serious|safe|dangerous|harmful|bad|ok|okay|fine|high|higher|low|lower|raised|elevated|worse|better|out of range)\b/,
+    new RegExp(
+      `\\b${oneOf(['is', 'are', 'was', 'were'])}\\b[a-z0-9 ]{0,40}\\b${oneOf([
+        'abnormal',
+        'bad',
+        'better',
+        'dangerous',
+        'elevated',
+        'fine',
+        'harmful',
+        'high',
+        'higher',
+        'low',
+        'lower',
+        'normal',
+        'ok',
+        'okay',
+        'out of range',
+        'raised',
+        'safe',
+        'serious',
+        'worse',
+      ])}\\b`
+    ),
     /\bwhat does (it|this|that|the result|my result) mean\b/,
     /\bwhat do (my|these|the) results mean\b/,
     /\bwhat is wrong with me\b/,
@@ -106,7 +139,53 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
        keeps "How do I change my address?" answerable: `change` on its own is
        an ordinary word on this screen. No medicine is named here, only the
        words for the kind of thing one is. */
-    /\b(keep|keeps|keeping|carry on|carrying on|continue|continuing|stop|stopping|pause|restart|change|changing|swap|switch|increase|decrease|reduce|double|halve|skip|split)\b[a-z0-9 ]{0,20}\b(taking|take|dose|doses|dosage|tablet|tablets|pill|pills|medicine|medicines|medication|medications|inhaler|insulin|injection|puff|puffs|statin|statins)\b/,
+    new RegExp(
+      `\\b${oneOf([
+        'carry on',
+        'carrying on',
+        'change',
+        'changing',
+        'continue',
+        'continuing',
+        'decrease',
+        'double',
+        'halve',
+        'increase',
+        'keep',
+        'keeping',
+        'keeps',
+        'pause',
+        'reduce',
+        'restart',
+        'skip',
+        'split',
+        'stop',
+        'stopping',
+        'swap',
+        'switch',
+      ])}\\b[a-z0-9 ]{0,20}\\b${oneOf([
+        'dosage',
+        'dose',
+        'doses',
+        'inhaler',
+        'injection',
+        'insulin',
+        'medication',
+        'medications',
+        'medicine',
+        'medicines',
+        'pill',
+        'pills',
+        'puff',
+        'puffs',
+        'statin',
+        'statins',
+        'tablet',
+        'tablets',
+        'take',
+        'taking',
+      ])}\\b`
+    ),
   ],
   /*
    * Spanish.
@@ -172,7 +251,38 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\btengo que\b/,
     /\bnecesito (que me|ir)\b/,
     /\bpuedo (dejar|empezar|tomar|saltarme|doblar|cambiar|parar)\b/,
-    /\b(es|son|era|eran|esta|estan)\b[a-z0-9 ]{0,40}\b(normal|normales|anormal|anormales|grave|graves|seguro|segura|peligroso|peligrosa|malo|mala|bien|alto|alta|altos|altas|bajo|baja|bajos|bajas|elevado|elevada|elevados|elevadas|peor|mejor|fuera de rango)\b/,
+    new RegExp(
+      `\\b${oneOf(['es', 'son', 'era', 'eran', 'esta', 'estan'])}\\b[a-z0-9 ]{0,40}\\b${oneOf([
+        'alta',
+        'altas',
+        'alto',
+        'altos',
+        'anormal',
+        'anormales',
+        'baja',
+        'bajas',
+        'bajo',
+        'bajos',
+        'bien',
+        'elevada',
+        'elevadas',
+        'elevado',
+        'elevados',
+        'fuera de rango',
+        'grave',
+        'graves',
+        'mala',
+        'malo',
+        'mejor',
+        'normal',
+        'normales',
+        'peligrosa',
+        'peligroso',
+        'peor',
+        'segura',
+        'seguro',
+      ])}\\b`
+    ),
     /\bque (significa|significan|quiere decir)\b/,
     /\bque me pasa\b/,
     /\bque tengo\s*$/,
@@ -185,7 +295,51 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
        infinitives because that is how the question is actually typed. The verb
        and its object are both required here too, so "¿Cómo cambio mi
        dirección?" and "¿Cuántas pastillas me quedan?" are answered. */
-    /\b(dejar|dejo|seguir|sigo|continuar|continuo|parar|paro|suspender|suspendo|cambiar|cambio|doblar|duplicar|aumentar|subir|bajar|reducir|saltar|saltarme|partir)\b[a-z0-9 ]{0,20}\b(tomando|tomar|tomo|dosis|pastilla|pastillas|pildora|pildoras|medicamento|medicamentos|medicina|medicinas|comprimido|comprimidos|inhalador|insulina|inyeccion|estatina|estatinas)\b/,
+    new RegExp(
+      `\\b${oneOf([
+        'aumentar',
+        'bajar',
+        'cambiar',
+        'cambio',
+        'continuar',
+        'continuo',
+        'dejar',
+        'dejo',
+        'doblar',
+        'duplicar',
+        'parar',
+        'paro',
+        'partir',
+        'reducir',
+        'saltar',
+        'saltarme',
+        'seguir',
+        'sigo',
+        'subir',
+        'suspender',
+        'suspendo',
+      ])}\\b[a-z0-9 ]{0,20}\\b${oneOf([
+        'comprimido',
+        'comprimidos',
+        'dosis',
+        'estatina',
+        'estatinas',
+        'inhalador',
+        'insulina',
+        'inyeccion',
+        'medicamento',
+        'medicamentos',
+        'medicina',
+        'medicinas',
+        'pastilla',
+        'pastillas',
+        'pildora',
+        'pildoras',
+        'tomando',
+        'tomar',
+        'tomo',
+      ])}\\b`
+    ),
   ],
 };
 
@@ -215,19 +369,129 @@ const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
        "5.9" arrives as "5 9" and "120/80 mmHg" as "120 80 mmhg"; the optional
        second group of digits is that, not a second number. Longer units come
        first so "mmol" is not read as "mm" followed by nothing. */
-    /\b\d+(?: \d+)? ?(mmhg|mmol|umol|nmol|pmol|mcg|percent|bpm|kpa|ng|ug|mg|iu|kg|ml|dl|cm|mm)\b/,
+    new RegExp(
+      /* Longer units first so "mmol" is not read as "mm" followed by nothing,
+         and no boundary before the unit so "5mg" counts as well as "5 mg". */
+      `\\b\\d+(?: \\d+)? ?${oneOf([
+        'mmhg',
+        'mmol',
+        'umol',
+        'nmol',
+        'pmol',
+        'percent',
+        'mcg',
+        'bpm',
+        'kpa',
+        'ng',
+        'ug',
+        'mg',
+        'iu',
+        'kg',
+        'ml',
+        'dl',
+        'cm',
+        'mm',
+      ])}\\b`
+    ),
     /* What a report prints where a word would be too long. `alt` is left out on
        purpose: it is an ordinary English word and this is the one entry that
        would fire on a question about something else entirely. */
-    /\b(a1c|alp|ast|bnp|cd4|crp|egfr|esr|ggt|gfr|hba1c|hdl|inr|ldl|mcv|o2|psa|spo2|tsh|wbc)\b/,
+    new RegExp(
+      `\\b${oneOf([
+        'a1c',
+        'alp',
+        'ast',
+        'bnp',
+        'cd4',
+        'crp',
+        'egfr',
+        'esr',
+        'gfr',
+        'ggt',
+        'hba1c',
+        'hdl',
+        'inr',
+        'ldl',
+        'mcv',
+        'o2',
+        'psa',
+        'spo2',
+        'tsh',
+        'wbc',
+      ])}\\b`
+    ),
   ],
   en: [
     /* "blood" is not here on its own, so "How do I book a blood test?" is
        answered; the compounds that are the name of a measurement are. */
-    /\b(albumin|bicarbonate|bilirubin|blood count|blood pressure|blood sugar|calcium|chloride|cholesterol|creatinine|ferritin|folate|glucose|haemoglobin|heart rate|hemoglobin|magnesium|oxygen saturation|phosphate|platelets|potassium|pulse rate|sodium|triglycerides|troponin|urate|urea|uric acid|vitamin d|white cell count)\b/,
+    new RegExp(
+      `\\b${oneOf([
+        'albumin',
+        'bicarbonate',
+        'bilirubin',
+        'blood count',
+        'blood pressure',
+        'blood sugar',
+        'calcium',
+        'chloride',
+        'cholesterol',
+        'creatinine',
+        'ferritin',
+        'folate',
+        'glucose',
+        'haemoglobin',
+        'heart rate',
+        'hemoglobin',
+        'magnesium',
+        'oxygen saturation',
+        'phosphate',
+        'platelets',
+        'potassium',
+        'pulse rate',
+        'sodium',
+        'triglycerides',
+        'troponin',
+        'urate',
+        'urea',
+        'uric acid',
+        'vitamin d',
+        'white cell count',
+      ])}\\b`
+    ),
   ],
   es: [
-    /\b(acido urico|albumina|azucar en sangre|bicarbonato|bilirrubina|calcio|cloruro|colesterol|creatinina|ferritina|folato|fosfato|frecuencia cardiaca|glucosa|hemoglobina|hemograma|magnesio|plaquetas|potasio|presion arterial|saturacion de oxigeno|sodio|tension arterial|trigliceridos|troponina|urato|urea|vitamina d)\b/,
+    new RegExp(
+      `\\b${oneOf([
+        'acido urico',
+        'albumina',
+        'azucar en sangre',
+        'bicarbonato',
+        'bilirrubina',
+        'calcio',
+        'cloruro',
+        'colesterol',
+        'creatinina',
+        'ferritina',
+        'folato',
+        'fosfato',
+        'frecuencia cardiaca',
+        'glucosa',
+        'hemoglobina',
+        'hemograma',
+        'magnesio',
+        'plaquetas',
+        'potasio',
+        'presion arterial',
+        'saturacion de oxigeno',
+        'sodio',
+        'tension arterial',
+        'trigliceridos',
+        'troponina',
+        'urato',
+        'urea',
+        'vitamina d',
+      ])}\\b`
+    ),
   ],
 };
 

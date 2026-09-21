@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 
 import { useAssistant } from '@/components/assistant/AssistantProvider';
+import type { SpeechAdapter } from './types';
 import { useSpeech } from './useSpeech';
 
 /**
@@ -27,16 +28,22 @@ interface UseEvidenceReviewOptions {
   chartId: string;
   /** Surface */
   surface: 'staff' | 'patient';
+  /**
+   * Speech adapter. Omitted, `useSpeech` falls back to its no-op adapter and
+   * `canReviewEvidence` is false, which is the shipped default: a clinic that
+   * has configured no provider gets the typed workflow and no voice at all.
+   */
+  adapter?: SpeechAdapter;
 }
 
 export function useEvidenceReview(options: UseEvidenceReviewOptions) {
-  const { isBiller, sessionId, chartId, surface } = options;
+  const { isBiller, sessionId, chartId, surface, adapter } = options;
   const { capabilities, runTurn } = useAssistant();
   const speech = useSpeech({
     sessionId,
     chartId,
     surface,
-    adapter: undefined, // Will use no-op if not configured
+    adapter,
   });
 
   // Check if the authorisation.reviewEvidence tool is available
@@ -56,11 +63,6 @@ export function useEvidenceReview(options: UseEvidenceReviewOptions) {
         return;
       }
 
-      if (!runTurn) {
-        speech.speak('Assistant is not configured.');
-        return;
-      }
-
       // Ask the assistant to review evidence
       // caseId is an internal identifier, not patient PHI; spoken only locally via TTS
       const caseDescriptions = cases
@@ -69,18 +71,23 @@ export function useEvidenceReview(options: UseEvidenceReviewOptions) {
 
       const question = `Review evidence for ${caseDescriptions}`;
 
-      // Use the existing assistant turn mechanism
-      // The assistant will call the authorisation.reviewEvidence tool
-      // and we'll intercept the result to speak it
       speech.speak(`Reviewing evidence for ${cases.length} case${cases.length > 1 ? 's' : ''}.`);
 
-      // This would need integration with the assistant's tool calling mechanism
-      // For now, we trigger a turn that will call the tool
-      await runTurn({
+      // `runTurn` is an async generator: calling it starts nothing, so this
+      // has to iterate. The tool output itself renders in the assistant
+      // transcript, which is the source-checked surface; the only thing worth
+      // speaking from here is a failure, because a spoken start followed by
+      // silence is the one outcome the biller cannot see.
+      for await (const event of runTurn({
         message: question,
         turnIndex: Date.now(),
         chartPatientId: chartId,
-      });
+      })) {
+        if (event.type === 'failed') {
+          speech.speak('The evidence review could not be completed.');
+          return;
+        }
+      }
     },
     [canReviewEvidence, runTurn, speech, chartId]
   );

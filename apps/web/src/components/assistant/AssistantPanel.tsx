@@ -3,7 +3,7 @@
 import { formatCount } from '@openrunic/i18n';
 import { IconButton, VoiceControls, VoiceIndicator } from '@openrunic/ui';
 import { usePathname } from 'next/navigation';
-import { useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 
 import { chartPatientIdFromPath } from '@/lib/agent';
@@ -55,34 +55,51 @@ export function AssistantPanel(): ReactElement | null {
   const hasEvidenceReviewTool =
     capabilities?.tools.some((tool) => tool.id === 'authorisation.reviewEvidence') ?? false;
 
+  // Every delayed voice transition is tracked so that stopping the session —
+  // or leaving the page — cancels the ones that have not fired yet. Without
+  // that, a stopped session walks itself back into processing and playing.
+  const voiceTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearVoiceTimers = useCallback(() => {
+    voiceTimers.current.forEach(clearTimeout);
+    voiceTimers.current = [];
+  }, []);
+
+  useEffect(() => clearVoiceTimers, [clearVoiceTimers]);
+
   // Voice control handlers
   const handleVoiceStart = useCallback(() => {
+    clearVoiceTimers();
     setVoiceState('capturing');
     setVoiceCaption(t('voice.status.listening'));
     setVoiceError(null);
+    const track = (fn: () => void, ms: number) => {
+      voiceTimers.current.push(setTimeout(fn, ms));
+    };
     // In a real implementation, this would start the speech adapter
     // For now, simulate a capture that triggers the evidence review
-    setTimeout(() => {
+    track(() => {
       setVoiceState('processing');
       setVoiceCaption(t('voice.status.processing'));
       // Simulate tool call and response
-      setTimeout(() => {
+      track(() => {
         setVoiceState('playing');
         setVoiceCaption(t('voice.status.speaking'));
         // Simulate TTS playback
-        setTimeout(() => {
+        track(() => {
           setVoiceState('idle');
           setVoiceCaption('');
         }, 2000);
       }, 1000);
     }, 500);
-  }, [t, setVoiceState, setVoiceCaption, setVoiceError]);
+  }, [t, clearVoiceTimers]);
 
   const handleVoiceStop = useCallback(() => {
+    clearVoiceTimers();
     setVoiceState('idle');
     setVoiceCaption('');
     setVoiceError(null);
-  }, [setVoiceState, setVoiceCaption, setVoiceError]);
+  }, [clearVoiceTimers]);
 
   const voiceLabels = {
     regionLabel: t('voice.controls.regionLabel'),

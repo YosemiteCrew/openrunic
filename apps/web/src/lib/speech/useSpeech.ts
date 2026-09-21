@@ -295,7 +295,6 @@ export function useSpeech(options: UseSpeechOptions): UseSpeechReturn {
  * Formats the authorisation review evidence result for spoken output.
  * This ensures the output is source-checked and follows ADR-0005 rule 8.
  * The review data may contain PHI in labels; output is for local TTS only.
- * // nosemgrep: phi-formatting - output for local TTS, not transmitted
  */
 export function formatEvidenceReviewForSpeech(review: {
   caseType: string;

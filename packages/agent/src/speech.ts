@@ -54,7 +54,6 @@ export interface AudioFormat {
  * - Access to audio streams is scoped to the authenticated user and chartId
  * - Session termination revokes access and clears queued audio (ADR-0005)
  * - The chartId is for LOCAL access control only; NOT transmitted to speech provider.
- *   // aikido:ignore PHI-in-config - chartId used for access control, not transmitted
  */
 export interface SpeechSessionConfig {
   /** Product-owned session ID, never a vendor session ID. */
@@ -64,7 +63,6 @@ export interface SpeechSessionConfig {
   /** The surface this session belongs to (staff/patient). */
   surface: AgentSurface;
   /** The chart/patient this session is scoped to. Used for access control and audit. */
-  // aikido:ignore PHI-in-config - chartId used for access control, not transmitted
   chartId: string;
   /** Input audio format from the client. */
   inputFormat: AudioFormat;
@@ -159,7 +157,6 @@ export interface SpeechAdapter {
   /**
    * Sends audio data for STT processing.
    * The audio buffer may contain PHI (patient speech); implementations MUST encrypt in transit.
-   * // nosemgrep: phi-transmission - audio encrypted in transit per HIPAA
    */
   sendAudio(handle: SpeechSessionHandle, audio: Uint8Array): Promise<void>;
 
@@ -167,7 +164,6 @@ export interface SpeechAdapter {
    * Requests TTS for the given text.
    * The text must be source-validated before this is called (ADR-0005 rule 8).
    * The text may contain PHI; implementations MUST encrypt in transit and not log.
-   * // nosemgrep: phi-transmission - text encrypted in transit per HIPAA
    */
   speak(handle: SpeechSessionHandle, text: string, turnId: string): Promise<void>;
 
@@ -203,7 +199,6 @@ export interface SpeechAdapterConfig {
   baseUrl: string;
   /** Authentication configuration (api key, token, etc.). Type-only; no secrets in source.
    *  Injected at runtime via environment/config, never hardcoded. */
-  // nosemgrep: secret-in-config - runtime-injected only
   authConfig: Record<string, string>;
   /** Provider-specific options. */
   options?: Record<string, unknown>;

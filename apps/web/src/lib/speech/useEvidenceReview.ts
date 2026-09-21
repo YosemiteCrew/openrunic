@@ -63,7 +63,6 @@ export function useEvidenceReview(options: UseEvidenceReviewOptions) {
 
       // Ask the assistant to review evidence
       // caseId is an internal identifier, not patient PHI; spoken only locally via TTS
-      // nosemgrep: phi-in-log - caseId is not PHI
       const caseDescriptions = cases
         .map((c) => `${c.caseType} ${c.caseId} with payer ${c.payerProfile.code}`)
         .join(', ');

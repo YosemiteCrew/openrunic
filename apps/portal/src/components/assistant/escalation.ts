@@ -82,6 +82,105 @@
 const oneOf = (words: readonly string[]): string => `(?:${words.join('|')})`;
 
 /**
+ * The words a plan for a medicine is made of, in every language this module
+ * carries, in one list each.
+ *
+ * Both lists are alphabetical and hold English and Spanish together, because
+ * every pattern runs against every question anyway: separating them would be a
+ * distinction the matcher never makes, and one list can only ever match more
+ * than two. Conjugated forms sit beside the infinitives because that is how
+ * the question is typed, not how a dictionary lists it.
+ */
+const PLAN_VERBS: readonly string[] = [
+  'aumentar',
+  'bajar',
+  'cambiar',
+  'cambio',
+  'carry on',
+  'carrying on',
+  'change',
+  'changing',
+  'continuar',
+  'continue',
+  'continuing',
+  'continuo',
+  'decrease',
+  'dejar',
+  'dejo',
+  'doblar',
+  'double',
+  'duplicar',
+  'halve',
+  'increase',
+  'keep',
+  'keeping',
+  'keeps',
+  'parar',
+  'paro',
+  'partir',
+  'pause',
+  'reduce',
+  'reducir',
+  'restart',
+  'saltar',
+  'saltarme',
+  'seguir',
+  'sigo',
+  'skip',
+  'split',
+  'stop',
+  'stopping',
+  'subir',
+  'suspender',
+  'suspendo',
+  'swap',
+  'switch',
+];
+
+/** What such a plan acts on. A medicine, a dose, or the form one comes in. */
+const PLAN_OBJECTS: readonly string[] = [
+  'comprimido',
+  'comprimidos',
+  'dosage',
+  'dose',
+  'doses',
+  'dosis',
+  'estatina',
+  'estatinas',
+  'inhalador',
+  'inhaler',
+  'injection',
+  'insulin',
+  'insulina',
+  'inyeccion',
+  'medicamento',
+  'medicamentos',
+  'medication',
+  'medications',
+  'medicina',
+  'medicinas',
+  'medicine',
+  'medicines',
+  'pastilla',
+  'pastillas',
+  'pildora',
+  'pildoras',
+  'pill',
+  'pills',
+  'puff',
+  'puffs',
+  'statin',
+  'statins',
+  'tablet',
+  'tablets',
+  'take',
+  'taking',
+  'tomando',
+  'tomar',
+  'tomo',
+];
+
+/**
  * Speech acts that ask for a judgement rather than for a record.
  *
  * Written as whole phrases, checked against the words of the question rather
@@ -92,6 +191,25 @@ const oneOf = (words: readonly string[]): string => `(?:${words.join('|')})`;
  * language visible. They are all applied regardless of what the reader chose.
  */
 const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
+  any: [
+    /* A plan for a medicine or a dose, rather than a request for permission to
+       have one. "Can I stop the tablets" is already above; "Do I keep taking
+       the metformin with this result?" and "¿Sigo tomando la metformina?" are
+       the same question with the asking taken out of it, and read as a
+       statement of what the reader is about to do.
+
+       One list rather than one per language, because every pattern runs
+       against every question anyway: splitting these would be a distinction
+       the matcher never makes, and the merged list can only ever match more.
+       The conjugated forms sit beside the infinitives because that is how the
+       question is actually typed.
+
+       The verb and the thing it acts on are both required, which is what keeps
+       "How do I change my address?" and "¿Cómo cambio mi dirección?"
+       answerable: `change` and `cambio` are ordinary words on this screen. No
+       medicine is named here, only the words for the kind of thing one is. */
+    new RegExp(`\\b${oneOf(PLAN_VERBS)}\\b[a-z0-9 ]{0,20}\\b${oneOf(PLAN_OBJECTS)}\\b`),
+  ],
   en: [
     /\bshould i\b/,
     /\bdo i need\b/,
@@ -131,61 +249,6 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bwhat would you\b/,
     /\bdiagnose\b/,
     /\bam i (ok|okay|alright|dying|ill)\b/,
-    /* A plan for a medicine or a dose, rather than a request for permission to
-       have one. "Can I stop the tablets" is already above; "Do I keep taking
-       the metformin with this result?" is the same question with the asking
-       taken out of it, and reads as a statement of what the reader is about to
-       do. The verb and the thing it acts on are both required, which is what
-       keeps "How do I change my address?" answerable: `change` on its own is
-       an ordinary word on this screen. No medicine is named here, only the
-       words for the kind of thing one is. */
-    new RegExp(
-      `\\b${oneOf([
-        'carry on',
-        'carrying on',
-        'change',
-        'changing',
-        'continue',
-        'continuing',
-        'decrease',
-        'double',
-        'halve',
-        'increase',
-        'keep',
-        'keeping',
-        'keeps',
-        'pause',
-        'reduce',
-        'restart',
-        'skip',
-        'split',
-        'stop',
-        'stopping',
-        'swap',
-        'switch',
-      ])}\\b[a-z0-9 ]{0,20}\\b${oneOf([
-        'dosage',
-        'dose',
-        'doses',
-        'inhaler',
-        'injection',
-        'insulin',
-        'medication',
-        'medications',
-        'medicine',
-        'medicines',
-        'pill',
-        'pills',
-        'puff',
-        'puffs',
-        'statin',
-        'statins',
-        'tablet',
-        'tablets',
-        'take',
-        'taking',
-      ])}\\b`
-    ),
   ],
   /*
    * Spanish.
@@ -290,56 +353,6 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\bque haria usted\b/,
     /\b(diagnosticame|diagnosticar)\b/,
     /\bestoy (bien|mal|grave|enfermo|enferma|muriendo)\b/,
-    /* The same plan in Spanish. `sigo tomando` is the ordinary way to say
-       "am I carrying on with", and the conjugated forms are listed beside the
-       infinitives because that is how the question is actually typed. The verb
-       and its object are both required here too, so "¿Cómo cambio mi
-       dirección?" and "¿Cuántas pastillas me quedan?" are answered. */
-    new RegExp(
-      `\\b${oneOf([
-        'aumentar',
-        'bajar',
-        'cambiar',
-        'cambio',
-        'continuar',
-        'continuo',
-        'dejar',
-        'dejo',
-        'doblar',
-        'duplicar',
-        'parar',
-        'paro',
-        'partir',
-        'reducir',
-        'saltar',
-        'saltarme',
-        'seguir',
-        'sigo',
-        'subir',
-        'suspender',
-        'suspendo',
-      ])}\\b[a-z0-9 ]{0,20}\\b${oneOf([
-        'comprimido',
-        'comprimidos',
-        'dosis',
-        'estatina',
-        'estatinas',
-        'inhalador',
-        'insulina',
-        'inyeccion',
-        'medicamento',
-        'medicamentos',
-        'medicina',
-        'medicinas',
-        'pastilla',
-        'pastillas',
-        'pildora',
-        'pildoras',
-        'tomando',
-        'tomar',
-        'tomo',
-      ])}\\b`
-    ),
   ],
 };
 

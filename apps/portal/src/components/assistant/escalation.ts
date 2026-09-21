@@ -25,6 +25,31 @@
  * cannot interpret anything, and a false match sends somebody to their care
  * team, which is never the wrong place.
  *
+ * ## Two classes of question, one destination
+ *
+ * This began as speech acts alone - "should I", "is this normal" - and a reader
+ * with a result in front of them often asks in neither shape. "Is 5.9 potassium
+ * too high?" names a measurement and a magnitude and asks for nothing by name.
+ * "Do I keep taking the metformin with this result?" is a plan rather than a
+ * request for permission. Both belong on this route, so a second class sits
+ * beside the speech acts: a question that names a measured value, either as a
+ * number with a unit or by the name of the measurement.
+ *
+ * That class is a flat set of measurement names in alphabetical order. It has
+ * no weights, no ordering and no second outcome: every entry lands on the same
+ * words and the same route as "should I", and a set that cannot express a rank
+ * cannot apply one, which is what keeps it inside ADR-0004 rule 3. It is also
+ * the one place here that reads what a question names rather than only what it
+ * asks for, so the line is worth stating plainly. A list of measurements is not
+ * a list of things to worry about: there is no condition in it, no symptom, and
+ * nothing saying one measurement matters more than another. "Is my chest
+ * normal?" and "Is my knee normal?" still land in the same place for the same
+ * reason, and "How do I book a blood test?" is still answered from the record.
+ *
+ * ADR-0006 is the reason this is the honest route rather than a cautious one:
+ * no capability granted to this surface returns a measured value, so a question
+ * about one has no answer here to give.
+ *
  * ## Every language's patterns, against every question
  *
  * The portal renders in the reader's language, so a reader asks in it. This
@@ -46,6 +71,116 @@
  */
 
 /**
+ * One alternation, `(?:a|b|c)`, out of a list.
+ *
+ * The patterns below are a pattern wrapped around a vocabulary, and the
+ * vocabulary is the part a maintainer reads and adds to. Writing the list as a
+ * list keeps it sorted, diffable and countable, and keeps the pattern itself
+ * short enough to see at once. Non-capturing because nothing here reads a
+ * group; `needsCareTeam` asks only whether a pattern matched.
+ */
+const oneOf = (words: readonly string[]): string => `(?:${words.join('|')})`;
+
+/**
+ * The words a plan for a medicine is made of, in every language this module
+ * carries, in one list each.
+ *
+ * Both lists are alphabetical and hold English and Spanish together, because
+ * every pattern runs against every question anyway: separating them would be a
+ * distinction the matcher never makes, and one list can only ever match more
+ * than two. Conjugated forms sit beside the infinitives because that is how
+ * the question is typed, not how a dictionary lists it.
+ */
+const PLAN_VERBS: readonly string[] = [
+  'aumentar',
+  'bajar',
+  'cambiar',
+  'cambio',
+  'carry on',
+  'carrying on',
+  'change',
+  'changing',
+  'continuar',
+  'continue',
+  'continuing',
+  'continuo',
+  'decrease',
+  'dejar',
+  'dejo',
+  'doblar',
+  'double',
+  'duplicar',
+  'halve',
+  'increase',
+  'keep',
+  'keeping',
+  'keeps',
+  'parar',
+  'paro',
+  'partir',
+  'pause',
+  'reduce',
+  'reducir',
+  'restart',
+  'saltar',
+  'saltarme',
+  'seguir',
+  'sigo',
+  'skip',
+  'split',
+  'stop',
+  'stopping',
+  'subir',
+  'suspender',
+  'suspendo',
+  'swap',
+  'switch',
+];
+
+/** What such a plan acts on. A medicine, a dose, or the form one comes in. */
+const PLAN_OBJECTS: readonly string[] = [
+  'comprimido',
+  'comprimidos',
+  'dosage',
+  'dose',
+  'doses',
+  'dosis',
+  'estatina',
+  'estatinas',
+  'inhalador',
+  'inhaler',
+  'injection',
+  'insulin',
+  'insulina',
+  'inyeccion',
+  'medicamento',
+  'medicamentos',
+  'medication',
+  'medications',
+  'medicina',
+  'medicinas',
+  'medicine',
+  'medicines',
+  'pastilla',
+  'pastillas',
+  'pildora',
+  'pildoras',
+  'pill',
+  'pills',
+  'puff',
+  'puffs',
+  'statin',
+  'statins',
+  'tablet',
+  'tablets',
+  'take',
+  'taking',
+  'tomando',
+  'tomar',
+  'tomo',
+];
+
+/**
  * Speech acts that ask for a judgement rather than for a record.
  *
  * Written as whole phrases, checked against the words of the question rather
@@ -56,6 +191,25 @@
  * language visible. They are all applied regardless of what the reader chose.
  */
 const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
+  any: [
+    /* A plan for a medicine or a dose, rather than a request for permission to
+       have one. "Can I stop the tablets" is already above; "Do I keep taking
+       the metformin with this result?" and "¿Sigo tomando la metformina?" are
+       the same question with the asking taken out of it, and read as a
+       statement of what the reader is about to do.
+
+       One list rather than one per language, because every pattern runs
+       against every question anyway: splitting these would be a distinction
+       the matcher never makes, and the merged list can only ever match more.
+       The conjugated forms sit beside the infinitives because that is how the
+       question is actually typed.
+
+       The verb and the thing it acts on are both required, which is what keeps
+       "How do I change my address?" and "¿Cómo cambio mi dirección?"
+       answerable: `change` and `cambio` are ordinary words on this screen. No
+       medicine is named here, only the words for the kind of thing one is. */
+    new RegExp(String.raw`\b${oneOf(PLAN_VERBS)}\b[a-z0-9 ]{0,20}\b${oneOf(PLAN_OBJECTS)}\b`),
+  ],
   en: [
     /\bshould i\b/,
     /\bdo i need\b/,
@@ -63,7 +217,29 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /* "Is X normal", whatever X is. The judgement being asked for is in the verb
        and the adjective; what sits between them is not read and does not matter,
        which is what keeps this from becoming a list of things to worry about. */
-    /\b(is|are|was|were)\b[a-z0-9 ]{0,40}\b(normal|serious|safe|dangerous|harmful|bad|ok|okay|fine)\b/,
+    new RegExp(
+      String.raw`\b${oneOf(['is', 'are', 'was', 'were'])}\b[a-z0-9 ]{0,40}\b${oneOf([
+        'abnormal',
+        'bad',
+        'better',
+        'dangerous',
+        'elevated',
+        'fine',
+        'harmful',
+        'high',
+        'higher',
+        'low',
+        'lower',
+        'normal',
+        'ok',
+        'okay',
+        'out of range',
+        'raised',
+        'safe',
+        'serious',
+        'worse',
+      ])}\b`
+    ),
     /\bwhat does (it|this|that|the result|my result) mean\b/,
     /\bwhat do (my|these|the) results mean\b/,
     /\bwhat is wrong with me\b/,
@@ -138,7 +314,40 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
     /\btengo que\b/,
     /\bnecesito (que me|ir)\b/,
     /\bpuedo (dejar|empezar|tomar|saltarme|doblar|cambiar|parar)\b/,
-    /\b(es|son|era|eran|esta|estan)\b[a-z0-9 ]{0,40}\b(normal|normales|grave|graves|seguro|segura|peligroso|peligrosa|malo|mala|bien)\b/,
+    new RegExp(
+      String.raw`\b${oneOf(['es', 'son', 'era', 'eran', 'esta', 'estan'])}\b[a-z0-9 ]{0,40}\b${oneOf(
+        [
+          'alta',
+          'altas',
+          'alto',
+          'altos',
+          'anormal',
+          'anormales',
+          'baja',
+          'bajas',
+          'bajo',
+          'bajos',
+          'bien',
+          'elevada',
+          'elevadas',
+          'elevado',
+          'elevados',
+          'fuera de rango',
+          'grave',
+          'graves',
+          'mala',
+          'malo',
+          'mejor',
+          'normal',
+          'normales',
+          'peligrosa',
+          'peligroso',
+          'peor',
+          'segura',
+          'seguro',
+        ]
+      )}\b`
+    ),
     /\bque (significa|significan|quiere decir)\b/,
     /\bque me pasa\b/,
     /\bque tengo\s*$/,
@@ -149,7 +358,171 @@ const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
   ],
 };
 
-const EVERY_PATTERN: readonly RegExp[] = Object.values(ASKS_FOR_A_JUDGEMENT).flat();
+/**
+ * Questions that name a measured value.
+ *
+ * A number with a unit, or the name of a measurement. Nothing here is a speech
+ * act, which is why it is a record of its own rather than more entries above:
+ * the name of that one says what it holds, and this would make it untrue.
+ *
+ * Read the note at the top of the file before adding to this. It is a flat set
+ * of names, and every entry produces the same single outcome. There is no
+ * weight, no threshold and no second destination, so nothing here can express
+ * how worrying anything is. Adding a condition or a symptom would be a
+ * different kind of list and is not what this is for.
+ *
+ * The name lists are alphabetical, because that is the order a maintainer can
+ * check. The unit list is the one exception and is longest first, for the
+ * reason written where it sits.
+ *
+ * `any` holds the forms that are spelled the same whatever the reader writes
+ * in: digits, SI units and the abbreviations a report prints. The language
+ * groups hold the words, and are kept separate for the same reason the speech
+ * acts are - a language with no entry is visible as an empty line rather than
+ * as silence.
+ */
+const ABOUT_A_MEASURED_VALUE: Readonly<Record<string, readonly RegExp[]>> = {
+  any: [
+    /* A number with a unit. The normaliser turns punctuation into spaces, so
+       "5.9" arrives as "5 9" and "120/80 mmHg" as "120 80 mmhg"; the optional
+       second group of digits is that, not a second number. Longer units come
+       first so "mmol" is not read as "mm" followed by nothing. */
+    new RegExp(
+      /* No boundary before the unit, so "5mg" counts as well as "5 mg". */
+      String.raw`\b\d+(?: \d+)? ?${oneOf([
+        'mmhg',
+        'mmol',
+        'umol',
+        'nmol',
+        'pmol',
+        'percent',
+        'mcg',
+        'bpm',
+        'kpa',
+        'ng',
+        'ug',
+        'mg',
+        'iu',
+        'kg',
+        'ml',
+        'dl',
+        'cm',
+        'mm',
+      ])}\b`
+    ),
+    /* What a report prints where a word would be too long. `alt` is left out on
+       purpose: it is an ordinary English word and this is the one entry that
+       would fire on a question about something else entirely. */
+    new RegExp(
+      String.raw`\b${oneOf([
+        'a1c',
+        'alp',
+        'ast',
+        'bnp',
+        'cd4',
+        'crp',
+        'egfr',
+        'esr',
+        'gfr',
+        'ggt',
+        'hba1c',
+        'hdl',
+        'inr',
+        'ldl',
+        'mcv',
+        'o2',
+        'psa',
+        'spo2',
+        'tsh',
+        'wbc',
+      ])}\b`
+    ),
+  ],
+  en: [
+    /* "blood" is not here on its own, so "How do I book a blood test?" is
+       answered; the compounds that are the name of a measurement are. */
+    new RegExp(
+      String.raw`\b${oneOf([
+        'albumin',
+        'bicarbonate',
+        'bilirubin',
+        'blood count',
+        'blood pressure',
+        'blood sugar',
+        'calcium',
+        'chloride',
+        'cholesterol',
+        'creatinine',
+        'ferritin',
+        'folate',
+        'glucose',
+        'haemoglobin',
+        'heart rate',
+        'hemoglobin',
+        'magnesium',
+        'oxygen saturation',
+        'phosphate',
+        'platelets',
+        'potassium',
+        'pulse rate',
+        'sodium',
+        'triglycerides',
+        'troponin',
+        'urate',
+        'urea',
+        'uric acid',
+        'vitamin d',
+        'white cell count',
+      ])}\b`
+    ),
+  ],
+  es: [
+    new RegExp(
+      String.raw`\b${oneOf([
+        'acido urico',
+        'albumina',
+        'azucar en sangre',
+        'bicarbonato',
+        'bilirrubina',
+        'calcio',
+        'cloruro',
+        'colesterol',
+        'creatinina',
+        'ferritina',
+        'folato',
+        'fosfato',
+        'frecuencia cardiaca',
+        'glucosa',
+        'hemoglobina',
+        'hemograma',
+        'magnesio',
+        'plaquetas',
+        'potasio',
+        'presion arterial',
+        'saturacion de oxigeno',
+        'sodio',
+        'tension arterial',
+        'trigliceridos',
+        'troponina',
+        'urato',
+        'urea',
+        'vitamina d',
+      ])}\b`
+    ),
+  ],
+};
+
+/**
+ * Both classes, flattened once.
+ *
+ * The union is the whole point and is taken in one place: a pattern can only
+ * ever add a match here, never take one away, whichever record or language it
+ * was written in.
+ */
+const EVERY_PATTERN: readonly RegExp[] = [
+  ...Object.values(ASKS_FOR_A_JUDGEMENT),
+  ...Object.values(ABOUT_A_MEASURED_VALUE),
+].flat();
 
 /**
  * The question, reduced to the words a pattern is written against.

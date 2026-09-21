@@ -24,6 +24,7 @@
  */
 
 import { Button, Switch } from '@openrunic/ui';
+import { endingFor } from '@openrunic/voice';
 import { useTranslator } from '@/lib/i18n/messages';
 import type { ReadbackAvailability } from '@/lib/voice';
 import type { ReadbackState } from '@openrunic/voice';
@@ -31,6 +32,15 @@ import type { ReadbackState } from '@openrunic/voice';
 export interface AssistantReadbackProps {
   availability: ReadbackAvailability;
   state: ReadbackState;
+  /**
+   * The last turn in the conversation, or null where there is none yet.
+   *
+   * How the last answer ended is only worth saying while that answer is the one
+   * above this line. A turn this screen refuses to read aloud is a turn the
+   * voice is never told about, so this is the one thing it cannot work out for
+   * itself - see {@link endingFor}.
+   */
+  lastTurnId: string | null;
   onToggle: () => void;
   onStop: () => void;
 }
@@ -49,6 +59,7 @@ const ENDING_KEYS = {
 export function AssistantReadback({
   availability,
   state,
+  lastTurnId,
   onToggle,
   onStop,
 }: Readonly<AssistantReadbackProps>) {
@@ -63,9 +74,10 @@ export function AssistantReadback({
 
   /* One sentence at a time, and the one being spoken wins: while the voice is
      reading, how the last answer ended is history. An answer read in full says
-     nothing at all - the reader just heard it. */
-  const ending =
-    state.ended === 'interrupted' || state.ended === 'failed' ? t(ENDING_KEYS[state.ended]) : '';
+     nothing at all - the reader just heard it, and neither does an ending about
+     an answer a later one has replaced on screen. */
+  const ended = endingFor(state, lastTurnId);
+  const ending = ended === 'interrupted' || ended === 'failed' ? t(ENDING_KEYS[ended]) : '';
   const status = state.speaking === null ? ending : t('portal.assistant.readback.reading');
 
   return (

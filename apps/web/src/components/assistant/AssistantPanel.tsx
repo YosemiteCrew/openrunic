@@ -197,6 +197,7 @@ export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): Rea
       <AssistantReadback
         availability={voice.availability}
         state={voice.state}
+        lastTurnId={state.turns.at(-1)?.id ?? null}
         onToggle={voice.toggle}
         onStop={voice.stop}
       />

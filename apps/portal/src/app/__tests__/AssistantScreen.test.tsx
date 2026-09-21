@@ -57,9 +57,19 @@ const APPOINTMENT_SOURCE = {
   untrusted: false,
 };
 
-function scripted(events: AssistantEvent[], onRequest?: (request: TurnRequest) => void) {
+/**
+ * A script per turn, so one conversation can carry two unalike answers. The
+ * last script answers every question after it.
+ */
+function scriptedTurns(
+  turns: readonly (readonly AssistantEvent[])[],
+  onRequest?: (request: TurnRequest) => void
+) {
+  let asked = 0;
   return async function* run(request: TurnRequest): AsyncGenerator<AssistantEvent> {
     onRequest?.(request);
+    const events = turns[Math.min(asked, turns.length - 1)] ?? [];
+    asked += 1;
     for (const event of events) {
       /* One tick between events, so the page sees them arrive rather than
          receiving the whole turn in the render that started it. That is the
@@ -76,6 +86,8 @@ interface MountOptions {
   probeRejects?: boolean;
   probeNeverSettles?: boolean;
   events?: AssistantEvent[];
+  /** A different answer per question. Takes the place of `events` where it is given. */
+  turns?: readonly (readonly AssistantEvent[])[];
   onRequest?: (request: TurnRequest) => void;
   api?: PortalApi;
   /**
@@ -94,7 +106,10 @@ function mount(options: MountOptions = {}) {
   };
 
   return render(
-    <AssistantProvider probe={probe} runTurn={scripted(options.events ?? [], options.onRequest)}>
+    <AssistantProvider
+      probe={probe}
+      runTurn={scriptedTurns(options.turns ?? [options.events ?? []], options.onRequest)}
+    >
       <AssistantScreen api={options.api ?? stubApi()} readback={options.readback} />
     </AssistantProvider>
   );
@@ -439,6 +454,38 @@ describe('reading the answer aloud', () => {
 
     expect(await screen.findByText(/no answer is shown/i)).toBeInTheDocument();
     expect(voice.said).toEqual([]);
+  });
+
+  it('stops saying how the last answer ended once a later answer is the one on screen', async () => {
+    /* #530. The first answer was read and the reader stopped it, which is worth
+       a sentence. The second is one this page will not read - its records never
+       arrived - so nothing new is said about the voice, and the sentence about
+       the first answer would sit under the second one. */
+    const stopped = 'Stopped reading. The answer is still on screen.';
+    const voice = recordingVoice();
+    mount({
+      availability: ENABLED,
+      turns: [
+        ANSWER,
+        [
+          { type: 'text', text: 'Your next visit is with the nurse.' },
+          { type: 'finished', outcome: 'completed' },
+        ],
+      ],
+      readback: voice.port,
+    });
+
+    await userEvent.click(await screen.findByRole('switch', { name: 'Read answers aloud' }));
+    await ask();
+    await screen.findByText('Reading the answer aloud.');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop reading' }));
+    expect(screen.getByText(stopped)).toBeInTheDocument();
+
+    await ask();
+    await screen.findByText(/no answer is shown/i);
+
+    expect(screen.queryByText(stopped)).not.toBeInTheDocument();
   });
 });
 

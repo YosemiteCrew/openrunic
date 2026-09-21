@@ -348,6 +348,40 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
   'portal.assistant.compose.ask': 'Preguntar',
   'portal.assistant.compose.stop': 'Parar',
+
+  'portal.assistant.readback.label': 'Leer las respuestas en voz alta',
+  'portal.assistant.readback.hint':
+    'Su dispositivo lee en voz alta la respuesta que ya está en esta pantalla, y nada más. La lectura la hace el propio dispositivo, así que no se envía ninguna palabra a ningún sitio para ello.',
+  'portal.assistant.readback.stop': 'Dejar de leer',
+  'portal.assistant.readback.noVoice':
+    'Este dispositivo no tiene ninguna voz instalada, así que no se puede leer nada en voz alta.',
+  'portal.assistant.readback.noLanguage':
+    'Este dispositivo no tiene una voz para el idioma de esta página, así que no se lee nada en voz alta.',
+  'portal.assistant.readback.reading': 'Leyendo la respuesta en voz alta.',
+  'portal.assistant.readback.interrupted': 'Lectura detenida. La respuesta sigue en la pantalla.',
+  'portal.assistant.readback.failed':
+    'No se pudo leer la respuesta en voz alta. Está en la pantalla, más arriba.',
+  'portal.assistant.dictation.speak': 'Diga su pregunta',
+  'portal.assistant.dictation.stop': 'Apagar el micrófono',
+  'portal.assistant.dictation.hint':
+    'Su dispositivo convierte su voz en texto en el propio dispositivo, y no se envía nada a ningún sitio para hacerlo. Las palabras van al cuadro de arriba, donde puede cambiarlas, y no se pregunta nada hasta que pulse Preguntar.',
+  'portal.assistant.dictation.starting': 'Abriendo el micrófono.',
+  'portal.assistant.dictation.listening':
+    'El micrófono está encendido. Sus palabras van al cuadro de arriba.',
+  'portal.assistant.dictation.noLanguage':
+    'Este dispositivo no puede convertir la voz en texto en el idioma de esta página sin enviar el sonido fuera, así que aquí solo puede escribir.',
+  'portal.assistant.dictation.notInstalled':
+    'Este dispositivo podría hacerlo una vez instalado su paquete de idioma para esta página, y no se enviaría nada a ningún sitio. Hasta entonces, aquí solo puede escribir.',
+  'portal.assistant.dictation.denied':
+    'No se permitió el micrófono, así que no se oyó nada. Puede permitirlo en los ajustes de su navegador, o escribir su pregunta.',
+  'portal.assistant.dictation.noSpeech':
+    'No se oyó nada. Puede intentarlo de nuevo, o escribir su pregunta.',
+  'portal.assistant.dictation.noAudio':
+    'No se pudo abrir ningún micrófono, así que no se oyó nada. Puede escribir su pregunta.',
+  'portal.assistant.dictation.offDevice':
+    'Este dispositivo solo lo habría hecho enviando el sonido fuera, así que no se oyó nada. Puede escribir su pregunta.',
+  'portal.assistant.dictation.failed':
+    'El micrófono se detuvo. Puede intentarlo de nuevo, o escribir su pregunta.',
   'portal.assistant.turn.youAsked': 'Usted preguntó:',
   'portal.assistant.turn.stillLooking': 'Sigue buscando.',
   'portal.assistant.step.done': ', hecho',

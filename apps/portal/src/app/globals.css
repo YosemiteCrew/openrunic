@@ -1081,3 +1081,80 @@ output {
 .portal-assistant__compose {
   padding-top: var(--space-2);
 }
+
+/* The voice control sits under the conversation and above the box, separated by a
+   hairline: it is a setting about the answers, not another thing to read. */
+.portal-assistant__readback {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.portal-assistant__readback-note,
+.portal-assistant__readback-status {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* Empty for most of this control's life, and it must not hold a line of space
+   open while it is: the status is always in the document so that a screen
+   reader has a region to announce into. */
+.portal-assistant__readback-status:empty {
+  display: none;
+}
+
+/* Wraps rather than squeezes. The status sentence is a translated one and the
+   stop control is a fixed width, so on the narrowest phone in a language whose
+   sentence runs longer than English the button takes its own line. */
+.portal-assistant__readback-live {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* The microphone sits between the box and the send control, because that is the
+   order the thing happens in: say it, read it, send it. It is not on the
+   hairline with the voice above, which is a setting about answers; this is a way
+   of filling the box. */
+.portal-assistant__dictation {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+/* Wraps rather than squeezes. The status sentence is a translated one and the
+   control is a fixed width, so on the narrowest phone in a language whose
+   sentence runs longer than English the status takes its own line. */
+.portal-assistant__dictation-live {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.portal-assistant__dictation-note,
+.portal-assistant__dictation-status {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* Empty whenever the microphone is closed and the last attempt went normally,
+   and it must not hold a line of space open while it is: the status is always in
+   the document so that a screen reader has a region to announce into. */
+.portal-assistant__dictation-status:empty {
+  display: none;
+}
+
+/* The words as they are recognised. Set in the body ink rather than the
+   secondary one, because this is the reader's own sentence and they are checking
+   it, and italic so it reads as provisional beside the box it is about to enter. */
+.portal-assistant__dictation-heard {
+  margin: 0;
+  font-size: var(--text-small);
+  font-style: italic;
+  color: var(--text-ink);
+}

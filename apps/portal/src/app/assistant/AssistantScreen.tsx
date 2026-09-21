@@ -29,7 +29,7 @@
  * ordinary portal error in its place.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
@@ -37,20 +37,40 @@ import { Notice } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { AssistantComposer } from '@/components/assistant/AssistantComposer';
 import { useAssistant } from '@/components/assistant/AssistantProvider';
+import { AssistantReadback } from '@/components/assistant/AssistantReadback';
 import { AssistantTurnView } from '@/components/assistant/AssistantTurn';
 import { announcementFor } from '@/components/assistant/transcript';
 import { useConversation } from '@/components/assistant/useConversation';
+import { useReadback } from '@/components/assistant/useReadback';
 import { getPortalApi } from '@/lib/api';
 import type { PortalApi } from '@/lib/api/types';
 import type { AssistantCapabilities } from '@/lib/assistant';
 import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
+import { createPlatformCapture, createPlatformReadback } from '@/lib/voice';
+import type { CapturePort, ReadbackPort } from '@/lib/voice';
 
 export interface AssistantScreenProps {
   api?: PortalApi;
+  /**
+   * The voice that reads an answer aloud. Absent means no readback, which is
+   * what the server render and a browser without speech both produce. Injected
+   * in tests, where jsdom has no synthesiser to drive.
+   */
+  readback?: ReadbackPort | null;
+  /**
+   * The microphone a question may be dictated into. Absent means none, which is
+   * what the server render and every browser without an on-device recogniser
+   * both produce. Injected in tests, where jsdom has none to drive.
+   */
+  capture?: CapturePort | null;
 }
 
-export function AssistantScreen({ api = getPortalApi() }: Readonly<AssistantScreenProps>) {
+export function AssistantScreen({
+  api = getPortalApi(),
+  readback,
+  capture,
+}: Readonly<AssistantScreenProps>) {
   const { availability, settled } = useAssistant();
 
   /* Nothing while the answer is still coming. Guessing either way is worse:
@@ -63,15 +83,29 @@ export function AssistantScreen({ api = getPortalApi() }: Readonly<AssistantScre
     return null;
   }
 
-  return <ConfiguredAssistant api={api} capabilities={availability.capabilities} />;
+  return (
+    <ConfiguredAssistant
+      api={api}
+      capabilities={availability.capabilities}
+      capture={capture}
+      readback={readback}
+    />
+  );
 }
 
 interface ConfiguredAssistantProps {
   api: PortalApi;
   capabilities: AssistantCapabilities;
+  readback?: ReadbackPort | null;
+  capture?: CapturePort | null;
 }
 
-function ConfiguredAssistant({ api, capabilities }: Readonly<ConfiguredAssistantProps>) {
+function ConfiguredAssistant({
+  api,
+  capabilities,
+  readback,
+  capture,
+}: Readonly<ConfiguredAssistantProps>) {
   const t = useTranslator();
   const load = useCallback(() => api.getPatient(), [api]);
   const { state, reload } = useAsync(load);
@@ -98,7 +132,14 @@ function ConfiguredAssistant({ api, capabilities }: Readonly<ConfiguredAssistant
         errorKey="portal.assistant.async.error"
         onRetry={reload}
       >
-        {(patient) => <Conversation capabilities={capabilities} chartPatientId={patient.id} />}
+        {(patient) => (
+          <Conversation
+            capabilities={capabilities}
+            capture={capture}
+            chartPatientId={patient.id}
+            readback={readback}
+          />
+        )}
       </AsyncBoundary>
     </>
   );
@@ -107,12 +148,40 @@ function ConfiguredAssistant({ api, capabilities }: Readonly<ConfiguredAssistant
 interface ConversationProps {
   capabilities: AssistantCapabilities;
   chartPatientId: string;
+  readback?: ReadbackPort | null;
+  capture?: CapturePort | null;
 }
 
-function Conversation({ capabilities, chartPatientId }: Readonly<ConversationProps>) {
+function Conversation({
+  capabilities,
+  chartPatientId,
+  readback,
+  capture,
+}: Readonly<ConversationProps>) {
   const t = useTranslator();
   const { runTurn } = useAssistant();
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
+
+  /* Built once. A new port every render would resubscribe to the device's voice
+     list on every keystroke, and the effect that speaks would take a new
+     dependency each time and read the last answer again. `undefined` means
+     nobody injected one, which is the browser's own voice or nothing; `null`
+     means a caller said there is none, and is not the same answer. */
+  const port = useMemo(
+    () => (readback === undefined ? createPlatformReadback() : readback),
+    [readback]
+  );
+  const voice = useReadback(port, t.locale, state.turns, chartPatientId);
+
+  /* Built once, for the same reason the voice is: a new port every render would
+     re-ask the browser what it can recognise on every keystroke, and would tear
+     down an open microphone to do it. `undefined` means nobody injected one,
+     which is the device's own recogniser or nothing; `null` means a caller said
+     there is none, and is not the same answer. */
+  const microphone = useMemo(
+    () => (capture === undefined ? createPlatformCapture() : capture),
+    [capture]
+  );
 
   return (
     <section
@@ -153,7 +222,20 @@ function Conversation({ capabilities, chartPatientId }: Readonly<ConversationPro
         </ol>
       )}
 
-      <AssistantComposer answering={state.answering} onAsk={ask} onStop={stop} />
+      <AssistantReadback
+        availability={voice.availability}
+        onStop={voice.stop}
+        onToggle={voice.toggle}
+        state={voice.state}
+      />
+
+      <AssistantComposer
+        answering={state.answering}
+        capture={microphone}
+        chartPatientId={chartPatientId}
+        onAsk={ask}
+        onStop={stop}
+      />
     </section>
   );
 }

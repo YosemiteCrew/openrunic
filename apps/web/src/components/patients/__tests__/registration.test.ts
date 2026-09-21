@@ -180,13 +180,21 @@ describe('findDuplicates', () => {
     expect(matches[0]?.reasonKeys.map((key) => t(key))).toContain('Same given name');
   });
 
-  it('treats a phone number that already exists as the strongest signal', () => {
+  it('names a number the practice already holds, without calling it a person', () => {
+    /*
+     * The number is reported, because a registrar comparing two records wants
+     * to know the practice already reaches somebody on it. It does not on its
+     * own say the two records are the same person: households, and patients
+     * with no number of their own, share a line. Which is why this pairs a
+     * matching number with a matching name, and checks the save is still not
+     * held. `duplicateMatching.test.ts` holds the rest of that table.
+     */
     const matches = findDuplicates(
-      draft({ given: 'Different', family: 'Person', phoneMobile: '5550142118' }),
+      draft({ given: 'Different', family: 'Patientsson', phoneMobile: '5550142118' }),
       MOCK_PATIENTS
     );
     expect(matches[0]?.reasonKeys.map((key) => t(key))).toContain('Same mobile number');
-    expect(isBlocking(matches)).toBe(true);
+    expect(isBlocking(matches)).toBe(false);
   });
 
   it('does not block on a shared family name alone', () => {

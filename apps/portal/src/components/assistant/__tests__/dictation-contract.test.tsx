@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { hidePage, showPage } from '@/__tests__/support';
+import { hidePage, showPage } from '@/__tests__/visibility';
 import { useDictation } from '@/components/assistant';
 import type { CaptureAvailability, CaptureEvent, CapturePort, CaptureSession } from '@/lib/voice';
 

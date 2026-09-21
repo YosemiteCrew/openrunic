@@ -1,5 +1,31 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
+
+import { showPage } from './src/__tests__/visibility';
+
+/**
+ * A page a case hid is shown again here, not on the case's own last line.
+ *
+ * `hidePage` shadows `document.visibilityState`, and an inline restore only runs
+ * when every assertion before it passed, so one failing assertion leaves the
+ * shadow standing for the rest of the file (#517).
+ *
+ * Nothing is broken by that today, and the reason is structural rather than
+ * luck: `usePageHidden` reads `document.visibilityState` only from inside its
+ * `visibilitychange` listener and never at mount, so a leftover shadow is inert
+ * for every consumer there is. This makes the invariant one a test file cannot
+ * get wrong, for the next file and for the first consumer that does read
+ * visibility at mount - not a repair of an observed cascade.
+ *
+ * Only when a shadow is actually there: `showPage` dispatches `visibilitychange`,
+ * and firing one after every test in the suite would hand components an event no
+ * test asked for.
+ */
+afterEach(() => {
+  if (Object.getOwnPropertyDescriptor(document, 'visibilityState')) {
+    showPage();
+  }
+});
 
 /**
  * Every rendered component gets a translator.

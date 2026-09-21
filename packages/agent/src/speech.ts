@@ -213,7 +213,7 @@ export class NoOpSpeechAdapter implements SpeechAdapter {
   readonly providerId = 'noop';
   readonly capabilities = new Set<SpeechCapability>();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- part of the interface; a no-op adapter supports nothing
   checkCapability(_capability: SpeechCapability): CapabilityCheckResult {
     return { supported: false, reason: 'Speech is not configured' };
   }
@@ -232,7 +232,6 @@ export class NoOpSpeechAdapter implements SpeechAdapter {
     return handle;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async stopSession(
     _handle: SpeechSessionHandle,
     _reason: 'user' | 'revoked' | 'context-change'
@@ -241,20 +240,17 @@ export class NoOpSpeechAdapter implements SpeechAdapter {
     void _reason;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async sendAudio(_handle: SpeechSessionHandle, _audio: Uint8Array): Promise<void> {
     void _handle;
     void _audio;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async speak(_handle: SpeechSessionHandle, _text: string, _turnId: string): Promise<void> {
     void _handle;
     void _text;
     void _turnId;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async interrupt(_handle: SpeechSessionHandle, _turnId: string): Promise<void> {
     void _handle;
     void _turnId;
@@ -304,7 +300,6 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
     return handle;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async stopSession(
     _handle: SpeechSessionHandle,
     _reason: 'user' | 'revoked' | 'context-change'
@@ -314,7 +309,6 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
     // Simulate session end
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async sendAudio(_handle: SpeechSessionHandle, _audio: Uint8Array): Promise<void> {
     void _handle;
     void _audio;
@@ -322,7 +316,6 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
     // The test controls when transcripts arrive via the fixture
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async speak(_handle: SpeechSessionHandle, _text: string, _turnId: string): Promise<void> {
     void _handle;
     void _text;
@@ -333,13 +326,11 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
 
     for (let i = 0; i < chunks.length; i++) {
       // In real adapter this would be audio bytes
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; would be audio bytes
       const audio = new TextEncoder().encode(chunks[i]);
       void audio;
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused; required by interface
   async interrupt(_handle: SpeechSessionHandle, _turnId: string): Promise<void> {
     void _handle;
     void _turnId;

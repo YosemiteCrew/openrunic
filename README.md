@@ -313,3 +313,5 @@ openrunic is licensed under the [GNU Affero General Public License v3.0 only](LI
 you to offer the source of your modified version to its users.
 
 Copyright (C) 2026 openrunic contributors
+
+# Trigger CI

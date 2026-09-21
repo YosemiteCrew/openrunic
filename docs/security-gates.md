@@ -21,9 +21,10 @@ stated explicitly.
 | **Synthetic data only**                          | `phi-guard.yml`         | Real patient data reaching the repository                         | Allowlists in `scripts/ci/phi-guard.mjs` |
 | **Release provenance**                           | `release-attest.yml`    | An operator installing an image nobody can trace                  | Not applicable                           |
 | **Exception expiry**                             | `exception-expiry.yml`  | An accepted finding outliving the reasoning that accepted it      | None, deliberately: it guards the others |
+| **Aikido coverage**                              | `aikido-coverage.yml`   | The Aikido review declining to run and reporting nothing at all   | None, deliberately: it guards a scanner  |
 | PR governance                                    | `pr-governance.yml`     | Untitled or unscoped changes entering history                     | None                                     |
 
-The six in bold are the subject of the rest of this page. The others are documented where they are
+The gates in bold are the subject of the rest of this page. The others are documented where they are
 configured.
 
 ## Container image vulnerabilities
@@ -171,6 +172,31 @@ has passed. Five things about it are deliberate:
 An expiry is not an instruction to delete the entry. It is an instruction to re-read it: confirm the
 finding is still unreachable, check whether a fix has been published since, then either remove the
 exception or renew it with a fresh date and a note saying what was checked.
+
+## Aikido coverage
+
+The two `Aikido Security:` contexts are posted by a GitHub App, so nothing in this repository
+decides whether they run. `Aikido Security: Deep Review` reported `skipped` on every pull request
+for an unmeasured number of weeks with the summary _"Aikido skipped this review because there are
+no credits left in the wallet"_, and that produced no red row, no notification, and no entry in any
+list a reviewer reads. `skipped` is neither a failure nor a success; the pull request page rendered
+what it renders when the review passes ([#408](https://github.com/YosemiteCrew/openrunic/issues/408)).
+
+Topping the wallet up is an owner action. `aikido-coverage.yml` is the other half: it reads the
+check runs the app posted on the head and fails when one of them declined - `skipped`, `neutral`,
+`cancelled` or `stale`, the conclusions that render as neither pass nor fail - printing the check's
+own `output.summary`, which names the cause where the conclusion cannot. A `failure` is not this
+gate's business: `Aikido Security: check code` is already required and already loud.
+
+Zero Aikido checks on a head fails too, and is reported separately from a head with no checks at
+all. The cost is that an uninstalled app, a vendor outage or a renamed check turns every pull
+request red; that is the recoverable direction, and staying green while the scanner is absent is
+the defect this removes.
+
+It does not run on a draft. Aikido skips a draft on purpose, and keying an exemption on that prose
+would put an unchecked claim in the one place the gate may skip itself - `pull_request.draft` is
+the fact, and a draft cannot merge. `ready_for_review` is a trigger so the gate starts the moment
+the exemption stops applying.
 
 ## Release provenance
 

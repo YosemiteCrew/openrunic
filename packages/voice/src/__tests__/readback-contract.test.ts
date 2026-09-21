@@ -1,9 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { hidePage, showPage } from '@/__tests__/visibility';
-import { useReadback } from '@/components/assistant';
-import type { AssistantTurn } from '@/components/assistant';
-import type { ReadbackEvent, ReadbackPort, Utterance } from '@/lib/voice';
+import { hidePage, showPage } from './visibility.js';
+import { useReadback } from '../useReadback.js';
+import type { ReadbackEvent, ReadbackPort, Utterance } from '../ports.js';
 
 /**
  * One contract, two adapters that share nothing but it.
@@ -140,41 +139,62 @@ function duplexSession(): Double {
   };
 }
 
-const ANSWERED: AssistantTurn = {
+/**
+ * A turn, as little of one as the hook is allowed to know.
+ *
+ * The hook is generic over this on purpose: it is handed an id and a rule, and
+ * the shape in between is the app's. The fields here are the two a real rule
+ * turns on - whether the turn settled, and whether its sources arrived - so the
+ * rule below is a real rule rather than a flag the test sets.
+ */
+interface Turn {
+  id: string;
+  answer: string;
+  settled: boolean;
+  sourced: boolean;
+}
+
+/**
+ * The surface's rule, in its smallest honest form.
+ *
+ * Both apps' rules reduce to this: an answer is read aloud only when it is
+ * finished and only when it is the checkable text already on the screen. The
+ * hook never sees the clauses, which is the property under test - a surface
+ * that learns a new reason to withhold does not have to teach the voice.
+ */
+function speakable(turn: Turn): string | null {
+  if (!turn.settled) return null;
+  if (!turn.sourced) return null;
+  return turn.answer;
+}
+
+const ANSWERED: Turn = {
   id: 'turn-1',
-  question: 'What do I owe?',
   answer: 'Your balance is 40 pounds, due on 2 April.',
-  steps: [],
-  sources: [
-    { resourceType: 'Bill', resourceId: 'b-1', label: 'April statement', untrusted: false },
-  ],
-  failures: [],
-  deferrals: [],
-  outcome: 'completed',
-  withheld: 'none',
+  settled: true,
+  sourced: true,
 };
 
-const UNSOURCED: AssistantTurn = {
+const UNSOURCED: Turn = {
   ...ANSWERED,
   id: 'turn-2',
   answer: '',
-  sources: [],
-  withheld: 'unsourced',
+  sourced: false,
 };
 
 interface Props {
-  turns: readonly AssistantTurn[];
-  chart: string;
+  turns: readonly Turn[];
+  scope: string;
   port: ReadbackPort | null;
 }
 
 function drive(port: ReadbackPort) {
   return renderHook(
-    ({ turns, chart, port: current }: Props) => useReadback(current, 'en', turns, chart),
+    ({ turns, scope, port: current }: Props) => useReadback(current, 'en', turns, speakable, scope),
     {
       initialProps: {
-        turns: [] as readonly AssistantTurn[],
-        chart: 'patient-1',
+        turns: [] as readonly Turn[],
+        scope: 'patient-1',
         port: port as ReadbackPort | null,
       },
     }
@@ -199,7 +219,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
 
     expect(double.said).toEqual([
       { id: 'turn-1', text: 'Your balance is 40 pounds, due on 2 April.', language: 'en' },
@@ -215,7 +235,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       double.finish('turn-1');
     });
@@ -230,7 +250,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       result.current.stop();
     });
@@ -249,7 +269,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     expect(double.cancels()).toBe(0);
 
     act(() => {
@@ -265,7 +285,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       double.ghost();
     });
@@ -283,7 +303,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       double.fail('turn-1');
     });
@@ -297,7 +317,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [UNSOURCED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [UNSOURCED], scope: 'patient-1', port: double.port });
 
     expect(double.said).toEqual([]);
     expect(result.current.state.speaking).toBeNull();
@@ -306,7 +326,7 @@ describe.each([
   it('stays silent while the switch is off, and stays silent about what it missed', () => {
     const { result, rerender } = drive(double.port);
 
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       result.current.toggle();
     });
@@ -322,7 +342,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       result.current.toggle();
     });
@@ -342,8 +362,8 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: null });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: null });
 
     expect(result.current.state.speaking).toBeNull();
     expect(result.current.state.on).toBe(false);
@@ -356,7 +376,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
 
     act(() => {
       hidePage();
@@ -376,7 +396,7 @@ describe.each([
     });
     rerender({
       turns: [ANSWERED, { ...ANSWERED, id: 'turn-3' }],
-      chart: 'patient-1',
+      scope: 'patient-1',
       port: double.port,
     });
 
@@ -389,8 +409,8 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
-    rerender({ turns: [], chart: 'patient-2', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+    rerender({ turns: [], scope: 'patient-2', port: double.port });
 
     expect(result.current.state.on).toBe(false);
     expect(result.current.state.speaking).toBeNull();

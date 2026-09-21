@@ -26,7 +26,7 @@
 import { Button, Switch } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
 import type { ReadbackAvailability } from '@/lib/voice';
-import type { ReadbackState } from './readback';
+import type { ReadbackState } from '@openrunic/voice';
 
 export interface AssistantReadbackProps {
   availability: ReadbackAvailability;

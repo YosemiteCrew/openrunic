@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hidePage, showPage } from '@/__tests__/visibility';
-import { usePageHidden } from '@/components/assistant/usePageHidden';
+import { hidePage, showPage } from './visibility.js';
+import { usePageHidden } from '../usePageHidden.js';
 
 /**
  * The plumbing, on its own.

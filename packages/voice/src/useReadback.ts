@@ -82,10 +82,36 @@ export function useReadback(
 
   /* A device that cannot speak must not sit with the switch on: the switch
      would be a promise of sound that never comes, and the next answer would be
-     recorded as offered while nobody heard anything. */
+     recorded as offered while nobody heard anything.
+
+     Which of the two ways of stopping applies turns on whether the control is
+     still on screen, and that is what the reason says. `no-voice` and
+     `language` leave it drawn, with a sentence saying which one it is, so how
+     the last utterance ended is still worth having beside it - `off` keeps it,
+     and keeping it is the point: a voice that failed must not have its failure
+     wiped off the screen by the switch going down.
+
+     `no-adapter` is the case where the control draws nothing at all. There is
+     no screen for an ending to be on, so carrying one forward cannot inform
+     anybody now; it can only reappear later, when a voice comes back or a
+     dismissed surface is opened again, as a sentence about an utterance from
+     before - beside a switch that is off. Forgetting is the honest answer, and
+     `revoke` is already it. */
   useEffect(() => {
-    if (availability.status !== 'available' && state.on) dispatch({ kind: 'off' });
-  }, [availability, state.on]);
+    if (availability.status === 'available') return;
+
+    if (availability.reason === 'no-adapter') {
+      /* Only when there is something to forget. `revoke` answers a fresh state
+         every time, so an unguarded dispatch would be a new object on every
+         render that reached it. */
+      if (state.on || state.speaking !== null || state.ended !== 'none') {
+        dispatch({ kind: 'revoke' });
+      }
+      return;
+    }
+
+    if (state.on) dispatch({ kind: 'off' });
+  }, [availability, state.on, state.speaking, state.ended]);
 
   /* A different record underneath, or none, is a different subject. The voice
      stops, the queue goes, and consent is asked for again rather than carried

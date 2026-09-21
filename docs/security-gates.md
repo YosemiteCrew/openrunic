@@ -183,10 +183,19 @@ list a reviewer reads. `skipped` is neither a failure nor a success; the pull re
 what it renders when the review passes ([#408](https://github.com/YosemiteCrew/openrunic/issues/408)).
 
 Topping the wallet up is an owner action. `aikido-coverage.yml` is the other half: it reads the
-check runs the app posted on the head and fails when one of them declined - `skipped`, `neutral`,
-`cancelled` or `stale`, the conclusions that render as neither pass nor fail - printing the check's
-own `output.summary`, which names the cause where the conclusion cannot. A `failure` is not this
-gate's business: `Aikido Security: check code` is already required and already loud.
+check runs the app posted on the head and fails unless the conclusion is one of the three that mean
+Aikido reached a verdict - `success`, `failure`, `timed_out` - printing the check's own
+`output.summary`, which names the cause where the conclusion cannot. Everything else declines,
+`skipped` and `action_required` included.
+
+The list is stated in that direction on purpose, and only the closed side of it is written down
+here. Naming the conclusions that decline leaves every value nobody thought of falling through to
+the pass, which is this gate's own defect one layer up; and there is no single list to name them
+from, because GitHub publishes two enums for this field that differ by `stale` - the request schema
+for `POST /check-runs` has it, the response schema for `check-run` does not. An allowlist is correct
+against both, and against a third. `failure` and `timed_out` are on it because they are already loud
+and already required, not because they are reviews: a second gate re-reporting a finding that is
+already red would fire for a reason it was not built for, and then get muted for it.
 
 A pass has to hold across two polls over the same set of contexts; a decline does not. Aikido
 creates `check code` up to two seconds before `Deep Review`, so a single poll can land on a head
@@ -203,6 +212,17 @@ It does not run on a draft. Aikido skips a draft on purpose, and keying an exemp
 would put an unchecked claim in the one place the gate may skip itself - `pull_request.draft` is
 the fact, and a draft cannot merge. `ready_for_review` is a trigger so the gate starts the moment
 the exemption stops applying.
+
+The wallet does not reach `Aikido Security: check code`. Credits are consumed by six named
+features - Libraries, Deep Review, Security Audit, Pentest, Code Quality and CVE Exploitability
+Analysis - and the SAST/SCA pull request check is not one of them; on a cap the vendor's own
+sentence is that Aikido _"skips actions that would charge a credit until the limit resets"_
+([Wallet & Credits](https://help.aikido.dev/miscellaneous-info/wallet-and-credits), read
+2026-09-21). That is the question #408 left open and deliberately would not infer from `Deep
+Review`'s behaviour: an empty wallet silences the optional review and leaves the required context
+scanning, and a credited feature that runs out declines rather than passing. It is a vendor page
+rather than a measurement taken here, so it is dated; what agrees with it from this side is `check
+code` reporting `success` with a scan id on twelve consecutive heads while the wallet was empty.
 
 ## Release provenance
 

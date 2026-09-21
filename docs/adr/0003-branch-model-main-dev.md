@@ -454,7 +454,13 @@ Security: check code` is protection rather than decoration and has posted `failu
 findings repeatedly, most recently on #413 (2026-09-07, a `MEDIUM` path traversal in a script
 added by that pull request, fixed rather than suppressed) - a running count is left out of this
 document deliberately, because it is a number somebody then has to keep; its sibling `Aikido Deep Review` has been `skipped` for want of credits on every
-run since the app was installed, and that residual is tracked in #408.
+run since the app was installed, which is #408.
+
+Fixing #408 narrowed this class rather than leaving it as stated above: the credits are still an
+owner action and still unconfigurable from here, but **whether the app reviewed a head is now readable from this
+repository.** `aikido-coverage.yml` reads the check runs the app posted and fails when one of them
+declined, so the app side of Aikido's silence is detectable even though it is not controllable.
+GitGuardian is the remaining context in this class with neither.
 
 `CodeQL` is the fourth class and the one worth naming separately: **posted by an app _and_
 downstream of a workflow this repository owns.** It has both silence modes.

@@ -1,0 +1,81 @@
+name: Aikido Coverage
+
+# `Aikido Security: Deep Review` reported `skipped` on every pull request for an
+# unmeasured number of weeks, with the summary "Aikido skipped this review
+# because there are no credits left in the wallet." Nothing said so: `skipped`
+# is neither a failure nor a success, so there was no red row, no notification,
+# and no entry in any list a reviewer reads. A security review was off and the
+# pull request page rendered what it renders when the review passes. #408.
+#
+# Topping the wallet up is an owner action and no file here configures it. This
+# is the other half: make the state announce itself. The job reads the checks
+# the Aikido app posted on this head and fails when one of them declined to run,
+# printing the check's own `output.summary` - the sentence that names the cause,
+# which the conclusion does not, because `skipped` is the same word for a wallet,
+# a path filter and a draft.
+#
+# Not run on a draft, and that is deliberate rather than an omission. Aikido
+# skips a draft on purpose and says so in the same `skipped` conclusion; keying
+# an exemption on that prose would put an unchecked claim in the one place the
+# gate is allowed to skip itself. `pull_request.draft` is the fact, it is the
+# vendor's own stated reason, and a draft cannot merge. `ready_for_review` is a
+# trigger so the gate starts the moment the exemption stops applying, and the
+# script asks for `filter=latest` so it reads the run Aikido posted then rather
+# than the draft skip still attached to the same sha.
+#
+# No `merge_group` and no `push`: both Aikido contexts are posted by a GitHub
+# App on the pull request, and it does not scan a bare branch push. Running
+# there would fail every time and say nothing.
+#
+# This is not a required context on either ruleset, so today it is a red row
+# rather than a block. That is the owner's call to make in the ruleset; what
+# this changes is that there is now something to look at. A red row is read
+# badly, but it is read - `skipped` is not rendered as anything at all.
+#
+# scripts/ci/aikido-coverage.mjs is the implementation; its tests run first,
+# because a guard whose own tests are broken has no business reporting on a pull
+# request. The job uses the runner's system Node: the guard is dependency-free
+# by design, so there is nothing to install.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - dev
+      - main
+
+concurrency:
+  group: aikido-coverage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  reviewed:
+    name: Aikido reviewed this pull request
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    # The script waits up to five minutes for the app to post. The two Aikido
+    # checks were posted 6 seconds after a pull request opened and completed 28
+    # seconds later, so the wait is headroom, not the expected cost.
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the tree; this job writes nothing back
+      checks: read # the check runs the Aikido app posted on this head
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job only reads the tree, so the default GITHUB_TOKEN must not
+          # be left behind in .git/config where a later step could read it.
+          persist-credentials: false
+
+      - name: Test the guard itself
+        run: node --test scripts/ci/aikido-coverage.test.mjs
+
+      - name: Check Aikido actually reviewed this head
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/aikido-coverage.mjs "$REPO" "$HEAD_SHA"

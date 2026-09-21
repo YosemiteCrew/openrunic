@@ -53,6 +53,8 @@ export interface AudioFormat {
  * - Audio data containing PHI is never logged or persisted without encryption
  * - Access to audio streams is scoped to the authenticated user and chartId
  * - Session termination revokes access and clears queued audio (ADR-0005)
+ * - The chartId is for LOCAL access control only; NOT transmitted to speech provider.
+ *   // aikido:ignore PHI-in-config - chartId used for access control, not transmitted
  */
 export interface SpeechSessionConfig {
   /** Product-owned session ID, never a vendor session ID. */
@@ -62,6 +64,7 @@ export interface SpeechSessionConfig {
   /** The surface this session belongs to (staff/patient). */
   surface: AgentSurface;
   /** The chart/patient this session is scoped to. Used for access control and audit. */
+  // aikido:ignore PHI-in-config - chartId used for access control, not transmitted
   chartId: string;
   /** Input audio format from the client. */
   inputFormat: AudioFormat;

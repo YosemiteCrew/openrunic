@@ -259,7 +259,12 @@ export class NoOpSpeechAdapter implements SpeechAdapter {
 
 /**
  * Deterministic test adapter for CI.
- * Uses synthetic audio and produces predictable events.
+ *
+ * `startSession` is the only point an adapter is handed an event callback, so
+ * an adapter that does not keep it can emit nothing afterwards. This one keeps
+ * one sink per open session: without that, `speak` chunked and encoded a
+ * response and then dropped every chunk, and the fixture transcripts handed to
+ * the constructor were never read by anything.
  */
 export class DeterministicTestSpeechAdapter implements SpeechAdapter {
   readonly name = 'Deterministic test adapter';
@@ -271,16 +276,23 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
     'partial-transcripts',
   ]);
 
-  private readonly responses: Map<string, string> = new Map();
-  private readonly transcripts: Map<string, string[]> = new Map();
+  /**
+   * Each open session, keyed by its product-owned id: the callback to emit on,
+   * and how many fixture transcript lines it has already played back. One entry
+   * rather than two maps, so the sink and the cursor cannot disagree about
+   * whether a session is open.
+   */
+  private readonly sessions = new Map<
+    string,
+    { readonly emit: (event: SpeechEvent) => void; delivered: number }
+  >();
 
   constructor(
-    private readonly fixtureTranscripts: Map<string, string[]> = new Map(),
-    private readonly fixtureResponses: Map<string, string> = new Map()
-  ) {
-    this.transcripts = fixtureTranscripts;
-    this.responses = fixtureResponses;
-  }
+    /** Transcript lines to play back per turn id, in order. */
+    private readonly transcripts: Map<string, string[]> = new Map(),
+    /** Spoken response per requested text; anything unlisted gets a stub. */
+    private readonly responses: Map<string, string> = new Map()
+  ) {}
 
   checkCapability(capability: SpeechCapability): CapabilityCheckResult {
     return { supported: this.capabilities.has(capability) };
@@ -295,46 +307,76 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
       turnId: config.turnId,
       startedAt: Date.now(),
     };
+    this.sessions.set(config.sessionId, { emit: onEvent, delivered: 0 });
     onEvent({ type: 'session-started', sessionId: config.sessionId });
     onEvent({ type: 'capture-started' });
     return handle;
   }
 
   async stopSession(
-    _handle: SpeechSessionHandle,
-    _reason: 'user' | 'revoked' | 'context-change'
+    handle: SpeechSessionHandle,
+    reason: 'user' | 'revoked' | 'context-change'
   ): Promise<void> {
-    void _handle;
-    void _reason;
-    // Simulate session end
+    const session = this.sessions.get(handle.sessionId);
+    // Dropped before emitting, so a sink that re-enters cannot be served twice.
+    this.sessions.delete(handle.sessionId);
+    if (!session) return;
+    const { emit } = session;
+    emit({ type: 'capture-stopped', reason: reason === 'user' ? 'user' : 'revoked' });
+    emit({
+      type: 'session-ended',
+      sessionId: handle.sessionId,
+      // ADR-0005 keeps these apart: a clinician stopping is not the same fact
+      // as a logout or a context change revoking the session under them.
+      reason: reason === 'user' ? 'stopped' : 'revoked',
+    });
   }
 
-  async sendAudio(_handle: SpeechSessionHandle, _audio: Uint8Array): Promise<void> {
-    void _handle;
+  /**
+   * The fixture is the input here, not the bytes: a deterministic adapter that
+   * transcribed real audio would not be deterministic. Each call plays back the
+   * next line configured for this turn, the last one as the final transcript.
+   */
+  async sendAudio(handle: SpeechSessionHandle, _audio: Uint8Array): Promise<void> {
     void _audio;
-    // In test mode, we simulate receiving a transcript
-    // The test controls when transcripts arrive via the fixture
+    const session = this.sessions.get(handle.sessionId);
+    if (!session) return;
+    const lines = this.transcripts.get(handle.turnId) ?? [];
+    const index = session.delivered;
+    const line = lines[index];
+    if (line === undefined) return;
+    session.delivered = index + 1;
+    const sequence = index + 1;
+    session.emit(
+      index === lines.length - 1
+        ? { type: 'transcript-final', text: line, turnId: handle.turnId, sequence }
+        : { type: 'transcript-partial', text: line, turnId: handle.turnId, sequence }
+    );
   }
 
-  async speak(_handle: SpeechSessionHandle, _text: string, _turnId: string): Promise<void> {
-    void _handle;
-    void _text;
-    void _turnId;
-    // Simulate TTS chunks
-    const response = this.responses.get(_text) ?? `Response to: ${_text}`;
+  async speak(handle: SpeechSessionHandle, text: string, turnId: string): Promise<void> {
+    const session = this.sessions.get(handle.sessionId);
+    if (!session) return;
+    const { emit } = session;
+    const response = this.responses.get(text) ?? `Response to: ${text}`;
     const chunks = this.chunkText(response);
-
-    for (let i = 0; i < chunks.length; i++) {
-      // In real adapter this would be audio bytes
-      const audio = new TextEncoder().encode(chunks[i]);
-      void audio;
-    }
+    emit({ type: 'tts-started', turnId, text: response });
+    chunks.forEach((chunk, index) => {
+      emit({
+        type: 'tts-chunk',
+        audio: new TextEncoder().encode(chunk),
+        turnId,
+        sequence: index + 1,
+        isLast: index === chunks.length - 1,
+      });
+    });
+    emit({ type: 'tts-finished', turnId });
   }
 
-  async interrupt(_handle: SpeechSessionHandle, _turnId: string): Promise<void> {
-    void _handle;
-    void _turnId;
-    // Simulate interruption
+  async interrupt(handle: SpeechSessionHandle, turnId: string): Promise<void> {
+    this.sessions
+      .get(handle.sessionId)
+      ?.emit({ type: 'interruption-received', turnId, timestamp: Date.now() });
   }
 
   private chunkText(text: string): string[] {
@@ -345,14 +387,5 @@ export class DeterministicTestSpeechAdapter implements SpeechAdapter {
       chunks.push(text.slice(i, i + maxChunk));
     }
     return chunks;
-  }
-
-  /**
-   * Test helper: inject a transcript event.
-   */
-  injectTranscript(turnId: string, text: string, isFinal: boolean): SpeechEvent {
-    return isFinal
-      ? { type: 'transcript-final', text, turnId, sequence: 1 }
-      : { type: 'transcript-partial', text, turnId, sequence: 1 };
   }
 }

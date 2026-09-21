@@ -129,35 +129,6 @@ export const assistant: Messages = {
   'assistant.failure.invalid.message':
     'Nothing was shown, because openrunic will not guess at a malformed answer. Ask again; if it keeps happening, report it to whoever configured the endpoint.',
   /* The unmapped case keeps the server's own `detail` as its message, which is
-      always a written sentence rather than a code, so only the heading is here. */
+     always a written sentence rather than a code, so only the heading is here. */
   'assistant.failure.unknown.title': 'That did not complete',
-
-  /* ----------------------------------------------------------- voice controls */
-  'voice.controls.regionLabel': 'Voice controls',
-  'voice.controls.startLabel': 'Start',
-  'voice.controls.stopLabel': 'Stop',
-  'voice.controls.startTooltip': 'Start voice input',
-  'voice.controls.stopTooltip': 'Stop voice input',
-  'voice.controls.waitTooltip': 'Please wait',
-  'voice.controls.pushToTalkLabel': 'Push to talk',
-  'voice.controls.pushToTalkTooltip': 'Hold to talk, release to send',
-  'voice.controls.pushToTalkHint': 'Hold to talk, release to send',
-  'voice.controls.muteInputTooltip': 'Mute microphone',
-  'voice.controls.unmuteInputTooltip': 'Unmute microphone',
-  'voice.controls.muteOutputTooltip': 'Mute playback',
-  'voice.controls.unmuteOutputTooltip': 'Unmute playback',
-  'voice.controls.enableCaptionsTooltip': 'Enable captions',
-  'voice.controls.disableCaptionsTooltip': 'Disable captions',
-  'voice.controls.unavailableMessage': 'Voice not available',
-
-  'voice.state.idle': 'Idle',
-  'voice.state.requesting': 'Requesting...',
-  'voice.state.capturing': 'Listening...',
-  'voice.state.processing': 'Processing...',
-  'voice.state.playing': 'Speaking...',
-  'voice.state.error': 'Error',
-
-  'voice.status.listening': 'Listening for your question...',
-  'voice.status.processing': 'Reviewing evidence...',
-  'voice.status.speaking': 'Reading evidence review...',
 };

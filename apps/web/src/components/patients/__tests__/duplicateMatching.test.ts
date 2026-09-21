@@ -85,10 +85,10 @@ const TWIN = patient({
   phoneMobile: HOUSEHOLD_LINE,
 });
 
-const SMITH = patient({
+const NULLSSON = patient({
   id: '100004',
-  given: 'John',
-  family: 'Smith',
+  given: 'Exampla',
+  family: 'Nullsson',
   birthDate: '1974-02-11',
   phoneMobile: '+1 555 0142 204',
 });
@@ -117,7 +117,7 @@ const OVERSEAS = patient({
 const ACCENTED = patient({
   id: '100007',
   given: 'Jos\u00e9',
-  family: 'Ibarra',
+  family: 'Fakeley',
   birthDate: '1980-12-05',
 });
 
@@ -125,7 +125,7 @@ const ROSTER: readonly Patient[] = [
   PARENT,
   FIRST_CHILD,
   TWIN,
-  SMITH,
+  NULLSSON,
   PREFERRED,
   OVERSEAS,
   ACCENTED,
@@ -185,14 +185,14 @@ const ROWS: readonly Row[] = [
   },
   {
     name: 'a name heard rather than read, with the date of birth agreeing',
-    draft: { given: 'Jon', family: 'Smyth', birthDate: '1974-02-11' },
+    draft: { given: 'Exampl', family: 'Nullssen', birthDate: '1974-02-11' },
     outcome: 'review',
     match: 'OR-100004',
     reasons: ['Family name one letter apart', 'Given name one letter apart', 'Same date of birth'],
   },
   {
     name: 'two neighbouring letters swapped, which is one edit and not two',
-    draft: { given: 'John', family: 'Smtih', birthDate: '1974-02-11' },
+    draft: { given: 'Exampla', family: 'Nullssno', birthDate: '1974-02-11' },
     outcome: 'review',
     match: 'OR-100004',
     reasons: ['Family name one letter apart', 'Same given name', 'Same date of birth'],
@@ -200,8 +200,8 @@ const ROWS: readonly Row[] = [
   {
     name: 'the same person, typed the same way, arriving a second time',
     draft: {
-      given: 'John',
-      family: 'Smith',
+      given: 'Exampla',
+      family: 'Nullsson',
       birthDate: '1974-02-11',
       phoneMobile: '+1 555 0142 204',
     },
@@ -211,8 +211,8 @@ const ROWS: readonly Row[] = [
   {
     name: 'the same person with one letter wrong in the given name',
     draft: {
-      given: 'Johm',
-      family: 'Smith',
+      given: 'Exampli',
+      family: 'Nullsson',
       birthDate: '1974-02-11',
       phoneMobile: '555 0142 204',
     },
@@ -229,8 +229,8 @@ const ROWS: readonly Row[] = [
   {
     name: 'a name left in whatever case the keyboard was in',
     draft: {
-      given: 'JOHN',
-      family: 'smith',
+      given: 'EXAMPLA',
+      family: 'nullsson',
       birthDate: '1974-02-11',
       phoneMobile: '+1 555 0142 204',
     },
@@ -240,7 +240,7 @@ const ROWS: readonly Row[] = [
   },
   {
     name: 'an accent typed as a letter and a mark rather than as one character',
-    draft: { given: 'Jose\u0301', family: 'Ibarra', birthDate: '1980-12-05' },
+    draft: { given: 'Jose\u0301', family: 'Fakeley', birthDate: '1980-12-05' },
     outcome: 'block',
     match: 'OR-100007',
     reasons: ['Same family name', 'Same given name', 'Same date of birth'],
@@ -248,8 +248,8 @@ const ROWS: readonly Row[] = [
   {
     name: 'two different people who share a family name and a town',
     draft: {
-      given: 'Marcus',
-      family: 'Smith',
+      given: 'Fictitia',
+      family: 'Nullsson',
       birthDate: '1991-08-03',
       phoneMobile: '+1 555 0199 777',
       city: 'Cedar Falls',
@@ -333,7 +333,7 @@ describe('a number is compared whole, or not at all', () => {
      */
     const seen = outcomeFor({
       given: 'Rowan',
-      family: 'Quorn',
+      family: 'Mockford',
       birthDate: '1955-01-01',
       phoneMobile: HOUSEHOLD_LINE,
     });

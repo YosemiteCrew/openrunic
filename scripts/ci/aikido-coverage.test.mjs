@@ -225,6 +225,31 @@ test('a pass is not believed until the same contexts come back twice', async () 
   assert.equal(fetchImpl.calls.length, 2);
 });
 
+test('a pass seen either side of a running poll is two passes, not two in a row', async () => {
+  // Why the confirmation is reset rather than only overwritten. A check that is
+  // re-requested goes back to `in_progress` and then forward again under the
+  // same name, so the set can read identically either side of a poll that saw
+  // the head unsettled. That middle poll is positive evidence the head was
+  // still moving, which is exactly what the first observation would otherwise
+  // be vouching for. Consecutive is the property; "seen twice" is not.
+  const fetchImpl = stubFetch(
+    page(1, [checkCode('success', 'ok')]),
+    page(1, [checkCode(null, undefined)]),
+    page(1, [checkCode('success', 'ok')]),
+    page(2, [checkCode('success', 'ok'), deepReview('skipped', NO_CREDITS)])
+  );
+  const result = await awaitReview('o/r', 'abc', 't', {
+    fetchImpl,
+    sleep: () => Promise.resolve(),
+    now: clock(1000),
+    deadlineMs: 120_000,
+    intervalMs: 15_000,
+  });
+
+  assert.equal(result.verdict, 'declined');
+  assert.equal(fetchImpl.calls.length, 4);
+});
+
 test('a growing set of contexts is not a settled one', async () => {
   // Why the confirmation is keyed on WHICH contexts came back and not merely on
   // having seen a pass twice. The gate matches on the app slug, not on two

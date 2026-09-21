@@ -170,6 +170,12 @@ export async function listCheckRuns(repo, sha, token, fetchImpl = fetch) {
  * the exact false pass this gate exists to remove. A check that declined, by
  * contrast, has declined whatever arrives after it.
  *
+ * Two polls *in a row*, which is why the confirmation is reset rather than only
+ * overwritten. A re-requested check goes back to `in_progress` and forward
+ * again under the same name, so the set can read identically either side of a
+ * poll that saw the head unsettled - and that middle poll is the evidence the
+ * earlier read would otherwise be vouching for.
+ *
  * The gap is narrower than `intervalMs`, so this costs one extra poll on a
  * fully-reviewed head and nothing at all today, where every head declines.
  */

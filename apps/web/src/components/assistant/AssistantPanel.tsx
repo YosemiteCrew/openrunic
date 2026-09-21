@@ -130,6 +130,47 @@ export function AssistantPanel(): ReactElement | null {
 
   const onScreen = availability.status === 'enabled' && capabilities !== null && isOpen;
 
+  /* Focus goes to the field on open and back to whatever opened the panel on
+     close. Both live in one effect so the grab and the restore cannot drift
+     apart, which is the failure that leaves a keyboard user at the top of the
+     document with no idea where they are. */
+  useEffect(() => {
+    if (!isOpen) return;
+    const trigger = document.activeElement;
+    fieldRef.current?.querySelector('textarea')?.focus();
+    return () => {
+      if (trigger instanceof HTMLElement) trigger.focus();
+    };
+  }, [isOpen]);
+
+  /* Escape dismisses the panel, registered on the region rather than declared
+     as a prop on it. The two drawers already write their Escape this way; the
+     difference here is the node it is bound to. A drawer is modal and listens
+     on the document, which is right when nothing behind it is operable. This
+     panel is not modal - the chart beside it stays live, and a clinician who
+     has clicked back into a note is typing in the note, where Escape means
+     whatever the note says it means. Binding to the panel keeps the key inside
+     the surface that owns it, which is what the `<aside>` was doing by
+     catching its children's bubbles, without asking a landmark to read as
+     something a person can operate. */
+  useEffect(() => {
+    /* `onScreen` is a dependency rather than a guard: it is what changes when
+       the panel mounts and unmounts, and the ref holds the node for exactly as
+       long as it is true, so the one null check below covers both. */
+    const panel = panelRef.current;
+    if (panel === null) return;
+
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      // Consumed here: the innermost open surface is the one Escape closes.
+      event.stopPropagation();
+      close();
+    };
+
+    panel.addEventListener('keydown', dismiss);
+    return () => panel.removeEventListener('keydown', dismiss);
+  }, [close, onScreen]);
+
   if (!onScreen) return null;
 
   return (

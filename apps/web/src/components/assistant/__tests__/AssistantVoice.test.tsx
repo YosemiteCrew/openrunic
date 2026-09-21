@@ -96,14 +96,16 @@ describe('assistant voice controls', () => {
   it('drops the queued transitions when the panel goes away', async () => {
     const { unmount } = await openVoicePanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
-    expect(vi.getTimerCount()).toBeGreaterThan(0);
-
-    unmount();
-
     // Counted rather than observed through state: React 19 silently drops a
     // setState after unmount, so the leak is only visible as a live timer.
-    expect(vi.getTimerCount()).toBe(0);
+    // Counted as a delta because the panel is not the only thing on the page
+    // holding one.
+    const idle = vi.getTimerCount();
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(vi.getTimerCount()).toBe(idle + 1);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(idle);
   });
 
   it('still walks the simulation through to idle when it is not stopped', async () => {

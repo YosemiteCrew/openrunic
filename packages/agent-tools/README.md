@@ -61,6 +61,14 @@ permission catalogue does not yet have, so no principal holds it and the tool is
 caller. That is deny-by-default working, not a gap being hidden, and it becomes reachable the day
 the platform grows the permission and the `/bff/v0/audit-events` route.
 
+`coding.suggest` holds the level a suggestion may carry to what a deployment-supplied
+`CodingLevelRules` computes from the cited documentation, never to the `supportedLevel` the caller
+sent alongside it - those two arrive in the same call, so comparing them checks a claim against
+itself. Level criteria are published content this repository does not redistribute, so with no rule
+set loaded a suggestion above level 0 is deferred to a coder naming what was missing, the way
+`packages/quality` reports a measure whose value sets are not loaded. Codes where levels do not
+apply are level 0 and need no rule set, so an unconfigured deployment keeps a useful tool.
+
 ## The patient catalogue
 
 Decided in [ADR-0006](../../docs/adr/0006-patient-agent-surface.md), which discharges ADR-0005

@@ -21,12 +21,13 @@
 //
 // ## What counts as declining
 //
-// `skipped`, `neutral`, `cancelled` and `stale`: the conclusions that render as
-// neither pass nor fail. `failure` and `timed_out` are NOT this script's
-// business. They are already loud, `Aikido Security: check code` is already a
-// required context on both rulesets, and a second gate re-reporting a finding
-// that is already red would make this one fire for a reason it was not built
-// for - and then get muted for it.
+// Anything that is not `success`, `failure` or `timed_out`. Stated as an
+// allowlist on purpose: a list of the conclusions that decline leaves every
+// value nobody thought of falling through to the pass, which is this gate's
+// own defect one layer up. GitHub publishes two disagreeing enums for this one
+// field, so there is no single list to write a denylist against - see
+// REACHED_A_VERDICT. `failure` and `timed_out` are in the allowlist because
+// they are already loud and already required, not because they are reviews.
 //
 // ## Why absence fails
 //
@@ -69,12 +70,42 @@ import process from 'node:process';
 export const AIKIDO_APP = 'aikido-pr-checks';
 
 /**
- * Conclusions that are neither a pass nor a fail.
+ * The conclusions that mean Aikido reached a verdict on this head.
  *
- * Every one of these renders on the pull request page as an absence of a
- * finding, which is the thing that reads as a finding of nothing.
+ * An allowlist, not a denylist, and the direction is the point.
+ *
+ * Three members, each for its own reason:
+ *
+ * - `success` - it ran and it passed. The only one that is a review.
+ * - `failure` and `timed_out` - a real red result. NOT this gate's business:
+ *   `Aikido Security: check code` is already a required context on both
+ *   rulesets and already loud, and a second gate re-reporting a finding that
+ *   is already red would fire for a reason it was not built for, and then get
+ *   muted for it.
+ *
+ * Everything else declines, `action_required` included - what an app posts
+ * when it needs a human to go and do something, an empty wallet being the
+ * example this file exists for. The denylist this replaced did not name it,
+ * so it was scoring exit 0 and a green row.
+ *
+ * ## Why the direction matters more than the membership
+ *
+ * There is no single list to write a denylist against. GitHub publishes two
+ * enums for this one field and they disagree (github/rest-api-description):
+ *
+ *   POST/PATCH .../check-runs, request `conclusion`   8 values, incl. `stale`
+ *   components/schemas/check-run, response            7 values, no `stale`
+ *
+ * So an app may legally POST a conclusion that the schema describing what you
+ * read back does not list. A denylist written from the response enum omits
+ * `stale`; one written from the request enum is complete today and silently
+ * incomplete the day either list grows. An allowlist is correct against both,
+ * and stays correct against a third.
+ *
+ * That is the same defect this gate exists for, one layer further out: a value
+ * the reader has no case for rendering as the case where nothing is wrong.
  */
-export const DECLINED = new Set(['skipped', 'neutral', 'cancelled', 'stale']);
+export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
 
 /** How long to wait for the app to post, and how often to look. */
 export const DEADLINE_MS = 5 * 60 * 1000;
@@ -94,7 +125,7 @@ export function classify(checkRuns, total = checkRuns.length) {
   if (mine.some((run) => run.status !== 'completed')) {
     return { verdict: 'running', total, runs: mine };
   }
-  const declined = mine.filter((run) => DECLINED.has(run.conclusion));
+  const declined = mine.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
   if (declined.length > 0) return { verdict: 'declined', total, runs: declined };
   return { verdict: 'reviewed', total, runs: mine };
 }

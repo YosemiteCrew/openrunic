@@ -67,24 +67,38 @@ test('a finding is not this gate’s business', () => {
 });
 
 test('action_required is a decline, and it is the one the denylist missed', () => {
-  // GitHub's check-run `conclusion` enum has seven members and the first
-  // version of this gate named four of them as declining, so the three it did
-  // not name fell through to the pass. Two of those - `failure` and `timed_out`
-  // - are deliberate (see above). `action_required` was not: it is what an app
-  // posts when it needs a human to go and do something, which is precisely the
-  // empty wallet this file exists for, and it was scoring exit 0.
+  // The first version of this gate named four conclusions as declining, so
+  // everything it did not name fell through to the pass. Two of those -
+  // `failure` and `timed_out` - are deliberate (see above). `action_required`
+  // was not: it is what an app posts when it needs a human to go and do
+  // something, which is precisely the empty wallet this file exists for, and
+  // it was scoring exit 0.
   assert.equal(
     classify([deepReview('action_required', 'Add credits to continue reviewing.')]).verdict,
     'declined'
   );
 });
 
-test('every conclusion in the enum lands on a stated side, and nothing lands on the pass by default', () => {
-  // The enum, copied from components/schemas/check-run in
-  // github/rest-api-description rather than remembered. Written out in full so
-  // that a member gaining a side is a diff here, and so the count below is
-  // checked against the list rather than against itself.
-  const ENUM = [
+test('every conclusion GitHub publishes lands on a stated side, from both of its disagreeing enums', () => {
+  // GitHub publishes two enums for this one field and they are not the same
+  // list. Both copied from github/rest-api-description rather than remembered,
+  // and written out in full so a member gaining a side is a diff here.
+  //
+  // `stale` is the disagreement: an app may legally POST it, and the schema
+  // describing what you read back does not list it. That is why the fix is the
+  // DIRECTION of the list and not its membership - a denylist is written
+  // against one of these two and is wrong against the other.
+  const REQUEST = [
+    'action_required',
+    'cancelled',
+    'failure',
+    'neutral',
+    'skipped',
+    'stale',
+    'success',
+    'timed_out',
+  ];
+  const RESPONSE = [
     'success',
     'failure',
     'neutral',
@@ -93,29 +107,44 @@ test('every conclusion in the enum lands on a stated side, and nothing lands on 
     'timed_out',
     'action_required',
   ];
+  assert.deepEqual(
+    REQUEST.filter((c) => !RESPONSE.includes(c)),
+    ['stale'],
+    'the two enums must still differ by exactly `stale`; re-read the schema if this fails'
+  );
+  assert.equal(REQUEST.length, 8);
+  assert.equal(RESPONSE.length, 7);
+
+  const every = [...new Set([...REQUEST, ...RESPONSE])];
   const verdicts = new Map(
-    ENUM.map((conclusion) => [conclusion, classify([checkCode(conclusion, 'x')]).verdict])
+    every.map((conclusion) => [conclusion, classify([checkCode(conclusion, 'x')]).verdict])
   );
 
   // `success` is the review. `failure` and `timed_out` are already loud and
-  // already required, so they are out of scope rather than passes.
-  assert.deepEqual(
-    ENUM.filter((c) => verdicts.get(c) === 'reviewed'),
-    ['success', 'failure', 'timed_out']
-  );
-  assert.deepEqual(
-    ENUM.filter((c) => verdicts.get(c) === 'declined'),
-    ['neutral', 'cancelled', 'skipped', 'action_required']
-  );
-  assert.equal(ENUM.length, 7);
+  // already required, so they are out of scope rather than passes. Every other
+  // member - including `stale`, which only one of the two enums has - declines.
+  assert.deepEqual(every.filter((c) => verdicts.get(c) === 'reviewed').sort(), [
+    'failure',
+    'success',
+    'timed_out',
+  ]);
+  assert.deepEqual(every.filter((c) => verdicts.get(c) === 'declined').sort(), [
+    'action_required',
+    'cancelled',
+    'neutral',
+    'skipped',
+    'stale',
+  ]);
+  assert.equal(every.length, 8);
 });
 
-test('a conclusion outside the enum declines rather than passing', () => {
+test('a conclusion in neither enum declines rather than passing', () => {
   // The direction of the list, asserted rather than argued. A value the gate
   // has never heard of - a vendor bug, a GitHub addition, a field that arrived
-  // empty - must not be the value that renders as a review. With a denylist
-  // this is `reviewed`; with an allowlist it is not.
-  for (const conclusion of ['stale', 'startup_failure', '', 'SUCCESS']) {
+  // empty - must not be the value that renders as a review. Two published
+  // enums already disagree by a member, so a third list is not a hypothetical.
+  // With a denylist each of these is `reviewed`; with an allowlist none is.
+  for (const conclusion of ['startup_failure', 'action_needed', '', 'SUCCESS']) {
     assert.equal(
       classify([checkCode(conclusion, 'x')]).verdict,
       'declined',

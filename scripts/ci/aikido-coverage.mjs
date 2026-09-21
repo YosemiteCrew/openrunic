@@ -22,12 +22,12 @@
 // ## What counts as declining
 //
 // Anything that is not `success`, `failure` or `timed_out`. Stated as an
-// allowlist on purpose: the conclusion is a closed enum of seven values, and a
-// list of the ones that decline leaves every value nobody thought of falling
-// through to the pass - which is this gate's own defect one layer up. See
-// REACHED_A_VERDICT for the per-member reasoning; `failure` and `timed_out`
-// are in it because they are already loud and already required, not because
-// they are reviews.
+// allowlist on purpose: a list of the conclusions that decline leaves every
+// value nobody thought of falling through to the pass, which is this gate's
+// own defect one layer up. GitHub publishes two disagreeing enums for this one
+// field, so there is no single list to write a denylist against - see
+// REACHED_A_VERDICT. `failure` and `timed_out` are in the allowlist because
+// they are already loud and already required, not because they are reviews.
 //
 // ## Why absence fails
 //
@@ -72,13 +72,7 @@ export const AIKIDO_APP = 'aikido-pr-checks';
 /**
  * The conclusions that mean Aikido reached a verdict on this head.
  *
- * An allowlist, not a denylist, and the direction is the point. GitHub's
- * check-run `conclusion` is a closed enum of seven values - `success`,
- * `failure`, `neutral`, `cancelled`, `skipped`, `timed_out`, `action_required`
- * (components/schemas/check-run in github/rest-api-description). Naming the
- * ones that decline leaves every other value falling through to the pass,
- * which is this gate's own defect one layer up: the state it cannot classify
- * renders as the state where nothing is wrong.
+ * An allowlist, not a denylist, and the direction is the point.
  *
  * Three members, each for its own reason:
  *
@@ -89,15 +83,27 @@ export const AIKIDO_APP = 'aikido-pr-checks';
  *   is already red would fire for a reason it was not built for, and then get
  *   muted for it.
  *
- * Everything else declines, including the one the enum has and the previous
- * denylist did not: `action_required`, which is what an app posts when it
- * needs a human to go and do something - an empty wallet being the example
- * this file exists for. It was scoring exit 0 and a green row.
+ * Everything else declines, `action_required` included - what an app posts
+ * when it needs a human to go and do something, an empty wallet being the
+ * example this file exists for. The denylist this replaced did not name it,
+ * so it was scoring exit 0 and a green row.
  *
- * The denylist also carried `stale`, which is not a check-run conclusion at
- * all; it belongs to workflow runs. Covering six of seven and guarding a
- * seventh that cannot arrive is what a list written against the wrong enum
- * looks like from both sides.
+ * ## Why the direction matters more than the membership
+ *
+ * There is no single list to write a denylist against. GitHub publishes two
+ * enums for this one field and they disagree (github/rest-api-description):
+ *
+ *   POST/PATCH .../check-runs, request `conclusion`   8 values, incl. `stale`
+ *   components/schemas/check-run, response            7 values, no `stale`
+ *
+ * So an app may legally POST a conclusion that the schema describing what you
+ * read back does not list. A denylist written from the response enum omits
+ * `stale`; one written from the request enum is complete today and silently
+ * incomplete the day either list grows. An allowlist is correct against both,
+ * and stays correct against a third.
+ *
+ * That is the same defect this gate exists for, one layer further out: a value
+ * the reader has no case for rendering as the case where nothing is wrong.
  */
 export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
 

@@ -71,16 +71,6 @@
  */
 
 /**
- * Speech acts that ask for a judgement rather than for a record.
- *
- * Written as whole phrases, checked against the words of the question rather
- * than as substrings, so "should" inside "shoulder" does not match.
- *
- * Grouped by the language they were written for, because that is the unit
- * somebody adding a language works in and the grouping is what makes a missing
- * language visible. They are all applied regardless of what the reader chose.
- */
-/**
  * One alternation, `(?:a|b|c)`, out of a list.
  *
  * The patterns below are a pattern wrapped around a vocabulary, and the
@@ -91,6 +81,16 @@
  */
 const oneOf = (words: readonly string[]): string => `(?:${words.join('|')})`;
 
+/**
+ * Speech acts that ask for a judgement rather than for a record.
+ *
+ * Written as whole phrases, checked against the words of the question rather
+ * than as substrings, so "should" inside "shoulder" does not match.
+ *
+ * Grouped by the language they were written for, because that is the unit
+ * somebody adding a language works in and the grouping is what makes a missing
+ * language visible. They are all applied regardless of what the reader chose.
+ */
 const ASKS_FOR_A_JUDGEMENT: Readonly<Record<string, readonly RegExp[]>> = {
   en: [
     /\bshould i\b/,

@@ -175,6 +175,15 @@ const ANSWERED: Turn = {
   sourced: true,
 };
 
+/**
+ * One turn, held still.
+ *
+ * Written once rather than inline at each rerender because a fresh array is a
+ * changed transcript to every effect that watches one - which would make the
+ * case below pass whatever it was pointed at.
+ */
+const ONE_ANSWER: readonly Turn[] = [ANSWERED];
+
 const UNSOURCED: Turn = {
   ...ANSWERED,
   id: 'turn-2',
@@ -401,6 +410,34 @@ describe.each([
     });
 
     expect(double.said.map((utterance) => utterance.id)).toEqual(['turn-1']);
+  });
+
+  it('reads a turn its rule has only just allowed, without the turn changing', () => {
+    /* A surface's rule is not a constant: it can be waiting on the role, the
+       locale or anything else the screen is waiting on, and it refuses until
+       that arrives. The turn on screen does not change when it does. A hook
+       that watched only the turns would have taken the refusal as final and
+       left the answer unread with the switch on and nothing to say why. */
+    const { result, rerender } = renderHook(
+      ({ turns, allow }: { turns: readonly Turn[]; allow: boolean }) =>
+        useReadback(double.port, 'en', turns, (turn) => (allow ? speakable(turn) : null), 'case-1'),
+      { initialProps: { turns: [] as readonly Turn[], allow: false } }
+    );
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: ONE_ANSWER, allow: false });
+    expect(double.said).toEqual([]);
+
+    rerender({ turns: ONE_ANSWER, allow: true });
+
+    expect(double.said.map((utterance) => utterance.id)).toEqual(['turn-1']);
+    /* And still only once, now that the rule lets it through: what stops a
+       second reading is the record of what has been offered, not the rule
+       holding still. */
+    rerender({ turns: ONE_ANSWER, allow: true });
+    expect(double.said).toHaveLength(1);
   });
 
   it('forgets the voice and the consent when the record underneath changes', () => {

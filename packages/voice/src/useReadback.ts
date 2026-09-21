@@ -107,27 +107,24 @@ export function useReadback<Turn extends { id: string }>(
      given for a page in front of them is not carried into a room they left. */
   usePageHidden(() => dispatch({ kind: 'revoke' }));
 
-  /* The surface's own rule, read through a ref rather than depended on.
-     Callers build it inline - it closes over a translator, a role, whatever
-     decides what that surface will show - so a new function arrives on every
-     render, and depending on it would re-enter this effect constantly. What
-     the effect must actually react to is a turn arriving or settling. */
-  const speakableRef = useRef(speakable);
-  useEffect(() => {
-    speakableRef.current = speakable;
-  }, [speakable]);
-
   /* Every settled turn is offered exactly once. With the switch off that is a
      no-op that records it, which is what stops turning the switch on from
-     reading the conversation so far back at somebody. */
+     reading the conversation so far back at somebody.
+
+     `speakable` is a dependency like any other, and it is safe to be one
+     because what stops a turn being spoken twice is `attempted` rather than
+     anything about how often this runs. A caller that rebuilds its rule on
+     every render therefore costs a loop over the turns on screen and nothing
+     else - there is no correctness in holding the rule still, so it is not
+     held still behind a ref that would have to be kept in step. */
   useEffect(() => {
     for (const turn of turns) {
-      const text = speakableRef.current(turn);
+      const text = speakable(turn);
       if (text === null) continue;
       if (state.attempted.has(turn.id)) continue;
       dispatch({ kind: 'speak', turnId: turn.id, text });
     }
-  }, [turns, state.attempted]);
+  }, [turns, speakable, state.attempted]);
 
   /*
    * One utterance, for as long as it is the utterance.

@@ -44,6 +44,23 @@ const CONFIG = join(APP_ROOT, 'eslint.config.mjs');
 const WRAPPER = join(APP_ROOT, 'src/components/state/Notices.tsx');
 const A_SCREEN = join(APP_ROOT, 'src/components/state/__tests__/not-the-wrapper.tsx');
 
+// Loading `eslint.config.mjs` pulls in the whole Next.js shareable config and
+// its plugins, and that happens on the FIRST lint rather than on construction.
+// Measured on a quiet machine: first lint 580 ms, every lint after it 3-8 ms -
+// including one from a freshly constructed ESLint, so this is a process-wide
+// cache and not something instance reuse would buy. Left where it fell, the
+// whole 580 ms was charged to whichever case linted first, which is why that
+// one case sat at 3.3 s on a quiet machine and 8.9 s under workspace load
+// against a 5000 ms budget while the other four finished in tens of ms (#532).
+// `beforeAll` below pays it once, so no case is charged for it.
+//
+// The hook needs its own budget because 8.9 s was the slowest cold load seen in
+// #532 and the same file ran 2-3x slower beside the rest of the workspace, which
+// is past the 10000 ms vitest gives a hook. Generous on purpose: nothing an
+// assertion says depends on this number, so it is only here to make a wedged
+// config load fail rather than hang.
+const CONFIG_LOAD_BUDGET_MS = 60_000;
+
 async function restrictedImportsIn(code: string, filePath: string): Promise<string[]> {
   const eslint = new ESLint({ cwd: APP_ROOT });
   const [result] = await eslint.lintText(code, { filePath, warnIgnored: false });
@@ -60,7 +77,12 @@ describe('the notices import rule', () => {
     // Keyed on something no assertion below reads, so this fires only for "wrong
     // file" and never steals a failure from the check that would name the cause.
     await expect(readFile(CONFIG, 'utf8')).resolves.toContain('eslint-config-next');
-  });
+
+    // Warms the config load described above. Deliberately unasserted and on an
+    // import no case below uses, so it cannot take a failure from the case that
+    // would name the cause - the point here is the cost, not the result.
+    await restrictedImportsIn("import { Card } from '@openrunic/ui';\n", A_SCREEN);
+  }, CONFIG_LOAD_BUDGET_MS);
 
   it('refuses Alert and Toast from the design system in an ordinary screen', async () => {
     const alert = await restrictedImportsIn("import { Alert } from '@openrunic/ui';\n", A_SCREEN);

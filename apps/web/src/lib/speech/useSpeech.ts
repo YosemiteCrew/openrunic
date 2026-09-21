@@ -166,6 +166,10 @@ export function useSpeech(options: UseSpeechOptions): UseSpeechReturn {
         supportsInterruption: true,
       };
 
+      // SECURITY: chartId is passed for adapter-side access control validation only.
+      // It is NOT transmitted to the speech provider. Audio data is encrypted in transit
+      // via the adapter's TLS connection. The adapter MUST enforce chartId scoping
+      // and revoke access on session end (ADR-0005).
       const handle = await adapterRef.current.startSession(config, (event: SpeechEvent) => {
         switch (event.type) {
           case 'capture-started':

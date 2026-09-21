@@ -80,15 +80,16 @@ export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): Rea
     return readback === undefined ? createPlatformReadback() : readback;
   }, [onScreen, readback]);
 
-  /* The chart the panel is beside is the scope the consent was given for, and
-     an empty string is a real value here rather than a missing one: it is the
-     scope of a conversation about no chart in particular, which is what a
-     biller asking about an authorisation case has. Moving between the two stops
-     the voice and asks again, the same as moving between two charts. */
   /* The rule runs here, beside the rule about what this surface will show. What
      reaches the voice is a turn id and the string on screen, and nothing that
      could be used to ask for another one. */
   const speakable = useMemo(() => speakableTurns(state.turns, speakableAnswer), [state.turns]);
+
+  /* The chart the panel is beside is the scope the consent was given for, and
+     an empty string is a real value for it rather than a missing one: it is the
+     scope of a conversation about no chart in particular, which is what a biller
+     asking about an authorisation case has. Moving between the two stops the
+     voice and asks again, the same as moving between two charts. */
   const voice = useReadback(port, t.locale, speakable, chartPatientId ?? '');
 
   /* Focus goes to the field on open and back to whatever opened the panel on

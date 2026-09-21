@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 
-import { AIKIDO_APP, awaitReview, classify, describe, listCheckRuns } from './aikido-coverage.mjs';
+import {
+  AIKIDO_APP,
+  REACHED_A_VERDICT,
+  awaitReview,
+  classify,
+  describe,
+  listCheckRuns,
+} from './aikido-coverage.mjs';
 
 // The two summaries below are the measured ones, copied off
 // `commits/<sha>/check-runs` rather than paraphrased. They are the whole reason
@@ -391,6 +400,42 @@ test('a pass settles on the second look, not the tenth', async () => {
   assert.equal(result.verdict, 'reviewed');
   assert.equal(fetchImpl.calls.length, 2);
   assert.deepEqual(slept, [15_000]);
+});
+
+test('docs/security-gates.md names the same verdict conclusions the code does', () => {
+  // This drifted once already and nothing said so. #524 wrote the section
+  // against a denylist of four conclusions; #526 replaced the code with an
+  // allowlist of three and left the prose describing the list it had removed -
+  // so the document that tells a reviewer what this gate passes named
+  // `skipped`, `neutral`, `cancelled` and `stale` as the declining set, and was
+  // silent on `action_required`, which is the member the fix was about.
+  //
+  // The doc is prose and cannot be generated, but the one sentence carrying the
+  // list can be compared to the constant. Only the closed side is written down
+  // there, which is also why this can be checked at all: the declining side is
+  // open-ended by design and has no list to compare against.
+  const docPath = path.join(import.meta.dirname, '..', '..', 'docs', 'security-gates.md');
+  const doc = readFileSync(docPath, 'utf8');
+
+  // A canary on the read itself: a section extracted from the wrong file, or
+  // from a heading that has been renamed, must fail here rather than downstream
+  // as an empty string that matches nothing.
+  const section = /^## Aikido coverage$([\s\S]*?)^## /mu.exec(doc)?.[1];
+  assert.ok(section, `no "## Aikido coverage" section in ${docPath}`);
+  assert.ok(
+    section.length > 500,
+    `the Aikido coverage section read as ${String(section.length)} chars`
+  );
+
+  const listed = /reached a verdict - ((?:`[a-z_]+`(?:, )?)+)/u.exec(section)?.[1];
+  assert.ok(listed, 'the Aikido coverage section no longer states which conclusions are a verdict');
+  assert.deepEqual(
+    listed
+      .split(', ')
+      .map((entry) => entry.replaceAll('`', ''))
+      .sort(),
+    [...REACHED_A_VERDICT].sort()
+  );
 });
 
 test('the announcement carries the sentence that names the cause', () => {

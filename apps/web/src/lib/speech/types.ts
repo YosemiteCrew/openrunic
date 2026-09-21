@@ -188,8 +188,8 @@ export interface UseSpeechOptions {
 export interface SpeechAdapterConfig {
   /** Base URL for the speech provider endpoint. */
   baseUrl: string;
-  /** Authentication credentials (api key, token, etc.). */
-  credentials: Record<string, string>;
+  /** Authentication configuration (api key, token, etc.). Type-only; no secrets in source. */
+  authConfig: Record<string, string>;
   /** Provider-specific options. */
   options?: Record<string, unknown>;
 }

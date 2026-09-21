@@ -1,9 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { hidePage, showPage } from '@/__tests__/visibility';
-import { useReadback } from '@/components/assistant';
-import type { AssistantTurn } from '@/components/assistant';
-import type { ReadbackEvent, ReadbackPort, Utterance } from '@/lib/voice';
+import { hidePage, showPage } from './visibility.js';
+import { speakableTurns } from '../readback.js';
+import { useReadback } from '../useReadback.js';
+import type { ReadbackEvent, ReadbackPort, Utterance } from '../ports.js';
 
 /**
  * One contract, two adapters that share nothing but it.
@@ -140,41 +140,75 @@ function duplexSession(): Double {
   };
 }
 
-const ANSWERED: AssistantTurn = {
+/**
+ * A turn, as little of one as the hook is allowed to know.
+ *
+ * The hook is generic over this on purpose: it is handed an id and a rule, and
+ * the shape in between is the app's. The fields here are the two a real rule
+ * turns on - whether the turn settled, and whether its sources arrived - so the
+ * rule below is a real rule rather than a flag the test sets.
+ */
+interface Turn {
+  id: string;
+  answer: string;
+  settled: boolean;
+  sourced: boolean;
+}
+
+/**
+ * The surface's rule, in its smallest honest form.
+ *
+ * Both apps' rules reduce to this: an answer is read aloud only when it is
+ * finished and only when it is the checkable text already on the screen. The
+ * hook never sees the clauses, which is the property under test - a surface
+ * that learns a new reason to withhold does not have to teach the voice.
+ */
+function speakable(turn: Turn): string | null {
+  if (!turn.settled) return null;
+  if (!turn.sourced) return null;
+  return turn.answer;
+}
+
+const ANSWERED: Turn = {
   id: 'turn-1',
-  question: 'What do I owe?',
   answer: 'Your balance is 40 pounds, due on 2 April.',
-  steps: [],
-  sources: [
-    { resourceType: 'Bill', resourceId: 'b-1', label: 'April statement', untrusted: false },
-  ],
-  failures: [],
-  deferrals: [],
-  outcome: 'completed',
-  withheld: 'none',
+  settled: true,
+  sourced: true,
 };
 
-const UNSOURCED: AssistantTurn = {
+/**
+ * One turn, held still.
+ *
+ * Written once rather than inline at each rerender because a fresh array is a
+ * changed transcript to every effect that watches one - which would make the
+ * case below pass whatever it was pointed at.
+ */
+const ONE_ANSWER: readonly Turn[] = [ANSWERED];
+
+const UNSOURCED: Turn = {
   ...ANSWERED,
   id: 'turn-2',
   answer: '',
-  sources: [],
-  withheld: 'unsourced',
+  sourced: false,
 };
 
 interface Props {
-  turns: readonly AssistantTurn[];
-  chart: string;
+  turns: readonly Turn[];
+  scope: string;
   port: ReadbackPort | null;
 }
 
 function drive(port: ReadbackPort) {
   return renderHook(
-    ({ turns, chart, port: current }: Props) => useReadback(current, 'en', turns, chart),
+    /* Mapped here rather than in the hook, the way a surface does it: what
+       reaches the voice is a turn id and the string the screen shows, and the
+       rule that decided so has already run. */
+    ({ turns, scope, port: current }: Props) =>
+      useReadback(current, 'en', speakableTurns(turns, speakable), scope),
     {
       initialProps: {
-        turns: [] as readonly AssistantTurn[],
-        chart: 'patient-1',
+        turns: [] as readonly Turn[],
+        scope: 'patient-1',
         port: port as ReadbackPort | null,
       },
     }
@@ -199,7 +233,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
 
     expect(double.said).toEqual([
       { id: 'turn-1', text: 'Your balance is 40 pounds, due on 2 April.', language: 'en' },
@@ -215,7 +249,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       double.finish('turn-1');
     });
@@ -230,7 +264,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       result.current.stop();
     });
@@ -249,7 +283,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     expect(double.cancels()).toBe(0);
 
     act(() => {
@@ -265,7 +299,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       double.ghost();
     });
@@ -283,7 +317,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       double.fail('turn-1');
     });
@@ -297,7 +331,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [UNSOURCED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [UNSOURCED], scope: 'patient-1', port: double.port });
 
     expect(double.said).toEqual([]);
     expect(result.current.state.speaking).toBeNull();
@@ -306,7 +340,7 @@ describe.each([
   it('stays silent while the switch is off, and stays silent about what it missed', () => {
     const { result, rerender } = drive(double.port);
 
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       result.current.toggle();
     });
@@ -322,7 +356,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
     act(() => {
       result.current.toggle();
     });
@@ -342,8 +376,8 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: null });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: null });
 
     expect(result.current.state.speaking).toBeNull();
     expect(result.current.state.on).toBe(false);
@@ -356,7 +390,7 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
 
     act(() => {
       hidePage();
@@ -376,11 +410,44 @@ describe.each([
     });
     rerender({
       turns: [ANSWERED, { ...ANSWERED, id: 'turn-3' }],
-      chart: 'patient-1',
+      scope: 'patient-1',
       port: double.port,
     });
 
     expect(double.said.map((utterance) => utterance.id)).toEqual(['turn-1']);
+  });
+
+  it('reads a turn its rule has only just allowed, without the turn changing', () => {
+    /* A surface's rule is not a constant: it can be waiting on the role, the
+       locale or anything else the screen is waiting on, and it refuses until
+       that arrives. The turn on screen does not change when it does. A hook
+       that watched only the turns would have taken the refusal as final and
+       left the answer unread with the switch on and nothing to say why. */
+    const { result, rerender } = renderHook(
+      ({ turns, allow }: { turns: readonly Turn[]; allow: boolean }) =>
+        useReadback(
+          double.port,
+          'en',
+          speakableTurns(turns, (turn) => (allow ? speakable(turn) : null)),
+          'case-1'
+        ),
+      { initialProps: { turns: [] as readonly Turn[], allow: false } }
+    );
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: ONE_ANSWER, allow: false });
+    expect(double.said).toEqual([]);
+
+    rerender({ turns: ONE_ANSWER, allow: true });
+
+    expect(double.said.map((utterance) => utterance.id)).toEqual(['turn-1']);
+    /* And still only once, now that the rule lets it through: what stops a
+       second reading is the record of what has been offered, not the rule
+       holding still. */
+    rerender({ turns: ONE_ANSWER, allow: true });
+    expect(double.said).toHaveLength(1);
   });
 
   it('forgets the voice and the consent when the record underneath changes', () => {
@@ -389,8 +456,8 @@ describe.each([
     act(() => {
       result.current.toggle();
     });
-    rerender({ turns: [ANSWERED], chart: 'patient-1', port: double.port });
-    rerender({ turns: [], chart: 'patient-2', port: double.port });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+    rerender({ turns: [], scope: 'patient-2', port: double.port });
 
     expect(result.current.state.on).toBe(false);
     expect(result.current.state.speaking).toBeNull();

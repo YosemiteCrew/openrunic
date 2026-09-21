@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPlatformReadback, platformSpeech } from '@/lib/voice';
-import type { PlatformSpeech } from '@/lib/voice';
+import { createPlatformReadback, platformSpeech } from '../index.js';
+import type { PlatformSpeech } from '../index.js';
 
 /**
  * The device's own voice, driven through fakes.

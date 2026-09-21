@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readbackAvailability } from '@/lib/voice';
-import type { ReadbackCapabilities, ReadbackPort } from '@/lib/voice';
+import { readbackAvailability } from '../index.js';
+import type { ReadbackCapabilities, ReadbackPort } from '../index.js';
 
 /**
  * The question asked before anything is spoken.

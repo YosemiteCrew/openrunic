@@ -23,15 +23,21 @@
  * instruction, so an ending that arrives after the reader stopped finds nothing
  * speaking and changes nothing. Nothing is recorded as heard that the reader
  * cut off.
+ *
+ * **Which answers may be read is not decided here.** The hook is handed the
+ * turns a surface has already found speakable, paired with the very strings it
+ * renders for them. That is what keeps "may this be shown" and "may this be
+ * heard" one sentence: a surface that learns a new reason to withhold an answer
+ * does not have to remember to come here and teach the voice the same reason,
+ * and nothing in this file could read a record even if it wanted to.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { readbackAvailability } from '@/lib/voice';
-import type { ReadbackAvailability, ReadbackPort } from '@/lib/voice';
-import { SILENT, readbackReducer, speakableAnswer } from './readback';
-import { usePageHidden } from './usePageHidden';
-import type { ReadbackState } from './readback';
-import type { AssistantTurn } from './transcript';
+import { readbackAvailability } from './ports.js';
+import type { ReadbackAvailability, ReadbackPort } from './ports.js';
+import { SILENT, readbackReducer } from './readback.js';
+import { usePageHidden } from './usePageHidden.js';
+import type { ReadbackState, Speaking } from './readback.js';
 
 export interface Readback {
   availability: ReadbackAvailability;
@@ -52,8 +58,8 @@ function sameAvailability(left: ReadbackAvailability, right: ReadbackAvailabilit
 export function useReadback(
   port: ReadbackPort | null,
   language: string,
-  turns: readonly AssistantTurn[],
-  chartPatientId: string
+  speakable: readonly Speaking[],
+  scope: string
 ): Readback {
   const [state, dispatch] = useReducer(readbackReducer, SILENT);
   const [availability, setAvailability] = useState<ReadbackAvailability>(() =>
@@ -81,14 +87,17 @@ export function useReadback(
     if (availability.status !== 'available' && state.on) dispatch({ kind: 'off' });
   }, [availability, state.on]);
 
-  /* A different chart, or none, is a different person. The voice stops, the
-     queue goes, and consent is asked for again rather than carried over. */
-  const chartRef = useRef(chartPatientId);
+  /* A different record underneath, or none, is a different subject. The voice
+     stops, the queue goes, and consent is asked for again rather than carried
+     over. The surface names its own scope - a chart, a case, an empty string
+     where the conversation is about nothing in particular - and this only has
+     to notice that the name changed. */
+  const scopeRef = useRef(scope);
   useEffect(() => {
-    if (chartRef.current === chartPatientId) return;
-    chartRef.current = chartPatientId;
+    if (scopeRef.current === scope) return;
+    scopeRef.current = scope;
     dispatch({ kind: 'revoke' });
-  }, [chartPatientId]);
+  }, [scope]);
 
   /* So does the page going out of sight, and the switch goes with it. An answer
      becoming audible while the screen is dark is the single case where the
@@ -97,17 +106,21 @@ export function useReadback(
      given for a page in front of them is not carried into a room they left. */
   usePageHidden(() => dispatch({ kind: 'revoke' }));
 
-  /* Every settled turn is offered exactly once. With the switch off that is a
-     no-op that records it, which is what stops turning the switch on from
-     reading the conversation so far back at somebody. */
+  /* Every turn the surface has found speakable is offered exactly once. With
+     the switch off that is a no-op that records it, which is what stops turning
+     the switch on from reading the conversation so far back at somebody.
+
+     The list is the whole of what this hook is told. Which turns are on it is
+     the surface's decision, taken beside its decision about what to show - see
+     {@link ./index.ts}. What stops one being spoken twice is `attempted` rather
+     than anything about how often this runs, so a caller that rebuilds the list
+     costs a loop over what is on screen and nothing else. */
   useEffect(() => {
-    for (const turn of turns) {
-      const text = speakableAnswer(turn);
-      if (text === null) continue;
-      if (state.attempted.has(turn.id)) continue;
-      dispatch({ kind: 'speak', turnId: turn.id, text });
+    for (const item of speakable) {
+      if (state.attempted.has(item.turnId)) continue;
+      dispatch({ kind: 'speak', turnId: item.turnId, text: item.text });
     }
-  }, [turns, state.attempted]);
+  }, [speakable, state.attempted]);
 
   /*
    * One utterance, for as long as it is the utterance.

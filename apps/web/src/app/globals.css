@@ -735,6 +735,38 @@ fieldset {
   color: var(--text-secondary);
 }
 
+/* Above the composer and on its own hairline, because it is a setting about
+   answers rather than a way of asking one. */
+.or-assistant__readback {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--border-hairline);
+}
+
+.or-assistant__readback-status {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* Empty for most of this control's life, and it must not hold a line of space
+   open while it is: the status is always in the document so that a screen
+   reader has a region to announce into. */
+.or-assistant__readback-status:empty {
+  display: none;
+}
+
+/* Wraps rather than squeezes. The status sentence is a translated one and the
+   stop control is a fixed width, so in a language whose sentence runs longer
+   than English the button takes its own line rather than the column scrolling
+   sideways. */
+.or-assistant__readback-live {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .or-assistant__composer {
   display: flex;
   flex-direction: column;

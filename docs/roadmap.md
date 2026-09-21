@@ -104,12 +104,12 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1846 of 2585 messages (71%).
+**es**: 1846 of 2593 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
 | admin     | 444 | 444 | `██████████████████` |
-| assistant |  55 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| assistant |  63 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | auth      |  21 |  21 | `██████████████████` |
 | billing   | 463 | 463 | `██████████████████` |
 | chart     | 187 |   0 | `░░░░░░░░░░░░░░░░░░` |
@@ -131,11 +131,11 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Workspace
 
-26 workspaces, all at 0.2.0.
+27 workspaces, all at 0.2.0.
 
 **apps/** `api`, `@openrunic/e2e`, `portal`, `web`.
 
-**packages/** `@openrunic/adapters`, `@openrunic/agent`, `@openrunic/agent-tools`, `@openrunic/ccda`, `@openrunic/cds-hooks`, `@openrunic/clinical-safety`, `@openrunic/collections`, `@openrunic/database`, `@openrunic/fhir`, `@openrunic/forms-engine`, `@openrunic/growth`, `@openrunic/hl7v2`, `@openrunic/i18n`, `@openrunic/inventory`, `@openrunic/mips`, `@openrunic/ops`, `@openrunic/pricing`, `@openrunic/quality`, `@openrunic/terminology`, `@openrunic/types`, `@openrunic/ui`, `@openrunic/x12`.
+**packages/** `@openrunic/adapters`, `@openrunic/agent`, `@openrunic/agent-tools`, `@openrunic/ccda`, `@openrunic/cds-hooks`, `@openrunic/clinical-safety`, `@openrunic/collections`, `@openrunic/database`, `@openrunic/fhir`, `@openrunic/forms-engine`, `@openrunic/growth`, `@openrunic/hl7v2`, `@openrunic/i18n`, `@openrunic/inventory`, `@openrunic/mips`, `@openrunic/ops`, `@openrunic/pricing`, `@openrunic/quality`, `@openrunic/terminology`, `@openrunic/types`, `@openrunic/ui`, `@openrunic/voice`, `@openrunic/x12`.
 
 ---
 

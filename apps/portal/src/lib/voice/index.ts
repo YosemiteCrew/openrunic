@@ -5,10 +5,24 @@
  * transcript, with every other rule about what a patient may be shown, because
  * the two questions have one answer: the words read aloud are the words on the
  * screen.
+ *
+ * The readback half is `@openrunic/voice` and is re-exported rather than
+ * re-stated: the staff surface reads answers aloud under the same port and the
+ * same reducer, and a second copy of either is the thing that would let the two
+ * drift. The microphone stays here, because it is still one app's decision -
+ * see `capture.ts` for why it could ship at all.
  */
 
-export { createPlatformReadback, platformSpeech } from './platform';
-export type { PlatformSpeech } from './platform';
+export { createPlatformReadback, platformSpeech, readbackAvailability } from '@openrunic/voice';
+export type {
+  PlatformSpeech,
+  ReadbackAvailability,
+  ReadbackCapabilities,
+  ReadbackEvent,
+  ReadbackPort,
+  ReadbackUnavailable,
+  Utterance,
+} from '@openrunic/voice';
 
 export { createPlatformCapture, platformRecognition } from './platform-capture';
 export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture';
@@ -22,13 +36,3 @@ export type {
   CaptureSession,
   CaptureUnavailable,
 } from './capture';
-
-export { readbackAvailability } from './ports';
-export type {
-  ReadbackAvailability,
-  ReadbackCapabilities,
-  ReadbackEvent,
-  ReadbackPort,
-  ReadbackUnavailable,
-  Utterance,
-} from './ports';

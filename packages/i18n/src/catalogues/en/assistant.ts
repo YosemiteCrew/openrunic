@@ -43,6 +43,20 @@ export const assistant: Messages = {
     'What you type here leaves this deployment and is sent to that endpoint.',
   'assistant.model.stays': 'Nothing you type here leaves this deployment.',
 
+  /* Reading the answer aloud. The copy says what is read and what is not sent,
+     because a control that starts speaking a patient's record in a consulting
+     room has to be understood before it is flipped rather than after. */
+  'assistant.readback.label': 'Read answers aloud',
+  'assistant.readback.hint':
+    'Your device reads out the answer already on this screen, and nothing else. The device does the reading, so no record text is sent anywhere for it.',
+  'assistant.readback.stop': 'Stop reading',
+  'assistant.readback.noVoice': 'This device has no voice installed, so nothing can be read aloud.',
+  'assistant.readback.noLanguage':
+    'This device has no voice for the language this page is in, so nothing is read aloud.',
+  'assistant.readback.reading': 'Reading the answer aloud.',
+  'assistant.readback.interrupted': 'Stopped reading. The answer is still on screen.',
+  'assistant.readback.failed': 'The answer could not be read aloud. It is on screen above.',
+
   'assistant.composer.label': 'Ask about this record',
   'assistant.composer.placeholder': 'What did the last visit record about the knee?',
   'assistant.composer.hint': 'Enter sends, Shift and Enter start a new line.',

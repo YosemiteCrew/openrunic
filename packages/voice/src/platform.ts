@@ -20,7 +20,7 @@
  * ordinary case rather than an error, and it renders as no readback at all.
  */
 
-import type { ReadbackEvent, ReadbackPort, Utterance } from './ports';
+import type { ReadbackEvent, ReadbackPort, Utterance } from './ports.js';
 
 /** The two globals this adapter needs, taken as values so they can be faked. */
 export interface PlatformSpeech {

@@ -4,29 +4,30 @@
  * The control that turns the voice on, and the one sentence about what it is
  * doing.
  *
- * Off is the state it ships in and the state it returns to. Sound that starts
- * by itself is an accessibility feature in a waiting room and a disclosure in a
- * bus queue, and this surface reads somebody's own appointments and what they
- * owe out loud, so it is never the default and the switch says plainly what it
- * will read before it reads anything.
+ * Off is the state it ships in and the state it returns to. A consulting room
+ * is a shared room and a front desk is a public one, and this surface reads a
+ * patient's record and what a payer is still owed out loud, so sound is never
+ * the default and the switch says plainly what it will read before it reads
+ * anything.
  *
  * **A device that cannot speak says so rather than showing a dead switch**, but
  * only when there is something to say. A browser with no speech at all - and
  * the server render, which is every first paint - draws nothing here, the same
- * answer this portal gives everywhere for a feature that is not present. A
- * device that has speech and no usable voice is a different case: the reader
- * could install one, so the sentence is worth the room.
+ * answer the shell gives everywhere for a feature that is not present. A device
+ * that has speech and no usable voice is a different case: the clinic could
+ * install one, so the sentence is worth the room.
  *
- * The status line is a live region because one of the four things it says is
- * that the answer could *not* be read. Somebody who turned this on is waiting
- * for sound, and silence with an explanation only a sighted reader can see is
- * the one failure this control could have that nobody would notice.
+ * The status line is a live region because one of the things it says is that
+ * the answer could *not* be read. Somebody who turned this on is waiting for
+ * sound, and silence with an explanation only a sighted reader can see is the
+ * one failure this control could have that nobody would notice.
  */
 
 import { Button, Switch } from '@openrunic/ui';
+import type { ReadbackAvailability, ReadbackState } from '@openrunic/voice';
+import type { ReactElement } from 'react';
+
 import { useTranslator } from '@/lib/i18n/messages';
-import type { ReadbackAvailability } from '@/lib/voice';
-import type { ReadbackState } from '@openrunic/voice';
 
 export interface AssistantReadbackProps {
   availability: ReadbackAvailability;
@@ -37,13 +38,13 @@ export interface AssistantReadbackProps {
 
 /** Why nothing can be read, in the reader's words. Null where there is nothing to explain. */
 const UNAVAILABLE_KEYS = {
-  'no-voice': 'portal.assistant.readback.noVoice',
-  language: 'portal.assistant.readback.noLanguage',
+  'no-voice': 'assistant.readback.noVoice',
+  language: 'assistant.readback.noLanguage',
 } as const;
 
 const ENDING_KEYS = {
-  interrupted: 'portal.assistant.readback.interrupted',
-  failed: 'portal.assistant.readback.failed',
+  interrupted: 'assistant.readback.interrupted',
+  failed: 'assistant.readback.failed',
 } as const;
 
 export function AssistantReadback({
@@ -51,7 +52,7 @@ export function AssistantReadback({
   state,
   onToggle,
   onStop,
-}: Readonly<AssistantReadbackProps>) {
+}: Readonly<AssistantReadbackProps>): ReactElement | null {
   const t = useTranslator();
 
   if (availability.status === 'unavailable' && availability.reason === 'no-adapter') return null;
@@ -66,31 +67,29 @@ export function AssistantReadback({
      nothing at all - the reader just heard it. */
   const ending =
     state.ended === 'interrupted' || state.ended === 'failed' ? t(ENDING_KEYS[state.ended]) : '';
-  const status = state.speaking === null ? ending : t('portal.assistant.readback.reading');
+  const status = state.speaking === null ? ending : t('assistant.readback.reading');
 
   return (
-    <div className="portal-assistant__readback">
+    <div className="or-assistant__readback">
       <Switch
         checked={state.on}
         disabled={unavailable !== null}
-        hint={t('portal.assistant.readback.hint')}
-        label={t('portal.assistant.readback.label')}
+        hint={t('assistant.readback.hint')}
+        label={t('assistant.readback.label')}
         onChange={onToggle}
       />
 
-      {unavailable === null ? null : (
-        <p className="portal-assistant__readback-note">{unavailable}</p>
-      )}
+      {unavailable === null ? null : <p className="or-caption">{unavailable}</p>}
 
-      <div className="portal-assistant__readback-live">
+      <div className="or-assistant__readback-live">
         {/* Always in the document, empty most of the time. A live region added
             to the page at the moment it has something to say is a region
             several screen readers never announce. */}
-        <output className="portal-assistant__readback-status">{status}</output>
+        <output className="or-caption or-assistant__readback-status">{status}</output>
 
         {state.speaking === null ? null : (
           <Button variant="secondary" iconLeft="square" onClick={onStop}>
-            {t('portal.assistant.readback.stop')}
+            {t('assistant.readback.stop')}
           </Button>
         )}
       </div>

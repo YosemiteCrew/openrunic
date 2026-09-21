@@ -368,9 +368,15 @@ describe.each([
     expect(result.current.state.ended).toBe('interrupted');
   });
 
-  it('settles as an interruption when the voice disappears mid-answer', () => {
-    /* A device can lose its voices while it is using one. Left alone the
-       surface would say "reading the answer aloud" for ever, over silence. */
+  it('settles and forgets when the voice disappears mid-answer', () => {
+    /* A device can lose its voices while it is using one, and a surface can
+       take the voice away by putting itself away. Left alone the surface would
+       say "reading the answer aloud" for ever, over silence.
+
+       It settles to nothing rather than to an interruption. Without an adapter
+       every surface draws no control at all, so there is no sentence on screen
+       for this ending to be, and the only thing keeping it could do is put it
+       on screen later - see the case below. */
     const { result, rerender } = drive(double.port);
 
     act(() => {
@@ -381,7 +387,81 @@ describe.each([
 
     expect(result.current.state.speaking).toBeNull();
     expect(result.current.state.on).toBe(false);
+    expect(result.current.state.ended).toBe('none');
+  });
+
+  it('has nothing to say about the last answer when the voice comes back', () => {
+    /* #529. A surface that dismisses itself hands the hook no voice and gets it
+       back on the way in. What the reader then sees is a control that has just
+       been turned off - and, before this, one sentence claiming it had stopped
+       reading, about an utterance from before they closed it. */
+    const { result, rerender } = drive(double.port);
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: null });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+
+    expect(result.current.state.on).toBe(false);
+    expect(result.current.state.ended).toBe('none');
+    /* And the answer already on screen is not read at the reader on the way
+       back in: coming back does not turn the switch on. */
+    expect(double.said.map((utterance) => utterance.id)).toEqual(['turn-1']);
+  });
+
+  it('forgets an ending that was already settled before the voice went away', () => {
+    /* The switch is off and nothing is speaking, so there is no sound to stop
+       and nothing about consent to change - and an ending left from before is
+       exactly what would come back on screen. A guard that only acted while the
+       switch was on would leave this one standing. */
+    const { result, rerender } = drive(double.port);
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+    act(() => {
+      result.current.toggle();
+    });
     expect(result.current.state.ended).toBe('interrupted');
+    expect(result.current.state.on).toBe(false);
+
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: null });
+    rerender({ turns: [ANSWERED], scope: 'patient-1', port: double.port });
+
+    expect(result.current.state.ended).toBe('none');
+  });
+
+  it('keeps how the last answer ended while the control is still on screen', () => {
+    /* The other half of the same rule. A voice that failed leaves a sentence
+       saying so, and a device whose voices changed to ones that cannot speak
+       this page still draws the control - so that sentence stays where the
+       reader can see it rather than being cleared by the switch going down. */
+    const { result, rerender } = renderHook(
+      ({ turns, language }: { turns: readonly Turn[]; language: string }) =>
+        useReadback(double.port, language, speakableTurns(turns, speakable), 'case-1'),
+      { initialProps: { turns: [] as readonly Turn[], language: 'en' } }
+    );
+
+    act(() => {
+      result.current.toggle();
+    });
+    rerender({ turns: ONE_ANSWER, language: 'en' });
+    act(() => {
+      double.fail('turn-1');
+    });
+    expect(result.current.state.ended).toBe('failed');
+
+    /* Both doubles speak `en-GB` and nothing else, so a page in another
+       language is a voice that cannot read it - the control stays drawn, with
+       its own sentence about why. */
+    rerender({ turns: ONE_ANSWER, language: 'pl' });
+
+    expect(result.current.state.on).toBe(false);
+    expect(result.current.state.ended).toBe('failed');
   });
 
   it('stops the voice and forgets the consent when the page goes out of sight', () => {

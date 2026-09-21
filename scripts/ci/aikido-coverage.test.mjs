@@ -123,6 +123,14 @@ test('listCheckRuns follows pages until it has what the API said there was', asy
   assert.equal(fetchImpl.calls.length, 2);
   assert.match(fetchImpl.calls[0].url, /\/repos\/o\/r\/commits\/abc\/check-runs\?/u);
   assert.match(fetchImpl.calls[1].url, /[?&]page=2\b/u);
+  // `filter=latest` is what the draft reasoning rests on, and nothing else
+  // here would notice it going. Without it the endpoint returns every attempt
+  // on the sha, so a pull request opened as a draft and then marked ready
+  // carries its stale draft `skipped` beside the fresh run and reports
+  // `declined` for a state that has already been resolved. Moot while Deep
+  // Review skips unconditionally; live the moment the wallet is funded, which
+  // is the state this gate exists to survive into.
+  assert.match(fetchImpl.calls[0].url, /[?&]filter=latest\b/u);
   assert.equal(fetchImpl.calls[0].init.headers.authorization, 'Bearer t');
 });
 
@@ -171,15 +179,19 @@ test('awaitReview polls while Aikido is still running and stops once it settles'
 });
 
 test('awaitReview gives up at the deadline and reports what was true then', async () => {
-  const fetchImpl = stubFetch(
-    page(1, [checkCode(null, undefined)]),
-    page(1, [checkCode(null, undefined)])
-  );
+  const fetchImpl = stubFetch(page(1, [checkCode(null, undefined)]));
+  const slept = [];
   const result = await awaitReview('o/r', 'abc', 't', {
     fetchImpl,
-    sleep: () => Promise.resolve(),
-    // 0, then 5000 - past a 4s deadline on the second look, so exactly two
-    // fetches and one sleep.
+    sleep: (ms) => {
+      slept.push(ms);
+      return Promise.resolve();
+    },
+    // `started` takes the first read, 0; the deadline test takes the second,
+    // 5000, which is already past 4000. So the loop returns after ONE fetch
+    // and never sleeps, and both are asserted rather than described - the
+    // stub is given a single page so a second fetch would throw rather than
+    // quietly succeed.
     now: clock(5000),
     deadlineMs: 4000,
     intervalMs: 15_000,
@@ -187,6 +199,7 @@ test('awaitReview gives up at the deadline and reports what was true then', asyn
 
   assert.equal(result.verdict, 'running');
   assert.equal(fetchImpl.calls.length, 1);
+  assert.deepEqual(slept, []);
 });
 
 test('the announcement carries the sentence that names the cause', () => {

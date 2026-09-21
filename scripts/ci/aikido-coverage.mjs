@@ -53,6 +53,14 @@
 //
 // Exit 0 when every Aikido check ran, 1 when one declined or none appeared,
 // 2 on a usage error.
+//
+// ## Why a pass is confirmed and a decline is not
+//
+// `check code` is created up to two seconds before `Deep Review`. A poll inside
+// that gap sees one completed `success` with nothing outstanding and would
+// report a whole review off half of one. So a pass has to hold across two polls
+// over the same set of contexts; a decline does not, because nothing arriving
+// later makes a declined check into a run one.
 
 import path from 'node:path';
 import process from 'node:process';
@@ -91,8 +99,19 @@ export function classify(checkRuns, total = checkRuns.length) {
   return { verdict: 'reviewed', total, runs: mine };
 }
 
-/** `running`, `no-checks` and `absent` can still change; the others cannot. */
-const SETTLED = new Set(['declined', 'reviewed']);
+/**
+ * The Aikido contexts on a head, as one comparable string.
+ *
+ * Keyed on the check name rather than a count, so the owner disabling
+ * `Deep Review` - one of the two remedies #408 asks for - settles on the
+ * remaining context instead of waiting out the deadline for a second one that
+ * is never coming.
+ */
+const contextsOf = (result) =>
+  result.runs
+    .map((run) => run.name)
+    .sort((a, b) => a.localeCompare(b))
+    .join('\n');
 
 /**
  * Every check run on a ref.
@@ -140,6 +159,19 @@ export async function listCheckRuns(repo, sha, token, fetchImpl = fetch) {
  * so five minutes is an order of magnitude of headroom and still terminates.
  * Whatever is true at the deadline is the answer - `running` included, because
  * a review that has not finished by then has not reviewed anything either.
+ *
+ * `declined` settles on the poll that sees it; `reviewed` does not, and needs
+ * the same set of contexts twice. The two are not symmetric because only one of
+ * them can be undone by a later arrival. Aikido creates `check code` 0-2
+ * seconds BEFORE `Deep Review` - measured 2026-09-21 on the eight most recently
+ * merged heads: earlier on six, same second on two, later on none. A poll
+ * landing in that gap sees one completed `success`, nothing outstanding, and
+ * reads a half-posted review as a whole one - exit 0 and a green row, which is
+ * the exact false pass this gate exists to remove. A check that declined, by
+ * contrast, has declined whatever arrives after it.
+ *
+ * The gap is narrower than `intervalMs`, so this costs one extra poll on a
+ * fully-reviewed head and nothing at all today, where every head declines.
  */
 export async function awaitReview(repo, sha, token, options = {}) {
   const {
@@ -151,11 +183,15 @@ export async function awaitReview(repo, sha, token, options = {}) {
   } = options;
 
   const started = now();
-  let result;
+  let confirming = null;
   for (;;) {
     const runs = await listCheckRuns(repo, sha, token, fetchImpl);
-    result = classify(runs);
-    if (SETTLED.has(result.verdict) || now() - started >= deadlineMs) return result;
+    const result = classify(runs);
+    const settled =
+      result.verdict === 'declined' ||
+      (result.verdict === 'reviewed' && contextsOf(result) === confirming);
+    if (settled || now() - started >= deadlineMs) return result;
+    confirming = result.verdict === 'reviewed' ? contextsOf(result) : null;
     await sleep(intervalMs);
   }
 }

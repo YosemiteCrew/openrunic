@@ -188,6 +188,12 @@ check runs the app posted on the head and fails when one of them declined - `ski
 own `output.summary`, which names the cause where the conclusion cannot. A `failure` is not this
 gate's business: `Aikido Security: check code` is already required and already loud.
 
+A pass has to hold across two polls over the same set of contexts; a decline does not. Aikido
+creates `check code` up to two seconds before `Deep Review`, so a single poll can land on a head
+carrying one completed `success` with nothing outstanding and report a whole review off half of
+one. Nothing arriving later turns a declined check into a run one, so the asymmetry is in the
+states, not in caution.
+
 Zero Aikido checks on a head fails too, and is reported separately from a head with no checks at
 all. The cost is that an uninstalled app, a vendor outage or a renamed check turns every pull
 request red; that is the recoverable direction, and staying green while the scanner is absent is

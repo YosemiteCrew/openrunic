@@ -21,12 +21,13 @@
 //
 // ## What counts as declining
 //
-// `skipped`, `neutral`, `cancelled` and `stale`: the conclusions that render as
-// neither pass nor fail. `failure` and `timed_out` are NOT this script's
-// business. They are already loud, `Aikido Security: check code` is already a
-// required context on both rulesets, and a second gate re-reporting a finding
-// that is already red would make this one fire for a reason it was not built
-// for - and then get muted for it.
+// Anything that is not `success`, `failure` or `timed_out`. Stated as an
+// allowlist on purpose: the conclusion is a closed enum of seven values, and a
+// list of the ones that decline leaves every value nobody thought of falling
+// through to the pass - which is this gate's own defect one layer up. See
+// REACHED_A_VERDICT for the per-member reasoning; `failure` and `timed_out`
+// are in it because they are already loud and already required, not because
+// they are reviews.
 //
 // ## Why absence fails
 //
@@ -69,12 +70,36 @@ import process from 'node:process';
 export const AIKIDO_APP = 'aikido-pr-checks';
 
 /**
- * Conclusions that are neither a pass nor a fail.
+ * The conclusions that mean Aikido reached a verdict on this head.
  *
- * Every one of these renders on the pull request page as an absence of a
- * finding, which is the thing that reads as a finding of nothing.
+ * An allowlist, not a denylist, and the direction is the point. GitHub's
+ * check-run `conclusion` is a closed enum of seven values - `success`,
+ * `failure`, `neutral`, `cancelled`, `skipped`, `timed_out`, `action_required`
+ * (components/schemas/check-run in github/rest-api-description). Naming the
+ * ones that decline leaves every other value falling through to the pass,
+ * which is this gate's own defect one layer up: the state it cannot classify
+ * renders as the state where nothing is wrong.
+ *
+ * Three members, each for its own reason:
+ *
+ * - `success` - it ran and it passed. The only one that is a review.
+ * - `failure` and `timed_out` - a real red result. NOT this gate's business:
+ *   `Aikido Security: check code` is already a required context on both
+ *   rulesets and already loud, and a second gate re-reporting a finding that
+ *   is already red would fire for a reason it was not built for, and then get
+ *   muted for it.
+ *
+ * Everything else declines, including the one the enum has and the previous
+ * denylist did not: `action_required`, which is what an app posts when it
+ * needs a human to go and do something - an empty wallet being the example
+ * this file exists for. It was scoring exit 0 and a green row.
+ *
+ * The denylist also carried `stale`, which is not a check-run conclusion at
+ * all; it belongs to workflow runs. Covering six of seven and guarding a
+ * seventh that cannot arrive is what a list written against the wrong enum
+ * looks like from both sides.
  */
-export const DECLINED = new Set(['skipped', 'neutral', 'cancelled', 'stale']);
+export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
 
 /** How long to wait for the app to post, and how often to look. */
 export const DEADLINE_MS = 5 * 60 * 1000;
@@ -94,7 +119,7 @@ export function classify(checkRuns, total = checkRuns.length) {
   if (mine.some((run) => run.status !== 'completed')) {
     return { verdict: 'running', total, runs: mine };
   }
-  const declined = mine.filter((run) => DECLINED.has(run.conclusion));
+  const declined = mine.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
   if (declined.length > 0) return { verdict: 'declined', total, runs: declined };
   return { verdict: 'reviewed', total, runs: mine };
 }

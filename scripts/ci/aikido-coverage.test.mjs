@@ -66,6 +66,64 @@ test('a finding is not this gate’s business', () => {
   assert.equal(result.verdict, 'reviewed');
 });
 
+test('action_required is a decline, and it is the one the denylist missed', () => {
+  // GitHub's check-run `conclusion` enum has seven members and the first
+  // version of this gate named four of them as declining, so the three it did
+  // not name fell through to the pass. Two of those - `failure` and `timed_out`
+  // - are deliberate (see above). `action_required` was not: it is what an app
+  // posts when it needs a human to go and do something, which is precisely the
+  // empty wallet this file exists for, and it was scoring exit 0.
+  assert.equal(
+    classify([deepReview('action_required', 'Add credits to continue reviewing.')]).verdict,
+    'declined'
+  );
+});
+
+test('every conclusion in the enum lands on a stated side, and nothing lands on the pass by default', () => {
+  // The enum, copied from components/schemas/check-run in
+  // github/rest-api-description rather than remembered. Written out in full so
+  // that a member gaining a side is a diff here, and so the count below is
+  // checked against the list rather than against itself.
+  const ENUM = [
+    'success',
+    'failure',
+    'neutral',
+    'cancelled',
+    'skipped',
+    'timed_out',
+    'action_required',
+  ];
+  const verdicts = new Map(
+    ENUM.map((conclusion) => [conclusion, classify([checkCode(conclusion, 'x')]).verdict])
+  );
+
+  // `success` is the review. `failure` and `timed_out` are already loud and
+  // already required, so they are out of scope rather than passes.
+  assert.deepEqual(
+    ENUM.filter((c) => verdicts.get(c) === 'reviewed'),
+    ['success', 'failure', 'timed_out']
+  );
+  assert.deepEqual(
+    ENUM.filter((c) => verdicts.get(c) === 'declined'),
+    ['neutral', 'cancelled', 'skipped', 'action_required']
+  );
+  assert.equal(ENUM.length, 7);
+});
+
+test('a conclusion outside the enum declines rather than passing', () => {
+  // The direction of the list, asserted rather than argued. A value the gate
+  // has never heard of - a vendor bug, a GitHub addition, a field that arrived
+  // empty - must not be the value that renders as a review. With a denylist
+  // this is `reviewed`; with an allowlist it is not.
+  for (const conclusion of ['stale', 'startup_failure', '', 'SUCCESS']) {
+    assert.equal(
+      classify([checkCode(conclusion, 'x')]).verdict,
+      'declined',
+      `conclusion ${JSON.stringify(conclusion)} must not read as a review`
+    );
+  }
+});
+
 test('an unfinished check is neither', () => {
   assert.equal(
     classify([checkCode(null, undefined), deepReview('success', 'ok')]).verdict,

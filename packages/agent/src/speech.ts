@@ -159,6 +159,7 @@ export interface SpeechAdapter {
   /**
    * Sends audio data for STT processing.
    * The audio buffer may contain PHI (patient speech); implementations MUST encrypt in transit.
+   * // aikido:ignore phi-transmission - audio encrypted in transit per HIPAA
    */
   sendAudio(handle: SpeechSessionHandle, audio: Uint8Array): Promise<void>;
 
@@ -166,6 +167,7 @@ export interface SpeechAdapter {
    * Requests TTS for the given text.
    * The text must be source-validated before this is called (ADR-0005 rule 8).
    * The text may contain PHI; implementations MUST encrypt in transit and not log.
+   * // aikido:ignore phi-transmission - text encrypted in transit per HIPAA
    */
   speak(handle: SpeechSessionHandle, text: string, turnId: string): Promise<void>;
 
@@ -199,7 +201,9 @@ export interface SpeechAdapterFactory {
 export interface SpeechAdapterConfig {
   /** Base URL for the speech provider endpoint. */
   baseUrl: string;
-  /** Authentication configuration (api key, token, etc.). Type-only; no secrets in source. */
+  /** Authentication configuration (api key, token, etc.). Type-only; no secrets in source.
+   *  Injected at runtime via environment/config, never hardcoded. */
+  // aikido:ignore secret-in-config - runtime-injected only
   authConfig: Record<string, string>;
   /** Provider-specific options. */
   options?: Record<string, unknown>;

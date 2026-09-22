@@ -1,5 +1,7 @@
 'use client';
 
+import { api } from './api';
+import { API_MODE } from './config';
 import { queryKey, useApiQuery } from './hooks';
 import type { AsyncState } from './hooks';
 import {
@@ -10,7 +12,7 @@ import {
   MOCK_PATIENT_PROBLEMS,
   MOCK_RESULTS,
 } from './mock/fixtures';
-import type { ListResponse, ServiceRequestDto } from './types';
+import type { ApiClient, ListResponse, ServiceRequestDto } from './types';
 
 /**
  * Orders, results and the typed inbox.
@@ -187,6 +189,28 @@ export function toOrder(dto: ServiceRequestDto): Order | null {
  */
 function viewValue<T extends string>(view: readonly T[], value: string): T | undefined {
   return view.find((option) => option === value);
+}
+
+/**
+ * A page of orders, with the rows the ledger refused counted rather than dropped.
+ *
+ * `page.total` counts what the API matched; `data` holds what {@link toOrder}
+ * could render. The two are different numbers whenever the page contains a
+ * referral, a draft or an ASAP order, and the difference is the whole reason
+ * this type exists: a clinician reading "25 orders" above 22 rows has no way to
+ * tell whether three are missing or three are elsewhere. So the count travels
+ * with the page and the screen states it (#539). Discarding it inside the
+ * mapping layer is what made it invisible.
+ */
+export interface OrderPage extends ListResponse<Order> {
+  /** Rows on this page the ledger has no word for. Counted in `page.total`, absent from `data`. */
+  refused: number;
+}
+
+/** One page of service requests, as the order ledger reads it. */
+export function toOrderPage(response: ListResponse<ServiceRequestDto>): OrderPage {
+  const data = response.data.map(toOrder).filter((order): order is Order => order !== null);
+  return { data, page: response.page, refused: response.data.length - data.length };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -422,7 +446,7 @@ function page<T>(rows: T[]): ListResponse<T> {
 
 /** The read surface the three screens share. An HTTP client will satisfy it too. */
 export interface WorklistClient {
-  orders: { list: (query?: OrderListQuery) => Promise<ListResponse<Order>> };
+  orders: { list: (query?: OrderListQuery) => Promise<OrderPage> };
   results: { list: (query?: ResultListQuery) => Promise<ListResponse<ResultReport>> };
   inbox: { list: (query?: InboxListQuery) => Promise<ListResponse<InboxItem>> };
 }
@@ -443,31 +467,65 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
   const inbox = data.inbox ?? MOCK_INBOX_ITEMS;
 
   return {
-    orders: { list: (query) => Promise.resolve(page(filterOrders(orders, query))) },
+    orders: {
+      /* Refused is zero by construction: these rows are already `Order`s and
+         never went through `toOrder`. */
+      list: (query) => Promise.resolve({ ...page(filterOrders(orders, query)), refused: 0 }),
+    },
     results: { list: (query) => Promise.resolve(page(filterResults(results, query))) },
     inbox: { list: (query) => Promise.resolve(page(filterInbox(inbox, query))) },
   };
 }
 
-/** The app's client. Mock-backed until the aggregates exist in `apps/api`. */
-export const worklist: WorklistClient = createWorklistClient();
+/**
+ * The orders half of {@link WorklistClient}, over `GET /bff/v0/orders`.
+ *
+ * `OrderListQuery` is assignable to `ServiceRequestListQuery` because the view
+ * enums are subsets of the domain ones; that is the same narrowing `toOrder`
+ * enforces on the way back, read from the other end.
+ */
+export function liveOrders(client: ApiClient): WorklistClient['orders'] {
+  return { list: (query = {}) => client.orders.list(query).then(toOrderPage) };
+}
 
 /**
- * Whether {@link worklist} is answering from fixtures, which today it always
- * is - in live mode as much as in mock mode. `createWorklistClient()` above
- * takes no api-mode branch because there is nothing to branch to: `apps/api`
- * has no worklist aggregate yet.
+ * The app's client.
+ *
+ * Orders read the API in live mode. Results and the inbox do not, because
+ * `apps/api` still has no aggregate behind them - the inbox in particular is a
+ * composition across results, messages and tasks that no route assembles. Mock
+ * mode keeps the fixture rows for all three: `MOCK_SERVICE_REQUESTS` is a
+ * thinner set than `MOCK_ORDERS` and carries no cancellation reason or linked
+ * report, so routing the demo through it would empty three columns of the
+ * screen it is there to demonstrate.
+ */
+export const worklist: WorklistClient =
+  API_MODE === 'live'
+    ? { ...createWorklistClient(), orders: liveOrders(api) }
+    : createWorklistClient();
+
+/**
+ * Whether the INBOX AND RESULTS screens are answering from fixtures, which
+ * today they always are - in live mode as much as in mock mode. `apps/api` has
+ * no aggregate behind either one.
+ *
+ * Orders used to be the third, and is not any more: {@link worklist} reads
+ * `GET /bff/v0/orders` in live mode. So this is no longer a property of the
+ * whole worklist and the orders screen no longer renders the notice gated on
+ * it - a screen reading Postgres carrying a "these rows are not real" banner is
+ * the same lie in the other direction.
  *
  * Exported rather than left as a fact about this file, because the shell's
  * "Demo data" badge is gated on the api MODE and this is a property of the
  * DATA, and the two disagree exactly where it matters. Set
  * `NEXT_PUBLIC_API_MODE=live` and the badge goes - the shell has no session and
- * therefore no facility to name - while the inbox, orders and results screens
- * go on serving Testperson, Exampla and a critical potassium that belongs to
- * nobody. The screen that reads this constant is the one that has to say so.
+ * therefore no facility to name - while the inbox and results screens go on
+ * serving Testperson, Exampla and a critical potassium that belongs to nobody.
+ * The screen that reads this constant is the one that has to say so.
  *
- * It is a literal because the honest value is a literal: the day a route lands,
- * this becomes a mode test and the screens reading it need no other change.
+ * It is a literal because the honest value is a literal: the day those two
+ * routes land, this becomes a mode test and the screens reading it need no
+ * other change.
  */
 export const WORKLIST_IS_FIXTURE_BACKED = true;
 
@@ -480,7 +538,7 @@ export interface WorklistHookOptions {
 export function useOrders(
   query: OrderListQuery = {},
   options: WorklistHookOptions = {}
-): AsyncState<ListResponse<Order>> {
+): AsyncState<OrderPage> {
   const client = options.client ?? worklist;
   return useApiQuery(queryKey('orders.list', { ...query }), () => client.orders.list(query), {
     enabled: options.enabled,

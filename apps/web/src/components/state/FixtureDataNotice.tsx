@@ -11,13 +11,15 @@ import { useTranslator } from '@/lib/i18n/messages';
  *
  * The shell states the rule in its own comment - "Demo data is never silent:
  * every screen says so, in the same place" - and puts a `Demo data` badge in
- * the top bar. That badge is gated on the api MODE. The inbox, orders and
- * results screens are fixture-backed in EVERY mode, because `apps/api` has no
- * worklist aggregate for them to read (see `WORKLIST_IS_FIXTURE_BACKED`).
+ * the top bar. That badge is gated on the api MODE. The inbox and results
+ * screens are fixture-backed in EVERY mode, because `apps/api` has no
+ * aggregate for them to read (see `WORKLIST_IS_FIXTURE_BACKED`). Orders was the
+ * third until it started reading `GET /bff/v0/orders`, and renders this no
+ * longer.
  *
  * The two conditions disagree exactly where it matters. Build with
  * `NEXT_PUBLIC_API_MODE=live` and the badge disappears - correctly, the shell
- * has no fixture facility to name - while those three screens go on listing a
+ * has no fixture facility to name - while those two screens go on listing a
  * refill request for Sandboxer, Prototypo and a critical potassium for
  * Testperson, Exampla. The one marker that said "not real" is removed at the
  * moment the rows start to look real, and the fixture names are the only thing

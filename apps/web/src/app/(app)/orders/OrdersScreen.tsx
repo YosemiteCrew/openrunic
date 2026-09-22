@@ -1,6 +1,7 @@
 'use client';
 
-import type { Translator } from '@openrunic/i18n';
+import { counted } from '@openrunic/i18n';
+import type { CountedMessage, Translator } from '@openrunic/i18n';
 import { Button, Card, Select, Table, Tag } from '@openrunic/ui';
 import type { SelectOption, TableColumn } from '@openrunic/ui';
 import { useMemo, useState } from 'react';
@@ -16,9 +17,9 @@ import {
   OrderStatusBadge,
 } from '@/components/orders';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, FixtureDataNotice, isEmptyList } from '@/components/state';
+import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_NOW, mockPatientById, mockProviderName, ORDER_STATUSES, useOrders } from '@/lib/api';
-import type { ListResponse, Order, OrderStatus, WorklistClient } from '@/lib/api';
+import type { Order, OrderPage, OrderStatus, WorklistClient } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -52,6 +53,27 @@ export interface OrdersScreenProps {
  * suffix is also what `catalogue-drift.test.ts` reads, so a heading pointing at
  * a key nobody defined fails the build rather than appearing above a column.
  */
+const ORDER_COUNT: CountedMessage = {
+  oneKey: 'orders.list.countOne',
+  otherKey: 'orders.list.countOther',
+};
+
+/**
+ * The rows this page matched and this screen cannot render (#539).
+ *
+ * It sits in the same line as the total because that is the only place the
+ * difference is legible: `page.total` counts what the API matched and `data`
+ * holds what the ledger has a word for, so a page of 25 containing three
+ * referrals is 22 rows under a total of 25. A clinician counting them needs to
+ * know whether three are missing or three are elsewhere, and a screen that
+ * shows the larger number and the smaller list without saying so answers
+ * neither.
+ */
+const NOT_SHOWN: CountedMessage = {
+  oneKey: 'orders.list.notShownOne',
+  otherKey: 'orders.list.notShownOther',
+};
+
 const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
   { key: 'order', headerKey: 'orders.list.column.order' },
   { key: 'patient', headerKey: 'orders.list.column.patient' },
@@ -138,7 +160,6 @@ export function OrdersScreen({
       }
     >
       <ScreenCommands commands={commands} />
-      <FixtureDataNotice />
       <Card tone="cream" title={t('orders.list.card')}>
         <AsyncBoundary
           state={orders}
@@ -165,12 +186,20 @@ export function OrdersScreen({
             ),
           }}
         >
-          {(page: ListResponse<Order>) => (
-            <Table
-              columns={columns}
-              rows={page.data.map((order) => toRow(t, order, now))}
-              caption={t('orders.list.caption')}
-            />
+          {(page: OrderPage) => (
+            <>
+              <Table
+                columns={columns}
+                rows={page.data.map((order) => toRow(t, order, now))}
+                caption={t('orders.list.caption')}
+              />
+              <p className="or-caption">{counted(t, ORDER_COUNT, page.page.total)}</p>
+              {page.refused > 0 ? (
+                <p className="or-caption">
+                  <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+                </p>
+              ) : null}
+            </>
           )}
         </AsyncBoundary>
       </Card>

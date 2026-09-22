@@ -217,7 +217,7 @@ function toRow(t: Translator, order: Order, now: string): Record<string, ReactNo
     ),
     placed: formatDateTime(t, order.placedAt, 'dense'),
     provider: mockProviderName(order.providerId),
-    destination: order.destination,
+    destination: order.destination ?? t('orders.list.destinationNotRecorded'),
     status: (
       <span className="or-cluster-tight">
         <OrderStatusBadge status={order.status} />

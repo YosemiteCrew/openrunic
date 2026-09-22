@@ -512,6 +512,22 @@ export interface ServiceRequestDto {
   updatedAt: string;
 }
 
+/** Mirrors `serviceRequestListQuerySchema`. Wider than `OrderListQuery`, which is a view. */
+export interface ServiceRequestListQuery extends PaginationQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: ServiceRequestStatus;
+  category?: ServiceRequestCategory;
+  priority?: ServiceRequestPriority;
+  orderedById?: string;
+  /** Inclusive ISO instant, over `requestedAt`. */
+  from?: string;
+  /** Exclusive ISO instant, over `requestedAt`. */
+  to?: string;
+  sort?: 'requestedAt' | 'scheduledFor' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
 /** Mirrors `DIAGNOSTIC_REPORT_STATUSES`. */
 export type DiagnosticReportStatus =
   | 'REGISTERED'
@@ -1003,6 +1019,10 @@ export interface ApiClient {
     ) => Promise<NoteAddendumDto>;
   };
   orders: {
+    list: (
+      query?: ServiceRequestListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<ServiceRequestDto>>;
     sign: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;
     transmit: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;
     cancel: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;

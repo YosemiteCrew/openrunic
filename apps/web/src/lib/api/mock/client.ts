@@ -31,6 +31,7 @@ import type {
   PaymentDto,
   RemittanceDto,
   ServiceRequestDto,
+  ServiceRequestListQuery,
   ServiceRequestStatus,
   StatementDto,
   TaskDto,
@@ -137,6 +138,49 @@ export function filterPatients(
     if (sort === 'birthDate') return a.birthDate.localeCompare(b.birthDate) * direction;
     if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
     return a.name.family.localeCompare(b.name.family, 'en') * direction;
+  });
+}
+
+/**
+ * The mock side of `GET /bff/v0/orders`, filtered and sorted the way
+ * `serviceRequestListQuerySchema` says the route is.
+ *
+ * The window is over `requestedAt` and is half-open - `from` inclusive, `to`
+ * exclusive - because that is what the published list description promises and
+ * a mock that closes the far end double-counts the boundary row against every
+ * caller that pages a day at a time.
+ */
+export function filterServiceRequests(
+  rows: readonly ServiceRequestDto[],
+  query: ServiceRequestListQuery = {}
+): readonly ServiceRequestDto[] {
+  const { patientId, encounterId, status, category, priority, orderedById, from, to } = query;
+
+  const matched = rows.filter((order) => {
+    if (patientId && order.patientId !== patientId) return false;
+    if (encounterId && order.encounterId !== encounterId) return false;
+    if (status && order.status !== status) return false;
+    if (category && order.category !== category) return false;
+    if (priority && order.priority !== priority) return false;
+    if (orderedById && order.orderedById !== orderedById) return false;
+    if (from && order.requestedAt < from) return false;
+    if (to && order.requestedAt >= to) return false;
+    return true;
+  });
+
+  const sort = query.sort ?? 'requestedAt';
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort((a, b) => {
+    if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
+    if (sort === 'scheduledFor') {
+      /* A row with no scheduled date sorts last rather than first, the way the
+         tasks route already treats a missing due date. Ascending or descending
+         is a question about the rows that have one. */
+      if (a.scheduledFor === null) return b.scheduledFor === null ? 0 : 1;
+      if (b.scheduledFor === null) return -1;
+      return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
+    }
+    return a.requestedAt.localeCompare(b.requestedAt) * direction;
   });
 }
 
@@ -985,6 +1029,10 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     orders: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterServiceRequests(orders.all(), query), query.page, query.pageSize)
+        ),
       sign: (id) => moveOrder(id, 'SIGNED'),
       transmit: (id) => moveOrder(id, 'TRANSMITTED'),
       cancel: (id) => moveOrder(id, 'CANCELLED'),

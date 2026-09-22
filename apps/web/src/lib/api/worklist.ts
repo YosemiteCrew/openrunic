@@ -10,7 +10,7 @@ import {
   MOCK_PATIENT_PROBLEMS,
   MOCK_RESULTS,
 } from './mock/fixtures';
-import type { ListResponse } from './types';
+import type { ListResponse, ServiceRequestDto } from './types';
 
 /**
  * Orders, results and the typed inbox.
@@ -112,7 +112,8 @@ export interface Order {
   /** ISO instant of the last lifecycle event, for the age-in-state chip. */
   lastEventAt: string;
   providerId: string;
-  destination: string;
+  /** Null until a lab is chosen: nothing is transmitted to a destination yet. */
+  destination: string | null;
   specimen: string | null;
   diagnosisCode: string | null;
   diagnosisDisplay: string | null;
@@ -125,6 +126,67 @@ export interface OrderListQuery {
   patientId?: string;
   status?: OrderStatus;
   category?: OrderCategory;
+}
+
+/**
+ * A service request as the order ledger reads it, or null when the ledger has
+ * no word for what the row is.
+ *
+ * The domain enums are strictly wider than this screen's, and neither width is
+ * an oversight. `SERVICE_REQUEST_CATEGORIES` carries REFERRAL and THERAPY,
+ * `SERVICE_REQUEST_STATUSES` carries DRAFT, COMPLETED and ENTERED_IN_ERROR, and
+ * the database's `ORDER_PRIORITIES` carries ASAP; OR-01 fixes this surface to
+ * the three things a clinician orders from it and OR-03 to the six states the
+ * ledger tracks.
+ *
+ * Whether a referral belongs on this screen at all, and whether an ASAP order
+ * wears the URGENT badge or the STAT one, are product decisions open as #535.
+ * Until they are answered this returns null rather than guessing, because a
+ * guess is a wrong word on a clinical row - an ASAP order shown as URGENT reads
+ * as less urgent than it is, to the one person who could act on the difference -
+ * whereas a null is a row the caller can count and say so about.
+ */
+export function toOrder(dto: ServiceRequestDto): Order | null {
+  const category = viewValue(ORDER_CATEGORIES, dto.category);
+  const status = viewValue(ORDER_STATUSES, dto.status);
+  const priority = viewValue(ORDER_PRIORITIES, dto.priority);
+  if (category === undefined || status === undefined || priority === undefined) return null;
+
+  return {
+    id: dto.id,
+    patientId: dto.patientId,
+    code: dto.code,
+    name: dto.display,
+    category,
+    status,
+    priority,
+    placedAt: dto.requestedAt,
+    lastEventAt: dto.updatedAt,
+    providerId: dto.orderedById,
+    destination: dto.performingLabName,
+    specimen: dto.specimenTypeCode,
+    diagnosisCode: dto.reasonCodes[0] ?? null,
+    /* The remaining three have no source yet, all of them open in #535:
+       `reasonCodes` are ICD-10 codes with no display beside them, the order to
+       report link is held on the report rather than the order, and
+       `ServiceRequest` has no cancellation reason column at all. They are
+       nullable on the view type and the screen already renders them as absent,
+       so a null here is the row rather than a placeholder for it. */
+    diagnosisDisplay: null,
+    resultId: null,
+    cancelReason: null,
+  };
+}
+
+/**
+ * The domain value, when the view has that word too.
+ *
+ * A lookup rather than a cast: a cast would make every future widening of a
+ * database enum arrive on the screen as a badge nobody defined, silently, and
+ * the widening would be somewhere else entirely.
+ */
+function viewValue<T extends string>(view: readonly T[], value: string): T | undefined {
+  return view.find((option) => option === value);
 }
 
 /* -------------------------------------------------------------------------- */

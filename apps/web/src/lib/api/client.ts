@@ -266,6 +266,8 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
         post<NoteAddendumDto>(`/notes/${segment(noteId)}/addenda`, body, signal),
     },
     orders: {
+      list: (query, signal) =>
+        get<ListResponse<ServiceRequestDto>>(`/orders${toSearchParams(query)}`, signal),
       sign: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/sign`, {}, signal),
       transmit: (id, signal) =>
         post<ServiceRequestDto>(`/orders/${segment(id)}/transmit`, {}, signal),

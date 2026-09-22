@@ -102,6 +102,10 @@ export const results: Messages = {
   'results.reading.born': ', born {birthDate}',
   'results.reading.collected': 'Collected {collected}, reported {reported} by {performer}',
   'results.reading.reported': 'Reported {reported} by {performer}',
+  'results.reading.moreAnalytesOne':
+    '{count} more analyte was reported for this panel and is not in this table.',
+  'results.reading.moreAnalytesOther':
+    '{count} more analytes were reported for this panel and are not in this table.',
   'results.reading.orderedBy': 'Ordered by {clinician}. Today is {today}.',
   'results.reading.noteHeading': 'Note on signing',
   'results.reading.caption': '{panel}, values against their reference ranges',

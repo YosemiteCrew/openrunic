@@ -116,6 +116,44 @@ interface Signing {
   withNote: boolean;
 }
 
+/**
+ * What the rows on screen are a count of, and what is absent from them.
+ *
+ * Three separate facts, deliberately not one sentence. A row absent because it
+ * is on a page this screen cannot reach, a row absent because the queue has no
+ * word for its category, and a queue that could not be narrowed to one
+ * clinician have different remedies, and a reader who cannot tell them apart
+ * cannot act on any of them.
+ */
+function QueueStatement({
+  page,
+  assignmentKnown,
+}: Readonly<{ page: ResultPage; assignmentKnown: boolean }>): ReactElement {
+  const t = useTranslator();
+  /* The rows the route put on this page, the refused ones included, so the two
+     sum to the window without reading `pageSize` - the route's clamp, not
+     necessarily what it applied. */
+  const windowed = page.data.length + page.refused;
+
+  return (
+    <>
+      <p className="or-caption">
+        {windowed < page.page.total
+          ? counted(t, RESULT_WINDOW, windowed, {
+              total: formatCount(page.page.total, t.locale),
+            })
+          : counted(t, RESULT_COUNT, page.page.total)}
+      </p>
+      {page.refused > 0 ? (
+        <p className="or-caption">
+          <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+        </p>
+      ) : null}
+      {assignmentKnown ? null : <p className="or-caption">{t('results.list.assignmentUnknown')}</p>}
+    </>
+  );
+}
+
 export interface ResultsScreenProps {
   /** Injectable for tests. Defaults to the app's worklist client. */
   client?: WorklistClient;
@@ -129,85 +167,31 @@ export interface ResultsScreenProps {
   assignmentKnown?: boolean;
 }
 
-export function ResultsScreen({
-  client,
-  now = MOCK_NOW,
-  assignmentKnown = RESULT_ASSIGNMENT_IS_KNOWN,
-}: Readonly<ResultsScreenProps>): ReactElement {
+/**
+ * The verbs this screen offers the command palette.
+ *
+ * A hook rather than a block inside the screen, because it is the one part of
+ * `ResultsScreen` with no markup in it and it is where the assignment decision
+ * shows up a second time: the two queue commands are withheld wherever the
+ * filter is, so the palette cannot narrow to something the route cannot answer.
+ */
+function useResultCommands({
+  selected,
+  bulkCandidates,
+  assignmentKnown,
+  requestSign,
+  setAssignment,
+  setBulkOpen,
+}: Readonly<{
+  selected: ResultReport | null;
+  bulkCandidates: readonly ResultReport[];
+  assignmentKnown: boolean;
+  requestSign: (report: ResultReport | null, withNote: boolean) => void;
+  setAssignment: (assignment: Assignment) => void;
+  setBulkOpen: (open: boolean) => void;
+}>): Command[] {
   const t = useTranslator();
-  /* Everyone, not ME, wherever assignment is unknown. A ME chip over a route
-     that filtered by nothing reads as "these are mine" and is a worse answer
-     than an absent filter. */
-  const [assignment, setAssignment] = useState<Assignment | ''>(assignmentKnown ? 'ME' : '');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
-  const [signing, setSigning] = useState<Signing | null>(null);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
-
-  const results = useResults(
-    { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
-    { client }
-  );
-
-  const assignmentFilters = useMemo<SelectOption[]>(
-    () =>
-      ASSIGNMENT_FILTERS.filter((filter) => assignmentKnown || filter.value === '').map(
-        (filter) => ({ value: filter.value, label: t(filter.labelKey) })
-      ),
-    [t, assignmentKnown]
-  );
-
-  const reports = useMemo(() => {
-    const rows = results.data?.data ?? [];
-    return [...rows].sort(
-      (a, b) => FLAG_ORDER[a.flag] - FLAG_ORDER[b.flag] || b.reportedAt.localeCompare(a.reportedAt)
-    );
-  }, [results.data]);
-
-  const openCount = reports.filter(
-    (report) => report.status === 'UNREVIEWED' && !signed[report.id]
-  ).length;
-  const bulkCandidates = reports.filter((report) => isBulkSignable(report) && !signed[report.id]);
-
-  const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
-
-  /* The analytes of the one report being read. Fetched here rather than with
-     the list, because one call per row is N+1 on a queue built to be scanned
-     and the values of a report nobody opened are never looked at. */
-  const analytes = useResultAnalytes(selected?.id ?? null, { client });
-  const reading = selected && analytes.data ? { ...selected, analytes: analytes.data } : selected;
-
-  const signOne = useCallback(
-    (report: ResultReport, note: string | null) => {
-      setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
-      setSigning(null);
-      setToast({
-        title: t('results.signed.title', { panel: report.panel }),
-        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
-      });
-    },
-    [t, now]
-  );
-
-  const signBulk = useCallback(() => {
-    const stamped: Record<string, SignedNote> = {};
-    for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
-    setSigned((previous) => ({ ...previous, ...stamped }));
-    setBulkOpen(false);
-    setToast({
-      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
-      message: t('results.bulk.message'),
-    });
-  }, [t, bulkCandidates, now]);
-
-  const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
-    if (!report) return;
-    setSelectedId(report.id);
-    setSigning({ report, withNote });
-  }, []);
-
-  const commands = useMemo<Command[]>(
+  return useMemo<Command[]>(
     () => [
       {
         id: 'results.sign',
@@ -257,8 +241,106 @@ export function ResultsScreen({
           ]
         : []),
     ],
-    [t, selected, bulkCandidates.length, requestSign, assignmentKnown]
+    /* The two setters are `useState`'s own and stable, but they arrive here as
+       parameters rather than from a `useState` call this hook can see, so they
+       are named rather than assumed. */
+    [t, selected, bulkCandidates.length, requestSign, assignmentKnown, setAssignment, setBulkOpen]
   );
+}
+
+export function ResultsScreen({
+  client,
+  now = MOCK_NOW,
+  assignmentKnown = RESULT_ASSIGNMENT_IS_KNOWN,
+}: Readonly<ResultsScreenProps>): ReactElement {
+  const t = useTranslator();
+  /* Everyone, not ME, wherever assignment is unknown. A ME chip over a route
+     that filtered by nothing reads as "these are mine" and is a worse answer
+     than an absent filter. */
+  const [assignment, setAssignment] = useState<Assignment | ''>(assignmentKnown ? 'ME' : '');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
+  const [signing, setSigning] = useState<Signing | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
+
+  const results = useResults(
+    { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
+    { client }
+  );
+
+  const assignmentFilters = useMemo<SelectOption[]>(
+    () =>
+      ASSIGNMENT_FILTERS.filter((filter) => assignmentKnown || filter.value === '').map(
+        (filter) => ({ value: filter.value, label: t(filter.labelKey) })
+      ),
+    [t, assignmentKnown]
+  );
+
+  const reports = useMemo(() => {
+    const rows = results.data?.data ?? [];
+    return [...rows].sort(
+      (a, b) => FLAG_ORDER[a.flag] - FLAG_ORDER[b.flag] || b.reportedAt.localeCompare(a.reportedAt)
+    );
+  }, [results.data]);
+
+  const openCount = reports.filter(
+    (report) => report.status === 'UNREVIEWED' && !signed[report.id]
+  ).length;
+  const bulkCandidates = reports.filter((report) => isBulkSignable(report) && !signed[report.id]);
+
+  const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
+
+  /* The analytes of the one report being read. Fetched here rather than with
+     the list, because one call per row is N+1 on a queue built to be scanned
+     and the values of a report nobody opened are never looked at. */
+  const analytes = useResultAnalytes(selected?.id ?? null, { client });
+  const reading =
+    selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
+  /* What the laboratory reported and this page of the report does not hold. The
+     route paginates these too, so the pane states its own residual the way the
+     queue states the rows it refused. */
+  const unshownAnalytes = analytes.data
+    ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
+    : 0;
+
+  const signOne = useCallback(
+    (report: ResultReport, note: string | null) => {
+      setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
+      setSigning(null);
+      setToast({
+        title: t('results.signed.title', { panel: report.panel }),
+        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
+      });
+    },
+    [t, now]
+  );
+
+  const signBulk = useCallback(() => {
+    const stamped: Record<string, SignedNote> = {};
+    for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
+    setSigned((previous) => ({ ...previous, ...stamped }));
+    setBulkOpen(false);
+    setToast({
+      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
+      message: t('results.bulk.message'),
+    });
+  }, [t, bulkCandidates, now]);
+
+  const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
+    if (!report) return;
+    setSelectedId(report.id);
+    setSigning({ report, withNote });
+  }, []);
+
+  const commands = useResultCommands({
+    selected,
+    bulkCandidates,
+    assignmentKnown,
+    requestSign,
+    setAssignment,
+    setBulkOpen,
+  });
 
   const selectedPatient = selected ? mockPatientById(selected.patientId) : undefined;
   const selectedPatientName = selectedPatient
@@ -336,25 +418,7 @@ export function ResultsScreen({
                   requestSign(report, false);
                 }}
               />
-              {/* The rows the route put on this page, the refused ones
-                  included, so the two sum to the window without reading
-                  `pageSize` - the route's clamp, not necessarily what it
-                  applied. */}
-              <p className="or-caption">
-                {page.data.length + page.refused < page.page.total
-                  ? counted(t, RESULT_WINDOW, page.data.length + page.refused, {
-                      total: formatCount(page.page.total, t.locale),
-                    })
-                  : counted(t, RESULT_COUNT, page.page.total)}
-              </p>
-              {page.refused > 0 ? (
-                <p className="or-caption">
-                  <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
-                </p>
-              ) : null}
-              {assignmentKnown ? null : (
-                <p className="or-caption">{t('results.list.assignmentUnknown')}</p>
-              )}
+              <QueueStatement page={page} assignmentKnown={assignmentKnown} />
             </Card>
 
             {reading ? (
@@ -364,6 +428,7 @@ export function ResultsScreen({
                 now={now}
                 onSign={() => requestSign(reading, false)}
                 onSignWithNote={() => requestSign(reading, true)}
+                unshownAnalytes={unshownAnalytes}
               />
             ) : null}
           </div>

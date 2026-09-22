@@ -585,8 +585,13 @@ export interface WorklistClient {
      * Separate from `list` because fetching them per row is N+1 on a queue that
      * exists to be scanned, and the one report open in the reading pane is the
      * only one whose values are read.
+     *
+     * A `ListResponse` rather than an array, because this collection paginates
+     * too and a bare array cannot say that it is short: the reading pane is a
+     * clinician deciding on values, and a table missing rows it does not
+     * mention is the one shape this screen must not take.
      */
-    analytes: (reportId: string) => Promise<ResultAnalyte[]>;
+    analytes: (reportId: string) => Promise<ListResponse<ResultAnalyte>>;
   };
   inbox: { list: (query?: InboxListQuery) => Promise<ListResponse<InboxItem>> };
 }
@@ -625,7 +630,7 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
     results: {
       list: (query) => Promise.resolve({ ...page(filterResults(results, query)), refused: 0 }),
       analytes: (reportId) =>
-        Promise.resolve(results.find((report) => report.id === reportId)?.analytes ?? []),
+        Promise.resolve(page(results.find((report) => report.id === reportId)?.analytes ?? [])),
     },
     inbox: { list: (query) => Promise.resolve(page(filterInbox(inbox, query))) },
   };
@@ -663,14 +668,30 @@ export function toReportQuery(query: ResultListQuery): DiagnosticReportListQuery
   };
 }
 
+/**
+ * The widest page `/results/{id}/observations` will serve.
+ *
+ * `MAX_PAGE_SIZE` in `apps/api/src/schemas/pagination.ts`; asking for more is
+ * rejected by the query schema rather than clamped. Asked for explicitly
+ * because the route's DEFAULT is 25, and a reading pane that took the default
+ * would render the first 25 analytes of a longer report as though they were all
+ * of them. The residual is still reported - see {@link WorklistClient} - since
+ * a panel longer than this is a fact about the laboratory, not one this layer
+ * gets to rule out.
+ */
+const ANALYTE_PAGE_SIZE = 100;
+
 /** The results half of {@link WorklistClient}, over `GET /bff/v0/results`. */
 export function liveResults(client: ApiClient): WorklistClient['results'] {
   return {
     list: (query = {}) => client.results.list(toReportQuery(query)).then(toResultPage),
     analytes: (reportId) =>
       client.results
-        .listObservations(reportId)
-        .then((response: ListResponse<ResultObservationDto>) => response.data.map(toResultAnalyte)),
+        .listObservations(reportId, { pageSize: ANALYTE_PAGE_SIZE })
+        .then((response: ListResponse<ResultObservationDto>) => ({
+          data: response.data.map(toResultAnalyte),
+          page: response.page,
+        })),
   };
 }
 
@@ -765,7 +786,7 @@ export function useResults(
 export function useResultAnalytes(
   reportId: string | null,
   options: WorklistHookOptions = {}
-): AsyncState<ResultAnalyte[]> {
+): AsyncState<ListResponse<ResultAnalyte>> {
   const client = options.client ?? worklist;
   return useApiQuery(
     queryKey('results.analytes', { reportId }),

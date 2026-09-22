@@ -10,6 +10,8 @@ import type { ReactElement, ReactNode } from 'react';
 import { mockPatientById, mockProviderName } from '@/lib/api';
 import type { ResultAnalyte, ResultReport } from '@/lib/api';
 import { formatDate, formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { ResultFlagBadge } from './ResultFlagBadge';
@@ -48,7 +50,23 @@ export interface ResultReadingProps {
   onSignWithNote: () => void;
   /** Fixed "now" for the age line. */
   now: string;
+  /**
+   * Analytes the laboratory reported and this table does not hold, when the
+   * report is longer than one page.
+   *
+   * Stated rather than assumed away. A clinician decides on the values in front
+   * of them, and a value table that is silently short is the one shape this
+   * pane must not take - the same argument the queue makes about its own
+   * window, one level down.
+   */
+  unshownAnalytes?: number;
 }
+
+/** What the laboratory reported and this page of the report does not hold. */
+const MORE_ANALYTES: CountedMessage = {
+  oneKey: 'results.reading.moreAnalytesOne',
+  otherKey: 'results.reading.moreAnalytesOther',
+};
 
 /** The table's columns, as catalogue keys. See `OrdersScreen` for why. */
 const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
@@ -65,6 +83,7 @@ export function ResultReading({
   onSign,
   onSignWithNote,
   now,
+  unshownAnalytes = 0,
 }: Readonly<ResultReadingProps>): ReactElement {
   const t = useTranslator();
   const patient = mockPatientById(report.patientId);
@@ -172,6 +191,12 @@ export function ResultReading({
           rows={report.analytes.map((analyte) => toRow(t, analyte))}
           caption={t('results.reading.caption', { panel: report.panel })}
         />
+      ) : null}
+
+      {unshownAnalytes > 0 ? (
+        <p className="or-caption">
+          <strong>{counted(t, MORE_ANALYTES, unshownAnalytes)}</strong>
+        </p>
       ) : null}
     </Card>
   );

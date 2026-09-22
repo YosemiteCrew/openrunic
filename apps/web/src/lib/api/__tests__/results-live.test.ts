@@ -405,9 +405,15 @@ describe('liveResults', () => {
   function stub(
     rows: readonly DiagnosticReportDto[],
     observations: readonly ResultObservationDto[] = []
-  ): { client: ApiClient; queries: unknown[]; observationIds: string[] } {
+  ): {
+    client: ApiClient;
+    queries: unknown[];
+    observationIds: string[];
+    observationQueries: unknown[];
+  } {
     const queries: unknown[] = [];
     const observationIds: string[] = [];
+    const observationQueries: unknown[] = [];
     const client = {
       results: {
         list: (query?: unknown) => {
@@ -417,16 +423,17 @@ describe('liveResults', () => {
             page: { page: 1, pageSize: 25, total: 25, totalPages: 1 },
           });
         },
-        listObservations: (id: string) => {
+        listObservations: (id: string, query?: unknown) => {
           observationIds.push(id);
+          observationQueries.push(query);
           return Promise.resolve({
             data: [...observations],
-            page: { page: 1, pageSize: 25, total: observations.length, totalPages: 1 },
+            page: { page: 1, pageSize: 100, total: observations.length, totalPages: 1 },
           });
         },
       },
     } as unknown as ApiClient;
-    return { client, queries, observationIds };
+    return { client, queries, observationIds, observationQueries };
   }
 
   it('sends the translated query, with the assignment filter dropped', async () => {
@@ -453,8 +460,30 @@ describe('liveResults', () => {
     const analytes = await liveResults(client).analytes('report-1');
 
     expect(observationIds).toEqual(['report-1']);
-    expect(analytes.map((analyte) => analyte.label)).toEqual(
+    expect(analytes.data.map((analyte) => analyte.label)).toEqual(
       MOCK_RESULT_OBSERVATIONS.map((row) => row.display)
     );
+  });
+
+  /* The route's default is 25 and its clamp is 100, so a pane that asked for
+     nothing would render the first 25 analytes of a longer report as though
+     they were all of them. */
+  it('asks for the widest page the observations route will serve', async () => {
+    const { client, observationQueries } = stub([], [...MOCK_RESULT_OBSERVATIONS]);
+
+    await liveResults(client).analytes('report-1');
+
+    expect(observationQueries).toEqual([{ pageSize: 100 }]);
+  });
+
+  /* The envelope, not just the rows: a bare array cannot say it is short, and
+     the reading pane needs the total to name what it is missing. */
+  it('carries the page the route reported rather than counting the rows it got', async () => {
+    const { client } = stub([], [...MOCK_RESULT_OBSERVATIONS]);
+
+    const analytes = await liveResults(client).analytes('report-1');
+
+    expect(analytes.page.total).toBe(MOCK_RESULT_OBSERVATIONS.length);
+    expect(analytes.page.pageSize).toBe(100);
   });
 });

@@ -490,16 +490,22 @@ function withFetchedAnalytes(): WorklistClient {
         return { ...page, data: page.data.map((report) => ({ ...report, analytes: [] })) };
       },
       analytes: () =>
-        Promise.resolve([
-          {
-            code: '2947-0',
-            label: 'Sodium, fetched',
-            value: 141,
-            unit: 'mmol/L',
-            low: 135,
-            high: 145,
-          },
-        ]),
+        Promise.resolve({
+          data: [
+            {
+              code: '2947-0',
+              label: 'Sodium, fetched',
+              value: 141,
+              unit: 'mmol/L',
+              low: 135,
+              high: 145,
+            },
+          ],
+          /* One analyte back and four reported: the pane has to say so, and a
+             fixture whose total equalled its rows could not tell a pane that
+             states the residual from one that assumes there is none. */
+          page: { page: 1, pageSize: 100, total: 4, totalPages: 1 },
+        }),
     },
   };
 }
@@ -512,6 +518,23 @@ describe('ResultsScreen, counting what it is showing', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByText('Sodium, fetched')).toBeInTheDocument();
     expect(within(table).getByText('141 mmol/L')).toBeInTheDocument();
+  });
+
+  /* The analytes of one report paginate too, and the reading pane is where a
+     clinician decides on values: a table that is silently short is the one
+     shape it must not take. */
+  it('names the analytes the laboratory reported and this table does not hold', async () => {
+    render(<ResultsScreen client={withFetchedAnalytes()} now={MOCK_NOW} />);
+    await screen.findByRole('table');
+
+    expect(screen.getByText(/^3 more analytes were reported for this panel/)).toBeInTheDocument();
+  });
+
+  it('says nothing about a residual when the table holds every analyte', async () => {
+    render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('table');
+
+    expect(screen.queryByText(/more analytes? (was|were) reported/)).not.toBeInTheDocument();
   });
 
   it('counts the queue and claims no absence when there is none', async () => {

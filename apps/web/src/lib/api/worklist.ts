@@ -750,11 +750,11 @@ function toResultTaskQuery(assignedTo: Assignment, userId: string): TaskListQuer
  * error, since a report id that matches nothing is simply a shorter page.
  */
 function reportIdsOf(response: ListResponse<TaskDto>): readonly string[] {
-  const ids = response.data
-    .filter((dto) => dto.subjectType === 'DiagnosticReport')
-    .map((dto) => dto.subjectId)
-    .filter((id): id is string => id !== null);
-  return [...new Set(ids)];
+  const ids = new Set<string>();
+  for (const dto of response.data) {
+    if (dto.subjectType === 'DiagnosticReport' && dto.subjectId !== null) ids.add(dto.subjectId);
+  }
+  return [...ids];
 }
 
 /** A queue with nothing in it, for an assignment no task answered. */

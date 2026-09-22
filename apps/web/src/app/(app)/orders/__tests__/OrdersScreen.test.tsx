@@ -8,6 +8,7 @@ import { createWorklistClient } from '@/lib/api/worklist';
 import type { WorklistClient } from '@/lib/api/worklist';
 
 const push = vi.fn();
+const CORE_ORDERS = MOCK_ORDERS.slice(0, 13);
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -33,7 +34,7 @@ function failing(): WorklistClient {
  * only on exactly this page.
  */
 function withRefused(refused: number): WorklistClient {
-  const base = createWorklistClient();
+  const base = createWorklistClient({ orders: CORE_ORDERS });
   return {
     ...base,
     orders: {
@@ -59,7 +60,7 @@ function withRefused(refused: number): WorklistClient {
  * one number for both would be wrong in whichever direction the reader guessed.
  */
 function truncated(beyond: number): WorklistClient {
-  const base = createWorklistClient();
+  const base = createWorklistClient({ orders: CORE_ORDERS });
   return {
     ...base,
     orders: {
@@ -143,11 +144,15 @@ describe('OrdersScreen', () => {
     expect(screen.getAllByRole('link', { name: 'New order' }).length).toBeGreaterThan(0);
   });
 
-  it('states how many orders the ledger matched', async () => {
+  it('renders the demo beyond one page and names the unreachable remainder', async () => {
     render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
-    await screen.findByRole('table');
+    const table = await screen.findByRole('table');
 
-    expect(screen.getByText(`${MOCK_ORDERS.length} orders`)).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(101);
+    expect(
+      screen.getByText(`100 of ${MOCK_ORDERS.length} orders.`, { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(`${MOCK_ORDERS.length} orders`)).not.toBeInTheDocument();
     expect(screen.queryByText(/not listed/)).not.toBeInTheDocument();
   });
 
@@ -158,8 +163,8 @@ describe('OrdersScreen', () => {
     render(<OrdersScreen client={withRefused(3)} now={MOCK_NOW} />);
 
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
-    expect(screen.getByText(`${MOCK_ORDERS.length + 3} orders`)).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(CORE_ORDERS.length + 1);
+    expect(screen.getByText(`${CORE_ORDERS.length + 3} orders`)).toBeInTheDocument();
     expect(screen.getByText(/^3 of the orders on this page are not listed/)).toBeInTheDocument();
   });
 
@@ -170,15 +175,15 @@ describe('OrdersScreen', () => {
     render(<OrdersScreen client={truncated(35)} now={MOCK_NOW} />);
 
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
+    expect(within(table).getAllByRole('row')).toHaveLength(CORE_ORDERS.length + 1);
     expect(
-      screen.getByText(`${MOCK_ORDERS.length} of ${MOCK_ORDERS.length + 35} orders.`, {
+      screen.getByText(`${CORE_ORDERS.length} of ${CORE_ORDERS.length + 35} orders.`, {
         exact: false,
       })
     ).toBeInTheDocument();
     /* The bare total is what the reader would otherwise have read as the row
        count, so it must not also be on the page. */
-    expect(screen.queryByText(`${MOCK_ORDERS.length + 35} orders`)).not.toBeInTheDocument();
+    expect(screen.queryByText(`${CORE_ORDERS.length + 35} orders`)).not.toBeInTheDocument();
   });
 
   it('asks for a window wider than the route default', async () => {

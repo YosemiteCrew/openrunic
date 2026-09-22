@@ -3,11 +3,11 @@ import type { Messages } from '../../catalogue.js';
 /**
  * The worklist. Operational.
  *
- * The five stream names, the SLA phrases and the words around a row: how work
- * is queued and when it is due, not what any item says. Everything an item
- * itself carries - its summary, its detail, the verb on its button and the
- * words the toast repeats back - arrives from the API and is left in whatever
- * language the deployment wrote it in.
+ * The five stream names, the SLA phrases, the verb each stream's row offers and
+ * the words around a row: how work is queued, when it is due and what finishes
+ * it. What an item itself carries - its summary and its detail, which are a
+ * task's title and description as somebody typed them - arrives from the API
+ * and is left in whatever language the deployment wrote it in.
  */
 export const inbox: Messages = {
   'inbox.title': 'Bandeja de entrada',
@@ -49,13 +49,34 @@ export const inbox: Messages = {
     '{count} pasó su hora de vencimiento. El más antiguo está {oldest}.',
   'inbox.rail.overdueSummaryOther':
     '{count} pasaron su hora de vencimiento. El más antiguo está {oldest}.',
+  'inbox.rail.windowOne':
+    '{count} de {total} elementos. El resto está en páginas que esta pantalla no alcanza.',
+  'inbox.rail.windowOther':
+    '{count} de {total} elementos. El resto está en páginas que esta pantalla no alcanza.',
+  'inbox.rail.notShownOne':
+    '{count} de los elementos de esta página no aparece, porque pertenece a una bandeja administrativa y no a esta.',
+  'inbox.rail.notShownOther':
+    '{count} de los elementos de esta página no aparecen, porque pertenecen a una bandeja administrativa y no a esta.',
   'inbox.rail.nothingOverdue':
     'No hay nada vencido. El elemento más antiguo sigue dentro de su plazo.',
   'inbox.rail.auditNote':
     'Cada acción aquí queda auditada, y una aprobación se puede deshacer desde el aviso mientras siga en pantalla.',
 
+  'inbox.stream.action.results': 'Revisar resultado',
+  'inbox.stream.action.messages': 'Responder',
+  'inbox.stream.action.refills': 'Aprobar receta',
+  'inbox.stream.action.cosign': 'Cofirmar nota',
+  'inbox.stream.action.tasks': 'Marcar como hecha',
+
+  'inbox.stream.done.results': 'Resultado abierto',
+  'inbox.stream.done.messages': 'Respuesta enviada',
+  'inbox.stream.done.refills': 'Receta aprobada',
+  'inbox.stream.done.cosign': 'Nota cofirmada',
+  'inbox.stream.done.tasks': 'Tarea cerrada',
+
   'inbox.list.label': 'Elementos de la bandeja de entrada',
   'inbox.list.practiceWide': 'De toda la clínica',
+  'inbox.list.unnamedPatient': 'Ficha de paciente',
   'inbox.list.received': 'Recibido {when}',
   'inbox.list.unread': 'Sin leer',
   'inbox.list.assignToMe': 'Asignármelo',

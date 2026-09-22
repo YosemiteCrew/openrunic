@@ -36,6 +36,7 @@ import type {
   ServiceRequestStatus,
   StatementDto,
   TaskDto,
+  TaskListQuery,
   TaskWorkStatus,
   UserDto,
   UserListQuery,
@@ -295,6 +296,92 @@ function byDiagnosticReport(
     };
   }
   return (a, b) => a[sort].localeCompare(b[sort]) * direction;
+}
+
+/**
+ * The task statuses that mean the work is still in flight.
+ *
+ * Mirrored by hand from the API's own set, like every enum in `types.ts`: this
+ * package has no import path into `apps/api`, and the openapi contract test is
+ * what holds the two copies together.
+ */
+const OPEN_TASK_STATUSES: readonly TaskWorkStatus[] = ['OPEN', 'IN_PROGRESS', 'ON_HOLD'];
+
+/**
+ * The mock side of `GET /bff/v0/tasks`, filtered and sorted the way
+ * `taskListQuerySchema` says the route is.
+ *
+ * Split the same three ways as the orders filter above - which tasks, whose
+ * work, and over what window - because `inboxFor` is a union rather than an
+ * equality and does not read as one guard among nine.
+ */
+export function filterTasks(
+  rows: readonly TaskDto[],
+  query: TaskListQuery = {}
+): readonly TaskDto[] {
+  const matched = rows.filter(
+    (task) => matchesTask(task, query) && ownsTask(task, query) && withinDueWindow(task, query)
+  );
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort(byTask(query.sort ?? 'dueAt', direction));
+}
+
+/** The exact-match half, plus `open` - a boolean read off a status set. */
+function matchesTask(
+  task: TaskDto,
+  { type, status, priority, patientId, slaState, open }: TaskListQuery
+): boolean {
+  if (type && task.type !== type) return false;
+  if (status && task.status !== status) return false;
+  if (priority && task.priority !== priority) return false;
+  if (patientId && task.patientId !== patientId) return false;
+  if (slaState && task.slaState !== slaState) return false;
+  if (open !== undefined && open !== OPEN_TASK_STATUSES.includes(task.status)) return false;
+  return true;
+}
+
+/**
+ * The assignment half.
+ *
+ * `inboxFor` is the one filter here that is not an equality: an inbox is that
+ * user's own work AND the pool nobody has claimed, and `assigneeType` is the
+ * column that decides which a row is in - a `TEAM` task with a stale
+ * `assigneeUserId` is still unclaimed.
+ */
+function ownsTask(
+  task: TaskDto,
+  { assigneeUserId, assigneeTeamKey, assigneeType, inboxFor }: TaskListQuery
+): boolean {
+  if (assigneeUserId && task.assigneeUserId !== assigneeUserId) return false;
+  if (assigneeTeamKey && task.assigneeTeamKey !== assigneeTeamKey) return false;
+  if (assigneeType && task.assigneeType !== assigneeType) return false;
+  if (inboxFor && task.assigneeType !== 'TEAM' && task.assigneeUserId !== inboxFor) return false;
+  return true;
+}
+
+/** The window half, over `dueAt`: `from` inclusive, `to` exclusive. */
+function withinDueWindow(task: TaskDto, { from, to }: TaskListQuery): boolean {
+  if (from && (task.dueAt === null || task.dueAt < from)) return false;
+  if (to && (task.dueAt === null || task.dueAt >= to)) return false;
+  return true;
+}
+
+/**
+ * The comparator the task list is sorted by.
+ *
+ * A task with no due date is not the most urgent one, so an absent `dueAt`
+ * sorts last ascending - and first descending, carrying the direction like
+ * every other row, which is what the route's own comparator does through
+ * `comparable()`.
+ */
+function byTask(
+  sort: NonNullable<TaskListQuery['sort']>,
+  direction: number
+): (a: TaskDto, b: TaskDto) => number {
+  if (sort === 'createdAt') return (a, b) => a.createdAt.localeCompare(b.createdAt) * direction;
+  if (sort === 'priority') return (a, b) => a.priority.localeCompare(b.priority) * direction;
+  return (a, b) => (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff') * direction;
 }
 
 export function filterAppointments(
@@ -881,7 +968,15 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
       me: () =>
         answer(() => {
           const roles = options.roles ?? heldSession()?.identity.roles ?? [];
-          return { roles: [...roles], permissions: capabilitiesForRoles(roles) };
+          /* The demonstration build signs one clinician in, and the fixtures
+             are written about them: `MOCK_TASKS` assigns to this id, so an
+             inbox asking "which of these are mine" gets the same answer here
+             as it would from a server that had resolved the token. */
+          return {
+            roles: [...roles],
+            permissions: capabilitiesForRoles(roles),
+            userId: MOCK_ACTING_USER,
+          };
         }),
     },
 
@@ -1191,6 +1286,8 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     tasks: {
+      list: (query = {}) =>
+        answer(() => paginate(filterTasks(tasks.all(), query), query.page, query.pageSize)),
       complete: (id, body = {}) =>
         answer(() => {
           const before = tasks.require(id, NO_TASK);

@@ -2,7 +2,7 @@
 
 import { api } from './api';
 import { API_MODE } from './config';
-import { queryKey, useApiQuery } from './hooks';
+import { queryKey, useApiQuery, useOwnCapabilities } from './hooks';
 import type { AsyncState } from './hooks';
 import {
   MOCK_INBOX_ITEMS,
@@ -21,6 +21,9 @@ import type {
   PaginationQuery,
   ResultObservationDto,
   ServiceRequestDto,
+  TaskDto,
+  TaskKind,
+  TaskListQuery,
 } from './types';
 
 /**
@@ -422,18 +425,26 @@ export interface InboxItem {
   patientId: string | null;
   /** The work, in one line. */
   summary: string;
-  /** The detail a disposition needs, without opening anything. */
-  detail: string;
+  /** The detail a disposition needs, without opening anything. Absent on a bare task. */
+  detail: string | null;
   /** ISO instant. */
   receivedAt: string;
-  /** ISO instant the practice promised itself. Drives the SLA chip. */
-  dueAt: string;
+  /**
+   * ISO instant the practice promised itself. Drives the SLA chip.
+   *
+   * Null where nobody promised anything. A task with no due date is not the
+   * most urgent one, so it sorts last and carries no chip rather than an
+   * invented one.
+   */
+  dueAt: string | null;
   assignedTo: Assignment;
-  unread: boolean;
-  /** The one action that finishes this item in the row: "Approve refill". */
-  actionLabel: string;
-  /** What the toast says once it is done: "Refill approved". */
-  doneLabel: string;
+  /**
+   * Null where this is not a fact the client can read.
+   *
+   * The API records no read receipt on a task, so a live row is neither unread
+   * nor read. `false` would be a claim that somebody has looked at it.
+   */
+  unread: boolean | null;
   /** Where the full context lives, when there is more to see. */
   href: string | null;
 }
@@ -458,7 +469,8 @@ const DUE_SOON_MINUTES = 240;
  * The label is the signal; the tone is decoration on top of it. That is the
  * colour-never-alone rule applied to the one chip a tired person scans for.
  */
-export function slaState(dueAt: string, now: string): SlaState {
+export function slaState(dueAt: string | null, now: string): SlaState {
+  if (dueAt === null) return 'ON_TIME';
   const minutes = (new Date(dueAt).getTime() - new Date(now).getTime()) / 60_000;
   if (Number.isNaN(minutes)) return 'ON_TIME';
   if (minutes < 0) return 'OVERDUE';
@@ -593,7 +605,7 @@ export interface WorklistClient {
      */
     analytes: (reportId: string) => Promise<ListResponse<ResultAnalyte>>;
   };
-  inbox: { list: (query?: InboxListQuery) => Promise<ListResponse<InboxItem>> };
+  inbox: { list: (query?: InboxListQuery) => Promise<InboxPage> };
 }
 
 export interface WorklistData {
@@ -632,7 +644,10 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
       analytes: (reportId) =>
         Promise.resolve(page(results.find((report) => report.id === reportId)?.analytes ?? [])),
     },
-    inbox: { list: (query) => Promise.resolve(page(filterInbox(inbox, query))) },
+    /* The fixture rows are the whole inbox and every one of them is typed, so
+       nothing is refused here. The field still travels: a screen reading it
+       only in live mode would be a screen nothing in the demo build exercises. */
+    inbox: { list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }) },
   };
 }
 
@@ -695,6 +710,122 @@ export function liveResults(client: ApiClient): WorklistClient['results'] {
   };
 }
 
+/* ---------------------------------------------------------------- the inbox */
+
+/**
+ * The typed stream a task belongs to, or null for work this inbox has no word
+ * for.
+ *
+ * Four of the nine task types are administrative - a fax, a document, a prior
+ * authorisation, a claim exception - and belong to the practice administrator's
+ * worklist (#475), not to a clinician's. Folding them into `TASKS` would put a
+ * claim exception in a clinician's inbox, which is the thing the five typed
+ * streams of C13 exist to prevent. They are refused and counted rather than
+ * renamed; see {@link InboxPage}.
+ */
+function toStream(type: TaskKind): InboxStream | null {
+  if (type === 'RESULT') return 'RESULTS';
+  if (type === 'MESSAGE') return 'MESSAGES';
+  if (type === 'REFILL') return 'REFILLS';
+  if (type === 'COSIGN') return 'COSIGN';
+  return type === 'GENERAL' ? 'TASKS' : null;
+}
+
+/**
+ * One task as the typed inbox reads it.
+ *
+ * `userId` is the signed-in clinician, and it is what turns an assignee column
+ * into the word the row shows: their own task is `ME`, and anything in the
+ * shared pool is `TEAM`. `assigneeType` decides which - a pooled task carrying
+ * a stale `assigneeUserId` is still unclaimed - so a task assigned to SOMEBODY
+ * ELSE reads as `TEAM` here and should not have been fetched; the route's
+ * `inboxFor` is what keeps it out.
+ */
+export function toInboxItem(dto: TaskDto, userId: string): InboxItem | null {
+  const stream = toStream(dto.type);
+  if (stream === null) return null;
+  return {
+    id: dto.id,
+    stream,
+    patientId: dto.patientId,
+    summary: dto.title,
+    detail: dto.description,
+    receivedAt: dto.createdAt,
+    dueAt: dto.dueAt,
+    assignedTo: dto.assigneeType === 'USER' && dto.assigneeUserId === userId ? 'ME' : 'TEAM',
+    /* No read receipt on a task, so this is not a fact here rather than a
+       `false`. See {@link InboxItem.unread}. */
+    unread: null,
+    /* The only subject this application has a screen for. A task pointing at a
+       message thread or a prescription has nowhere to open yet, and a link to
+       nowhere is worse than no link. */
+    href: dto.subjectType === 'DiagnosticReport' ? '/results' : null,
+  };
+}
+
+/**
+ * A page of inbox items, with the rows the five streams refused counted rather
+ * than dropped.
+ *
+ * The same shape and the same argument as {@link OrderPage} and
+ * {@link ResultPage}: `page.total` counts what the API matched, `data` holds
+ * what the inbox has a word for, and a clinician reading "12 items" above 9
+ * rows cannot tell whether three are missing or three are elsewhere.
+ */
+export interface InboxPage extends ListResponse<InboxItem> {
+  /** Rows on this page that belong to an administrative worklist, not this one. */
+  refused: number;
+}
+
+/** One page of tasks, as the typed inbox reads it. */
+export function toInboxPage(response: ListResponse<TaskDto>, userId: string): InboxPage {
+  const data = response.data
+    .map((dto) => toInboxItem(dto, userId))
+    .filter((item): item is InboxItem => item !== null);
+  return { data, page: response.page, refused: response.data.length - data.length };
+}
+
+/**
+ * `InboxListQuery` as `/bff/v0/tasks` can answer it.
+ *
+ * `stream` is deliberately NOT translated into `type`, even though the route
+ * has that filter: the screen filters streams in the browser and counts all
+ * five on the chips from one page, so narrowing at the route would empty the
+ * other four counts. `assignedTo` is narrowed here, because the pool and one
+ * person's own work are different pages rather than different rows of one.
+ */
+export function toTaskQuery(query: InboxListQuery, userId: string): TaskListQuery {
+  return {
+    inboxFor: userId,
+    open: true,
+    pageSize: INBOX_PAGE_SIZE,
+    sort: 'dueAt',
+    order: 'asc',
+    ...(query.assignedTo === undefined
+      ? {}
+      : { assigneeType: query.assignedTo === 'ME' ? 'USER' : 'TEAM' }),
+  };
+}
+
+/**
+ * The widest page `/bff/v0/tasks` will serve.
+ *
+ * `MAX_PAGE_SIZE` in `apps/api/src/schemas/pagination.ts`. Asked for
+ * explicitly because the route's default is 25 and this screen counts all five
+ * streams off one page: a default-sized page would render chip counts that are
+ * a property of the pagination rather than of the inbox. The residual is still
+ * reported - an inbox longer than this is a fact about the practice.
+ */
+const INBOX_PAGE_SIZE = 100;
+
+/** The inbox half of {@link WorklistClient}, over `GET /bff/v0/tasks`. */
+export function liveInbox(client: ApiClient, userId: string): WorklistClient['inbox'] {
+  return {
+    list: (query = {}) =>
+      client.tasks.list(toTaskQuery(query, userId)).then((page) => toInboxPage(page, userId)),
+  };
+}
+
 /**
  * The app's client.
  *
@@ -712,6 +843,20 @@ export const worklist: WorklistClient =
     : createWorklistClient();
 
 /**
+ * The app's client, once the caller has a name.
+ *
+ * The inbox is the one worklist that cannot be built at module scope: it is
+ * defined in terms of the signed-in clinician, and `userId` arrives from
+ * `/bff/v0/me` a request later. Null is "not known yet" - or a principal that
+ * is not staff at all - and yields the fixture client, which is why the hook
+ * below holds the query until it is not null.
+ */
+export function worklistFor(userId: string | null): WorklistClient {
+  if (API_MODE !== 'live' || userId === null) return worklist;
+  return { ...worklist, inbox: liveInbox(api, userId) };
+}
+
+/**
  * Whether the assignment of a result is a fact this client can read.
  *
  * False over the API, where assignment lives on `Task` and no report field or
@@ -720,35 +865,10 @@ export const worklist: WorklistClient =
  * filter that cannot select is worse than an absent one: it narrows nothing and
  * says it narrowed.
  *
- * A mode test rather than a literal, unlike {@link INBOX_IS_FIXTURE_BACKED},
- * because this one is already a property of which client is wired up.
+ * A mode test rather than a literal: it is already a property of which client
+ * is wired up.
  */
 export const RESULT_ASSIGNMENT_IS_KNOWN = API_MODE !== 'live';
-
-/**
- * Whether the INBOX is answering from fixtures, which today it always is - in
- * live mode as much as in mock mode.
- *
- * It is the last of the three. Orders reads `GET /bff/v0/orders` and results
- * reads `GET /bff/v0/results`; the inbox has a route too - `GET /bff/v0/tasks`,
- * one work engine whose five streams are `type` filters - and no mapping onto
- * {@link InboxItem} yet, and three of that type's fields (`unread` among them)
- * have no served shape at all. So this is a property of the INBOX rather than
- * of the worklist, and the two screens that used to read it no longer do.
- *
- * Exported rather than left as a fact about this file, because the shell's
- * "Demo data" badge is gated on the api MODE and this is a property of the
- * DATA, and the two disagree exactly where it matters. Set
- * `NEXT_PUBLIC_API_MODE=live` and the badge goes - the shell has no session and
- * therefore no facility to name - while the inbox goes on serving Sandboxer,
- * Prototypo and a refill that belongs to nobody. The screen that reads this
- * constant is the one that has to say so.
- *
- * It is a literal because the honest value is a literal: the day that mapping
- * lands, this becomes a mode test and the screen reading it needs no other
- * change.
- */
-export const INBOX_IS_FIXTURE_BACKED = true;
 
 export interface WorklistHookOptions {
   /** Injectable for tests. Defaults to the app's client. */
@@ -795,12 +915,33 @@ export function useResultAnalytes(
   );
 }
 
+/**
+ * The typed inbox of the signed-in clinician.
+ *
+ * The only worklist hook that reads a second route. `/bff/v0/me` names the
+ * caller, and without that name the inbox cannot be asked for: the route
+ * filters on a user id, and every row is labelled mine or pool by comparing
+ * against the same id. So in live mode the query waits rather than asking for
+ * an unfiltered one, which would be every clinician's work under a heading
+ * that says it is yours.
+ *
+ * An injected client is used as given, name or no name: that is the demo build
+ * and the tests, where the rows say whose they are.
+ */
 export function useInbox(
   query: InboxListQuery = {},
   options: WorklistHookOptions = {}
-): AsyncState<ListResponse<InboxItem>> {
-  const client = options.client ?? worklist;
+): AsyncState<InboxPage> {
+  const capabilities = useOwnCapabilities();
+  const userId = capabilities.data?.userId ?? null;
+  const client = options.client ?? worklistFor(userId);
+  /* The name gates the request rather than keying it. Flipping `enabled` is
+     already what re-runs the query when `/me` comes back, so an id in the key
+     would add nothing in live mode and refetch the same fixture page in the
+     demo build - on the one screen whose chip counts are read while it
+     settles. */
+  const live = options.client === undefined && API_MODE === 'live';
   return useApiQuery(queryKey('inbox.list', { ...query }), () => client.inbox.list(query), {
-    enabled: options.enabled,
+    enabled: (options.enabled ?? true) && (!live || userId !== null),
   });
 }

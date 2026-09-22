@@ -286,6 +286,7 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
         post<DiagnosticReportDto>(`/results/${segment(id)}/review`, {}, signal),
     },
     tasks: {
+      list: (query, signal) => get<ListResponse<TaskDto>>(`/tasks${toSearchParams(query)}`, signal),
       complete: (id, body, signal) =>
         post<TaskDto>(`/tasks/${segment(id)}/complete`, body ?? {}, signal),
     },

@@ -221,6 +221,60 @@ describe('InboxScreen, undo', () => {
     expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
   });
 
+  /* Three states, not two. A live task names a patient by uuid, and
+     `mockPatientById` answers nothing for one - so the row used to fall into
+     the no-patient branch and announce a patient's work as the practice's.
+     Driven through the screen rather than the list, because the branch is a
+     property of the row a reader scans. */
+  it('separates a task nobody owns from one whose patient it cannot name', async () => {
+    const item = at([...MOCK_INBOX_ITEMS]);
+    const client = createWorklistClient({
+      inbox: [
+        { ...item, id: 'practice', patientId: null },
+        { ...item, id: 'unnamed', patientId: '0192f1a0-0000-7000-8000-0000000000ff' },
+      ],
+    });
+    render(<InboxScreen client={client} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    expect(within(list()).getByText('Practice-wide')).toBeInTheDocument();
+    expect(within(list()).getByText('Patient record')).toBeInTheDocument();
+  });
+
+  /* #539, on the third of the three worklists: this screen has no pager and its
+     chip counts are a count of ONE page, so a queue that matched more than this
+     page says so rather than letting the chips read as the practice's whole
+     inbox. The refusal is the second, separate fact - an administrative task is
+     absent for a different reason and has a different remedy. */
+  it('states the page it is showing and the rows it refused, as two facts', async () => {
+    const item = at([...MOCK_INBOX_ITEMS]);
+    const client = {
+      ...createWorklistClient(),
+      inbox: {
+        list: () =>
+          Promise.resolve({
+            data: [item],
+            page: { page: 1, pageSize: 100, total: 94, totalPages: 1 },
+            refused: 2,
+          }),
+      },
+    } satisfies WorklistClient;
+    render(<InboxScreen client={client} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    // 1 rendered + 2 refused is the window the route answered, under a total of 94.
+    expect(screen.getByText(/3 of 94 items/)).toBeInTheDocument();
+    expect(screen.getByText(/2 of the items on this page are not listed/)).toBeInTheDocument();
+  });
+
+  it('says neither thing when the page is the whole queue', async () => {
+    render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    expect(screen.queryByText(/of the items on this page/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/items\. The rest are on pages/)).not.toBeInTheDocument();
+  });
+
   it('undoes the last completion only, not everything finished so far', async () => {
     render(<InboxScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Inbox items' });

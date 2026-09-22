@@ -18,9 +18,18 @@ import type { Messages } from '../../catalogue.js';
  * the two positions differently where a language needs to, which is the case
  * `toLowerCase()` cannot express at all.
  *
- * What is NOT here: the words on an inbox row itself. `summary`, `detail`,
- * `actionLabel` and `doneLabel` all arrive on the item from the API, which is
- * what wrote them and what a disposition is audited against.
+ * ## The verb on a row is a property of its stream, so it lives here
+ *
+ * It used to be a field on the item, on the reasoning that the API wrote it and
+ * a disposition is audited against those words. The API writes no such field -
+ * a task carries a title, a description and an outcome - and the eleven fixture
+ * rows that carried one held five distinct values between them, one per stream.
+ * So it was a per-stream constant written eleven times in English, in a screen
+ * whose every other word is translated.
+ *
+ * What IS still the item's own: `summary` and `detail`, which are the task's
+ * title and description as somebody typed them, and are left in whatever
+ * language the deployment wrote them in.
  */
 export const inbox: Messages = {
   'inbox.title': 'Inbox',
@@ -64,13 +73,34 @@ export const inbox: Messages = {
   'inbox.rail.openItemsOther': '{count} open items',
   'inbox.rail.overdueSummaryOne': '{count} past its due time. The oldest is {oldest}.',
   'inbox.rail.overdueSummaryOther': '{count} past their due time. The oldest is {oldest}.',
+  'inbox.rail.windowOne':
+    '{count} of {total} items. The rest are on pages this screen cannot reach.',
+  'inbox.rail.windowOther':
+    '{count} of {total} items. The rest are on pages this screen cannot reach.',
+  'inbox.rail.notShownOne':
+    '{count} of the items on this page is not listed, because it belongs to an administrative worklist rather than this one.',
+  'inbox.rail.notShownOther':
+    '{count} of the items on this page are not listed, because they belong to an administrative worklist rather than this one.',
   'inbox.rail.nothingOverdue': 'Nothing is overdue. The oldest item is still inside its promise.',
   'inbox.rail.auditNote':
     'Every disposition here is audited, and an approval can be undone from the toast while it is still on screen.',
 
   /* -------------------------------------------------------------- the rows */
+  'inbox.stream.action.results': 'Review result',
+  'inbox.stream.action.messages': 'Reply',
+  'inbox.stream.action.refills': 'Approve refill',
+  'inbox.stream.action.cosign': 'Cosign note',
+  'inbox.stream.action.tasks': 'Mark done',
+
+  'inbox.stream.done.results': 'Result opened',
+  'inbox.stream.done.messages': 'Reply sent',
+  'inbox.stream.done.refills': 'Refill approved',
+  'inbox.stream.done.cosign': 'Note cosigned',
+  'inbox.stream.done.tasks': 'Task closed',
+
   'inbox.list.label': 'Inbox items',
   'inbox.list.practiceWide': 'Practice-wide',
+  'inbox.list.unnamedPatient': 'Patient record',
   'inbox.list.received': 'Received {when}',
   'inbox.list.unread': 'Unread',
   'inbox.list.assignToMe': 'Assign to me',

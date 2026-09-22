@@ -104,7 +104,7 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1846 of 2612 messages (71%).
+**es**: 1859 of 2625 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
@@ -117,7 +117,7 @@ These cannot be started inside this repository. Each needs an external body, and
 | common    |  33 |  33 | `██████████████████` |
 | downtime  |  14 |  14 | `██████████████████` |
 | encounter |  66 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| inbox     |  54 |  54 | `██████████████████` |
+| inbox     |  69 |  69 | `██████████████████` |
 | insurance |  63 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | marketing | 162 | 162 | `██████████████████` |
 | nav       |  44 |  44 | `██████████████████` |
@@ -127,7 +127,7 @@ These cannot be started inside this repository. Each needs an external body, and
 | reports   |  84 |  84 | `██████████████████` |
 | results   |  92 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | schedule  | 147 | 147 | `██████████████████` |
-| shell     |  23 |  23 | `██████████████████` |
+| shell     |  21 |  21 | `██████████████████` |
 
 ## Workspace
 

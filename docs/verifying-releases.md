@@ -21,7 +21,7 @@ Two images, one per deployable component: `ghcr.io/yosemitecrew/openrunic-api` a
 
 **The image tag is the git tag, verbatim.** Components are released independently under
 component-scoped tags (`api-vX.Y.Z`, `web-vX.Y.Z`, see [RELEASING.md](../RELEASING.md)), and the
-publish job tags the image with whatever the release was tagged, so the first release of the API is
+publish job tags the image with whatever the release was tagged, so the 0.3.0 API image is
 `ghcr.io/yosemitecrew/openrunic-api:api-v0.3.0` and not `:0.3.0`. The prefix repeating inside the
 tag looks like a mistake and is not one: the tag is the release's own name, which is what makes an
 image traceable back to a release page without a lookup table.

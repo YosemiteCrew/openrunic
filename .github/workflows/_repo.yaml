@@ -120,6 +120,30 @@ jobs:
       - name: Check for empty tracked files
         run: node scripts/ci/empty-files.mjs
 
+  version-claims:
+    name: Default-branch docs name no version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Reads the checkout and nothing else.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # No Setup step: the guard is dependency-free and runs on the runner's
+      # system Node, the same as empty-files above. `pnpm run
+      # check:version-claims` is the identical check locally.
+      #
+      # It reads the committed tree, so it judges what is about to land rather
+      # than what the checkout's working copy happens to say.
+      - name: Check default-branch documents for version claims
+        run: node scripts/ci/version-claims.mjs
+
   generated-docs:
     name: Generated docs (roadmap)
     runs-on: ubuntu-latest

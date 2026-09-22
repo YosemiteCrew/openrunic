@@ -43,6 +43,14 @@
 // deliberate and it is the recoverable direction. The alternative - staying
 // green when the scanner is absent - is the defect this exists to remove.
 //
+// There is one exemption and it is narrow: `Aikido Security: Deep Review`,
+// conclusion `skipped`, on a head whose COMMIT author GitHub reports as a
+// `Bot` - the pull request's author is a different fact and the wrong one. The
+// vendor declines that context on a bot-authored head before any other reason
+// is consulted, so there is no signal there to lose - see BOT_EXEMPT, which
+// carries the argument and the measurement. `check code` is still required of a
+// bot head, because it runs on one.
+//
 // Drafts are handled by the workflow, which does not run this on one, rather
 // than by an exemption here. Aikido skips a draft on purpose and says so, and
 // trusting that prose would put an unchecked claim in the one place a gate is
@@ -107,6 +115,103 @@ export const AIKIDO_APP = 'aikido-pr-checks';
  */
 export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
 
+/**
+ * The one context, and the one conclusion, that a bot-authored head is excused.
+ *
+ * Aikido declines Deep Review on any head whose latest commit was authored by a
+ * bot, with the summary "Aikido skipped this review because the latest commit
+ * was authored by a bot." That is a vendor rule, it is true by construction of
+ * the head, and nothing on the branch can change it - so every dependabot pull
+ * request was a permanent red row on a check that had already said everything
+ * it had to say (#549).
+ *
+ * ## Why this is an acceptance and not a silencing
+ *
+ * Exempting a skip is the move #408 exists to argue against, so the reason it
+ * is right here has to be the thing that is different, and it is this: on a
+ * bot-authored head there is no Deep Review signal to lose, of any cause. The
+ * vendor declines it before the wallet, the strictness or the path filter is
+ * ever consulted, so a wallet that emptied and a wallet that is full produce
+ * the identical `skipped` on that context. A gate cannot report a state it
+ * cannot observe, and the empty wallet remains observable on every
+ * human-authored head, where this exemption does not apply.
+ *
+ * What would be a silencing is exempting the head. `Aikido Security: check
+ * code` is the required context, it carries the SCA, and it RUNS on a
+ * bot-authored head - `success` on all three of this repository's dependabot
+ * pull requests, measured on #546, #491 and #414. It is also the context the
+ * wallet does not reach (docs/security-gates.md). So it is observable there,
+ * and it is left fully guarded.
+ *
+ * That guard is not redundant with the ruleset. GitHub's required status checks
+ * are satisfied by "a successful, skipped, or neutral status" - so a required
+ * `check code` that reported `skipped` would merge, and this is the only thing
+ * on the head that would say so.
+ *
+ * ## Why it is a name and a conclusion, and frozen
+ *
+ * The pair is the exemption. Not "Deep Review on a bot head", which would
+ * excuse it declining for a cause that is not the bot rule; not "anything
+ * skipped on a bot head", which would excuse `check code`. Widening either half
+ * is invisible to every test that only makes legal calls, so the membership is
+ * asserted directly in the tests rather than only exercised.
+ *
+ * Keyed on the HEAD COMMIT's author, read from the API, and never on the
+ * summary prose.
+ *
+ * The commit's author and not the pull request's. Those are the same fact on a
+ * clean dependabot branch and different the moment a human pushes onto one - a
+ * hand-fixed lockfile conflict, a review fix. There `pull_request.user.type` is
+ * still `Bot` while Aikido's rule does not fire, so an exemption keyed on the
+ * pull request author would excuse a Deep Review that skipped for some OTHER
+ * cause. With the wallet empty, as it was on this branch's own head, that other
+ * cause is #408 - and the exemption would have printed "whatever the wallet
+ * says" while silencing exactly it.
+ */
+export const BOT_EXEMPT = Object.freeze({
+  name: 'Aikido Security: Deep Review',
+  conclusion: 'skipped',
+});
+
+/** Whether this run is the one absence a bot-authored head is excused. */
+export const isBotExempt = (run) =>
+  run.name === BOT_EXEMPT.name && run.conclusion === BOT_EXEMPT.conclusion;
+
+/**
+ * Whether this commit is AUTHORED by a bot account.
+ *
+ * `.author`, never `.committer`. On a dependabot commit the committer is
+ * GitHub's own web-flow account and reads `User`, so the two fields disagree on
+ * exactly the head this exemption is about - measured on `2cbbf64`, PR #546:
+ * `.author.type` `Bot`, `.committer.type` `User`.
+ *
+ * `.author` is the account GitHub matched to the commit's author email and is
+ * null when it matched nothing. Null reads as not-a-bot, which is the
+ * fail-closed direction the rest of this file takes: an unrecognised head keeps
+ * the gate strict rather than excusing a context on it.
+ *
+ * A non-ok response throws, for the same reason - the gate cannot decide an
+ * exemption it could not read, and the recoverable direction is red.
+ */
+export async function headCommitIsBot(repo, sha, token, fetchImpl = fetch) {
+  const response = await fetchImpl(`https://api.github.com/repos/${repo}/commits/${sha}`, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${token}`,
+      'x-github-api-version': '2022-11-28',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`commit ${sha} returned ${String(response.status)}`);
+  }
+  const body = await response.json();
+  // The comparison lives HERE, inside the function the tests call, and not at
+  // the call site. A predicate spelled out at the call site and re-spelled in
+  // the test is pinned by nothing: loosening this to a truthiness check left
+  // every test green when it was written that way, which is how it was found.
+  return (body.author?.type ?? null) === 'Bot';
+}
+
 /** How long to wait for the app to post, and how often to look. */
 export const DEADLINE_MS = 5 * 60 * 1000;
 export const INTERVAL_MS = 15 * 1000;
@@ -119,15 +224,23 @@ export const INTERVAL_MS = 15 * 1000;
  * the same filter as the answer, so it is what separates "nothing has started"
  * from "plenty started and none of it was Aikido".
  */
-export function classify(checkRuns, total = checkRuns.length) {
+export function classify(checkRuns, total = checkRuns.length, options = {}) {
+  const { headAuthoredByBot = false } = options;
   const mine = checkRuns.filter((run) => run.app?.slug === AIKIDO_APP);
-  if (mine.length === 0) return { verdict: total === 0 ? 'no-checks' : 'absent', total, runs: [] };
+  const none = { total, runs: [], exempt: [] };
+  if (mine.length === 0) return { verdict: total === 0 ? 'no-checks' : 'absent', ...none };
   if (mine.some((run) => run.status !== 'completed')) {
-    return { verdict: 'running', total, runs: mine };
+    return { verdict: 'running', total, runs: mine, exempt: [] };
   }
-  const declined = mine.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
-  if (declined.length > 0) return { verdict: 'declined', total, runs: declined };
-  return { verdict: 'reviewed', total, runs: mine };
+  const exempt = headAuthoredByBot ? mine.filter(isBotExempt) : [];
+  const rest = mine.filter((run) => !exempt.includes(run));
+  // Everything Aikido posted was the excused one. The exemption covers Deep
+  // Review and nothing else, so a head carrying only that has not been scanned,
+  // and reading it as a review is the exact false pass this gate removes.
+  if (rest.length === 0) return { verdict: 'only-exempt', total, runs: mine, exempt };
+  const declined = rest.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
+  if (declined.length > 0) return { verdict: 'declined', total, runs: declined, exempt };
+  return { verdict: 'reviewed', total, runs: rest, exempt };
 }
 
 /**
@@ -217,13 +330,14 @@ export async function awaitReview(repo, sha, token, options = {}) {
     now = Date.now,
     deadlineMs = DEADLINE_MS,
     intervalMs = INTERVAL_MS,
+    headAuthoredByBot = false,
   } = options;
 
   const started = now();
   let confirming = null;
   for (;;) {
     const runs = await listCheckRuns(repo, sha, token, fetchImpl);
-    const result = classify(runs);
+    const result = classify(runs, runs.length, { headAuthoredByBot });
     const settled =
       result.verdict === 'declined' ||
       (result.verdict === 'reviewed' && contextsOf(result) === confirming);
@@ -242,9 +356,22 @@ export function describe(result, sha) {
       `    ${run.output?.title ?? '(no title)'}\n` +
       `    ${(run.output?.summary ?? '(no summary)').split('\n')[0]}`
   );
+  const exemptions = (result.exempt ?? [])
+    .map(
+      (run) =>
+        `  ${run.name}  ${String(run.conclusion)}  EXEMPT: the head is bot-authored, and\n` +
+        '    Aikido declines this context on a bot-authored head whatever the wallet says.\n' +
+        '    Accepted 2026-09-22, #549. See docs/security-gates.md.\n'
+    )
+    .join('');
   switch (result.verdict) {
     case 'reviewed':
-      return `${head}: ${String(result.runs.length)} Aikido check(s) ran.\n${lines.join('\n')}\n`;
+      return (
+        `${head}: ${String(result.runs.length)} Aikido check(s) ran.\n${lines.join('\n')}\n` +
+        // An accepted absence still gets said out loud. A gate that skips part
+        // of itself silently is the shape this whole file exists to remove.
+        exemptions
+      );
     case 'declined':
       return (
         `${head}: Aikido did not review this pull request.\n\n${lines.join('\n')}\n\n` +
@@ -258,6 +385,15 @@ export function describe(result, sha) {
         `${head}: Aikido was still running at the deadline.\n\n${lines.join('\n')}\n\n` +
         'A review that has not finished has not reviewed anything. Re-run this check once\n' +
         'the Aikido checks above have completed.\n'
+      );
+    case 'only-exempt':
+      return (
+        `${head}: the only Aikido check on this head is the one a bot-authored head is\n` +
+        `excused, so nothing scanned it.\n\n${lines.join('\n')}\n\n` +
+        `The exemption covers ${BOT_EXEMPT.name} and nothing else.\n` +
+        'Aikido Security: check code is the required context, it carries the SCA, and it\n' +
+        'runs on a bot-authored head - so its absence here is a real absence. Check that\n' +
+        'the app is still installed and has not renamed the context this gate matches.\n'
       );
     case 'absent':
       return (
@@ -285,7 +421,11 @@ async function main(argv, env) {
     );
     return 2;
   }
-  const result = await awaitReview(repo, sha, token);
+  // One extra request, on the same host the gate already talks to, so the
+  // predicate it implements is the one the vendor documents.
+  const result = await awaitReview(repo, sha, token, {
+    headAuthoredByBot: await headCommitIsBot(repo, sha, token),
+  });
   process.stdout.write(describe(result, sha));
   return result.verdict === 'reviewed' ? 0 : 1;
 }

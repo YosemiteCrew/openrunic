@@ -6,18 +6,25 @@ grateful to researchers who report responsibly.
 
 ## Supported versions
 
-openrunic follows [Semantic Versioning](https://semver.org/). The first release is **0.1.0**.
+openrunic follows [Semantic Versioning](https://semver.org/).
 
 Security fixes are made on the **most recent release line only**. There is no long-term-support
 line and nothing is backported to an older minor. With a `0.x` major and a small maintainer group,
 a support promise we cannot keep would be worse than an honest one, so the remedy for an older
 install is always to upgrade.
 
-| Release line              | Supported                                                                     |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| 0.1.x                     | Yes. This is the current line                                                 |
-| Earlier lines             | None exist yet. When 0.2.0 ships, 0.1.x stops receiving fixes on the same day |
-| `dev` and `main` branches | Yes. Fixes land here first and reach installations in the next release        |
+| Release line                       | Supported                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| The most recent minor release line | Yes                                                                    |
+| Every earlier line                 | No. A line stops receiving fixes the day the next minor ships          |
+| `dev` and `main` branches          | Yes. Fixes land here first and reach installations in the next release |
+
+Which line that is appears on the
+[Releases page](https://github.com/YosemiteCrew/openrunic/releases), not here. This document is
+served from the default branch and no release step edits it, so a version number written on this
+page would be accurate for one release and wrong for every release after it - and was, for three
+weeks. Stating the rule instead of the number is what keeps it true, and a gate holds this page
+to it; see `RELEASING.md`.
 
 Two consequences worth stating plainly. Because the major version is `0`, upgrading to collect a
 security fix can mean absorbing a breaking change; that is a real cost, and you should not first

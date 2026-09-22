@@ -110,6 +110,10 @@ edit, or otherwise behave badly when the two branches diverge. Keep these identi
 | `.github/PULL_REQUEST_TEMPLATE.md` | Served from the default branch                                                                                                        |
 | `SECURITY.md`                      | The Security tab reads the default branch copy                                                                                        |
 
+Three of those are configuration; `SECURITY.md`, the pull-request template and the issue forms are
+prose, which is the half that rots quietly, because nothing bumps a sentence at release time.
+`check:version-claims` holds those three to naming no version - see step 3.
+
 The practical rule: change these files on `dev` like everything else, then promote. Never patch
 them on `main` alone, and if a hotfix touches them, back-merge immediately.
 
@@ -128,6 +132,12 @@ promotion; doing them afterwards means patching `main` directly, which this mode
    root `package.json` and every workspace under `apps/` and `packages/` to the release version in
    one commit on `dev`, and check the result with `git grep -n '"version"' -- '**/package.json'`.
 
+   Two documents report a version in prose and are part of this step, because nothing else opens
+   them: the **Project status** heading in `README.md`, which names the current release, and the
+   worked image tags in `docs/verifying-releases.md`, which a reader pastes. `docs/roadmap.md`
+   also carries the number and is not in this step: it is generated, and `pnpm run roadmap:check`
+   fails if it is stale.
+
 3. **Retire the statements that say openrunic has no releases.** Several files assert it, and each
    becomes false the moment the release is published. They are not all in this document, so find
    them rather than trying to remember them:
@@ -139,6 +149,17 @@ promotion; doing them afterwards means patching `main` directly, which this mode
    At the time of writing that finds `docs/verifying-releases.md`, the marketing site footer in
    `apps/web`, and the header comment in `.github/workflows/release-attest.yml`. Correct what is
    now untrue; do not delete the warnings that are still true.
+
+   That grep is not a gate and cannot become one: it matches a fixed phrase, and the stale claim
+   that reached a published page was not a phrase but a _number_ - `SECURITY.md` named `0.1.x` as
+   the supported line and went on naming it for three weeks after the next minor retired it. No
+   fixed pattern finds the next one of those.
+
+   So the documents GitHub serves from the **default branch** name no version at all. They state
+   the rule and link the Releases page, which has no release at which it becomes false, and
+   `pnpm run check:version-claims` (`scripts/ci/version-claims.mjs`, in `verify` and in CI) keeps
+   them that way. There is nothing to do in this step for those files, which is the point of
+   spending a gate on them. Everywhere else a version is named on purpose and step 2 owns it.
 
 4. Promotion PR opened with the correct title format and merged.
 

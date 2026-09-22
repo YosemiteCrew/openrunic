@@ -145,31 +145,51 @@ export function filterPatients(
  * The mock side of `GET /bff/v0/orders`, filtered and sorted the way
  * `serviceRequestListQuerySchema` says the route is.
  *
- * The window is over `requestedAt` and is half-open - `from` inclusive, `to`
- * exclusive - because that is what the published list description promises and
- * a mock that closes the far end double-counts the boundary row against every
- * caller that pages a day at a time.
+ * The two halves of the predicate are separate functions because they are two
+ * different questions - which orders, and over what window - and the window has
+ * a semantic worth stating once where it is implemented.
  */
 export function filterServiceRequests(
   rows: readonly ServiceRequestDto[],
   query: ServiceRequestListQuery = {}
 ): readonly ServiceRequestDto[] {
-  const { patientId, encounterId, status, category, priority, orderedById, from, to } = query;
-
-  const matched = rows.filter((order) => {
-    if (patientId && order.patientId !== patientId) return false;
-    if (encounterId && order.encounterId !== encounterId) return false;
-    if (status && order.status !== status) return false;
-    if (category && order.category !== category) return false;
-    if (priority && order.priority !== priority) return false;
-    if (orderedById && order.orderedById !== orderedById) return false;
-    if (from && order.requestedAt < from) return false;
-    if (to && order.requestedAt >= to) return false;
-    return true;
-  });
+  const matched = rows.filter(
+    (order) => matchesServiceRequest(order, query) && withinRequestedWindow(order, query)
+  );
 
   const direction = query.order === 'desc' ? -1 : 1;
   return [...matched].sort(byServiceRequest(query.sort ?? 'requestedAt', direction));
+}
+
+/** The exact-match half: every field the route narrows on by equality. */
+function matchesServiceRequest(
+  order: ServiceRequestDto,
+  { patientId, encounterId, status, category, priority, orderedById }: ServiceRequestListQuery
+): boolean {
+  if (patientId && order.patientId !== patientId) return false;
+  if (encounterId && order.encounterId !== encounterId) return false;
+  if (status && order.status !== status) return false;
+  if (category && order.category !== category) return false;
+  if (priority && order.priority !== priority) return false;
+  if (orderedById && order.orderedById !== orderedById) return false;
+  return true;
+}
+
+/**
+ * The window half, over `requestedAt`.
+ *
+ * Half-open - `from` inclusive, `to` exclusive - because that is what the
+ * published list description promises, and a mock that closes the far end
+ * double-counts the boundary row against every caller that pages a day at a
+ * time.
+ */
+function withinRequestedWindow(
+  order: ServiceRequestDto,
+  { from, to }: ServiceRequestListQuery
+): boolean {
+  if (from && order.requestedAt < from) return false;
+  if (to && order.requestedAt >= to) return false;
+  return true;
 }
 
 /**

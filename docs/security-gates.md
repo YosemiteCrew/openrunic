@@ -224,6 +224,64 @@ scanning, and a credited feature that runs out declines rather than passing. It 
 rather than a measurement taken here, so it is dated; what agrees with it from this side is `check
 code` reporting `success` with a scan id on twelve consecutive heads while the wallet was empty.
 
+### The bot-authored head exemption, accepted 2026-09-22
+
+Aikido declines `Aikido Security: Deep Review` on any head whose latest commit was authored by a
+bot, with the summary _"Aikido skipped this review because the latest commit was authored by a
+bot"_. The condition is true by construction of the head, so nothing on the branch can change it
+and every dependabot pull request was a permanent red row on this check
+([#549](https://github.com/YosemiteCrew/openrunic/issues/549)).
+
+The guard excuses that, and only that: the pair `Aikido Security: Deep Review` + `skipped`, on a
+head whose **commit author** GitHub reports as a `Bot`, read from `commits/<sha>` as `.author.type`.
+It is keyed on that fact rather than on the vendor's sentence, for the same reason the draft
+exemption lives in the workflow.
+
+The commit's author, and not the pull request's. Those are the same account on a clean dependabot
+branch and different the moment a human pushes onto one - a hand-fixed lockfile conflict, a review
+fix. There `pull_request.user.type` is still `Bot` while Aikido's rule does not fire, so a gate
+keyed on the pull request author would excuse a Deep Review that skipped for some other cause;
+with the wallet empty, that other cause is
+[#408](https://github.com/YosemiteCrew/openrunic/issues/408). It is also `.author` and not
+`.committer`: a dependabot commit is committed by GitHub's web-flow account, so the two fields
+disagree on exactly the head this is about (`2cbbf64`, `.author.type` `Bot`, `.committer.type`
+`User`). An unmatched author resolves to null and reads as not-a-bot, and a commit that cannot be
+read fails the job - both the fail-closed direction.
+`BOT_EXEMPT` in `scripts/ci/aikido-coverage.mjs` is the pair; widening either half fails a test
+that asserts its membership directly, because a widening is invisible to every test that only
+makes legal calls.
+
+This is an acceptance rather than a silencing, and the difference is what is observable. On a
+head whose commit is bot-authored there is no Deep Review signal of any cause: the vendor declines the context
+before the wallet, the strictness or the path filter is consulted, so an empty wallet and a full
+one produce the identical `skipped` there. The empty wallet stays observable on every
+human-authored head, where this exemption does not apply.
+
+What is _not_ excused is the head. `Aikido Security: check code` is the required context on both
+rulesets, it carries the SCA, it is the context the wallet does not reach (above), and it runs on
+a bot-authored head - `success` on all three of this repository's dependabot pull requests,
+[#546](https://github.com/YosemiteCrew/openrunic/pull/546),
+[#491](https://github.com/YosemiteCrew/openrunic/pull/491) and
+[#414](https://github.com/YosemiteCrew/openrunic/pull/414), read off
+`commits/<sha>/check-runs` on 2026-09-22. So it is left fully required there, and a head carrying
+only the excused check is its own verdict rather than a pass.
+
+Leaving it required is not redundant with the ruleset. GitHub satisfies a required status check on
+_"a successful, skipped, or neutral status"_
+([about protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches),
+read 2026-09-22), so a required `check code` reporting `skipped` would merge, and this gate is the
+only thing on the head that would say so. That is why the exemption is one context wide and not
+the whole job: skipping the job on a bot head - the draft analogue - would remove the detector
+from the one class of pull request that both merges and carries dependency changes.
+
+The open half is a vendor question, and it is not closed by this. Aikido's published Deep Review
+settings are the per-repository toggle, strictness, linked repositories, excluded paths, the
+inherited gating threshold and a monthly credit cap
+([Configure Deep Review](https://help.aikido.dev/deep-review/configure-deep-review), read
+2026-09-22); none of them is author-based, and the documentation corpus has nothing on bot authors
+either way. If Deep Review can be enabled for bot authors, this exemption should be reverted
+rather than kept.
+
 ## Release provenance
 
 See [verifying-releases.md](verifying-releases.md) for the operator-facing side: what is published,

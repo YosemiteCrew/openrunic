@@ -889,6 +889,25 @@ function taskStatuses(query: TaskListQuery): readonly TaskStatus[] | undefined {
 }
 
 /**
+ * The four filters that answer WHOSE work a task is.
+ *
+ * Split out of `matches` because they are one question asked four ways - a
+ * person, a pool, which of the two, and the union of the first and second -
+ * and because the arms below are the only ones that read more than one column
+ * of the row.
+ */
+function ownsTask(row: TaskRow, query: TaskListQuery): boolean {
+  if (query.assigneeUserId !== undefined && row.assigneeUserId !== query.assigneeUserId) {
+    return false;
+  }
+  if (query.assigneeTeamKey !== undefined && row.assigneeTeamKey !== query.assigneeTeamKey) {
+    return false;
+  }
+  if (query.assigneeType !== undefined && row.assigneeType !== query.assigneeType) return false;
+  return query.inboxFor === undefined || inInboxOf(row, query.inboxFor);
+}
+
+/**
  * The union behind {@link TaskListQuery.inboxFor}, in one place.
  *
  * Both ports read this rather than each spelling the union out, because the two
@@ -956,14 +975,7 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
     if (wanted !== undefined && !wanted.includes(row.status)) return false;
     if (query.priority !== undefined && row.priority !== query.priority) return false;
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
-    if (query.assigneeUserId !== undefined && row.assigneeUserId !== query.assigneeUserId) {
-      return false;
-    }
-    if (query.assigneeTeamKey !== undefined && row.assigneeTeamKey !== query.assigneeTeamKey) {
-      return false;
-    }
-    if (query.assigneeType !== undefined && row.assigneeType !== query.assigneeType) return false;
-    if (query.inboxFor !== undefined && !inInboxOf(row, query.inboxFor)) return false;
+    if (!ownsTask(row, query)) return false;
     if (query.slaState !== undefined && row.slaState !== query.slaState) return false;
     return inWindow(row.dueAt, query.from, query.to);
   },

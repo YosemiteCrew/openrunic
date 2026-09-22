@@ -57,6 +57,17 @@ export const orders: Messages = {
   'orders.list.column.age': 'In this state',
   'orders.list.column.actions': 'Actions',
 
+  'orders.list.countOne': '{count} order',
+  'orders.list.countOther': '{count} orders',
+  'orders.list.windowOne':
+    '{count} of {total} orders. The rest are on pages this screen cannot reach.',
+  'orders.list.windowOther':
+    '{count} of {total} orders. The rest are on pages this screen cannot reach.',
+  'orders.list.notShownOne':
+    '{count} of the orders on this page is not listed, because this ledger has no word for its category, status or priority.',
+  'orders.list.notShownOther':
+    '{count} of the orders on this page are not listed, because this ledger has no word for their category, status or priority.',
+
   'orders.list.noDiagnosis': 'No diagnosis linked',
   'orders.list.destinationNotRecorded': 'No destination yet',
   'orders.list.patientNotRecorded': 'Not recorded',

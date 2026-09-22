@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrdersScreen } from '@/app/(app)/orders/OrdersScreen';
 import { ApiError } from '@/lib/api/client';
-import { MOCK_NOW } from '@/lib/api/mock/fixtures';
+import { MOCK_NOW, MOCK_ORDERS } from '@/lib/api/mock/fixtures';
 import { createWorklistClient } from '@/lib/api/worklist';
 import type { WorklistClient } from '@/lib/api/worklist';
 
@@ -17,6 +17,54 @@ vi.mock('next/navigation', () => ({
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
   return { orders: { list: fail }, results: { list: fail }, inbox: { list: fail } };
+}
+
+/**
+ * A ledger page whose total is larger than the rows on it, the way a live page
+ * carrying a referral or a draft is (#539).
+ *
+ * The total and the row count are deliberately different numbers here. A screen
+ * that printed `data.length` where it should print `page.total` agrees with
+ * itself on the fixture client, which reports no refusal at all, and is wrong
+ * only on exactly this page.
+ */
+function withRefused(refused: number): WorklistClient {
+  const base = createWorklistClient();
+  return {
+    ...base,
+    orders: {
+      list: async (query) => {
+        const page = await base.orders.list(query);
+        return {
+          ...page,
+          page: { ...page.page, total: page.page.total + refused },
+          refused,
+        };
+      },
+    },
+  };
+}
+
+/**
+ * A page the route truncated: the ledger matched `beyond` more orders than it
+ * put on the page, and this screen has no pager to reach them (#539).
+ *
+ * `refused` stays zero here so the two causes stay separable. A row absent
+ * because the ledger has no word for it and a row absent because it is on page
+ * two are different facts with different remedies, and a screen that printed
+ * one number for both would be wrong in whichever direction the reader guessed.
+ */
+function truncated(beyond: number): WorklistClient {
+  const base = createWorklistClient();
+  return {
+    ...base,
+    orders: {
+      list: async (query) => {
+        const page = await base.orders.list(query);
+        return { ...page, page: { ...page.page, total: page.page.total + beyond } };
+      },
+    },
+  };
 }
 
 beforeEach(() => {
@@ -89,6 +137,54 @@ describe('OrdersScreen', () => {
 
     expect(await screen.findByText('No orders yet')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'New order' }).length).toBeGreaterThan(0);
+  });
+
+  it('states how many orders the ledger matched', async () => {
+    render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('table');
+
+    expect(screen.getByText(`${MOCK_ORDERS.length} orders`)).toBeInTheDocument();
+    expect(screen.queryByText(/not listed/)).not.toBeInTheDocument();
+  });
+
+  /* The count and the list have to answer the same question. A clinician
+     reading a total of 16 and counting 13 rows cannot tell whether three are
+     missing or three are elsewhere, so the screen says which. */
+  it('states the rows it matched but cannot render, beside the total', async () => {
+    render(<OrdersScreen client={withRefused(3)} now={MOCK_NOW} />);
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
+    expect(screen.getByText(`${MOCK_ORDERS.length + 3} orders`)).toBeInTheDocument();
+    expect(screen.getByText(/^3 of the orders on this page are not listed/)).toBeInTheDocument();
+  });
+
+  /* The blocker on #540: the route paginates at 25 by default and this screen
+     has no pager, so a bare total over a full table says nothing about whether
+     the table is the whole match. The count line has to name the window. */
+  it('names the window when the ledger matched more orders than the page holds', async () => {
+    render(<OrdersScreen client={truncated(35)} now={MOCK_NOW} />);
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
+    expect(
+      screen.getByText(`${MOCK_ORDERS.length} of ${MOCK_ORDERS.length + 35} orders.`, {
+        exact: false,
+      })
+    ).toBeInTheDocument();
+    /* The bare total is what the reader would otherwise have read as the row
+       count, so it must not also be on the page. */
+    expect(screen.queryByText(`${MOCK_ORDERS.length + 35} orders`)).not.toBeInTheDocument();
+  });
+
+  it('asks for a window wider than the route default', async () => {
+    const list = vi.fn(createWorklistClient().orders.list);
+    render(
+      <OrdersScreen client={{ ...createWorklistClient(), orders: { list } }} now={MOCK_NOW} />
+    );
+    await screen.findByRole('table');
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 100 }));
   });
 
   it('says what happened and what to do when the ledger fails to load', async () => {

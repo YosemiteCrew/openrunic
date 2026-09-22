@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createHttpClient, createMockClient, filterServiceRequests, toOrder } from '@/lib/api';
-import type { ServiceRequestDto } from '@/lib/api';
+import {
+  createHttpClient,
+  createMockClient,
+  filterServiceRequests,
+  liveOrders,
+  toOrder,
+  toOrderPage,
+} from '@/lib/api';
+import type { ApiClient, ListResponse, ServiceRequestDto } from '@/lib/api';
 import { MOCK_SERVICE_REQUESTS } from '@/lib/api/mock/records';
 
 /**
@@ -200,5 +207,83 @@ describe('orders.list on both clients', () => {
     const page = await createMockClient().orders.list({ pageSize: 1 });
     expect(page.data).toHaveLength(1);
     expect(page.page.total).toBe(MOCK_SERVICE_REQUESTS.length);
+  });
+});
+
+/**
+ * The page mapper, which is where the refusal stops being invisible (#539).
+ *
+ * `toOrder` answering null is correct and already covered above. What is
+ * covered here is what happens to the null: `page.total` counts rows the API
+ * matched and `data` holds rows the ledger can render, so the two are different
+ * numbers on any page carrying a referral or a draft, and the difference has to
+ * leave the mapping layer for the screen to be able to say so.
+ */
+describe('toOrderPage', () => {
+  /* The refused row is FIRST, so a mapper that dropped the null by truncating
+     rather than filtering would lose the rendered rows too and fail here. */
+  const response: ListResponse<ServiceRequestDto> = {
+    data: [dto({ id: 'referral', category: 'REFERRAL' }), dto({ id: 'lab' })],
+    /* Deliberately not 2: a real page is one window onto a larger match, and a
+       mapper that recomputed the total from the rows it was handed would agree
+       with itself here and be wrong on every page but the last. */
+    page: { page: 1, pageSize: 2, total: 25, totalPages: 13 },
+  };
+
+  it('keeps the total the API reported rather than recomputing it from the page', () => {
+    expect(toOrderPage(response).page).toEqual({ page: 1, pageSize: 2, total: 25, totalPages: 13 });
+  });
+
+  it('lists only the rows the ledger has a word for', () => {
+    expect(toOrderPage(response).data.map((order) => order.id)).toEqual(['lab']);
+  });
+
+  it('counts the refused rows rather than discarding them', () => {
+    expect(toOrderPage(response).refused).toBe(1);
+  });
+
+  it('reports no refusal when every row on the page mapped', () => {
+    expect(toOrderPage({ ...response, data: [dto({ id: 'lab' })] }).refused).toBe(0);
+  });
+});
+
+describe('liveOrders', () => {
+  function stub(rows: readonly ServiceRequestDto[]): {
+    client: ApiClient;
+    queries: unknown[];
+  } {
+    const queries: unknown[] = [];
+    const client = {
+      orders: {
+        list: (query?: unknown) => {
+          queries.push(query);
+          return Promise.resolve({
+            data: [...rows],
+            page: { page: 1, pageSize: 25, total: 25, totalPages: 1 },
+          });
+        },
+      },
+    } as unknown as ApiClient;
+    return { client, queries };
+  }
+
+  it('sends the view query to the route unchanged', async () => {
+    const { client, queries } = stub([]);
+
+    await liveOrders(client).list({ status: 'PENDED', category: 'LAB' });
+
+    expect(queries).toEqual([{ status: 'PENDED', category: 'LAB' }]);
+  });
+
+  /* The whole point of the wiring: a page of 25 with one referral in it is 24
+     rows and a stated difference, not 24 rows under a silent 25. */
+  it('answers a mapped page whose refused count survives the mapping', async () => {
+    const { client } = stub([dto({ id: 'referral', category: 'REFERRAL' }), dto({ id: 'lab' })]);
+
+    const page = await liveOrders(client).list();
+
+    expect(page.data.map((order) => order.id)).toEqual(['lab']);
+    expect(page.page.total).toBe(25);
+    expect(page.refused).toBe(1);
   });
 });

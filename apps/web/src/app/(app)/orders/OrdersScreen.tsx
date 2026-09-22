@@ -1,6 +1,7 @@
 'use client';
 
-import type { Translator } from '@openrunic/i18n';
+import { counted, formatCount } from '@openrunic/i18n';
+import type { CountedMessage, Translator } from '@openrunic/i18n';
 import { Button, Card, Select, Table, Tag } from '@openrunic/ui';
 import type { SelectOption, TableColumn } from '@openrunic/ui';
 import { useMemo, useState } from 'react';
@@ -16,9 +17,9 @@ import {
   OrderStatusBadge,
 } from '@/components/orders';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, FixtureDataNotice, isEmptyList } from '@/components/state';
+import { AsyncBoundary, isEmptyList } from '@/components/state';
 import { MOCK_NOW, mockPatientById, mockProviderName, ORDER_STATUSES, useOrders } from '@/lib/api';
-import type { ListResponse, Order, OrderStatus, WorklistClient } from '@/lib/api';
+import type { Order, OrderPage, OrderStatus, WorklistClient } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -52,6 +53,54 @@ export interface OrdersScreenProps {
  * suffix is also what `catalogue-drift.test.ts` reads, so a heading pointing at
  * a key nobody defined fails the build rather than appearing above a column.
  */
+const ORDER_COUNT: CountedMessage = {
+  oneKey: 'orders.list.countOne',
+  otherKey: 'orders.list.countOther',
+};
+
+/**
+ * The rows this page matched and this screen cannot render (#539).
+ *
+ * It sits in the same line as the total because that is the only place the
+ * difference is legible: `page.total` counts what the API matched and `data`
+ * holds what the ledger has a word for, so a page of 25 containing three
+ * referrals is 22 rows under a total of 25. A clinician counting them needs to
+ * know whether three are missing or three are elsewhere, and a screen that
+ * shows the larger number and the smaller list without saying so answers
+ * neither.
+ */
+const NOT_SHOWN: CountedMessage = {
+  oneKey: 'orders.list.notShownOne',
+  otherKey: 'orders.list.notShownOther',
+};
+
+/**
+ * The rows on this page, when the ledger matched more than one page of them.
+ *
+ * `/bff/v0/orders` paginates and this screen has no pager, so on a busy day the
+ * total above a full table is a number about the clinic and not about the table
+ * - 60 over 25 rows reads exactly like 60 over 22, and only one of those is
+ * missing anything. Stating the window separates them: the reader is told which
+ * number the rows belong to before {@link NOT_SHOWN} tells them what else is
+ * absent from it.
+ */
+const ORDER_WINDOW: CountedMessage = {
+  oneKey: 'orders.list.windowOne',
+  otherKey: 'orders.list.windowOther',
+};
+
+/**
+ * The window this screen asks for, clamped by the route to `MAX_PAGE_SIZE`.
+ *
+ * The same size the patient roster and the claims workbench ask for, and for
+ * the same reason: a worklist under a couple of hundred rows is one a clinician
+ * finishes, and re-fetching while they scan it flashes a skeleton over rows
+ * they were already reading. It is not a promise that every order fits - when
+ * it does not, the count line says so rather than the table growing a pager
+ * nothing else on this screen has.
+ */
+const PAGE_SIZE = 100;
+
 const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
   { key: 'order', headerKey: 'orders.list.column.order' },
   { key: 'patient', headerKey: 'orders.list.column.patient' },
@@ -69,7 +118,7 @@ export function OrdersScreen({
 }: Readonly<OrdersScreenProps>): ReactElement {
   const t = useTranslator();
   const [status, setStatus] = useState<OrderStatus | ''>('');
-  const orders = useOrders(status ? { status } : {}, { client });
+  const orders = useOrders({ pageSize: PAGE_SIZE, status: status || undefined }, { client });
 
   const statusFilters = useMemo<SelectOption[]>(
     () => [
@@ -138,7 +187,6 @@ export function OrdersScreen({
       }
     >
       <ScreenCommands commands={commands} />
-      <FixtureDataNotice />
       <Card tone="cream" title={t('orders.list.card')}>
         <AsyncBoundary
           state={orders}
@@ -165,13 +213,35 @@ export function OrdersScreen({
             ),
           }}
         >
-          {(page: ListResponse<Order>) => (
-            <Table
-              columns={columns}
-              rows={page.data.map((order) => toRow(t, order, now))}
-              caption={t('orders.list.caption')}
-            />
-          )}
+          {(page: OrderPage) => {
+            /* The rows the route put on this page, the refused ones included:
+               `data` is what the ledger could render and `refused` is the rest
+               of the same window, so the two sum to the window without reading
+               `pageSize` - which is the route's clamp and not necessarily what
+               it applied. */
+            const windowed = page.data.length + page.refused;
+            return (
+              <>
+                <Table
+                  columns={columns}
+                  rows={page.data.map((order) => toRow(t, order, now))}
+                  caption={t('orders.list.caption')}
+                />
+                <p className="or-caption">
+                  {windowed < page.page.total
+                    ? counted(t, ORDER_WINDOW, windowed, {
+                        total: formatCount(page.page.total, t.locale),
+                      })
+                    : counted(t, ORDER_COUNT, page.page.total)}
+                </p>
+                {page.refused > 0 ? (
+                  <p className="or-caption">
+                    <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+                  </p>
+                ) : null}
+              </>
+            );
+          }}
         </AsyncBoundary>
       </Card>
     </AppShell>

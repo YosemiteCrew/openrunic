@@ -29,8 +29,10 @@ import { TASK_STATUSES as TASK_STATUS_VALUES } from '@openrunic/database';
 import {
   childBatch,
   comparable,
+  equalsIfSet,
   inWindow,
   jsonColumn,
+  matchesIfSet,
   windowFilter,
   type BaseQuery,
   type ChildBatch,
@@ -396,6 +398,17 @@ export const specimenSpec: CollectionSpec<
 /* ------------------------------------------------------------------- reports */
 
 export interface DiagnosticReportListQuery extends BaseQuery {
+  /**
+   * Several logical ids at once.
+   *
+   * The sign-off queue's ME/TEAM filter sends this. Assignment is a `Task`
+   * fact over the `RESULT` stream and not a column here, and `Task.subjectId`
+   * carries no relation to traverse, so the caller asks the task collection
+   * whose work it is and names the answer (#535). An empty array is a filter
+   * that matches nothing, not an absent one - the same reading the `ids` filter
+   * on `PatientListQuery` gives it.
+   */
+  ids?: readonly string[];
   patientId?: string;
   encounterId?: string;
   serviceRequestId?: string;
@@ -491,21 +504,23 @@ export const diagnosticReportSpec: CollectionSpec<
   },
 
   matches(row: DiagnosticReportRow, query: DiagnosticReportListQuery): boolean {
-    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
-    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
-    if (query.serviceRequestId !== undefined && row.serviceRequestId !== query.serviceRequestId) {
-      return false;
-    }
-    if (query.status !== undefined && row.status !== query.status) return false;
-    if (query.category !== undefined && row.category !== query.category) return false;
-    if (query.abnormalFlag !== undefined && row.abnormalFlag !== query.abnormalFlag) return false;
-    if (query.reviewed !== undefined && (row.reviewedAt !== null) !== query.reviewed) return false;
-    return inWindow(row.issuedAt, query.from, query.to);
+    return (
+      matchesIfSet(query.ids, (ids) => ids.includes(row.id)) &&
+      equalsIfSet(query.patientId, row.patientId) &&
+      equalsIfSet(query.encounterId, row.encounterId) &&
+      equalsIfSet(query.serviceRequestId, row.serviceRequestId) &&
+      equalsIfSet(query.status, row.status) &&
+      equalsIfSet(query.category, row.category) &&
+      equalsIfSet(query.abnormalFlag, row.abnormalFlag) &&
+      equalsIfSet(query.reviewed, row.reviewedAt !== null) &&
+      inWindow(row.issuedAt, query.from, query.to)
+    );
   },
 
   where(query: DiagnosticReportListQuery) {
     const issuedAt = windowFilter(query.from, query.to);
     return {
+      ...(query.ids === undefined ? {} : { id: { in: [...query.ids] } }),
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.serviceRequestId === undefined ? {} : { serviceRequestId: query.serviceRequestId }),

@@ -31,8 +31,6 @@ export const results: Messages = {
   'results.list.assignment.mine': 'Mine',
   'results.list.assignment.team': 'Team pool',
   'results.list.assignment.everyone': 'Everyone',
-  'results.list.assignmentUnknown':
-    "Everyone's results. Whose queue a result sits in is not recorded yet, so this queue cannot be narrowed to yours or your team's.",
 
   'results.list.countOne': '{count} result',
   'results.list.countOther': '{count} results',

@@ -53,6 +53,7 @@ import type {
 import { CLOSED_TASK_STATUSES, OPEN_TASK_STATUSES } from '../repositories/specs/orders.js';
 
 import {
+  MAX_PAGE_SIZE,
   paginationQueryFields,
   sortOrderField,
   windowOf,
@@ -362,6 +363,30 @@ export function toSpecimenDto(row: SpecimenRow): SpecimenDto {
 export const diagnosticReportListQuerySchema = z.strictObject({
   ...paginationQueryFields,
   ...windowQueryFields,
+  /**
+   * A named set of logical ids, comma-separated, at most one page of them.
+   *
+   * What the sign-off queue sends to ask its ME/TEAM question. Assignment is a
+   * `Task` fact - `assigneeType` over the `RESULT` stream - and there is no
+   * relation for a report `where` to traverse, because `Task.subjectId` names an
+   * encounter or an order as readily as a report and so carries no `@relation`.
+   * The caller asks `/bff/v0/tasks` whose work it is and names the answer here
+   * (#535).
+   *
+   * It discloses nothing new. An unfiltered page of this route already returns
+   * these rows, with these fields, to this permission and under the same chart
+   * gate; naming the ids can only return fewer of them.
+   *
+   * Split before validation rather than after, so an empty value, a trailing
+   * comma or one bad id is a 400 naming the position rather than a silently
+   * shorter set. The same reason the object is strict, and the same shape
+   * `patientListQuerySchema` carries for the same job.
+   */
+  ids: z
+    .string()
+    .transform((value) => value.split(','))
+    .pipe(z.array(z.uuid()).min(1).max(MAX_PAGE_SIZE))
+    .optional(),
   patientId: z.uuid().optional(),
   encounterId: z.uuid().optional(),
   serviceRequestId: z.uuid().optional(),
@@ -384,6 +409,7 @@ export function toDiagnosticReportListQuery(
     page: input.page,
     pageSize: input.pageSize,
     ...windowOf(input),
+    ...(input.ids === undefined ? {} : { ids: input.ids }),
     ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
     ...(input.encounterId === undefined ? {} : { encounterId: input.encounterId }),
     ...(input.serviceRequestId === undefined ? {} : { serviceRequestId: input.serviceRequestId }),

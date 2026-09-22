@@ -50,7 +50,7 @@ describe('PatientsScreen', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByRole('columnheader', { name: 'MRN' })).toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: 'Date of birth' })).toBeInTheDocument();
-    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_PATIENTS.length + 1);
+    expect(within(table).getAllByRole('row')).toHaveLength(Math.min(MOCK_PATIENTS.length, 100) + 1);
   });
 
   it('links each patient to their chart by name', async () => {
@@ -127,12 +127,11 @@ describe('PatientsScreen', () => {
     render(<PatientsScreen client={truncated(140)} />);
 
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_PATIENTS.length + 1);
+    expect(within(table).getAllByRole('row')).toHaveLength(Math.min(MOCK_PATIENTS.length, 100) + 1);
     expect(
-      screen.getByText(
-        `${MOCK_PATIENTS.length} of ${MOCK_PATIENTS.length + 140} patients in this view.`,
-        { exact: false }
-      )
+      screen.getByText(`100 of ${MOCK_PATIENTS.length + 140} patients in this view.`, {
+        exact: false,
+      })
     ).toBeInTheDocument();
     /* The bare total is what the reader would otherwise have read as the row
        count, so it must not also be on the page. */
@@ -141,12 +140,14 @@ describe('PatientsScreen', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('states the plain total when the page holds the whole roster', async () => {
+  it('renders the window statement from the default demo fixtures', async () => {
     render(<PatientsScreen client={createMockClient()} />);
 
     await screen.findByRole('table');
-    expect(screen.getByText(`${MOCK_PATIENTS.length} patients in this view`)).toBeInTheDocument();
-    expect(screen.queryByText(/cannot reach/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(`100 of ${MOCK_PATIENTS.length} patients in this view.`, { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/The rest are on pages this screen cannot reach/)).toBeInTheDocument();
   });
 
   it('explains a server failure and offers a retry', async () => {

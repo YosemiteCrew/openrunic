@@ -357,10 +357,33 @@ function toPatient(seed: PatientSeed): Patient {
  */
 const PATIENTS_IN_SEED_ORDER: readonly Patient[] = PATIENT_SEEDS.map(toPatient);
 
-/** Twelve patients, ordered by family name, as the API's default sort returns them. */
-export const MOCK_PATIENTS: readonly Patient[] = [...PATIENTS_IN_SEED_ORDER].sort((a, b) =>
-  a.name.family.localeCompare(b.name.family, 'en')
-);
+/**
+ * Directory-only rows that put the demo roster just beyond its 100-row window.
+ *
+ * The twelve authored patients above remain the only rows referenced by
+ * appointments, charts and billing fixtures. These extra rows exist so the
+ * running product demonstrates the roster's honest truncation statement
+ * rather than leaving that state reachable only through a synthetic test
+ * client. Their names and identifiers are generated deterministically and are
+ * deliberately fixture-shaped.
+ */
+const WINDOW_DEMO_PATIENTS: readonly Patient[] = Array.from({ length: 89 }, (_, index) => {
+  const serial = String(index + 1).padStart(3, '0');
+  return toPatient({
+    id: `0192f1a0-0000-7000-8000-00000000w${serial}`,
+    mrn: `OR-${String(200_000 + index)}`,
+    given: `Fixture${serial}`,
+    family: `Windowpatient${serial}`,
+    birthDate: '1990-01-01',
+    sexAtBirth: 'UNKNOWN',
+  });
+});
+
+/** 101 patients, ordered by family name, as the API's default sort returns them. */
+export const MOCK_PATIENTS: readonly Patient[] = [
+  ...PATIENTS_IN_SEED_ORDER,
+  ...WINDOW_DEMO_PATIENTS,
+].sort((a, b) => a.name.family.localeCompare(b.name.family, 'en'));
 
 interface AppointmentSeed {
   id: string;

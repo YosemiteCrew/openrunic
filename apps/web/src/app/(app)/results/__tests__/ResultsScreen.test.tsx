@@ -421,15 +421,6 @@ describe('ResultsScreen, the everyone queue', () => {
 });
 
 /**
- * The queue over a client that cannot answer `assignedTo`.
- *
- * `/bff/v0/results` serves no assignment filter, because assignment is a `Task`
- * fact rather than a column on the report (#535). A control that cannot select
- * is worse than an absent one - it narrows nothing and reports that it narrowed
- * - so the screen offers only the queue it is actually showing, opens on it,
- * and says why.
- */
-/**
  * A queue page whose total is larger than the rows on it, the way a live page
  * carrying a referral report is.
  *
@@ -590,64 +581,49 @@ describe('ResultsScreen, counting what it is showing', () => {
   });
 });
 
-describe('ResultsScreen, where assignment is not recorded', () => {
+/**
+ * The assignment control, now that every client can answer it.
+ *
+ * `/bff/v0/results` still serves no assignment filter - assignment is a `Task`
+ * fact rather than a column on the report - but `liveResults` asks the task
+ * collection and narrows the report read to what it answered (#535). So the
+ * control selects in both modes, and the screen no longer carries a statement
+ * about a queue it could not narrow.
+ */
+describe('ResultsScreen, the assignment control', () => {
   function render_(): void {
-    render(
-      <ResultsScreen client={createWorklistClient()} now={MOCK_NOW} assignmentKnown={false} />
-    );
+    render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
   }
 
-  it('opens on everyone rather than on a queue it cannot prove is mine', async () => {
+  it('opens on my queue rather than on everyone', async () => {
     render_();
 
     const rows = within(
       await screen.findByRole('list', { name: 'Results to review' })
     ).getAllByRole('listitem');
-    expect(rows).toHaveLength(MOCK_RESULTS.length);
-    expect(screen.getByLabelText('Assignment')).toHaveValue('');
+    expect(rows).toHaveLength(MINE);
+    expect(screen.getByLabelText('Assignment')).toHaveValue('ME');
   });
 
-  it('offers neither queue it cannot select, as a filter', async () => {
+  it('offers all three queues as filters', async () => {
     render_();
     await screen.findByRole('list', { name: 'Results to review' });
 
     const options = within(screen.getByLabelText('Assignment')).getAllByRole('option');
-    expect(options.map((option) => option.textContent)).toEqual(['Everyone']);
+    expect(options.map((option) => option.textContent)).toEqual(['Mine', 'Team pool', 'Everyone']);
   });
 
   /* Through the palette rather than `queryByText`: a command nobody has opened
      the palette for is absent from the DOM whether or not the screen offers it,
-     so the cheap assertion passes over a screen that offers both. */
-  it('offers neither queue it cannot select, as a command', async () => {
+     so the cheap assertion passes over a screen that offers neither. */
+  it('offers both queues as commands', async () => {
     render_();
     await screen.findByRole('list', { name: 'Results to review' });
 
     fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
     await screen.findByRole('option', { name: /Sign the open result(?! with)/ });
 
-    expect(screen.queryByRole('option', { name: /Show my results/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /Show the team pool/ })).not.toBeInTheDocument();
-  });
-
-  it('says whose results these are and why they cannot be narrowed', async () => {
-    render_();
-    await screen.findByRole('list', { name: 'Results to review' });
-
-    expect(
-      screen.getByText(/Whose queue a result sits in is not recorded yet/)
-    ).toBeInTheDocument();
-  });
-
-  /* The statement belongs to the client, not to the screen: over a client that
-     does carry assignment, saying it cannot be narrowed is the same wrong
-     answer in the other direction. */
-  it('says none of that where the rows do carry an assignment', async () => {
-    render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
-    await screen.findByRole('list', { name: 'Results to review' });
-
-    expect(
-      screen.queryByText(/Whose queue a result sits in is not recorded yet/)
-    ).not.toBeInTheDocument();
-    expect(within(screen.getByLabelText('Assignment')).getAllByRole('option')).toHaveLength(3);
+    expect(screen.getByRole('option', { name: /Show my results/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Show the team pool/ })).toBeInTheDocument();
   });
 });

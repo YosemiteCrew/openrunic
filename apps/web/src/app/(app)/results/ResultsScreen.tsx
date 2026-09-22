@@ -14,7 +14,6 @@ import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
 import {
   isBulkSignable,
   MOCK_NOW,
-  RESULT_ASSIGNMENT_IS_KNOWN,
   usePatientNames,
   useProviderNames,
   useResultAnalytes,
@@ -120,16 +119,12 @@ interface Signing {
 /**
  * What the rows on screen are a count of, and what is absent from them.
  *
- * Three separate facts, deliberately not one sentence. A row absent because it
- * is on a page this screen cannot reach, a row absent because the queue has no
- * word for its category, and a queue that could not be narrowed to one
- * clinician have different remedies, and a reader who cannot tell them apart
- * cannot act on any of them.
+ * Two separate facts, deliberately not one sentence. A row absent because it is
+ * on a page this screen cannot reach and a row absent because the queue has no
+ * word for its category have different remedies, and a reader who cannot tell
+ * them apart cannot act on either.
  */
-function QueueStatement({
-  page,
-  assignmentKnown,
-}: Readonly<{ page: ResultPage; assignmentKnown: boolean }>): ReactElement {
+function QueueStatement({ page }: Readonly<{ page: ResultPage }>): ReactElement {
   const t = useTranslator();
   /* The rows the route put on this page, the refused ones included, so the two
      sum to the window without reading `pageSize` - the route's clamp, not
@@ -150,7 +145,6 @@ function QueueStatement({
           <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
         </p>
       ) : null}
-      {assignmentKnown ? null : <p className="or-caption">{t('results.list.assignmentUnknown')}</p>}
     </>
   );
 }
@@ -160,33 +154,23 @@ export interface ResultsScreenProps {
   client?: WorklistClient;
   /** Fixed "now", so a signature timestamp is deterministic. */
   now?: string;
-  /**
-   * Whether the rows carry an assignment. Injectable for tests alongside
-   * `client`, because the two are one fact: a client that cannot answer
-   * `assignedTo` and a screen that offers the filter disagree.
-   */
-  assignmentKnown?: boolean;
 }
 
 /**
  * The verbs this screen offers the command palette.
  *
  * A hook rather than a block inside the screen, because it is the one part of
- * `ResultsScreen` with no markup in it and it is where the assignment decision
- * shows up a second time: the two queue commands are withheld wherever the
- * filter is, so the palette cannot narrow to something the route cannot answer.
+ * `ResultsScreen` with no markup in it.
  */
 function useResultCommands({
   selected,
   bulkCandidates,
-  assignmentKnown,
   requestSign,
   setAssignment,
   setBulkOpen,
 }: Readonly<{
   selected: ResultReport | null;
   bulkCandidates: readonly ResultReport[];
-  assignmentKnown: boolean;
   requestSign: (report: ResultReport | null, withNote: boolean) => void;
   setAssignment: (assignment: Assignment) => void;
   setBulkOpen: (open: boolean) => void;
@@ -218,47 +202,39 @@ function useResultCommands({
         icon: 'check-check',
         perform: () => setBulkOpen(bulkCandidates.length > 0),
       },
-      /* Offered only where they can select. A command that narrows nothing and
-         reports that it narrowed is the same wrong answer as the filter, with
-         no control left on screen to explain it. */
-      ...(assignmentKnown
-        ? [
-            {
-              id: 'results.mine',
-              group: 'actions' as const,
-              label: t('results.command.mine'),
-              keywords: searchWords(t('results.command.mineKeywords')),
-              icon: 'user-round' as const,
-              perform: () => setAssignment('ME'),
-            },
-            {
-              id: 'results.team',
-              group: 'actions' as const,
-              label: t('results.command.team'),
-              keywords: searchWords(t('results.command.teamKeywords')),
-              icon: 'users' as const,
-              perform: () => setAssignment('TEAM'),
-            },
-          ]
-        : []),
+      {
+        id: 'results.mine',
+        group: 'actions',
+        label: t('results.command.mine'),
+        keywords: searchWords(t('results.command.mineKeywords')),
+        icon: 'user-round',
+        perform: () => setAssignment('ME'),
+      },
+      {
+        id: 'results.team',
+        group: 'actions',
+        label: t('results.command.team'),
+        keywords: searchWords(t('results.command.teamKeywords')),
+        icon: 'users',
+        perform: () => setAssignment('TEAM'),
+      },
     ],
     /* The two setters are `useState`'s own and stable, but they arrive here as
        parameters rather than from a `useState` call this hook can see, so they
        are named rather than assumed. */
-    [t, selected, bulkCandidates.length, requestSign, assignmentKnown, setAssignment, setBulkOpen]
+    [t, selected, bulkCandidates.length, requestSign, setAssignment, setBulkOpen]
   );
 }
 
 export function ResultsScreen({
   client,
   now = MOCK_NOW,
-  assignmentKnown = RESULT_ASSIGNMENT_IS_KNOWN,
 }: Readonly<ResultsScreenProps>): ReactElement {
   const t = useTranslator();
-  /* Everyone, not ME, wherever assignment is unknown. A ME chip over a route
-     that filtered by nothing reads as "these are mine" and is a worse answer
-     than an absent filter. */
-  const [assignment, setAssignment] = useState<Assignment | ''>(assignmentKnown ? 'ME' : '');
+  /* The clinician's own sign-off queue is what this screen is for, and every
+     client can now answer it: over fixtures from the row, and over the API from
+     the `RESULT` task that carries the assignment (#535). */
+  const [assignment, setAssignment] = useState<Assignment | ''>('ME');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [signed, setSigned] = useState<Record<string, SignedNote>>({});
   const [signing, setSigning] = useState<Signing | null>(null);
@@ -271,11 +247,8 @@ export function ResultsScreen({
   );
 
   const assignmentFilters = useMemo<SelectOption[]>(
-    () =>
-      ASSIGNMENT_FILTERS.filter((filter) => assignmentKnown || filter.value === '').map(
-        (filter) => ({ value: filter.value, label: t(filter.labelKey) })
-      ),
-    [t, assignmentKnown]
+    () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
+    [t]
   );
 
   const reports = useMemo(() => {
@@ -343,7 +316,6 @@ export function ResultsScreen({
   const commands = useResultCommands({
     selected,
     bulkCandidates,
-    assignmentKnown,
     requestSign,
     setAssignment,
     setBulkOpen,
@@ -426,7 +398,7 @@ export function ResultsScreen({
                 }}
                 patientNamed={patientNamed}
               />
-              <QueueStatement page={page} assignmentKnown={assignmentKnown} />
+              <QueueStatement page={page} />
             </Card>
 
             {reading ? (

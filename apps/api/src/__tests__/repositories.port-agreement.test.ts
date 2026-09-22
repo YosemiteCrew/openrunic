@@ -481,6 +481,7 @@ const FILTERS: {
     pageSize: 25,
     sort: 'issuedAt',
     order: 'asc',
+    ids: ['id-id'],
     patientId: 'id-patientId',
     encounterId: 'id-encounterId',
     serviceRequestId: 'id-serviceRequestId',

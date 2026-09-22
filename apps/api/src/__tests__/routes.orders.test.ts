@@ -1054,6 +1054,57 @@ describe('results', () => {
     expect(await ids('sort=createdAt&order=desc')).toEqual([REPORT_B, REPORT_A]);
   });
 
+  it('answers a named set of ids, and says nothing about the ones it does not hold', async () => {
+    /*
+     * What the sign-off queue's ME/TEAM filter sends. Assignment is a `Task`
+     * fact over the `RESULT` stream and no column here carries it, so the
+     * caller asks the task collection whose work a result is and names the
+     * answer (#535).
+     *
+     * The unknown id in the middle is the half that matters: the response is
+     * SHORTER than the request, with no placeholder row. A row invented for it
+     * would put a panel on a report that does not exist.
+     */
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
+    seed(
+      dataset,
+      'DiagnosticReport',
+      makeReportRow(),
+      makeReportRow({ id: REPORT_B, patientId: OTHER_PATIENT, issuedAt: LATE })
+    );
+
+    // Both spellings of the separator. `URLSearchParams` percent-encodes a
+    // comma, so the web client sends `%2C` and a hand-written URL sends `,`;
+    // asserting only the literal one would leave the shape the app emits
+    // unexercised.
+    for (const separator of [',', '%2C']) {
+      const page = await body<ListResponse<DiagnosticReportDto>>(
+        await call(app, 'get', `/bff/v0/results?ids=${[REPORT_B, testId(999)].join(separator)}`)
+      );
+      expect(page.data.map((row) => row.id)).toEqual([REPORT_B]);
+      // The total is the named set, not the index: a pager over a named set
+      // that counted every report would page off the end of its own request.
+      expect(page.page.total).toBe(1);
+    }
+  });
+
+  it.each([
+    ['an empty id set', 'ids='],
+    ['a trailing comma in the id set', `ids=${REPORT_A},`],
+    ['an id that is not a UUID', 'ids=openrunic-not-an-id'],
+    [
+      'more ids than one page can hold',
+      `ids=${Array.from({ length: 101 }, (_unused, index) => testId(index + 1)).join(',')}`,
+    ],
+  ])('rejects %s on the results queue with a 400', async (_label, query) => {
+    const { app } = createTestApp();
+    const res = await call(app, 'get', `/bff/v0/results?${query}`);
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toBe('application/problem+json');
+  });
+
   it('records a minimal report on the schema defaults', async () => {
     const { app } = createTestApp();
     const res = await call(app, 'post', '/bff/v0/results', { body: VALID_REPORT });

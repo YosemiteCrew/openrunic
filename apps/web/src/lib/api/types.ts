@@ -578,6 +578,16 @@ export interface DiagnosticReportDto {
 
 /** Mirrors `diagnosticReportListQuerySchema`. Wider than `ResultListQuery`, which is a view. */
 export interface DiagnosticReportListQuery extends PaginationQuery {
+  /**
+   * A named set of logical ids, at most one page of them.
+   *
+   * What the sign-off queue sends once it has asked `/bff/v0/tasks` whose work
+   * each result is: assignment is a `Task` fact and the report route serves no
+   * filter for it (#535). Serialised comma-separated by {@link toSearchParams},
+   * and refused rather than shortened, like the `ids` filter on
+   * {@link PatientListQuery}.
+   */
+  ids?: readonly string[];
   patientId?: string;
   encounterId?: string;
   serviceRequestId?: string;

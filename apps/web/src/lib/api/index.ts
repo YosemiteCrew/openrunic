@@ -177,7 +177,6 @@ export {
   ORDER_STATUSES,
   patientProblems,
   rankCatalog,
-  RESULT_ASSIGNMENT_IS_KNOWN,
   RESULT_FLAGS,
   RESULT_STATUSES,
   slaState,

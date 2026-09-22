@@ -21,6 +21,7 @@ import type {
   DiagnosticReportListQuery,
   ListResponse,
   PaginationQuery,
+  PrincipalCapabilities,
   ResultObservationDto,
   ServiceRequestDto,
   TaskDto,
@@ -301,9 +302,13 @@ export interface ResultReport {
    *
    * Assignment is a `Task` fact - `assigneeType`, `assigneeUserId`,
    * `assigneeTeamKey`, over the `RESULT` stream - and not a column on the
-   * report, so a live row reads null until the report-to-task join lands
-   * (#535). `reviewedById` is a different question: who signed it, not whose
-   * work it is.
+   * report, so a live row reads null. The queue can still be narrowed to a
+   * person or the pool: {@link liveResults} asks the task collection the
+   * question and names the reports it answers with. Serving the value per row
+   * is a report-DTO change and waits for something that renders it.
+   *
+   * `reviewedById` is a different question: who signed it, not whose work it
+   * is.
    */
   assignedTo: Assignment | null;
   /** Empty from a list: fetched per report, never per row. See {@link WorklistClient}. */
@@ -318,10 +323,9 @@ export interface ResultReport {
  * that could not spell the field could not ask for anything but the first 25
  * (#539).
  *
- * `assignedTo` is answerable over fixtures and not over the route, which serves
- * no assignment filter at all. {@link liveResults} drops it rather than sending
- * something else, and {@link RESULT_ASSIGNMENT_IS_KNOWN} is how a screen finds
- * out before offering the control.
+ * `assignedTo` has no served field: the route carries no assignment filter,
+ * because assignment is not a column on the report. {@link liveResults} answers
+ * it with a second read rather than dropping it or sending something else.
  */
 export interface ResultListQuery extends PaginationQuery {
   assignedTo?: Assignment;
@@ -669,14 +673,17 @@ export function liveOrders(client: ApiClient): WorklistClient['orders'] {
  *
  * Three of the four view filters have a served field. `assignedTo` does not -
  * `diagnosticReportListQuerySchema` carries no assignment filter, because
- * assignment is not a column on the report - and it is dropped here rather than
- * translated into the nearest thing, because the nearest thing is
- * `reviewedById`, which answers who signed a result and not whose queue it is
- * in. A screen must not offer the control over this client; see
- * {@link RESULT_ASSIGNMENT_IS_KNOWN}.
+ * assignment is not a column on the report - and it is never translated into
+ * the nearest thing, because the nearest thing is `reviewedById`, which answers
+ * who signed a result and not whose queue it is in. It arrives here already
+ * answered, as `ids`: see {@link liveResults}.
  */
-export function toReportQuery(query: ResultListQuery): DiagnosticReportListQuery {
+export function toReportQuery(
+  query: ResultListQuery,
+  ids?: readonly string[]
+): DiagnosticReportListQuery {
   return {
+    ...(ids === undefined ? {} : { ids }),
     ...(query.page === undefined ? {} : { page: query.page }),
     ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }),
     ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
@@ -698,10 +705,93 @@ export function toReportQuery(query: ResultListQuery): DiagnosticReportListQuery
  */
 const ANALYTE_PAGE_SIZE = 100;
 
-/** The results half of {@link WorklistClient}, over `GET /bff/v0/results`. */
-export function liveResults(client: ApiClient): WorklistClient['results'] {
+/**
+ * The widest page of `RESULT` tasks the assignment question is asked over.
+ *
+ * `MAX_PAGE_SIZE` in `apps/api/src/schemas/pagination.ts`, and the same number
+ * {@link INBOX_PAGE_SIZE} asks the same route for. It bounds the narrowed
+ * queue: the report ids come from one page of tasks, so a clinician holding
+ * more than a hundred open results sees the first hundred. That is the same
+ * bound the inbox already renders under, on the same rows.
+ */
+const RESULT_TASK_PAGE_SIZE = 100;
+
+/**
+ * The assignment question, as `/bff/v0/tasks` can answer it.
+ *
+ * `inboxFor` alone is everything this user could act on; `assigneeType`
+ * narrows it to their own work or to the unclaimed pool, which is exactly the
+ * ME/TEAM split the sign-off queue offers. `type` is `RESULT` because a task
+ * about a report is the only kind whose subject can be one.
+ *
+ * `open` matters here in a way it does not on the inbox chips: a signed-off
+ * result closes its task, and without this the ME queue would keep answering
+ * with work the clinician has already finished.
+ */
+function toResultTaskQuery(assignedTo: Assignment, userId: string): TaskListQuery {
   return {
-    list: (query = {}) => client.results.list(toReportQuery(query)).then(toResultPage),
+    type: 'RESULT',
+    inboxFor: userId,
+    assigneeType: assignedTo === 'ME' ? 'USER' : 'TEAM',
+    open: true,
+    pageSize: RESULT_TASK_PAGE_SIZE,
+    sort: 'dueAt',
+    order: 'asc',
+  };
+}
+
+/**
+ * The reports a page of tasks is about, deduplicated.
+ *
+ * `subjectType` is checked rather than assumed. The column is a model name and
+ * nothing in the schema constrains it per task type, so a `RESULT` task
+ * pointing at something else would otherwise contribute a foreign id to a
+ * report query - which the route would answer with silence rather than an
+ * error, since a report id that matches nothing is simply a shorter page.
+ */
+function reportIdsOf(response: ListResponse<TaskDto>): readonly string[] {
+  const ids = response.data
+    .filter((dto) => dto.subjectType === 'DiagnosticReport')
+    .map((dto) => dto.subjectId)
+    .filter((id): id is string => id !== null);
+  return [...new Set(ids)];
+}
+
+/** A queue with nothing in it, for an assignment no task answered. */
+function noResults(pageSize: number): ResultPage {
+  return { data: [], page: { page: 1, pageSize, total: 0, totalPages: 0 }, refused: 0 };
+}
+
+/**
+ * The results half of {@link WorklistClient}, over `GET /bff/v0/results`.
+ *
+ * `userId` is the signed-in clinician, or null where the caller has no name -
+ * not staff, or `/bff/v0/me` not back yet. Only the assignment filter needs it,
+ * so an unnamed client still answers every other query; asked whose work a
+ * result is with no name to compare against, it answers with an empty queue
+ * rather than with everyone's, because the control says ME.
+ *
+ * The assignment path is two reads and that is deliberate. It is a filter, not
+ * a union: the task read decides which ids are asked for and the report read
+ * answers a subset of them, so a task claimed between the two can leave a row
+ * off the page but cannot duplicate one. The union case - the inbox - is one
+ * query for exactly that reason (#535).
+ */
+export function liveResults(client: ApiClient, userId: string | null): WorklistClient['results'] {
+  return {
+    list: async (query = {}) => {
+      if (query.assignedTo === undefined) {
+        return toResultPage(await client.results.list(toReportQuery(query)));
+      }
+      if (userId === null) return noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE);
+      const tasks = await client.tasks.list(toResultTaskQuery(query.assignedTo, userId));
+      const ids = reportIdsOf(tasks);
+      // Not a query worth sending: `ids` is refused empty by the route, and an
+      // absent `ids` would widen this to every result in the practice, which is
+      // the one answer a ME filter must never give.
+      if (ids.length === 0) return noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE);
+      return toResultPage(await client.results.list(toReportQuery(query, ids)));
+    },
     analytes: (reportId) =>
       client.results
         .listObservations(reportId, { pageSize: ANALYTE_PAGE_SIZE })
@@ -841,36 +931,24 @@ export function liveInbox(client: ApiClient, userId: string): WorklistClient['in
  */
 export const worklist: WorklistClient =
   API_MODE === 'live'
-    ? { ...createWorklistClient(), orders: liveOrders(api), results: liveResults(api) }
+    ? { ...createWorklistClient(), orders: liveOrders(api), results: liveResults(api, null) }
     : createWorklistClient();
 
 /**
  * The app's client, once the caller has a name.
  *
- * The inbox is the one worklist that cannot be built at module scope: it is
- * defined in terms of the signed-in clinician, and `userId` arrives from
- * `/bff/v0/me` a request later. Null is "not known yet" - or a principal that
- * is not staff at all - and yields the fixture client, which is why the hook
- * below holds the query until it is not null.
+ * Two worklists are defined in terms of the signed-in clinician and so cannot
+ * be finished at module scope: the inbox, which is that person's work, and the
+ * sign-off queue's ME/TEAM filter, which is the same question asked of the
+ * `RESULT` stream. `userId` arrives from `/bff/v0/me` a request later. Null is
+ * "not known yet" - or a principal that is not staff at all - and yields the
+ * client above, which is why the hooks below hold their queries until it is not
+ * null.
  */
 export function worklistFor(userId: string | null): WorklistClient {
   if (API_MODE !== 'live' || userId === null) return worklist;
-  return { ...worklist, inbox: liveInbox(api, userId) };
+  return { ...worklist, inbox: liveInbox(api, userId), results: liveResults(api, userId) };
 }
-
-/**
- * Whether the assignment of a result is a fact this client can read.
- *
- * False over the API, where assignment lives on `Task` and no report field or
- * query filter carries it, and true over fixtures, where `MOCK_RESULTS` states
- * it per row. A screen reads this before offering a ME/TEAM control, because a
- * filter that cannot select is worse than an absent one: it narrows nothing and
- * says it narrowed.
- *
- * A mode test rather than a literal: it is already a property of which client
- * is wired up.
- */
-export const RESULT_ASSIGNMENT_IS_KNOWN = API_MODE !== 'live';
 
 export interface WorklistHookOptions {
   /** Injectable for tests. Defaults to the app's client. */
@@ -888,14 +966,39 @@ export function useOrders(
   });
 }
 
+/**
+ * The sign-off queue, narrowed to whoever asked for it.
+ *
+ * Unfiltered it needs no name and asks immediately, which is what it did before
+ * the ME/TEAM filter could select. `assignedTo` is the one query that does:
+ * assignment is a `Task` fact and the task read filters on a user id, so until
+ * `/bff/v0/me` lands there is nothing to ask the question of. Asking anyway
+ * would return every clinician's results under a control that says ME - the
+ * one wrong answer this filter can give - so the query holds and reports
+ * `/me`'s state as its own, the way {@link useInbox} does.
+ *
+ * An injected client is used as given, name or no name: that is the demo build
+ * and the tests, where the rows say whose they are.
+ */
 export function useResults(
   query: ResultListQuery = {},
   options: WorklistHookOptions = {}
 ): AsyncState<ResultPage> {
-  const client = options.client ?? worklist;
-  return useApiQuery(queryKey('results.list', { ...query }), () => client.results.list(query), {
-    enabled: options.enabled,
-  });
+  const capabilities = useOwnCapabilities();
+  const userId = capabilities.data?.userId ?? null;
+  const client = options.client ?? worklistFor(userId);
+  const live = options.client === undefined && API_MODE === 'live';
+  const named = !live || query.assignedTo === undefined || userId !== null;
+  const state = useApiQuery(
+    queryKey('results.list', { ...query }),
+    () => client.results.list(query),
+    { enabled: (options.enabled ?? true) && named }
+  );
+
+  const empty = useMemo(() => noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE), [query.pageSize]);
+  const held = useMemo(() => heldOn(capabilities, empty), [capabilities, empty]);
+
+  return named ? state : held;
 }
 
 /**
@@ -915,6 +1018,36 @@ export function useResultAnalytes(
     () => client.results.analytes(reportId ?? ''),
     { enabled: (options.enabled ?? true) && reportId !== null }
   );
+}
+
+/**
+ * A worklist's own state while the name it is defined in terms of is in the air.
+ *
+ * A DISABLED query is not a held one. `useApiQuery` answers a disabled query
+ * with success and a null payload, and `AsyncBoundary` reads a null payload as
+ * a failure - so gating alone puts "This did not load" and an inert Try again
+ * over a screen whose prerequisite is simply still loading. The prerequisite is
+ * `/bff/v0/me`, so until it lands the hook reports THAT request's state as its
+ * own, retry included.
+ *
+ * `empty` is the answer once `/me` has landed and named nobody: a patient or a
+ * service principal, for whom the screen holds no work rather than a failure.
+ * It is a page rather than null so the surrounding statements read zero rather
+ * than a number about somebody else.
+ */
+function heldOn<T>(capabilities: AsyncState<PrincipalCapabilities>, empty: T): AsyncState<T> {
+  if (capabilities.status === 'error') {
+    return {
+      status: 'error',
+      data: null,
+      error: capabilities.error,
+      refetch: capabilities.refetch,
+    };
+  }
+  if (capabilities.status === 'loading') {
+    return { status: 'loading', data: null, error: null, refetch: capabilities.refetch };
+  }
+  return { status: 'success', data: empty, error: null, refetch: capabilities.refetch };
 }
 
 /**
@@ -948,30 +1081,7 @@ export function useInbox(
     enabled: (options.enabled ?? true) && named,
   });
 
-  /* A DISABLED query is not a held one. `useApiQuery` answers a disabled query
-     with success and a null payload, and `AsyncBoundary` reads a null payload
-     as a failure - so gating alone puts "This did not load" and an inert Try
-     again over a screen whose prerequisite is simply still in the air. The
-     inbox's prerequisite is `/bff/v0/me`, so until it lands this hook reports
-     THAT request's state as its own, retry included. */
-  const held = useMemo<AsyncState<InboxPage>>(() => {
-    if (capabilities.status === 'error') {
-      return {
-        status: 'error',
-        data: null,
-        error: capabilities.error,
-        refetch: capabilities.refetch,
-      };
-    }
-    if (capabilities.status === 'loading') {
-      return { status: 'loading', data: null, error: null, refetch: capabilities.refetch };
-    }
-    /* Named, and the name is null: a patient or a service principal, for whom
-       this screen has no work rather than a failure. The empty state is the
-       honest answer, and it is a page so the rail's own statements read zero
-       rather than a number about somebody else. */
-    return { status: 'success', data: NO_INBOX, error: null, refetch: capabilities.refetch };
-  }, [capabilities]);
+  const held = useMemo(() => heldOn(capabilities, NO_INBOX), [capabilities]);
 
   return named ? state : held;
 }

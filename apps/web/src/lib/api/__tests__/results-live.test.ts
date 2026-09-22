@@ -9,7 +9,13 @@ import {
   toResultPage,
   toResultReport,
 } from '@/lib/api';
-import type { ApiClient, DiagnosticReportDto, ListResponse, ResultObservationDto } from '@/lib/api';
+import type {
+  ApiClient,
+  DiagnosticReportDto,
+  ListResponse,
+  ResultObservationDto,
+  TaskDto,
+} from '@/lib/api';
 import { filterDiagnosticReports } from '@/lib/api/mock/client';
 import { MOCK_DIAGNOSTIC_REPORTS, MOCK_RESULT_OBSERVATIONS } from '@/lib/api/mock/records';
 
@@ -416,17 +422,54 @@ describe('toResultPage', () => {
   });
 });
 
+/**
+ * A `RESULT` task, as `GET /bff/v0/tasks` answers it.
+ *
+ * Only the four fields the join reads are meaningful here: the subject pair it
+ * follows to a report, and the id it deduplicates on.
+ */
+function task(overrides: Partial<TaskDto> = {}): TaskDto {
+  return {
+    id: 'task-1',
+    type: 'RESULT',
+    status: 'OPEN',
+    priority: 'NORMAL',
+    patientId: 'patient-1',
+    encounterId: null,
+    subjectType: 'DiagnosticReport',
+    subjectId: 'report-1',
+    title: 'Review result',
+    description: null,
+    assigneeType: 'USER',
+    assigneeUserId: 'user-1',
+    assigneeTeamKey: null,
+    dueAt: null,
+    slaState: 'OK',
+    expiresAt: null,
+    sourceEventId: null,
+    completedAt: null,
+    completedById: null,
+    outcome: null,
+    createdAt: '2026-02-01T09:00:00.000Z',
+    updatedAt: '2026-02-01T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('liveResults', () => {
   function stub(
     rows: readonly DiagnosticReportDto[],
-    observations: readonly ResultObservationDto[] = []
+    observations: readonly ResultObservationDto[] = [],
+    tasks: readonly TaskDto[] = []
   ): {
     client: ApiClient;
     queries: unknown[];
+    taskQueries: unknown[];
     observationIds: string[];
     observationQueries: unknown[];
   } {
     const queries: unknown[] = [];
+    const taskQueries: unknown[] = [];
     const observationIds: string[] = [];
     const observationQueries: unknown[] = [];
     const client = {
@@ -447,22 +490,128 @@ describe('liveResults', () => {
           });
         },
       },
+      tasks: {
+        list: (query?: unknown) => {
+          taskQueries.push(query);
+          return Promise.resolve({
+            data: [...tasks],
+            page: { page: 1, pageSize: 100, total: tasks.length, totalPages: 1 },
+          });
+        },
+      },
     } as unknown as ApiClient;
-    return { client, queries, observationIds, observationQueries };
+    return { client, queries, taskQueries, observationIds, observationQueries };
   }
 
-  it('sends the translated query, with the assignment filter dropped', async () => {
-    const { client, queries } = stub([]);
+  it('sends the translated query, and asks no task when assignment is not filtered', async () => {
+    const { client, queries, taskQueries } = stub([]);
 
-    await liveResults(client).list({ assignedTo: 'ME', flag: 'CRITICAL', status: 'UNREVIEWED' });
+    await liveResults(client, 'user-1').list({ flag: 'CRITICAL', status: 'UNREVIEWED' });
 
     expect(queries).toEqual([{ abnormalFlag: 'CRITICAL', reviewed: false }]);
+    expect(taskQueries).toEqual([]);
+  });
+
+  /* The whole join in one assertion: the question goes to the task collection
+     as the caller's own open RESULT work, and the reports read is narrowed to
+     what it answered - with the screen's other filters still on it, since a
+     result being mine does not make it critical. */
+  it('asks the task collection whose work it is and names the reports it answered', async () => {
+    const { client, queries, taskQueries } = stub(
+      [],
+      [],
+      [task({ subjectId: 'report-7' }), task({ id: 'task-2', subjectId: 'report-9' })]
+    );
+
+    await liveResults(client, 'user-1').list({ assignedTo: 'ME', flag: 'CRITICAL' });
+
+    expect(taskQueries).toEqual([
+      {
+        type: 'RESULT',
+        inboxFor: 'user-1',
+        assigneeType: 'USER',
+        open: true,
+        pageSize: 100,
+        sort: 'dueAt',
+        order: 'asc',
+      },
+    ]);
+    expect(queries).toEqual([{ ids: ['report-7', 'report-9'], abnormalFlag: 'CRITICAL' }]);
+  });
+
+  /* TEAM is the unclaimed pool, which is `assigneeType` and not a second user
+     id: `inboxFor` stays the caller either way, and only the narrowing moves.
+     An arm that read the wrong one would send a query that still looks right. */
+  it('asks for the pool rather than the caller when the filter is TEAM', async () => {
+    const { client, taskQueries } = stub([], [], [task()]);
+
+    await liveResults(client, 'user-1').list({ assignedTo: 'TEAM' });
+
+    expect(taskQueries).toEqual([
+      expect.objectContaining({ inboxFor: 'user-1', assigneeType: 'TEAM' }),
+    ]);
+  });
+
+  /* A task about something else contributing its subject id would ask the
+     report route for a row that is not a report - answered with a shorter page
+     rather than an error, so nothing downstream would say it happened. */
+  it('follows only the tasks whose subject is a report', async () => {
+    const { client, queries } = stub(
+      [],
+      [],
+      [
+        task({ subjectType: 'Encounter', subjectId: 'encounter-3' }),
+        task({ id: 'task-2', subjectType: null, subjectId: null }),
+        task({ id: 'task-3', subjectId: 'report-7' }),
+      ]
+    );
+
+    await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
+
+    expect(queries).toEqual([{ ids: ['report-7'] }]);
+  });
+
+  it('names a report once when two tasks point at it', async () => {
+    const { client, queries } = stub(
+      [],
+      [],
+      [task({ subjectId: 'report-7' }), task({ id: 'task-2', subjectId: 'report-7' })]
+    );
+
+    await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
+
+    expect(queries).toEqual([{ ids: ['report-7'] }]);
+  });
+
+  /* The one answer a ME filter must never give. An absent `ids` is not an
+     empty one: it would widen the read to every result in the practice, under
+     a control that says these are mine. */
+  it('answers an empty queue rather than an unnarrowed read when no task matched', async () => {
+    const { client, queries } = stub([dto({ id: 'lab' })], [], []);
+
+    const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME', pageSize: 40 });
+
+    expect(queries).toEqual([]);
+    expect(page.data).toEqual([]);
+    expect(page.page).toEqual({ page: 1, pageSize: 40, total: 0, totalPages: 0 });
+  });
+
+  /* A caller with no name is a patient or a service principal, not a clinician
+     whose queue is everyone's. */
+  it('answers an empty queue, and asks nothing, when the caller has no name', async () => {
+    const { client, queries, taskQueries } = stub([dto({ id: 'lab' })], [], [task()]);
+
+    const page = await liveResults(client, null).list({ assignedTo: 'ME' });
+
+    expect(taskQueries).toEqual([]);
+    expect(queries).toEqual([]);
+    expect(page.data).toEqual([]);
   });
 
   it('answers a mapped page whose refused count survives the mapping', async () => {
     const { client } = stub([dto({ id: 'referral', category: 'REFERRAL' }), dto({ id: 'lab' })]);
 
-    const page = await liveResults(client).list();
+    const page = await liveResults(client, 'user-1').list();
 
     expect(page.data.map((report) => report.id)).toEqual(['lab']);
     expect(page.page.total).toBe(25);
@@ -472,7 +621,7 @@ describe('liveResults', () => {
   it('fetches the analytes of the report it was asked for, and maps them', async () => {
     const { client, observationIds } = stub([], [...MOCK_RESULT_OBSERVATIONS]);
 
-    const analytes = await liveResults(client).analytes('report-1');
+    const analytes = await liveResults(client, 'user-1').analytes('report-1');
 
     expect(observationIds).toEqual(['report-1']);
     expect(analytes.data.map((analyte) => analyte.label)).toEqual(
@@ -486,7 +635,7 @@ describe('liveResults', () => {
   it('asks for the widest page the observations route will serve', async () => {
     const { client, observationQueries } = stub([], [...MOCK_RESULT_OBSERVATIONS]);
 
-    await liveResults(client).analytes('report-1');
+    await liveResults(client, 'user-1').analytes('report-1');
 
     expect(observationQueries).toEqual([{ pageSize: 100 }]);
   });
@@ -496,7 +645,7 @@ describe('liveResults', () => {
   it('carries the page the route reported rather than counting the rows it got', async () => {
     const { client } = stub([], [...MOCK_RESULT_OBSERVATIONS]);
 
-    const analytes = await liveResults(client).analytes('report-1');
+    const analytes = await liveResults(client, 'user-1').analytes('report-1');
 
     expect(analytes.page.total).toBe(MOCK_RESULT_OBSERVATIONS.length);
     expect(analytes.page.pageSize).toBe(100);

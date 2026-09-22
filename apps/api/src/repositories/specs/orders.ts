@@ -396,6 +396,17 @@ export const specimenSpec: CollectionSpec<
 /* ------------------------------------------------------------------- reports */
 
 export interface DiagnosticReportListQuery extends BaseQuery {
+  /**
+   * Several logical ids at once.
+   *
+   * The sign-off queue's ME/TEAM filter sends this. Assignment is a `Task`
+   * fact over the `RESULT` stream and not a column here, and `Task.subjectId`
+   * carries no relation to traverse, so the caller asks the task collection
+   * whose work it is and names the answer (#535). An empty array is a filter
+   * that matches nothing, not an absent one - the same reading the `ids` filter
+   * on `PatientListQuery` gives it.
+   */
+  ids?: readonly string[];
   patientId?: string;
   encounterId?: string;
   serviceRequestId?: string;
@@ -491,6 +502,7 @@ export const diagnosticReportSpec: CollectionSpec<
   },
 
   matches(row: DiagnosticReportRow, query: DiagnosticReportListQuery): boolean {
+    if (query.ids !== undefined && !query.ids.includes(row.id)) return false;
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
     if (query.serviceRequestId !== undefined && row.serviceRequestId !== query.serviceRequestId) {
@@ -506,6 +518,7 @@ export const diagnosticReportSpec: CollectionSpec<
   where(query: DiagnosticReportListQuery) {
     const issuedAt = windowFilter(query.from, query.to);
     return {
+      ...(query.ids === undefined ? {} : { id: { in: [...query.ids] } }),
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.serviceRequestId === undefined ? {} : { serviceRequestId: query.serviceRequestId }),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,10 +18,11 @@ import {
   SCHEMES,
 } from './advisory-ids.mjs';
 // The tree reader moved to its own module when `exception-expiry.mjs` needed
-// it. Its tests stayed here, under the heading they were written under: they
-// need this file's `gitRepo` fixture, and two of them assert what `scan` does
-// with what the reader returns, which is the pair rather than either half.
+// it. Its tests stayed here, under the heading they were written under,
+// because two of them assert what `scan` does with what the reader returns,
+// which is the pair rather than either half.
 import { parseBatch, parseIndexRecords, readBlobs, trackedFiles } from './git-blobs.mjs';
+import { gitRepo } from './git-repo-fixture.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -39,29 +40,6 @@ function stubFetch(...outcomes) {
   };
   impl.calls = calls;
   return impl;
-}
-
-/**
- * A real git repository, because `scan` reads blobs rather than the working
- * tree. Building one is not ceremony: it is what makes these tests exercise the
- * same path production does, tracked-ness included.
- */
-function gitRepo(files, links = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), 'advisory-ids-'));
-  const git = (...args) => {
-    const done = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
-    assert.equal(done.status, 0, `git ${args.join(' ')}: ${done.stderr}`);
-  };
-  git('init', '-q');
-  for (const [name, body] of Object.entries(files)) {
-    mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
-    writeFileSync(path.join(root, name), body);
-  }
-  for (const [name, target] of Object.entries(links)) {
-    symlinkSync(target, path.join(root, name));
-  }
-  git('add', '-A');
-  return root;
 }
 
 // ---------------------------------------------------------------- parsing

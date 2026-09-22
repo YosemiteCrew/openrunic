@@ -119,10 +119,15 @@ export function filterPatients(
   rows: readonly Patient[],
   query: PatientListQuery = {}
 ): readonly Patient[] {
-  const { q, mrn, family, given, birthDate, active } = query;
+  const { ids, q, mrn, family, given, birthDate, active } = query;
   const needle = q?.trim().toLowerCase();
+  // An empty set matches nothing, the same as over the API: it is a filter the
+  // caller asked for, not one it left out. `undefined` is the absent one, which
+  // is why this is a Set-or-undefined rather than an always-present Set.
+  const wanted = ids === undefined ? undefined : new Set(ids);
 
   const matched = rows.filter((patient) => {
+    if (wanted && !wanted.has(patient.id)) return false;
     if (needle) {
       const searchable: string = haystack(patient);
       if (!searchable.includes(needle)) return false;

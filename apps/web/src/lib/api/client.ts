@@ -97,7 +97,10 @@ export function toSearchParams(query: object | undefined): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null) continue;
-    params.set(key, String(value));
+    // A set parameter is one comma-separated value, which is what the route
+    // schemas split. Stated rather than left to `String(array)` doing it by
+    // accident, because the accident is silent the day one stops being an array.
+    params.set(key, Array.isArray(value) ? value.join(',') : String(value));
   }
   const serialized = params.toString();
   return serialized ? `?${serialized}` : '';

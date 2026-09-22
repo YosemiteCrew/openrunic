@@ -18,8 +18,15 @@ import {
 } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
-import { MOCK_NOW, mockPatientById, mockProviderName, ORDER_STATUSES, useOrders } from '@/lib/api';
-import type { Order, OrderPage, OrderStatus, WorklistClient } from '@/lib/api';
+import { MOCK_NOW, ORDER_STATUSES, useOrders, usePatientNames, useProviderNames } from '@/lib/api';
+import type {
+  Order,
+  OrderPage,
+  OrderStatus,
+  PatientLookup,
+  ProviderLookup,
+  WorklistClient,
+} from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -119,6 +126,12 @@ export function OrdersScreen({
   const t = useTranslator();
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const orders = useOrders({ pageSize: PAGE_SIZE, status: status || undefined }, { client });
+
+  /* The ledger's two name columns, one read each. Off the page the route
+     answered rather than off the rendered rows, which is the same set and is
+     available before the boundary resolves. */
+  const patientNamed = usePatientNames((orders.data?.data ?? []).map((order) => order.patientId));
+  const providerNamed = useProviderNames();
 
   const statusFilters = useMemo<SelectOption[]>(
     () => [
@@ -224,7 +237,7 @@ export function OrdersScreen({
               <>
                 <Table
                   columns={columns}
-                  rows={page.data.map((order) => toRow(t, order, now))}
+                  rows={page.data.map((order) => toRow(t, order, now, patientNamed, providerNamed))}
                   caption={t('orders.list.caption')}
                 />
                 <p className="or-caption">
@@ -264,8 +277,14 @@ function searchWords(words: string): string[] {
     .filter((word) => word !== '');
 }
 
-function toRow(t: Translator, order: Order, now: string): Record<string, ReactNode> {
-  const patient = mockPatientById(order.patientId);
+function toRow(
+  t: Translator,
+  order: Order,
+  now: string,
+  patientNamed: PatientLookup,
+  providerNamed: ProviderLookup
+): Record<string, ReactNode> {
+  const patient = patientNamed(order.patientId);
   return {
     id: order.id,
     order: (
@@ -286,7 +305,10 @@ function toRow(t: Translator, order: Order, now: string): Record<string, ReactNo
       t('orders.list.patientNotRecorded')
     ),
     placed: formatDateTime(t, order.placedAt, 'dense'),
-    provider: mockProviderName(order.providerId),
+    /* A clinician the directory cannot name is named as absent, in the
+       reader's own language. The fixture lookup this replaced answered with an
+       English word for it on every screen, translated or not. */
+    provider: providerNamed(order.providerId) ?? t('orders.list.providerNotRecorded'),
     destination: order.destination ?? t('orders.list.destinationNotRecorded'),
     status: (
       <span className="or-cluster-tight">

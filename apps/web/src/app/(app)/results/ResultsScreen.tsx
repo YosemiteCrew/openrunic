@@ -14,8 +14,9 @@ import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
 import {
   isBulkSignable,
   MOCK_NOW,
-  mockPatientById,
   RESULT_ASSIGNMENT_IS_KNOWN,
+  usePatientNames,
+  useProviderNames,
   useResultAnalytes,
   useResults,
 } from '@/lib/api';
@@ -291,6 +292,12 @@ export function ResultsScreen({
 
   const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
 
+  /* The queue and the reading pane name the same people, so both read one
+     directory rather than one each. Keyed on the page the route answered, not
+     on the selection: opening a row is not a new set of patients. */
+  const patientNamed = usePatientNames(reports.map((report) => report.patientId));
+  const providerNamed = useProviderNames();
+
   /* The analytes of the one report being read. Fetched here rather than with
      the list, because one call per row is N+1 on a queue built to be scanned
      and the values of a report nobody opened are never looked at. */
@@ -342,7 +349,7 @@ export function ResultsScreen({
     setBulkOpen,
   });
 
-  const selectedPatient = selected ? mockPatientById(selected.patientId) : undefined;
+  const selectedPatient = selected ? patientNamed(selected.patientId) : undefined;
   const selectedPatientName = selectedPatient
     ? formatName(selectedPatient.name, 'full')
     : t('results.thisPatient');
@@ -417,6 +424,7 @@ export function ResultsScreen({
                   const report = reports.find((candidate) => candidate.id === id) ?? null;
                   requestSign(report, false);
                 }}
+                patientNamed={patientNamed}
               />
               <QueueStatement page={page} assignmentKnown={assignmentKnown} />
             </Card>
@@ -429,6 +437,8 @@ export function ResultsScreen({
                 onSign={() => requestSign(reading, false)}
                 onSignWithNote={() => requestSign(reading, true)}
                 unshownAnalytes={unshownAnalytes}
+                patientNamed={patientNamed}
+                providerNamed={providerNamed}
               />
             ) : null}
           </div>

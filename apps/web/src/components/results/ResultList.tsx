@@ -6,8 +6,7 @@ import { Badge, Button } from '@openrunic/ui';
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 
-import { mockPatientById } from '@/lib/api';
-import type { ResultAnalyte, ResultReport } from '@/lib/api';
+import type { PatientLookup, ResultAnalyte, ResultReport } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName, formatVital, vitalState } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -78,6 +77,8 @@ export interface ResultListProps {
   onSign: (id: string) => void;
   /** Ids signed in this session, so the row can say so without a refetch. */
   signedIds: string[];
+  /** Names a row's patient. Resolved by the screen, one read for the page. */
+  patientNamed: PatientLookup;
 }
 
 export function ResultList({
@@ -86,6 +87,7 @@ export function ResultList({
   onSelect,
   onSign,
   signedIds,
+  patientNamed,
 }: Readonly<ResultListProps>): ReactElement {
   const t = useTranslator();
   const listRef = useRef<HTMLUListElement>(null);
@@ -125,7 +127,7 @@ export function ResultList({
   return (
     <ul ref={listRef} className="or-results__list" aria-label={t('results.queue.title')}>
       {reports.map((report) => {
-        const patient = mockPatientById(report.patientId);
+        const patient = patientNamed(report.patientId);
         const isSigned = report.status === 'SIGNED' || signed.has(report.id);
         return (
           <li key={report.id} className="or-result-row" data-selected={report.id === selectedId}>

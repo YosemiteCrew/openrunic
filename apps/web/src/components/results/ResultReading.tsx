@@ -7,8 +7,7 @@ import type { BadgeTone, TableColumn } from '@openrunic/ui';
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-import { mockPatientById, mockProviderName } from '@/lib/api';
-import type { ResultAnalyte, ResultReport } from '@/lib/api';
+import type { PatientLookup, ProviderLookup, ResultAnalyte, ResultReport } from '@/lib/api';
 import { formatDate, formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
 import { counted } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
@@ -60,6 +59,10 @@ export interface ResultReadingProps {
    * window, one level down.
    */
   unshownAnalytes?: number;
+  /** Names the report's patient. Resolved by the screen, one read for the page. */
+  patientNamed: PatientLookup;
+  /** Names the ordering clinician, from the staff directory. */
+  providerNamed: ProviderLookup;
 }
 
 /** What the laboratory reported and this page of the report does not hold. */
@@ -84,9 +87,11 @@ export function ResultReading({
   onSignWithNote,
   now,
   unshownAnalytes = 0,
+  patientNamed,
+  providerNamed,
 }: Readonly<ResultReadingProps>): ReactElement {
   const t = useTranslator();
-  const patient = mockPatientById(report.patientId);
+  const patient = patientNamed(report.patientId);
   const isSigned = report.status === 'SIGNED' || signed !== null;
   const columns = useMemo<TableColumn[]>(
     () => COLUMNS.map(({ headerKey, ...column }) => ({ ...column, header: t(headerKey) })),
@@ -110,10 +115,10 @@ export function ResultReading({
                 {signed
                   ? t('results.reading.signedAtBy', {
                       at: formatDateTime(t, signed.at, 'dense'),
-                      clinician: clinicianName(t, report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, report.orderedBy),
                     })
                   : t('results.reading.signedBy', {
-                      clinician: clinicianName(t, report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, report.orderedBy),
                     })}
               </span>
             </>
@@ -168,7 +173,7 @@ export function ResultReading({
         </div>
         <p className="or-small or-muted">
           {t('results.reading.orderedBy', {
-            clinician: clinicianName(t, report.orderedBy),
+            clinician: clinicianName(t, providerNamed, report.orderedBy),
             today: formatDate(t, now),
           })}
         </p>
@@ -205,12 +210,17 @@ export function ResultReading({
 /**
  * The ordering clinician, or that nobody is recorded.
  *
- * Null wherever the report has no service request behind it, which is every
- * live row until that join lands (#535), so the absence is named rather than
- * passed to a lookup that would answer with the id it was given.
+ * Two absences, one word. The report may carry no service request behind it at
+ * all - every live row until that join lands (#535) - and the directory read
+ * may not name the id it does carry. Neither is a name, and inventing one from
+ * the id would put a stranger on a signed result.
  */
-function clinicianName(t: Translator, providerId: string | null): string {
-  return providerId === null ? t('results.notRecorded') : mockProviderName(providerId);
+function clinicianName(
+  t: Translator,
+  providerNamed: ProviderLookup,
+  providerId: string | null
+): string {
+  return providerNamed(providerId) ?? t('results.notRecorded');
 }
 
 function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {

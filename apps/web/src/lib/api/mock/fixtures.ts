@@ -148,11 +148,6 @@ export const MOCK_PROVIDERS = [
   { id: LINDQVIST.id, name: 'Dr. Lindqvist', role: 'Paediatrics' },
 ] as const;
 
-/** Reads a provider name for a fixture id, so a fixture screen is never a UUID. */
-export function mockProviderName(providerId: string): string {
-  return MOCK_PROVIDERS.find((provider) => provider.id === providerId)?.name ?? 'Unassigned';
-}
-
 interface PatientSeed {
   id: string;
   mrn: string;
@@ -621,11 +616,6 @@ export function mockPatientIdByMrn(mrn: string): string {
   const patient = MOCK_PATIENTS.find((candidate) => candidate.mrn === mrn);
   if (patient === undefined) throw new Error(`no fixture patient carries MRN ${mrn}`);
   return patient.id;
-}
-
-export function mockPatientById(patientId: string | null): Patient | undefined {
-  if (!patientId) return undefined;
-  return MOCK_PATIENTS.find((patient) => patient.id === patientId);
 }
 
 /* -------------------------------------------------------------------------- */

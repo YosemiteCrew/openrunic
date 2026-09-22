@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { InboxScreen } from '@/app/(app)/inbox/InboxScreen';
 import { ApiError } from '@/lib/api/client';
-import { MOCK_INBOX_ITEMS, MOCK_NOW } from '@/lib/api/mock/fixtures';
+import { MOCK_INBOX_ITEMS, MOCK_NOW, MOCK_PATIENTS } from '@/lib/api/mock/fixtures';
 import { createWorklistClient } from '@/lib/api/worklist';
 import type { WorklistClient } from '@/lib/api/worklist';
 
@@ -221,22 +221,35 @@ describe('InboxScreen, undo', () => {
     expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
   });
 
-  /* Three states, not two. A live task names a patient by uuid, and
-     `mockPatientById` answers nothing for one - so the row used to fall into
-     the no-patient branch and announce a patient's work as the practice's.
-     Driven through the screen rather than the list, because the branch is a
-     property of the row a reader scans. */
-  it('separates a task nobody owns from one whose patient it cannot name', async () => {
+  /* Three states, not two, and all three in one render because the point is
+     that they are told apart. A task with no patient is the practice's; a task
+     whose id the name read could not answer for is somebody's and unnamed; a
+     task whose id it could is named. Before #559 the third was impossible in a
+     live build - every row resolved through the fixtures - so the second and
+     third collapsed into the first and announced a patient's work as the
+     practice's. Driven through the screen rather than the list, because the
+     branch is a property of the row a reader scans. */
+  it('separates a task nobody owns, one it cannot name, and one it can', async () => {
     const item = at([...MOCK_INBOX_ITEMS]);
+    const patient = MOCK_PATIENTS[0];
+    if (!patient) throw new Error('The fixtures need a patient.');
     const client = createWorklistClient({
       inbox: [
         { ...item, id: 'practice', patientId: null },
         { ...item, id: 'unnamed', patientId: '0192f1a0-0000-7000-8000-0000000000ff' },
+        { ...item, id: 'named', patientId: patient.id },
       ],
     });
     render(<InboxScreen client={client} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Inbox items' });
 
+    /* The awaited assertion comes FIRST, and the other two are then exact. The
+       name is a second read over the ids this page came back with, so until it
+       settles the named row reads unnamed as well - and `getByText` run before
+       it lands finds "Patient record" twice. Asserting one of each AFTER the
+       read is what says the three states were actually told apart, rather than
+       two of them agreeing for a moment. */
+    await within(list()).findByText(`${patient.name.family}, ${patient.name.given}`);
     expect(within(list()).getByText('Practice-wide')).toBeInTheDocument();
     expect(within(list()).getByText('Patient record')).toBeInTheDocument();
   });

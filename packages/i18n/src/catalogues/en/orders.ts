@@ -58,6 +58,7 @@ export const orders: Messages = {
   'orders.list.column.actions': 'Actions',
 
   'orders.list.noDiagnosis': 'No diagnosis linked',
+  'orders.list.destinationNotRecorded': 'No destination yet',
   'orders.list.patientNotRecorded': 'Not recorded',
   'orders.list.openResult': 'Open result for {order}',
   'orders.list.retry': 'Retry {order}',

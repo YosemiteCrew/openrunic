@@ -31,6 +31,7 @@ import type {
   PaymentDto,
   RemittanceDto,
   ServiceRequestDto,
+  ServiceRequestListQuery,
   ServiceRequestStatus,
   StatementDto,
   TaskDto,
@@ -138,6 +139,86 @@ export function filterPatients(
     if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
     return a.name.family.localeCompare(b.name.family, 'en') * direction;
   });
+}
+
+/**
+ * The mock side of `GET /bff/v0/orders`, filtered and sorted the way
+ * `serviceRequestListQuerySchema` says the route is.
+ *
+ * The two halves of the predicate are separate functions because they are two
+ * different questions - which orders, and over what window - and the window has
+ * a semantic worth stating once where it is implemented.
+ */
+export function filterServiceRequests(
+  rows: readonly ServiceRequestDto[],
+  query: ServiceRequestListQuery = {}
+): readonly ServiceRequestDto[] {
+  const matched = rows.filter(
+    (order) => matchesServiceRequest(order, query) && withinRequestedWindow(order, query)
+  );
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort(byServiceRequest(query.sort ?? 'requestedAt', direction));
+}
+
+/** The exact-match half: every field the route narrows on by equality. */
+function matchesServiceRequest(
+  order: ServiceRequestDto,
+  { patientId, encounterId, status, category, priority, orderedById }: ServiceRequestListQuery
+): boolean {
+  if (patientId && order.patientId !== patientId) return false;
+  if (encounterId && order.encounterId !== encounterId) return false;
+  if (status && order.status !== status) return false;
+  if (category && order.category !== category) return false;
+  if (priority && order.priority !== priority) return false;
+  if (orderedById && order.orderedById !== orderedById) return false;
+  return true;
+}
+
+/**
+ * The window half, over `requestedAt`.
+ *
+ * Half-open - `from` inclusive, `to` exclusive - because that is what the
+ * published list description promises, and a mock that closes the far end
+ * double-counts the boundary row against every caller that pages a day at a
+ * time.
+ */
+function withinRequestedWindow(
+  order: ServiceRequestDto,
+  { from, to }: ServiceRequestListQuery
+): boolean {
+  if (from && order.requestedAt < from) return false;
+  if (to && order.requestedAt >= to) return false;
+  return true;
+}
+
+/**
+ * The comparator the orders list is sorted by.
+ *
+ * `scheduledFor` is the only key that can be absent, and the route sorts an
+ * absent one last ascending and FIRST descending: the spec reads it through
+ * `comparable()`, which answers `+Infinity`, and the memory port multiplies the
+ * whole comparison by the direction. Postgres agrees - `orderBy` names no
+ * `nulls` option, and its defaults are NULLS LAST on asc, NULLS FIRST on desc.
+ * So the null branch carries the direction like every other row.
+ */
+function byServiceRequest(
+  sort: NonNullable<ServiceRequestListQuery['sort']>,
+  direction: number
+): (a: ServiceRequestDto, b: ServiceRequestDto) => number {
+  if (sort === 'createdAt') {
+    return (a, b) => a.createdAt.localeCompare(b.createdAt) * direction;
+  }
+  if (sort === 'requestedAt') {
+    return (a, b) => a.requestedAt.localeCompare(b.requestedAt) * direction;
+  }
+  return (a, b) => {
+    if (a.scheduledFor === null || b.scheduledFor === null) {
+      const byAbsence = (a.scheduledFor === null ? 1 : 0) - (b.scheduledFor === null ? 1 : 0);
+      return byAbsence * direction;
+    }
+    return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
+  };
 }
 
 export function filterAppointments(
@@ -985,6 +1066,10 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     orders: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterServiceRequests(orders.all(), query), query.page, query.pageSize)
+        ),
       sign: (id) => moveOrder(id, 'SIGNED'),
       transmit: (id) => moveOrder(id, 'TRANSMITTED'),
       cancel: (id) => moveOrder(id, 'CANCELLED'),

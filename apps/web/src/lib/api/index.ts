@@ -16,6 +16,7 @@ export {
   filterFacilities,
   filterNotes,
   filterPatients,
+  filterServiceRequests,
 } from './mock/client';
 export type { MockClientOptions } from './mock/client';
 export {
@@ -173,6 +174,7 @@ export {
   RESULT_FLAGS,
   RESULT_STATUSES,
   slaState,
+  toOrder,
   useInbox,
   useOrders,
   useResults,

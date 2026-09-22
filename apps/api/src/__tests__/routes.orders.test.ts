@@ -541,6 +541,33 @@ describe('GET /bff/v0/orders', () => {
     expect(await ids('sort=scheduledFor')).toEqual([ORDER_A, ORDER_B]);
   });
 
+  /* `scheduledFor` is the only sort key that can be absent, and absence is not
+     a direction-free rule: the spec reads the column through `comparable()`,
+     which answers `+Infinity`, and the memory port multiplies the comparison by
+     the direction. Postgres lands in the same place - the spec's `orderBy`
+     names no `nulls` option, so NULLS LAST ascending, NULLS FIRST descending.
+     The dated row is the higher id so neither direction can be produced by the
+     id tie-break alone. */
+  it('sorts an unscheduled order last ascending and first descending', async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT);
+    seed(
+      dataset,
+      'ServiceRequest',
+      makeOrderRow({ scheduledFor: null }),
+      makeOrderRow({ id: ORDER_B, scheduledFor: new Date('2026-08-14T09:00:00.000Z') })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (
+        await body<ListResponse<ServiceRequestDto>>(
+          await call(app, 'get', `/bff/v0/orders?${query}`)
+        )
+      ).data.map((row) => row.id);
+
+    expect(await ids('sort=scheduledFor')).toEqual([ORDER_B, ORDER_A]);
+    expect(await ids('sort=scheduledFor&order=desc')).toEqual([ORDER_A, ORDER_B]);
+  });
+
   it('400s a filter name nobody declared', async () => {
     const { app } = createTestApp();
     const res = await call(app, 'get', '/bff/v0/orders?statuss=SIGNED');

@@ -305,7 +305,7 @@ function byDiagnosticReport(
  * package has no import path into `apps/api`, and the openapi contract test is
  * what holds the two copies together.
  */
-const OPEN_TASK_STATUSES: readonly TaskWorkStatus[] = ['OPEN', 'IN_PROGRESS', 'ON_HOLD'];
+const OPEN_TASK_STATUSES: ReadonlySet<TaskWorkStatus> = new Set(['OPEN', 'IN_PROGRESS', 'ON_HOLD']);
 
 /**
  * The mock side of `GET /bff/v0/tasks`, filtered and sorted the way
@@ -337,7 +337,7 @@ function matchesTask(
   if (priority && task.priority !== priority) return false;
   if (patientId && task.patientId !== patientId) return false;
   if (slaState && task.slaState !== slaState) return false;
-  if (open !== undefined && open !== OPEN_TASK_STATUSES.includes(task.status)) return false;
+  if (open !== undefined && open !== OPEN_TASK_STATUSES.has(task.status)) return false;
   return true;
 }
 

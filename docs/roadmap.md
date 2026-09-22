@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Everything below is counted from this repository at version **0.2.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
+Everything below is counted from this repository at version **0.3.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
 
 **45 available now. 5 next. 3 later.** 31 FHIR R4 resource types served at the boundary. 2 languages.
 
@@ -131,7 +131,7 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Workspace
 
-27 workspaces, all at 0.2.0.
+27 workspaces, all at 0.3.0.
 
 **apps/** `api`, `@openrunic/e2e`, `portal`, `web`.
 

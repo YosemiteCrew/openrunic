@@ -186,6 +186,10 @@ describe('every hand-registered sub-resource route is accounted for', () => {
     { route: 'POST /bff/v0/forms/submissions/:id/complete', parent: 'formSubmissions' },
     { route: 'POST /bff/v0/forms/submissions/:id/sign', parent: 'formSubmissions' },
     { route: 'POST /bff/v0/medications/prescriptions/:id/cancel', parent: 'prescriptions' },
+    {
+      route: 'GET /bff/v0/medications/prescriptions/:id/refills-remaining',
+      parent: 'prescriptions',
+    },
     { route: 'POST /bff/v0/medications/prescriptions/:id/sign', parent: 'prescriptions' },
     { route: 'POST /bff/v0/medications/prescriptions/:id/transmit', parent: 'prescriptions' },
     { route: 'POST /bff/v0/messages/:id/read', parent: 'messages' },
@@ -394,6 +398,7 @@ describe('every hand-registered addressed route is accounted for', () => {
   const INVENTORY: readonly AddressedRoute[] = [
     { route: 'GET /bff/v0/appointments/:id', parent: 'appointments' },
     { route: 'GET /bff/v0/audit/:id', parent: undefined },
+    { route: 'GET /bff/v0/medications/prescription-fills/:id', parent: 'prescriptionFills' },
     { route: 'GET /bff/v0/patients/:id', parent: 'patients' },
     { route: 'GET /bff/v0/referrals/:id', parent: 'referrals' },
     { route: 'GET /bff/v0/telehealth/:id', parent: 'telehealthVisits' },
@@ -417,6 +422,7 @@ describe('every hand-registered addressed route is accounted for', () => {
    */
   const CHART_BEARING: readonly string[] = [
     'GET /bff/v0/appointments/:id',
+    'GET /bff/v0/medications/prescription-fills/:id',
     'GET /bff/v0/referrals/:id',
     'PATCH /bff/v0/appointments/:id',
   ];
@@ -587,6 +593,29 @@ describe('a BFF clinical read, driven through the app', () => {
     });
   }
 
+  const FILL = testId(70805);
+
+  function seedStrangerFill(
+    dataset: ReturnType<typeof createTestApp>['dataset'],
+    facility: string
+  ): void {
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ id: STRANGER, mrn: 'OR-770805', primaryFacilityId: facility })
+    );
+    seed(dataset, 'PrescriptionFill', {
+      id: FILL,
+      tenantId: DEMO_TENANT_A,
+      patientId: STRANGER,
+      prescriptionId: testId(70807),
+      stockPostingId: testId(70808),
+      filledOn: FIXED_NOW,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+  }
+
   it('refuses a read of a chart nothing connects the reader to', async () => {
     const { app, dataset } = createTestApp();
     seedStrangerProblem(dataset, DEMO_FACILITY_A);
@@ -649,6 +678,76 @@ describe('a BFF clinical read, driven through the app', () => {
     seedStrangerProblem(dataset, DEMO_FACILITY_A);
     const res = await app.request(`/bff/v0/problems`, { headers: bearer(TOKENS.clinicianA) });
     expect(res.status).toBe(404);
+  });
+
+  it('refuses a fill read of a chart nothing connects the reader to', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    const res = await app.request(`/bff/v0/medications/prescription-fills/${FILL}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    // 404, not 403: a 403 would confirm the fill exists to a reader who may not see it.
+    expect(res.status).toBe(404);
+  });
+
+  it('answers a fill read once a relationship exists', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    seedCareRelationship(dataset, {
+      patientId: STRANGER,
+      providerId: '01890000-0000-7000-8000-000000000101',
+      as: 'appointment',
+      id: testId(70809),
+    });
+    const res = await app.request(`/bff/v0/medications/prescription-fills/${FILL}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: FILL, patientId: STRANGER });
+  });
+
+  it('404s a fill that is not there', async () => {
+    const { app } = createTestApp();
+    const res = await app.request(`/bff/v0/medications/prescription-fills/${testId(70810)}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a fill list that names a chart the reader is not on', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    const res = await app.request(`/bff/v0/medications/prescription-fills?patientId=${STRANGER}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a broad fill list that spans a chart the reader is not on', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    const res = await app.request('/bff/v0/medications/prescription-fills', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('answers the fill list once a relationship exists', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    seedCareRelationship(dataset, {
+      patientId: STRANGER,
+      providerId: '01890000-0000-7000-8000-000000000101',
+      as: 'appointment',
+      id: testId(70806),
+    });
+    const res = await app.request('/bff/v0/medications/prescription-fills', {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { data: readonly unknown[] }).data).toHaveLength(1);
   });
 
   it('does not audit the relationship check as reads by the reader', async () => {

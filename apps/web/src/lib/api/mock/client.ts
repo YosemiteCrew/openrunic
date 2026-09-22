@@ -857,6 +857,25 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
         }),
     },
 
+    prescriptions: {
+      getRefillsRemaining: (id) =>
+        answer(() => {
+          // Fixed figures, because this mock keeps no fill store - but the
+          // arithmetic is the API's own, so a screen built against the mock sees
+          // the number the server would send. `authorisedRefills` is the repeats
+          // allowed in addition to the original dispense, so the first fill
+          // spends no refill and only the ones after it do.
+          const authorisedRefills = 5;
+          const fillsRecorded = 2;
+          return {
+            prescriptionId: id,
+            authorisedRefills,
+            fillsRecorded,
+            refillsRemaining: Math.max(0, authorisedRefills - Math.max(0, fillsRecorded - 1)),
+          };
+        }),
+    },
+
     encounters: {
       list: (query = {}) =>
         answer(() =>

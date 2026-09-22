@@ -16,6 +16,7 @@ import type {
   PatientCreateBody,
   PatientUpdateBody,
   PaymentDto,
+  PrescriptionRefillsRemainingDto,
   PrincipalCapabilities,
   ProblemDocument,
   RemittanceParseResult,
@@ -233,6 +234,13 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
       list: (query, signal) =>
         get<ListResponse<MedicationStatementDto>>(
           `/medications/statements${toSearchParams(query)}`,
+          signal
+        ),
+    },
+    prescriptions: {
+      getRefillsRemaining: (id, signal) =>
+        get<PrescriptionRefillsRemainingDto>(
+          `/medications/prescriptions/${segment(id)}/refills-remaining`,
           signal
         ),
     },

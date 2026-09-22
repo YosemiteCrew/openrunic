@@ -1656,6 +1656,121 @@ describe('/bff/v0/notes/:id/addenda', () => {
 
 /* ------------------------------------------------- prescription transitions */
 
+describe('GET /bff/v0/medications/prescriptions/:id/refills-remaining', () => {
+  const url = `/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}/refills-remaining`;
+
+  function seedFills(dataset: MemoryDataset, count: number): void {
+    for (let i = 0; i < count; i += 1) {
+      seed(dataset, 'PrescriptionFill', {
+        id: testId(7900 + i),
+        tenantId: DEMO_TENANT_A,
+        patientId: PATIENT_ID,
+        prescriptionId: PRESCRIPTION_ID,
+        stockPostingId: testId(7950 + i),
+        filledOn: FIXED_NOW,
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    }
+  }
+
+  /*
+   * `refills` is FHIR `numberOfRepeatsAllowed`: repeats allowed IN ADDITION to
+   * the original dispense. A fill is written on every dispense that names a
+   * prescription, the first one included, so the first fill spends no refill
+   * and each one after it spends one. The table is the whole of that rule: the
+   * second column moving from 0 to 1 must not move the third.
+   */
+  it.each([
+    [0, 0, 0],
+    [0, 1, 0],
+    [0, 2, 0],
+    [2, 0, 2],
+    [2, 1, 2],
+    [2, 2, 1],
+    [2, 3, 0],
+    [2, 5, 0],
+  ])('%i authorised with %i fills recorded leaves %i', async (refills, fills, remaining) => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
+    seed(dataset, 'MedicationRequest', makePrescriptionRow({ refills }));
+    seedFills(dataset, fills);
+
+    const res = await app.request(url, { headers: bearer(TOKENS.clinicianA) });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      prescriptionId: PRESCRIPTION_ID,
+      authorisedRefills: refills,
+      fillsRecorded: fills,
+      refillsRemaining: remaining,
+    });
+  });
+
+  it('counts every fill, not just the page it read', async () => {
+    // The count comes from the page total with pageSize 1, so a repository that
+    // reported the page length instead would answer 1 for any number of fills.
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
+    seed(dataset, 'MedicationRequest', makePrescriptionRow({ refills: 9 }));
+    seedFills(dataset, 4);
+
+    const body = (await (
+      await app.request(url, { headers: bearer(TOKENS.clinicianA) })
+    ).json()) as {
+      fillsRecorded: number;
+      refillsRemaining: number;
+    };
+
+    expect(body.fillsRecorded).toBe(4);
+    expect(body.refillsRemaining).toBe(6);
+  });
+
+  it("counts only this prescription's fills", async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT_ID);
+    seed(dataset, 'MedicationRequest', makePrescriptionRow({ refills: 3 }));
+    seedFills(dataset, 2);
+    seed(dataset, 'PrescriptionFill', {
+      id: testId(7990),
+      tenantId: DEMO_TENANT_A,
+      patientId: PATIENT_ID,
+      prescriptionId: testId(7991),
+      stockPostingId: testId(7992),
+      filledOn: FIXED_NOW,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+
+    const body = (await (
+      await app.request(url, { headers: bearer(TOKENS.clinicianA) })
+    ).json()) as {
+      fillsRecorded: number;
+    };
+
+    expect(body.fillsRecorded).toBe(2);
+  });
+
+  it('404s a prescription that is not there', async () => {
+    const { app } = createTestApp();
+    const res = await app.request(
+      `/bff/v0/medications/prescriptions/${testId(7993)}/refills-remaining`,
+      { headers: bearer(TOKENS.clinicianA) }
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it('404s a chart the reader is not on', async () => {
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'MedicationRequest', makePrescriptionRow({ refills: 2 }));
+
+    const res = await app.request(url, { headers: bearer(TOKENS.clinicianA) });
+
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('the prescription state machine', () => {
   const url = (action: string): string =>
     `/bff/v0/medications/prescriptions/${PRESCRIPTION_ID}/${action}`;
@@ -2205,11 +2320,12 @@ describe('the published contracts', () => {
 
     // Eight aggregates with four operations each, plus the seven transitions
     // and nested routes that are written by hand, plus the medication screen,
-    // the growth chart and the three registry-submission steps.
-    expect(documented).toHaveLength(44);
+    // the growth chart, the three registry-submission steps, and the two
+    // prescription-fill read routes plus the refills-remaining route.
+    expect(documented).toHaveLength(47);
     for (const route of documented) {
       expect(registered, route).toContain(route);
     }
-    expect(new Set(clinicalRouteContracts().map((c) => c.operationId)).size).toBe(44);
+    expect(new Set(clinicalRouteContracts().map((c) => c.operationId)).size).toBe(47);
   });
 });

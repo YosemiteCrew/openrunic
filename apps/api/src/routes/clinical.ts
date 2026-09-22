@@ -65,6 +65,8 @@ import {
   observationListQuerySchema,
   observationPatchSchema,
   prescriptionDtoSchema,
+  prescriptionFillDtoSchema,
+  prescriptionFillListQuerySchema,
   prescriptionListQuerySchema,
   prescriptionPatchSchema,
   problemDtoSchema,
@@ -91,12 +93,16 @@ import {
   toObservationListQuery,
   toObservationPatch,
   toPrescriptionDto,
+  toPrescriptionFillDto,
+  toPrescriptionFillListQuery,
   toPrescriptionListQuery,
   toPrescriptionPatch,
   toProblemDto,
   toProblemListQuery,
   toProblemPatch,
+  prescriptionRefillsRemainingDtoSchema,
   type NotePatchBody,
+  type PrescriptionRefillsRemainingDto,
 } from '../schemas/clinical.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
@@ -111,6 +117,7 @@ import {
 } from './crud.js';
 import {
   attributedTo,
+  gateCharts,
   idParamSchema,
   policyOf,
   repositories,
@@ -139,6 +146,7 @@ import {
 const MISSING_ENCOUNTER = 'No such encounter.';
 const MISSING_NOTE = 'No such clinical note.';
 const MISSING_PRESCRIPTION = 'No such prescription.';
+const MISSING_FILL = 'No such prescription fill.';
 
 /* ------------------------------------------------------------ the tables */
 
@@ -397,6 +405,84 @@ function crudModules(): CrudModule[] {
       toDto: toPrescriptionDto,
     }),
 
+    (() => {
+      const router = new Hono<AppEnv>();
+      const base = '/medications/prescription-fills';
+
+      router.get(base, requirePermission('encounter.read'), async (c) => {
+        const input = parseQuery(c, prescriptionFillListQuerySchema);
+        const { prescriptionFills } = repositories(c);
+        const page = await prescriptionFills.list(toPrescriptionFillListQuery(input));
+        // Hand-registered, so it does not inherit the list gate `defineCrud`
+        // applies. A fill names a chart, and a list of chart data is a read of
+        // every chart it returns, so it needs the same relationship per row -
+        // before the DTOs form, so a refused list never serialises what it read.
+        await gateCharts(c, 'prescriptionFills', page.rows);
+        return c.json(toListResponse(page, toPrescriptionFillDto));
+      });
+
+      router.get(`${base}/:id`, requirePermission('encounter.read'), async (c) => {
+        const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+        const { prescriptionFills } = repositories(c);
+        // The read and the guard in one call, as everywhere else that reads a
+        // chart-bearing row by id. It answers the same 404 for a fill that is
+        // not there as for one this reader may not reach, so a separate null
+        // check would only be a second spelling of the first half.
+        const row = await requiredParentChart(
+          c,
+          'prescriptionFills',
+          await prescriptionFills.findById(id),
+          MISSING_FILL
+        );
+        return c.json(toPrescriptionFillDto(row));
+      });
+
+      const contracts: RouteContract[] = [
+        {
+          method: 'get',
+          path: '/bff/v0/medications/prescription-fills',
+          operationId: 'listPrescriptionFills',
+          summary: 'List prescription fills.',
+          description:
+            'Returns fills recorded on dispense. A fill is append-only and carries the stock posting that created it. Query by `patientId` and/or `prescriptionId`.',
+          tags: ['medications'],
+          permission: 'encounter.read',
+          query: prescriptionFillListQuerySchema,
+          responses: [
+            {
+              status: 200,
+              description: 'One page of prescription fills.',
+              schema: listResponseSchema(prescriptionFillDtoSchema),
+            },
+            ...CRUD_ERRORS,
+          ],
+        },
+        {
+          method: 'get',
+          path: '/bff/v0/medications/prescription-fills/{id}',
+          operationId: 'readPrescriptionFill',
+          summary: 'Read one prescription fill.',
+          description:
+            'Returns the fill with its stock posting reference and the date it was filled.',
+          tags: ['medications'],
+          permission: 'encounter.read',
+          pathParams: [
+            { name: 'id', description: 'Prescription fill id (UUIDv7).', schema: idParamSchema },
+          ],
+          responses: [
+            {
+              status: 200,
+              description: 'The prescription fill.',
+              schema: prescriptionFillDtoSchema,
+            },
+            ...CRUD_ERRORS,
+            NOT_FOUND_RESPONSE,
+          ],
+        },
+      ];
+      return { segment: 'medications/prescription-fills', contracts, routes: router };
+    })(),
+
     defineCrud({
       segment: 'allergies',
       singular: 'allergy',
@@ -491,6 +577,46 @@ export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
   for (const module of crudModules()) {
     router.route('/', module.routes);
   }
+
+  router.get(
+    '/medications/prescriptions/:id/refills-remaining',
+    requirePermission('encounter.read'),
+    async (c) => {
+      const id = parseParam(c.req.param('id'), idParamSchema, 'id');
+      const { prescriptions, prescriptionFills } = repositories(c);
+      const prescription = await prescriptions.findById(id);
+      if (prescription === null) {
+        throw ApiError.notFound(MISSING_PRESCRIPTION);
+      }
+      await requiredParentChart(c, 'prescriptions', prescription, MISSING_PRESCRIPTION);
+
+      const fillsPage = await prescriptionFills.list({
+        prescriptionId: id,
+        page: 1,
+        pageSize: 1,
+        sort: 'filledOn',
+        order: 'desc',
+      });
+      const fillsRecorded = fillsPage.total;
+      const authorisedRefills = prescription.refills;
+      // `refills` is FHIR `numberOfRepeatsAllowed`: the repeats allowed IN
+      // ADDITION to the original dispense. A fill is written on every dispense
+      // that names a prescription, the first one included (see the stock
+      // posting spec), so the first fill spends no refill and only the ones
+      // after it do. Counting every fill as a refill reports one repeat fewer
+      // than the prescriber authorised, which refuses a dispense the patient
+      // is entitled to.
+      const refillsUsed = Math.max(0, fillsRecorded - 1);
+      const refillsRemaining = Math.max(0, authorisedRefills - refillsUsed);
+
+      return c.json({
+        prescriptionId: id,
+        authorisedRefills,
+        fillsRecorded,
+        refillsRemaining,
+      } satisfies PrescriptionRefillsRemainingDto);
+    }
+  );
 
   router.post('/encounters/:id/sign', requirePermission('encounter.write'), async (c) => {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
@@ -1307,5 +1433,26 @@ export function clinicalRouteContracts(): RouteContract[] {
       response: prescriptionDtoSchema,
       conflict: 'The prescription has already reached a terminal state.',
     }),
+
+    {
+      method: 'get',
+      path: '/bff/v0/medications/prescriptions/{id}/refills-remaining',
+      operationId: 'readPrescriptionRefillsRemaining',
+      summary: 'Read the remaining refills for a prescription.',
+      description:
+        'Returns the authorised refills, the number of fills recorded, and the refills remaining. A fill is recorded on dispense and is append-only. `authorisedRefills` is the repeats allowed in addition to the original dispense, so the first fill spends no refill and each one after it spends one; remaining is floored at zero.',
+      tags: ['medications'],
+      permission: 'encounter.read',
+      pathParams: [{ name: 'id', description: 'Prescription id (UUIDv7).', schema: idParamSchema }],
+      responses: [
+        {
+          status: 200,
+          description: 'The refills remaining for this prescription.',
+          schema: prescriptionRefillsRemainingDtoSchema,
+        },
+        ...CRUD_ERRORS,
+        NOT_FOUND_RESPONSE,
+      ],
+    },
   ];
 }

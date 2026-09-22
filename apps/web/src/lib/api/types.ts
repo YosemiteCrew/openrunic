@@ -419,6 +419,13 @@ export interface MedicationStatementDto {
   updatedAt: string;
 }
 
+export interface PrescriptionRefillsRemainingDto {
+  prescriptionId: string;
+  authorisedRefills: number;
+  fillsRecorded: number;
+  refillsRemaining: number;
+}
+
 export type MedicationStatementStatus =
   | 'ACTIVE'
   | 'COMPLETED'
@@ -962,6 +969,12 @@ export interface ApiClient {
       query?: MedicationStatementListQuery,
       signal?: AbortSignal
     ) => Promise<ListResponse<MedicationStatementDto>>;
+  };
+  prescriptions: {
+    getRefillsRemaining: (
+      id: string,
+      signal?: AbortSignal
+    ) => Promise<PrescriptionRefillsRemainingDto>;
   };
   encounters: {
     list: (query?: EncounterListQuery, signal?: AbortSignal) => Promise<ListResponse<EncounterDto>>;

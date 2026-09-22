@@ -455,3 +455,42 @@ describe('API_CONFIG', () => {
     expect(API_CONFIG.getToken?.()).toBeNull();
   });
 });
+
+describe('prescriptions.getRefillsRemaining', () => {
+  it('reads the refills-remaining route for the prescription, with the id encoded', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        prescriptionId: 'rx/1',
+        authorisedRefills: 2,
+        fillsRecorded: 1,
+        refillsRemaining: 2,
+      })
+    );
+    const client = createHttpClient({
+      baseUrl: 'http://api.test',
+      getToken: () => 'tok',
+      fetchImpl,
+    });
+
+    const body = await client.prescriptions.getRefillsRemaining('rx/1');
+
+    const [url] = fetchImpl.mock.calls[0] as [string];
+    // Encoded, not interpolated raw: an id carrying a slash must not invent a path segment.
+    expect(url).toBe('http://api.test/bff/v0/medications/prescriptions/rx%2F1/refills-remaining');
+    expect(body.refillsRemaining).toBe(2);
+  });
+
+  it("answers from the mock with the API's own arithmetic, not a fixed remainder", async () => {
+    // The first fill is the original dispense and spends no refill, so five
+    // authorised with two fills recorded leaves four. A mock that disagreed with
+    // the server would teach a screen the wrong number.
+    const body = await createMockClient().prescriptions.getRefillsRemaining('rx-1');
+
+    expect(body).toEqual({
+      prescriptionId: 'rx-1',
+      authorisedRefills: 5,
+      fillsRecorded: 2,
+      refillsRemaining: 4,
+    });
+  });
+});

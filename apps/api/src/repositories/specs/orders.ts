@@ -29,8 +29,10 @@ import { TASK_STATUSES as TASK_STATUS_VALUES } from '@openrunic/database';
 import {
   childBatch,
   comparable,
+  equalsIfSet,
   inWindow,
   jsonColumn,
+  matchesIfSet,
   windowFilter,
   type BaseQuery,
   type ChildBatch,
@@ -502,17 +504,17 @@ export const diagnosticReportSpec: CollectionSpec<
   },
 
   matches(row: DiagnosticReportRow, query: DiagnosticReportListQuery): boolean {
-    if (query.ids !== undefined && !query.ids.includes(row.id)) return false;
-    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
-    if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
-    if (query.serviceRequestId !== undefined && row.serviceRequestId !== query.serviceRequestId) {
-      return false;
-    }
-    if (query.status !== undefined && row.status !== query.status) return false;
-    if (query.category !== undefined && row.category !== query.category) return false;
-    if (query.abnormalFlag !== undefined && row.abnormalFlag !== query.abnormalFlag) return false;
-    if (query.reviewed !== undefined && (row.reviewedAt !== null) !== query.reviewed) return false;
-    return inWindow(row.issuedAt, query.from, query.to);
+    return (
+      matchesIfSet(query.ids, (ids) => ids.includes(row.id)) &&
+      equalsIfSet(query.patientId, row.patientId) &&
+      equalsIfSet(query.encounterId, row.encounterId) &&
+      equalsIfSet(query.serviceRequestId, row.serviceRequestId) &&
+      equalsIfSet(query.status, row.status) &&
+      equalsIfSet(query.category, row.category) &&
+      equalsIfSet(query.abnormalFlag, row.abnormalFlag) &&
+      equalsIfSet(query.reviewed, row.reviewedAt !== null) &&
+      inWindow(row.issuedAt, query.from, query.to)
+    );
   },
 
   where(query: DiagnosticReportListQuery) {

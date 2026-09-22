@@ -1,5 +1,7 @@
 'use client';
 
+import { useMemo } from 'react';
+
 import { api } from './api';
 import { API_MODE } from './config';
 import { queryKey, useApiQuery, useOwnCapabilities } from './hooks';
@@ -941,7 +943,42 @@ export function useInbox(
      demo build - on the one screen whose chip counts are read while it
      settles. */
   const live = options.client === undefined && API_MODE === 'live';
-  return useApiQuery(queryKey('inbox.list', { ...query }), () => client.inbox.list(query), {
-    enabled: (options.enabled ?? true) && (!live || userId !== null),
+  const named = !live || userId !== null;
+  const state = useApiQuery(queryKey('inbox.list', { ...query }), () => client.inbox.list(query), {
+    enabled: (options.enabled ?? true) && named,
   });
+
+  /* A DISABLED query is not a held one. `useApiQuery` answers a disabled query
+     with success and a null payload, and `AsyncBoundary` reads a null payload
+     as a failure - so gating alone puts "This did not load" and an inert Try
+     again over a screen whose prerequisite is simply still in the air. The
+     inbox's prerequisite is `/bff/v0/me`, so until it lands this hook reports
+     THAT request's state as its own, retry included. */
+  const held = useMemo<AsyncState<InboxPage>>(() => {
+    if (capabilities.status === 'error') {
+      return {
+        status: 'error',
+        data: null,
+        error: capabilities.error,
+        refetch: capabilities.refetch,
+      };
+    }
+    if (capabilities.status === 'loading') {
+      return { status: 'loading', data: null, error: null, refetch: capabilities.refetch };
+    }
+    /* Named, and the name is null: a patient or a service principal, for whom
+       this screen has no work rather than a failure. The empty state is the
+       honest answer, and it is a page so the rail's own statements read zero
+       rather than a number about somebody else. */
+    return { status: 'success', data: NO_INBOX, error: null, refetch: capabilities.refetch };
+  }, [capabilities]);
+
+  return named ? state : held;
 }
+
+/** An inbox with nothing in it, for a caller this screen holds no work for. */
+const NO_INBOX: InboxPage = {
+  data: [],
+  page: { page: 1, pageSize: 0, total: 0, totalPages: 0 },
+  refused: 0,
+};

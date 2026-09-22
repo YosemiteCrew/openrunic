@@ -59,9 +59,15 @@ export type ProviderLookup = (id: string | null) => string | null;
  * Sorted so the request key is a property of the SET rather than of the order
  * rows happened to arrive in: a re-sorted page of the same patients is the same
  * read, and keying on row order would refetch it.
+ *
+ * With a comparator rather than the default, which sorts by UTF-16 code unit -
+ * the same order this file's test sorts its expectation in, so the two cannot
+ * disagree about what "the same set" is.
  */
 function named(ids: readonly (string | null)[]): readonly string[] {
-  return [...new Set(ids.filter((id): id is string => id !== null))].sort().slice(0, MAX_NAMED);
+  return [...new Set(ids.filter((id): id is string => id !== null))]
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, MAX_NAMED);
 }
 
 /**

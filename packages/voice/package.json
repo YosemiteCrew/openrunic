@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/voice",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The speech boundary for the Openrunic EMR: the readback port, the on-device adapter behind it, and the rules that decide what may be heard.",
   "license": "AGPL-3.0-only",
   "type": "module",

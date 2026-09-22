@@ -208,4 +208,34 @@ describe.skipIf(!DATABASE_URL)('the Prisma repositories against Postgres', () =>
     expect(page.rows).toHaveLength(2);
     expect(page.total).toBeGreaterThanOrEqual(5);
   });
+
+  /*
+   * The `ids` filter, on the port that ships.
+   *
+   * It is here rather than only in `repositories.port-agreement.test.ts`
+   * because that file's oracle interprets a `where` rather than sending it:
+   * both sides of it are this repository's own code. What only Postgres can
+   * settle is that the clause Prisma is handed is one the database accepts and
+   * narrows with - the same gap that left 18 of 31 FHIR resources answering 500
+   * under a green suite (#305).
+   */
+  it('narrows to a named set of ids, and to none for an empty one', async () => {
+    const repositories = live.repositories(DEMO_TENANT_A);
+    const first = await repositories.patients.create({ ...patient, mrn: 'OR-named-1' });
+    const second = await repositories.patients.create({ ...patient, mrn: 'OR-named-2' });
+    await repositories.patients.create({ ...patient, mrn: 'OR-named-3' });
+
+    const query = { page: 1, pageSize: 25, sort: 'familyName', order: 'asc' } as const;
+    const named = await repositories.patients.list({ ...query, ids: [second.id, first.id] });
+
+    expect([...named.rows.map((row) => row.id)].sort()).toEqual([first.id, second.id].sort());
+    // The total is the narrowed set: a pager reading the whole index here would
+    // page off the end of its own request.
+    expect(named.total).toBe(2);
+
+    // Postgres answers `IN ()` as nothing, which is what `matches` answers for
+    // an empty set as well. A port that read it as "no filter" would hand a
+    // caller the whole index for a request that named nobody.
+    expect((await repositories.patients.list({ ...query, ids: [] })).total).toBe(0);
+  });
 });

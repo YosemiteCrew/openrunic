@@ -311,6 +311,7 @@ const FILTERS: {
     sort: 'familyName',
     order: 'asc',
     id: 'id-id',
+    ids: ['id-id'],
     q: 'needle',
     mrn: 'id-mrn',
     sexAtBirth: 'FEMALE',

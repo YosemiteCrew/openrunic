@@ -178,7 +178,7 @@ export const isBotExempt = (run) =>
   run.name === BOT_EXEMPT.name && run.conclusion === BOT_EXEMPT.conclusion;
 
 /**
- * The type of the GitHub account this commit is AUTHORED by, or null.
+ * Whether this commit is AUTHORED by a bot account.
  *
  * `.author`, never `.committer`. On a dependabot commit the committer is
  * GitHub's own web-flow account and reads `User`, so the two fields disagree on
@@ -193,7 +193,7 @@ export const isBotExempt = (run) =>
  * A non-ok response throws, for the same reason - the gate cannot decide an
  * exemption it could not read, and the recoverable direction is red.
  */
-export async function fetchHeadAuthorType(repo, sha, token, fetchImpl = fetch) {
+export async function headCommitIsBot(repo, sha, token, fetchImpl = fetch) {
   const response = await fetchImpl(`https://api.github.com/repos/${repo}/commits/${sha}`, {
     headers: {
       accept: 'application/vnd.github+json',
@@ -205,7 +205,11 @@ export async function fetchHeadAuthorType(repo, sha, token, fetchImpl = fetch) {
     throw new Error(`commit ${sha} returned ${String(response.status)}`);
   }
   const body = await response.json();
-  return body.author?.type ?? null;
+  // The comparison lives HERE, inside the function the tests call, and not at
+  // the call site. A predicate spelled out at the call site and re-spelled in
+  // the test is pinned by nothing: loosening this to a truthiness check left
+  // every test green when it was written that way, which is how it was found.
+  return (body.author?.type ?? null) === 'Bot';
 }
 
 /** How long to wait for the app to post, and how often to look. */
@@ -419,9 +423,8 @@ async function main(argv, env) {
   }
   // One extra request, on the same host the gate already talks to, so the
   // predicate it implements is the one the vendor documents.
-  const headAuthorType = await fetchHeadAuthorType(repo, sha, token);
   const result = await awaitReview(repo, sha, token, {
-    headAuthoredByBot: headAuthorType === 'Bot',
+    headAuthoredByBot: await headCommitIsBot(repo, sha, token),
   });
   process.stdout.write(describe(result, sha));
   return result.verdict === 'reviewed' ? 0 : 1;

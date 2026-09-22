@@ -10,7 +10,7 @@ import {
   awaitReview,
   classify,
   describe,
-  fetchHeadAuthorType,
+  headCommitIsBot,
   isBotExempt,
   listCheckRuns,
 } from './aikido-coverage.mjs';
@@ -594,16 +594,20 @@ test('the bot fact is read off the commit author, not the committer', async () =
   });
   const read = async (page) => {
     const fetchImpl = stubFetch(page);
-    const type = await fetchHeadAuthorType('o/r', 'abc', 't', fetchImpl);
+    const isBot = await headCommitIsBot('o/r', 'abc', 't', fetchImpl);
     assert.match(fetchImpl.calls[0].url, /\/repos\/o\/r\/commits\/abc$/u);
-    return type;
+    return isBot;
   };
 
-  assert.equal(await read(commit('Bot', 'User')), 'Bot', 'the real dependabot shape');
-  assert.equal(await read(commit('User', 'Bot')), 'User', 'reading the committer would say Bot');
+  assert.equal(await read(commit('Bot', 'User')), true, 'the real dependabot shape');
+  assert.equal(await read(commit('User', 'Bot')), false, 'reading the committer would say true');
   // An unmatched author email resolves to null, and null is not a bot. The
   // fail-closed direction: an unrecognised head keeps the gate strict.
-  assert.equal(await read(commit(null, 'Bot')), null);
+  assert.equal(await read(commit(null, 'Bot')), false);
+  // And the comparison is on the exact string, not truthiness - the arm that
+  // survived when the call site spelled it out instead of this function.
+  assert.equal(await read(commit('bot', null)), false, 'case-variant is not a bot');
+  assert.equal(await read(commit('Organization', null)), false);
 });
 
 test('the commit author decides the exemption, and the pull request author does not', async () => {
@@ -635,7 +639,7 @@ test('an unreadable commit is red rather than unexcused-by-default', async () =>
   // job, which is the recoverable direction; returning null would quietly make
   // every bot head strict again and look like the exemption never landed.
   const fetchImpl = stubFetch({ ok: false, status: 404, body: {} });
-  await assert.rejects(() => fetchHeadAuthorType('o/r', 'abc', 't', fetchImpl), /returned 404/u);
+  await assert.rejects(() => headCommitIsBot('o/r', 'abc', 't', fetchImpl), /returned 404/u);
 });
 
 test('docs/security-gates.md names the same exempt pair the code does', () => {

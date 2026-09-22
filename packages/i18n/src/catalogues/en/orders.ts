@@ -57,8 +57,8 @@ export const orders: Messages = {
   'orders.list.column.age': 'In this state',
   'orders.list.column.actions': 'Actions',
 
-  'orders.list.countOne': '{count} order',
-  'orders.list.countOther': '{count} orders',
+  'orders.list.countOne': '{shown} of {count} order',
+  'orders.list.countOther': '{shown} of {count} orders',
   'orders.list.notShownOne':
     '{count} of them is not listed, because this ledger has no word for its category, status or priority.',
   'orders.list.notShownOther':

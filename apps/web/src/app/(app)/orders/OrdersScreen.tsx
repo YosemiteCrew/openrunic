@@ -1,6 +1,6 @@
 'use client';
 
-import { counted } from '@openrunic/i18n';
+import { counted, formatCount } from '@openrunic/i18n';
 import type { CountedMessage, Translator } from '@openrunic/i18n';
 import { Button, Card, Select, Table, Tag } from '@openrunic/ui';
 import type { SelectOption, TableColumn } from '@openrunic/ui';
@@ -73,6 +73,20 @@ const NOT_SHOWN: CountedMessage = {
   oneKey: 'orders.list.notShownOne',
   otherKey: 'orders.list.notShownOther',
 };
+
+/**
+ * `formatCount` again, for the row rather than the total (#540).
+ *
+ * `ORDER_COUNT` states `{shown} of {total}` rather than the bare total, for
+ * the same reason `NOT_SHOWN` exists: a live page's total can be larger than
+ * pageSize regardless of whether anything was refused, and a caption that
+ * prints only the total is silent about the rest exactly the way the pre-#539
+ * screen was. `data.length` is what actually rendered - refused rows and rows
+ * that never reached this page are both absent from it - so it is the true
+ * "shown" count whatever the reason for the gap. When shown equals total the
+ * message reads "25 of 25 orders", which is a plainer sentence away from
+ * "25 orders" but not a false one, and needs no branch to get there.
+ */
 
 const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
   { key: 'order', headerKey: 'orders.list.column.order' },
@@ -193,7 +207,11 @@ export function OrdersScreen({
                 rows={page.data.map((order) => toRow(t, order, now))}
                 caption={t('orders.list.caption')}
               />
-              <p className="or-caption">{counted(t, ORDER_COUNT, page.page.total)}</p>
+              <p className="or-caption">
+                {counted(t, ORDER_COUNT, page.page.total, {
+                  shown: formatCount(page.data.length, t.locale),
+                })}
+              </p>
               {page.refused > 0 ? (
                 <p className="or-caption">
                   <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>

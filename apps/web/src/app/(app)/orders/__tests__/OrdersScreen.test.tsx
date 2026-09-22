@@ -117,11 +117,13 @@ describe('OrdersScreen', () => {
     expect(screen.getAllByRole('link', { name: 'New order' }).length).toBeGreaterThan(0);
   });
 
-  it('states how many orders the ledger matched', async () => {
+  it('states how many orders the ledger matched, and how many of them are shown', async () => {
     render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('table');
 
-    expect(screen.getByText(`${MOCK_ORDERS.length} orders`)).toBeInTheDocument();
+    expect(
+      screen.getByText(`${MOCK_ORDERS.length} of ${MOCK_ORDERS.length} orders`)
+    ).toBeInTheDocument();
     expect(screen.queryByText(/not listed/)).not.toBeInTheDocument();
   });
 
@@ -133,8 +135,36 @@ describe('OrdersScreen', () => {
 
     const table = await screen.findByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
-    expect(screen.getByText(`${MOCK_ORDERS.length + 3} orders`)).toBeInTheDocument();
+    expect(
+      screen.getByText(`${MOCK_ORDERS.length} of ${MOCK_ORDERS.length + 3} orders`)
+    ).toBeInTheDocument();
     expect(screen.getByText(/^3 of them are not listed/)).toBeInTheDocument();
+  });
+
+  /* #540: a live page can be smaller than the total for a reason `refused`
+     never counts - pageSize capping how many rows the route returns at all.
+     Nothing upstream calls that a refusal, so a screen that only ever checked
+     `refused` would show this exact case as a bare, silent total, which is the
+     defect the reviewer found in the first version of this fix. */
+  it('states the window even when nothing was refused, only paged', async () => {
+    const base = createWorklistClient();
+    const client: WorklistClient = {
+      ...base,
+      orders: {
+        list: async (query) => {
+          const page = await base.orders.list(query);
+          return { ...page, page: { ...page.page, total: page.page.total + 40 }, refused: 0 };
+        },
+      },
+    };
+
+    render(<OrdersScreen client={client} now={MOCK_NOW} />);
+    await screen.findByRole('table');
+
+    expect(
+      screen.getByText(`${MOCK_ORDERS.length} of ${MOCK_ORDERS.length + 40} orders`)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/not listed/)).not.toBeInTheDocument();
   });
 
   it('says what happened and what to do when the ledger fails to load', async () => {

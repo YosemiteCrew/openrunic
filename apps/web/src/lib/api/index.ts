@@ -150,40 +150,46 @@ export {
 } from './mock/admin';
 export type { AdminMockOptions } from './mock/admin';
 
-/* Orders, results and the typed inbox, on a fixture-only client.
+/* Orders, results and the typed inbox.
 
-   `/bff/v0/orders` and `/bff/v0/results` are both served, transitions included,
-   and the `orders` and `results` methods on {@link ApiClient} already reach
-   them; what is missing is the mapping from those payloads into the worklist
-   view types below. The inbox is the one thing here with no route of its own:
-   it is a composition across results, messages and tasks that the API does not
-   assemble. */
+   Orders read `GET /bff/v0/orders` and results `GET /bff/v0/results` in live
+   mode, mapped onto the view types below. The inbox is still fixture-only in
+   every mode: `GET /bff/v0/tasks` is the aggregate behind it - one work engine
+   whose five streams are `type` filters - and the mapping onto `InboxItem` is
+   not written, three of that type's fields having no served shape at all. */
 export {
   ASSIGNMENTS,
   createWorklistClient,
   filterInbox,
   filterOrders,
   filterResults,
+  INBOX_IS_FIXTURE_BACKED,
   INBOX_STREAMS,
   isBulkSignable,
   liveOrders,
+  liveResults,
   ORDER_CATEGORIES,
   ORDER_PRIORITIES,
   ORDER_STATUSES,
   patientProblems,
   rankCatalog,
+  RESULT_ASSIGNMENT_IS_KNOWN,
   RESULT_FLAGS,
   RESULT_STATUSES,
   slaState,
   toOrder,
   toOrderPage,
+  toReportQuery,
+  toResultAnalyte,
+  toResultPage,
+  toResultReport,
   useInbox,
   useOrders,
+  useResultAnalytes,
   useResults,
   WARNING_TIERS,
   warningsFor,
   worklist,
-  WORKLIST_IS_FIXTURE_BACKED,
 } from './worklist';
 export type {
   Assignment,
@@ -203,6 +209,7 @@ export type {
   ResultAnalyte,
   ResultFlag,
   ResultListQuery,
+  ResultPage,
   ResultReport,
   ResultStatus,
   SlaState,

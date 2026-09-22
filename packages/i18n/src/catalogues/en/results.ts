@@ -31,6 +31,19 @@ export const results: Messages = {
   'results.list.assignment.mine': 'Mine',
   'results.list.assignment.team': 'Team pool',
   'results.list.assignment.everyone': 'Everyone',
+  'results.list.assignmentUnknown':
+    "Everyone's results. Whose queue a result sits in is not recorded yet, so this queue cannot be narrowed to yours or your team's.",
+
+  'results.list.countOne': '{count} result',
+  'results.list.countOther': '{count} results',
+  'results.list.windowOne':
+    '{count} of {total} results. The rest are on pages this screen cannot reach.',
+  'results.list.windowOther':
+    '{count} of {total} results. The rest are on pages this screen cannot reach.',
+  'results.list.notShownOne':
+    '{count} of the results on this page is not listed, because this queue has no word for its category.',
+  'results.list.notShownOther':
+    '{count} of the results on this page are not listed, because this queue has no word for their category.',
   /* Noun phrase, lower case: the loading and error copy build a sentence
      around it. */
   'results.list.subject': 'the results queue',
@@ -88,6 +101,7 @@ export const results: Messages = {
      its own monospace element and so cannot sit inside this message. */
   'results.reading.born': ', born {birthDate}',
   'results.reading.collected': 'Collected {collected}, reported {reported} by {performer}',
+  'results.reading.reported': 'Reported {reported} by {performer}',
   'results.reading.orderedBy': 'Ordered by {clinician}. Today is {today}.',
   'results.reading.noteHeading': 'Note on signing',
   'results.reading.caption': '{panel}, values against their reference ranges',

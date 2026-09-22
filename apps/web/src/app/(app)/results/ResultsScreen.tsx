@@ -10,9 +10,16 @@ import type { Command } from '@/components/command';
 import { ResultList, ResultReading, SignNoteModal } from '@/components/results';
 import type { SignedNote } from '@/components/results';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, FixtureDataNotice, Toast, isEmptyList } from '@/components/state';
-import { isBulkSignable, MOCK_NOW, mockPatientById, useResults } from '@/lib/api';
-import type { Assignment, ResultFlag, ResultReport, WorklistClient } from '@/lib/api';
+import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
+import {
+  isBulkSignable,
+  MOCK_NOW,
+  mockPatientById,
+  RESULT_ASSIGNMENT_IS_KNOWN,
+  useResultAnalytes,
+  useResults,
+} from '@/lib/api';
+import type { Assignment, ResultFlag, ResultPage, ResultReport, WorklistClient } from '@/lib/api';
 import { formatName } from '@/lib/format';
 import { formatCount } from '@openrunic/i18n';
 
@@ -51,6 +58,39 @@ const ASSIGNMENT_FILTERS: readonly { value: Assignment | ''; labelKey: string }[
   { value: '', labelKey: 'results.list.assignment.everyone' },
 ];
 
+/**
+ * The rows on this page, when the queue matched more than one page of them.
+ *
+ * The same statement the orders ledger makes and for the same reason: this
+ * screen has no pager, so a total above a full list is a number about the
+ * clinic rather than about the list, and 60 over 25 rows reads exactly like 60
+ * over 22 (#539).
+ */
+const RESULT_WINDOW: CountedMessage = {
+  oneKey: 'results.list.windowOne',
+  otherKey: 'results.list.windowOther',
+};
+
+const RESULT_COUNT: CountedMessage = {
+  oneKey: 'results.list.countOne',
+  otherKey: 'results.list.countOther',
+};
+
+/** The rows the queue refused, because `SERVICE_REQUEST_CATEGORIES` is wider than OR-01's three. */
+const NOT_SHOWN: CountedMessage = {
+  oneKey: 'results.list.notShownOne',
+  otherKey: 'results.list.notShownOther',
+};
+
+/**
+ * The window this screen asks for, clamped by the route to `MAX_PAGE_SIZE`.
+ *
+ * The same size the orders ledger asks for, and for the same reason: a queue
+ * under a couple of hundred rows is one a clinician finishes, and re-fetching
+ * while they scan it flashes a skeleton over rows they were already reading.
+ */
+const PAGE_SIZE = 100;
+
 const BATCH_ACTION: CountedMessage = {
   oneKey: 'results.bulk.actionOne',
   otherKey: 'results.bulk.actionOther',
@@ -81,25 +121,41 @@ export interface ResultsScreenProps {
   client?: WorklistClient;
   /** Fixed "now", so a signature timestamp is deterministic. */
   now?: string;
+  /**
+   * Whether the rows carry an assignment. Injectable for tests alongside
+   * `client`, because the two are one fact: a client that cannot answer
+   * `assignedTo` and a screen that offers the filter disagree.
+   */
+  assignmentKnown?: boolean;
 }
 
 export function ResultsScreen({
   client,
   now = MOCK_NOW,
+  assignmentKnown = RESULT_ASSIGNMENT_IS_KNOWN,
 }: Readonly<ResultsScreenProps>): ReactElement {
   const t = useTranslator();
-  const [assignment, setAssignment] = useState<Assignment | ''>('ME');
+  /* Everyone, not ME, wherever assignment is unknown. A ME chip over a route
+     that filtered by nothing reads as "these are mine" and is a worse answer
+     than an absent filter. */
+  const [assignment, setAssignment] = useState<Assignment | ''>(assignmentKnown ? 'ME' : '');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [signed, setSigned] = useState<Record<string, SignedNote>>({});
   const [signing, setSigning] = useState<Signing | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
 
-  const results = useResults(assignment ? { assignedTo: assignment } : {}, { client });
+  const results = useResults(
+    { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
+    { client }
+  );
 
   const assignmentFilters = useMemo<SelectOption[]>(
-    () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
-    [t]
+    () =>
+      ASSIGNMENT_FILTERS.filter((filter) => assignmentKnown || filter.value === '').map(
+        (filter) => ({ value: filter.value, label: t(filter.labelKey) })
+      ),
+    [t, assignmentKnown]
   );
 
   const reports = useMemo(() => {
@@ -115,6 +171,12 @@ export function ResultsScreen({
   const bulkCandidates = reports.filter((report) => isBulkSignable(report) && !signed[report.id]);
 
   const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
+
+  /* The analytes of the one report being read. Fetched here rather than with
+     the list, because one call per row is N+1 on a queue built to be scanned
+     and the values of a report nobody opened are never looked at. */
+  const analytes = useResultAnalytes(selected?.id ?? null, { client });
+  const reading = selected && analytes.data ? { ...selected, analytes: analytes.data } : selected;
 
   const signOne = useCallback(
     (report: ResultReport, note: string | null) => {
@@ -171,24 +233,31 @@ export function ResultsScreen({
         icon: 'check-check',
         perform: () => setBulkOpen(bulkCandidates.length > 0),
       },
-      {
-        id: 'results.mine',
-        group: 'actions',
-        label: t('results.command.mine'),
-        keywords: searchWords(t('results.command.mineKeywords')),
-        icon: 'user-round',
-        perform: () => setAssignment('ME'),
-      },
-      {
-        id: 'results.team',
-        group: 'actions',
-        label: t('results.command.team'),
-        keywords: searchWords(t('results.command.teamKeywords')),
-        icon: 'users',
-        perform: () => setAssignment('TEAM'),
-      },
+      /* Offered only where they can select. A command that narrows nothing and
+         reports that it narrowed is the same wrong answer as the filter, with
+         no control left on screen to explain it. */
+      ...(assignmentKnown
+        ? [
+            {
+              id: 'results.mine',
+              group: 'actions' as const,
+              label: t('results.command.mine'),
+              keywords: searchWords(t('results.command.mineKeywords')),
+              icon: 'user-round' as const,
+              perform: () => setAssignment('ME'),
+            },
+            {
+              id: 'results.team',
+              group: 'actions' as const,
+              label: t('results.command.team'),
+              keywords: searchWords(t('results.command.teamKeywords')),
+              icon: 'users' as const,
+              perform: () => setAssignment('TEAM'),
+            },
+          ]
+        : []),
     ],
-    [t, selected, bulkCandidates.length, requestSign]
+    [t, selected, bulkCandidates.length, requestSign, assignmentKnown]
   );
 
   const selectedPatient = selected ? mockPatientById(selected.patientId) : undefined;
@@ -233,7 +302,6 @@ export function ResultsScreen({
       }
     >
       <ScreenCommands commands={commands} />
-      <FixtureDataNotice />
       <AsyncBoundary
         state={results}
         subject={t('results.list.subject')}
@@ -250,7 +318,7 @@ export function ResultsScreen({
           ),
         }}
       >
-        {() => (
+        {(page: ResultPage) => (
           <div className="or-results">
             <Card
               tone="cream"
@@ -268,15 +336,34 @@ export function ResultsScreen({
                   requestSign(report, false);
                 }}
               />
+              {/* The rows the route put on this page, the refused ones
+                  included, so the two sum to the window without reading
+                  `pageSize` - the route's clamp, not necessarily what it
+                  applied. */}
+              <p className="or-caption">
+                {page.data.length + page.refused < page.page.total
+                  ? counted(t, RESULT_WINDOW, page.data.length + page.refused, {
+                      total: formatCount(page.page.total, t.locale),
+                    })
+                  : counted(t, RESULT_COUNT, page.page.total)}
+              </p>
+              {page.refused > 0 ? (
+                <p className="or-caption">
+                  <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+                </p>
+              ) : null}
+              {assignmentKnown ? null : (
+                <p className="or-caption">{t('results.list.assignmentUnknown')}</p>
+              )}
             </Card>
 
-            {selected ? (
+            {reading ? (
               <ResultReading
-                report={selected}
-                signed={signed[selected.id] ?? null}
+                report={reading}
+                signed={signed[reading.id] ?? null}
                 now={now}
-                onSign={() => requestSign(selected, false)}
-                onSignWithNote={() => requestSign(selected, true)}
+                onSign={() => requestSign(reading, false)}
+                onSignWithNote={() => requestSign(reading, true)}
               />
             ) : null}
           </div>

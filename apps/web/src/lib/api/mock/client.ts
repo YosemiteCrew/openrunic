@@ -15,6 +15,7 @@ import type {
   ClinicalNoteDto,
   ClinicalNoteState,
   DiagnosticReportDto,
+  DiagnosticReportListQuery,
   EncounterDto,
   EncounterListQuery,
   EncounterStatus,
@@ -54,6 +55,7 @@ import {
   MOCK_ACTING_USER,
   MOCK_CLAIM_RECORDS,
   MOCK_DIAGNOSTIC_REPORTS,
+  MOCK_RESULT_OBSERVATIONS,
   MOCK_ENCOUNTERS,
   MOCK_FORM_DEFINITION_RECORDS,
   MOCK_NOTES,
@@ -219,6 +221,49 @@ function byServiceRequest(
     }
     return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
   };
+}
+
+/**
+ * The reports a `/bff/v0/results` query matches.
+ *
+ * `reviewed` is a boolean over a nullable timestamp rather than a column, which
+ * is what the route does too: `reviewed=false` is the sign-off queue and
+ * `reviewed=true` the reports somebody has already acted on, and the absence of
+ * the filter is both.
+ */
+export function filterDiagnosticReports(
+  rows: readonly DiagnosticReportDto[],
+  query: DiagnosticReportListQuery = {}
+): readonly DiagnosticReportDto[] {
+  const matched = rows.filter((report) => {
+    if (query.patientId && report.patientId !== query.patientId) return false;
+    if (query.encounterId && report.encounterId !== query.encounterId) return false;
+    if (query.serviceRequestId && report.serviceRequestId !== query.serviceRequestId) return false;
+    if (query.status && report.status !== query.status) return false;
+    if (query.category && report.category !== query.category) return false;
+    if (query.abnormalFlag && report.abnormalFlag !== query.abnormalFlag) return false;
+    if (query.reviewed !== undefined && (report.reviewedAt !== null) !== query.reviewed) {
+      return false;
+    }
+    // Half-open over `issuedAt`, as for orders above.
+    if (query.from && report.issuedAt < query.from) return false;
+    if (query.to && report.issuedAt >= query.to) return false;
+    return true;
+  });
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  const sort = query.sort ?? 'issuedAt';
+  return [...matched].sort((a, b) => {
+    if (sort === 'effectiveAt') {
+      // The only nullable key, and it carries the direction the same way
+      // `scheduledFor` does: absent sorts last ascending, first descending.
+      if (a.effectiveAt === null || b.effectiveAt === null) {
+        return ((a.effectiveAt === null ? 1 : 0) - (b.effectiveAt === null ? 1 : 0)) * direction;
+      }
+      return a.effectiveAt.localeCompare(b.effectiveAt) * direction;
+    }
+    return a[sort].localeCompare(b[sort]) * direction;
+  });
 }
 
 export function filterAppointments(
@@ -1076,6 +1121,28 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     results: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterDiagnosticReports(results.all(), query), query.page, query.pageSize)
+        ),
+      /* Read through the report, as the route does: an id naming a report this
+         client has no row for is absent rather than an empty list, which would
+         read as a report with no analytes. */
+      listObservations: (id, query = {}) =>
+        answer(() => {
+          results.require(id, NO_RESULT);
+          const rows = MOCK_RESULT_OBSERVATIONS.filter(
+            (observation) => observation.diagnosticReportId === id
+          );
+          const direction = query.order === 'desc' ? -1 : 1;
+          const sort = query.sort ?? 'sequence';
+          const sorted = [...rows].sort((a, b) =>
+            sort === 'sequence'
+              ? (a.sequence - b.sequence) * direction
+              : a[sort].localeCompare(b[sort]) * direction
+          );
+          return paginate(sorted, query.page, query.pageSize);
+        }),
       review: (id) =>
         answer(() => {
           const before = results.require(id, NO_RESULT);

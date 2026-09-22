@@ -567,6 +567,69 @@ export interface DiagnosticReportDto {
   updatedAt: string;
 }
 
+/** Mirrors `diagnosticReportListQuerySchema`. Wider than `ResultListQuery`, which is a view. */
+export interface DiagnosticReportListQuery extends PaginationQuery {
+  patientId?: string;
+  encounterId?: string;
+  serviceRequestId?: string;
+  status?: DiagnosticReportStatus;
+  category?: ServiceRequestCategory;
+  abnormalFlag?: AbnormalFlag;
+  /** `false` is the sign-off queue: reports nobody has acted on yet. */
+  reviewed?: boolean;
+  /** Inclusive ISO instant, over `issuedAt`. */
+  from?: string;
+  /** Exclusive ISO instant, over `issuedAt`. */
+  to?: string;
+  sort?: 'issuedAt' | 'effectiveAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
+/** Mirrors `OBSERVATION_STATUSES`. */
+export type ObservationStatus =
+  | 'REGISTERED'
+  | 'PRELIMINARY'
+  | 'FINAL'
+  | 'AMENDED'
+  | 'CORRECTED'
+  | 'CANCELLED'
+  | 'ENTERED_IN_ERROR';
+
+/** Mirrors `resultObservationDtoSchema`: one analyte of one report. */
+export interface ResultObservationDto {
+  id: string;
+  diagnosticReportId: string;
+  patientId: string;
+  status: ObservationStatus;
+  sequence: number;
+  loincCode: string | null;
+  code: string;
+  codeSystem: string;
+  display: string;
+  valueNumber: number | null;
+  valueText: string | null;
+  valueCode: string | null;
+  unit: string | null;
+  referenceLow: number | null;
+  referenceHigh: number | null;
+  referenceRangeText: string | null;
+  interpretationCode: string | null;
+  abnormalFlag: AbnormalFlag;
+  effectiveAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Mirrors `resultObservationListQuerySchema`. No filters: the analytes of one
+ * report are the only way this collection is read, and `sequence` is the order
+ * the laboratory reported them in.
+ */
+export interface ResultObservationListQuery extends PaginationQuery {
+  sort?: 'sequence' | 'effectiveAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
 /** Mirrors `TASK_STATUSES`. */
 export type TaskWorkStatus = 'OPEN' | 'IN_PROGRESS' | 'ON_HOLD' | 'DONE' | 'CANCELLED' | 'EXPIRED';
 
@@ -1028,6 +1091,16 @@ export interface ApiClient {
     cancel: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;
   };
   results: {
+    list: (
+      query?: DiagnosticReportListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<DiagnosticReportDto>>;
+    /** The analytes of one report. Fetched per report, never per row of a list. */
+    listObservations: (
+      id: string,
+      query?: ResultObservationListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<ResultObservationDto>>;
     review: (id: string, signal?: AbortSignal) => Promise<DiagnosticReportDto>;
   };
   tasks: {

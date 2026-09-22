@@ -39,7 +39,10 @@ function headline(t: Translator, report: ResultReport): string {
     const reading = formatVital(t, {
       label: outOfRange.label,
       value: outOfRange.value,
-      unit: outOfRange.unit,
+      // '' rather than the null the observation carried: `formatVital` renders
+      // the unit beside the value and an analyte with no unit is one with
+      // nothing to render there, not one with the word "null" to render.
+      unit: outOfRange.unit ?? '',
       range: { low: outOfRange.low, high: outOfRange.high },
       decimals: outOfRange.decimals,
     });
@@ -145,7 +148,7 @@ export function ResultList({
               <span className="or-small or-muted">
                 {t('results.row.reported', {
                   at: formatDateTime(t, report.reportedAt, 'dense'),
-                  performer: report.performer,
+                  performer: report.performer ?? t('results.notRecorded'),
                 })}
               </span>
             </button>

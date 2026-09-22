@@ -21,6 +21,7 @@ import type {
   ProblemDocument,
   RemittanceParseResult,
   RemittancePostResult,
+  ResultObservationDto,
   ServiceRequestDto,
   StatementDto,
   TaskDto,
@@ -274,6 +275,13 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
       cancel: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/cancel`, {}, signal),
     },
     results: {
+      list: (query, signal) =>
+        get<ListResponse<DiagnosticReportDto>>(`/results${toSearchParams(query)}`, signal),
+      listObservations: (id, query, signal) =>
+        get<ListResponse<ResultObservationDto>>(
+          `/results/${segment(id)}/observations${toSearchParams(query)}`,
+          signal
+        ),
       review: (id, signal) =>
         post<DiagnosticReportDto>(`/results/${segment(id)}/review`, {}, signal),
     },

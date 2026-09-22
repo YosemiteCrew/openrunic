@@ -91,10 +91,10 @@ export function ResultReading({
                 {signed
                   ? t('results.reading.signedAtBy', {
                       at: formatDateTime(t, signed.at, 'dense'),
-                      clinician: mockProviderName(report.orderedBy),
+                      clinician: clinicianName(t, report.orderedBy),
                     })
                   : t('results.reading.signedBy', {
-                      clinician: mockProviderName(report.orderedBy),
+                      clinician: clinicianName(t, report.orderedBy),
                     })}
               </span>
             </>
@@ -131,16 +131,25 @@ export function ResultReading({
         <div className="or-cluster">
           <ResultFlagBadge flag={report.flag} />
           <span className="or-small">
-            {t('results.reading.collected', {
-              collected: formatDateTime(t, report.collectedAt, 'dense'),
-              reported: formatDateTime(t, report.reportedAt, 'dense'),
-              performer: report.performer,
-            })}
+            {/* Two messages rather than one with an empty slot: a report whose
+                specimen has no collection time has nothing to say about when it
+                was collected, and "Collected  , reported ..." is a sentence
+                about a missing value rather than about the report. */}
+            {report.collectedAt
+              ? t('results.reading.collected', {
+                  collected: formatDateTime(t, report.collectedAt, 'dense'),
+                  reported: formatDateTime(t, report.reportedAt, 'dense'),
+                  performer: report.performer ?? t('results.notRecorded'),
+                })
+              : t('results.reading.reported', {
+                  reported: formatDateTime(t, report.reportedAt, 'dense'),
+                  performer: report.performer ?? t('results.notRecorded'),
+                })}
           </span>
         </div>
         <p className="or-small or-muted">
           {t('results.reading.orderedBy', {
-            clinician: mockProviderName(report.orderedBy),
+            clinician: clinicianName(t, report.orderedBy),
             today: formatDate(t, now),
           })}
         </p>
@@ -168,11 +177,22 @@ export function ResultReading({
   );
 }
 
+/**
+ * The ordering clinician, or that nobody is recorded.
+ *
+ * Null wherever the report has no service request behind it, which is every
+ * live row until that join lands (#535), so the absence is named rather than
+ * passed to a lookup that would answer with the id it was given.
+ */
+function clinicianName(t: Translator, providerId: string | null): string {
+  return providerId === null ? t('results.notRecorded') : mockProviderName(providerId);
+}
+
 function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {
   const reading = formatVital(t, {
     label: analyte.label,
     value: analyte.value,
-    unit: analyte.unit,
+    unit: analyte.unit ?? '',
     range: { low: analyte.low, high: analyte.high },
     decimals: analyte.decimals,
   });
@@ -185,7 +205,9 @@ function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode>
         <span className="or-mono or-muted">{analyte.code}</span>
       </span>
     ),
-    // The unit rides with the value: a bare number is never a reading.
+    // The unit rides with the value: a bare number is never a reading. The
+    // trim is for the analyte that has no unit to ride with - a culture, a
+    // presence - rather than for a unit nobody filled in.
     value: `${reading.value} ${reading.unit}`.trim(),
     range: reading.rangeText ?? t('results.reading.noRange'),
     state: (

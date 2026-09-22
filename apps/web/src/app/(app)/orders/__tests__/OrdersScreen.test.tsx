@@ -16,7 +16,11 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
-  return { orders: { list: fail }, results: { list: fail }, inbox: { list: fail } };
+  return {
+    orders: { list: fail },
+    results: { list: fail, analytes: fail },
+    inbox: { list: fail },
+  };
 }
 
 /**

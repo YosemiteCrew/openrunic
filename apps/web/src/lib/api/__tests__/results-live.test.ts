@@ -562,7 +562,11 @@ describe('liveResults', () => {
       [
         task({ subjectType: 'Encounter', subjectId: 'encounter-3' }),
         task({ id: 'task-2', subjectType: null, subjectId: null }),
-        task({ id: 'task-3', subjectId: 'report-7' }),
+        // The two columns are independent, so the pair that names a report and
+        // no row has to be rejected by the id, not by the type. With the type
+        // and the id refused together nothing separates the two conditions.
+        task({ id: 'task-3', subjectId: null }),
+        task({ id: 'task-4', subjectId: 'report-7' }),
       ]
     );
 

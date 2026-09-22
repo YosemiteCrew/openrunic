@@ -165,9 +165,15 @@ describe('filterServiceRequests', () => {
     expect(ids({ sort: 'createdAt' })).toEqual(['b', 'a']);
   });
 
-  it('sorts an order with no scheduled date last rather than first', () => {
+  /* Unscheduled sorts last ascending and first descending, because the route
+     reads the column through `comparable()` - absent becomes `+Infinity` - and
+     then multiplies the comparison by the direction. Postgres does the same:
+     `orderBy` names no `nulls` option, so NULLS LAST on asc, NULLS FIRST on
+     desc. A mock that pinned unscheduled last in both directions would disagree
+     with the route it stands in for on exactly the descending page. */
+  it('sorts an order with no scheduled date last ascending and first descending', () => {
     expect(ids({ sort: 'scheduledFor' })).toEqual(['a', 'b']);
-    expect(ids({ sort: 'scheduledFor', order: 'desc' })).toEqual(['a', 'b']);
+    expect(ids({ sort: 'scheduledFor', order: 'desc' })).toEqual(['b', 'a']);
   });
 });
 

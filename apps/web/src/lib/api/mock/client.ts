@@ -195,10 +195,12 @@ function withinRequestedWindow(
 /**
  * The comparator the orders list is sorted by.
  *
- * `scheduledFor` is the only key that can be absent, and a row without one
- * sorts last in both directions, the way the tasks route already treats a task
- * with no due date. Ascending or descending is a question about the rows that
- * have a date; a row that has none is not early, it is unscheduled.
+ * `scheduledFor` is the only key that can be absent, and the route sorts an
+ * absent one last ascending and FIRST descending: the spec reads it through
+ * `comparable()`, which answers `+Infinity`, and the memory port multiplies the
+ * whole comparison by the direction. Postgres agrees - `orderBy` names no
+ * `nulls` option, and its defaults are NULLS LAST on asc, NULLS FIRST on desc.
+ * So the null branch carries the direction like every other row.
  */
 function byServiceRequest(
   sort: NonNullable<ServiceRequestListQuery['sort']>,
@@ -211,8 +213,10 @@ function byServiceRequest(
     return (a, b) => a.requestedAt.localeCompare(b.requestedAt) * direction;
   }
   return (a, b) => {
-    if (a.scheduledFor === null) return b.scheduledFor === null ? 0 : 1;
-    if (b.scheduledFor === null) return -1;
+    if (a.scheduledFor === null || b.scheduledFor === null) {
+      const byAbsence = (a.scheduledFor === null ? 1 : 0) - (b.scheduledFor === null ? 1 : 0);
+      return byAbsence * direction;
+    }
     return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
   };
 }

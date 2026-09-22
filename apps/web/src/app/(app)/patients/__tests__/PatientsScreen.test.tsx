@@ -19,6 +19,30 @@ function failing(error: ApiError): ApiClient {
   return createMockClient({ failure: error });
 }
 
+/**
+ * A roster page the route truncated: the practice matched `beyond` more
+ * patients than this page carries, and the screen has no pager to reach them
+ * (#541).
+ *
+ * The total and the row count are deliberately different numbers here. The
+ * fixture client reports a total equal to the rows it returned, so a screen
+ * that prints the total where it should describe the window agrees with itself
+ * on every other fixture and is wrong only on exactly this page.
+ */
+function truncated(beyond: number): ApiClient {
+  const base = createMockClient();
+  return {
+    ...base,
+    patients: {
+      ...base.patients,
+      list: async (query) => {
+        const page = await base.patients.list(query);
+        return { ...page, page: { ...page.page, total: page.page.total + beyond } };
+      },
+    },
+  };
+}
+
 describe('PatientsScreen', () => {
   it('renders the roster as a real table with header associations', async () => {
     render(<PatientsScreen client={createMockClient()} />);
@@ -93,6 +117,36 @@ describe('PatientsScreen', () => {
 
     expect(await screen.findByText('No patient matches that search')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Register new patient' }).length).toBeGreaterThan(0);
+  });
+
+  /* #541: the roster asks for one window, has no pager, and printed the match
+     total under it. A practice of 240 rendering 100 rows under "240 patients in
+     this view" gives the reader a number about the practice and a table about
+     the window, with nothing on the screen saying which is which. */
+  it('names the window when the practice holds more patients than the page', async () => {
+    render(<PatientsScreen client={truncated(140)} />);
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_PATIENTS.length + 1);
+    expect(
+      screen.getByText(
+        `${MOCK_PATIENTS.length} of ${MOCK_PATIENTS.length + 140} patients in this view.`,
+        { exact: false }
+      )
+    ).toBeInTheDocument();
+    /* The bare total is what the reader would otherwise have read as the row
+       count, so it must not also be on the page. */
+    expect(
+      screen.queryByText(`${MOCK_PATIENTS.length + 140} patients in this view`)
+    ).not.toBeInTheDocument();
+  });
+
+  it('states the plain total when the page holds the whole roster', async () => {
+    render(<PatientsScreen client={createMockClient()} />);
+
+    await screen.findByRole('table');
+    expect(screen.getByText(`${MOCK_PATIENTS.length} patients in this view`)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot reach/)).not.toBeInTheDocument();
   });
 
   it('explains a server failure and offers a retry', async () => {

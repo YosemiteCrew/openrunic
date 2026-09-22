@@ -16,6 +16,7 @@ import type {
   PatientCreateBody,
   PatientUpdateBody,
   PaymentDto,
+  PrescriptionRefillsRemainingDto,
   PrincipalCapabilities,
   ProblemDocument,
   RemittanceParseResult,

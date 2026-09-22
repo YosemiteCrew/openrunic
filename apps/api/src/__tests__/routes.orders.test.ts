@@ -106,6 +106,7 @@ const DOCUMENT_A = testId(240);
 const DOCUMENT_B = testId(241);
 const TASK_A = testId(250);
 const TASK_B = testId(251);
+const TASK_C = testId(252);
 const THREAD_A = testId(260);
 const THREAD_B = testId(261);
 const MESSAGE_A = testId(270);
@@ -1531,12 +1532,61 @@ describe('tasks', () => {
     expect(await ids(`patientId=${PATIENT}`)).toEqual([TASK_A]);
     expect(await ids(`assigneeUserId=${CLINICIAN}`)).toEqual([TASK_A]);
     expect(await ids('assigneeTeamKey=front-desk')).toEqual([TASK_B]);
+    expect(await ids('assigneeType=USER')).toEqual([TASK_A]);
+    expect(await ids('assigneeType=TEAM')).toEqual([TASK_B]);
     expect(await ids('slaState=BREACH')).toEqual([TASK_B]);
     expect(await ids('from=2026-08-15T00:00:00.000Z')).toEqual([TASK_B]);
     expect(await ids('to=2026-08-15T00:00:00.000Z')).toEqual([TASK_A]);
     expect(await ids('sort=dueAt&order=desc')).toEqual([TASK_B, TASK_A]);
     expect(await ids('sort=priority')).toEqual([TASK_A, TASK_B]);
     expect(await ids('sort=createdAt&order=desc')).toEqual([TASK_B, TASK_A]);
+  });
+
+  it("answers an inbox as that user's own work and the unclaimed pool, and nobody else's", async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow(),
+      makeTaskRow({ id: TASK_B, assigneeType: 'TEAM', assigneeUserId: null, assigneeTeamKey: 'x' }),
+      makeTaskRow({ id: TASK_C, assigneeUserId: OTHER_USER })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (
+        await body<ListResponse<TaskDto>>(await call(app, 'get', `/bff/v0/tasks?${query}`))
+      ).data.map((row) => row.id);
+
+    /* The baseline is the assertion, not the setup: it says the third task is
+       reachable for this caller, so its absence below is the union refusing it
+       rather than the chart gate hiding it further up. */
+    expect(await ids('')).toEqual([TASK_A, TASK_B, TASK_C]);
+    expect(await ids(`inboxFor=${CLINICIAN}`)).toEqual([TASK_A, TASK_B]);
+    // The union narrows rather than replaces: each half of the inbox alone.
+    expect(await ids(`inboxFor=${CLINICIAN}&assigneeType=USER`)).toEqual([TASK_A]);
+    expect(await ids(`inboxFor=${CLINICIAN}&assigneeType=TEAM`)).toEqual([TASK_B]);
+  });
+
+  it('reads a task still in flight as open and a finished one as not', async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({ status: 'ON_HOLD' }),
+      makeTaskRow({ id: TASK_B, status: 'DONE' }),
+      makeTaskRow({ id: TASK_C, status: 'CANCELLED' })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (
+        await body<ListResponse<TaskDto>>(await call(app, 'get', `/bff/v0/tasks?${query}`))
+      ).data.map((row) => row.id);
+
+    /* On hold is in flight: somebody is waiting on something, which is work an
+       inbox has to keep showing. The two halves are asserted as a partition of
+       the same three rows, so a status landing in both sets fails here. */
+    expect(await ids('open=true')).toEqual([TASK_A]);
+    expect(await ids('open=false')).toEqual([TASK_B, TASK_C]);
   });
 
   it('sorts a task with no due date last rather than first', async () => {

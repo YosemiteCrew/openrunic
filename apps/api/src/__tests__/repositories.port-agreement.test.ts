@@ -600,6 +600,11 @@ const FILTERS: {
     patientId: 'id-patientId',
     assigneeUserId: 'id-assigneeUserId',
     assigneeTeamKey: 'id-assigneeTeamKey',
+    assigneeType: 'USER',
+    // The same user as `assigneeUserId`, per the note above the table: the
+    // union's own-work half then intersects the scalar rather than emptying it,
+    // so the pair is exercised instead of short-circuiting to "matches nothing".
+    inboxFor: 'id-assigneeUserId',
     slaState: 'OK',
     from: new Date('2026-08-01T00:00:00.000Z'),
     to: new Date('2026-09-01T00:00:00.000Z'),

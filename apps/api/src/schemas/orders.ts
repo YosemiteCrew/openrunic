@@ -50,6 +50,7 @@ import type {
   TaskPatchInput,
   TaskRow,
 } from '../repositories/specs/orders.js';
+import { CLOSED_TASK_STATUSES, OPEN_TASK_STATUSES } from '../repositories/specs/orders.js';
 
 import {
   paginationQueryFields,
@@ -741,6 +742,11 @@ export const taskListQuerySchema = z.strictObject({
   patientId: z.uuid().optional(),
   assigneeUserId: z.uuid().optional(),
   assigneeTeamKey: z.string().min(1).max(64).optional(),
+  assigneeType: z.enum(TASK_ASSIGNEE_TYPES).optional(),
+  /** A user id. Their own tasks and the unclaimed pool, in one page. */
+  inboxFor: z.uuid().optional(),
+  /** `true` is the work still in flight: open, in progress or on hold. */
+  open: booleanFlag,
   slaState: z.enum(TASK_SLA_STATES).optional(),
   sort: z.enum(['dueAt', 'priority', 'createdAt']).default('dueAt'),
   order: sortOrderField,
@@ -749,6 +755,7 @@ export const taskListQuerySchema = z.strictObject({
 export type TaskListQueryInput = z.infer<typeof taskListQuerySchema>;
 
 export function toTaskListQuery(input: TaskListQueryInput): TaskListQuery {
+  const open = flag(input.open);
   return {
     page: input.page,
     pageSize: input.pageSize,
@@ -759,6 +766,9 @@ export function toTaskListQuery(input: TaskListQueryInput): TaskListQuery {
     ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
     ...(input.assigneeUserId === undefined ? {} : { assigneeUserId: input.assigneeUserId }),
     ...(input.assigneeTeamKey === undefined ? {} : { assigneeTeamKey: input.assigneeTeamKey }),
+    ...(input.assigneeType === undefined ? {} : { assigneeType: input.assigneeType }),
+    ...(input.inboxFor === undefined ? {} : { inboxFor: input.inboxFor }),
+    ...(open === undefined ? {} : { statusIn: open ? OPEN_TASK_STATUSES : CLOSED_TASK_STATUSES }),
     ...(input.slaState === undefined ? {} : { slaState: input.slaState }),
     sort: input.sort,
     order: input.order,

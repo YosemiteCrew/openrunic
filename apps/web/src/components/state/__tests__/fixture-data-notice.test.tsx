@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * The two constants this component reads are module-level and resolved at
  * import time in the real build - `IS_MOCK_MODE` from the inlined
- * `NEXT_PUBLIC_API_MODE`, `WORKLIST_IS_FIXTURE_BACKED` from a literal. Neither
+ * `NEXT_PUBLIC_API_MODE`, `INBOX_IS_FIXTURE_BACKED` from a literal. Neither
  * can be set per case from outside, so the barrel is mocked with getters: an ES
  * import is a live binding, so the component re-reads them on every render and
  * one module instance serves every case below.
@@ -22,7 +22,7 @@ vi.mock('@/lib/api', async () => {
     get IS_MOCK_MODE(): boolean {
       return state.isMockMode;
     },
-    get WORKLIST_IS_FIXTURE_BACKED(): boolean {
+    get INBOX_IS_FIXTURE_BACKED(): boolean {
       return state.isFixtureBacked;
     },
   };

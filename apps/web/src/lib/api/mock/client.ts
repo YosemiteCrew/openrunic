@@ -15,6 +15,7 @@ import type {
   ClinicalNoteDto,
   ClinicalNoteState,
   DiagnosticReportDto,
+  DiagnosticReportListQuery,
   EncounterDto,
   EncounterListQuery,
   EncounterStatus,
@@ -54,6 +55,7 @@ import {
   MOCK_ACTING_USER,
   MOCK_CLAIM_RECORDS,
   MOCK_DIAGNOSTIC_REPORTS,
+  MOCK_RESULT_OBSERVATIONS,
   MOCK_ENCOUNTERS,
   MOCK_FORM_DEFINITION_RECORDS,
   MOCK_NOTES,
@@ -219,6 +221,80 @@ function byServiceRequest(
     }
     return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
   };
+}
+
+/**
+ * The reports a `/bff/v0/results` query matches.
+ *
+ * `reviewed` is a boolean over a nullable timestamp rather than a column, which
+ * is what the route does too: `reviewed=false` is the sign-off queue and
+ * `reviewed=true` the reports somebody has already acted on, and the absence of
+ * the filter is both.
+ */
+export function filterDiagnosticReports(
+  rows: readonly DiagnosticReportDto[],
+  query: DiagnosticReportListQuery = {}
+): readonly DiagnosticReportDto[] {
+  const matched = rows.filter(
+    (report) => matchesDiagnosticReport(report, query) && withinIssuedWindow(report, query)
+  );
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort(byDiagnosticReport(query.sort ?? 'issuedAt', direction));
+}
+
+/** The exact-match half, plus `reviewed` - a boolean read off a nullable timestamp. */
+function matchesDiagnosticReport(
+  report: DiagnosticReportDto,
+  {
+    patientId,
+    encounterId,
+    serviceRequestId,
+    status,
+    category,
+    abnormalFlag,
+    reviewed,
+  }: DiagnosticReportListQuery
+): boolean {
+  if (patientId && report.patientId !== patientId) return false;
+  if (encounterId && report.encounterId !== encounterId) return false;
+  if (serviceRequestId && report.serviceRequestId !== serviceRequestId) return false;
+  if (status && report.status !== status) return false;
+  if (category && report.category !== category) return false;
+  if (abnormalFlag && report.abnormalFlag !== abnormalFlag) return false;
+  if (reviewed !== undefined && (report.reviewedAt !== null) !== reviewed) return false;
+  return true;
+}
+
+/** The window half, over `issuedAt`. Half-open, as for orders above. */
+function withinIssuedWindow(
+  report: DiagnosticReportDto,
+  { from, to }: DiagnosticReportListQuery
+): boolean {
+  if (from && report.issuedAt < from) return false;
+  if (to && report.issuedAt >= to) return false;
+  return true;
+}
+
+/**
+ * The comparator the results list is sorted by.
+ *
+ * `effectiveAt` is the only nullable key, and it carries the direction the same
+ * way `scheduledFor` does: absent sorts last ascending, first descending.
+ */
+function byDiagnosticReport(
+  sort: NonNullable<DiagnosticReportListQuery['sort']>,
+  direction: number
+): (a: DiagnosticReportDto, b: DiagnosticReportDto) => number {
+  if (sort === 'effectiveAt') {
+    return (a, b) => {
+      if (a.effectiveAt === null || b.effectiveAt === null) {
+        return ((a.effectiveAt === null ? 1 : 0) - (b.effectiveAt === null ? 1 : 0)) * direction;
+      }
+      return a.effectiveAt.localeCompare(b.effectiveAt) * direction;
+    };
+  }
+  return (a, b) => a[sort].localeCompare(b[sort]) * direction;
 }
 
 export function filterAppointments(
@@ -1076,6 +1152,28 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     results: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterDiagnosticReports(results.all(), query), query.page, query.pageSize)
+        ),
+      /* Read through the report, as the route does: an id naming a report this
+         client has no row for is absent rather than an empty list, which would
+         read as a report with no analytes. */
+      listObservations: (id, query = {}) =>
+        answer(() => {
+          results.require(id, NO_RESULT);
+          const rows = MOCK_RESULT_OBSERVATIONS.filter(
+            (observation) => observation.diagnosticReportId === id
+          );
+          const direction = query.order === 'desc' ? -1 : 1;
+          const sort = query.sort ?? 'sequence';
+          const sorted = [...rows].sort((a, b) =>
+            sort === 'sequence'
+              ? (a.sequence - b.sequence) * direction
+              : a[sort].localeCompare(b[sort]) * direction
+          );
+          return paginate(sorted, query.page, query.pageSize);
+        }),
       review: (id) =>
         answer(() => {
           const before = results.require(id, NO_RESULT);

@@ -67,11 +67,17 @@ describe('usePatientNames', () => {
     render(<PatientProbe client={client} rows={[second, first, second, null]} />);
 
     await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
-    // The distinct ids, sorted: the request is a property of the SET on the
-    // page, so a re-sorted page of the same patients is the same read. The size
-    // is asked for explicitly because the route's default page is 25, and a
-    // longer page would be named down to its first 25 rows.
-    const wanted = [first, second].sort((a, b) => a.localeCompare(b));
+    /* The distinct ids, in code-unit order: the request is a property of the
+       SET on the page. Sorted here the way the seam sorts - not with
+       `localeCompare`, which is locale-dependent and would make one set two
+       cache keys. The rule is written out here rather than imported, so this is
+       a second statement of it and not a reading of the first: reversing the
+       seam's comparator fails this case. What the case below adds is the
+       property the order exists FOR - the same patients arriving reversed are
+       the same read. The size is asked for explicitly because the route's
+       default page is 25, and a longer page would be named down to its first
+       25 rows. */
+    const wanted = [first, second].sort((a, b) => (a === b ? 0 : a < b ? -1 : 1));
     expect(list).toHaveBeenCalledWith({ ids: wanted, pageSize: 2 }, expect.anything());
 
     await waitFor(async () =>

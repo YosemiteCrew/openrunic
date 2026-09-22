@@ -60,13 +60,21 @@ export type ProviderLookup = (id: string | null) => string | null;
  * rows happened to arrive in: a re-sorted page of the same patients is the same
  * read, and keying on row order would refetch it.
  *
- * With a comparator rather than the default, which sorts by UTF-16 code unit -
- * the same order this file's test sorts its expectation in, so the two cannot
- * disagree about what "the same set" is.
+ * The comparator is a plain one and deliberately NOT `localeCompare`, which is
+ * the usual answer to S2871 and the wrong one here. This order is a cache key,
+ * and `localeCompare` is locale-dependent: the same set of ids could sort two
+ * ways in two runtimes, or in one runtime under two locales, and produce two
+ * keys for one read. Code-unit order is the same everywhere, which is the only
+ * property this needs.
  */
+function byCodeUnit(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 function named(ids: readonly (string | null)[]): readonly string[] {
   return [...new Set(ids.filter((id): id is string => id !== null))]
-    .sort((left, right) => left.localeCompare(right))
+    .sort(byCodeUnit)
     .slice(0, MAX_NAMED);
 }
 

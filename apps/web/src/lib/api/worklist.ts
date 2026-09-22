@@ -12,7 +12,8 @@ import {
   MOCK_PATIENT_PROBLEMS,
   MOCK_RESULTS,
 } from './mock/fixtures';
-import type { ApiClient, ListResponse, ServiceRequestDto } from './types';
+import { paginate } from './pagination';
+import type { ApiClient, ListResponse, PaginationQuery, ServiceRequestDto } from './types';
 
 /**
  * Orders, results and the typed inbox.
@@ -124,7 +125,15 @@ export interface Order {
   cancelReason: string | null;
 }
 
-export interface OrderListQuery {
+/**
+ * `PaginationQuery` because the route paginates whether or not the caller says
+ * so: `/bff/v0/orders` defaults to 25 rows and clamps at `MAX_PAGE_SIZE`. A
+ * query with no `pageSize` does not mean "every order", it means "the first
+ * 25", and a screen that could not spell the field could not ask for anything
+ * else (#539). Asking is only half of it - the window is smaller than the match
+ * whenever the clinic is busier than the clamp, so the screen states it too.
+ */
+export interface OrderListQuery extends PaginationQuery {
   patientId?: string;
   status?: OrderStatus;
   category?: OrderCategory;
@@ -468,9 +477,17 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
 
   return {
     orders: {
-      /* Refused is zero by construction: these rows are already `Order`s and
+      /* Paginated, unlike results and the inbox below, because `OrderListQuery`
+         carries the window the route applies and a fixture client that ignored
+         it would answer a question the live one does not.
+
+         Refused is zero by construction: these rows are already `Order`s and
          never went through `toOrder`. */
-      list: (query) => Promise.resolve({ ...page(filterOrders(orders, query)), refused: 0 }),
+      list: (query = {}) =>
+        Promise.resolve({
+          ...paginate(filterOrders(orders, query), query.page, query.pageSize),
+          refused: 0,
+        }),
     },
     results: { list: (query) => Promise.resolve(page(filterResults(results, query))) },
     inbox: { list: (query) => Promise.resolve(page(filterInbox(inbox, query))) },

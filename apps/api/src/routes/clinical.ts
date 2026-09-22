@@ -146,6 +146,7 @@ import {
 const MISSING_ENCOUNTER = 'No such encounter.';
 const MISSING_NOTE = 'No such clinical note.';
 const MISSING_PRESCRIPTION = 'No such prescription.';
+const MISSING_FILL = 'No such prescription fill.';
 
 /* ------------------------------------------------------------ the tables */
 
@@ -423,11 +424,16 @@ function crudModules(): CrudModule[] {
       router.get(`${base}/:id`, requirePermission('encounter.read'), async (c) => {
         const id = parseParam(c.req.param('id'), idParamSchema, 'id');
         const { prescriptionFills } = repositories(c);
-        const row = await prescriptionFills.findById(id);
-        if (row === null) {
-          throw ApiError.notFound('No such prescription fill.');
-        }
-        await requiredParentChart(c, 'prescriptionFills', row, 'No such prescription fill.');
+        // The read and the guard in one call, as everywhere else that reads a
+        // chart-bearing row by id. It answers the same 404 for a fill that is
+        // not there as for one this reader may not reach, so a separate null
+        // check would only be a second spelling of the first half.
+        const row = await requiredParentChart(
+          c,
+          'prescriptionFills',
+          await prescriptionFills.findById(id),
+          MISSING_FILL
+        );
         return c.json(toPrescriptionFillDto(row));
       });
 

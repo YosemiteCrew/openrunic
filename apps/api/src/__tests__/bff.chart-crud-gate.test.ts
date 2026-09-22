@@ -680,6 +680,42 @@ describe('a BFF clinical read, driven through the app', () => {
     expect(res.status).toBe(404);
   });
 
+  it('refuses a fill read of a chart nothing connects the reader to', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    const res = await app.request(`/bff/v0/medications/prescription-fills/${FILL}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+    // 404, not 403: a 403 would confirm the fill exists to a reader who may not see it.
+    expect(res.status).toBe(404);
+  });
+
+  it('answers a fill read once a relationship exists', async () => {
+    const { app, dataset } = createTestApp();
+    seedStrangerFill(dataset, DEMO_FACILITY_A);
+    seedCareRelationship(dataset, {
+      patientId: STRANGER,
+      providerId: '01890000-0000-7000-8000-000000000101',
+      as: 'appointment',
+      id: testId(70809),
+    });
+    const res = await app.request(`/bff/v0/medications/prescription-fills/${FILL}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: FILL, patientId: STRANGER });
+  });
+
+  it('404s a fill that is not there', async () => {
+    const { app } = createTestApp();
+    const res = await app.request(`/bff/v0/medications/prescription-fills/${testId(70810)}`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
   it('refuses a fill list that names a chart the reader is not on', async () => {
     const { app, dataset } = createTestApp();
     seedStrangerFill(dataset, DEMO_FACILITY_A);

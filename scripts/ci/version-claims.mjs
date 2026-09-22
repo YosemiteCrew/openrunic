@@ -58,7 +58,9 @@
 //
 // Exit codes:
 //   0  nothing in scope names a version
-//   1  something does, or a scope entry matched no tracked file
+//   1  something does, or the guard could not read what it claims to cover -
+//      a scope entry that matched no tracked file, or a scoped blob that is
+//      binary
 
 import path from 'node:path';
 import process from 'node:process';
@@ -170,7 +172,20 @@ export function main(_argv, { root = process.cwd() } = {}) {
   for (const { file, why } of scoped) {
     const sha = entries.find((entry) => entry.file === file).sha;
     const text = blobs.get(sha);
-    if (text === null) continue;
+    if (text === null) {
+      // A binary blob in THIS scope is the renamed-document failure wearing a
+      // different hat: the file is still selected, the count below still
+      // includes it, and nothing read a byte of it. These three documents are
+      // prose GitHub renders, so there is no legitimate binary case to skip
+      // past - and skipping would leave `scoped.length` describing files
+      // selected rather than files scanned, which is the one number a reader
+      // takes this guard's word for.
+      process.stderr.write(
+        'version-claims: this guard did not run over what it claims to cover:\n'
+      );
+      process.stderr.write(`  ${file} is a binary blob, so nothing scanned it (${why})\n`);
+      return 1;
+    }
     found.push(...findClaims(text, file, why));
   }
 

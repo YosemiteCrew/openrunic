@@ -168,20 +168,33 @@ export function filterServiceRequests(
     return true;
   });
 
-  const sort = query.sort ?? 'requestedAt';
   const direction = query.order === 'desc' ? -1 : 1;
-  return [...matched].sort((a, b) => {
-    if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
-    if (sort === 'scheduledFor') {
-      /* A row with no scheduled date sorts last rather than first, the way the
-         tasks route already treats a missing due date. Ascending or descending
-         is a question about the rows that have one. */
-      if (a.scheduledFor === null) return b.scheduledFor === null ? 0 : 1;
-      if (b.scheduledFor === null) return -1;
-      return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
-    }
-    return a.requestedAt.localeCompare(b.requestedAt) * direction;
-  });
+  return [...matched].sort(byServiceRequest(query.sort ?? 'requestedAt', direction));
+}
+
+/**
+ * The comparator the orders list is sorted by.
+ *
+ * `scheduledFor` is the only key that can be absent, and a row without one
+ * sorts last in both directions, the way the tasks route already treats a task
+ * with no due date. Ascending or descending is a question about the rows that
+ * have a date; a row that has none is not early, it is unscheduled.
+ */
+function byServiceRequest(
+  sort: NonNullable<ServiceRequestListQuery['sort']>,
+  direction: number
+): (a: ServiceRequestDto, b: ServiceRequestDto) => number {
+  if (sort === 'createdAt') {
+    return (a, b) => a.createdAt.localeCompare(b.createdAt) * direction;
+  }
+  if (sort === 'requestedAt') {
+    return (a, b) => a.requestedAt.localeCompare(b.requestedAt) * direction;
+  }
+  return (a, b) => {
+    if (a.scheduledFor === null) return b.scheduledFor === null ? 0 : 1;
+    if (b.scheduledFor === null) return -1;
+    return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
+  };
 }
 
 export function filterAppointments(

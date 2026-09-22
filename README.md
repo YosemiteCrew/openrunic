@@ -132,7 +132,7 @@ A modern, fast, lightweight EMR:
 
 ## Project status
 
-**0.2.0.** Substantial EMR functionality has shipped and has tests behind it.
+**0.3.0.** Substantial EMR functionality has shipped and has tests behind it.
 [`docs/emr-capabilities.md`](docs/emr-capabilities.md) is the capability map: it records 45 of 53
 capabilities as Done. Read it before assuming this project is either further along or further behind
 than it is.

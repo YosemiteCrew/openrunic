@@ -857,6 +857,20 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
         }),
     },
 
+    prescriptions: {
+      getRefillsRemaining: (id) =>
+        answer(() => {
+          // Mock implementation - return some refills remaining for testing
+          // In reality, this would be computed from the prescription and fills
+          return {
+            prescriptionId: id,
+            authorisedRefills: 5,
+            fillsRecorded: 2,
+            refillsRemaining: 3,
+          };
+        }),
+    },
+
     encounters: {
       list: (query = {}) =>
         answer(() =>

@@ -186,6 +186,10 @@ describe('every hand-registered sub-resource route is accounted for', () => {
     { route: 'POST /bff/v0/forms/submissions/:id/complete', parent: 'formSubmissions' },
     { route: 'POST /bff/v0/forms/submissions/:id/sign', parent: 'formSubmissions' },
     { route: 'POST /bff/v0/medications/prescriptions/:id/cancel', parent: 'prescriptions' },
+    {
+      route: 'GET /bff/v0/medications/prescriptions/:id/refills-remaining',
+      parent: 'prescriptions',
+    },
     { route: 'POST /bff/v0/medications/prescriptions/:id/sign', parent: 'prescriptions' },
     { route: 'POST /bff/v0/medications/prescriptions/:id/transmit', parent: 'prescriptions' },
     { route: 'POST /bff/v0/messages/:id/read', parent: 'messages' },
@@ -394,6 +398,7 @@ describe('every hand-registered addressed route is accounted for', () => {
   const INVENTORY: readonly AddressedRoute[] = [
     { route: 'GET /bff/v0/appointments/:id', parent: 'appointments' },
     { route: 'GET /bff/v0/audit/:id', parent: undefined },
+    { route: 'GET /bff/v0/medications/prescription-fills/:id', parent: 'prescriptionFills' },
     { route: 'GET /bff/v0/patients/:id', parent: 'patients' },
     { route: 'GET /bff/v0/referrals/:id', parent: 'referrals' },
     { route: 'GET /bff/v0/telehealth/:id', parent: 'telehealthVisits' },
@@ -417,6 +422,7 @@ describe('every hand-registered addressed route is accounted for', () => {
    */
   const CHART_BEARING: readonly string[] = [
     'GET /bff/v0/appointments/:id',
+    'GET /bff/v0/medications/prescription-fills/:id',
     'GET /bff/v0/referrals/:id',
     'PATCH /bff/v0/appointments/:id',
   ];

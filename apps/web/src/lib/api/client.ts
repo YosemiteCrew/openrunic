@@ -236,6 +236,13 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
           signal
         ),
     },
+    prescriptions: {
+      getRefillsRemaining: (id, signal) =>
+        get<PrescriptionRefillsRemainingDto>(
+          `/medications/prescriptions/${segment(id)}/refills-remaining`,
+          signal
+        ),
+    },
     encounters: {
       list: (query, signal) =>
         get<ListResponse<EncounterDto>>(`/encounters${toSearchParams(query)}`, signal),

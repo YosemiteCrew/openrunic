@@ -36,6 +36,31 @@ export const INBOX_STREAM_INLINE_KEYS: Record<InboxStream, string> = {
   TASKS: 'inbox.stream.inline.tasks',
 };
 
+/**
+ * The verb that finishes a row of this stream, and what the toast says after.
+ *
+ * A property of the stream rather than of the item: a refill is approved and a
+ * cosign is signed whichever refill it is. It used to be two fields on the
+ * item, which made it eleven copies of five English strings on the one screen
+ * where every other word is translated - and unanswerable for a row read from
+ * the API, which carries a title and a description and nothing that is a verb.
+ */
+export const INBOX_STREAM_ACTION_KEYS: Record<InboxStream, string> = {
+  RESULTS: 'inbox.stream.action.results',
+  MESSAGES: 'inbox.stream.action.messages',
+  REFILLS: 'inbox.stream.action.refills',
+  COSIGN: 'inbox.stream.action.cosign',
+  TASKS: 'inbox.stream.action.tasks',
+};
+
+export const INBOX_STREAM_DONE_KEYS: Record<InboxStream, string> = {
+  RESULTS: 'inbox.stream.done.results',
+  MESSAGES: 'inbox.stream.done.messages',
+  REFILLS: 'inbox.stream.done.refills',
+  COSIGN: 'inbox.stream.done.cosign',
+  TASKS: 'inbox.stream.done.tasks',
+};
+
 export const INBOX_STREAM_ICON: Record<InboxStream, string> = {
   RESULTS: 'flask-conical',
   MESSAGES: 'message-square',

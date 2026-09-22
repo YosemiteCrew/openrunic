@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Button, Card, Select } from '@openrunic/ui';
 import type { SelectOption } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
@@ -8,6 +9,7 @@ import type { ChangeEvent, ReactElement } from 'react';
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import {
+  INBOX_STREAM_DONE_KEYS,
   INBOX_STREAM_INLINE_KEYS,
   INBOX_STREAM_LABEL_KEYS,
   InboxList,
@@ -15,9 +17,10 @@ import {
   slaLabel,
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, FixtureDataNotice, Toast } from '@/components/state';
+import { AsyncBoundary, Toast } from '@/components/state';
 import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
+
 import { counted } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
@@ -79,6 +82,26 @@ const OPEN_ITEMS: CountedMessage = {
   otherKey: 'inbox.rail.openItemsOther',
 };
 
+/**
+ * The rows the route put on this page, when it matched more than one page of
+ * them.
+ *
+ * The same statement the orders ledger and the sign-off queue make, for the
+ * same reason: this screen has no pager, and the chip counts above the list are
+ * a count of ONE page. A total above a full list is a number about the practice
+ * rather than about the queue (#539).
+ */
+const INBOX_WINDOW: CountedMessage = {
+  oneKey: 'inbox.rail.windowOne',
+  otherKey: 'inbox.rail.windowOther',
+};
+
+/** The rows the five typed streams refused, because `TASK_TYPES` is wider than C13's five. */
+const NOT_SHOWN: CountedMessage = {
+  oneKey: 'inbox.rail.notShownOne',
+  otherKey: 'inbox.rail.notShownOther',
+};
+
 const OVERDUE_SUMMARY: CountedMessage = {
   oneKey: 'inbox.rail.overdueSummaryOne',
   otherKey: 'inbox.rail.overdueSummaryOther',
@@ -105,17 +128,23 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
     const open = loaded.filter(
       (item) => !completed.has(item.id) && (!stream || item.stream === stream)
     );
+    /* A task with no due date is not the most urgent one, so it sorts last -
+       the same decision the route's own comparator makes, so the two orderings
+       do not disagree about the top of the queue. */
     return open.sort(
       (a, b) =>
         rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
-        a.dueAt.localeCompare(b.dueAt)
+        (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff')
     );
   }, [loaded, doneIds, stream, now]);
 
-  const complete = useCallback((item: InboxItem) => {
-    setDoneIds((previous) => [...previous, item.id]);
-    setCompletion({ item, label: item.doneLabel });
-  }, []);
+  const complete = useCallback(
+    (item: InboxItem) => {
+      setDoneIds((previous) => [...previous, item.id]);
+      setCompletion({ item, label: t(INBOX_STREAM_DONE_KEYS[item.stream]) });
+    },
+    [t]
+  );
 
   /* One undo for both dispositions: whichever list the row landed in, this puts
      it back exactly where it was. Reversible acts get an undo, not a dialog. */
@@ -182,8 +211,19 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
     [t]
   );
 
+  /* Read off the page rather than off `visible`, which the stream chips and the
+     completed rows have already narrowed: the two absences below are facts
+     about what the ROUTE answered, and folding them into the filtered count
+     would make them disappear the moment somebody picked a stream. */
+  const page = inbox.data?.page ?? null;
+  const refused = inbox.data?.refused ?? 0;
+  const windowed = inbox.data ? inbox.data.data.length + refused : null;
+
   const overdue = visible.filter((item) => slaState(item.dueAt, now) === 'OVERDUE');
-  const oldestOverdue = overdue[0];
+  /* The instant rather than the item: an item with no due date is never
+     OVERDUE, and reading the field out here is what says so to the compiler
+     without asserting it. */
+  const oldestOverdueAt = overdue[0]?.dueAt ?? null;
 
   return (
     <AppShell
@@ -209,18 +249,27 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
           title={counted(t, OPEN_ITEMS, visible.length)}
         >
           <p className="or-small">
-            {oldestOverdue
+            {oldestOverdueAt !== null
               ? counted(t, OVERDUE_SUMMARY, overdue.length, {
-                  oldest: slaLabel(t, oldestOverdue.dueAt, now, 'inline'),
+                  oldest: slaLabel(t, oldestOverdueAt, now, 'inline'),
                 })
               : t('inbox.rail.nothingOverdue')}
           </p>
+          {windowed !== null && page !== null && windowed < page.total ? (
+            <p className="or-caption">
+              {counted(t, INBOX_WINDOW, windowed, { total: formatCount(page.total, t.locale) })}
+            </p>
+          ) : null}
+          {refused > 0 ? (
+            <p className="or-caption">
+              <strong>{counted(t, NOT_SHOWN, refused)}</strong>
+            </p>
+          ) : null}
           <p className="or-small or-muted">{t('inbox.rail.auditNote')}</p>
         </Card>
       }
     >
       <ScreenCommands commands={commands} />
-      <FixtureDataNotice />
       <InboxStreamFilter
         items={loaded.filter((item) => !done.has(item.id))}
         active={stream}

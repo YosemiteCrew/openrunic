@@ -671,6 +671,29 @@ export interface TaskDto {
   updatedAt: string;
 }
 
+/** Mirrors `taskListQuerySchema`. Wider than `InboxListQuery`, which is a view. */
+export interface TaskListQuery extends PaginationQuery {
+  type?: TaskKind;
+  status?: TaskWorkStatus;
+  priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  patientId?: string;
+  assigneeUserId?: string;
+  assigneeTeamKey?: string;
+  /** Person or pool, without naming which person or which pool. */
+  assigneeType?: 'USER' | 'TEAM';
+  /** A user id: their own tasks and the unclaimed pool, as one page. */
+  inboxFor?: string;
+  /** `true` is the work still in flight: open, in progress or on hold. */
+  open?: boolean;
+  slaState?: 'OK' | 'AGING' | 'BREACH';
+  /** Inclusive ISO instant, over `dueAt`. */
+  from?: string;
+  /** Exclusive ISO instant, over `dueAt`. */
+  to?: string;
+  sort?: 'dueAt' | 'priority' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
 /** Mirrors `taskCompleteSchema`. */
 export interface TaskCompleteBody {
   outcome?: string;
@@ -1009,6 +1032,15 @@ export interface PrincipalCapabilities {
   readonly roles: readonly string[];
   /** Sorted, so two answers that mean the same thing compare equal. */
   readonly permissions: readonly string[];
+  /**
+   * The caller's own `User` id, or null when the caller is not staff.
+   *
+   * The one thing the browser cannot work out for itself: it holds a bearer
+   * token, and nothing in the token is the API's identifier for the person
+   * holding it. A surface defined in terms of the caller - a personal inbox,
+   * "assigned to me" - has to ask.
+   */
+  readonly userId: string | null;
 }
 
 export interface ApiClient {
@@ -1104,6 +1136,7 @@ export interface ApiClient {
     review: (id: string, signal?: AbortSignal) => Promise<DiagnosticReportDto>;
   };
   tasks: {
+    list: (query?: TaskListQuery, signal?: AbortSignal) => Promise<ListResponse<TaskDto>>;
     complete: (id: string, body?: TaskCompleteBody, signal?: AbortSignal) => Promise<TaskDto>;
   };
   claims: {

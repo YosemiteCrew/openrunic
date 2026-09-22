@@ -24,6 +24,7 @@ import type {
   TaskInput,
   THREAD_KINDS,
 } from '@openrunic/database';
+import { TASK_STATUSES as TASK_STATUS_VALUES } from '@openrunic/database';
 
 import {
   childBatch,
@@ -772,6 +773,23 @@ export const documentSpec: CollectionSpec<
 
 /* --------------------------------------------------------------------- tasks */
 
+/**
+ * The task statuses that mean the work is still in flight.
+ *
+ * One definition, read by the administrative worklist and by the clinician
+ * inbox: two lists of "still open" that drifted apart would put a task on one
+ * surface and not the other with nothing to grep for.
+ */
+export const OPEN_TASK_STATUSES: readonly TaskStatus[] = ['OPEN', 'IN_PROGRESS', 'ON_HOLD'];
+
+/**
+ * The complement of {@link OPEN_TASK_STATUSES}, derived rather than listed, so
+ * a sixth status added to the enum lands in exactly one of the two sets.
+ */
+export const CLOSED_TASK_STATUSES: readonly TaskStatus[] = TASK_STATUS_VALUES.filter(
+  (status) => !OPEN_TASK_STATUSES.includes(status)
+);
+
 export interface TaskListQuery extends BaseQuery {
   type?: TaskType;
   status?: TaskStatus;
@@ -790,6 +808,23 @@ export interface TaskListQuery extends BaseQuery {
   patientId?: string;
   assigneeUserId?: string;
   assigneeTeamKey?: string;
+  /** Person or pool, without naming which person or which pool. */
+  assigneeType?: TaskAssigneeType;
+  /**
+   * The work one user has to act on: their own tasks, plus anything still in
+   * the shared pool.
+   *
+   * The two halves are a union, and `assigneeUserId` and `assigneeTeamKey`
+   * intersect, so no combination of the existing filters expresses this. Asked
+   * as two queries it is two snapshots: a task claimed out of the pool between
+   * the reads appears in both result sets or in neither, which is the same
+   * argument {@link TaskListQuery.statusIn} makes about a task changing status.
+   *
+   * The pool half is deliberately every team rather than the caller's teams. A
+   * principal carries no team membership, so a narrower reading would have to
+   * invent one.
+   */
+  inboxFor?: string;
   slaState?: TaskSlaState;
   /** Inclusive lower bound on `dueAt`. */
   from?: Date;
@@ -853,6 +888,37 @@ function taskStatuses(query: TaskListQuery): readonly TaskStatus[] | undefined {
   return statusIn.includes(status) ? [status] : [];
 }
 
+/**
+ * The four filters that answer WHOSE work a task is.
+ *
+ * Split out of `matches` because they are one question asked four ways - a
+ * person, a pool, which of the two, and the union of the first and second -
+ * and because the arms below are the only ones that read more than one column
+ * of the row.
+ */
+function ownsTask(row: TaskRow, query: TaskListQuery): boolean {
+  if (query.assigneeUserId !== undefined && row.assigneeUserId !== query.assigneeUserId) {
+    return false;
+  }
+  if (query.assigneeTeamKey !== undefined && row.assigneeTeamKey !== query.assigneeTeamKey) {
+    return false;
+  }
+  if (query.assigneeType !== undefined && row.assigneeType !== query.assigneeType) return false;
+  return query.inboxFor === undefined || inInboxOf(row, query.inboxFor);
+}
+
+/**
+ * The union behind {@link TaskListQuery.inboxFor}, in one place.
+ *
+ * Both ports read this rather than each spelling the union out, because the two
+ * halves have to agree on what an unclaimed task is: `assigneeType` is the
+ * column that decides it, and a row with a `TEAM` type and a stale
+ * `assigneeUserId` is still in the pool.
+ */
+function inInboxOf(row: TaskRow, userId: string): boolean {
+  return row.assigneeType === 'TEAM' || row.assigneeUserId === userId;
+}
+
 export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, TaskListQuery> = {
   model: 'Task',
   targetType: 'Task',
@@ -909,12 +975,7 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
     if (wanted !== undefined && !wanted.includes(row.status)) return false;
     if (query.priority !== undefined && row.priority !== query.priority) return false;
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
-    if (query.assigneeUserId !== undefined && row.assigneeUserId !== query.assigneeUserId) {
-      return false;
-    }
-    if (query.assigneeTeamKey !== undefined && row.assigneeTeamKey !== query.assigneeTeamKey) {
-      return false;
-    }
+    if (!ownsTask(row, query)) return false;
     if (query.slaState !== undefined && row.slaState !== query.slaState) return false;
     return inWindow(row.dueAt, query.from, query.to);
   },
@@ -929,6 +990,10 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.assigneeUserId === undefined ? {} : { assigneeUserId: query.assigneeUserId }),
       ...(query.assigneeTeamKey === undefined ? {} : { assigneeTeamKey: query.assigneeTeamKey }),
+      ...(query.assigneeType === undefined ? {} : { assigneeType: query.assigneeType }),
+      ...(query.inboxFor === undefined
+        ? {}
+        : { OR: [{ assigneeUserId: query.inboxFor }, { assigneeType: 'TEAM' as const }] }),
       ...(query.slaState === undefined ? {} : { slaState: query.slaState }),
       ...(dueAt === undefined ? {} : { dueAt }),
     };

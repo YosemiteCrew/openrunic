@@ -1733,8 +1733,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-12T11:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Review result',
-    doneLabel: 'Result opened',
     href: '/results',
   },
   {
@@ -1747,8 +1745,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T09:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Review result',
-    doneLabel: 'Result opened',
     href: '/results',
   },
   {
@@ -1761,8 +1757,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T12:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Review result',
-    doneLabel: 'Result opened',
     href: '/results',
   },
   {
@@ -1775,8 +1769,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-12T17:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Reply',
-    doneLabel: 'Reply sent',
     href: null,
   },
   {
@@ -1789,8 +1781,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T17:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Reply',
-    doneLabel: 'Reply sent',
     href: null,
   },
   {
@@ -1803,8 +1793,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T09:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Approve refill',
-    doneLabel: 'Refill approved',
     href: null,
   },
   {
@@ -1817,8 +1805,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-11T17:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Approve refill',
-    doneLabel: 'Refill approved',
     href: null,
   },
   {
@@ -1831,8 +1817,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-15T17:00:00.000Z',
     assignedTo: 'ME',
     unread: false,
-    actionLabel: 'Cosign note',
-    doneLabel: 'Note cosigned',
     href: null,
   },
   {
@@ -1845,8 +1829,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-11T17:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Cosign note',
-    doneLabel: 'Note cosigned',
     href: null,
   },
   {
@@ -1859,8 +1841,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-12T12:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Mark done',
-    doneLabel: 'Task closed',
     href: '/orders',
   },
   {
@@ -1873,8 +1853,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-14T17:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Mark done',
-    doneLabel: 'Task closed',
     href: null,
   },
 ];

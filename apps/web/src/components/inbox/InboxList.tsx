@@ -8,7 +8,7 @@ import type { InboxItem } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
-import { INBOX_STREAM_ICON, INBOX_STREAM_LABEL_KEYS } from './streams';
+import { INBOX_STREAM_ACTION_KEYS, INBOX_STREAM_ICON, INBOX_STREAM_LABEL_KEYS } from './streams';
 import { SlaBadge } from './SlaBadge';
 
 /**
@@ -65,7 +65,19 @@ export function InboxList({
                     <span className="or-mono or-muted">{formatMrn(patient.mrn)}</span>
                   </>
                 ) : (
-                  <strong>{t('inbox.list.practiceWide')}</strong>
+                  /* Three states, not two. A task with no patient is
+                     practice-wide; a task with a patient this build cannot
+                     name is not, and saying so would move somebody's work out
+                     of their chart in the one line a reader scans for it.
+                     `mockPatientById` answers nothing for a real id, which is
+                     the whole of the gap - see #559. */
+                  <strong>
+                    {t(
+                      item.patientId === null
+                        ? 'inbox.list.practiceWide'
+                        : 'inbox.list.unnamedPatient'
+                    )}
+                  </strong>
                 )}
               </span>
               <span className="or-inbox__summary">{item.summary}</span>
@@ -83,7 +95,7 @@ export function InboxList({
 
             <span className="or-inbox__actions">
               <Button variant="secondary" size="sm" onClick={() => onComplete(item)}>
-                {item.actionLabel}
+                {t(INBOX_STREAM_ACTION_KEYS[item.stream])}
               </Button>
               {mine ? null : (
                 <Button

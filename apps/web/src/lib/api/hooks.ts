@@ -112,7 +112,9 @@ export function useApiQuery<T>(
 
   return useMemo(() => {
     // A disabled query is not pending: there is nothing to wait for, so it
-    // reports success with no data and the screen renders its empty state.
+    // reports success with no data. That payload is NOT an empty state -
+    // `AsyncBoundary` reads a null payload as a failure - so a caller that
+    // disables on a prerequisite must answer for the wait itself.
     if (!enabled) return { status: 'success' as AsyncStatus, data: null, error: null, refetch };
     if (fresh === null)
       return { status: 'loading' as AsyncStatus, data: null, error: null, refetch };

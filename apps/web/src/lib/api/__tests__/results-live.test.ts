@@ -315,7 +315,10 @@ describe('filterDiagnosticReports', () => {
      above cannot show: one of them is absent, so that arm answers from the
      absence alone and a comparator that never read `effectiveAt` would pass. */
   it('orders two collected reports by their collection instant', () => {
-    const collected = [rows[0], dto({ id: 'c', effectiveAt: '2026-02-06T00:00:00.000Z' })];
+    const collected = [
+      dto({ id: 'a', effectiveAt: '2026-02-05T00:00:00.000Z' }),
+      dto({ id: 'c', effectiveAt: '2026-02-06T00:00:00.000Z' }),
+    ];
     const sorted = (query: Parameters<typeof filterDiagnosticReports>[1]): string[] =>
       filterDiagnosticReports(collected, query).map((row) => row.id);
 

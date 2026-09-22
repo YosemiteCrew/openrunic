@@ -1,4 +1,4 @@
-import { formatCount } from '@openrunic/i18n';
+import { formatCount, verbatim } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 
 import type { PatientName } from '@/lib/api/types';
@@ -625,7 +625,15 @@ export function formatVital(t: Translator, input: VitalInput): FormattedVital {
 
   const bounds: string | null =
     range && (range.low !== undefined || range.high !== undefined)
-      ? t('clinical.vital.range', { low: range.low ?? '-', high: range.high ?? '-', unit })
+      ? // Through `verbatim` for the reason the comment above gives, which is
+        // about this area having no Spanish catalogue rather than about the
+        // bounds being identifiers. Whoever writes `es/clinical.ts` changes
+        // this line and the one above it together.
+        t('clinical.vital.range', {
+          low: range.low === undefined ? '-' : verbatim(range.low),
+          high: range.high === undefined ? '-' : verbatim(range.high),
+          unit,
+        })
       : null;
 
   return {

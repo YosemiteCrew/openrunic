@@ -1,4 +1,5 @@
-import { API_ENV, resolveApiMode } from '@/lib/api';
+import { API_MODE } from '@/lib/api';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 
 import { readStream } from './sse';
 import type { AssistantCapabilities, AssistantEvent } from './types';
@@ -57,7 +58,11 @@ const TURNS_PATH = '/bff/v0/agent/turns';
 
 function headers(transport: AssistantTransport, accept: string): Record<string, string> {
   const authorization = transport.authorization?.();
-  return { accept, ...(authorization === undefined ? {} : { authorization }) };
+  return {
+    accept,
+    [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER,
+    ...(authorization === undefined ? {} : { authorization }),
+  };
 }
 
 /**
@@ -176,9 +181,9 @@ export type RunTurn = (request: TurnRequest) => AsyncIterable<AssistantEvent>;
  * `NEXT_PUBLIC_API_MODE=live` the answer comes from the API and from nothing
  * else: no build flag turns this on.
  */
-const DEFAULT_TRANSPORT: AssistantTransport = { baseUrl: API_ENV.baseUrl ?? '' };
+const DEFAULT_TRANSPORT: AssistantTransport = { baseUrl: '/api' };
 
-const IS_MOCK_MODE = resolveApiMode(API_ENV.mode) !== 'live';
+const IS_MOCK_MODE = API_MODE !== 'live';
 
 export const defaultProbe: ProbeAssistant = (signal) =>
   IS_MOCK_MODE ? Promise.resolve(ABSENT) : probeAssistant(DEFAULT_TRANSPORT, signal);

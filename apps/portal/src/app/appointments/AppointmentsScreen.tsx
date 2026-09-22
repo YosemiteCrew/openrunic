@@ -30,6 +30,7 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
   const t = useTranslator();
   const load = useCallback(() => api.getAppointments(), [api]);
   const { state, reload } = useAsync(load);
+  const requestsSupported = state.status === 'ready' && state.data.requestsSupported !== false;
 
   /** The appointment awaiting the second step of a cancellation, if any. */
   const [pendingCancel, setPendingCancel] = useState<Appointment | null>(null);
@@ -73,11 +74,13 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
         lede={t('portal.appointments.lede')}
       />
 
-      <div className="portal-actions">
-        <Button iconLeft="calendar-plus" onClick={() => setRequestFor({})}>
-          {t('portal.appointments.request')}
-        </Button>
-      </div>
+      {requestsSupported ? (
+        <div className="portal-actions">
+          <Button iconLeft="calendar-plus" onClick={() => setRequestFor({})}>
+            {t('portal.appointments.request')}
+          </Button>
+        </div>
+      ) : null}
 
       {request.status === 'done' ? (
         <output className="portal-record__meta">{t('portal.appointments.requested')}</output>
@@ -101,9 +104,11 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
             title={t('portal.appointments.empty.title')}
             message={t('portal.appointments.empty.message')}
             action={
-              <Button iconLeft="calendar-plus" onClick={() => setRequestFor({})}>
-                {t('portal.appointments.request')}
-              </Button>
+              requestsSupported ? (
+                <Button iconLeft="calendar-plus" onClick={() => setRequestFor({})}>
+                  {t('portal.appointments.request')}
+                </Button>
+              ) : undefined
             }
           />
         }
@@ -128,9 +133,11 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                     key={appointment.id}
                     headingLevel={3}
                     overline={t(
-                      appointment.mode === 'video'
-                        ? 'portal.appointments.mode.video'
-                        : 'portal.appointments.mode.inPerson'
+                      {
+                        video: 'portal.appointments.mode.video',
+                        'in-person': 'portal.appointments.mode.inPerson',
+                        unknown: 'portal.appointments.mode.unknown',
+                      }[appointment.mode ?? 'unknown'] ?? 'portal.appointments.mode.unknown'
                     )}
                     title={appointment.reason}
                   >
@@ -146,20 +153,24 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
                           {t('portal.appointments.directions')}
                         </Button>
                       ) : null}
-                      <Button
-                        variant="secondary"
-                        iconLeft="calendar-clock"
-                        onClick={() => setRequestFor({ rescheduleOf: appointment.id })}
-                      >
-                        {t('portal.appointments.move')}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        iconLeft="calendar-x"
-                        onClick={() => setPendingCancel(appointment)}
-                      >
-                        {t('portal.appointments.cancel')}
-                      </Button>
+                      {appointment.rescheduleSupported !== false ? (
+                        <Button
+                          variant="secondary"
+                          iconLeft="calendar-clock"
+                          onClick={() => setRequestFor({ rescheduleOf: appointment.id })}
+                        >
+                          {t('portal.appointments.move')}
+                        </Button>
+                      ) : null}
+                      {appointment.cancellationSupported !== false ? (
+                        <Button
+                          variant="danger"
+                          iconLeft="calendar-x"
+                          onClick={() => setPendingCancel(appointment)}
+                        >
+                          {t('portal.appointments.cancel')}
+                        </Button>
+                      ) : null}
                     </div>
                   </Card>
                 ))
@@ -206,7 +217,7 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
              would quietly come apart in another language. */
           description={t('portal.appointments.cancelDialog.description', {
             reason: pendingCancel.reason,
-            clinician: pendingCancel.clinician,
+            clinician: pendingCancel.clinician ?? t('portal.appointment.careTeam'),
             when: formatDateTime(t, pendingCancel.startsAt),
           })}
           onClose={() => setPendingCancel(null)}

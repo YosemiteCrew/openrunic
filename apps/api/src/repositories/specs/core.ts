@@ -24,7 +24,7 @@ import {
   type Writable,
 } from '../collection.js';
 import { APPOINTMENT_DEFAULTS, PATIENT_DEFAULTS } from '../defaults.js';
-import type { ScopedRow } from '../rows.js';
+import type { OrderByFor, ScopedRow, WhereFor } from '../rows.js';
 import type { AdministrativeGender, AppointmentStatus, TelehealthVisitStatus } from '../types.js';
 
 /**
@@ -139,6 +139,9 @@ export const patientSpec: CollectionSpec<
    */
   facilityColumn: 'primaryFacilityId',
   facilityScoped: true,
+  // `primaryFacilityId` is nullable: somebody registered before a site was
+  // recorded is not sited, and stays visible to the whole tenant.
+  facilityColumnOptional: true,
   facilityHidesAddressed: false,
   // A patient-scoped token reaches exactly one chart, and for this table that
   // chart is the row's own id.
@@ -232,7 +235,7 @@ export const patientSpec: CollectionSpec<
     return `${row.familyName} ${row.givenName}`;
   },
 
-  orderBy(query: PatientListQuery) {
+  orderBy(query: PatientListQuery): OrderByFor<'Patient'> {
     const { order } = query;
     if (query.sort === 'birthDate') return [{ birthDate: order }, { id: 'asc' as const }];
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
@@ -244,7 +247,7 @@ export const patientSpec: CollectionSpec<
   },
 
   uniqueBy: {
-    where: (input: PatientCreateInput) => ({ mrn: input.mrn }),
+    where: (input: PatientCreateInput): WhereFor<'Patient'> => ({ mrn: input.mrn }),
     matches: (row: ScopedRow<'Patient'>, input: PatientCreateInput) => row.mrn === input.mrn,
     message: (input: PatientCreateInput) => `A patient with MRN ${input.mrn} already exists.`,
   },
@@ -371,7 +374,7 @@ export const appointmentSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.start.getTime();
   },
 
-  orderBy(query: AppointmentListQuery) {
+  orderBy(query: AppointmentListQuery): OrderByFor<'Appointment'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ start: query.order }, { id: 'asc' as const }];
   },
@@ -484,7 +487,7 @@ export const telehealthVisitSpec: CollectionSpec<
     return row.scheduledStart.getTime();
   },
 
-  orderBy(query: TelehealthVisitListQuery) {
+  orderBy(query: TelehealthVisitListQuery): OrderByFor<'TelehealthVisit'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ scheduledStart: order }, { id: 'asc' as const }];
@@ -587,7 +590,7 @@ export const relatedPersonSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.familyName;
   },
 
-  orderBy(query: RelatedPersonListQuery) {
+  orderBy(query: RelatedPersonListQuery): OrderByFor<'RelatedPerson'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ familyName: order }, { id: 'asc' as const }];
@@ -644,12 +647,64 @@ export const breakGlassGrantSpec: CollectionSpec<
   patientColumn: 'patientId',
   compartment: 'open',
 
-  newRow(input: BreakGlassGrantInput, context): Writable<'BreakGlassGrant'> {
+  /**
+   * At most one unexpired grant per reader per chart.
+   *
+   * The route documents a repeat declaration as returning the grant already
+   * held, and it implemented that by reading the caller's grants and then
+   * creating a row - two round trips with nothing held between them. Two
+   * declarations for one chart arriving together both read no grant and both
+   * created one, so "at most one" was true only of requests that happened not
+   * to overlap.
+   *
+   * Stated here so both ports say it. The in-memory store checks its arrays and
+   * the Prisma store issues the same question as a `findFirst` inside the
+   * create's transaction, and each raises the same conflict, so the handler has
+   * one behaviour to recover from rather than one per implementation.
+   *
+   * It is not the whole guarantee, and cannot be. The Prisma path is still
+   * check-then-write against a live server, so two connections can pass it at
+   * once; `break_glass_ceiling` refuses the loser under the advisory lock it
+   * already takes, which is the half no application-side check can provide.
+   * This is what makes the invariant hold in the store the tests run against
+   * and what gives the race a name in both.
+   *
+   * "Unexpired" is measured against the declaration's own `grantedAt` rather
+   * than against a clock read here, so the natural key, the route's bounds
+   * check and the trigger are all asking about the same instant. It is also why
+   * this cannot be a unique index: a partial index predicate has to be
+   * immutable, and "still in force" is a comparison against the row's own time.
+   */
+  uniqueBy: {
+    where(input: BreakGlassGrantInput): WhereFor<'BreakGlassGrant'> {
+      return {
+        userId: input.userId,
+        patientId: input.patientId,
+        expiresAt: { gt: input.grantedAt },
+      };
+    },
+    matches(row: ScopedRow<'BreakGlassGrant'>, input: BreakGlassGrantInput): boolean {
+      return (
+        row.userId === input.userId &&
+        row.patientId === input.patientId &&
+        row.expiresAt > input.grantedAt
+      );
+    },
+    message(): string {
+      return 'This reader already holds an unexpired break-glass grant on this chart.';
+    },
+  },
+
+  newRow(input: BreakGlassGrantInput): Writable<'BreakGlassGrant'> {
     return {
       userId: input.userId,
       patientId: input.patientId,
       reason: input.reason,
-      grantedAt: context.now,
+      /* The caller's instant, not the repository clock's. `expiresAt` was
+         already derived from it, and a window that began a few milliseconds
+         after the moment it was measured from is a window nothing else in this
+         file can reason about. */
+      grantedAt: input.grantedAt,
       expiresAt: input.expiresAt,
     };
   },
@@ -700,7 +755,7 @@ export const breakGlassGrantSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.grantedAt.getTime();
   },
 
-  orderBy(query: BreakGlassGrantListQuery) {
+  orderBy(query: BreakGlassGrantListQuery): OrderByFor<'BreakGlassGrant'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ grantedAt: order }, { id: 'asc' as const }];

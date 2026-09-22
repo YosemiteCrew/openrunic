@@ -1,5 +1,7 @@
 'use client';
 
+import { api } from './api';
+import { API_MODE } from './config';
 import { queryKey, useApiQuery } from './hooks';
 import type { AsyncState } from './hooks';
 import {
@@ -10,7 +12,8 @@ import {
   MOCK_PATIENT_PROBLEMS,
   MOCK_RESULTS,
 } from './mock/fixtures';
-import type { ListResponse } from './types';
+import { paginate } from './pagination';
+import type { ApiClient, ListResponse, PaginationQuery, ServiceRequestDto } from './types';
 
 /**
  * Orders, results and the typed inbox.
@@ -112,7 +115,8 @@ export interface Order {
   /** ISO instant of the last lifecycle event, for the age-in-state chip. */
   lastEventAt: string;
   providerId: string;
-  destination: string;
+  /** Null until a lab is chosen: nothing is transmitted to a destination yet. */
+  destination: string | null;
   specimen: string | null;
   diagnosisCode: string | null;
   diagnosisDisplay: string | null;
@@ -121,10 +125,101 @@ export interface Order {
   cancelReason: string | null;
 }
 
-export interface OrderListQuery {
+/**
+ * `PaginationQuery` because the route paginates whether or not the caller says
+ * so: `/bff/v0/orders` defaults to 25 rows and clamps at `MAX_PAGE_SIZE`. A
+ * query with no `pageSize` does not mean "every order", it means "the first
+ * 25", and a screen that could not spell the field could not ask for anything
+ * else (#539). Asking is only half of it - the window is smaller than the match
+ * whenever the clinic is busier than the clamp, so the screen states it too.
+ */
+export interface OrderListQuery extends PaginationQuery {
   patientId?: string;
   status?: OrderStatus;
   category?: OrderCategory;
+}
+
+/**
+ * A service request as the order ledger reads it, or null when the ledger has
+ * no word for what the row is.
+ *
+ * The domain enums are strictly wider than this screen's, and neither width is
+ * an oversight. `SERVICE_REQUEST_CATEGORIES` carries REFERRAL and THERAPY,
+ * `SERVICE_REQUEST_STATUSES` carries DRAFT, COMPLETED and ENTERED_IN_ERROR, and
+ * the database's `ORDER_PRIORITIES` carries ASAP; OR-01 fixes this surface to
+ * the three things a clinician orders from it and OR-03 to the six states the
+ * ledger tracks.
+ *
+ * Whether a referral belongs on this screen at all, and whether an ASAP order
+ * wears the URGENT badge or the STAT one, are product decisions open as #535.
+ * Until they are answered this returns null rather than guessing, because a
+ * guess is a wrong word on a clinical row - an ASAP order shown as URGENT reads
+ * as less urgent than it is, to the one person who could act on the difference -
+ * whereas a null is a row the caller can count and say so about.
+ */
+export function toOrder(dto: ServiceRequestDto): Order | null {
+  const category = viewValue(ORDER_CATEGORIES, dto.category);
+  const status = viewValue(ORDER_STATUSES, dto.status);
+  const priority = viewValue(ORDER_PRIORITIES, dto.priority);
+  if (category === undefined || status === undefined || priority === undefined) return null;
+
+  return {
+    id: dto.id,
+    patientId: dto.patientId,
+    code: dto.code,
+    name: dto.display,
+    category,
+    status,
+    priority,
+    placedAt: dto.requestedAt,
+    lastEventAt: dto.updatedAt,
+    providerId: dto.orderedById,
+    destination: dto.performingLabName,
+    specimen: dto.specimenTypeCode,
+    diagnosisCode: dto.reasonCodes[0] ?? null,
+    /* The remaining three have no source yet, all of them open in #535:
+       `reasonCodes` are ICD-10 codes with no display beside them, the order to
+       report link is held on the report rather than the order, and
+       `ServiceRequest` has no cancellation reason column at all. They are
+       nullable on the view type and the screen already renders them as absent,
+       so a null here is the row rather than a placeholder for it. */
+    diagnosisDisplay: null,
+    resultId: null,
+    cancelReason: null,
+  };
+}
+
+/**
+ * The domain value, when the view has that word too.
+ *
+ * A lookup rather than a cast: a cast would make every future widening of a
+ * database enum arrive on the screen as a badge nobody defined, silently, and
+ * the widening would be somewhere else entirely.
+ */
+function viewValue<T extends string>(view: readonly T[], value: string): T | undefined {
+  return view.find((option) => option === value);
+}
+
+/**
+ * A page of orders, with the rows the ledger refused counted rather than dropped.
+ *
+ * `page.total` counts what the API matched; `data` holds what {@link toOrder}
+ * could render. The two are different numbers whenever the page contains a
+ * referral, a draft or an ASAP order, and the difference is the whole reason
+ * this type exists: a clinician reading "25 orders" above 22 rows has no way to
+ * tell whether three are missing or three are elsewhere. So the count travels
+ * with the page and the screen states it (#539). Discarding it inside the
+ * mapping layer is what made it invisible.
+ */
+export interface OrderPage extends ListResponse<Order> {
+  /** Rows on this page the ledger has no word for. Counted in `page.total`, absent from `data`. */
+  refused: number;
+}
+
+/** One page of service requests, as the order ledger reads it. */
+export function toOrderPage(response: ListResponse<ServiceRequestDto>): OrderPage {
+  const data = response.data.map(toOrder).filter((order): order is Order => order !== null);
+  return { data, page: response.page, refused: response.data.length - data.length };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -360,7 +455,7 @@ function page<T>(rows: T[]): ListResponse<T> {
 
 /** The read surface the three screens share. An HTTP client will satisfy it too. */
 export interface WorklistClient {
-  orders: { list: (query?: OrderListQuery) => Promise<ListResponse<Order>> };
+  orders: { list: (query?: OrderListQuery) => Promise<OrderPage> };
   results: { list: (query?: ResultListQuery) => Promise<ListResponse<ResultReport>> };
   inbox: { list: (query?: InboxListQuery) => Promise<ListResponse<InboxItem>> };
 }
@@ -381,14 +476,75 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
   const inbox = data.inbox ?? MOCK_INBOX_ITEMS;
 
   return {
-    orders: { list: (query) => Promise.resolve(page(filterOrders(orders, query))) },
+    orders: {
+      /* Paginated, unlike results and the inbox below, because `OrderListQuery`
+         carries the window the route applies and a fixture client that ignored
+         it would answer a question the live one does not.
+
+         Refused is zero by construction: these rows are already `Order`s and
+         never went through `toOrder`. */
+      list: (query = {}) =>
+        Promise.resolve({
+          ...paginate(filterOrders(orders, query), query.page, query.pageSize),
+          refused: 0,
+        }),
+    },
     results: { list: (query) => Promise.resolve(page(filterResults(results, query))) },
     inbox: { list: (query) => Promise.resolve(page(filterInbox(inbox, query))) },
   };
 }
 
-/** The app's client. Mock-backed until the aggregates exist in `apps/api`. */
-export const worklist: WorklistClient = createWorklistClient();
+/**
+ * The orders half of {@link WorklistClient}, over `GET /bff/v0/orders`.
+ *
+ * `OrderListQuery` is assignable to `ServiceRequestListQuery` because the view
+ * enums are subsets of the domain ones; that is the same narrowing `toOrder`
+ * enforces on the way back, read from the other end.
+ */
+export function liveOrders(client: ApiClient): WorklistClient['orders'] {
+  return { list: (query = {}) => client.orders.list(query).then(toOrderPage) };
+}
+
+/**
+ * The app's client.
+ *
+ * Orders read the API in live mode. Results and the inbox do not, because
+ * `apps/api` still has no aggregate behind them - the inbox in particular is a
+ * composition across results, messages and tasks that no route assembles. Mock
+ * mode keeps the fixture rows for all three: `MOCK_SERVICE_REQUESTS` is a
+ * thinner set than `MOCK_ORDERS` and carries no cancellation reason or linked
+ * report, so routing the demo through it would empty three columns of the
+ * screen it is there to demonstrate.
+ */
+export const worklist: WorklistClient =
+  API_MODE === 'live'
+    ? { ...createWorklistClient(), orders: liveOrders(api) }
+    : createWorklistClient();
+
+/**
+ * Whether the INBOX AND RESULTS screens are answering from fixtures, which
+ * today they always are - in live mode as much as in mock mode. `apps/api` has
+ * no aggregate behind either one.
+ *
+ * Orders used to be the third, and is not any more: {@link worklist} reads
+ * `GET /bff/v0/orders` in live mode. So this is no longer a property of the
+ * whole worklist and the orders screen no longer renders the notice gated on
+ * it - a screen reading Postgres carrying a "these rows are not real" banner is
+ * the same lie in the other direction.
+ *
+ * Exported rather than left as a fact about this file, because the shell's
+ * "Demo data" badge is gated on the api MODE and this is a property of the
+ * DATA, and the two disagree exactly where it matters. Set
+ * `NEXT_PUBLIC_API_MODE=live` and the badge goes - the shell has no session and
+ * therefore no facility to name - while the inbox and results screens go on
+ * serving Testperson, Exampla and a critical potassium that belongs to nobody.
+ * The screen that reads this constant is the one that has to say so.
+ *
+ * It is a literal because the honest value is a literal: the day those two
+ * routes land, this becomes a mode test and the screens reading it need no
+ * other change.
+ */
+export const WORKLIST_IS_FIXTURE_BACKED = true;
 
 export interface WorklistHookOptions {
   /** Injectable for tests. Defaults to the app's client. */
@@ -399,7 +555,7 @@ export interface WorklistHookOptions {
 export function useOrders(
   query: OrderListQuery = {},
   options: WorklistHookOptions = {}
-): AsyncState<ListResponse<Order>> {
+): AsyncState<OrderPage> {
   const client = options.client ?? worklist;
   return useApiQuery(queryKey('orders.list', { ...query }), () => client.orders.list(query), {
     enabled: options.enabled,

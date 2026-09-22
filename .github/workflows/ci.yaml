@@ -5,8 +5,9 @@ name: CI
 # artifacts and outputs to each other by ordinary same-run means: no
 # workflow_run, no download-by-run-id, no PAT.
 #
-# This is the primary CI. The `CI Required` aggregate below is the one check to
-# mark required on the branch rulesets once its behaviour has been observed.
+# This is the primary CI. The `CI Required` aggregate below is the one check
+# marked required on the branch rulesets - the comment on that job records when
+# that happened and how to read its absence on a pull request.
 
 on:
   pull_request: {}
@@ -87,12 +88,61 @@ jobs:
       - name: Run the whole suite with no model configured
         run: pnpm turbo run test
 
+  portal-layout:
+    name: Portal layout
+    needs: core
+    if: needs.core.outputs.has-any == 'true'
+    # The portal's unit suite is jsdom, which reports every width as 0, so an overflow
+    # assertion written there passes without checking anything. This stage is the only place
+    # the question is asked in something that does layout. It is gated on `has-any` rather
+    # than on the portal alone because the stylesheet it measures is half in @openrunic/ui.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      # Same cache shape as the storybook workflow: the browser version is pinned by the
+      # lockfile, so the lockfile hash is the exact key and the install below is a no-op on a
+      # hit - which is why it is not behind an `if`.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install Chromium
+        run: pnpm --filter portal exec playwright install --with-deps chromium
+
+      # Through turbo rather than pnpm directly: the suite imports the built stylesheet from
+      # @openrunic/ui, and the task declares `dependsOn: ["^build"]` so it cannot run against
+      # a stale one.
+      - name: Run the layout suite
+        run: pnpm turbo run test:layout --filter=portal
+
   migration:
     needs: core
     # Only when the database workspace is affected - that is what carries
     # schema.prisma and prisma/migrations. No other workspace can change what
     # `prisma migrate deploy` does, so this stays off the critical path for the
     # majority of pull requests.
+    #
+    # This ALSO covers `apps/api`, which is not obvious and was got wrong once.
+    # `_core.yaml` builds the matrix from `turbo ... --filter="...[BASE]"`, and
+    # the leading `...` includes a package's DEPENDENCIES - so an apps/api-only
+    # change puts `@openrunic/database` in the matrix and fires this stage
+    # already. Measured, not reasoned: a one-line change under apps/api reports
+    # 17 affected packages and `@openrunic/database` is one of them. The API's
+    # DATABASE_URL-gated suites had never run for a different reason entirely -
+    # this workflow had no step that ran them.
     if: >
       needs.core.outputs.has-any == 'true' &&
       contains(needs.core.outputs.matrix, '@openrunic/database')
@@ -165,10 +215,21 @@ jobs:
 
   ci-required:
     name: CI Required
-    # The one check to mark required on the branch rulesets. Published first so
-    # its behaviour can be observed before it is made required.
+    # The one check marked required on BOTH branch rulesets. It was published
+    # first so its behaviour could be observed before that happened - the
+    # switchover has since been made, and this comment went on describing it as
+    # pending until 2026-09-06.
+    #
+    # What each ruleset requires ALONGSIDE it is deliberately not listed here.
+    # An earlier version of this comment enumerated it and was wrong within
+    # three hours: `dev` gained a required context on 2026-09-06 and nothing in
+    # this file can notice when that happens. Read the rulesets.
+    #
+    # Which matters for how a reader treats its absence: a pull request with no
+    # `CI Required` row is a check that has not reported yet, not a check nobody
+    # is enforcing.
     if: always()
-    needs: [core, repo, test, agent-disabled, migration, ops, sonar]
+    needs: [core, repo, test, agent-disabled, portal-layout, migration, ops, sonar]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

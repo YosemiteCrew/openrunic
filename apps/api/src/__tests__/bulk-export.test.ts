@@ -1,3 +1,4 @@
+import type { OperationOutcome } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
 import type { Principal } from '../auth/principal.js';
@@ -421,6 +422,30 @@ describe('_type', () => {
     expect(manifest.output.map((file) => file.type).sort()).toEqual(['Encounter', 'Patient']);
   });
 
+  it('refuses a repeated parameter that is not _type', async () => {
+    /*
+     * The pair with the test above, differing only in the parameter name.
+     * Every repeated search parameter at the FHIR boundary is refused - the
+     * internal routes still flatten, which `http/validate.ts` says; `_type` is
+     * exempt because it means a list and `parseTypeFilter` reads all of it.
+     * `_since` sent twice is two answers to one question, and answering it
+     * with either one is the guess this boundary refuses to make.
+     */
+    const { app } = harness();
+
+    const res = await app.request(
+      '/fhir/$export?_since=2026-01-01T00:00:00Z&_since=2026-06-01T00:00:00Z',
+      { headers: asyncHeaders }
+    );
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as OperationOutcome).issue[0]).toMatchObject({
+      code: 'not-supported',
+      diagnostics: 'sent more than once',
+      expression: ['_since'],
+    });
+  });
+
   /**
    * A manifest lists what was produced, not what was asked for, so a silently
    * dropped type is invisible to the client: it receives a complete-looking
@@ -484,6 +509,24 @@ describe('_since', () => {
     const res = await app.request('/fhir/$export?_since=last-tuesday', { headers: asyncHeaders });
 
     expect(res.status).toBe(400);
+  });
+
+  it('refuses a _since that is present and empty', async () => {
+    /*
+     * The export shares the search boundary's parameter guard, and this is the
+     * request that most needs it: an empty `_since` read as absent produces a
+     * COMPLETE export that the client believes is the delta since their last
+     * one, and nothing in the manifest says otherwise. That is the failure the
+     * comment at the `$export` call site names, arriving through a blank value
+     * rather than through a misspelled name.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/$export?_since=', { headers: asyncHeaders });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as { issue?: { expression?: string[] }[] };
+    expect(outcome.issue?.[0]?.expression).toEqual(['_since']);
   });
 
   /**
@@ -601,6 +644,157 @@ describe('the bounds, which are reported rather than silent', () => {
     expect(res.status).toBe(204);
     expect(captured?.truncations).toEqual([{ type: 'Patient', exported: 5, total: 600 }]);
     expect(captured?.files[0]?.count).toBe(5);
+  });
+
+  /**
+   * A record the projection cannot represent, in the one format that has
+   * nowhere to say so.
+   *
+   * A search answers this with an `outcome` entry. NDJSON has no entries, so
+   * the manifest's `error` array is where it has to land - and it must not
+   * arrive dressed as a ceiling, because a ceiling is answered by narrowing the
+   * export and this is answered by nothing the client can do.
+   */
+  /**
+   * The page after the one that held the unprojectable record.
+   *
+   * A withheld row leaves the page, so a page of five hundred comes back with
+   * four hundred and ninety-nine - and the loop reads a short page as the last
+   * page. Everything after it is then dropped from the export, silently, with a
+   * manifest reporting one withheld record and a file missing far more than
+   * one. A truncation caused by a diagnostic is the worst way to learn of one.
+   *
+   * Five hundred and one dispenses, with the unprojectable one sorted first so
+   * it is certainly on the first page rather than probably.
+   */
+  it('does not read a page shortened by a withheld row as the last page', async () => {
+    const { app, dataset } = createTestApp();
+    const chart = testId(8000);
+    const provider = testId(900);
+    const item = testId(8001);
+    const lot = testId(8002);
+    seed(dataset, 'Patient', makePatientRow({ id: chart, mrn: 'OR-800100' }));
+    seed(dataset, 'StockItem', {
+      ...storageColumns(item),
+      sku: 'MET-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockLot', {
+      ...storageColumns(lot),
+      itemId: item,
+      facilityId: DEMO_FACILITY_A,
+      lotNumber: 'LOT-8000',
+      status: 'AVAILABLE',
+      expiresOn: null,
+      openedOn: null,
+      beyondUseDays: null,
+      manufacturer: null,
+      ndcCode: null,
+      receivedOn: FIXED_NOW,
+    });
+
+    const posting = (id: string, occurredOn: Date): void => {
+      seed(dataset, 'StockPosting', {
+        ...storageColumns(id),
+        kind: 'DISPENSE',
+        facilityId: DEMO_FACILITY_A,
+        patientId: chart,
+        encounterId: null,
+        prescriptionId: null,
+        immunizationId: null,
+        occurredOn,
+        postedById: provider,
+        witnessedById: null,
+        reference: null,
+        note: null,
+      });
+    };
+    const movement = (id: string, postingId: string, lotSeq: number): void => {
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(id),
+        postingId,
+        lotId: lot,
+        itemId: item,
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 1,
+        occurredOn: FIXED_NOW,
+        actorId: provider,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq,
+      });
+    };
+
+    // Sorted first by `occurredOn desc`, so it is on the first page by
+    // construction rather than by luck - a test that happened to put it on the
+    // second page would pass against the bug it exists to catch.
+    const unprojectable = testId(8100);
+    posting(unprojectable, new Date(FIXED_NOW.getTime() + 60_000));
+    for (let index = 0; index < 51; index += 1) {
+      movement(testId(8200 + index), unprojectable, index + 1);
+    }
+    for (let index = 0; index < 500; index += 1) {
+      const id = testId(9000 + index);
+      posting(id, new Date(FIXED_NOW.getTime() - (index + 1) * 1000));
+      movement(testId(20_000 + index), id, 1);
+    }
+
+    let captured: Awaited<ReturnType<typeof runExport>> | undefined;
+    app.get('/probe', async (c) => {
+      captured = await runExport(c, SERVED_MODULES, ['MedicationDispense'], undefined);
+      return c.body(null, 204);
+    });
+    await app.request('/probe', { headers: bearer(TOKENS.adminA) });
+
+    // Every dispense that could be projected, including the five hundredth,
+    // which lives on the page the old signal never asked for.
+    expect(captured?.files[0]?.count).toBe(500);
+    expect(captured?.truncations[0]?.withheld).toHaveLength(1);
+    expect(captured?.truncations[0]?.withheld?.[0]).toContain(unprojectable);
+  });
+
+  it('reports a withheld record as its own reason, not as a ceiling', () => {
+    const files = truncationOutcomes([
+      {
+        type: 'MedicationDispense',
+        exported: 4,
+        total: 5,
+        withheld: ['MedicationDispense/x was drawn from more than 50 lots.'],
+      },
+    ]);
+
+    const outcome = JSON.parse(files[0]?.ndjson ?? '{}') as {
+      issue?: { code?: string; diagnostics?: string }[];
+    };
+
+    expect(outcome.issue?.map((issue) => issue.code)).toEqual(['incomplete']);
+    // The ceiling did not bite, so its advice must not appear. Telling a client
+    // to narrow an export that is short for another reason sends them round a
+    // loop that cannot end.
+    expect(JSON.stringify(outcome)).not.toContain('Narrow the export');
+  });
+
+  it('reports both reasons when the ceiling bit as well', () => {
+    /* The pair is what says the two are distinguished rather than one of them
+       being reported for both causes. */
+    const files = truncationOutcomes(
+      [{ type: 'Observation', exported: 50, total: 200, withheld: ['Observation/y is unusable.'] }],
+      50
+    );
+
+    const outcome = JSON.parse(files[0]?.ndjson ?? '{}') as { issue?: { code?: string }[] };
+
+    expect(outcome.issue?.map((issue) => issue.code)).toEqual(['too-costly', 'incomplete']);
   });
 
   it('reports a truncated type as an OperationOutcome rather than a short file', () => {

@@ -43,8 +43,19 @@ export default defineConfig({
     maxWorkers: 2,
     environment: 'jsdom',
     globals: true,
+    // `vi.stubGlobal` and `vi.stubEnv` are undone between cases rather than by
+    // each file. The inline `vi.unstubAll*()` on a case's last line has the same
+    // hole as the inline page restore in #517: it does not run when an assertion
+    // above it fails, so the stub outlives the case that made it and every later
+    // test in the file runs against it.
+    unstubEnvs: true,
+    unstubGlobals: true,
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+    // The layout guard runs in a real browser from vitest.layout.config.mts. Collected
+    // here it would report every width as 0 and pass without checking anything, which is
+    // worse than not running it: a green row nobody reads twice.
+    exclude: ['**/node_modules/**', 'src/__tests__/layout/**'],
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'json', 'lcov'],

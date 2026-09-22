@@ -2,11 +2,11 @@
  * What the portal reads, in the shapes a patient screen wants.
  *
  * These are portal view models, not FHIR resources. The API boundary speaks FHIR R4; the
- * adapters in `mock.ts` and `http.ts` flatten it into the plain, already-glossed records
+ * adapters in `mock.ts` and `http.ts` flatten it into patient-facing records
  * below so no screen has to reach into a CodeableConcept to draw a row.
  *
  * Two rules run through every clinical type here:
- *  - a coded term always travels with `plain`, the plain-language gloss shown beside it;
+ *  - a coded term may carry `plain`, but the UI never invents a gloss when storage has none;
  *  - a measured value always travels with its `unit` and a labelled `range` state, so a
  *    number is never presented bare.
  */
@@ -39,22 +39,25 @@ export interface Appointment {
   durationMinutes: number;
   /** Plain reason for the visit, in the patient's words. */
   reason: string;
-  clinician: string;
-  department: string;
-  mode: AppointmentMode;
+  clinician: string | null;
+  department: string | null;
+  mode: AppointmentMode | null;
   /** Where to go, for an in-person visit. */
-  location?: string;
+  location?: string | null;
   /** Link to the video room, for a video visit. */
-  joinUrl?: string;
+  joinUrl?: string | null;
   /** Link to directions, for an in-person visit. */
-  directionsUrl?: string;
+  directionsUrl?: string | null;
   /** Only set once an appointment has been cancelled. */
-  cancelledReason?: string;
+  cancelledReason?: string | null;
+  cancellationSupported?: boolean;
+  rescheduleSupported?: boolean;
 }
 
 export interface Appointments {
   upcoming: Appointment[];
   past: Appointment[];
+  requestsSupported?: boolean;
 }
 
 /**
@@ -71,7 +74,7 @@ export interface AppointmentRequest {
 }
 
 export interface Balance {
-  outstanding: Money;
+  outstanding: Money | null;
   /** ISO date the balance is due, or null when nothing is outstanding. */
   dueOn: string | null;
   statementCount: number;
@@ -94,6 +97,7 @@ export interface HomeSummary {
   balance: Balance;
   unreadMessages: number;
   actionItems: ActionItem[];
+  appointmentRequestsSupported?: boolean;
 }
 
 export interface Problem {
@@ -102,65 +106,65 @@ export interface Problem {
   term: string;
   /** Coding system reference, e.g. 'E03.9'. */
   code: string;
-  /** Plain-language gloss shown beside the term, e.g. 'Underactive thyroid'. */
-  plain: string;
+  /** Plain-language gloss shown beside the term when the record stores one. */
+  plain: string | null;
   recordedOn: string;
-  /** 'Being treated' / 'Resolved' - already plain, shown as a labelled badge. */
-  status: string;
+  status: 'active' | 'recurrence' | 'relapse' | 'inactive' | 'remission' | 'resolved';
 }
 
 export interface Medication {
   id: string;
   name: string;
-  plain: string;
+  plain: string | null;
   /** Numeric strength, kept apart from its unit so the unit is always rendered. */
-  strength: number;
-  unit: string;
+  strength: number | null;
+  unit: string | null;
   /** How to take it, in plain words. */
-  instruction: string;
-  prescribedBy: string;
+  instruction: string | null;
+  prescribedBy: string | null;
   startedOn: string;
 }
 
 export interface Allergy {
   id: string;
   substance: string;
-  plain: string;
-  reaction: string;
-  /** 'Severe' / 'Mild' - plain already, shown as a labelled badge. */
-  severity: string;
+  plain: string | null;
+  reaction: string | null;
+  severity: 'mild' | 'moderate' | 'severe' | null;
   recordedOn: string;
 }
 
 export interface Immunisation {
   id: string;
   vaccine: string;
-  plain: string;
+  plain: string | null;
   givenOn: string;
-  doseLabel: string;
+  /** The dose as a number and its named unit. Both are present or neither is. */
+  doseQuantity: number | null;
+  doseUnit: string | null;
 }
 
 export interface ClinicalDocument {
   id: string;
   title: string;
-  plain: string;
+  plain: string | null;
   addedOn: string;
-  /** Human-sized description of the file, e.g. 'PDF, 2 pages'. */
-  format: string;
+  /** The stored media type, e.g. 'application/pdf'. Never rendered; `documentKind` names it. */
+  contentType: string;
+  /** The stored size in bytes. `formatFileSize` writes it for the reader. */
+  byteSize: number;
 }
 
 /** A measured result. Never rendered without its unit and its labelled range state. */
 export interface Result {
   id: string;
   name: string;
-  plain: string;
+  plain: string | null;
   value: number;
   unit: string;
   /** The reference range as text, e.g. '0.4 to 4.0'. Empty when none was supplied. */
   referenceRange: string;
   range: RangeState;
-  /** The range verdict in words: 'In range' / 'Above the usual range'. */
-  rangeLabel: string;
   takenOn: string;
 }
 
@@ -178,7 +182,7 @@ export type MessageAuthor = 'patient' | 'care-team';
 export interface Message {
   id: string;
   author: MessageAuthor;
-  authorName: string;
+  authorName: string | null;
   sentAt: string;
   body: string;
 }
@@ -187,9 +191,10 @@ export interface MessageThread {
   id: string;
   subject: string;
   /** Who at the practice the thread is with. */
-  correspondent: string;
+  correspondent: string | null;
   lastMessageAt: string;
   unread: boolean;
+  replySupported?: boolean;
   messages: Message[];
 }
 
@@ -212,11 +217,12 @@ export interface FormTask {
   title: string;
   /** What the form is for, in one plain sentence. */
   purpose: string;
-  dueOn: string;
+  dueOn: string | null;
   status: FormStatus;
   questions: FormQuestion[];
   /** Answers already saved, keyed by question id. Resume reads from here. */
   answers: Record<string, string>;
+  editable?: boolean;
 }
 
 export interface StatementLine {
@@ -235,12 +241,14 @@ export interface Statement {
   id: string;
   reference: string;
   issuedOn: string;
-  dueOn: string;
+  dueOn: string | null;
   status: StatementStatus;
-  total: Money;
+  total: Money | null;
   /** What is still owed. Negative means the account is in credit. */
   balance: Money;
   lines: StatementLine[];
+  detailsAvailable?: boolean;
+  paymentAvailable?: boolean;
 }
 
 export interface Receipt {

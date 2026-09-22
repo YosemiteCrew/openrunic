@@ -521,6 +521,31 @@ describe('VXU', () => {
       )
     ).toThrow(/Expected a VXU/);
   });
+
+  it.each(['2oops', '1e1', '0', '-1', '9007199254740992'])(
+    'refuses invalid RXA-2 sequence %s instead of changing its meaning',
+    (sequence) => {
+      const raw = [
+        'MSH|^~\\&|S|F|R|F|20260814093000||VXU^V04^VXU_V04|C1|P|2.5.1',
+        'PID|1||MRN||Nullsson^Placeholder',
+        `RXA|0|${sequence}|20251012|150^Influenza^CVX|999`,
+      ].join('\r');
+
+      expect(() => parseVxu(raw)).toThrow(/RXA-2 must be a positive safe integer/);
+    }
+  );
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses outbound RXA-2 sequence %s before emitting an invalid VXU',
+    (sequence) => {
+      expect(() =>
+        buildVxu({
+          ...vxu,
+          immunisations: [{ ...vxu.immunisations[0]!, sequence }],
+        })
+      ).toThrow(/RXA-2 must be a positive safe integer/);
+    }
+  );
 });
 
 describe('acknowledgements', () => {
@@ -629,6 +654,12 @@ describe('timestamps', () => {
     expect(() => hl7Date('March 2nd')).toThrow(Hl7Error);
   });
 
+  it('refuses impossible calendar dates instead of normalising them', () => {
+    expect(() => hl7Date('2026-02-30')).toThrow(/out of range/);
+    expect(() => hl7Date('1994-03-02T00:00:00Z')).toThrow(Hl7Error);
+    expect(() => hl7Instant('2026-02-30T09:30:00Z')).toThrow(Hl7Error);
+  });
+
   it('reads a timestamp at whatever precision it was written', () => {
     expect(fromHl7('20260814093000+0000')).toBe('2026-08-14T09:30:00.000Z');
     expect(fromHl7('20260814093000')).toBe('2026-08-14T09:30:00.000Z');
@@ -649,6 +680,11 @@ describe('timestamps', () => {
   it('refuses a timestamp it cannot read, and one whose fields are impossible', () => {
     expect(() => fromHl7('yesterday')).toThrow(/Cannot read/);
     expect(() => fromHl7('20261345000000')).toThrow(/out of range/);
+  });
+
+  it('refuses impossible calendar dates at date and instant precision', () => {
+    expect(() => fromHl7('20260230')).toThrow(/out of range/);
+    expect(() => fromHl7('20260230093000+0000')).toThrow(/out of range/);
   });
 });
 

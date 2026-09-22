@@ -19,8 +19,17 @@ minimumReleaseAgeExclude:
 overrides:
   # GHSA fixes: postcss < 8.5.23 (Next pins 8.4.31 exactly).
   postcss: 8.5.26
-  # GHSA fix: sharp < 0.35.0 (Next optional dep allows only 0.34.x).
-  sharp: 0.35.1
+  # GHSA-rgj7-g3m4-5g8c: sharp < 0.35.4 (Next optional dep allows only 0.34.x,
+  # this override is what lifts it past 0.35.0 in the first place).
+  sharp: 0.35.4
+  # GHSA-2883-xcg3-v3hh: js-yaml < 4.3.2 can be coerced into prototype
+  # pollution via a crafted YAML document. Build-time only here (eslint/jest
+  # config loaders pin 4.3.1 transitively); no runtime path parses
+  # user-supplied YAML.
+  js-yaml: 4.3.2
+  # GHSA-2wm5-q62r-hmrv: colord < 2.9.4 has a ReDoS in its CSS color parser.
+  # Pulled in transitively by Storybook's theming; build/dev-time only.
+  colord: 2.9.4
   # esbuild ships a prebuilt Go binary, so its embedded Go stdlib is what
   # vulnerability scanners see. 0.25.x embeds go1.23.12 (GO-2026-4337,
   # critical); 0.28.2 embeds go1.26.5. Storybook's esbuild-register pulls the
@@ -33,12 +42,14 @@ overrides:
   # range; 8.0.1 is the current latest of that line. Re-check when Prisma
   # updates.
   deepmerge-ts: 8.0.1
-  # GHSA-r8f6-24hv-cj3g: mysql2 < 3.22.0 can be downgraded by a hostile server
+  # GHSA-3f6p-5ww8-9rcr: mysql2 < 3.22.0 can be downgraded by a hostile server
   # to mysql_clear_password and leak credentials in plaintext. It arrives
   # through the prisma CLI, which pins 3.15.3 on 7.9.1 and 7.10.0 alike, and
   # this product talks to Postgres, so no runtime here ever opens a MySQL
-  # connection. Re-check when Prisma updates; prisma 8 is still a release
-  # candidate.
+  # connection. The override still governs the development tree; the driver no
+  # longer reaches the published API image, whose prune list removes it - see
+  # apps/api/Dockerfile. Re-check when Prisma updates; prisma 8 is still a
+  # release candidate.
   mysql2: 3.24.2
   # GHSA-f65p-4m7j-42xc / GHSA-fph4-wmhf-6fwf / GHSA-5jgf-p345-68v8: fast-uri
   # < 3.1.6 normalises a malformed IPv6 authority in a way that enables SSRF.

@@ -85,19 +85,20 @@ what a deployment may redistribute. That separation is `packages/terminology`'s 
 
 ## The other gates
 
-| Gate                                   | Where                                | Enforces                                            |
-| -------------------------------------- | ------------------------------------ | --------------------------------------------------- |
-| ESLint, `tsc`                          | `_core.yaml`, per affected workspace | Correctness and types                               |
-| Vitest with coverage floors            | `_test.yaml`, `COVERAGE_FLOORS`      | Test coverage per app                               |
-| SonarCloud                             | `_sonar.yaml`                        | 95% coverage, zero duplication, zero open issues    |
-| CodeQL                                 | `codeql.yml`                         | Semantic security analysis                          |
-| Gitleaks, GitGuardian, secret scanning | `secret-scan.yml`, apps              | Committed secrets                                   |
-| syft, grype, grant                     | `supply-chain.yml`                   | SBOM, dependency vulnerabilities, licence policy    |
-| Dependency review                      | `dependency-review.yml`              | New vulnerable or badly-licensed dependencies       |
-| OpenSSF Scorecard                      | `scorecard.yml`                      | Supply-chain posture, published                     |
-| Storybook + axe                        | `storybook.yml`                      | Every story renders and passes accessibility checks |
-| Promotion source                       | `promotion-guard.yaml`               | Only `dev` may merge into `main`                    |
-| Generated docs                         | `_repo.yaml`, `roadmap:check`        | `docs/roadmap.md` matches what its sources say      |
+| Gate                                   | Where                                 | Enforces                                            |
+| -------------------------------------- | ------------------------------------- | --------------------------------------------------- |
+| ESLint, `tsc`                          | `_core.yaml`, per affected workspace  | Correctness and types                               |
+| Vitest with coverage floors            | `_test.yaml`, `COVERAGE_FLOORS`       | Test coverage per app                               |
+| SonarCloud                             | `_sonar.yaml`                         | 95% coverage, zero duplication, zero open issues    |
+| CodeQL                                 | `codeql.yml`                          | Semantic security analysis                          |
+| Gitleaks, GitGuardian, secret scanning | `secret-scan.yml`, apps               | Committed secrets                                   |
+| syft, grype, grant                     | `supply-chain.yml`                    | SBOM, dependency vulnerabilities, licence policy    |
+| Dependency review                      | `dependency-review.yml`               | New vulnerable or badly-licensed dependencies       |
+| OpenSSF Scorecard                      | `scorecard.yml`                       | Supply-chain posture, published                     |
+| Storybook + axe                        | `storybook.yml`                       | Every story renders and passes accessibility checks |
+| Story coverage                         | `storybook.yml`, `story-coverage.mjs` | A new `packages/ui` component ships with no story   |
+| Promotion source                       | `promotion-guard.yaml`                | Only `dev` may merge into `main`                    |
+| Generated docs                         | `_repo.yaml`, `roadmap:check`         | `docs/roadmap.md` matches what its sources say      |
 
 `CI Required` and `Supply Chain Required` are fail-closed aggregates: a skipped dependency passes,
 a cancelled one fails. Do not edit an aggregate to make a branch green.

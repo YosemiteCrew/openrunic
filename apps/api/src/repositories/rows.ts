@@ -36,6 +36,79 @@ export type FindFirstArgs<M extends PrismaModelName> = Operations<M>['findFirst'
 export type CreateArgs<M extends PrismaModelName> = Operations<M>['create']['args'];
 export type UpdateManyArgs<M extends PrismaModelName> = Operations<M>['updateMany']['args'];
 
+/**
+ * A Prisma `orderBy` for `M`, named so a spec can annotate its own with one.
+ *
+ * The name exists for the annotation, not for the type: `OrderByFor<'Observation'>`
+ * is exactly `FindManyArgs<'Observation'>['orderBy']`. What the annotation buys
+ * is excess-property checking, and nothing else here does. Every property of a
+ * generated ordering argument is optional, so `[{ effectiveAtTYPO: 'desc' }]` is
+ * structurally assignable and the compiler has nothing to say about it - and a
+ * misspelled sort column is not a wrong page, it is an unordered one, which no
+ * HTTP test sees because the memory port sorts with `sortValue` instead.
+ *
+ * Freshness only survives to a property written directly into a literal, so this
+ * works for `orderBy`, whose fifty-four bodies contain no spread, and would not
+ * work for `where`, whose bodies are almost entirely
+ * `...(query.x === undefined ? {} : { x: query.x })`. That half is checked
+ * against `schema.prisma` at run time instead, in
+ * `repositories.port-agreement.test.ts`.
+ *
+ * Do not drop this annotation on the strength of that check. It calls `orderBy`
+ * once, with a query that sets every parameter the spec declares, so it reads
+ * whichever branch that query selects and no other - and forty-seven of the
+ * fifty-four bodies branch. Measured on `patientSpec`: a typo in the
+ * `sort === 'birthDate'` branch with this annotation removed is rc=0 from the
+ * compiler and rc=0 from the whole api suite, with the annotation it is TS2561,
+ * and the same typo in the default branch is rc=1 from the run-time check.
+ */
+export type OrderByFor<M extends PrismaModelName> = FindManyArgs<M>['orderBy'];
+
+/**
+ * A Prisma `where` for `M`, for the half of the surface an annotation can hold.
+ *
+ * `CollectionSpec.where` does not carry this and deliberately: its bodies are
+ * conditional spreads, and a property a spread contributed survives no
+ * excess-property check, annotated or not. `UniqueBy.where` is the opposite -
+ * fourteen implementations returning fifteen literals, none containing a spread -
+ * so the annotation works there, and on all fifteen it does: a column the model
+ * does not have is TS2353, or TS2561 where the misspelling is close enough for
+ * the compiler to suggest the real one.
+ *
+ * Without it, a key ADDED beside the real ones is rc=0 at all fifteen. An
+ * existing key MISSPELLED is rc=0 at nine and caught at six - and those six are
+ * not cover, they are an accident of arity. Rename the only property of a
+ * single-key literal and it has nothing in common with a target whose every
+ * property is optional, so weak-type detection fires where excess-property
+ * checking cannot. It stops firing on the first ordinary edit, in either of two
+ * directions:
+ *
+ *   facilitySpec  `{ codeZZTYPO }`             unannotated  TS2322  caught
+ *   facilitySpec  `{ codeZZTYPO, name }`       unannotated  rc=0    one more column
+ *   taskSpec      `{ sourceEventIdZZ }`        unannotated  rc=0    one more branch
+ *   taskSpec      same, sibling collapsed away  unannotated  TS2322  caught
+ *   taskSpec      both branches misspelled      unannotated  TS2322  caught
+ *   taskSpec      sibling = one CORRECT key     unannotated  rc=0    missed
+ *   any of those, annotated                                  TS2353 / TS2561
+ *
+ * `taskSpec` is the live example and the reason the count is six rather than
+ * seven. The last three rows say which half of it matters: collapse the sibling
+ * away and the check returns, and two misspelled branches are still caught - so
+ * it is the sibling NAMING A REAL COLUMN that suppresses it, giving the union a
+ * property in common with the target. Not the union itself, and not the
+ * sibling's arity: one correct key suppresses it just as well as two.
+ *
+ * It is not the only guard for most of them, but that cover is incidental rather
+ * than systematic. Thirteen of the fourteen are caught at run time by hand-written
+ * per-spec tests spread across six files - `repositories.prisma.test.ts` reaches
+ * only `patients` - so nothing arranges it and a spec added tomorrow inherits none
+ * of it. `breakGlassGrantSpec` is reached by nothing at all: made to throw, the
+ * whole api suite is rc=0 at 3993 passed and the marker never prints, while the
+ * same throw in `patientSpec` fails eight tests. There this annotation is the
+ * whole guard.
+ */
+export type WhereFor<M extends PrismaModelName> = FindManyArgs<M>['where'];
+
 /** A value that carries a `toNumber`, which is how a Decimal presents itself. */
 interface DecimalLike {
   toNumber(): number;

@@ -11,6 +11,7 @@ import {
   clinicalNoteInput,
   conditionInput,
   procedureInput,
+  breakGlassGrantInput,
   consentGrantInput,
   coverageInput,
   diagnosticReportInput,
@@ -24,6 +25,7 @@ import {
   localDate,
   medicationRequestInput,
   medicationStatementInput,
+  prescriptionFillInput,
   noteAddendumInput,
   observationInput,
   patientCreateInput,
@@ -48,6 +50,7 @@ import {
 } from './index.js';
 
 const ID = {
+  tenant: '01920000-0000-7000-8000-000000000000',
   patient: '01920000-0000-7000-8000-000000000001',
   facility: '01920000-0000-7000-8000-000000000002',
   provider: '01920000-0000-7000-8000-000000000003',
@@ -59,6 +62,8 @@ const ID = {
   claim: '01920000-0000-7000-8000-000000000009',
   form: '01920000-0000-7000-8000-00000000000a',
   remittance: '01920000-0000-7000-8000-00000000000b',
+  medicationRequest: '01920000-0000-7000-8000-00000000000c',
+  stockPosting: '01920000-0000-7000-8000-00000000000d',
 } as const;
 
 /** Asserts a schema accepts `value`, surfacing the zod error when it does not. */
@@ -91,7 +96,7 @@ describe('common primitives', () => {
     expect(accepts(localDate, date)).toStrictEqual(date);
   });
 
-  it.each(['17/04/1991', '1991-4-7', 'yesterday', '', 19910417])(
+  it.each(['17/04/1991', '1991-4-7', '1991-02-29', 'yesterday', '', 19910417])(
     'rejects %s as a local date',
     (value) => {
       rejects(localDate, value);
@@ -104,9 +109,12 @@ describe('common primitives', () => {
     );
   });
 
-  it('rejects an unparsable instant', () => {
-    rejects(timestamp, 'half past nine');
-  });
+  it.each(['half past nine', '2025-02-29T09:30:00.000Z', '2025-02-28T09:30:00.000'])(
+    'rejects %s as an instant',
+    (value) => {
+      rejects(timestamp, value);
+    }
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -294,6 +302,54 @@ describe('consentGrantInput', () => {
       status: 'REVOKED',
       revokedAt: '2026-08-13T09:00:00.000Z',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('breakGlassGrantInput', () => {
+  const declaration = {
+    userId: ID.provider,
+    patientId: ID.patient,
+    reason: 'Collapsed in reception, no record found.',
+    grantedAt: '2026-08-17T15:00:00.000Z',
+    expiresAt: '2026-08-17T16:00:00.000Z',
+  };
+
+  it('accepts a declaration with a reason and an ordered window', () => {
+    accepts(breakGlassGrantInput, declaration);
+  });
+
+  it('rejects a reason that is only whitespace', () => {
+    // A reason nobody wrote is not a reason, and the whole control here is that
+    // a person stated why and their name is on it.
+    rejects(breakGlassGrantInput, { ...declaration, reason: '   ' });
+  });
+
+  it('rejects a window that ends before it begins', () => {
+    /*
+     * The same statement the table makes as a CHECK, made here so it fails
+     * before a round trip. A grant that expired before it was granted is either
+     * a typo or an attempt to leave no window at all, and the second is worse:
+     * the row would look like access was taken when none was.
+     */
+    rejects(breakGlassGrantInput, {
+      ...declaration,
+      expiresAt: '2026-08-17T14:00:00.000Z',
+    });
+  });
+
+  it('rejects a window with no width', () => {
+    /* Strictly after, not "at or after". A zero-width window is a declaration
+       that was never in force, which is not a thing this route can mean. */
+    rejects(breakGlassGrantInput, { ...declaration, expiresAt: declaration.grantedAt });
+  });
+
+  it('rejects a declaration that names no moment it was made', () => {
+    const withoutGrantedAt: Record<string, unknown> = { ...declaration };
+    delete withoutGrantedAt['grantedAt'];
+
+    rejects(breakGlassGrantInput, withoutGrantedAt);
   });
 });
 
@@ -815,6 +871,27 @@ describe('medicationRequestInput', () => {
   });
 });
 
+describe('prescriptionFillInput', () => {
+  const validFill = {
+    patientId: ID.patient,
+    prescriptionId: ID.medicationRequest,
+    stockPostingId: ID.stockPosting,
+    filledOn: '2026-08-17',
+  };
+
+  it('accepts a completed prescription fill', () => {
+    accepts(prescriptionFillInput, validFill);
+  });
+
+  it.each([
+    ['an invalid prescription id', { prescriptionId: 'prescription' }],
+    ['an instant where a calendar date belongs', { filledOn: '2026-08-17T09:00:00.000Z' }],
+    ['a caller-supplied tenant', { tenantId: ID.tenant }],
+  ])('rejects %s', (_label, patch) => {
+    rejects(prescriptionFillInput, { ...validFill, ...patch });
+  });
+});
+
 describe('immunizationInput', () => {
   it('accepts an administered dose', () => {
     accepts(immunizationInput, {
@@ -1262,6 +1339,14 @@ describe('statementInput', () => {
 
   it('accepts a statement', () => {
     accepts(statementInput, validStatement);
+  });
+
+  it('accepts an ISO currency', () => {
+    accepts(statementInput, { ...validStatement, currency: 'EUR' });
+  });
+
+  it('rejects a malformed currency', () => {
+    rejects(statementInput, { ...validStatement, currency: 'EURO' });
   });
 
   it('rejects a pay link with no expiry', () => {

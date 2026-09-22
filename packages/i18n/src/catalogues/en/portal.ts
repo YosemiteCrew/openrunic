@@ -79,6 +79,25 @@ export const portal: Messages = {
   'portal.footer.emergency':
     'For a medical emergency, call the emergency services on your local number.',
 
+  /* -------------------------------------------------------------- sign-in */
+  'portal.auth.page.title': 'Sign in',
+  'portal.auth.overline': 'Patient portal',
+  'portal.auth.title': 'Sign in to your record',
+  'portal.auth.lede': 'Use the secure access token your care team gave you.',
+  'portal.auth.idle': 'You were signed out after being inactive. Sign in again to continue.',
+  'portal.auth.expired': 'Your session ended. Sign in again to continue.',
+  'portal.auth.tokenLabel': 'Access token',
+  'portal.auth.tokenHint':
+    'The token is kept in a protected session and is not available to page scripts.',
+  'portal.auth.rejected': 'That access token was not accepted.',
+  'portal.auth.signingIn': 'Signing in',
+  'portal.auth.submit': 'Sign in',
+  'portal.auth.unavailable': 'The portal could not sign you in. Try again in a moment.',
+  'portal.auth.developmentLede': 'Development only: open the seeded patient record.',
+  'portal.auth.developmentAction': 'Open development record',
+  'portal.auth.checking': 'Checking your session.',
+  'portal.auth.signOut': 'Sign out',
+
   /* -------------------------------------------------------------- the home */
   'portal.home.overline': 'Your care',
   'portal.home.title': 'Home',
@@ -93,11 +112,11 @@ export const portal: Messages = {
   /* Two whole sentences rather than a clause appended to one: a language that
      puts the instruction first cannot express that by translating fragments. */
   'portal.home.balance.dueUnknown':
-    'Ask the practice when this is due. You can pay online, or ask the practice about paying in instalments.',
-  'portal.home.balance.dueBy':
-    'Due by {date}. You can pay online, or ask the practice about paying in instalments.',
+    'Ask the practice when this is due. Open your bills for the statement details.',
+  'portal.home.balance.dueBy': 'Due by {date}. Open your bills for the statement details.',
+  'portal.home.balance.multipleCurrencies':
+    'You have outstanding statements in more than one currency. Open your bills to see them.',
   'portal.home.balance.seeBills': 'See your bills',
-  'portal.home.balance.pay': 'Pay a bill',
   'portal.home.messages.overline': 'Messages',
   'portal.home.messages.title': 'From your care team',
   'portal.home.messages.open': 'Open messages',
@@ -111,6 +130,7 @@ export const portal: Messages = {
     'Ask the practice for a slot and they will confirm it by message.',
   'portal.home.appointment.request': 'Request an appointment',
   'portal.home.appointment.videoLocation': 'A video call. The link opens in this browser.',
+  'portal.home.appointment.seeAll': 'See all appointments',
   'portal.home.page.title': 'Home',
   'portal.home.page.description':
     'Your next appointment, your balance, your messages and anything waiting on you.',
@@ -125,16 +145,15 @@ export const portal: Messages = {
   'portal.app.titleTemplate': '{page} - patient portal',
   'portal.app.description': 'See your appointments, health record, messages, forms and bills.',
   'portal.appointments.page.title': 'Appointments',
-  'portal.appointments.page.description':
-    'Your upcoming and past appointments, and how to request, move or cancel one.',
+  'portal.appointments.page.description': 'Your upcoming and past appointments.',
   'portal.bills.page.title': 'Bills',
-  'portal.bills.page.description': 'Your statements, what each charge was for, and how to pay.',
+  'portal.bills.page.description': 'Your statements and what each charge was for.',
   'portal.forms.page.title': 'Forms',
   'portal.forms.page.description':
-    'Questionnaires to fill in before your appointments. Save as you go and finish later.',
+    'Questionnaires your care team has sent you and their current status.',
   'portal.healthRecord.page.title': 'Health record',
   'portal.healthRecord.page.description':
-    'Your results, conditions, medicines, allergies, vaccinations and documents, each with a plain-language explanation.',
+    'Your recorded results, conditions, medicines, allergies, vaccinations and documents.',
   'portal.messages.page.title': 'Messages',
   'portal.messages.page.description': 'Read what your care team has written and reply to them.',
   'portal.assistant.page.title': 'Assistant',
@@ -186,6 +205,7 @@ export const portal: Messages = {
   'portal.appointment.where': 'Where',
   'portal.appointment.videoDefault': 'A video call',
   'portal.appointment.roomUnconfirmed': 'The practice will confirm the room.',
+  'portal.appointment.careTeam': 'Your care team',
 
   /*
    * THE APPOINTMENTS SCREEN.
@@ -196,8 +216,7 @@ export const portal: Messages = {
    */
   'portal.appointments.overline': 'Your visits',
   'portal.appointments.title': 'Appointments',
-  'portal.appointments.lede':
-    'What is booked, what has already happened, and how to ask for a change.',
+  'portal.appointments.lede': 'What is booked and what has already happened.',
   'portal.appointments.request': 'Request an appointment',
   'portal.appointments.requested':
     'Your request has gone to the practice. They will confirm by message. Nothing is booked until they do.',
@@ -215,6 +234,7 @@ export const portal: Messages = {
   'portal.appointments.mode.video': 'Video call',
   'portal.appointments.mode.inPerson': 'In person',
   'portal.appointments.mode.past': 'Past',
+  'portal.appointments.mode.unknown': 'Appointment',
   'portal.appointments.join': 'Join the video call',
   'portal.appointments.directions': 'Get directions',
   'portal.appointments.move': 'Ask to move it',
@@ -244,15 +264,14 @@ export const portal: Messages = {
    * date placed next to each other, because "on" is not a word every language
    * puts there, or puts first.
    *
-   * What the practice recorded stays as it arrived: the condition, the dose
-   * label, the severity, the plain-language gloss beside a coded term. Those
-   * are the record, not the interface, and inventing a translation for a
-   * clinical word is the failure this catalogue avoids everywhere else.
+   * What the practice recorded stays as it arrived: the condition, dose label
+   * and plain-language gloss beside a coded term. Finite workflow statuses are
+   * interface labels and are translated here.
    */
   'portal.healthRecord.overline': 'Your record',
   'portal.healthRecord.title': 'Health record',
   'portal.healthRecord.lede':
-    'Everything your care team has written down, with a plain-language explanation beside each clinical term.',
+    'Everything your care team has written down. When the record includes a plain-language explanation, it appears beside the clinical term.',
   'portal.healthRecord.empty.title': 'Your record has nothing in it yet.',
   'portal.healthRecord.empty.message':
     'Results, conditions, medicines and documents appear here after your first appointment.',
@@ -262,6 +281,9 @@ export const portal: Messages = {
   'portal.healthRecord.results.noRange': 'No usual range was recorded for this test.',
   'portal.healthRecord.results.usualRange': 'Usual range: {range}',
   'portal.healthRecord.results.takenOn': 'Taken on {date}',
+  'portal.healthRecord.results.range.inRange': 'Within the recorded range',
+  'portal.healthRecord.results.range.outOfRange': 'Outside the recorded range',
+  'portal.healthRecord.results.range.unknown': 'Range status not recorded',
   'portal.healthRecord.results.ask': 'Ask about this result',
   'portal.healthRecord.results.explainer.title': 'What to do about this number',
   'portal.healthRecord.results.explainer.body':
@@ -271,23 +293,47 @@ export const portal: Messages = {
   'portal.healthRecord.problems.title': 'Problems on your record',
   'portal.healthRecord.problems.none': 'No conditions are recorded.',
   'portal.healthRecord.problems.recordedOn': 'Recorded on {date}',
+  'portal.healthRecord.problems.status.active': 'Active',
+  'portal.healthRecord.problems.status.recurrence': 'Returned',
+  'portal.healthRecord.problems.status.relapse': 'Relapsed',
+  'portal.healthRecord.problems.status.inactive': 'Inactive',
+  'portal.healthRecord.problems.status.remission': 'In remission',
+  'portal.healthRecord.problems.status.resolved': 'Resolved',
   'portal.healthRecord.medications.overline': 'Medicines',
   'portal.healthRecord.medications.title': 'What you have been prescribed',
   'portal.healthRecord.medications.none': 'No medicines are recorded.',
   'portal.healthRecord.medications.prescribedBy': 'Prescribed by {clinician}, started {date}',
+  'portal.healthRecord.medications.startedOn': 'Started {date}',
   'portal.healthRecord.allergies.overline': 'Allergies',
   'portal.healthRecord.allergies.title': 'What to avoid',
   'portal.healthRecord.allergies.none': 'No allergies are recorded.',
   'portal.healthRecord.allergies.reaction': 'What happened: {reaction}',
   'portal.healthRecord.allergies.recordedOn': 'Recorded on {date}',
+  'portal.healthRecord.allergies.severity.mild': 'Mild',
+  'portal.healthRecord.allergies.severity.moderate': 'Moderate',
+  'portal.healthRecord.allergies.severity.severe': 'Severe',
   'portal.healthRecord.immunisations.overline': 'Vaccinations',
   'portal.healthRecord.immunisations.title': 'Immunisations you have had',
   'portal.healthRecord.immunisations.none': 'No vaccinations are recorded.',
   'portal.healthRecord.immunisations.givenOn': 'Given on {date}',
+  'portal.healthRecord.immunisations.dose': 'Dose given: {dose}',
   'portal.healthRecord.documents.overline': 'Documents',
   'portal.healthRecord.documents.title': 'Letters and reports',
   'portal.healthRecord.documents.none': 'No documents have been added.',
-  'portal.healthRecord.documents.addedOn': 'Added on {date}',
+  'portal.healthRecord.documents.addedOn': 'Added on {date}, {size}',
+  /*
+   * What a document is, named rather than typed.
+   *
+   * The badge used to carry the media type the file was stored with. These are the
+   * labels the portal maps it onto, and `other` is the answer for anything unmapped,
+   * so the set is closed and the pill stays the size of a word.
+   */
+  'portal.healthRecord.documents.kind.pdf': 'PDF',
+  'portal.healthRecord.documents.kind.image': 'Image',
+  'portal.healthRecord.documents.kind.document': 'Document',
+  'portal.healthRecord.documents.kind.spreadsheet': 'Spreadsheet',
+  'portal.healthRecord.documents.kind.text': 'Text',
+  'portal.healthRecord.documents.kind.other': 'File',
   /*
    * BILLS.
    *
@@ -298,8 +344,7 @@ export const portal: Messages = {
    */
   'portal.bills.overline': 'Your account',
   'portal.bills.title': 'Bills',
-  'portal.bills.lede':
-    'Every statement the practice has issued, what each charge was for, and how to pay.',
+  'portal.bills.lede': 'Every statement the practice has issued and what each charge was for.',
   'portal.bills.empty.title': 'You have no statements.',
   'portal.bills.empty.message':
     'When the practice bills you for a visit, the statement appears here.',
@@ -307,6 +352,7 @@ export const portal: Messages = {
   'portal.bills.statement.title': 'Issued {date}',
   'portal.bills.statement.status': 'Status',
   'portal.bills.statement.dueBy': 'Due by',
+  'portal.bills.statement.noDueDate': 'No due date recorded',
   'portal.bills.statement.stillToPay': 'Still to pay',
   'portal.bills.statement.total': 'Total',
   'portal.bills.statement.open': 'See what this was for',
@@ -352,6 +398,8 @@ export const portal: Messages = {
   'portal.messages.threads.meta': '{correspondent}, {when}',
   'portal.messages.conversation.overline': 'Conversation',
   'portal.messages.conversation.who': '{author}, {when}',
+  'portal.messages.conversation.closed': 'This conversation is closed to replies.',
+  'portal.messages.careTeam': 'Care team',
   'portal.messages.notice.title': 'Not for emergencies',
   'portal.messages.notice.body':
     'Replies can take a few working days. If you need help now, call the practice. For a medical emergency, call the emergency services on your local number.',
@@ -373,8 +421,7 @@ export const portal: Messages = {
    */
   'portal.forms.overline': 'Before your visit',
   'portal.forms.title': 'Forms',
-  'portal.forms.lede':
-    'Questionnaires your care team has asked you to fill in. Save as you go and finish whenever you like.',
+  'portal.forms.lede': 'Questionnaires your care team has sent you and their current status.',
   'portal.forms.empty.title': 'You have no forms to fill in.',
   'portal.forms.empty.message':
     'When your care team sends you one, it appears here with the date it is needed by.',
@@ -382,6 +429,7 @@ export const portal: Messages = {
   'portal.forms.status.inProgress': 'Saved, not sent',
   'portal.forms.status.submitted': 'Sent',
   'portal.forms.neededBy': 'Needed by {date}',
+  'portal.forms.noDueDate': 'No due date recorded',
   'portal.forms.open': 'Open the form',
   'portal.forms.continue': 'Continue the form',
   'portal.forms.yes': 'Yes',
@@ -431,6 +479,44 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': 'What did the practice write down about my last visit?',
   'portal.assistant.compose.ask': 'Ask',
   'portal.assistant.compose.stop': 'Stop',
+
+  /* Reading the answer aloud. The copy says what is read and what is not sent,
+     because a control that starts speaking somebody's balance in a waiting room
+     has to be understood before it is flipped rather than after. */
+  'portal.assistant.readback.label': 'Read answers aloud',
+  'portal.assistant.readback.hint':
+    'Your device reads out the answer already on this screen, and nothing else. The device does the reading, so no words are sent anywhere for it.',
+  'portal.assistant.readback.stop': 'Stop reading',
+  'portal.assistant.readback.noVoice':
+    'This device has no voice installed, so nothing can be read aloud.',
+  'portal.assistant.readback.noLanguage':
+    'This device has no voice for the language this page is in, so nothing is read aloud.',
+  'portal.assistant.readback.reading': 'Reading the answer aloud.',
+  'portal.assistant.readback.interrupted': 'Stopped reading. The answer is still on screen.',
+  'portal.assistant.readback.failed': 'The answer could not be read aloud. It is on screen above.',
+  /* Asking by voice. The copy says where the words go before the microphone is
+     opened, because a person deciding whether to speak their own health question
+     out loud in a shared room is deciding on the strength of this sentence. */
+  'portal.assistant.dictation.speak': 'Speak your question',
+  'portal.assistant.dictation.stop': 'Stop the microphone',
+  'portal.assistant.dictation.hint':
+    'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the box above, where you can change them, and nothing is asked until you press Ask.',
+  'portal.assistant.dictation.starting': 'Opening the microphone.',
+  'portal.assistant.dictation.listening': 'The microphone is on. Your words go into the box above.',
+  'portal.assistant.dictation.noLanguage':
+    'This device cannot turn speech into writing in the language this page is in without sending the sound away, so you can only type here.',
+  'portal.assistant.dictation.notInstalled':
+    'This device could do this once its language pack for this page is installed, and nothing would be sent anywhere. Until then you can only type here.',
+  'portal.assistant.dictation.denied':
+    'The microphone was not allowed, so nothing was heard. You can allow it in your browser settings, or type your question.',
+  'portal.assistant.dictation.noSpeech':
+    'Nothing was heard. You can try again, or type your question.',
+  'portal.assistant.dictation.noAudio':
+    'No microphone could be opened, so nothing was heard. You can type your question instead.',
+  'portal.assistant.dictation.offDevice':
+    'This device would only have done this by sending the sound away, so nothing was heard. You can type your question instead.',
+  'portal.assistant.dictation.failed':
+    'The microphone stopped. You can try again, or type your question.',
   'portal.assistant.turn.youAsked': 'You asked:',
   'portal.assistant.turn.stillLooking': 'Still looking.',
   'portal.assistant.step.done': ', done',

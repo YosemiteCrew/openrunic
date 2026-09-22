@@ -104,6 +104,37 @@ async function growthFor(
   return (await res.json()) as GrowthBody;
 }
 
+describe('the growth query string', () => {
+  /*
+   * `growthQuerySchema` was one of three `z.object` schemas on this boundary,
+   * so a typo'd `measure` was accepted and ignored: the caller asked for one
+   * chart and received every one, with a 200 saying it had worked. The
+   * docblock on `http/validate.ts` claimed every schema here was strict.
+   */
+  it('refuses an unknown parameter rather than drawing every chart', async () => {
+    const { app } = harness();
+    const res = await app.request(`/bff/v0/patients/${PATIENT}/growth?measuer=weight`, {
+      headers: bearer(TOKENS.clinicianA),
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors?: { message: string }[] };
+    expect(body.errors?.map((issue) => issue.message).join(' ')).toContain('measuer');
+  });
+
+  it('refuses the same parameter sent twice', async () => {
+    const { app } = harness();
+    const res = await app.request(
+      `/bff/v0/patients/${PATIENT}/growth?measure=weight&measure=height`,
+      { headers: bearer(TOKENS.clinicianA) }
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors?: { path: string; message: string }[] };
+    expect(body.errors).toEqual([{ path: 'measure', message: 'sent more than once' }]);
+  });
+});
+
 describe('plotting a patient', () => {
   it('scores a weight against the chart and says which reference it used', async () => {
     const { app, dataset } = harness();

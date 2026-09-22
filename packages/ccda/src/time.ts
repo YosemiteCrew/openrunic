@@ -1,5 +1,14 @@
 import { CcdaError } from './xml/errors.js';
 
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
+
+function isCalendarDate(year: string, month: string, day: string): boolean {
+  const value = `${year}-${month}-${day}`;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 /**
  * HL7 v3 timestamps, in both directions.
  *
@@ -16,8 +25,12 @@ import { CcdaError } from './xml/errors.js';
 
 /** `20260814093000+0000` - a full instant, always in UTC. */
 export function hl7Instant(iso: string): string {
+  const calendar = ISO_DATE_PREFIX.exec(iso);
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(date.getTime()) ||
+    (calendar !== null && !isCalendarDate(calendar[1]!, calendar[2]!, calendar[3]!))
+  ) {
     throw new CcdaError(`Cannot write ${iso} as an HL7 timestamp: it is not a date.`);
   }
   const pad = (value: number, width = 2): string => String(value).padStart(width, '0');
@@ -29,9 +42,12 @@ export function hl7Instant(iso: string): string {
 
 /** `20260814` - a date with no time, from `YYYY-MM-DD`. */
 export function hl7Date(isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
+  const match = ISO_DATE.exec(isoDate);
   if (match === null) {
     throw new CcdaError(`Cannot write ${isoDate} as an HL7 date: expected YYYY-MM-DD.`);
+  }
+  if (!isCalendarDate(match[1]!, match[2]!, match[3]!)) {
+    throw new CcdaError(`Cannot write ${isoDate} as an HL7 date: the fields are out of range.`);
   }
   return `${match[1]}${match[2]}${match[3]}`;
 }
@@ -55,6 +71,9 @@ export function fromHl7(value: string | undefined): string | undefined {
   }
 
   const [, year, month = '01', day = '01', hour, minute = '00', second = '00', zone] = match;
+  if (!isCalendarDate(year!, month, day)) {
+    throw new CcdaError(`Cannot read ${value} as an HL7 timestamp: the fields are out of range.`);
+  }
   if (hour === undefined) return `${year}-${month}-${day}`;
 
   const offset =
@@ -67,7 +86,7 @@ export function fromHl7(value: string | undefined): string | undefined {
 }
 
 /** The two shapes this codec writes: a date, or an ISO instant. */
-const READABLE = /^(\d{4}-\d{2}-\d{2})(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+const READABLE = /^(\d{4})-(\d{2})-(\d{2})(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 /**
  * How a date is shown to a person reading the narrative.
@@ -86,6 +105,7 @@ export function readableDate(value: string | undefined): string {
 
   const match = READABLE.exec(value.trim());
   if (match === null) return value;
+  if (!isCalendarDate(match[1]!, match[2]!, match[3]!)) return value;
 
   const date = new Date(value.length === 10 ? `${value}T00:00:00Z` : value);
   return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10);

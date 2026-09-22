@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@openrunic/database';
 import { describe, expect, it } from 'vitest';
 
-import { demoOrganisationId } from '@openrunic/database/seed';
+import { buildDemoPractice, demoOrganisationId } from '@openrunic/database/seed';
 
 import {
   createDemoPrincipalResolver,
@@ -32,29 +32,32 @@ interface SeededUser {
   credential: string | null;
 }
 
-const USERS: SeededUser[] = [
-  {
-    id: 'user-clinician',
-    email: 'a.okafor@demo.invalid',
-    givenName: 'Adaeze',
-    familyName: 'Okafor',
-    credential: 'MD',
-  },
-  {
-    id: 'user-frontdesk',
-    email: 'f.deskly@demo.invalid',
-    givenName: 'Fern',
-    familyName: 'Deskly',
-    credential: null,
-  },
-  {
-    id: 'user-biller',
-    email: 'r.claimsworth@demo.invalid',
-    givenName: 'Reg',
-    familyName: 'Claimsworth',
-    credential: 'CPC',
-  },
-];
+/**
+ * The rows a real database would return, taken from the seed rather than
+ * described.
+ *
+ * This was a hand-written list, and it disagreed with the seed on two of the
+ * three names it claimed to mirror. That is survivable while it is only a label,
+ * and it stops being survivable the moment the list decides what the resolver
+ * can find: a spec whose email has no seeded user is skipped by a bare
+ * `continue`, so a fixture that invents the user hides the one failure this file
+ * is here to catch. `buildDemoPractice` is pure and already imported for
+ * `demoOrganisationId`, so reading it costs nothing and cannot drift.
+ */
+const USERS: SeededUser[] = buildDemoPractice()
+  .users.filter((user) => DEMO_TOKENS.some((spec) => spec.email === user.email))
+  .map((user) => ({
+    id: String(user.id),
+    email: String(user.email),
+    givenName: String(user.givenName),
+    familyName: String(user.familyName),
+    // Prisma answers a nullable column with null; the builder simply omits it.
+    credential: user.credential === undefined ? null : String(user.credential),
+  }));
+
+/** The user the clinician token resolves to, read from the same source. */
+const CLINICIAN = USERS.find((user) => user.email === 'a.okafor@demo.invalid');
+const FRONT_DESK = USERS.find((user) => user.email === 'f.deskly@demo.invalid');
 
 /**
  * A client whose organisation lookup returns whatever the test scripts.
@@ -104,6 +107,20 @@ const seeded = {
 };
 
 describe('createDemoPrincipalResolver', () => {
+  /*
+   * The premise, asserted rather than assumed. Every test below is written as
+   * though the seed holds a user for each published token; if it does not, the
+   * fixture silently shrinks and the suite goes on measuring a smaller table
+   * than the one that ships.
+   */
+  it('has a seeded user behind every published token', () => {
+    // Compared as sets: which rows exist is the premise, and the order either
+    // list happens to be written in is not.
+    expect([...USERS].map((user) => user.email).sort()).toStrictEqual(
+      DEMO_TOKENS.map((spec) => spec.email).sort()
+    );
+  });
+
   it('binds every token to the tenant the seed actually created', async () => {
     const resolver = createDemoPrincipalResolver(clientReturning([seeded]).client);
 
@@ -160,7 +177,7 @@ describe('createDemoPrincipalResolver', () => {
     const resolver = createDemoPrincipalResolver(clientReturning([seeded]).client);
 
     await expect(resolver.resolve('dev-clinician-a')).resolves.toMatchObject({
-      subject: 'user-clinician',
+      subject: CLINICIAN?.id,
       facilityIds: ['facility-1', 'facility-2'],
     });
   });
@@ -171,15 +188,18 @@ describe('createDemoPrincipalResolver', () => {
     // The audit trail caches this label so a later rename cannot rewrite
     // history, which is why it is composed at resolve time.
     await expect(resolver.resolve('dev-clinician-a')).resolves.toMatchObject({
-      displayName: 'Adaeze Okafor, MD',
+      displayName: `${String(CLINICIAN?.givenName)} ${String(CLINICIAN?.familyName)}, ${String(CLINICIAN?.credential)}`,
     });
   });
 
   it('leaves the trailing comma off a user with no credential', async () => {
     const resolver = createDemoPrincipalResolver(clientReturning([seeded]).client);
 
+    // No credential on this row, so no trailing comma - asserted against the
+    // seed's own name for them rather than a remembered one.
+    expect(FRONT_DESK?.credential).toBeNull();
     await expect(resolver.resolve('dev-frontdesk-a')).resolves.toMatchObject({
-      displayName: 'Fern Deskly',
+      displayName: `${String(FRONT_DESK?.givenName)} ${String(FRONT_DESK?.familyName)}`,
     });
   });
 

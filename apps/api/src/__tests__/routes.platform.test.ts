@@ -1046,6 +1046,11 @@ describe('the form submission lifecycle', () => {
     async ({ transition, refusedFrom, payload }) => {
       const { app, dataset } = createTestApp();
       seed(dataset, 'FormSubmission', makeFormSubmissionRow({ status: refusedFrom }));
+      // The transitions ask the care-relationship gate now (#322), and this
+      // case is about the state machine rather than about the gate. Without it
+      // the refusal is a 404 from the chart and the 409 this asserts is never
+      // reached - a premise failing quietly and looking like the conclusion.
+      authorise(dataset, PATIENT_ID);
 
       const res = await send(
         app,
@@ -1058,6 +1063,101 @@ describe('the form submission lifecycle', () => {
       expect((await body<ProblemDocument>(res)).type).toBe(
         'https://openrunic.org/problems/invalid-transition'
       );
+    }
+  );
+
+  /* ------------------------------- the chart gate on the hand-registered
+     ------------------------------- transitions (#322) */
+
+  /**
+   * Every door into a submission that is registered by hand.
+   *
+   * The generated read is gated by `chartFrom: 'formSubmissions'`; these three
+   * are not generated, so the CRUD seam never saw them. Driven on `dev` before
+   * this change, one caller with no relationship to the chart:
+   *
+   *   GET  /bff/v0/forms/submissions/{id}            404   the read IS gated
+   *   POST /bff/v0/forms/submissions/{id}/complete   200
+   *   POST /bff/v0/forms/submissions/{id}/sign       200
+   *   POST /bff/v0/forms/submissions/{id}/amend      200
+   *
+   * with the positive control - the same caller, the same row, a relationship
+   * seeded - at 200 on the read, so the 404 is the care gate and not an
+   * unseeded row.
+   *
+   * Signing is the one that decides it: a signed form is an attestation
+   * carrying `signedById`, so an ungated door stamps a refused caller's name on
+   * a document in a chart they cannot open.
+   *
+   * NO APPOINTMENT OR ENCOUNTER IS SEEDED HERE, and that is load-bearing rather
+   * than incidental. `facility-activity` grants the relationship from either,
+   * narrowed to the caller's own sites - so `formsApp()`, which seeds one
+   * through `authorise`, describes a caller who IS in the chart. A stranger
+   * fixture that reuses it measures nothing.
+   */
+  const GATED_DOORS = [
+    ['complete', 'IN_PROGRESS', { completedByType: 'PATIENT' }],
+    ['sign', 'COMPLETED', {}],
+    ['amend', 'SIGNED', { values: { systolic: 120 } }],
+  ] as const;
+
+  /** The submission seeded in a legal prior state, and NO relationship. */
+  function strangerFormsApp(from: ScopedRow<'FormSubmission'>['status']): TestApp {
+    const harness = createTestApp();
+    seed(
+      harness.dataset,
+      'FormDefinition',
+      makeFormDefinitionRow({
+        id: DEFINITION_ID,
+        status: 'PUBLISHED',
+        publishedAt: FIXED_NOW,
+        publishedById: testId(951),
+      })
+    );
+    seed(harness.dataset, 'FormSubmission', makeFormSubmissionRow({ status: from }));
+    return harness;
+  }
+
+  it.each(GATED_DOORS)(
+    'POST /forms/submissions/:id/%s is refused on a chart nothing connects the writer to',
+    async (transition, from, payload) => {
+      const { app } = strangerFormsApp(from);
+
+      // 404 and not 403, the same as every chart refusal, and the detail
+      // separates the gate refusing from the row being absent - two different
+      // findings behind one status code.
+      const res = await send(
+        app,
+        'POST',
+        `/bff/v0/forms/submissions/${SUBMISSION_ID}/${transition}`,
+        payload
+      );
+
+      expect(res.status).toBe(404);
+      expect((await body<ProblemDocument>(res)).detail).toBe('No such patient.');
+    }
+  );
+
+  it.each(GATED_DOORS)(
+    'POST /forms/submissions/:id/%s still answers a writer who is in that patient care',
+    async (transition, from, payload) => {
+      const harness = strangerFormsApp(from);
+      authorise(harness.dataset, PATIENT_ID);
+
+      // A real 200 rather than "not 404": every door is seeded in a state its
+      // transition is legal from, so a 409 here would mean the state machine
+      // had taken the route out of the product while the pair still read as the
+      // gate working.
+      expect(
+        (
+          await send(
+            harness.app,
+            'POST',
+            `/bff/v0/forms/submissions/${SUBMISSION_ID}/${transition}`,
+            payload
+          )
+        ).status
+      ).toBe(200);
     }
   );
 
@@ -2074,6 +2174,9 @@ describe('GET /bff/v0/audit/verify', () => {
       tailSeq: null,
       brokenAtSeq: null,
       reason: null,
+      // The verification of an empty chain is still a verification somebody
+      // asked for, and it is recorded like any other.
+      recorded: true,
     });
   });
 
@@ -2098,6 +2201,67 @@ describe('GET /bff/v0/audit/verify', () => {
     const { app } = createTestApp();
 
     expect((await get(app, '/bff/v0/audit/verify', TOKENS.frontDeskA)).status).toBe(403);
+  });
+
+  /**
+   * The integrity check is the one audit read that was never audited.
+   *
+   * Measured on `dev` at `39a9dbbc` and again here: `/audit` and `/audit/:id`
+   * each leave a row, a REFUSED `/audit/verify` leaves a row through the
+   * denial path, and a SUCCESSFUL one left nothing. So the principal holding
+   * `audit.read` could ask whether the tamper detection had fired, as often as
+   * they liked, invisibly - while the principal without it was recorded every
+   * time they asked. Backwards under either reading of the principle: the row
+   * that matters for tamper detection is the one naming who checked.
+   *
+   * Not `recordReads`. That would emit a `phi.read` naming up to 500 walked
+   * `AuditEvent` ids and every distinct patient in the range, as rows this
+   * reader ACCESSED - the inflation `AuditCollector.read`'s own suppression
+   * comment exists to prevent. The verifier hashed a sequence; it opened no
+   * chart. So this is one event about the verification and it carries no row
+   * content, which is also what keeps the disclosure argument satisfied.
+   */
+  it('records the verification itself, so a successful check leaves a trace', async () => {
+    const { app, sink } = await auditedApp();
+    sink.clear();
+
+    const report = await body<AuditVerificationDto>(await get(app, '/bff/v0/audit/verify'));
+    expect(report.valid).toBe(true);
+
+    const verifications = sink.writes().filter((entry) => entry.event.action === 'audit.verified');
+    expect(verifications).toHaveLength(1);
+    const event = verifications[0]?.event;
+    expect(event?.targetType).toBe('AuditChain');
+    expect(event?.outcome).toBe('success');
+    expect(event?.metadata).toMatchObject({ valid: true, checked: report.checked });
+    // No row content: the verification says what was checked, never what the
+    // rows contained, so the record cannot itself become a disclosure.
+    expect(event?.patientId).toBeUndefined();
+  });
+
+  it('records a verification that FAILED, which is the row an investigation reads', async () => {
+    const { app, auditStore, sink } = await auditedApp();
+    Object.assign(firstEvent(auditStore, DEMO_TENANT_A), { action: 'nothing.happened' });
+    sink.clear();
+
+    const report = await body<AuditVerificationDto>(await get(app, '/bff/v0/audit/verify'));
+    expect(report.valid).toBe(false);
+
+    const event = sink.writes().find((entry) => entry.event.action === 'audit.verified')?.event;
+    expect(event?.metadata).toMatchObject({ valid: false, brokenAtSeq: report.brokenAtSeq });
+  });
+
+  it('records nothing extra when the check is refused', async () => {
+    // The must-not-fire arm. A 403 is already recorded once, by the denial
+    // path; the new event must not double it or fire for a caller who never
+    // reached the chain.
+    const { app, sink } = createTestApp();
+    sink.clear();
+
+    expect((await get(app, '/bff/v0/audit/verify', TOKENS.frontDeskA)).status).toBe(403);
+
+    expect(sink.writes().filter((e) => e.event.action === 'audit.verified')).toHaveLength(0);
+    expect(sink.writes().filter((e) => e.event.action === 'authorisation.denied')).toHaveLength(1);
   });
 });
 

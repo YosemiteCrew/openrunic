@@ -38,6 +38,25 @@ export const portal: Messages = {
   'portal.footer.emergency':
     'Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
 
+  'portal.auth.page.title': 'Iniciar sesión',
+  'portal.auth.overline': 'Portal del paciente',
+  'portal.auth.title': 'Entre en su historia clínica',
+  'portal.auth.lede': 'Use el token de acceso seguro que le ha dado su equipo asistencial.',
+  'portal.auth.idle': 'La sesión se cerró por inactividad. Vuelva a entrar para continuar.',
+  'portal.auth.expired': 'Su sesión ha terminado. Vuelva a entrar para continuar.',
+  'portal.auth.tokenLabel': 'Token de acceso',
+  'portal.auth.tokenHint':
+    'El token se conserva en una sesión protegida y no está disponible para los scripts de la página.',
+  'portal.auth.rejected': 'No se ha aceptado ese token de acceso.',
+  'portal.auth.signingIn': 'Entrando',
+  'portal.auth.submit': 'Entrar',
+  'portal.auth.unavailable':
+    'No se ha podido iniciar la sesión. Vuelva a intentarlo en un momento.',
+  'portal.auth.developmentLede': 'Solo desarrollo: abra la historia clínica de prueba.',
+  'portal.auth.developmentAction': 'Abrir historia de prueba',
+  'portal.auth.checking': 'Comprobando su sesión.',
+  'portal.auth.signOut': 'Cerrar sesión',
+
   'portal.home.overline': 'Su atención',
   'portal.home.title': 'Inicio',
   'portal.home.lede':
@@ -49,11 +68,11 @@ export const portal: Messages = {
   'portal.home.balance.title': 'Lo que debe',
   'portal.home.balance.nothing': 'No hay nada que pagar.',
   'portal.home.balance.dueUnknown':
-    'Pregunte a la consulta cuándo vence. Puede pagar en línea, o preguntar a la consulta por el pago a plazos.',
-  'portal.home.balance.dueBy':
-    'Vence el {date}. Puede pagar en línea, o preguntar a la consulta por el pago a plazos.',
+    'Pregunte a la consulta cuándo vence. Abra sus facturas para ver los detalles.',
+  'portal.home.balance.dueBy': 'Vence el {date}. Abra sus facturas para ver los detalles.',
+  'portal.home.balance.multipleCurrencies':
+    'Tiene facturas pendientes en más de una moneda. Ábralas para verlas.',
   'portal.home.balance.seeBills': 'Ver sus facturas',
-  'portal.home.balance.pay': 'Pagar una factura',
   'portal.home.messages.overline': 'Mensajes',
   'portal.home.messages.title': 'De su equipo asistencial',
   'portal.home.messages.open': 'Abrir los mensajes',
@@ -67,6 +86,7 @@ export const portal: Messages = {
     'Pida una hora a la consulta y se la confirmarán por mensaje.',
   'portal.home.appointment.request': 'Pedir una cita',
   'portal.home.appointment.videoLocation': 'Una videollamada. El enlace se abre en este navegador.',
+  'portal.home.appointment.seeAll': 'Ver todas las citas',
   'portal.home.page.title': 'Inicio',
   'portal.home.page.description':
     'Su próxima cita, su saldo, sus mensajes y todo lo que está pendiente de usted.',
@@ -75,16 +95,15 @@ export const portal: Messages = {
   'portal.app.description':
     'Consulte sus citas, su historia clínica, sus mensajes, sus formularios y sus facturas.',
   'portal.appointments.page.title': 'Citas',
-  'portal.appointments.page.description':
-    'Sus citas próximas y pasadas, y cómo pedir, cambiar o anular una.',
+  'portal.appointments.page.description': 'Sus citas próximas y pasadas.',
   'portal.bills.page.title': 'Facturas',
-  'portal.bills.page.description': 'Sus facturas, el motivo de cada cargo y cómo pagarlas.',
+  'portal.bills.page.description': 'Sus facturas y el motivo de cada cargo.',
   'portal.forms.page.title': 'Formularios',
   'portal.forms.page.description':
-    'Cuestionarios para rellenar antes de sus citas. Guarde a medida que avanza y termine más tarde.',
+    'Cuestionarios que le ha enviado su equipo asistencial y su estado actual.',
   'portal.healthRecord.page.title': 'Historia clínica',
   'portal.healthRecord.page.description':
-    'Sus resultados, sus diagnósticos, sus medicamentos, sus alergias, sus vacunas y sus documentos, cada uno con una explicación en lenguaje claro.',
+    'Sus resultados, sus diagnósticos, sus medicamentos, sus alergias, sus vacunas y sus documentos registrados.',
   'portal.messages.page.title': 'Mensajes',
   'portal.messages.page.description': 'Lea lo que ha escrito su equipo asistencial y respóndales.',
   'portal.assistant.page.title': 'Asistente',
@@ -115,9 +134,10 @@ export const portal: Messages = {
   'portal.appointment.where': 'Dónde',
   'portal.appointment.videoDefault': 'Una videollamada',
   'portal.appointment.roomUnconfirmed': 'La consulta le confirmará la sala.',
+  'portal.appointment.careTeam': 'Su equipo asistencial',
   'portal.appointments.overline': 'Sus visitas',
   'portal.appointments.title': 'Citas',
-  'portal.appointments.lede': 'Lo que tiene reservado, lo que ya ha pasado y cómo pedir un cambio.',
+  'portal.appointments.lede': 'Lo que tiene reservado y lo que ya ha pasado.',
   'portal.appointments.request': 'Pedir una cita',
   'portal.appointments.requested':
     'Su solicitud ha llegado a la consulta. Se lo confirmarán por mensaje. No hay nada reservado hasta que lo hagan.',
@@ -134,6 +154,7 @@ export const portal: Messages = {
   'portal.appointments.mode.video': 'Videollamada',
   'portal.appointments.mode.inPerson': 'Presencial',
   'portal.appointments.mode.past': 'Pasada',
+  'portal.appointments.mode.unknown': 'Cita',
   'portal.appointments.join': 'Entrar en la videollamada',
   'portal.appointments.directions': 'Cómo llegar',
   'portal.appointments.move': 'Pedir un cambio de hora',
@@ -159,7 +180,7 @@ export const portal: Messages = {
   'portal.healthRecord.overline': 'Su historia',
   'portal.healthRecord.title': 'Historia clínica',
   'portal.healthRecord.lede':
-    'Todo lo que ha anotado su equipo asistencial, con una explicación en lenguaje claro junto a cada término clínico.',
+    'Todo lo que ha anotado su equipo asistencial. Si el registro incluye una explicación en lenguaje claro, aparecerá junto al término clínico.',
   'portal.healthRecord.empty.title': 'Su historia clínica todavía no tiene nada.',
   'portal.healthRecord.empty.message':
     'Sus resultados, sus diagnósticos, sus medicamentos y sus documentos aparecerán aquí después de su primera cita.',
@@ -169,6 +190,9 @@ export const portal: Messages = {
   'portal.healthRecord.results.noRange': 'No consta un rango habitual para esta prueba.',
   'portal.healthRecord.results.usualRange': 'Rango habitual: {range}',
   'portal.healthRecord.results.takenOn': 'Tomada el {date}',
+  'portal.healthRecord.results.range.inRange': 'Dentro del rango registrado',
+  'portal.healthRecord.results.range.outOfRange': 'Fuera del rango registrado',
+  'portal.healthRecord.results.range.unknown': 'Estado del rango no registrado',
   'portal.healthRecord.results.ask': 'Preguntar por este resultado',
   'portal.healthRecord.results.explainer.title': 'Qué hacer con esta cifra',
   'portal.healthRecord.results.explainer.body':
@@ -178,27 +202,43 @@ export const portal: Messages = {
   'portal.healthRecord.problems.title': 'Diagnósticos en su historia clínica',
   'portal.healthRecord.problems.none': 'No consta ningún diagnóstico.',
   'portal.healthRecord.problems.recordedOn': 'Registrado el {date}',
+  'portal.healthRecord.problems.status.active': 'Activo',
+  'portal.healthRecord.problems.status.recurrence': 'Reaparición',
+  'portal.healthRecord.problems.status.relapse': 'Recaída',
+  'portal.healthRecord.problems.status.inactive': 'Inactivo',
+  'portal.healthRecord.problems.status.remission': 'En remisión',
+  'portal.healthRecord.problems.status.resolved': 'Resuelto',
   'portal.healthRecord.medications.overline': 'Medicamentos',
   'portal.healthRecord.medications.title': 'Lo que le han recetado',
   'portal.healthRecord.medications.none': 'No consta ningún medicamento.',
   'portal.healthRecord.medications.prescribedBy': 'Recetado por {clinician}, iniciado el {date}',
+  'portal.healthRecord.medications.startedOn': 'Iniciado el {date}',
   'portal.healthRecord.allergies.overline': 'Alergias',
   'portal.healthRecord.allergies.title': 'Lo que debe evitar',
   'portal.healthRecord.allergies.none': 'No consta ninguna alergia.',
   'portal.healthRecord.allergies.reaction': 'Qué pasó: {reaction}',
   'portal.healthRecord.allergies.recordedOn': 'Registrada el {date}',
+  'portal.healthRecord.allergies.severity.mild': 'Leve',
+  'portal.healthRecord.allergies.severity.moderate': 'Moderada',
+  'portal.healthRecord.allergies.severity.severe': 'Grave',
   'portal.healthRecord.immunisations.overline': 'Vacunas',
   'portal.healthRecord.immunisations.title': 'Vacunas que ha recibido',
   'portal.healthRecord.immunisations.none': 'No consta ninguna vacuna.',
   'portal.healthRecord.immunisations.givenOn': 'Administrada el {date}',
+  'portal.healthRecord.immunisations.dose': 'Dosis administrada: {dose}',
   'portal.healthRecord.documents.overline': 'Documentos',
   'portal.healthRecord.documents.title': 'Informes y cartas',
   'portal.healthRecord.documents.none': 'No se ha añadido ningún documento.',
-  'portal.healthRecord.documents.addedOn': 'Añadido el {date}',
+  'portal.healthRecord.documents.addedOn': 'Añadido el {date}, {size}',
+  'portal.healthRecord.documents.kind.pdf': 'PDF',
+  'portal.healthRecord.documents.kind.image': 'Imagen',
+  'portal.healthRecord.documents.kind.document': 'Documento',
+  'portal.healthRecord.documents.kind.spreadsheet': 'Hoja de cálculo',
+  'portal.healthRecord.documents.kind.text': 'Texto',
+  'portal.healthRecord.documents.kind.other': 'Archivo',
   'portal.bills.overline': 'Su cuenta',
   'portal.bills.title': 'Facturas',
-  'portal.bills.lede':
-    'Todas las facturas que ha emitido la consulta, el motivo de cada cargo y cómo pagarlas.',
+  'portal.bills.lede': 'Todas las facturas que ha emitido la consulta y el motivo de cada cargo.',
   'portal.bills.empty.title': 'No tiene ninguna factura.',
   'portal.bills.empty.message':
     'Cuando la consulta le facture una visita, la factura aparecerá aquí.',
@@ -206,6 +246,7 @@ export const portal: Messages = {
   'portal.bills.statement.title': 'Emitida el {date}',
   'portal.bills.statement.status': 'Estado',
   'portal.bills.statement.dueBy': 'Vence el',
+  'portal.bills.statement.noDueDate': 'No consta una fecha de vencimiento',
   'portal.bills.statement.stillToPay': 'Pendiente de pago',
   'portal.bills.statement.total': 'Total',
   'portal.bills.statement.open': 'Ver el motivo',
@@ -244,6 +285,8 @@ export const portal: Messages = {
   'portal.messages.threads.meta': '{correspondent}, {when}',
   'portal.messages.conversation.overline': 'Conversación',
   'portal.messages.conversation.who': '{author}, {when}',
+  'portal.messages.conversation.closed': 'Esta conversación no admite respuestas.',
+  'portal.messages.careTeam': 'Equipo asistencial',
   'portal.messages.notice.title': 'No es para urgencias',
   'portal.messages.notice.body':
     'Las respuestas pueden tardar unos días laborables. Si necesita ayuda ahora, llame a la consulta. Si se trata de una urgencia médica, llame a los servicios de emergencia de su zona.',
@@ -256,8 +299,7 @@ export const portal: Messages = {
     'Su mensaje no se ha enviado y su borrador sigue en la caja. Compruebe su conexión y vuelva a enviarlo.',
   'portal.forms.overline': 'Antes de su visita',
   'portal.forms.title': 'Formularios',
-  'portal.forms.lede':
-    'Cuestionarios que su equipo asistencial le ha pedido que rellene. Guarde a medida que avanza y termine cuando quiera.',
+  'portal.forms.lede': 'Cuestionarios que le ha enviado su equipo asistencial y su estado actual.',
   'portal.forms.empty.title': 'No tiene ningún formulario que rellenar.',
   'portal.forms.empty.message':
     'Cuando su equipo asistencial le envíe uno, aparecerá aquí con la fecha para la que se necesita.',
@@ -265,6 +307,7 @@ export const portal: Messages = {
   'portal.forms.status.inProgress': 'Guardado, sin enviar',
   'portal.forms.status.submitted': 'Enviado',
   'portal.forms.neededBy': 'Se necesita para el {date}',
+  'portal.forms.noDueDate': 'No consta una fecha límite',
   'portal.forms.open': 'Abrir el formulario',
   'portal.forms.continue': 'Continuar el formulario',
   'portal.forms.yes': 'Sí',
@@ -305,6 +348,40 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
   'portal.assistant.compose.ask': 'Preguntar',
   'portal.assistant.compose.stop': 'Parar',
+
+  'portal.assistant.readback.label': 'Leer las respuestas en voz alta',
+  'portal.assistant.readback.hint':
+    'Su dispositivo lee en voz alta la respuesta que ya está en esta pantalla, y nada más. La lectura la hace el propio dispositivo, así que no se envía ninguna palabra a ningún sitio para ello.',
+  'portal.assistant.readback.stop': 'Dejar de leer',
+  'portal.assistant.readback.noVoice':
+    'Este dispositivo no tiene ninguna voz instalada, así que no se puede leer nada en voz alta.',
+  'portal.assistant.readback.noLanguage':
+    'Este dispositivo no tiene una voz para el idioma de esta página, así que no se lee nada en voz alta.',
+  'portal.assistant.readback.reading': 'Leyendo la respuesta en voz alta.',
+  'portal.assistant.readback.interrupted': 'Lectura detenida. La respuesta sigue en la pantalla.',
+  'portal.assistant.readback.failed':
+    'No se pudo leer la respuesta en voz alta. Está en la pantalla, más arriba.',
+  'portal.assistant.dictation.speak': 'Diga su pregunta',
+  'portal.assistant.dictation.stop': 'Apagar el micrófono',
+  'portal.assistant.dictation.hint':
+    'Su dispositivo convierte su voz en texto en el propio dispositivo, y no se envía nada a ningún sitio para hacerlo. Las palabras van al cuadro de arriba, donde puede cambiarlas, y no se pregunta nada hasta que pulse Preguntar.',
+  'portal.assistant.dictation.starting': 'Abriendo el micrófono.',
+  'portal.assistant.dictation.listening':
+    'El micrófono está encendido. Sus palabras van al cuadro de arriba.',
+  'portal.assistant.dictation.noLanguage':
+    'Este dispositivo no puede convertir la voz en texto en el idioma de esta página sin enviar el sonido fuera, así que aquí solo puede escribir.',
+  'portal.assistant.dictation.notInstalled':
+    'Este dispositivo podría hacerlo una vez instalado su paquete de idioma para esta página, y no se enviaría nada a ningún sitio. Hasta entonces, aquí solo puede escribir.',
+  'portal.assistant.dictation.denied':
+    'No se permitió el micrófono, así que no se oyó nada. Puede permitirlo en los ajustes de su navegador, o escribir su pregunta.',
+  'portal.assistant.dictation.noSpeech':
+    'No se oyó nada. Puede intentarlo de nuevo, o escribir su pregunta.',
+  'portal.assistant.dictation.noAudio':
+    'No se pudo abrir ningún micrófono, así que no se oyó nada. Puede escribir su pregunta.',
+  'portal.assistant.dictation.offDevice':
+    'Este dispositivo solo lo habría hecho enviando el sonido fuera, así que no se oyó nada. Puede escribir su pregunta.',
+  'portal.assistant.dictation.failed':
+    'El micrófono se detuvo. Puede intentarlo de nuevo, o escribir su pregunta.',
   'portal.assistant.turn.youAsked': 'Usted preguntó:',
   'portal.assistant.turn.stillLooking': 'Sigue buscando.',
   'portal.assistant.step.done': ', hecho',

@@ -7,6 +7,7 @@ import { chartSearch } from './tools/chart-search.js';
 import { codingSuggest } from './tools/coding-suggest.js';
 import { denialDraftAppeal } from './tools/denial-draft-appeal.js';
 import { denialTriage } from './tools/denial-triage.js';
+import { authorisationReviewEvidence } from './tools/authorisation-review-evidence.js';
 import { documentsExtractCandidates } from './tools/documents-extract-candidates.js';
 import { formsDraftDefinition } from './tools/forms-draft-definition.js';
 import { inboxClassify } from './tools/inbox-classify.js';
@@ -32,6 +33,7 @@ export const V1_TOOLS: readonly AgentTool[] = [
   chartSearch,
   denialTriage,
   denialDraftAppeal,
+  authorisationReviewEvidence,
   priorauthAssemblePacket,
   formsDraftDefinition,
   inboxClassify,

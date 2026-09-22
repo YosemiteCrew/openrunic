@@ -5,15 +5,15 @@ import { createDevelopmentAdapters } from '../development.js';
 /**
  * The partner seams a development run gets for free.
  *
- * Two properties are worth pinning, and neither is about coverage.
+ * The properties below are worth pinning, and none is about coverage.
  *
- * The adapter is initialised at construction, because one that is not answers
+ * Each adapter is initialised at construction, because one that is not answers
  * `misconfigured` to every call and surfaces as a 502 from a route that looks
  * like it should work. `createApp` is synchronous so the module cannot await
  * that init; it relies on this particular adapter settling on the next
  * microtask, having done no I/O. A test is the only thing that holds anybody to
- * that, and it is the assumption that breaks first if somebody swaps the mock
- * for a vendor whose init reaches the network.
+ * that, and it is the assumption that breaks first if somebody swaps either
+ * mock for a vendor whose init reaches the network.
  *
  * And the join links point at `.invalid`, a TLD the DNS root can never resolve.
  * That is what makes a fixture link that escapes into a ticket, a log or a
@@ -30,6 +30,39 @@ describe('createDevelopmentAdapters', () => {
 
     expect(resolved.ok).toBe(true);
     expect(registry.descriptors().map((descriptor) => descriptor.capability)).toContain('video');
+  });
+
+  it('registers prescribing without controlled-substance enrolment', () => {
+    const registry = createDevelopmentAdapters();
+
+    expect(registry.resolve('erx').ok).toBe(true);
+    expect(registry.entitledTo('erx', 'epcs')).toBe(false);
+  });
+
+  it('can transmit an ordinary prescription on the microtask after construction', async () => {
+    const registry = createDevelopmentAdapters();
+    const resolved = registry.resolve('erx');
+    if (!resolved.ok) throw new Error('the development registry has no eRx adapter');
+
+    await settle();
+
+    const receipt = await resolved.value.transmitPrescription({
+      prescriptionId: 'prescription-1',
+      patientRef: 'patient-1',
+      prescriberRef: 'prescriber-1',
+      pharmacyRef: 'pharmacy-1',
+      drugCode: '1049502',
+      drugCodeSystem: 'http://www.nlm.nih.gov/research/umls/rxnorm',
+      sigText: 'Take one tablet by mouth daily.',
+      quantity: 30,
+      quantityUnit: 'tablet',
+      refills: 0,
+      daysSupply: 30,
+      dispenseAsWritten: false,
+      writtenAt: '2026-09-03T09:30:00.000Z',
+    });
+
+    expect(receipt.ok).toBe(true);
   });
 
   it('is usable on the microtask after construction, without anybody awaiting init', async () => {
@@ -90,6 +123,8 @@ describe('createDevelopmentAdapters', () => {
 
     expect(first).not.toBe(second);
     expect(first.unregister('video')).toBe(true);
+    expect(first.unregister('erx')).toBe(true);
     expect(second.resolve('video').ok).toBe(true);
+    expect(second.resolve('erx').ok).toBe(true);
   });
 });

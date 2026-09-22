@@ -24,6 +24,7 @@ import {
   useStatements,
 } from '@/lib/api/billing';
 import type { AsyncState } from '@/lib/api/hooks';
+import { useOwnCapabilities } from '@/lib/api/hooks';
 import { useInbox, useOrders, useResults } from '@/lib/api/worklist';
 
 /**
@@ -71,6 +72,7 @@ const HOOKS: ReadonlyArray<readonly [string, () => AsyncState<unknown>]> = [
   ['orders', () => useOrders()],
   ['results', () => useResults()],
   ['inbox', () => useInbox()],
+  ['own capabilities', () => useOwnCapabilities()],
 ];
 
 describe('every read hook, with no client and no query', () => {

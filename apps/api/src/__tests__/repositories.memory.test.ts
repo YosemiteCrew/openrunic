@@ -26,7 +26,7 @@ import {
 function harness(dataset: MemoryDataset = createEmptyDataset()): {
   dataset: MemoryDataset;
   sink: MemoryAuditSink;
-  repos: (tenantId?: string) => Repositories;
+  repos: (tenantId?: string, compartmentPatientId?: string) => Repositories;
 } {
   const sink = createMemoryAuditSink();
   let counter = 500;
@@ -39,9 +39,10 @@ function harness(dataset: MemoryDataset = createEmptyDataset()): {
   return {
     dataset,
     sink,
-    repos: (tenantId = DEMO_TENANT_A) =>
+    repos: (tenantId = DEMO_TENANT_A, compartmentPatientId) =>
       registry.forRequest({
         tenantId,
+        ...(compartmentPatientId === undefined ? {} : { compartmentPatientId }),
         audit: new AuditCollector(sink, {
           tenantId,
           actorType: 'user',
@@ -575,6 +576,35 @@ describe('the in-memory appointment repository', () => {
     const row = await repos.appointments.create(CREATE_INPUT);
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(registry.dataset.table('Appointment')).toHaveLength(1);
+  });
+
+  it('confines creates to the patient launch context', async () => {
+    const { dataset, repos } = harness();
+    const confined = repos(DEMO_TENANT_A, testId(1));
+
+    await expect(
+      confined.appointments.create({ ...CREATE_INPUT, patientId: testId(2) })
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      confined.appointments.create({ ...CREATE_INPUT, patientId: testId(1) })
+    ).resolves.toMatchObject({ patientId: testId(1) });
+
+    expect(dataset.table('Appointment')).toHaveLength(1);
+  });
+
+  it('refuses creates whose chart can only be known through a join', async () => {
+    const { dataset, repos } = harness();
+
+    await expect(
+      repos(DEMO_TENANT_A, testId(1)).messages.create({
+        threadId: testId(10),
+        senderType: 'PATIENT',
+        senderPatientId: testId(1),
+        body: 'Synthetic portal message.',
+      })
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(dataset.table('Message')).toHaveLength(0);
   });
 });
 

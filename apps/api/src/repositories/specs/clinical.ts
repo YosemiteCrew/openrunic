@@ -17,6 +17,7 @@ import type {
   ObservationInput,
 } from '@openrunic/database';
 
+import { ApiError } from '../../errors.js';
 import {
   inWindow,
   jsonColumn,
@@ -27,7 +28,7 @@ import {
   type RowContext,
   type Writable,
 } from '../collection.js';
-import type { Row, ScopedRow } from '../rows.js';
+import type { OrderByFor, Row, ScopedRow } from '../rows.js';
 
 /**
  * The chart: the visit and everything documented against it.
@@ -83,6 +84,7 @@ export type NoteAddendumRow = ScopedRow<'NoteAddendum'>;
 export type ConditionRow = ScopedRow<'Condition'>;
 export type MedicationStatementRow = ScopedRow<'MedicationStatement'>;
 export type MedicationRequestRow = ScopedRow<'MedicationRequest'>;
+export type PrescriptionFillRow = ScopedRow<'PrescriptionFill'>;
 export type AllergyIntoleranceRow = ScopedRow<'AllergyIntolerance'>;
 export type ImmunizationRow = ScopedRow<'Immunization'>;
 export type ObservationRow = ScopedRow<'Observation'>;
@@ -291,7 +293,7 @@ export const encounterSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.startedAt.getTime();
   },
 
-  orderBy(query: EncounterListQuery) {
+  orderBy(query: EncounterListQuery): OrderByFor<'Encounter'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ startedAt: query.order }, { id: 'asc' as const }];
   },
@@ -410,7 +412,7 @@ export const clinicalNoteSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: ClinicalNoteListQuery) {
+  orderBy(query: ClinicalNoteListQuery): OrderByFor<'ClinicalNote'> {
     if (query.sort === 'signedAt') return [{ signedAt: query.order }, { id: 'asc' as const }];
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
@@ -487,7 +489,7 @@ export const noteAddendumSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: NoteAddendumListQuery) {
+  orderBy(query: NoteAddendumListQuery): OrderByFor<'NoteAddendum'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -614,7 +616,7 @@ export const procedureSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.performedStart.getTime();
   },
 
-  orderBy(query: ProcedureListQuery) {
+  orderBy(query: ProcedureListQuery): OrderByFor<'Procedure'> {
     const { order } = query;
     if (query.sort === 'createdAt') return [{ createdAt: order }, { id: 'asc' as const }];
     return [{ performedStart: order }, { id: 'asc' as const }];
@@ -697,7 +699,7 @@ export const conditionSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.recordedAt.getTime();
   },
 
-  orderBy(query: ConditionListQuery) {
+  orderBy(query: ConditionListQuery): OrderByFor<'Condition'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ recordedAt: query.order }, { id: 'asc' as const }];
   },
@@ -782,7 +784,7 @@ export const medicationStatementSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.reportedAt.getTime();
   },
 
-  orderBy(query: MedicationStatementListQuery) {
+  orderBy(query: MedicationStatementListQuery): OrderByFor<'MedicationStatement'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ reportedAt: query.order }, { id: 'asc' as const }];
   },
@@ -818,6 +820,21 @@ export interface MedicationRequestPatchInput {
   pharmacyNcpdpId?: string;
   /** Set only by the sign, transmit and cancel routes. */
   status?: MedicationRequestStatus;
+  /**
+   * The network's handle for this transmission, and the instant it accepted it.
+   *
+   * Both come from the eRx adapter's receipt and neither is reachable from the
+   * public patch body - `prescriptionPatchSchema` is a strict object naming
+   * neither, so only the transmit route can write them. That matters: they are
+   * the evidence that a prescription left this system, and a field a client can
+   * set is not evidence of anything.
+   *
+   * `transmittedAt` is the network's own instant rather than a local clock
+   * reading. The question the column answers is when the prescription left, and
+   * only one end of that call knows.
+   */
+  erxRef?: string;
+  transmittedAt?: Date;
 }
 
 export const medicationRequestSpec: CollectionSpec<
@@ -863,8 +880,7 @@ export const medicationRequestSpec: CollectionSpec<
 
   patchData(
     patch: MedicationRequestPatchInput,
-    before: ScopedRow<'MedicationRequest'>,
-    context: RowContext
+    before: ScopedRow<'MedicationRequest'>
   ): Partial<Writable<'MedicationRequest'>> {
     const data: Partial<Writable<'MedicationRequest'>> = {
       ...(patch.display === undefined ? {} : { display: patch.display }),
@@ -881,10 +897,29 @@ export const medicationRequestSpec: CollectionSpec<
       ...(patch.status === undefined ? {} : { status: patch.status }),
     };
 
-    // Stamped where the status is set rather than by a later job, so "when did
-    // this leave for the pharmacy" is answerable from the row that says it did.
-    if (patch.status === 'TRANSMITTED' && before.transmittedAt === null) {
-      data.transmittedAt = context.now;
+    /*
+     * The transmission evidence, written only when the caller has it.
+     *
+     * This used to stamp `transmittedAt` from the repository clock whenever the
+     * status reached TRANSMITTED, which made the timestamp a restatement of the
+     * enum rather than a fact about the network - and the row then asserted that
+     * a prescription had left the practice on the strength of a local write,
+     * with `erxRef` still null. The transmit route supplies both from the
+     * adapter's receipt now.
+     *
+     * There is deliberately no fallback. A status set to TRANSMITTED without a
+     * stamp leaves the column null, which reads as "we do not know when", and
+     * that is the honest answer to a state this code can no longer produce. The
+     * alternative is the defect this replaces: an absent value written as a
+     * positive one.
+     *
+     * `erxRef` is write-once. A second reference on one prescription would mean
+     * it had been sent twice, which is what the transmit route refuses to do, so
+     * overwriting one silently would hide that rather than record it.
+     */
+    if (patch.erxRef !== undefined && before.erxRef === null) data.erxRef = patch.erxRef;
+    if (patch.transmittedAt !== undefined && before.transmittedAt === null) {
+      data.transmittedAt = patch.transmittedAt;
     }
     return data;
   },
@@ -909,7 +944,7 @@ export const medicationRequestSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.writtenAt.getTime();
   },
 
-  orderBy(query: MedicationRequestListQuery) {
+  orderBy(query: MedicationRequestListQuery): OrderByFor<'MedicationRequest'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ writtenAt: query.order }, { id: 'asc' as const }];
   },
@@ -920,6 +955,58 @@ export const medicationRequestSpec: CollectionSpec<
   ): Record<string, unknown> {
     if (before === null) return { status: row.status, intent: row.intent };
     return before.status === row.status ? {} : { statusFrom: before.status, statusTo: row.status };
+  },
+};
+
+/* --------------------------------------------------- prescription fills */
+
+export interface PrescriptionFillListQuery extends BaseQuery {
+  patientId?: string;
+  prescriptionId?: string;
+  sort: 'filledOn' | 'createdAt';
+}
+
+type PrescriptionFillPatch = Record<string, never>;
+
+export const prescriptionFillSpec: CollectionSpec<
+  'PrescriptionFill',
+  never,
+  PrescriptionFillPatch,
+  PrescriptionFillListQuery
+> = {
+  model: 'PrescriptionFill',
+  targetType: 'PrescriptionFill',
+  action: 'prescription.fill',
+  patientColumn: 'patientId',
+  compartment: { column: 'patientId' },
+
+  newRow(): never {
+    throw ApiError.conflict('A prescription fill is written only with its stock posting.');
+  },
+
+  patchData(): never {
+    throw ApiError.conflict('A completed prescription fill is append-only.');
+  },
+
+  matches(row: PrescriptionFillRow, query: PrescriptionFillListQuery): boolean {
+    if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
+    return query.prescriptionId === undefined || row.prescriptionId === query.prescriptionId;
+  },
+
+  where(query: PrescriptionFillListQuery) {
+    return {
+      ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+      ...(query.prescriptionId === undefined ? {} : { prescriptionId: query.prescriptionId }),
+    };
+  },
+
+  sortValue(row: PrescriptionFillRow, sort: PrescriptionFillListQuery['sort']): number {
+    return (sort === 'createdAt' ? row.createdAt : row.filledOn).getTime();
+  },
+
+  orderBy(query: PrescriptionFillListQuery): OrderByFor<'PrescriptionFill'> {
+    const sort = query.sort === 'createdAt' ? 'createdAt' : 'filledOn';
+    return [{ [sort]: query.order }, { id: 'asc' as const }];
   },
 };
 
@@ -1008,7 +1095,7 @@ export const allergySpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.recordedAt.getTime();
   },
 
-  orderBy(query: AllergyListQuery) {
+  orderBy(query: AllergyListQuery): OrderByFor<'AllergyIntolerance'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ recordedAt: query.order }, { id: 'asc' as const }];
   },
@@ -1114,7 +1201,7 @@ export const immunisationSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.administeredAt.getTime();
   },
 
-  orderBy(query: ImmunisationListQuery) {
+  orderBy(query: ImmunisationListQuery): OrderByFor<'Immunization'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ administeredAt: query.order }, { id: 'asc' as const }];
   },
@@ -1125,6 +1212,7 @@ export const immunisationSpec: CollectionSpec<
 export interface ObservationListQuery extends BaseQuery {
   patientId?: string;
   encounterId?: string;
+  status?: ObservationStatus;
   category?: ObservationCategory;
   code?: string;
   loincCode?: string;
@@ -1207,6 +1295,7 @@ export const observationSpec: CollectionSpec<
   matches(row: ScopedRow<'Observation'>, query: ObservationListQuery): boolean {
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
+    if (query.status !== undefined && row.status !== query.status) return false;
     if (query.category !== undefined && row.category !== query.category) return false;
     if (query.code !== undefined && row.code !== query.code) return false;
     if (query.loincCode !== undefined && row.loincCode !== query.loincCode) return false;
@@ -1218,6 +1307,7 @@ export const observationSpec: CollectionSpec<
     return {
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
+      ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.category === undefined ? {} : { category: query.category }),
       ...(query.code === undefined ? {} : { code: query.code }),
       ...(query.loincCode === undefined ? {} : { loincCode: query.loincCode }),
@@ -1229,7 +1319,7 @@ export const observationSpec: CollectionSpec<
     return sort === 'createdAt' ? row.createdAt.getTime() : row.effectiveAt.getTime();
   },
 
-  orderBy(query: ObservationListQuery) {
+  orderBy(query: ObservationListQuery): OrderByFor<'Observation'> {
     if (query.sort === 'createdAt') return [{ createdAt: query.order }, { id: 'asc' as const }];
     return [{ effectiveAt: query.order }, { id: 'asc' as const }];
   },
@@ -1429,7 +1519,7 @@ export const referralSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: ReferralListQuery) {
+  orderBy(query: ReferralListQuery): OrderByFor<'Referral'> {
     if (query.sort === 'priority') return [{ priority: query.order }, { id: 'asc' as const }];
     if (query.sort === 'sentAt') return [{ sentAt: query.order }, { id: 'asc' as const }];
     return [{ createdAt: query.order }, { id: 'asc' as const }];
@@ -1489,7 +1579,7 @@ export const careTeamSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: CareTeamListQuery) {
+  orderBy(query: CareTeamListQuery): OrderByFor<'CareTeam'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -1609,7 +1699,7 @@ export const careTeamParticipantSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: CareTeamParticipantListQuery) {
+  orderBy(query: CareTeamParticipantListQuery): OrderByFor<'CareTeamParticipant'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -1701,7 +1791,7 @@ export const carePlanSpec: CollectionSpec<
     return row.createdAt.getTime();
   },
 
-  orderBy(query: CarePlanListQuery) {
+  orderBy(query: CarePlanListQuery): OrderByFor<'CarePlan'> {
     return [{ createdAt: query.order }, { id: 'asc' as const }];
   },
 };
@@ -1793,7 +1883,7 @@ export const goalSpec: CollectionSpec<'Goal', GoalInput, GoalPatchInput, GoalLis
     return row.dueDate?.getTime() ?? Number.NEGATIVE_INFINITY;
   },
 
-  orderBy(query: GoalListQuery) {
+  orderBy(query: GoalListQuery): OrderByFor<'Goal'> {
     const { order } = query;
     if (query.sort === 'dueDate') {
       /* Null placement, made explicit. The memory port sorts an absent due date
@@ -1877,7 +1967,7 @@ export const deviceSpec: CollectionSpec<'Device', DeviceInput, DevicePatchInput,
       return row.createdAt.getTime();
     },
 
-    orderBy(query: DeviceListQuery) {
+    orderBy(query: DeviceListQuery): OrderByFor<'Device'> {
       return [{ createdAt: query.order }, { id: 'asc' as const }];
     },
   };
@@ -1895,6 +1985,7 @@ export const clinicalSpecs = {
   careTeamParticipants: careTeamParticipantSpec,
   medicationStatements: medicationStatementSpec,
   prescriptions: medicationRequestSpec,
+  prescriptionFills: prescriptionFillSpec,
   allergies: allergySpec,
   immunisations: immunisationSpec,
   observations: observationSpec,

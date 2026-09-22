@@ -2,7 +2,7 @@ import { createPrismaClient, withTenantSession, type PrismaClient } from '@openr
 import { z } from 'zod';
 
 import { createPrismaAuditSink, type StandaloneAuditWork } from '../audit/prisma-sink.js';
-import type { AuditEventDelegate } from '../repositories/db-port.js';
+import { lockAuditChain, type AuditEventDelegate } from '../repositories/db-port.js';
 import type { AuditSink } from '../audit/types.js';
 import type { PrincipalResolver } from '../auth/principal.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
@@ -49,6 +49,12 @@ export type WiringEnv = z.infer<typeof wiringEnvSchema>;
 export interface ServerWiring {
   readonly repositories: RepositoryRegistry;
   readonly principalResolver: PrincipalResolver;
+  /**
+   * Carried so the composition can name it when it announces which resolver is
+   * in force, without parsing the environment a second time. `principalResolver`
+   * above is the demo one whether or not it ends up being used.
+   */
+  readonly authMode: WiringEnv['OPENRUNIC_AUTH_MODE'];
   readonly auditSink: AuditSink;
   /** Cheapest possible proof that the database is answering. */
   readonly readiness: () => Promise<boolean>;
@@ -72,19 +78,25 @@ export function parseWiringEnv(
 }
 
 /**
- * Resolves bearer tokens to principals.
+ * The boot announcement for a deployment with no identity provider.
  *
- * The one supported mode is the demo table, and choosing it is shouted about on
- * every boot. That warning is the product of a deliberate decision: the API can
- * run self-hosted today, before an identity provider exists, but nobody should
- * be able to reach that state without having been told, in the boot log, that
- * the deployment has no authentication.
+ * Exported and NOT called from `buildPrincipalResolver`, which is the whole
+ * point. This wiring always builds the demo resolver; `index.ts` then discards
+ * it when an issuer is configured, so a warning written here is written about a
+ * resolver that may never serve a request. It said
+ * `OPENRUNIC_AUTH_MODE=demo-tokens` and "This deployment has NO authentication"
+ * to operators whose OIDC group was complete and enforcing - and #307 was filed
+ * on the strength of that message rather than on a request, asserting an
+ * authentication bypass that does not exist.
+ *
+ * Only the composition knows which resolver is in force, so only the
+ * composition may announce it. See the call site in `index.ts`.
  */
-function buildPrincipalResolver(
+export function announceDemoTokenAuthentication(
   mode: WiringEnv['OPENRUNIC_AUTH_MODE'],
-  client: PrismaClient
-): PrincipalResolver {
-  process.stderr.write(
+  write: (message: string) => void = (message) => void process.stderr.write(message)
+): void {
+  write(
     [
       '',
       '  ###############################################################',
@@ -100,6 +112,69 @@ function buildPrincipalResolver(
       '',
     ].join('\n')
   );
+}
+
+/**
+ * The boot announcement for a deployment that verifies tokens against an issuer.
+ *
+ * One line rather than a banner, because it reports a correctly configured
+ * state. It names the issuer so an operator can see WHICH provider is being
+ * trusted - the failure this pairs with is a deployment pointed at the wrong
+ * one, which a message saying only "OIDC enabled" cannot help with.
+ */
+export function announceIssuerAuthentication(
+  issuer: string,
+  write: (message: string) => void = (message) => void process.stderr.write(message)
+): void {
+  write(`  openrunic-api: bearer tokens are verified against ${issuer}\n`);
+}
+
+/**
+ * Announce the resolver that is actually in force.
+ *
+ * THE CHOICE LIVES HERE, not at the call site, and that is the whole point of
+ * this function existing. #307 was a defect of composition: `buildServerWiring`
+ * was individually correct, the banner's wording was individually correct about
+ * the object it described, and `index.ts` was individually correct to prefer a
+ * configured issuer. Nothing was wrong except which of them spoke.
+ *
+ * `index.ts` has top-level side effects and no test imports it, so a condition
+ * written there is a condition nothing can exercise. Two tests that each call an
+ * announcement directly pin what each one SAYS and say nothing about which is
+ * chosen - which would leave the composition as the only untested part of a
+ * change whose entire subject is the composition.
+ *
+ * Pure, and takes its writer, so both branches are reachable from a test.
+ */
+export function announceAuthentication(
+  wiring: ServerWiring | null,
+  issuer: string | undefined,
+  write?: (message: string) => void
+): void {
+  // Nothing outside production. Development keeps `createApp`'s in-memory
+  // defaults, and a banner about self-hosting on a laptop running `pnpm dev` is
+  // noise that trains people to skim the one that matters.
+  if (wiring === null) return;
+
+  if (issuer === undefined) {
+    announceDemoTokenAuthentication(wiring.authMode, write);
+    return;
+  }
+
+  announceIssuerAuthentication(issuer, write);
+}
+
+/**
+ * Resolves bearer tokens to principals.
+ *
+ * The one supported mode is the demo table. This function no longer announces
+ * anything: see `announceDemoTokenAuthentication` for why the announcement
+ * belongs to the caller that chooses between resolvers.
+ */
+function buildPrincipalResolver(
+  _mode: WiringEnv['OPENRUNIC_AUTH_MODE'],
+  client: PrismaClient
+): PrincipalResolver {
   // Bound to the seeded tenant, not to the fixture tenant id. See
   // demo-principals.ts: the two are different values, and using the fixture one
   // authenticates fine and then shows an empty practice.
@@ -149,6 +224,12 @@ function standaloneAuditWork(prisma: PrismaClient): StandaloneAuditWork {
             return row === null ? null : { seq: row.seq, hash: row.hash };
           },
         },
+        // The same lock the mutation path takes, on this transaction. Without
+        // it here the two paths serialise against themselves and not against
+        // each other, which is the half of the race a per-path fix would miss:
+        // a chart read and a registration in the same tenant collide exactly
+        // as two chart reads do.
+        lockAuditChain: (tenant) => lockAuditChain(tx, tenant),
       });
     });
 }
@@ -184,6 +265,7 @@ export function buildServerWiring(env: WiringEnv, client?: PrismaClient): Server
   return {
     repositories,
     principalResolver: buildPrincipalResolver(env.OPENRUNIC_AUTH_MODE, prisma),
+    authMode: env.OPENRUNIC_AUTH_MODE,
     auditSink,
     // `SELECT 1` rather than a real query: readiness must not be expensive, and
     // it must not touch patient data to answer.

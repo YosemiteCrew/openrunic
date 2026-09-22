@@ -143,6 +143,74 @@ describe('round trip', () => {
   });
 });
 
+/**
+ * The plan-goal link, in the direction FHIR R4 defines it.
+ *
+ * `Goal.addresses` names the clinical concerns a goal is about, not the plan it
+ * belongs to, so a plan-goal association emitted there was invalid and was
+ * removed. `CarePlan.goal` is the conformant home, and until it was projected
+ * the FHIR surface carried no plan-goal association at all - the link existed
+ * in the database and nowhere a client could see it.
+ */
+describe('the goals a plan is working towards', () => {
+  const GOAL_A = '0192f1a0-0000-7000-8000-0000000000g1';
+  const GOAL_B = '0192f1a0-0000-7000-8000-0000000000g2';
+
+  it('emits one reference per goal, in the order it was given them', () => {
+    expect(toFhirCarePlan({ ...PLAN, goalIds: [GOAL_A, GOAL_B] }).goal).toEqual([
+      { reference: `Goal/${GOAL_A}`, type: 'Goal' },
+      { reference: `Goal/${GOAL_B}`, type: 'Goal' },
+    ]);
+  });
+
+  it('emits no element at all for a plan with no goals', () => {
+    /*
+     * Absent, not `goal: []`. An empty array is a claim that the plan was
+     * checked and found to have none, and a consumer is entitled to read it
+     * that way; a plan is an assessment first and most carry no goals, so the
+     * empty array would be the commoner and more confident of the two.
+     */
+    expect(toFhirCarePlan(PLAN).goal).toBeUndefined();
+    expect(toFhirCarePlan({ ...PLAN, goalIds: [] }).goal).toBeUndefined();
+  });
+
+  it('survives the round trip', () => {
+    const planned = { ...PLAN, goalIds: [GOAL_A, GOAL_B] };
+
+    expect(fromFhirCarePlan(toFhirCarePlan(planned))).toEqual(planned);
+  });
+
+  it('reads back no goals rather than an empty list', () => {
+    /* The other half of the asymmetry above: a sender who wrote no `goal` gets
+       back a domain object with no `goalIds`, not one with an empty array. */
+    expect(fromFhirCarePlan(toFhirCarePlan(PLAN)).goalIds).toBeUndefined();
+  });
+
+  it('drops a reference to something that is not a Goal', () => {
+    /*
+     * A plan arriving from elsewhere that lists a Condition among its goals is
+     * not a plan this system can hold. Keeping the id and forgetting the type
+     * would file that Condition's id as a goal id, and the next read would
+     * publish a `Goal/{id}` reference that resolves to nothing.
+     */
+    const foreignPlan: fhir4.CarePlan = {
+      ...toFhirCarePlan(PLAN),
+      goal: [{ reference: `Condition/${GOAL_A}` }, { reference: `Goal/${GOAL_B}` }],
+    };
+
+    expect(fromFhirCarePlan(foreignPlan).goalIds).toEqual([GOAL_B]);
+  });
+
+  it('reads back nothing when every reference was foreign', () => {
+    const foreignPlan: fhir4.CarePlan = {
+      ...toFhirCarePlan(PLAN),
+      goal: [{ reference: `Condition/${GOAL_A}` }],
+    };
+
+    expect(fromFhirCarePlan(foreignPlan).goalIds).toBeUndefined();
+  });
+});
+
 describe('fromFhirCarePlan, on input it did not write', () => {
   const foreign = (div: string): fhir4.CarePlan => ({
     resourceType: 'CarePlan',

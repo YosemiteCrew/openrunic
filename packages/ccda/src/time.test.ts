@@ -30,6 +30,12 @@ describe('writing', () => {
     expect(() => hl7Instant('not a date')).toThrow(CcdaError);
     expect(() => hl7Date('March 2nd')).toThrow(CcdaError);
   });
+
+  it('refuses impossible calendar dates instead of normalising them', () => {
+    expect(() => hl7Date('2026-02-30')).toThrow(/out of range/);
+    expect(() => hl7Date('1994-03-02T00:00:00Z')).toThrow(CcdaError);
+    expect(() => hl7Instant('2026-02-30T09:30:00Z')).toThrow(CcdaError);
+  });
 });
 
 describe('reading', () => {
@@ -74,6 +80,11 @@ describe('reading', () => {
   it('refuses a value whose fields are out of range', () => {
     expect(() => fromHl7('20261345000000+0000')).toThrow(/out of range/);
   });
+
+  it('refuses impossible calendar dates at date and instant precision', () => {
+    expect(() => fromHl7('20260230')).toThrow(/out of range/);
+    expect(() => fromHl7('20260230093000+0000')).toThrow(/out of range/);
+  });
 });
 
 describe('what a person is shown', () => {
@@ -98,5 +109,6 @@ describe('what a person is shown', () => {
     expect(readableDate('sometime in 2019')).toBe('sometime in 2019');
     expect(readableDate('19940302')).toBe('19940302');
     expect(readableDate('2026-13-45')).toBe('2026-13-45');
+    expect(readableDate('2026-02-30')).toBe('2026-02-30');
   });
 });

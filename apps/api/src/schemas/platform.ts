@@ -5,10 +5,10 @@ import {
   FORM_SUBMISSION_STATUSES,
   USER_STATUSES,
   timestamp,
-  type AuditChainVerification,
 } from '@openrunic/database';
 import { z } from 'zod';
 
+import type { AuditChainOutcome } from '../repositories/audit-query.js';
 import { readJsonObject } from '../repositories/collection.js';
 import type { ScopedRow } from '../repositories/rows.js';
 import type {
@@ -904,25 +904,37 @@ export const auditVerificationDtoSchema = z.strictObject({
   /** Where tampering began, not merely where it was noticed. */
   brokenAtSeq: z.string().nullable(),
   reason: z.string().nullable(),
+  /**
+   * Whether this verification was itself recorded in the audit log.
+   *
+   * `false` means the walk completed and the recorder did not. Reported in the
+   * body rather than as a status, for the reason a broken chain is: this
+   * endpoint answers `200` with `valid: false`, so a consumer that reads only
+   * the status is already blind to the thing it exists to report.
+   */
+  recorded: z.boolean(),
 });
 
 export type AuditVerificationDto = z.infer<typeof auditVerificationDtoSchema>;
 
-export function toAuditVerificationDto(result: AuditChainVerification): AuditVerificationDto {
-  if (!result.valid) {
+export function toAuditVerificationDto(outcome: AuditChainOutcome): AuditVerificationDto {
+  const { verification, recorded } = outcome;
+  if (!verification.valid) {
     return {
       valid: false,
-      checked: result.checked,
+      checked: verification.checked,
       tailSeq: null,
-      brokenAtSeq: result.brokenAtSeq.toString(),
-      reason: result.reason,
+      brokenAtSeq: verification.brokenAtSeq.toString(),
+      reason: verification.reason,
+      recorded,
     };
   }
   return {
     valid: true,
-    checked: result.checked,
-    tailSeq: result.tail === null ? null : result.tail.seq.toString(),
+    checked: verification.checked,
+    tailSeq: verification.tail === null ? null : verification.tail.seq.toString(),
     brokenAtSeq: null,
     reason: null,
+    recorded,
   };
 }

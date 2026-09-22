@@ -228,7 +228,11 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
               {forms.map((form) => (
                 <Card
                   key={form.id}
-                  overline={t('portal.forms.neededBy', { date: formatDate(t, form.dueOn) })}
+                  overline={
+                    form.dueOn === null
+                      ? t('portal.forms.noDueDate')
+                      : t('portal.forms.neededBy', { date: formatDate(t, form.dueOn) })
+                  }
                   title={form.title}
                 >
                   <p className="or-body">{form.purpose}</p>
@@ -237,19 +241,21 @@ export function FormsScreen({ api = getPortalApi() }: Readonly<FormsScreenProps>
                       {t(STATUS_LABEL_KEYS[form.status])}
                     </Badge>
                   </p>
-                  <div className="portal-actions">
-                    <Button
-                      iconLeft={form.status === 'submitted' ? 'file-check' : 'clipboard-list'}
-                      variant={form.status === 'submitted' ? 'secondary' : 'primary'}
-                      onClick={() => setOpenId(form.id)}
-                    >
-                      {t(
-                        form.status === 'in-progress'
-                          ? 'portal.forms.continue'
-                          : 'portal.forms.open'
-                      )}
-                    </Button>
-                  </div>
+                  {form.editable !== false ? (
+                    <div className="portal-actions">
+                      <Button
+                        iconLeft={form.status === 'submitted' ? 'file-check' : 'clipboard-list'}
+                        variant={form.status === 'submitted' ? 'secondary' : 'primary'}
+                        onClick={() => setOpenId(form.id)}
+                      >
+                        {t(
+                          form.status === 'in-progress'
+                            ? 'portal.forms.continue'
+                            : 'portal.forms.open'
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
                 </Card>
               ))}
             </div>

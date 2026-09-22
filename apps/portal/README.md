@@ -24,13 +24,21 @@ fixed ids and invented identities only. A session behaves like a real account - 
 message stays in its thread, a cancelled appointment moves to the past list, a paid
 statement clears its balance - but nothing is persisted.
 
-| Variable               | Default | Effect                                          |
-| ---------------------- | ------- | ----------------------------------------------- |
-| `NEXT_PUBLIC_API_MODE` | `mock`  | `live` talks to the API; anything else is mock. |
-| `NEXT_PUBLIC_API_URL`  | (none)  | API origin, used only in live mode.             |
+| Variable                | Default | Effect                                                      |
+| ----------------------- | ------- | ----------------------------------------------------------- |
+| `NEXT_PUBLIC_API_MODE`  | `mock`  | `live` uses the authenticated proxy; anything else is mock. |
+| `OPENRUNIC_API_URL`     | (none)  | Server-side API origin, used only in live mode.             |
+| `SESSION_COOKIE_SECRET` | (none)  | Seals patient session cookies; required in production.      |
 
 Anything other than the exact string `live` resolves to mock. A typo must never be the
 thing that puts a real record on screen.
+
+## Live mode
+
+Live mode adds a sign-in route and gates every patient page behind a sealed httpOnly
+session cookie. Sign-in validates the supplied patient bearer token against the API, and a
+same-origin server proxy attaches it only to an allowlist of patient-scoped API operations.
+The browser never chooses a patient id or receives the API origin.
 
 ## Layout
 
@@ -93,6 +101,6 @@ is why the default demo has six sections.
 ## Voice
 
 Plain language, short sentences, the reader addressed as "you". No "we" in system messages.
-No clinical term without a plain-language gloss beside it. No measured value without its
-unit and a labelled range state. Empty and error states state the fact, then the next
-action. No exclamation marks.
+The interface never invents a plain-language gloss the record does not contain. No measured
+value appears without its unit and a labelled range state. Empty and error states state the
+fact, then the next action. No exclamation marks.

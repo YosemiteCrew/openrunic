@@ -18,6 +18,7 @@ export {
   formatCount,
   formatProblems,
   plural,
+  verbatim,
   type Interpolations,
   type PluralForms,
 } from './format.js';

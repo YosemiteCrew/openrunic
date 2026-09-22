@@ -21,7 +21,15 @@ import {
 } from '../schemas/telehealth.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParam, idParamSchema, policyOf, repositories, required } from './helpers.js';
+import {
+  gateCharts,
+  idParam,
+  idParamSchema,
+  policyOf,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * TELEHEALTH: A ROOM FOR ONE VISIT, AND A TOKEN PER PERSON WHO MAY ENTER IT.
@@ -105,11 +113,9 @@ async function assertStaff(c: Context<AppEnv>): Promise<void> {
   const principal = c.get('principal');
   // Three ways a patient reaches here, and any one of them is refused, because
   // no single signal is reliable on its own. A portal token bound to a chart
-  // carries `compartmentPatientId`. A patient principal issued without a patient
-  // scope carries none, so the actor type is checked too - but `actor_type` is
-  // an optional OIDC claim that `readActorType` defaults to `user` when it is
-  // absent, so a portal token that omits it would still read as staff. The role
-  // is what the issuer always sets, so `patient-portal` is the backstop.
+  // carries `compartmentPatientId`. The OIDC resolver refuses a patient
+  // identity without one, but this route also accepts injected resolvers, so
+  // the actor type and role remain independent backstops here.
   // `service` is left through on all three: a trusted integration is not a
   // patient, and telehealth rooms are opened by machines as well as people.
   const isPatient =
@@ -163,6 +169,36 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     // rather than an attribution, and narrowing on it costs a legitimate caller
     // nothing.
     assertFacilityAccess(policyOf(c), appointment.facilityId);
+    /*
+     * And then the chart, because opening a room is a write on somebody's
+     * record. This route is registered by hand, so the CRUD seam's gate never
+     * ran on it (#322).
+     *
+     * THE ORDER IS DELIBERATE AND IT IS THE OPPOSITE OF `clinical.ts` AND
+     * `financial.ts`, which ask the chart first. `crud.ts` documents the reason
+     * for this one - the chart refusal runs after the facility check so it
+     * reveals nothing the facility check would already have hidden - and here
+     * that is observable rather than theoretical: `refuses a principal who may
+     * not reach the appointment's site` asserts **403**, and asking the chart
+     * first turns it into a 404. Preserving that answer is worth more than
+     * matching the other two files.
+     *
+     * `requiredParentChart` cannot express this, since it couples the read to
+     * the gate on purpose. So the read and the gate are three lines apart and
+     * this comment is the thing keeping them together; do not put anything
+     * between them that can return.
+     *
+     * WHEN IT CAN ACTUALLY REFUSE, because it is narrower than it looks.
+     * `facility-activity` grants the relationship from a live appointment,
+     * narrowed by the repository to the caller's own sites, and the check above
+     * passes only for a caller granted this appointment's site - so for a
+     * BOOKED appointment the two coincide and this cannot refuse anyone the
+     * facility check let through. It bites on the rows `facility-activity`
+     * excludes: CANCELLED, ENTERED_IN_ERROR, and a start more than a year past.
+     * Driven on `dev`, a clinician with no relationship opened a room on a
+     * CANCELLED appointment and got 201.
+     */
+    await gateCharts(c, 'appointments', [appointment]);
 
     const existing = await repos.telehealthVisits.list({
       page: 1,
@@ -210,12 +246,36 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
    * refusing here means a finished consultation cannot be rejoined even if a
    * vendor is lenient about it, and lenient is what vendors are.
    */
-  router.post('/telehealth/:id/join', requirePermission('appointment.read'), async (c) => {
+  router.post('/telehealth/:id/join', requirePermission('telehealth.join'), async (c) => {
     await assertStaff(c);
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, telehealthJoinSchema);
     const repos = repositories(c);
     const visit = required(await repos.telehealthVisits.findById(id), NO_VISIT);
+
+    /**
+     * The visit's chart, which is the appointment's chart - a telehealth visit
+     * has no chart column of its own, so it reaches one only through the
+     * appointment it names (#337). The same shape as `messages/{id}/read`,
+     * which gates on the thread for the same reason.
+     *
+     * Before the status check, not after. A caller who may not open this chart
+     * must not learn from a `409` whether the visit is open, closed or already
+     * ended; `requiredParentChart` refuses with the same `404` an unreachable
+     * appointment would give, and only a caller who may see the visit at all
+     * reaches the conflict below.
+     *
+     * `requiredParentChart` rather than a read and a `gateCharts` three lines
+     * apart: this route has no reason to order the facility check first, unlike
+     * `POST /appointments/{id}/telehealth`, so the read and the gate can be the
+     * one call that cannot be spelled apart.
+     */
+    await requiredParentChart(
+      c,
+      'appointments',
+      await repos.appointments.findById(visit.appointmentId),
+      NO_APPOINTMENT
+    );
 
     if (visit.status !== 'OPEN') {
       throw ApiError.conflict(`This visit is ${visit.status} and cannot be joined.`);
@@ -251,6 +311,30 @@ export function telehealthRoutes(registry: AdapterRegistry): Hono<AppEnv> {
     const body = await parseJsonBody(c, telehealthEndSchema);
     const repos = repositories(c);
     const visit = required(await repos.telehealthVisits.findById(id), NO_VISIT);
+
+    /**
+     * The visit's chart, which is the appointment's chart - a telehealth visit
+     * has no chart column of its own, so it reaches one only through the
+     * appointment it names (#337). The same shape as `messages/{id}/read`,
+     * which gates on the thread for the same reason.
+     *
+     * Before the status check, not after. A caller who may not open this chart
+     * must not learn from a `409` whether the visit is open, closed or already
+     * ended; `requiredParentChart` refuses with the same `404` an unreachable
+     * appointment would give, and only a caller who may see the visit at all
+     * reaches the conflict below.
+     *
+     * `requiredParentChart` rather than a read and a `gateCharts` three lines
+     * apart: this route has no reason to order the facility check first, unlike
+     * `POST /appointments/{id}/telehealth`, so the read and the gate can be the
+     * one call that cannot be spelled apart.
+     */
+    await requiredParentChart(
+      c,
+      'appointments',
+      await repos.appointments.findById(visit.appointmentId),
+      NO_APPOINTMENT
+    );
 
     if (visit.status !== 'OPEN') {
       throw ApiError.conflict(`This visit is already ${visit.status}.`);
@@ -338,7 +422,7 @@ export function telehealthRouteContracts(): RouteContract[] {
       description:
         'Returns a short-lived token for one named participant. The token is returned exactly once and is never persisted: a caller that loses one asks for another. A visit that has ended issues nothing.',
       tags: ['telehealth'],
-      permission: 'appointment.read',
+      permission: 'telehealth.join',
       pathParams: [idParam('TelehealthVisit')],
       body: telehealthJoinSchema,
       responses: [

@@ -43,6 +43,13 @@ describe('the permission catalogue', () => {
     expect(ROLE_PERMISSIONS['front-desk']).not.toContain('encounter.write');
   });
 
+  it('lets care staff admit a participant without giving billing the same power', () => {
+    expect(ROLE_PERMISSIONS.clinician).toContain('telehealth.join');
+    expect(ROLE_PERMISSIONS['front-desk']).toContain('telehealth.join');
+    expect(ROLE_PERMISSIONS.biller).not.toContain('telehealth.join');
+    expect(ROLE_PERMISSIONS['read-only']).not.toContain('telehealth.join');
+  });
+
   it('rejects a string that is not a permission', () => {
     expect(isPermission('patient.destroy')).toBe(false);
   });

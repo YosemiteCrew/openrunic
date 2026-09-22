@@ -4,6 +4,7 @@ import type {
   AllergySeverity,
   CareTeamRelationship,
   MedicationSource,
+  MedicationStatus,
   NoteState,
   ProblemStatus,
 } from '@/lib/api/chart/types';
@@ -51,10 +52,71 @@ export const ALLERGY_CATEGORY_LABELS: Record<AllergyCategory, { labelKey: string
 };
 
 export const MEDICATION_SOURCE_LABELS: Record<MedicationSource, { labelKey: string }> = {
-  PRESCRIBED_HERE: { labelKey: 'chart.medicationSource.prescribedHere' },
-  PATIENT_REPORTED: { labelKey: 'chart.medicationSource.patientReported' },
+  REPORTED: { labelKey: 'chart.medicationSource.reported' },
+  PRESCRIBED: { labelKey: 'chart.medicationSource.prescribed' },
   RECONCILED: { labelKey: 'chart.medicationSource.reconciled' },
+  IMPORTED: { labelKey: 'chart.medicationSource.imported' },
 };
+
+/**
+ * Every medication state, each with its own words.
+ *
+ * A `Record` over the union, so adding a state to `MedicationStatus` fails to
+ * compile here instead of rendering as a raw enum name or, worse, as the wrong
+ * neighbour. `medicationStatusLabelKey` below reads it with a fallback, and
+ * says why that is not the same thing as typing it with one.
+ */
+export const MEDICATION_STATUS_LABELS: Record<MedicationStatus, { labelKey: string }> = {
+  ACTIVE: { labelKey: 'chart.medicationStatus.active' },
+  COMPLETED: { labelKey: 'chart.medicationStatus.completed' },
+  ENTERED_IN_ERROR: { labelKey: 'chart.medicationStatus.enteredInError' },
+  INTENDED: { labelKey: 'chart.medicationStatus.intended' },
+  NOT_TAKEN: { labelKey: 'chart.medicationStatus.notTaken' },
+  ON_HOLD: { labelKey: 'chart.medicationStatus.onHold' },
+  STOPPED: { labelKey: 'chart.medicationStatus.stopped' },
+  UNKNOWN: { labelKey: 'chart.medicationStatus.unknown' },
+};
+
+/**
+ * A word for a medication enum member that arrived over the wire.
+ *
+ * The two `Record`s here are exhaustive over the unions above, and that is a
+ * claim about this build rather than about the server. `requestJson` casts the
+ * response body instead of parsing it, so the `status` and `source` on a
+ * medication row are whatever the API sent: a member added to the Prisma enum
+ * before this build knows the word for it reaches these lookups, and an indexed
+ * read of it is `undefined`. `undefined.labelKey` is a `TypeError` thrown during
+ * render, which `DowntimeBoundary` in `app/_shell/AppShell.tsx` catches - it
+ * wraps `SessionGate`, so it is above every signed-in screen rather than around
+ * this panel. Caught is not contained: the boundary replaces everything inside
+ * it, so one row this build has no word for costs the reader the whole screen -
+ * no tabs, no patient rail, no navigation, and the seven medications the build
+ * *can* name gone with the one it cannot. Measured on a running chart at
+ * `/patients/<id>`, not inferred: the page renders "this screen could not be
+ * displayed" and a reference code, and `getByRole('tab')` counts zero.
+ *
+ * So the read is widened to a string key deliberately, which is what the value
+ * actually is at this boundary, and the fallback is load-bearing rather than
+ * defensive: the type cannot see the case, so nothing but this stops it. The
+ * `Record` type is unchanged, so adding a member to `MedicationStatus` still
+ * fails to compile above rather than silently landing on the fallback here.
+ *
+ * `unrecognised` is deliberately not `UNKNOWN`. `UNKNOWN` is a state the API
+ * records, and it means nobody knows whether the patient takes the medication.
+ * This means the API knows the state and this build has no word for it. They are
+ * different sentences to a prescriber and folding one into the other is the same
+ * defect the panel's complement exists to prevent.
+ */
+const WIDENED_STATUS: Record<string, { labelKey: string } | undefined> = MEDICATION_STATUS_LABELS;
+const WIDENED_SOURCE: Record<string, { labelKey: string } | undefined> = MEDICATION_SOURCE_LABELS;
+
+export function medicationStatusLabelKey(status: MedicationStatus): string {
+  return WIDENED_STATUS[status]?.labelKey ?? 'chart.medicationStatus.unrecognised';
+}
+
+export function medicationSourceLabelKey(source: MedicationSource): string {
+  return WIDENED_SOURCE[source]?.labelKey ?? 'chart.medicationSource.unrecognised';
+}
 
 export const CARE_TEAM_LABELS: Record<CareTeamRelationship, { labelKey: string }> = {
   PRIMARY: { labelKey: 'chart.careTeam.primary' },

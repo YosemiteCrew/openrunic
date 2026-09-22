@@ -1,6 +1,8 @@
 import { AdapterRegistry } from '@openrunic/adapters';
 import { describe, expect, it } from 'vitest';
 
+import type { ProblemDocument } from '../http/problem.js';
+import { telehealthRouteContracts } from '../routes/telehealth.js';
 import type { JoinTokenResponse, TelehealthVisitDto } from '../schemas/telehealth.js';
 
 import {
@@ -15,6 +17,7 @@ import {
   makeAppointmentRow,
   seed,
   testId,
+  seedCareRelationship,
   TOKENS,
   UNPRIVILEGED_TOKEN,
 } from './support.js';
@@ -52,6 +55,23 @@ function post(path: string, token: string, body?: unknown): [string, RequestInit
 
 async function json<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
+}
+
+/**
+ * Moves the seeded appointment outside every `facility-activity` window, which
+ * is what removes the care relationship a visit was opened under. Chosen to sit
+ * outside the bound under the frozen fixture clock AND the wall clock, because
+ * the derivation reads `new Date()` (#426).
+ */
+function lapse(dataset: ReturnType<typeof createTestApp>['dataset']): void {
+  const row = dataset
+    .table('Appointment')
+    .find((candidate: { id: string }) => candidate.id === APPOINTMENT) as {
+    start: Date;
+    end: Date;
+  };
+  row.start = new Date('2025-07-09T15:00:00.000Z');
+  row.end = new Date('2025-07-09T15:30:00.000Z');
 }
 
 async function openVisit(
@@ -142,6 +162,64 @@ describe('opening a room', () => {
     expect(res.status).toBe(403);
   });
 
+  /**
+   * Opening a room is a write on somebody's chart, and it is gated (#322).
+   *
+   * THE FIXTURE IS THE WHOLE CASE. `harness()` seeds a BOOKED appointment, and
+   * a booked appointment IS a relationship source: `facility-activity` grants
+   * the chart to any caller granted its site, which is exactly the caller
+   * `assertFacilityAccess` lets through. So on a booked row the gate cannot
+   * refuse anyone, and a case built on `harness()` would be green with the gate
+   * deleted.
+   *
+   * It bites on the rows `facility-activity` excludes - CANCELLED,
+   * ENTERED_IN_ERROR, and a start more than a year past. Driven on `dev` before
+   * this change, a caller with no relationship opened a room on a CANCELLED
+   * appointment and got 201.
+   */
+  it('refuses a room on an appointment whose chart the caller is not in', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: APPOINTMENT, patientId: PATIENT, status: 'CANCELLED' })
+    );
+
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    // 404 rather than 403: the chart refusal must not confirm the appointment
+    // exists. The site refusal below is deliberately 403 and runs first, which
+    // is why that case still reads 403 and this one reads 404.
+    expect(res.status).toBe(404);
+    expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+  });
+
+  it('opens the room once the caller is in that patient care', async () => {
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: APPOINTMENT, patientId: PATIENT, status: 'CANCELLED' })
+    );
+    // The reachable control. Without it the refusal above is also satisfied by
+    // a route that refuses everyone - which would take telehealth out of the
+    // product while the pair still read as the gate working.
+    seedCareRelationship(dataset, {
+      patientId: PATIENT,
+      providerId: testId(902),
+      as: 'encounter',
+      id: testId(8_600),
+    });
+
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    expect(res.status).toBe(201);
+  });
+
   it('refuses a principal who may not reach the appointment\u2019s site', async () => {
     const { app, dataset } = createTestApp();
     seed(
@@ -180,6 +258,116 @@ describe('opening a room', () => {
 });
 
 describe('letting somebody in', () => {
+  it('publishes the narrower permission in the route contract', () => {
+    const join = telehealthRouteContracts().find(
+      (contract) => contract.operationId === 'issueTelehealthJoinToken'
+    );
+
+    expect(join?.permission).toBe('telehealth.join');
+  });
+
+  /**
+   * The chart gate on `join`, and the lapse is the only way to reach it.
+   *
+   * A visit can only exist because `POST /appointments/{id}/telehealth` allowed
+   * it, and that route asks the same chart question - so a caller who never had
+   * the relationship has no visit to join. What is reachable is a caller who
+   * HAD it and lost it: `facility-activity` grants from a live appointment and
+   * excludes one whose start is more than a year past, so moving the row is the
+   * whole lapse.
+   *
+   * The date is outside the window under both clocks. `FACILITY_ACTIVITY_STALE_MS`
+   * is measured from `new Date()` and the fixture's clock is frozen (#426), so a
+   * date chosen against `FIXED_NOW` alone drifts into and out of being true as
+   * the calendar moves.
+   */
+  it("refuses a join once the caller has lost the appointment's chart", async () => {
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.frontDeskA, {
+        participantId: PATIENT,
+        role: 'guest',
+      })
+    );
+
+    // The same 404 an unreachable appointment gives, and before the 409 the
+    // status check would raise - a caller who may not open this chart must not
+    // learn whether the visit is open.
+    expect(res.status).toBe(404);
+    expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+  });
+
+  it('refuses before the status check, so a 409 never leaks the visit state', async () => {
+    // The ordering, asserted rather than assumed. This caller would get a 409
+    // "this visit is ENDED and cannot be joined" if the chart gate ran after the
+    // status check - which tells them the visit exists and what state it is in.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+    await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.adminA, { reasonCode: 'completed' })
+    );
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.frontDeskA, {
+        participantId: PATIENT,
+        role: 'guest',
+      })
+    );
+
+    // 404, not the 409 the ENDED status would otherwise produce.
+    expect(res.status).toBe(404);
+  });
+
+  it('proves the lapse is what refused it, by refusing a new room too', async () => {
+    // The discriminator. Without it the case above is also satisfied by a join
+    // route that refuses everyone, and by a lapse that never took effect.
+    const { app, dataset } = harness();
+    await openVisit(app);
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/appointments/${APPOINTMENT}/telehealth`, TOKENS.frontDeskA)
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it('lets reception admit a participant', async () => {
+    const { app } = harness();
+    const visit = await openVisit(app);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.frontDeskA, {
+        participantId: PATIENT,
+        role: 'guest',
+      })
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses billing a credential for the consultation', async () => {
+    const { app } = harness();
+    const visit = await openVisit(app);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/join`, TOKENS.billerA, {
+        participantId: PATIENT,
+        role: 'host',
+      })
+    );
+
+    expect(res.status).toBe(403);
+    expect((await json<ProblemDocument>(res)).detail).toContain('telehealth.join');
+  });
+
   it('issues a token for one named participant', async () => {
     const { app } = harness();
     const visit = await openVisit(app);
@@ -270,6 +458,57 @@ describe('letting somebody in', () => {
 });
 
 describe('ending a visit', () => {
+  it("refuses an end once the caller has lost the appointment's chart", async () => {
+    // The same gate as `join`, on the route that closes the visit rather than
+    // the one that admits to it. Both write to a visit whose only chart is the
+    // appointment's, and neither asked before #337.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    expect(res.status).toBe(404);
+    expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+  });
+
+  it('refuses before the status check, so a 409 never leaks that the visit ended', async () => {
+    // The same assertion as the join case, on the route that carries the same
+    // seventeen-line promise. Without it the docblock above `end` is a claim
+    // held by nothing: reorder that gate below its status check and a lapsed
+    // caller is told `This visit is already ENDED`, with the suite green.
+    const { app, dataset } = harness();
+    const visit = await openVisit(app);
+    await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.adminA, { reasonCode: 'completed' })
+    );
+
+    lapse(dataset);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    // 404, not the 409 the ENDED status would otherwise produce.
+    expect(res.status).toBe(404);
+  });
+
+  it('still ends a visit for a caller who kept the chart', async () => {
+    // The must-not-fire arm. A gate that refused everyone would satisfy the case
+    // above and take telehealth out of the product.
+    const { app } = harness();
+    const visit = await openVisit(app);
+
+    const res = await app.request(
+      ...post(`/bff/v0/telehealth/${visit.id}/end`, TOKENS.frontDeskA, { reasonCode: 'completed' })
+    );
+
+    expect(res.status).toBe(200);
+  });
+
   it('keeps when it ended and how long it ran', async () => {
     const { app } = harness();
     const visit = await openVisit(app);
@@ -392,9 +631,8 @@ describe('a portal token and the telehealth routes', () => {
   });
 
   it('refuses a patient actor even with no compartment on the token', async () => {
-    // The OIDC shape Codex flagged: actor_type patient, no launch context, so no
-    // compartmentPatientId. It must be refused on the actor type, not just the
-    // compartment it happens not to carry.
+    // OIDC refuses this identity before routing. The injected test resolver
+    // deliberately reaches the route so its actor-type backstop stays live.
     const { app } = createTestApp({ adapters: new AdapterRegistry() });
     const list = await app.request('/bff/v0/telehealth?status=OPEN', {
       headers: bearer(TOKENS.portalNoCompartmentA),
@@ -403,8 +641,8 @@ describe('a portal token and the telehealth routes', () => {
   });
 
   it('refuses a portal role whose actor_type defaulted to user', async () => {
-    // The backstop: no compartment, actor_type read as user, only the role
-    // marks it a patient. Without the role check this would pass as staff.
+    // OIDC refuses this identity before routing. The injected test resolver
+    // deliberately reaches the route so its role backstop stays live.
     const { app } = createTestApp({ adapters: new AdapterRegistry() });
     const res = await app.request('/bff/v0/telehealth?status=OPEN', {
       headers: bearer(TOKENS.portalUserActorA),
@@ -444,5 +682,129 @@ describe('a portal token and the telehealth routes', () => {
       headers: bearer(TOKENS.adminA),
     });
     expect(((await list.json()) as { data: unknown[] }).data).toHaveLength(1);
+  });
+});
+
+/* ---------------------------------------- an appointment that names no chart (#336) */
+
+/**
+ * `Appointment.patientId` is nullable - a held slot, a block with no patient on
+ * it yet - and `gateCharts` skips a row whose chart column is null, so
+ * `chartIdOf` answers `undefined` and the id never reaches
+ * `assertCareRelationship`. #336 asked what protects such a row.
+ *
+ * Answering it here needs a control the other collections do not, and getting
+ * that wrong is what a first version of this block did. On a BOOKED appointment
+ * at the caller's own facility the gate refuses NOBODY: `facility-activity`
+ * authorises any clinician there, which is what the route's own comment says
+ * two lines above the `gateCharts` call. So a BOOKED row cannot be the charted
+ * control - it answers 201 with the chart present, and an arm that reads 201 on
+ * both columns has measured the relationship source, not the gate.
+ *
+ * The generalisation is narrower than "the caller's own facility", and it is
+ * the half worth carrying to the next collection: `facility-activity` reads
+ * `encounters` and `appointments` and NOTHING else (`care-relationship.ts`,
+ * the two `list` calls under `name: 'facility-activity'`). So the trap is not
+ * that the row is facility-scoped - most of them are - it is that an
+ * appointment row is itself the evidence that authorises reading it. A
+ * `Payment` or a `StockPosting` case needs no extra control; an `Encounter`
+ * one does. Raised in review.
+ *
+ * The 2x2, driven at c636835, is what separates them:
+ *
+ *     status      chart      clinician A   clinician B (other tenant)
+ *     BOOKED      named          201            404
+ *     BOOKED      none           201            404
+ *     CANCELLED   named          404            404
+ *     CANCELLED   none           201            404
+ *
+ * CANCELLED is one of the rows `facility-activity` excludes, so it is the only
+ * cell where the gate is the thing deciding - and it is where the exemption
+ * shows: same status, same principal, one field different, 404 becomes 201.
+ * The BOOKED row stays as the second control, because without it the CANCELLED
+ * pair cannot say whether the gate is inert on a chartless row or simply absent.
+ *
+ * This is the door #334 measured it on, and it is the one that matters:
+ * opening a room mints the visit that `join` and `end` then act on, so an inert
+ * gate here is inert for everything downstream.
+ */
+describe('the chart gate is inert on an appointment that names no chart, and bounded by the tenant', () => {
+  const CHARTED = testId(9_101);
+  const CHARTLESS = testId(9_102);
+
+  function exemptionApp(status: 'BOOKED' | 'CANCELLED'): ReturnType<typeof createTestApp> {
+    const created = createTestApp();
+    seed(
+      created.dataset,
+      'Appointment',
+      makeAppointmentRow({ id: CHARTED, patientId: PATIENT, status }),
+      makeAppointmentRow({ id: CHARTLESS, patientId: null, status })
+    );
+    return created;
+  }
+
+  const open = async (
+    app: ReturnType<typeof createTestApp>['app'],
+    id: string,
+    token: string
+  ): Promise<number> =>
+    (await app.request(...post(`/bff/v0/appointments/${id}/telehealth`, token))).status;
+
+  it('refuses a clinician with no relationship on a CANCELLED appointment that NAMES a chart', async () => {
+    const { app } = exemptionApp('CANCELLED');
+
+    expect(await open(app, CHARTED, TOKENS.clinicianA)).toBe(404);
+  });
+
+  it('admits the same clinician on the CANCELLED appointment that names NONE - the exemption', async () => {
+    const { app } = exemptionApp('CANCELLED');
+
+    // 201 rather than `not.toBe(404)`: the point is that the room OPENS. A 409
+    // from the appointment state machine would satisfy a not-404 while saying
+    // nothing about the gate.
+    expect(await open(app, CHARTLESS, TOKENS.clinicianA)).toBe(201);
+  });
+
+  /**
+   * The control that stops the pair above being read as "the gate is missing".
+   * On a BOOKED row the gate is present and cannot refuse this caller, because
+   * `facility-activity` authorises them - so both columns are 201 for a reason
+   * that has nothing to do with the chart being null.
+   */
+  it('opens a room on a BOOKED appointment whether or not it names a chart', async () => {
+    const { app } = exemptionApp('BOOKED');
+
+    expect(await open(app, CHARTED, TOKENS.clinicianA)).toBe(201);
+    expect(await open(app, CHARTLESS, TOKENS.clinicianA)).toBe(201);
+  });
+
+  it('still refuses the other tenant on the chartless appointment, both statuses', async () => {
+    expect(await open(exemptionApp('CANCELLED').app, CHARTLESS, TOKENS.clinicianB)).toBe(404);
+    expect(await open(exemptionApp('BOOKED').app, CHARTLESS, TOKENS.clinicianB)).toBe(404);
+  });
+
+  /**
+   * The addressed appointment read uses the same chart gate as the telehealth
+   * write above. A chartless held slot remains facility-scoped, while a charted
+   * row outside the caller's care relationships is indistinguishable from a
+   * missing appointment. The schedule collection remains facility-scoped.
+   */
+  it('applies the chartless exemption to the addressed appointment read', async () => {
+    const { app } = exemptionApp('CANCELLED');
+
+    expect(
+      (
+        await app.request(`/bff/v0/appointments/${CHARTED}`, {
+          headers: bearer(TOKENS.clinicianA),
+        })
+      ).status
+    ).toBe(404);
+    expect(
+      (
+        await app.request(`/bff/v0/appointments/${CHARTLESS}`, {
+          headers: bearer(TOKENS.clinicianA),
+        })
+      ).status
+    ).toBe(200);
   });
 });

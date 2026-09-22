@@ -37,7 +37,14 @@ const BLANK: AssistantTurn = {
 describe('the box a question is typed in', () => {
   it('will not send an empty question, however it is pressed', async () => {
     const onAsk = vi.fn();
-    render(<AssistantComposer answering={false} onAsk={onAsk} onStop={vi.fn()} />);
+    render(
+      <AssistantComposer
+        answering={false}
+        chartPatientId="patient-1"
+        onAsk={onAsk}
+        onStop={vi.fn()}
+      />
+    );
 
     const ask = screen.getByRole('button', { name: 'Ask' });
     expect(ask).toBeDisabled();
@@ -49,7 +56,14 @@ describe('the box a question is typed in', () => {
 
   it('clears the box only once the question has gone', async () => {
     const onAsk = vi.fn();
-    render(<AssistantComposer answering={false} onAsk={onAsk} onStop={vi.fn()} />);
+    render(
+      <AssistantComposer
+        answering={false}
+        chartPatientId="patient-1"
+        onAsk={onAsk}
+        onStop={vi.fn()}
+      />
+    );
 
     const box = screen.getByLabelText('Your question');
     await userEvent.type(box, 'When am I next in?');
@@ -61,7 +75,9 @@ describe('the box a question is typed in', () => {
 
   it('leaves the box usable while an answer is arriving, and offers a way out of it', async () => {
     const onStop = vi.fn();
-    render(<AssistantComposer answering onAsk={vi.fn()} onStop={onStop} />);
+    render(
+      <AssistantComposer answering chartPatientId="patient-1" onAsk={vi.fn()} onStop={onStop} />
+    );
 
     // Disabling the field somebody is typing in throws their focus to the top
     // of the document, and a keyboard user then has to find their way back.

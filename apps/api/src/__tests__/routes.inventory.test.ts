@@ -497,7 +497,7 @@ describe('dispensing', () => {
   });
 
   it('spreads a divisible request across two cartons under one posting', async () => {
-    const { app, sink } = harness();
+    const { app, dataset, sink } = harness();
     await postOk(app, 'receipts', delivery('LOT-A', 12));
     await postOk(app, 'receipts', delivery('LOT-B', 30));
 
@@ -512,6 +512,7 @@ describe('dispensing', () => {
 
     expect(posting.movements.map((movement) => movement.quantity)).toEqual([12, 8]);
     expect(new Set(posting.movements.map((movement) => movement.id)).size).toBe(2);
+    expect(dataset.table('PrescriptionFill')).toEqual([]);
 
     // One act, and the audit event says so by naming both lines. The
     // repositories' own events say which rows were touched, not that stock left
@@ -725,6 +726,15 @@ describe('dispensing against a prescription', () => {
       encounterId: testId(61),
       note: 'handed to the patient at the counter',
     });
+    expect(dataset.table('PrescriptionFill')).toEqual([
+      expect.objectContaining({
+        tenantId: DEMO_TENANT_A,
+        patientId: PATIENT,
+        prescriptionId: testId(60),
+        stockPostingId: posting.id,
+        filledOn: new Date(`${TODAY}T00:00:00.000Z`),
+      }),
+    ]);
   });
 
   /**

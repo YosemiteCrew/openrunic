@@ -6,7 +6,11 @@ import {
 } from '@openrunic/fhir';
 import { describe, expect, it } from 'vitest';
 
+import { rejectUnsupportedParams } from '../fhir/params.js';
+import { CONTROL_SEARCH_PARAMS } from '../fhir/registry.js';
 import { SERVED_MODULES } from '../fhir/resources.js';
+import { ROLE_MODEL_CAVEAT, ROLE_PERMISSIONS } from '../policy/permissions.js';
+import { observationSpec } from '../repositories/specs/clinical.js';
 import type { AuditChainStore } from '../audit/chain-store.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -15,9 +19,11 @@ import type { ClaimStatus } from '../repositories/specs/financial.js';
 import {
   DEMO_TENANT_A,
   DEMO_TENANT_B,
+  DEMO_PORTAL_PATIENT,
   bearer,
   createTestApp,
   DEMO_FACILITY_A,
+  DEMO_FACILITY_B,
   FIXED_NOW,
   makeAppointmentRow,
   makePatientRow,
@@ -292,10 +298,14 @@ function seedChart(dataset: MemoryDataset): void {
     expirationDate: null,
   });
 
+  /* Retired rather than active, so the two implants carry two different
+     statuses. A chart where every row of a resource shares one status cannot
+     tell a working `status` filter from a dropped one - every row it returns
+     carries the code that was asked for either way. */
   seed(dataset, 'Device', {
     ...storageColumns(testId(48)),
     patientId: PATIENT,
-    status: 'ACTIVE',
+    status: 'INACTIVE',
     typeCode: null,
     typeSystem: null,
     typeText: 'Hip prosthesis, left',
@@ -372,6 +382,20 @@ function seedChart(dataset: MemoryDataset): void {
     authorId: PROVIDER,
   });
 
+  /* A finished plan, so the collection holds two statuses rather than one. */
+  seed(dataset, 'CarePlan', {
+    ...storageColumns(testId(34)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    status: 'COMPLETED',
+    intent: 'PLAN',
+    title: 'Smoking cessation',
+    narrative: 'Quit date reached and sustained at twelve weeks.',
+    periodStart: FIXED_NOW,
+    periodEnd: FIXED_NOW,
+    authorId: PROVIDER,
+  });
+
   /* A team with one member of each kind, so the projection exercises all three
      member reference types rather than the practitioner one three times. */
   seed(dataset, 'CareTeam', {
@@ -381,6 +405,18 @@ function seedChart(dataset: MemoryDataset): void {
     name: 'Primary care',
     periodStart: FIXED_NOW,
     periodEnd: null,
+  });
+
+  /* A stood-down team, so the collection holds two statuses rather than one.
+     It carries no participants on purpose: the membership projection is
+     exercised by the team above, and this row is here for the filter. */
+  seed(dataset, 'CareTeam', {
+    ...storageColumns(testId(35)),
+    patientId: PATIENT,
+    status: 'INACTIVE',
+    name: 'Post-discharge transition',
+    periodStart: FIXED_NOW,
+    periodEnd: FIXED_NOW,
   });
 
   seed(dataset, 'CareTeamParticipant', {
@@ -545,6 +581,35 @@ function seedChart(dataset: MemoryDataset): void {
     unit: '/min',
     referenceLow: 60,
     referenceHigh: 100,
+    interpretationCode: 'N',
+    bodySiteCode: null,
+    effectiveAt: FIXED_NOW,
+    issuedAt: null,
+    performerId: PROVIDER,
+    formSubmissionId: null,
+  });
+
+  /* An unverified reading, so the collection holds two statuses rather than
+     one. `PRELIMINARY` and not `AMENDED`: the empty-bundle case below asserts
+     that no seeded observation is amended, and a fixture that fills that
+     absence turns a discriminating test into a failing one. */
+  seed(dataset, 'Observation', {
+    ...storageColumns(testId(27)),
+    patientId: PATIENT,
+    encounterId: ENCOUNTER,
+    category: 'VITAL_SIGNS',
+    status: 'PRELIMINARY',
+    loincCode: '8310-5',
+    code: '8310-5',
+    codeSystem: 'http://loinc.org',
+    display: 'Body temperature',
+    valueNumber: 37,
+    valueText: null,
+    valueCode: null,
+    valueBoolean: null,
+    unit: 'Cel',
+    referenceLow: 36,
+    referenceHigh: 38,
     interpretationCode: 'N',
     bodySiteCode: null,
     effectiveAt: FIXED_NOW,
@@ -1175,6 +1240,387 @@ describe('one crowded care team does not empty the others', () => {
     /* The assertion that fails without the per-team trim. */
     expect(byId.get(testId(1100))).toBe(1);
   });
+
+  it('leaves the rest of the page intact when one team is bigger than the whole old allowance', async () => {
+    /*
+     * The case the assertion above cannot reach, and the reason this issue was
+     * filed with the one above already passing.
+     *
+     * The old loader took one page of `MAX_TEAM_MEMBERS * rows.length + 1` and
+     * trimmed per team afterwards. With twenty-five members and two teams the
+     * allowance was forty-one, so everything fit and the trim did the rest -
+     * which is a real property, and not the one that was broken. The trim only
+     * comes too late once a single team is larger than the WHOLE allowance:
+     * then it consumes the page before any other team is reached, and the trim
+     * has nothing left to trim.
+     *
+     * Forty-five on the first team against an allowance of forty-one is that
+     * case. What a client saw was a care team with nobody on it, because a
+     * different patient's team was large - no error, no truncation flag,
+     * nothing to distinguish it from a team that really has no members.
+     */
+    const { app, dataset } = harness();
+
+    for (let index = 0; index < 45; index += 1) {
+      seed(dataset, 'CareTeamParticipant', {
+        ...storageColumns(testId(2000 + index)),
+        careTeamId: testId(41),
+        patientId: PATIENT,
+        memberType: 'USER',
+        memberUserId: PROVIDER,
+        memberRelatedPersonId: null,
+        roleCode: '207Q00000X',
+        roleSystem: 'http://nucc.org/provider-taxonomy',
+        roleText: null,
+        periodStart: null,
+        periodEnd: null,
+      });
+    }
+
+    seed(dataset, 'CareTeam', {
+      ...storageColumns(testId(2100)),
+      patientId: PATIENT,
+      status: 'ACTIVE',
+      name: 'Starved team',
+      periodStart: null,
+      periodEnd: null,
+    });
+    seed(dataset, 'CareTeamParticipant', {
+      ...storageColumns(testId(2101)),
+      careTeamId: testId(2100),
+      patientId: PATIENT,
+      memberType: 'PATIENT',
+      memberUserId: null,
+      memberRelatedPersonId: null,
+      roleCode: '116154003',
+      roleSystem: 'http://snomed.info/sct',
+      roleText: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+
+    const bundle = (await (
+      await app.request('/fhir/CareTeam', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const byId = new Map(
+      (bundle.entry ?? []).map((entry) => {
+        const resource = entry.resource as { id?: string; participant?: unknown[] };
+        return [resource.id, resource.participant?.length ?? 0];
+      })
+    );
+
+    // The crowded team still loses its own tail, which is the bound doing its
+    // job rather than a second bug.
+    expect(byId.get(testId(41))).toBe(20);
+    // And the team that has nothing to do with it keeps its member.
+    expect(byId.get(testId(2100))).toBe(1);
+  });
+});
+
+/**
+ * The plan-goal link, end to end.
+ *
+ * `Goal.addresses` used to carry it, which R4 forbids - its targets are the
+ * clinical concerns a goal is about, not the plan it belongs to - so the invalid
+ * reference was dropped to make the Goal conformant. That left the association
+ * in the database and nowhere a client could see it: `CarePlan.goal` is the
+ * conformant home and was not projected.
+ */
+describe('a care plan carries the goals it is working towards', () => {
+  it('names its own goals and only its own', async () => {
+    /*
+     * The harness seeds two goals on this chart: one pointing at this plan and
+     * one with no plan at all. A loader that filtered on nothing would emit
+     * both, and the resource would claim the practice is working towards a goal
+     * that belongs to no plan - which reads as a plan commitment nobody made.
+     */
+    const { app } = harness();
+
+    const bundle = (await (
+      await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
+    ).json()) as Bundle;
+
+    const plan = (bundle.entry ?? [])
+      .map((entry) => entry.resource as { id?: string; goal?: { reference?: string }[] })
+      .find((resource) => resource.id === testId(44));
+
+    expect(plan?.goal?.map((one) => one.reference)).toEqual([`Goal/${testId(45)}`]);
+  });
+
+  it('reads the same link back through the single-resource route', async () => {
+    /* Read-by-id builds its own single-row page, so a `prepare` wired only into
+       the search would leave this one empty and nothing would say so. */
+    const { app } = harness();
+
+    const plan = (await (
+      await app.request(`/fhir/CarePlan/${testId(44)}`, { headers: bearer(TOKENS.adminA) })
+    ).json()) as { goal?: { reference?: string }[] };
+
+    expect(plan.goal?.map((one) => one.reference)).toEqual([`Goal/${testId(45)}`]);
+  });
+});
+
+describe('a dispense too large to summarise is refused rather than understated', () => {
+  const patient = testId(7001);
+  const posting = testId(7002);
+  const fitting = testId(7004);
+
+  /**
+   * A chart holding one dispense this server cannot summarise, and optionally
+   * one it can.
+   *
+   * The second is what makes the search assertions mean anything: a bundle
+   * carrying an outcome and no matches would also satisfy "the client was
+   * told", and it is the wrong answer. The interesting claim is that the
+   * dispense that was fine is still served.
+   */
+  function world(alsoFitting: boolean, inCare = true): ReturnType<typeof createTestApp> {
+    const made = createTestApp();
+    const { dataset } = made;
+    seed(dataset, 'Patient', makePatientRow({ id: patient, mrn: 'OR-700100' }));
+    /* The appointment is what gives a staff principal a care relationship with
+       this chart. `inCare: false` withholds it, which is the only way to reach
+       the gate below with an otherwise ordinary token. */
+    if (inCare) {
+      seed(dataset, 'Appointment', makeAppointmentRow({ id: testId(7003), patientId: patient }));
+    }
+    seed(dataset, 'StockItem', {
+      ...storageColumns(testId(7010)),
+      sku: 'MET-500',
+      name: 'Metformin 500 mg tablet',
+      unit: 'tablet',
+      rxnormCode: '860975',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind: 'DISPENSE',
+      facilityId: DEMO_FACILITY_A,
+      patientId: patient,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+
+    // Fifty-one lots against a per-posting page of fifty. Clinically absurd and
+    // structurally permitted, which is the combination that produces a silent
+    // wrong number rather than an error.
+    for (let index = 0; index < 51; index += 1) {
+      seed(dataset, 'StockLot', {
+        ...storageColumns(testId(7100 + index)),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        lotNumber: `LOT-${String(index)}`,
+        status: 'AVAILABLE',
+        expiresOn: null,
+        openedOn: null,
+        beyondUseDays: null,
+        manufacturer: null,
+        ndcCode: null,
+        receivedOn: FIXED_NOW,
+      });
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(7200 + index)),
+        postingId: posting,
+        lotId: testId(7100 + index),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 1,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: index + 1,
+      });
+    }
+
+    if (alsoFitting) {
+      seed(dataset, 'StockPosting', {
+        ...storageColumns(fitting),
+        kind: 'DISPENSE',
+        facilityId: DEMO_FACILITY_A,
+        patientId: patient,
+        encounterId: null,
+        prescriptionId: null,
+        immunizationId: null,
+        occurredOn: FIXED_NOW,
+        postedById: PROVIDER,
+        witnessedById: null,
+        reference: null,
+        note: null,
+      });
+      seed(dataset, 'StockMovement', {
+        ...storageColumns(testId(7300)),
+        postingId: fitting,
+        lotId: testId(7100),
+        itemId: testId(7010),
+        facilityId: DEMO_FACILITY_A,
+        kind: 'DISPENSE',
+        quantity: 2,
+        occurredOn: FIXED_NOW,
+        actorId: PROVIDER,
+        reason: null,
+        correctsMovementId: null,
+        lotSeq: 1,
+      });
+    }
+    return made;
+  }
+
+  it('answers 501 instead of a quantity short by the lots it did not load', async () => {
+    /*
+     * The projection sums the movements it is handed and publishes the total as
+     * `quantity`, which a receiving system reads as how much medicine this
+     * person was given. The loader takes one page per posting, so a dispense
+     * drawn from more lots than that page holds was summed from part of itself:
+     * a number too low, entirely plausible, and indistinguishable from a
+     * smaller dispense.
+     *
+     * There is no approximately correct dispensed quantity. An understated one
+     * reconciles against nothing, hides a recall, and would be read as the dose
+     * actually supplied. Refusing says what is true - this server cannot
+     * represent that record - and points at the ledger, which can.
+     *
+     * The read refuses where the search below does not, and that asymmetry is
+     * the point: "give me exactly that record" has no honest partial answer,
+     * and "give me this chart's dispenses" does.
+     */
+    const { app } = world(false);
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(501);
+    const outcome = (await res.json()) as {
+      resourceType?: string;
+      issue?: { diagnostics?: string }[];
+    };
+
+    // And specifically not a resource carrying 50 where 51 were handed over.
+    expect(outcome.resourceType).toBe('OperationOutcome');
+    // The posting is named, so a client is told which record is at fault rather
+    // than only that something on this chart cannot be served.
+    expect(outcome.issue?.[0]?.diagnostics).toContain(posting);
+  });
+
+  it('refuses a reader with no care relationship before it says the record is unprojectable', async () => {
+    /*
+     * The order of the two checks in `read`, asserted rather than left to the
+     * comment that states it.
+     *
+     * `withheld` runs after `assertCareRelationship` on purpose. Run first, it
+     * answers 501 to a principal the policy layer is about to refuse - and this
+     * 501 is not an empty refusal: it names the posting and says the dispense
+     * was drawn from more than fifty lots. That is the record's id and a fact
+     * about its size, handed to a reader who is not allowed to know it exists.
+     *
+     * Nothing but the ordering stands between those two answers, `withheld` is
+     * a framework hook other modules will implement, and swapping the lines
+     * leaves the rest of the suite green. So the refusal is pinned here: 404,
+     * the same answer this chart gives for any record, with no diagnostics.
+     */
+    const { app } = world(false, false);
+
+    const res = await app.request(`/fhir/MedicationDispense/${posting}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(404);
+    // And specifically not the 501, which would name the record while refusing it.
+    expect(JSON.stringify(await res.json())).not.toContain(posting);
+  });
+
+  it('serves the rest of the chart and names the one it withheld', async () => {
+    /*
+     * The whole reason this bundle machinery exists.
+     *
+     * `prepare` runs for the search as well as the read, so refusing from
+     * inside it made one pathological record answer 501 for a whole chart's
+     * dispense history - and since the portal gained this resource, that is a
+     * patient unable to read any of their medicines because of one of them.
+     *
+     * Dropping the entry silently would have been the same understatement one
+     * level up: a medication list one dispense short, with nothing to say so,
+     * is indistinguishable from a patient dispensed one fewer medicine. So the
+     * search returns what it can AND says what it could not, which is what an
+     * `outcome` entry is for.
+     */
+    const { app } = world(true);
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${patient}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    const entries = bundle.entry ?? [];
+
+    // The dispense that was fine is served. Without this the bundle could carry
+    // an outcome and nothing else and still look like it passed.
+    expect(
+      entries
+        .filter((entry) => entry.search?.mode === 'match')
+        .map((entry) => (entry.resource as { id?: string }).id)
+    ).toEqual([fitting]);
+
+    // And the one that was not is named, as an outcome rather than as a match.
+    const outcomes = entries.filter((entry) => entry.search?.mode === 'outcome');
+    expect(outcomes).toHaveLength(1);
+    const issues = (outcomes[0]?.resource as { issue?: { diagnostics?: string }[] }).issue ?? [];
+    expect(issues.map((issue) => issue.diagnostics).join(' ')).toContain(posting);
+
+    /*
+     * `total` is unchanged at two. The withheld row matched - it is a dispense
+     * on this chart - and the outcome is not a match, so counting either
+     * differently would put a new wrong number in place of the old one. The gap
+     * between the total and the matches returned is exactly what the outcome
+     * explains.
+     */
+    expect(bundle.total).toBe(2);
+  });
+
+  it('emits no outcome entry when it withheld nothing', async () => {
+    /*
+     * The control that matters most, because every searchset this server
+     * produces goes through the same builder. The interesting question is not
+     * whether the new entry appears, it is whether anything else moved.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.every((entry) => entry.search?.mode === 'match')).toBe(true);
+  });
+
+  it('still serves a dispense that fits', async () => {
+    /* The control. The assertion above passes for a route that refuses
+       everything. */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('the CarePlan category filter is honoured, not merely advertised', () => {
@@ -1192,7 +1638,9 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
     const matched = (await (
       await app.request('/fhir/CarePlan?category=assess-plan', { headers: bearer(TOKENS.adminA) })
     ).json()) as Bundle;
-    expect(matched.total).toBe(1);
+    // Both seeded plans carry the served category; the half that catches the
+    // bug is the zero below, which a dropped filter cannot produce.
+    expect(matched.total).toBe(2);
 
     const missed = (await (
       await app.request('/fhir/CarePlan?category=careteam', { headers: bearer(TOKENS.adminA) })
@@ -1213,7 +1661,7 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
       )
     ).json()) as Bundle;
 
-    expect(bundle.total).toBe(1);
+    expect(bundle.total).toBe(2);
   });
 
   it('refuses a token that names another system, even with the same code', async () => {
@@ -1240,10 +1688,14 @@ describe('the CarePlan category filter is honoured, not merely advertised', () =
     const bundle = (await (
       await app.request('/fhir/CarePlan', { headers: bearer(TOKENS.adminA) })
     ).json()) as Bundle;
-    const plan = bundle.entry?.[0]?.resource as { text?: { div?: string; status?: string } };
+    /* By id, not by position. The bundle's order is not this test's subject,
+       and reading entry[0] made the assertion depend on it - seeding a second
+       plan moved the row out from under it. */
+    const plan = bundle.entry?.find((entry) => (entry.resource as FhirResource).id === testId(44))
+      ?.resource as { text?: { div?: string; status?: string } } | undefined;
 
-    expect(plan.text?.status).toBe('additional');
-    expect(plan.text?.div).toContain('<p>Continue metformin.</p>');
+    expect(plan?.text?.status).toBe('additional');
+    expect(plan?.text?.div).toContain('<p>Continue metformin.</p>');
   });
 });
 
@@ -1381,6 +1833,118 @@ describe('every served resource', () => {
   );
 });
 
+/**
+ * Every parameter of every served resource, including `_id`.
+ *
+ * Shared by the two suites below so they cannot cover different sets: the
+ * narrowing suite exempts `_id` because it is a common parameter no module
+ * declares, and the empty-value suite must not, because the guard it checks
+ * reads the query rather than the module.
+ */
+const EMPTY_VALUE_CASES = SERVED_MODULES.filter((module) =>
+  module.interactions.includes('search-type')
+).flatMap((module) => module.params.map((name) => ({ type: module.type, name })));
+
+describe('every advertised search parameter refuses an empty value', () => {
+  /*
+   * The twin of the suite below, and the case it cannot reach.
+   *
+   * That one sends a value nothing carries and checks the row count drops. This
+   * one sends no value at all, which `SearchParams` delivers as
+   * present-and-empty rather than absent - and before this the boundary
+   * answered it three different ways. Thirteen date parameters and seven
+   * closed-value-set tokens refused it. Forty-one selected nothing, because an
+   * equality against an empty string matches no row. And seven answered with
+   * every row this practice holds:
+   *
+   *   Patient?name=  ?family=  ?given=
+   *   Practitioner?identifier=  ?name=
+   *   Organization?name=
+   *   Location?name=
+   *
+   * A contains-filter on an empty needle is a tautology and a bare token with
+   * no value admits any, so a client that filtered received the whole practice
+   * and had no way to tell - which is the failure `params.ts` opens by naming.
+   *
+   * Every parameter now refuses, including `_id`: the guard is at the boundary
+   * and reads the query rather than the module, so an exemption would have to
+   * be written rather than fallen into.
+   */
+  it.each(EMPTY_VALUE_CASES.map((one) => [`${one.type}?${one.name}`, one] as const))(
+    '%s is refused when it is present and empty',
+    async (_label, one) => {
+      const { app } = harness();
+
+      const res = await app.request(`/fhir/${one.type}?${one.name}=`, {
+        headers: bearer(TOKENS.adminA),
+      });
+
+      expect(res.status, `${one.type}?${one.name}= must not be answered with a bundle`).toBe(400);
+      /* The outcome names the parameter. A refusal that did not would leave a
+         client with several blank fields no better off than an empty bundle. */
+      const outcome = (await res.json()) as {
+        resourceType?: string;
+        issue?: { diagnostics?: string; expression?: string[] }[];
+      };
+      expect(outcome.resourceType).toBe('OperationOutcome');
+      expect(outcome.issue?.[0]?.expression).toEqual([one.name]);
+    }
+  );
+
+  it('names every empty parameter, not just the first', async () => {
+    /*
+     * One issue each, because a client that blanked three fields and is told
+     * about one goes round this loop three times. The map is over the empty
+     * names rather than over the first, and this is what pins that.
+     */
+    const { app } = harness();
+
+    const res = await app.request('/fhir/Patient?family=&given=&name=', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as { issue?: { expression?: string[] }[] };
+    expect(outcome.issue?.flatMap((issue) => issue.expression ?? [])).toEqual([
+      'family',
+      'given',
+      'name',
+    ]);
+  });
+
+  it('still answers the same searches when the parameter carries a value', async () => {
+    /*
+     * The control, and it is the assertion that stops the guard being too
+     * broad. A refusal that fired on every request would pass every case above
+     * and take the whole boundary down with it.
+     */
+    const { app } = harness();
+    const headers = bearer(TOKENS.adminA);
+
+    for (const type of ['Patient', 'Practitioner', 'Organization', 'Location'] as const) {
+      const all = await app.request(`/fhir/${type}`, { headers });
+      expect(all.status, `${type} with no parameters`).toBe(200);
+      expect(((await all.json()) as Bundle).total ?? 0).toBeGreaterThan(0);
+    }
+
+    const named = await app.request('/fhir/Patient?family=a', { headers });
+    expect(named.status).toBe(200);
+  });
+
+  it('reports an unknown parameter as unknown even when it is also empty', () => {
+    /*
+     * Order matters and is asserted. A misspelled parameter sent with no value
+     * satisfies both rules, and "not a supported search parameter" is the one
+     * that tells the client what to fix; "present but empty" would send them to
+     * put a value in a parameter this server does not have.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: [''] }, accepted)).toThrow(
+      /Unsupported search parameter/u
+    );
+  });
+});
+
 describe('every advertised search parameter narrows', () => {
   /*
    * The conformance suite proves the CapabilityStatement and the router agree
@@ -1403,6 +1967,59 @@ describe('every advertised search parameter narrows', () => {
    * their value set rather than answering with an empty bundle.
    */
 
+  /*
+   * What these cases cannot see, by construction rather than by oversight.
+   *
+   * Every one of them sends ONE value for ONE parameter. FHIR gives a repeated
+   * parameter and a comma-separated one meanings of their own - AND across
+   * repeats, OR within a list - and neither shape ever reaches a case here, so
+   * nothing below says what happens to either.
+   *
+   * The two shapes have different answers, so they are stated separately.
+   *
+   * A REPEAT is refused. `rejectRepeated` in `fhir/params.ts` answers a 400
+   * before any case here is reached, and both orders are pinned by
+   * `fhir.test.ts` - `refuses a repeated parameter instead of answering the
+   * first value`, and `... in the order where the guards never looked` for the
+   * second occurrence that used to bypass the UUID check. It was FIRST-wins and
+   * order-dependent before that, which is what issue #381 measured.
+   *
+   * A COMMA LIST is still one value, and that half is neither implemented nor
+   * pinned. It is not hypothetical - five patients seeded against the served
+   * app, one of whose family name is literally `TestpersonA,TestpersonB`,
+   * because a zero cannot say why it is a zero:
+   *
+   *   ?family=TestpersonA                       200   total 2   prefix, so two rows
+   *   ?family=TestpersonA,TestpersonB           200   total 1   the literal row, ALONE
+   *   ?family=TestpersonZ,TestpersonB           200   total 0   first half matches nothing
+   *   ?family=TestpersonA&family=TestpersonB    400   sent more than once
+   *   ?family=TestpersonB&family=TestpersonA    400   sent more than once
+   *
+   * The comma is part of one value rather than a list separator, shown by what
+   * it DOES match and not only by what it does not.
+   *
+   * `family` is a prefix match, which is why `?family=TestpersonA` returns two
+   * rows. Two more arms, because `?family=Testperson` returning all five is
+   * equally true of a *contains* match and cannot tell the two apart - and
+   * `containsFold` sits in the same file as `startsWithFold`, serving the
+   * general `q` parameter:
+   *
+   *   ?family=personA                           200   total 0   prefix, not contains
+   *   ?family=testpersona                       200   total 2   and case-folded
+   *
+   * Every row above was re-run on the commit that added the repeat refusal,
+   * against `createTestApp` with that five-patient fixture. The two 400 rows
+   * are additionally asserted by the two named cases, so those cannot go stale
+   * without a test going red; the five 200 rows can, and are the ones to
+   * re-run rather than trust.
+   *
+   * The OR half of #381 stays open and stays a bound rather than a test.
+   * Pinning any comma row would pin a semantics nobody has chosen - whether
+   * `?code=A,B` should widen is the decision still to make, and a test written
+   * now is one whoever makes it would have to delete. Asserting instead that
+   * each case sends a single value would only restate the line below that
+   * builds the URL, which is a check that can agree with nothing but itself.
+   */
   /** A value of the right shape that no seeded row can carry. */
   const absentValue = (param: SearchParamDefinition): string => {
     if (param.type === 'reference') {
@@ -1435,11 +2052,170 @@ describe('every advertised search parameter narrows', () => {
       }))
   );
 
-  it('has a case for every parameter of every served resource', () => {
-    /* The guard on the guard. A module whose params list were read wrongly
-       would produce no cases and this suite would pass by testing nothing. */
-    expect(cases.length).toBeGreaterThanOrEqual(SERVED_MODULES.length);
+  /*
+   * The cases that cannot narrow, and the assertions that keep the list honest.
+   *
+   * `absentValue` sends a value nothing carries. For an enum-validated
+   * parameter that value is not merely absent, it is not a code at all, so the
+   * module refuses it with a 400 before any filter runs and the case proves
+   * nothing about whether the parameter narrows. Allowing a refusal through is
+   * right - refusing a value is not ignoring it - but it used to be allowed
+   * through *silently*: eight of these cases returned before asserting anything
+   * and were counted as coverage. That is the failure this suite exists to
+   * catch, one level up from where it catches it.
+   *
+   * Both directions are checked. A parameter that starts being refused has to
+   * be added here deliberately; one that stops being refused removes itself;
+   * and an entry naming a parameter no module declares fails rather than going
+   * on excusing a case that no longer runs.
+   *
+   * Each entry also names the test that does cover the parameter, and that
+   * pairing was measured rather than assumed: the emitted filter key was
+   * renamed at each module's `toQuery`, so the token still validates and only
+   * the filter is lost, and the whole api suite was run per arm. Every arm
+   * failed exactly the test paired with it here and nothing else.
+   *
+   *   CarePlan?status        CarePlan returns only rows carrying the status
+   *   CareTeam?status        CareTeam ... (one `it.each` over `advertising`)
+   *   Device?status          Device ...
+   *   Observation?status     Observation ...
+   *   Claim?status           finds the one claim whose state maps to the code,
+   *                          not its neighbours
+   *   Goal?lifecycle-status  narrows by lifecycle status and refuses a code
+   *                          outside the value set
+   *   Patient?birthdate      fhir.test.ts, searches by _id, identifier, name,
+   *   Patient?gender         family, given, birthdate and gender
+   *
+   * That table is a measurement and deliberately not a guard, which is why it
+   * is a comment and the set below is only labels. Asserting those names still
+   * appear in the two suites does not work: they would be written here, in a
+   * file the scan reads, so the haystack would contain every needle by
+   * construction and a misspelt entry passes. Matching the declaration instead
+   * does not rescue it - four of the eight are rendered by an `it.each` from
+   * `'%s returns only rows carrying the status it was asked for'`, so their
+   * full names exist in no source line. Delete one of those tests and nothing
+   * here objects; re-run the rename arm rather than trusting the table.
+   *
+   * `toBe(400)` rather than the 4xx range on purpose: 401, 403 and 404 do not
+   * mean "not a code in this value set", and a case that began answering one of
+   * those would be an authorisation or routing fault wearing an exemption.
+   *
+   * There is deliberately no floor on the size of this map. Emptying it does
+   * not go unnoticed - the eight cases below then fail one by one, each naming
+   * itself - and a cardinality assertion here would fire for that same cause
+   * with a worse message than the cases give.
+   */
+  const REFUSES_THE_ABSENT_VALUE: ReadonlySet<string> = new Set([
+    /* Enum-validated: the probe value is not a code in the resource's value
+       set, so the module refuses it before any filter runs. */
+    'CarePlan?status',
+    'CareTeam?status',
+    'Claim?status',
+    'Device?status',
+    'Goal?lifecycle-status',
+    'Observation?status',
+    /* Format-validated, and refused in `patientModule.toQuery` before the query
+       is built. Both are covered by the one Patient search case, which is in
+       `fhir.test.ts` rather than this file. */
+    'Patient?birthdate',
+    'Patient?gender',
+  ]);
+
+  it('exempts only parameters that still exist', () => {
+    /* The other end of the exemption. A parameter removed from a module, or a
+       resource no longer served, leaves an entry here that nothing else would
+       notice - and the entry would go on excusing a case that no longer runs.
+       The reverse direction, an exemption for a parameter that does narrow, is
+       asserted by the case itself. */
+    const labels = new Set(cases.map((one) => `${one.type}?${one.name}`));
+
+    for (const exempt of REFUSES_THE_ABSENT_VALUE) {
+      expect(
+        [...labels],
+        `${exempt} is exempt from narrowing but is not a case: the parameter or the ` +
+          `resource is gone, so the exemption should go too`
+      ).toContain(exempt);
+    }
+  });
+
+  it('has a case for every parameter the server advertises', async () => {
+    /*
+     * The guard on the guard, against the CapabilityStatement rather than
+     * against a count.
+     *
+     * What it replaced was `cases.length >= SERVED_MODULES.length`, which
+     * compares a count of parameters against a count of modules and so
+     * tolerates losing about seven cases in eight: shrink `cases` to one per
+     * module and the floor is satisfied exactly. Measured on `dev` before this
+     * changed - thirty-six of the three hundred and fourteen cases in this file
+     * could vanish and the suite stayed green.
+     *
+     * A count recomputed from `SERVED_MODULES` would not fix it. That is the
+     * same list this suite already reads, so it can only agree with itself, and
+     * a check that can only agree with itself is the fault this file spent a
+     * whole review on.
+     *
+     * `/fhir/metadata` is a second position rather than a second copy.
+     * `buildCapabilityStatement` derives its `searchParam` list from the same
+     * `module.params` this suite reads, but through the application's own
+     * expression rather than through the `flatMap` above, so a mistake in
+     * either derivation shows as a disagreement.
+     *
+     * What it cannot see is a `params` list that is wrong in the first place,
+     * because both sides read it. That is pinned elsewhere and it was measured
+     * rather than assumed: dropping `given` from the Patient module fails four
+     * tests, among them `lists exactly the parameters each resource implements`
+     * in `readme.fhir-table.test.ts`, which holds every module's list - order
+     * included - against a hand-maintained table in the README, and merely
+     * swapping two names fails that same test. The per-case `definition` lookup
+     * below is the other half, for a name no `SEARCH_SUPPORT` entry defines.
+     *
+     * Not `SEARCH_SUPPORT`, which was the first thing tried and is the wrong
+     * relation: it is a catalogue of definitions and a strict superset of what
+     * the modules serve on seventeen of the thirty resources - `Task` declares
+     * one parameter against five defined - so a shrunk `cases` is still a
+     * subset of it and passes.
+     */
+    const { app } = harness();
+    const statement = (await (await app.request('/fhir/metadata')).json()) as {
+      rest: { resource: { type: string; searchParam: { name: string }[] }[] }[];
+    };
+    const advertised = statement.rest[0]?.resource ?? [];
+
+    /* The rail read nothing, as distinct from finding nothing: an unmounted
+       endpoint or a changed envelope would otherwise make every comparison
+       below vacuous. */
+    expect(advertised.length, '/fhir/metadata advertised no resources at all').toBeGreaterThan(0);
+
+    /* `_count` and `_offset` are paging, appended by the generator to every
+       resource; `_id` is the common parameter this suite exempts above. None of
+       the three is a filter a module implements. */
+    const notAFilter = new Set([...CONTROL_SEARCH_PARAMS.map((param) => param.name), '_id']);
+
+    for (const resource of advertised) {
+      expect(
+        cases
+          .filter((one) => one.type === resource.type)
+          .map((one) => one.name)
+          .sort(),
+        `${resource.type}: the cases in this suite and the parameters /fhir/metadata ` +
+          `advertises disagree, so one of the two derivations has dropped something`
+      ).toEqual(
+        resource.searchParam
+          .map((param) => param.name)
+          .filter((name) => !notAFilter.has(name))
+          .sort()
+      );
+    }
+
+    /* The other direction, so a resource the generator dropped cannot hide by
+       simply not being iterated above. */
+    const advertisedTypes = new Set(advertised.map((resource) => resource.type));
     for (const one of cases) {
+      expect(
+        [...advertisedTypes],
+        `${one.type} has cases in this suite but /fhir/metadata does not serve it`
+      ).toContain(one.type);
       expect(
         one.definition,
         `${one.type}?${one.name} is mounted but absent from SEARCH_SUPPORT`
@@ -1462,9 +2238,31 @@ describe('every advertised search parameter narrows', () => {
         headers,
       });
 
-      if (res.status >= 400 && res.status < 500) return;
+      const label = `${one.type}?${one.name}`;
+
+      if (res.status >= 400 && res.status < 500) {
+        expect(
+          res.status,
+          `${label} was refused with ${String(res.status)}. An exempted case is one whose ` +
+            `value set rejects the probe value, which is a 400; anything else here is a ` +
+            `different fault being read as one`
+        ).toBe(400);
+        expect(
+          [...REFUSES_THE_ABSENT_VALUE],
+          `${label} refuses the probe value, so this case cannot tell a working filter from ` +
+            `a dropped one. Add it to REFUSES_THE_ABSENT_VALUE, naming the test that does ` +
+            `cover it, or give absentValue a code this parameter accepts`
+        ).toContain(label);
+        return;
+      }
 
       expect(res.status).toBe(200);
+      expect(
+        [...REFUSES_THE_ABSENT_VALUE],
+        `${label} answers 200, so it is no longer exempt from proving that it narrows: ` +
+          `remove it from REFUSES_THE_ABSENT_VALUE`
+      ).not.toContain(label);
+
       const filtered = (await res.json()) as Bundle;
       expect(
         filtered.total,
@@ -1917,7 +2715,9 @@ describe('the projections', () => {
       await app.request('/fhir/Observation?date=2026-08-14', { headers: bearer(TOKENS.adminA) })
     ).json()) as Bundle;
 
-    expect(inside.total).toBe(1);
+    // Both seeded observations sit on the same instant; the discriminating
+    // half is the day either side answering zero.
+    expect(inside.total).toBe(2);
     expect(outside.total).toBe(0);
   });
 
@@ -1969,6 +2769,32 @@ describe('the permission each resource is served under', () => {
 
     expect(bff, 'the BFF route publishes its permission').toBeDefined();
     expect(module?.permission).toBe(bff);
+  });
+
+  /**
+   * THE SAME SENTENCE, AT THE BOUNDARY A CONFORMANCE CLIENT ACTUALLY READS.
+   *
+   * The six BFF operations onto `Role` and `RoleAssignment` carry
+   * `ROLE_MODEL_CAVEAT` in their OpenAPI descriptions. A directory client never
+   * sees that document - it reads the CapabilityStatement - and this resource
+   * projects the same rows, so without this it can search a complete, current,
+   * internally consistent picture of who holds which role that is not the
+   * picture the API enforces.
+   *
+   * Asserted against the served statement rather than the module, because the
+   * module having the field says nothing about the statement carrying it: the
+   * emission is a separate line in `metadata.ts` and is what a client receives.
+   */
+  it('tells a conformance client that these rows decide nothing', async () => {
+    const { app } = harness();
+
+    const statement = (await (await app.request('/fhir/metadata')).json()) as {
+      rest: { resource: { type: string; documentation?: string }[] }[];
+    };
+    const entry = statement.rest[0]?.resource.find((r) => r.type === 'PractitionerRole');
+
+    expect(entry, 'PractitionerRole is served, so it is in the statement').toBeDefined();
+    expect(entry?.documentation).toBe(ROLE_MODEL_CAVEAT);
   });
 
   it('refuses a principal holding no permissions at all', async () => {
@@ -2721,4 +3547,515 @@ describe('a MedicationDispense filled from more than one lot', () => {
     const dispense = (await res.json()) as { quantity?: { value?: number } };
     expect(dispense.quantity?.value).toBe(0.3);
   });
+});
+
+/**
+ * A patient reading the record of their own medicines being handed over.
+ *
+ * `MedicationDispense` was served under `order.read`, which `patient-portal`
+ * does not hold, so a portal token was refused at the permission gate before
+ * the compartment narrowing it depends on was ever consulted. The chart was
+ * readable and the prescription was readable; only the record of collecting it
+ * was not.
+ *
+ * The gate is now `encounter.read`, the permission `MedicationRequest` and
+ * `MedicationStatement` are already served under. These assertions are what
+ * makes that safe rather than merely open, and they are deliberately taken at
+ * every read shape rather than at the one the change was made for: the
+ * promotion review found a chart search leaking tenant-wide because only
+ * read-by-id had been guarded, and a permission is not a boundary until every
+ * door through it has been tried.
+ */
+describe('a patient reading their own MedicationDispense', () => {
+  const OTHER_PATIENT = testId(6100);
+  const OWN_POSTING = testId(6101);
+  const OTHER_POSTING = testId(6102);
+  const RECEIPT_POSTING = testId(6103);
+  /*
+   * A dispense that belongs to no chart: a dose drawn against ward stock rather
+   * than against a person. `StockPosting.patientId` is nullable and nothing
+   * requires a chart when `kind` is DISPENSE, so this row is representable and
+   * it is the one `kind: 'DISPENSE'` alone does not exclude.
+   */
+  const WARD_POSTING = testId(6106);
+  /** The portal patient's own dispense, but recorded at the practice's other site. */
+  const OTHER_SITE_POSTING = testId(6107);
+  const ITEM = testId(6110);
+  const LOT = testId(6111);
+
+  /** One dispensing posting and the movement under it, on a named chart. */
+  function seedDispense(
+    dataset: MemoryDataset,
+    posting: string,
+    patientId: string | null,
+    kind: 'DISPENSE' | 'RECEIPT' = 'DISPENSE',
+    facilityId: string = DEMO_FACILITY_A
+  ): void {
+    seed(dataset, 'StockPosting', {
+      ...storageColumns(posting),
+      kind,
+      facilityId,
+      patientId,
+      encounterId: null,
+      prescriptionId: null,
+      immunizationId: null,
+      occurredOn: FIXED_NOW,
+      postedById: PROVIDER,
+      witnessedById: null,
+      reference: null,
+      note: null,
+    });
+    seed(dataset, 'StockMovement', {
+      ...storageColumns(testId(Number(posting.slice(-4)) + 100)),
+      postingId: posting,
+      lotId: LOT,
+      itemId: ITEM,
+      facilityId: DEMO_FACILITY_A,
+      kind: kind === 'DISPENSE' ? 'DISPENSE' : 'RECEIPT',
+      quantity: 1,
+      occurredOn: FIXED_NOW,
+      actorId: PROVIDER,
+      reason: null,
+      correctsMovementId: null,
+      lotSeq: 1,
+    });
+  }
+
+  function world(): ReturnType<typeof createTestApp> {
+    const made = createTestApp();
+    const { dataset } = made;
+    seed(dataset, 'Patient', makePatientRow({ id: DEMO_PORTAL_PATIENT, mrn: 'OR-610001' }));
+    seed(dataset, 'Patient', makePatientRow({ id: OTHER_PATIENT, mrn: 'OR-610002' }));
+    /*
+     * An appointment on each chart, which is what gives a staff principal a
+     * care relationship with it. Without them the staff control below reads
+     * 404 for the reason `assertCareRelationship` exists rather than for the
+     * permission this suite is about - a premise failing quietly and looking
+     * like the conclusion.
+     */
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(6104), patientId: DEMO_PORTAL_PATIENT })
+    );
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({ id: testId(6105), patientId: OTHER_PATIENT })
+    );
+    seed(dataset, 'StockItem', {
+      ...storageColumns(ITEM),
+      sku: 'AMX-250',
+      name: 'Amoxicillin 250 mg capsule',
+      unit: 'capsule',
+      rxnormCode: '308182',
+      ndcCode: null,
+      cvxCode: null,
+      packSize: null,
+      reorderLevel: null,
+      controlled: false,
+      controlledSchedule: null,
+      active: true,
+    });
+    seed(dataset, 'StockLot', {
+      ...storageColumns(LOT),
+      itemId: ITEM,
+      facilityId: DEMO_FACILITY_A,
+      lotNumber: 'LOT-610',
+      status: 'AVAILABLE',
+      expiresOn: null,
+      openedOn: null,
+      beyondUseDays: null,
+      manufacturer: null,
+      ndcCode: null,
+      receivedOn: FIXED_NOW,
+    });
+    seedDispense(dataset, OWN_POSTING, DEMO_PORTAL_PATIENT);
+    seedDispense(dataset, OTHER_POSTING, OTHER_PATIENT);
+    // A delivery booked in. It belongs to no chart, and it is what a patient
+    // must never reach through this route: it says what the practice stocks.
+    seedDispense(dataset, RECEIPT_POSTING, null, 'RECEIPT');
+    // And a dispense with no chart, which `kind` does not exclude.
+    seedDispense(dataset, WARD_POSTING, null);
+    return made;
+  }
+
+  it('reads its own dispense by id', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense/${OWN_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { id?: string }).toMatchObject({
+      resourceType: 'MedicationDispense',
+      id: OWN_POSTING,
+    });
+  });
+
+  it('finds its own dispense through a patient search', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${DEMO_PORTAL_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      OWN_POSTING,
+    ]);
+  });
+
+  it('is given only its own chart by a search that names no patient at all', async () => {
+    /*
+     * The broad-list shape, and the one the promotion review found unguarded
+     * elsewhere. A search with no `patient` parameter is the request that asks
+     * for everything, and the compartment - not the query - is what has to
+     * answer it.
+     */
+    const { app } = world();
+
+    const res = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id)).toEqual([
+      OWN_POSTING,
+    ]);
+  });
+
+  it('cannot read another patient dispense by id', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense/${OTHER_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    // Absent rather than forbidden, for the reason the patient routes give:
+    // a 403 would confirm the id names something.
+    expect(res.status).toBe(404);
+  });
+
+  it('cannot widen its own compartment by naming another chart in the query', async () => {
+    const { app } = world();
+
+    const res = await app.request(`/fhir/MedicationDispense?patient=${OTHER_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bundle).entry ?? []).toEqual([]);
+  });
+
+  /**
+   * #329. `patient-portal`'s demo grant is one facility
+   * (`PORTAL_PRINCIPAL.facilityIds`), and this dispense is the caller's own -
+   * `patientId` matches the compartment - recorded at the OTHER one. Before the
+   * fix, the facility narrowing (written for a staff reader covering a site)
+   * ran ahead of the compartment and excluded it anyway: same chart, same
+   * caller, wrong site, and the row was simply missing rather than refused.
+   *
+   * Seeded locally rather than in `world()`, because every other case in this
+   * describe enumerates the portal's whole dispense list and would have to
+   * change to accommodate a second one on the same chart - this is the one
+   * case that is about there being two.
+   */
+  it('reads its own dispense recorded at another site of the practice', async () => {
+    const { app, dataset } = world();
+    seedDispense(dataset, OTHER_SITE_POSTING, DEMO_PORTAL_PATIENT, 'DISPENSE', DEMO_FACILITY_B);
+
+    const byId = await app.request(`/fhir/MedicationDispense/${OTHER_SITE_POSTING}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(byId.status).toBe(200);
+
+    const search = await app.request(`/fhir/MedicationDispense?patient=${DEMO_PORTAL_PATIENT}`, {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(search.status).toBe(200);
+    const bundle = (await search.json()) as Bundle;
+    expect(bundle.entry?.map((entry) => (entry.resource as { id?: string }).id).sort()).toEqual(
+      [OWN_POSTING, OTHER_SITE_POSTING].sort()
+    );
+  });
+
+  it('reaches no posting that belongs to no chart, and neither does staff', async () => {
+    /*
+     * A receipt, a count and a wastage carry a null chart. They are in the same
+     * table as the dispense this change opened up and they say what a practice
+     * stocks and how much of it, so they are the thing a widening here would
+     * leak.
+     *
+     * Both tokens are asserted because only the pair says which control did the
+     * work. This one is the module's own narrowing - `findById` keeps anything
+     * that is not a DISPENSE on a chart out of a clinical route for every
+     * caller - and it would still hold if the compartment did nothing. The
+     * compartment is proved by the other-patient assertions above, where staff
+     * are served the row and the portal is not.
+     */
+    const { app } = world();
+
+    for (const token of [TOKENS.portalA, TOKENS.adminA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${RECEIPT_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading a receipt`).toBe(404);
+    }
+  });
+
+  it('leaves an uncharted dispense out of the bundle, for staff as well as the portal', async () => {
+    /*
+     * The two doors, made to agree.
+     *
+     * `findById` narrows on `kind === 'DISPENSE' && patientId !== null`;
+     * `toQuery` narrowed on `kind` alone. `patientId` is nullable, so a dispense
+     * drawn against ward stock satisfies the second and not the first, and the
+     * same record answered 404 by id while appearing in the search.
+     *
+     * Both tokens are asserted because only the pair says which control did the
+     * work. The portal was never served this row - the compartment is an
+     * equality on `patientId` and null equals nothing - so the portal assertion
+     * would pass with the module unchanged. The staff assertion is the one that
+     * fails without the filter, because a staff bundle has no compartment
+     * underneath it to fall back on.
+     */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.clinicianA, TOKENS.portalA]) {
+      const res = await app.request('/fhir/MedicationDispense', { headers: bearer(token) });
+
+      expect(res.status, `${token} searching`).toBe(200);
+      const ids = ((await res.json()) as Bundle).entry?.map(
+        (entry) => (entry.resource as { id?: string }).id
+      );
+      expect(ids ?? [], `${token} must not be served an uncharted dispense`).not.toContain(
+        WARD_POSTING
+      );
+    }
+  });
+
+  it('still answers 404 for that same posting by id', async () => {
+    /* Unchanged, and asserted alongside the search so the pair is visibly the
+       same rule rather than two rules that happen to agree today. */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.portalA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${WARD_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading an uncharted dispense`).toBe(404);
+    }
+  });
+
+  it('still serves the charted dispenses through both doors', async () => {
+    /*
+     * The control, and it is the assertion that stops the filter being
+     * satisfied by a route that returns nothing. A `charted` filter inverted,
+     * or applied to the wrong column, empties the bundle - which every
+     * assertion above would report as success.
+     */
+    const { app } = world();
+
+    const search = await app.request('/fhir/MedicationDispense', {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(search.status).toBe(200);
+    const ids = ((await search.json()) as Bundle).entry?.map(
+      (entry) => (entry.resource as { id?: string }).id
+    );
+    expect(ids).toEqual(expect.arrayContaining([OWN_POSTING, OTHER_POSTING]));
+
+    const read = await app.request(`/fhir/MedicationDispense/${OWN_POSTING}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+    expect(read.status).toBe(200);
+  });
+
+  it('is gated on a permission the portal bundle actually holds', () => {
+    /*
+     * The regression this suite exists to prevent, asserted at its source
+     * rather than through a request.
+     *
+     * Every assertion above goes through the router, so all of them would break
+     * together and for the same reason if the module's permission were changed
+     * back - which is a real answer but a slow one to read. This says the thing
+     * directly: whatever `MedicationDispense` is served under has to be
+     * something a patient's own token carries, or a patient cannot read their
+     * own record however well the compartment works.
+     */
+    const module = SERVED_MODULES.find((served) => served.type === 'MedicationDispense');
+
+    expect(module).toBeDefined();
+    expect(ROLE_PERMISSIONS['patient-portal']).toContain(module?.permission);
+  });
+
+  it('still serves the staff who could already read it', async () => {
+    /* The control. Every assertion above passes for a route nobody can reach. */
+    const { app } = world();
+
+    for (const token of [TOKENS.adminA, TOKENS.clinicianA]) {
+      const res = await app.request(`/fhir/MedicationDispense/${OTHER_POSTING}`, {
+        headers: bearer(token),
+      });
+      expect(res.status, `${token} reading a dispense`).toBe(200);
+    }
+  });
+});
+
+describe('a status search selects only the rows carrying that status', () => {
+  /*
+   * The hole in `every advertised search parameter narrows`, and the defect it
+   * let through.
+   *
+   * That suite sends `openrunic-no-such-value` and accepts a 4xx as a pass,
+   * because refusing a value is not ignoring it. For a closed value set the
+   * refusal happens first, every time: `statusToken` rejects any code the
+   * mapping does not round-trip, so the probe is answered 400 before the filter
+   * would have run. The suite can never reach the branch it exists to test, and
+   * a `status` that selected nothing looked identical to one that worked.
+   *
+   * `Observation?status=` was exactly that. `toQuery` built the term correctly;
+   * `ObservationListQuery` never declared the field, so `matches` did not
+   * compare it and `where` did not emit it. A client asking for amended results
+   * received forty final ones, 200, in a well-formed searchset. #380.
+   *
+   * The probe here is a code that IS in the value set and is absent from the
+   * data, which is the one shape neither suite was sending and the one a real
+   * client sends. Note that the two ports cannot check each other on this:
+   * `matches` and `where` were wrong in the same way, so they agreed.
+   */
+  const advertising = SERVED_MODULES.filter((module) => module.params.includes('status'));
+
+  /* Resources whose shared chart deliberately holds a single status. See the
+     parameterised case below, which asserts each name here really is
+     single-status rather than taking the exemption on trust. */
+  const singleStatusByDesign = new Set(['Claim']);
+
+  it('covers every resource that advertises status', () => {
+    /* The guard on the guard. `losslessStatus` advertises `status` only where
+       the value set round-trips, which today is Observation alone - but a
+       mapping losing its lossy values would mount another one, and the cases
+       below would silently stop covering the server. This fails when that
+       happens, rather than passing over a resource nobody probed. */
+    expect(advertising.map((module) => module.type).sort()).toEqual([
+      'CarePlan',
+      'CareTeam',
+      'Claim',
+      'Device',
+      'Observation',
+    ]);
+  });
+
+  it('answers a legal status that no row carries with an empty bundle', async () => {
+    const { app } = harness();
+    const headers = bearer(TOKENS.adminA);
+
+    const all = (await (await app.request('/fhir/Observation', { headers })).json()) as Bundle;
+    expect(all.total, 'Observation has no seeded rows, so this proves nothing').toBeGreaterThan(0);
+
+    const res = await app.request('/fhir/Observation?status=amended', { headers });
+    expect(res.status, 'amended is in the value set, so it must be answered').toBe(200);
+
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.total, 'no seeded observation is amended').toBe(0);
+    expect(bundle.entry ?? []).toHaveLength(0);
+  });
+
+  it('reaches both halves of the collection filter, not only the one the doubles read', () => {
+    /*
+     * The HTTP cases above run against the memory port, so `matches` decides
+     * them and a `where` that dropped the term would pass every one - which is
+     * the blindness that hid this defect in the first place, pointed at the
+     * suite meant to catch it. Removing the term from `where` leaves all of
+     * them green; this is the case that goes red.
+     *
+     * Asserted directly rather than through a port comparison, because both
+     * halves were wrong in the same direction and agreed with each other.
+     */
+    const base = { sort: 'effectiveAt', page: 1, pageSize: 10, order: 'desc' } as const;
+
+    expect(observationSpec.where({ ...base, status: 'FINAL' })).toMatchObject({ status: 'FINAL' });
+    expect(observationSpec.where(base)).not.toHaveProperty('status');
+
+    const row = { status: 'FINAL' } as Parameters<typeof observationSpec.matches>[0];
+    expect(observationSpec.matches(row, { ...base, status: 'FINAL' })).toBe(true);
+    expect(observationSpec.matches(row, { ...base, status: 'AMENDED' })).toBe(false);
+  });
+
+  it.each(advertising.map((module) => [module.type, module] as const))(
+    '%s returns only rows carrying the status it was asked for',
+    async (type) => {
+      /*
+       * The other side of it, and the arm that generalises: an empty answer
+       * alone would also be produced by a filter that selects nothing at all,
+       * which is a different defect wearing the same result.
+       *
+       * The codes come from the data rather than from a value set, so this
+       * needs no per-resource table and covers a resource that starts
+       * advertising `status` later. Where a resource holds exactly one status
+       * it cannot discriminate a working filter from a dropped one - that is
+       * what the Observation case above is for, and it is why that one sends a
+       * code the data does not carry.
+       */
+      const { app } = harness();
+      const headers = bearer(TOKENS.adminA);
+
+      const all = (await (await app.request(`/fhir/${type}`, { headers })).json()) as Bundle;
+      expect(all.total, `${type} has no seeded rows, so this proves nothing`).toBeGreaterThan(0);
+
+      const present = [
+        ...new Set(
+          (all.entry ?? [])
+            .map((entry) => (entry.resource as { status?: string }).status)
+            .filter((status): status is string => status !== undefined)
+        ),
+      ];
+      expect(present.length, `${type} rows carry no status to filter on`).toBeGreaterThan(0);
+
+      /*
+       * The precondition that decides whether the loop below can fail at all.
+       * With one distinct status in the chart, "every returned row carries the
+       * status asked for" is true whether the filter runs or not - the case
+       * passes a dropped filter and reports it as coverage. That was the state
+       * of all five resources before this seeding, and nothing said so.
+       *
+       * The exemption is checked rather than taken on trust: `Claim` must
+       * really be single-status here, so if the chart ever gains a second claim
+       * code the exemption fails and has to be removed rather than quietly
+       * covering a case it no longer describes. Claim is exempt because its
+       * FHIR `status` is a mapped code and its own suite already discriminates
+       * it across two rows seeded per-test; a second claim in the shared chart
+       * would break neighbouring assertions whose whole value is an exact id
+       * set.
+       */
+      if (singleStatusByDesign.has(type)) {
+        expect(
+          present.length,
+          `${type} is exempt from the two-status rule but is no longer single-status`
+        ).toBe(1);
+      } else {
+        expect(
+          present.length,
+          `${type} carries one status, so this case cannot tell a working filter from a dropped one`
+        ).toBeGreaterThan(1);
+      }
+
+      for (const status of present) {
+        const res = await app.request(`/fhir/${type}?status=${encodeURIComponent(status)}`, {
+          headers,
+        });
+        expect(res.status, `${type}?status=${status}`).toBe(200);
+
+        const bundle = (await res.json()) as Bundle;
+        expect(bundle.total, `${type}?status=${status} selected nothing`).toBeGreaterThan(0);
+        for (const entry of bundle.entry ?? []) {
+          expect((entry.resource as { status?: string }).status).toBe(status);
+        }
+      }
+    }
+  );
 });

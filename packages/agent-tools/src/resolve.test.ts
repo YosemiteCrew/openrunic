@@ -38,6 +38,7 @@ describe('resolving tools for a principal', () => {
     );
     expect(tools.map((tool) => tool.id)).toEqual([
       'chart.search',
+      'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
       'inbox.classify',
       'appointments.findSlots',
@@ -56,6 +57,7 @@ describe('resolving tools for a principal', () => {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
       'coding.suggest',
     ]);
@@ -145,7 +147,11 @@ describe('the reader/writer split at resolve time', () => {
       stubPrincipal({ roleIds: ['clinician'], scopes: ALL_SCOPES }),
       { trustClass: 'reader' }
     );
-    expect(readerTools.map((tool) => tool.id)).toEqual(['chart.search', 'appointments.findSlots']);
+    expect(readerTools.map((tool) => tool.id)).toEqual([
+      'chart.search',
+      'authorisation.reviewEvidence',
+      'appointments.findSlots',
+    ]);
     expect(readerTools.every((tool) => tool.sideEffect === 'read')).toBe(true);
   });
 
@@ -164,7 +170,7 @@ describe('capability caps', () => {
   it('narrows the exposed set without ever widening it', () => {
     const principal = stubPrincipal({ roleIds: ['clinician'], scopes: ALL_SCOPES });
     const capped = resolveTools(registry, principal, { maxToolsExposed: 2 });
-    expect(capped.map((tool) => tool.id)).toEqual(['chart.search', 'priorauth.assemblePacket']);
+    expect(capped.map((tool) => tool.id)).toEqual(['chart.search', 'authorisation.reviewEvidence']);
   });
 
   it('accepts a deployer allowlist that is narrower than the shipped one', () => {

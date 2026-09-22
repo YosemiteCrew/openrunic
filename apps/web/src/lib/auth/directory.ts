@@ -6,12 +6,16 @@ import type { Identity } from './session';
  *
  * ## Why the web app holds a table at all
  *
- * The API has no endpoint that answers "who is this token". Its authn
- * middleware resolves a token to a principal and hands that principal to the
- * handler; nothing serves it back to the caller. So a sign-in surface that has
- * just accepted a token has no way to ask what it means, and something has to
- * know the name to render. Under OIDC that something is the token itself - the
- * identity comes out of the verified claims, and this table stops being
+ * `GET /bff/v0/me` (#346) answers what a token may DO - its roles and its
+ * permissions - and deliberately not whose it is. That DTO says it is not a
+ * security boundary, and `subject` is what an audit record attributes an access
+ * to, so an identity fact inside an advisory object would invite a client to
+ * trust it for attribution. Nothing serves the caller their own subject or
+ * display name, which is the half this table carries. So a sign-in surface that
+ * has just accepted a token still has no way to ask whose it is, and something
+ * has to know the name to render. Under OIDC that something is the token
+ * itself: the identity comes out of the verified claims, and this table stops
+ * being
  * consulted. `identityForAccessToken` in `credentials.ts` is that seam: it is
  * the one function that turns a credential into a name, and the OIDC path
  * replaces its body rather than the shape of anything that calls it. It lives
@@ -28,7 +32,8 @@ import type { Identity } from './session';
  * API package, which would put a server's auth module into a browser bundle.
  * The subjects are the load-bearing half: they are what an audit record
  * attributes an access to, so they must match the API's, not merely look like
- * it.
+ * it. `scripts/ci/demo-principal-parity.mjs` asserts that on every `verify`; it
+ * was checked by hand once, and a hand check works exactly once.
  *
  * ## Who is deliberately missing
  *
@@ -46,40 +51,47 @@ export interface StaffCredential {
   readonly identity: Identity;
 }
 
-const DEVELOPMENT_STAFF: readonly StaffCredential[] = [
-  {
-    token: 'dev-clinician-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000101',
-      displayName: 'Dr. Adaeze Okafor',
-      roles: ['clinician'],
-    },
-  },
-  {
-    token: 'dev-frontdesk-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000102',
-      displayName: 'Front Desk',
-      roles: ['front-desk'],
-    },
-  },
-  {
-    token: 'dev-biller-a',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000103',
-      displayName: 'Billing',
-      roles: ['biller'],
-    },
-  },
-  {
-    token: 'dev-clinician-b',
-    identity: {
-      subject: '01890000-0000-7000-8000-000000000201',
-      displayName: 'Dr. Rowan Vale',
-      roles: ['clinician'],
-    },
-  },
-];
+/**
+ * The table, written as rows rather than as seven copies of one object.
+ *
+ * Each row is `[token, subject, display name, ...roles]`. The subjects are
+ * spelled out in full on purpose: they are the load-bearing half, because an
+ * audit record attributes an access to the subject, so these have to be
+ * diffable by eye against `apps/api/src/auth/static-resolver.ts` rather than
+ * merely look like it. Deriving them from a shared prefix would save a few
+ * characters and cost exactly that.
+ *
+ * This was seven eight-line object literals until 2026-09-06, which Sonar reads
+ * as one sixty-line self-duplication, and it is right: the shape carried no
+ * information, and the four values on each row were the only thing that ever
+ * differed. Every principal happens to hold one role today; the rest spread so
+ * a two-role one needs no change here.
+ */
+const DEVELOPMENT_STAFF: readonly StaffCredential[] = (
+  [
+    ['dev-clinician-a', '01890000-0000-7000-8000-000000000101', 'Dr. Adaeze Okafor', 'clinician'],
+    ['dev-frontdesk-a', '01890000-0000-7000-8000-000000000102', 'Front Desk', 'front-desk'],
+    ['dev-biller-a', '01890000-0000-7000-8000-000000000103', 'Billing', 'biller'],
+    ['dev-clinician-b', '01890000-0000-7000-8000-000000000201', 'Dr. Rowan Vale', 'clinician'],
+    // The three oversight principals. They are staff, so the rule this table
+    // already states - a patient's credential is not a staff credential -
+    // admits them, and leaving them out would mean the API grew a token for
+    // reading the audit trail that nobody could sign in with. They meet more
+    // refusals than a clinician does, and that is the behaviour rather than a
+    // gap here: the screens say which permission is missing.
+    ['dev-auditor-a', '01890000-0000-7000-8000-000000000104', 'Audita Trailmore, CHC', 'auditor'],
+    [
+      'dev-stockkeeper-a',
+      '01890000-0000-7000-8000-000000000105',
+      'Stocka Shelfward, CPhT',
+      'stock-keeper',
+    ],
+    ['dev-readonly-a', '01890000-0000-7000-8000-000000000106', 'Reada Overlook', 'read-only'],
+  ] as const satisfies readonly (readonly [string, string, string, ...string[]])[]
+).map(([token, subject, displayName, ...roles]) => ({
+  token,
+  identity: { subject, displayName, roles },
+}));
 
 /**
  * The credentials this build accepts, which outside development is almost never
@@ -113,5 +125,26 @@ export function developmentCredentials(
   demoBuild = false
 ): readonly StaffCredential[] {
   if (nodeEnv !== 'production') return DEVELOPMENT_STAFF;
+  /* The empty list IS the refusal: no throw, no guard, the door closed by there
+     being nothing to iterate. Anything that replaces this lookup with a call to
+     the API has to re-express it explicitly, because an absence cannot fail a
+     test.
+
+     And it cannot be delegated to the API, for a reason that does not depend on
+     configuration: THIS BUILD CANNOT KNOW WHICH RESOLVER THE API IT IS POINTED
+     AT HAS INSTALLED. A browser holds a base URL and sees no server wiring.
+     Some deployments accept these tokens and some refuse them, the selection is
+     made server-side, and it will stay unknowable from here however the modes
+     and issuers are arranged later. So the decision is made where it IS
+     knowable.
+
+     Stated as an invariant on purpose. Three earlier drafts named a specific
+     condition and each was falsified by reading one file further: the API
+     selects its resolver on whether an OIDC issuer is configured
+     (`apps/api/src/index.ts`), and `announceAuthentication` branches on exactly
+     that to say which verifier is in force. If a future reader wants the
+     server-side condition, it is there - it does not belong here, because a
+     comment whose job is to stop a refactor must not rest on a premise a
+     reader can find a counter-example to. */
   return demoBuild ? DEVELOPMENT_STAFF : [];
 }

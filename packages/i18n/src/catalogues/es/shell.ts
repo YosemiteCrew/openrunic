@@ -19,6 +19,12 @@ export const shell: Messages = {
 
   'shell.demoData': 'Datos de demostración',
 
+  'shell.fixtureNotice.title': 'Estos no son pacientes reales',
+  'shell.fixtureNotice.message':
+    'Esta pantalla muestra filas de ejemplo incorporadas, no el trabajo de su ' +
+    'consulta. Nada de lo que aparece aquí es una persona real, y actuar sobre ' +
+    'una fila no cambia nada.',
+
   'shell.palette.title': 'Paleta de comandos',
   'shell.palette.searchLabel': 'Buscar pacientes, pantallas y acciones',
   'shell.palette.searchPlaceholder': 'Escriba un paciente, una pantalla o una acción',

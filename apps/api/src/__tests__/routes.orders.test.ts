@@ -281,6 +281,7 @@ function makeMessageRow(overrides: Partial<MessageRow> = {}): MessageRow {
   return {
     ...storageColumns(MESSAGE_A),
     threadId: THREAD_A,
+    patientId: PATIENT,
     senderType: 'USER',
     senderUserId: CLINICIAN,
     senderPatientId: null,
@@ -328,6 +329,11 @@ async function problem(res: Response): Promise<ProblemDocument> {
 function seededApp(): Harness {
   const harness = createTestApp();
   const { dataset } = harness;
+  // Every one of these rows names PATIENT, and the transition routes ask the
+  // care-relationship gate now (#322). Without this the fixture describes a
+  // clinician with no business in the chart, which is not the caller any of
+  // these cases is about.
+  authorise(dataset, PATIENT);
   seed(dataset, 'ServiceRequest', makeOrderRow());
   seed(dataset, 'Specimen', makeSpecimenRow());
   seed(dataset, 'DiagnosticReport', makeReportRow());
@@ -535,6 +541,33 @@ describe('GET /bff/v0/orders', () => {
     expect(await ids('sort=scheduledFor')).toEqual([ORDER_A, ORDER_B]);
   });
 
+  /* `scheduledFor` is the only sort key that can be absent, and absence is not
+     a direction-free rule: the spec reads the column through `comparable()`,
+     which answers `+Infinity`, and the memory port multiplies the comparison by
+     the direction. Postgres lands in the same place - the spec's `orderBy`
+     names no `nulls` option, so NULLS LAST ascending, NULLS FIRST descending.
+     The dated row is the higher id so neither direction can be produced by the
+     id tie-break alone. */
+  it('sorts an unscheduled order last ascending and first descending', async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT);
+    seed(
+      dataset,
+      'ServiceRequest',
+      makeOrderRow({ scheduledFor: null }),
+      makeOrderRow({ id: ORDER_B, scheduledFor: new Date('2026-08-14T09:00:00.000Z') })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (
+        await body<ListResponse<ServiceRequestDto>>(
+          await call(app, 'get', `/bff/v0/orders?${query}`)
+        )
+      ).data.map((row) => row.id);
+
+    expect(await ids('sort=scheduledFor')).toEqual([ORDER_B, ORDER_A]);
+    expect(await ids('sort=scheduledFor&order=desc')).toEqual([ORDER_A, ORDER_B]);
+  });
+
   it('400s a filter name nobody declared', async () => {
     const { app } = createTestApp();
     const res = await call(app, 'get', '/bff/v0/orders?statuss=SIGNED');
@@ -694,8 +727,20 @@ describe('PATCH /bff/v0/orders/:id', () => {
 });
 
 describe('the order state machine', () => {
+  /**
+   * This harness seeded an order and nothing else, and every success case below
+   * asserted a 2xx through `sign`, `transmit` and `cancel` - which is the
+   * missing chart gate written down as a requirement. Sixteen of them went red
+   * the moment the gate was added (#322).
+   *
+   * The relationship is what these cases assume and never stated: they are
+   * about the state machine, and a caller with no business in the chart never
+   * reaches it. The refusal has its own driven case in
+   * `policy.care-relationship.test.ts`.
+   */
   function orderApp(status: ServiceRequestRow['status']): Harness {
     const harness = createTestApp();
+    authorise(harness.dataset, PATIENT);
     seed(harness.dataset, 'ServiceRequest', makeOrderRow({ status }));
     return harness;
   }
@@ -1973,18 +2018,26 @@ describe('the messages inside a thread', () => {
     expect(res.status).toBe(404);
   });
 
-  it('serves a compartment-restricted principal no messages at all', async () => {
-    // `Message` reaches a chart only through its thread, which the repository
-    // layer does not join, so a portal token is refused the table wholesale
-    // rather than served one nobody narrowed.
-    const { app } = seededApp();
-    const page = await body<ListResponse<MessageDto>>(
+  it('serves a compartment-restricted principal only its own thread messages', async () => {
+    const { app, dataset } = seededApp();
+    seed(dataset, 'MessageThread', makeThreadRow({ id: THREAD_B, patientId: OTHER_PATIENT }));
+    seed(
+      dataset,
+      'Message',
+      makeMessageRow({ id: testId(272), threadId: THREAD_B, patientId: OTHER_PATIENT })
+    );
+
+    const own = await body<ListResponse<MessageDto>>(
       await call(app, 'get', `/bff/v0/messages/threads/${THREAD_A}/messages`, {
         token: TOKENS.portalA,
       })
     );
+    const other = await call(app, 'get', `/bff/v0/messages/threads/${THREAD_B}/messages`, {
+      token: TOKENS.portalA,
+    });
 
-    expect(page.data).toEqual([]);
+    expect(own.data.map((message) => message.id)).toEqual([MESSAGE_A]);
+    expect(other.status).toBe(404);
   });
 });
 
@@ -2117,7 +2170,15 @@ describe('audit', () => {
     const { app, sink } = seededApp();
     await call(app, 'post', `/bff/v0/orders/${ORDER_A}/sign`, { body: {} });
 
-    expect(sink.writes()[0]?.event).toMatchObject({
+    // Chosen by action rather than by position. The transition asks the
+    // care-relationship gate now, and asking it records a `chart.access`, so
+    // the domain event is no longer the first write on this route. Indexing
+    // would make this assertion depend on how many decisions were recorded
+    // before the one it is about. Same repair as #320 made in
+    // `routes.clinical.test.ts`.
+    const moves = sink.writes().filter((entry) => entry.event.action === 'order.updated');
+    expect(moves, 'no audit write named order.updated').toHaveLength(1);
+    expect(moves[0]?.event).toMatchObject({
       action: 'order.updated',
       metadata: { statusFrom: 'DRAFT', statusTo: 'SIGNED' },
     });
@@ -2148,7 +2209,7 @@ describe('audit', () => {
     });
   });
 
-  it('files a message event under no chart, because a message names a sender and not a chart', async () => {
+  it('files a message event under the thread chart', async () => {
     const { app, sink } = seededApp();
     await call(app, 'post', `/bff/v0/messages/threads/${THREAD_A}/messages`, {
       body: { body: 'Noted, thank you.' },
@@ -2156,7 +2217,7 @@ describe('audit', () => {
 
     const created = sink.writes().find((entry) => entry.event.action === 'message.created');
     expect(created?.event.targetType).toBe('Message');
-    expect(created?.event.patientId).toBeUndefined();
+    expect(created?.event.patientId).toBe(PATIENT);
   });
 });
 
@@ -2331,7 +2392,10 @@ describe('the Prisma half of each filter, which Postgres would evaluate', () => 
       })
     ).toEqual({
       type: 'RESULT',
-      status: 'OPEN',
+      // One `status` clause, built from the scalar and the set together. A
+      // scalar alone still emits `in`, because both ports read the same
+      // resolved decision rather than two spellings of it.
+      status: { in: ['OPEN'] },
       priority: 'HIGH',
       patientId: PATIENT,
       assigneeUserId: CLINICIAN,
@@ -2339,6 +2403,39 @@ describe('the Prisma half of each filter, which Postgres would evaluate', () => 
       slaState: 'AGING',
       dueAt: { gte: EARLY, lt: LATE },
     });
+  });
+
+  /**
+   * `status` and `statusIn` over one column, which is the pair that has split
+   * the two ports four times in this file's history. The clause is one key
+   * however the pair arrives, and the impossible intersection narrows to
+   * nothing rather than losing its clause and widening to every row.
+   */
+  it('resolves a task query on both sides of `statusIn`', () => {
+    const query = { ...BASE_QUERY, sort: 'dueAt' } as const;
+
+    expect(taskSpec.where({ ...query, statusIn: ['OPEN', 'IN_PROGRESS'] })).toEqual({
+      status: { in: ['OPEN', 'IN_PROGRESS'] },
+    });
+    // The scalar inside the set is the intersection, not both clauses.
+    expect(taskSpec.where({ ...query, status: 'OPEN', statusIn: ['OPEN', 'ON_HOLD'] })).toEqual({
+      status: { in: ['OPEN'] },
+    });
+    // Outside it, nothing matches - and `in: []` says so to Postgres.
+    expect(taskSpec.where({ ...query, status: 'DONE', statusIn: ['OPEN'] })).toEqual({
+      status: { in: [] },
+    });
+
+    // The memory port answers each of the three the same way.
+    const open = makeTaskRow({ status: 'OPEN' });
+    const done = makeTaskRow({ status: 'DONE' });
+    expect(taskSpec.matches(open, { ...query, statusIn: ['OPEN', 'IN_PROGRESS'] })).toBe(true);
+    expect(taskSpec.matches(done, { ...query, statusIn: ['OPEN', 'IN_PROGRESS'] })).toBe(false);
+    expect(
+      taskSpec.matches(open, { ...query, status: 'OPEN', statusIn: ['OPEN', 'ON_HOLD'] })
+    ).toBe(true);
+    expect(taskSpec.matches(open, { ...query, status: 'DONE', statusIn: ['OPEN'] })).toBe(false);
+    expect(taskSpec.matches(done, { ...query, status: 'DONE', statusIn: ['OPEN'] })).toBe(false);
   });
 
   it('narrows a thread query on both sides of `open`', () => {
@@ -2508,6 +2605,326 @@ describe('the analyte spec', () => {
   });
 });
 
+/* ------------------------------------- the chart gate on the hand-registered
+   ------------------------------------- writes (#322) */
+
+/**
+ * Every route in this file that reads a parent row by id and then writes to it.
+ *
+ * These are registered by hand rather than generated, so the CRUD seam's chart
+ * gate does not run on them - which is how a clinician refused the chart could
+ * still sign, transmit and cancel an order on it, receive and reject its
+ * specimens, review its results, file and reject its documents, complete its
+ * tasks and post into its threads. Driven on `dev` before the fix:
+ * `GET /orders/{id}` 404 and `POST /orders/{id}/sign` 200, same row, same
+ * reader.
+ *
+ * The cases live here rather than in `policy.care-relationship.test.ts`, where
+ * the equivalents for `clinical.ts` live, for one reason: the eight row
+ * builders they need are in this file. A second copy of eight fixtures is a
+ * second place for one of them to stop matching the shape the repository
+ * returns, which is the cost this repository already refuses elsewhere.
+ *
+ * Each door is its own case, so un-gating one lands on that one rather than on
+ * a neighbour. The reachable control beside it is what separates "the gate
+ * refused this reader" from "the route refuses everyone", which would take the
+ * whole state machine out of the product while reading as the gate working.
+ */
+describe('a write on a chart is not a way round the gate', () => {
+  /** A document received into the inbox and filed to no chart at all. */
+  const CHARTLESS_DOCUMENT = testId(9_240);
+
+  /** Every parent row seeded, and NO care relationship to the chart they name. */
+  function strangerApp(): Harness {
+    const harness = createTestApp();
+    const { dataset } = harness;
+    seed(dataset, 'ServiceRequest', makeOrderRow({ status: 'SIGNED' }));
+    seed(dataset, 'Specimen', makeSpecimenRow());
+    seed(dataset, 'DiagnosticReport', makeReportRow());
+    seed(dataset, 'Document', makeDocumentRow());
+    seed(dataset, 'Document', makeDocumentRow({ id: DOCUMENT_B }));
+    // An inbox fax: received, filed to nobody yet. `Document.patientId` is
+    // nullable and this is the state it is nullable FOR. It is what the
+    // supersede door row names in its body, so that row's second gate is
+    // vacuous - `chartIdOf` is undefined, `gateCharts` iterates an empty set -
+    // and the only thing that can refuse the request is the gate on the
+    // document in the PATH. With a chartable body document there, the second
+    // gate answers for the first and the row measures neither. Raised in
+    // review, twice.
+    seed(dataset, 'Document', makeDocumentRow({ id: CHARTLESS_DOCUMENT, patientId: null }));
+    // Assigned to somebody else on purpose. `makeTaskRow` hands the task to
+    // CLINICIAN with a different assigner, which is the `assigned-task`
+    // relationship source - so the default fixture authorises the reader and
+    // this whole describe would measure a caller who IS in the chart. Caught by
+    // the first run: every refusal row came back 409 or 200 rather than 404,
+    // and a 409 from the state machine is what a passing gate looks like.
+    seed(dataset, 'Task', makeTaskRow({ assigneeUserId: OTHER_USER }));
+    seed(dataset, 'MessageThread', makeThreadRow());
+    seed(dataset, 'Message', makeMessageRow());
+    return harness;
+  }
+
+  /**
+   * The tables whose rows differ from a snapshot taken earlier.
+   *
+   * Named tables rather than a whole-dataset comparison, because a red case
+   * has to say WHICH table moved: comparing the serialised dataset prints four
+   * kilobytes twice and the changed field is somewhere inside it.
+   *
+   * Empty tables are dropped. Reading a table CREATES it, so the
+   * care-relationship lookup every gate performs turns four absent tables into
+   * four empty ones on any refused request - a difference in the map and not in
+   * a row. Comparing those made all fourteen cases fail on an unmodified tree,
+   * which is a control failing rather than a finding.
+   */
+  const tablesOf = (dataset: MemoryDataset): Map<string, string> =>
+    new Map(
+      dataset
+        .models()
+        .map((model) => [model, JSON.stringify(dataset.table(model))] as const)
+        .filter(([, rows]) => rows !== '[]')
+    );
+
+  const changedSince = (before: Map<string, string>, dataset: MemoryDataset): string[] => {
+    const after = tablesOf(dataset);
+    return [...new Set([...before.keys(), ...after.keys()])]
+      .filter((model) => before.get(model) !== after.get(model))
+      .sort();
+  };
+
+  const DOORS = [
+    ['POST /orders/:id/sign', `/bff/v0/orders/${ORDER_A}/sign`, {}],
+    ['POST /orders/:id/transmit', `/bff/v0/orders/${ORDER_A}/transmit`, {}],
+    ['POST /orders/:id/cancel', `/bff/v0/orders/${ORDER_A}/cancel`, {}],
+    ['POST /specimens/:id/receive', `/bff/v0/specimens/${SPECIMEN_A}/receive`, {}],
+    [
+      'POST /specimens/:id/reject',
+      `/bff/v0/specimens/${SPECIMEN_A}/reject`,
+      { rejectionReason: 'Haemolysed' },
+    ],
+    ['POST /results/:id/review', `/bff/v0/results/${REPORT_A}/review`, {}],
+    ['POST /documents/:id/file', `/bff/v0/documents/${DOCUMENT_A}/file`, {}],
+    [
+      'POST /documents/:id/reject',
+      `/bff/v0/documents/${DOCUMENT_A}/reject`,
+      { reason: 'Unreadable' },
+    ],
+    [
+      'POST /documents/:id/supersede',
+      `/bff/v0/documents/${DOCUMENT_A}/supersede`,
+      { supersededById: CHARTLESS_DOCUMENT },
+    ],
+    ['POST /tasks/:id/complete', `/bff/v0/tasks/${TASK_A}/complete`, {}],
+    ['POST /tasks/:id/cancel', `/bff/v0/tasks/${TASK_A}/cancel`, {}],
+    ['POST /messages/threads/:id/close', `/bff/v0/messages/threads/${THREAD_A}/close`, {}],
+    [
+      'POST /messages/threads/:id/messages',
+      `/bff/v0/messages/threads/${THREAD_A}/messages`,
+      { body: 'A reply.' },
+    ],
+    ['POST /messages/:id/read', `/bff/v0/messages/${MESSAGE_A}/read`, {}],
+  ] as const;
+
+  it.each(DOORS)(
+    '%s is refused on a chart nothing connects the writer to',
+    async (_l, path, body) => {
+      const { app, dataset } = strangerApp();
+      const before = tablesOf(dataset);
+
+      // 404 and not 403, the same as every read: a 403 confirms the row exists to
+      // somebody who may not see it.
+      expect((await call(app, 'post', path, { body })).status).toBe(404);
+      // The status says the REPLY was refused. It does not say the WRITE was.
+      // Measured on the order transitions: with the chart gate moved below its
+      // update, `transmit` wrote `TRANSMITTED` with a `transmittedAt` stamp and
+      // `cancel` wrote `CANCELLED`, and both still answered 404 with every
+      // assertion above green. Fourteen doors share this line, so the ordering
+      // each of them relies on is asserted here rather than trusted.
+      expect(changedSince(before, dataset)).toEqual([]);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s still answers a writer who is in that patient care',
+    async (_l, path, body) => {
+      const harness = strangerApp();
+      authorise(harness.dataset, PATIENT);
+
+      expect((await call(harness.app, 'post', path, { body })).status).not.toBe(404);
+    }
+  );
+
+  /**
+   * `supersede` reads a SECOND document named in the body, and that row names
+   * its own chart - which is not necessarily the chart of the document in the
+   * path. Naming it is reaching into that chart.
+   *
+   * This harness is built rather than borrowed, and both halves of that matter.
+   * `seed` is a `push` and the memory port's `findById` takes the FIRST match,
+   * so re-seeding an id already in the table adds a shadowed row and changes
+   * nothing - my first version of this case did exactly that, and both gates
+   * could be deleted with the file still at 216 / 0. Raised in review.
+   *
+   * And the document in the PATH has to be one the reader may open. A body
+   * document that could be refused either way hides which of the two gates
+   * refused it: the path gate answers first, with the same 404 and the same
+   * `No such patient.`, so it subsumes the second entirely.
+   */
+  it('POST /documents/:id/supersede gates the document named in the body too', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    seed(
+      harness.dataset,
+      'Document',
+      makeDocumentRow({ id: DOCUMENT_B, patientId: OTHER_PATIENT })
+    );
+    // The path document only. The body document names a chart this reader has
+    // no relationship to, so the only thing that can refuse is the second gate.
+    authorise(harness.dataset, PATIENT);
+
+    const res = await call(harness.app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: DOCUMENT_B },
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  /**
+   * The generated seam, and the door the transition routes above do not cover.
+   *
+   * `defineCrud`'s PATCH gates the chart of the row it FOUND, which is the one
+   * the caller is reading out of. A patch body carrying the chart column moves
+   * the row into a different chart, and until #330 nothing asked about that
+   * one: a caller with a relationship to the origin could take a document out
+   * of a chart they can open and put it into one they cannot, in one request,
+   * and then be unable to read back what they had done.
+   *
+   * `documentPatchSchema` is the only one of the twenty-three `*PatchSchema`
+   * exports that carries `patientId`, so this is the only shape that reaches
+   * it today - which is a fact about the schemas rather than about the seam,
+   * and the gate is on the seam.
+   *
+   * Both halves of the supersede case's hard-won setup apply here. The document
+   * in the PATH is one the reader may open, or the gate that already existed
+   * answers first with the same 404 and hides whether the new one fired at all.
+   * And the destination chart is a real one the reader cannot reach rather than
+   * `null`: `Document.patientId` is nullable, and a null destination makes
+   * `chartIdOf` `undefined` and `gateCharts` iterate an empty set, so the case
+   * would pass with the gate deleted.
+   */
+  it('PATCH /documents/:id gates the chart the patch names, not only the row it found', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    // The origin only. The destination is a chart nothing connects this reader
+    // to, so the only thing that can refuse is the gate on the patch body.
+    authorise(harness.dataset, PATIENT);
+
+    const res = await call(harness.app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
+      body: { patientId: OTHER_PATIENT },
+    });
+
+    expect(res.status).toBe(404);
+    // The status alone does not say the write was refused, only that the reply
+    // was. Move the gate below `collection.update` and every assertion above
+    // still passes while the document has already left this reader's chart -
+    // same status, same body, row gone. Raised in review, measured: the suite
+    // was green under that reordering until this line existed.
+    expect(harness.dataset.table('Document').find((row) => row.id === DOCUMENT_A)?.patientId).toBe(
+      PATIENT
+    );
+  });
+
+  it('PATCH /documents/:id still answers when both charts are reachable', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    authorise(harness.dataset, PATIENT, OTHER_PATIENT);
+
+    const res = await call(harness.app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
+      body: { patientId: OTHER_PATIENT },
+    });
+
+    expect(res.status).not.toBe(404);
+  });
+
+  it('PATCH /documents/:id is unaffected when the patch names no chart', async () => {
+    // The must-not-fire arm. A patch that carries no chart column re-asks the
+    // question the row gate already answered, and must not start refusing the
+    // ordinary edit that every other resource's PATCH is.
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    authorise(harness.dataset, PATIENT);
+
+    const res = await call(harness.app, 'patch', `/bff/v0/documents/${DOCUMENT_A}`, {
+      body: { title: 'A retitled document' },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  /**
+   * The other half of #330, now settled the other way: unlike PATCH above,
+   * CREATE does not gate the chart it names. Deliberate - the person triaging
+   * an inbox of unclaimed faxes has, by definition, no relationship with the
+   * chart the fax turns out to belong to, and `care-relationship.ts` already
+   * accepts that shape of argument for reception and billing. `createTestApp`
+   * seeds no relationship for anyone, so a 201 here is the writer having none
+   * to the named chart, not an unnoticed one. Locked in so a later change does
+   * not "fix" this into breaking that workflow without the question being
+   * reopened.
+   */
+  it('POST /documents may name a chart the writer has no relationship with (#330)', async () => {
+    const { app } = createTestApp();
+
+    const res = await call(app, 'post', '/bff/v0/documents', {
+      body: { ...VALID_DOCUMENT, patientId: OTHER_PATIENT },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('POST /documents/:id/supersede still answers when both charts are reachable', async () => {
+    const harness = createTestApp();
+    seed(harness.dataset, 'Document', makeDocumentRow());
+    seed(
+      harness.dataset,
+      'Document',
+      makeDocumentRow({ id: DOCUMENT_B, patientId: OTHER_PATIENT })
+    );
+    authorise(harness.dataset, PATIENT, OTHER_PATIENT);
+
+    const res = await call(harness.app, 'post', `/bff/v0/documents/${DOCUMENT_A}/supersede`, {
+      body: { supersededById: DOCUMENT_B },
+    });
+
+    expect(res.status).not.toBe(404);
+  });
+
+  /**
+   * The message's patient id narrows the launch compartment. The thread is
+   * still the authoritative parent for the staff care-relationship gate, so
+   * the transition asks about it too.
+   *
+   * The refusal is `No such patient.` and not the route's own `NO_MESSAGE`,
+   * because `assertCareRelationship` raises its own before the parent read's
+   * message is ever used. That is true of every gated door in this file and in
+   * `clinical.ts`, so it is consistent rather than particular - and the
+   * `NO_MESSAGE` argument still decides the OTHER refusal, the one where the
+   * thread row is genuinely absent.
+   *
+   * Asserted rather than described: my first version of this case claimed the
+   * refusal kept the message's subject, on the strength of the argument I had
+   * passed rather than on what came back.
+   */
+  it('POST /messages/:id/read is refused through the thread it hangs off', async () => {
+    const { app } = strangerApp();
+
+    const res = await call(app, 'post', `/bff/v0/messages/${MESSAGE_A}/read`, { body: {} });
+
+    expect(res.status).toBe(404);
+    expect((await problem(res)).detail).toBe('No such patient.');
+  });
+});
+
 /* ------------------------------------------------------- a service principal */
 
 const SERVICE_TOKEN = 'test-service-a';
@@ -2528,10 +2945,275 @@ const SERVICE_PRINCIPAL: Principal = {
   purposeOfUse: 'HOPERAT',
 };
 
+/**
+ * The relationship is seeded for the SERVICE subject rather than the clinician,
+ * because the service account is the caller here.
+ *
+ * Measured rather than assumed: on `dev` this principal already gets 404 from
+ * `GET /bff/v0/messages/threads/{id}`, which the generated read gates through
+ * `chartFrom`. So a service account posting into a thread it cannot read was
+ * the inconsistency, and gating the nested write removes it rather than raising
+ * a new question about machine accounts. What this case is about is that the
+ * message is attributed to the SYSTEM, which is orthogonal.
+ */
 function serviceApp(): Harness {
-  return createTestApp({
+  const harness = createTestApp({
     principalResolver: createStaticPrincipalResolver(
       new Map([...DEMO_PRINCIPALS, [SERVICE_TOKEN, SERVICE_PRINCIPAL]])
     ),
   });
+  seedCareRelationship(harness.dataset, {
+    patientId: PATIENT,
+    providerId: SERVICE_PRINCIPAL.subject,
+    as: 'appointment',
+    id: testId(8_960),
+  });
+  return harness;
 }
+
+/* ------------------------------------------- a row that names no chart (#336) */
+
+/**
+ * `gateCharts` skips a row whose chart column is null - `chartIdOf` answers
+ * `undefined` and the id never reaches `assertCareRelationship`. That is
+ * correct: a row naming no chart has no relationship to require, and refusing
+ * it would refuse a chart it could never have.
+ *
+ * The consequence is what #336 asked for and what nothing here said: "this
+ * route is gated" means "gated when the row names a chart", and on a nullable
+ * chart column that is a standing exemption on an axis no status and no state
+ * machine can rescue. `Task` and `MessageThread` are two of the six columns
+ * where it applies.
+ *
+ * These cases exist so the exemption is ASSERTED rather than discovered. The
+ * question the issue posed was not whether the product can produce such a row -
+ * it can, `POST /bff/v0/tasks` with no `patientId` is a 201 - but what protects
+ * one once it exists. Driven at `c636835`, the answer is the tenant and the
+ * permission and nothing else, and the third column is what makes that an
+ * exemption to write down rather than a hole to close: the same request from
+ * the other tenant is refused.
+ *
+ * Each door carries all three arms, because two of them alone cannot say which
+ * thing failed. A charted 404 with no chartless arm is a gate that might refuse
+ * everyone; a chartless 200 with no charted arm is a route that might admit
+ * everyone; and both without the cross-tenant arm cannot tell an exemption from
+ * an unscoped read.
+ */
+describe('the chart gate is inert on a row that names no chart, and bounded by the tenant', () => {
+  const CHARTLESS_TASK = testId(9_250);
+  const CHARTLESS_THREAD = testId(9_260);
+
+  /** Both rows seeded twice: naming PATIENT, and naming nobody. */
+  function exemptionApp(): Harness {
+    const harness = createTestApp();
+    const { dataset } = harness;
+    // Assigned elsewhere on purpose: `assigned-task` is a relationship source,
+    // so a task handed to CLINICIAN would authorise the caller and the charted
+    // arm would measure a reader who is in the chart. That is the mistake the
+    // stranger harness above records having made.
+    seed(dataset, 'Task', makeTaskRow({ assigneeUserId: OTHER_USER }));
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({ id: CHARTLESS_TASK, patientId: null, assigneeUserId: OTHER_USER })
+    );
+    seed(dataset, 'MessageThread', makeThreadRow());
+    seed(
+      dataset,
+      'MessageThread',
+      makeThreadRow({ id: CHARTLESS_THREAD, patientId: null, kind: 'STAFF' })
+    );
+    return harness;
+  }
+
+  const DOORS = [
+    ['GET /tasks/:id', 'get', (id: string) => `/bff/v0/tasks/${id}`, undefined],
+    ['POST /tasks/:id/complete', 'post', (id: string) => `/bff/v0/tasks/${id}/complete`, {}],
+    ['POST /tasks/:id/cancel', 'post', (id: string) => `/bff/v0/tasks/${id}/cancel`, {}],
+    [
+      'GET /messages/threads/:id',
+      'get',
+      (id: string) => `/bff/v0/messages/threads/${id}`,
+      undefined,
+    ],
+    [
+      'POST /messages/threads/:id/close',
+      'post',
+      (id: string) => `/bff/v0/messages/threads/${id}/close`,
+      {},
+    ],
+    [
+      'POST /messages/threads/:id/messages',
+      'post',
+      (id: string) => `/bff/v0/messages/threads/${id}/messages`,
+      { body: 'A reply.' },
+    ],
+  ] as const;
+
+  const chartlessIdFor = (label: string): string =>
+    label.includes('/tasks/') ? CHARTLESS_TASK : CHARTLESS_THREAD;
+  const chartedIdFor = (label: string): string => (label.includes('/tasks/') ? TASK_A : THREAD_A);
+
+  it.each(DOORS)(
+    '%s refuses a stranger on the row that NAMES a chart',
+    async (label, method, path, reqBody) => {
+      const { app } = exemptionApp();
+
+      const res = await call(app, method, path(chartedIdFor(label)), { body: reqBody });
+
+      expect(res.status).toBe(404);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s admits the same stranger on the row that names NONE - the exemption',
+    async (label, method, path, reqBody) => {
+      const { app } = exemptionApp();
+
+      const res = await call(app, method, path(chartlessIdFor(label)), { body: reqBody });
+
+      // Deliberately not `not.toBe(404)`. The point of the case is that the
+      // request SUCCEEDS - a 409 from a state machine would also satisfy a
+      // not-404 and would say nothing about the gate.
+      expect([200, 201]).toContain(res.status);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s still refuses the other tenant on the chartless row',
+    async (label, method, path, reqBody) => {
+      const { app } = exemptionApp();
+
+      const res = await call(app, method, path(chartlessIdFor(label)), {
+        token: TOKENS.clinicianB,
+        body: reqBody,
+      });
+
+      expect(res.status).toBe(404);
+    }
+  );
+});
+
+/**
+ * `messageThreadCreateSchema` refuses a `PATIENT` thread that names no chart.
+ * The patch schema carries `kind` and cannot carry `patientId`, so before this
+ * was gated one PATCH reached that state and reached it permanently - nothing
+ * on the patch schema could then supply the chart, and the row sat outside the
+ * gate above for the rest of its life while its own `kind` claimed to be chart
+ * data.
+ *
+ * BEFORE THIS CHANGE, `PATCH /bff/v0/messages/threads/{id}` with
+ * `{kind: 'PATIENT'}` on a thread whose `patientId` is null answered 200, and
+ * the row came back `kind` PATIENT with `patientId` null.
+ *
+ * The refusal is a 422 rather than a 409: it is the create schema's own
+ * invariant, reported in the same shape a create violating it gets, not a state
+ * transition the product knows about and refuses.
+ */
+describe('a patch cannot make a chartless thread claim to be a patient thread', () => {
+  const CHARTLESS_THREAD = testId(9_261);
+
+  function threadApp(): Harness {
+    const harness = createTestApp();
+    seed(harness.dataset, 'MessageThread', makeThreadRow());
+    seed(
+      harness.dataset,
+      'MessageThread',
+      makeThreadRow({ id: CHARTLESS_THREAD, patientId: null, kind: 'STAFF' })
+    );
+    return harness;
+  }
+
+  it('refuses kind PATIENT on a thread that names no chart', async () => {
+    const { app } = threadApp();
+
+    const res = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { kind: 'PATIENT' },
+    });
+
+    expect(res.status).toBe(422);
+    const problemDoc = await problem(res);
+    expect(problemDoc.detail).toBe('A patient thread must name the chart it belongs to.');
+    // The row did not move. A 422 says the REPLY was refused, not the write.
+    const after = await call(app, 'get', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`);
+    expect(await body<MessageThreadDto>(after)).toMatchObject({ kind: 'STAFF', patientId: null });
+  });
+
+  it('still allows every other patch on that same thread', async () => {
+    const { app } = threadApp();
+
+    const subject = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { subject: 'Rota cover for Friday' },
+    });
+    expect(subject.status).toBe(200);
+
+    const staff = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { kind: 'STAFF' },
+    });
+    expect(staff.status).toBe(200);
+  });
+
+  /**
+   * The premise the refusal rests on, asserted so it cannot stop being true
+   * quietly.
+   *
+   * Refusing `kind: 'PATIENT'` on a chartless row is the right answer only
+   * because the patch schema cannot carry `patientId` - the state is
+   * unreachable rather than merely unset, so there is nothing the caller could
+   * have sent instead. If `patientId` were added to `messageThreadPatchSchema`
+   * later, the guard would start refusing a patch that legitimately supplies
+   * the chart, and nothing above would notice: every case there would still
+   * pass. Raised in review.
+   *
+   * This inverts on its own. `messageThreadPatchSchema` is a `strictObject`, so
+   * an unknown key is a 422 today; adding the field turns this case red rather
+   * than leaving the guard silently wrong in the other direction.
+   */
+  it('rejects patientId on the patch schema, which is why refusing the kind is right', async () => {
+    const { app } = threadApp();
+
+    const res = await call(app, 'patch', `/bff/v0/messages/threads/${CHARTLESS_THREAD}`, {
+      body: { kind: 'PATIENT', patientId: PATIENT },
+    });
+
+    /* The status is NOT the half that inverts, and it looks like it is. Add
+       `patientId` to the schema and this still answers 422 - the row-aware
+       guard refuses `kind: 'PATIENT'` on a chartless row whatever the body
+       carried, so the status is satisfied by the mechanism this case exists to
+       stop relying on. Measured: under that mutation the failure is `expected
+       false to be true` here and nowhere else. The message assertion is the
+       whole case; deleting it as redundant leaves a case that cannot fail. */
+    expect(res.status).toBe(422);
+    // The path is the ROOT rather than the field: Zod reports an unrecognised
+    // key against the object, not against a key it has no schema for. So the
+    // assertion is on the message, which names it.
+    expect((await problem(res)).errors?.some((issue) => issue.message.includes('patientId'))).toBe(
+      true
+    );
+  });
+
+  /**
+   * The must-not-fire, and it is the one that separates "a chartless row was
+   * refused" from "the route stopped accepting `kind` at all". A thread that
+   * DOES name a chart may be moved to PATIENT by a caller in that chart.
+   */
+  it('allows kind PATIENT on a thread that already names a chart', async () => {
+    const harness = threadApp();
+    authorise(harness.dataset, PATIENT);
+    seed(
+      harness.dataset,
+      'MessageThread',
+      makeThreadRow({ id: testId(9_262), patientId: PATIENT, kind: 'STAFF' })
+    );
+
+    const res = await call(harness.app, 'patch', `/bff/v0/messages/threads/${testId(9_262)}`, {
+      body: { kind: 'PATIENT' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await body<MessageThreadDto>(res)).toMatchObject({
+      kind: 'PATIENT',
+      patientId: PATIENT,
+    });
+  });
+});

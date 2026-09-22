@@ -57,7 +57,19 @@ export const orders: Messages = {
   'orders.list.column.age': 'In this state',
   'orders.list.column.actions': 'Actions',
 
+  'orders.list.countOne': '{count} order',
+  'orders.list.countOther': '{count} orders',
+  'orders.list.windowOne':
+    '{count} of {total} orders. The rest are on pages this screen cannot reach.',
+  'orders.list.windowOther':
+    '{count} of {total} orders. The rest are on pages this screen cannot reach.',
+  'orders.list.notShownOne':
+    '{count} of the orders on this page is not listed, because this ledger has no word for its category, status or priority.',
+  'orders.list.notShownOther':
+    '{count} of the orders on this page are not listed, because this ledger has no word for their category, status or priority.',
+
   'orders.list.noDiagnosis': 'No diagnosis linked',
+  'orders.list.destinationNotRecorded': 'No destination yet',
   'orders.list.patientNotRecorded': 'Not recorded',
   'orders.list.openResult': 'Open result for {order}',
   'orders.list.retry': 'Retry {order}',
@@ -131,6 +143,10 @@ export const orders: Messages = {
      catalogue, so only the sentence around them is translated. */
   'orders.new.blocker.critical': '{warning}. Choose an override reason or remove the order.',
   'orders.new.blocker.noDiagnosis': '{order} has no diagnosis linked.',
+  'orders.new.blocker.notPermitted':
+    'Your role cannot sign orders. Pend them for a clinician to sign, or ask one to sign now.',
+  'orders.new.blocker.permissionUnknown':
+    'We could not confirm whether you may sign. Try again, or pend these orders.',
   'orders.new.blockers.heading': 'Before signing',
 
   'orders.new.review.headingOne': 'Review {count} order',

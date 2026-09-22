@@ -1,4 +1,6 @@
-import type { Translator } from '@openrunic/i18n';
+import type { CountedMessage, Translator } from '@openrunic/i18n';
+
+import { counted } from '@/lib/i18n/counted';
 
 import type { AgentEvent, AgentSource } from '@/lib/agent';
 
@@ -220,6 +222,27 @@ export function transcriptReducer(
 }
 
 /**
+ * The two announcements that carry a source count.
+ *
+ * Through `counted` rather than `count === 1`, for the reason the comment on
+ * {@link announcementFor} gives and then did not act on: one is not the only
+ * special case in every language, and a screen reader speaking the wrong form
+ * is the listener's only copy of the sentence. `counted` also puts the number
+ * through `formatCount`, so the digits are the listener's as well as the
+ * grammar - which is why the `one` messages carry `{count}` rather than a
+ * literal 1.
+ */
+const READY: CountedMessage = {
+  oneKey: 'assistant.announce.readyOne',
+  otherKey: 'assistant.announce.ready',
+};
+
+const STOPPED_PARTIAL: CountedMessage = {
+  oneKey: 'assistant.announce.stoppedPartialOne',
+  otherKey: 'assistant.announce.stoppedPartial',
+};
+
+/**
  * What the live region says.
  *
  * The transcript itself is not a live region. Marking the streaming prose live
@@ -248,10 +271,6 @@ export function announcementFor(t: Translator, state: TranscriptState): string {
   }
 
   const count = turn.sources.length;
-  if (turn.outcome === 'stopped') {
-    return count === 1
-      ? t('assistant.announce.stoppedPartialOne')
-      : t('assistant.announce.stoppedPartial', { count });
-  }
-  return count === 1 ? t('assistant.announce.readyOne') : t('assistant.announce.ready', { count });
+  if (turn.outcome === 'stopped') return counted(t, STOPPED_PARTIAL, count);
+  return counted(t, READY, count);
 }

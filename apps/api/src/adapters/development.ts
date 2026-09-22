@@ -1,12 +1,13 @@
-import { AdapterRegistry, MockVideoAdapter } from '@openrunic/adapters';
+import { AdapterRegistry, MockErxAdapter, MockVideoAdapter } from '@openrunic/adapters';
 
 /**
  * The partner seams a development run gets for free.
  *
- * One in-process telehealth vendor, which issues join links at a host that can
- * never resolve. That is the point: a developer can open a visit, let two
- * people in and end it without an account anywhere, and a link that escapes a
- * fixture goes nowhere.
+ * In-process telehealth and prescribing vendors let a developer exercise both
+ * seams without an account anywhere. Video issues join links at a host that
+ * can never resolve, so a link that escapes a fixture goes nowhere. The eRx
+ * practice is deliberately not enrolled for controlled substances: ordinary
+ * prescriptions can travel while the enrolment refusal remains exercisable.
  *
  * `assertProductionWiring` refuses this default under NODE_ENV=production, for
  * the same reason it refuses the demo token table. Nothing about a mock vendor
@@ -30,6 +31,15 @@ import { AdapterRegistry, MockVideoAdapter } from '@openrunic/adapters';
 export function createDevelopmentAdapters(): AdapterRegistry {
   const registry = new AdapterRegistry();
   const video = new MockVideoAdapter();
+  const erx = new MockErxAdapter();
+  const dependencies = {
+    now: () => new Date(),
+    // Fixed placeholders, because the mocks never call anything. Real vendor
+    // references are resolved from the deployment's secret store.
+    resolveSecret: () => Promise.resolve('development'),
+    emit: () => undefined,
+    log: () => undefined,
+  };
 
   video
     .init(
@@ -41,15 +51,7 @@ export function createDevelopmentAdapters(): AdapterRegistry {
         region: 'local',
         maxParticipants: 8,
       },
-      {
-        now: () => new Date(),
-        // A fixed placeholder, because the mock never calls anything. A real
-        // vendor's reference is resolved from the deployment's secret store,
-        // and that wiring belongs with the vendor rather than here.
-        resolveSecret: () => Promise.resolve('development'),
-        emit: () => undefined,
-        log: () => undefined,
-      }
+      dependencies
     )
     .catch((error: unknown) => {
       // Cannot happen with a literal config and no I/O, and is reported rather
@@ -58,6 +60,19 @@ export function createDevelopmentAdapters(): AdapterRegistry {
       console.error('openrunic: the development telehealth adapter failed to initialise', error);
     });
 
+  const erxConfig = {
+    vendorId: erx.descriptor.vendorId,
+    environment: 'sandbox' as const,
+    credentialRef: 'development',
+    timeoutMs: 10_000,
+    networkAccountId: 'development',
+    epcs: false,
+  };
+  erx.init(erxConfig, dependencies).catch((error: unknown) => {
+    console.error('openrunic: the development prescribing adapter failed to initialise', error);
+  });
+
   registry.register('video', video);
+  registry.register('erx', erx, { config: erxConfig });
   return registry;
 }

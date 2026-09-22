@@ -289,9 +289,16 @@ function toPrincipal(
   if (actorType === null) return null;
 
   const scopes = [...new Set([...toStringArray(claims.scope), ...toStringArray(claims.scopes)])];
+  const roles = toStringArray(claims[resolved.roles]);
 
   const compartment = decideCompartment(claims[resolved.patient], scopes);
   if (compartment.kind === 'unusable') return null;
+  if (
+    compartment.kind !== 'confined' &&
+    (actorType === 'patient' || roles.includes('patient-portal'))
+  ) {
+    return null;
+  }
 
   const displayName = stringClaim(claims[resolved.displayName]);
 
@@ -300,7 +307,7 @@ function toPrincipal(
     tenantId,
     actorType,
     ...(displayName === null ? {} : { displayName }),
-    roles: toStringArray(claims[resolved.roles]),
+    roles,
     facilityIds: toStringArray(claims[resolved.facilityIds]),
     scopes,
     ...(compartment.kind === 'confined' ? { compartmentPatientId: compartment.patientId } : {}),

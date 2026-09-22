@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from './client.js';
 import type { PrismaClient } from './generated/prisma/client.js';
@@ -57,6 +57,11 @@ const TENANT_B = '01924f00-0000-7000-8000-00000000000b';
 const PATIENT_A = '01924f00-0000-7000-8000-0000000000a1';
 const PATIENT_B = '01924f00-0000-7000-8000-0000000000b1';
 const UNKNOWN_TENANT = '01924f00-0000-7000-8000-0000000000ff';
+/** A member of staff in tenant A, for the break-glass write door below. */
+const READER_A = '01924f00-0000-7000-8000-0000000000c1';
+const SECOND_READER_A = '01924f00-0000-7000-8000-0000000000c2';
+/** A second chart in tenant A, so "a different chart" is a case that exists. */
+const SECOND_PATIENT_A = '01924f00-0000-7000-8000-0000000000a2';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../prisma/migrations', import.meta.url));
 
@@ -131,6 +136,8 @@ describe.skipIf(ADMIN_URL === '')('row-level security, against a real database',
   const appRole = `openrunic_rls_app_${suffix}`;
 
   let fixture: Fixture | undefined;
+  /** The application role's connection string, for a case that needs a second one. */
+  let appUrl = '';
 
   /** Narrows the fixture once, so no assertion in this file needs a `!`. */
   function db(): Fixture {
@@ -195,13 +202,30 @@ describe.skipIf(ADMIN_URL === '')('row-level security, against a real database',
       await owner.query('COMMIT');
     }
 
-    const app = new Client({ connectionString: urlFor(appRole, appPassword, database) });
+    // Two readers in tenant A. `BreakGlassGrant.userId` is a foreign key to
+    // `User`, so the write door below has nothing to insert without them.
+    await owner.query('BEGIN');
+    await owner.query('SELECT set_config($1, $2, true)', [TENANT_SETTING, TENANT_A]);
+    for (const [reader, email] of [
+      [READER_A, 'reader.one@clinic.invalid'],
+      [SECOND_READER_A, 'reader.two@clinic.invalid'],
+    ] as const) {
+      await owner.query(
+        `INSERT INTO "User" ("id", "tenantId", "email", "givenName", "familyName", "updatedAt")
+           VALUES ($1, $2, $3, 'Testy', 'Readerson', now())`,
+        [reader, TENANT_A, email]
+      );
+    }
+    await owner.query('COMMIT');
+
+    appUrl = urlFor(appRole, appPassword, database);
+    const app = new Client({ connectionString: appUrl });
     await app.connect();
 
     fixture = {
       owner,
       app,
-      prisma: createPrismaClient({ datasourceUrl: urlFor(appRole, appPassword, database) }),
+      prisma: createPrismaClient({ datasourceUrl: appUrl }),
     };
   }, 180_000);
 
@@ -693,6 +717,286 @@ describe.skipIf(ADMIN_URL === '')('row-level security, against a real database',
           tx.patient.updateMany({ where: { id: PATIENT_B }, data: { familyName: 'Rewritten' } })
         )
       ).resolves.toEqual({ count: 0 });
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* How a unique violation reaches the application.                          */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The premise the API's conflict mapping rests on, asserted where it is true.
+   *
+   * `apps/api` enforces a spec's natural key by reading inside the create's
+   * transaction and then inserting, which under READ COMMITTED is
+   * check-then-write: two connections both find no clash, both pass, and the
+   * table's unique index decides. The loser's error is what the API has to
+   * recognise, and it recognises it by `error.code === 'P2002'` - deliberately
+   * duck-typed, because Prisma's error classes are identities in one copy of
+   * its runtime and a build resolving two makes `instanceof` answer false for
+   * exactly the error being asked about.
+   *
+   * That leaves one fact no unit test can supply: whether Postgres really
+   * raises this for a real unique index and whether Prisma really spells it
+   * that way. A fake port asserting `P2002` would be asserting its own fixture.
+   * So it is asserted here, through the same client the application uses, and
+   * both under contention and without it - a raced duplicate and a sequential
+   * one are the same violation, and the mapping would be wrong if only one of
+   * them carried the code.
+   */
+  describe('a unique violation, as the application client reports it', () => {
+    /** Seeded by the fixture, so this address is already taken in tenant A. */
+    const TAKEN = 'reader.one@clinic.invalid';
+    /** Free at the start of every case here, and contested inside one of them. */
+    const CONTESTED = 'contested.reader@clinic.invalid';
+
+    function newUser(email: string): Record<string, unknown> {
+      return {
+        id: randomUUID(),
+        tenantId: TENANT_A,
+        email,
+        givenName: 'Testy',
+        familyName: 'Readerson',
+      };
+    }
+
+    function create(client: PrismaClient, email: string): Promise<unknown> {
+      return withTenantSession(client, { tenantId: TENANT_A }, (tx) =>
+        tx.user.create({ data: newUser(email) as never })
+      );
+    }
+
+    /*
+     * This block removes the rows it writes rather than leaving them for the
+     * fixture teardown. Nothing else here counts users today, and a row seeded
+     * for everybody is how an unrelated assertion goes red for a reason that
+     * has nothing to do with what it asserts.
+     */
+    afterEach(async () => {
+      await asTenant(db().owner, TENANT_A, 'DELETE FROM "User" WHERE "email" = $1', [CONTESTED]);
+    });
+
+    it('is reported as P2002 when the key is already taken', async () => {
+      await expect(create(db().prisma, TAKEN)).rejects.toMatchObject({ code: 'P2002' });
+    });
+
+    it('is reported as P2002 by the loser of a genuine race, and there is exactly one loser', async () => {
+      /*
+       * Two clients, so two connections, so a real race rather than two awaits
+       * on one. Both transactions insert the same key; the index admits one
+       * and refuses the other, and which one is not decided here.
+       *
+       * The assertion that matters is the shape: one fulfilled, one rejected,
+       * and the rejection carrying the code the API keys on. Asserting only
+       * that one of them failed would pass just as well if Postgres had
+       * reported a deadlock or a serialization failure, which the API does
+       * not map and must not.
+       */
+      const contender = createPrismaClient({ datasourceUrl: appUrl });
+      try {
+        const results = await Promise.allSettled([
+          create(db().prisma, CONTESTED),
+          create(contender, CONTESTED),
+        ]);
+
+        expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+        const loser = results.find((result) => result.status === 'rejected');
+        expect(loser?.reason).toMatchObject({ code: 'P2002' });
+      } finally {
+        await contender.$disconnect();
+      }
+    });
+
+    it('leaves exactly one row behind, which is the point of the index', async () => {
+      const contender = createPrismaClient({ datasourceUrl: appUrl });
+      try {
+        await Promise.allSettled([create(db().prisma, CONTESTED), create(contender, CONTESTED)]);
+
+        const { rows } = await asTenant<{ count: string }>(
+          db().app,
+          TENANT_A,
+          'SELECT count(*)::text AS count FROM "User" WHERE "email" = $1',
+          [CONTESTED]
+        );
+
+        // The half a "one of them failed" assertion cannot see: a race that
+        // refused both, or admitted both, would still have produced one
+        // rejection somewhere in a longer run.
+        expect(rows[0]?.count).toBe('1');
+      } finally {
+        await contender.$disconnect();
+      }
+    });
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* The break-glass write door.                                             */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The bounds on emergency access, checked where they are actually enforced.
+   *
+   * These are not row-level security, and they are here because this fixture is
+   * the only place in the repository that replays the committed migration SQL
+   * against a real server. `break_glass_ceiling` is plpgsql: it takes an
+   * advisory lock and refuses under it, and no unit test with a fake port can
+   * say whether the SQL that will be applied to production does either. The
+   * assertions that matter most are the concurrent ones, and they need two real
+   * connections - which is exactly what a suite built on a live database has
+   * and nothing else here does.
+   *
+   * The API keeps its own copy of these bounds so it can refuse readably, and
+   * `apps/api` asserts that copy. This asserts the one that is true.
+   */
+  describe('the break-glass write door, against a real database', () => {
+    /** A fresh connection as the application role, for the concurrent cases. */
+    async function secondConnection(): Promise<Client> {
+      const client = new Client({ connectionString: appUrl });
+      await client.connect();
+      return client;
+    }
+
+    async function declare(
+      client: Client,
+      reader: string,
+      patient: string,
+      minutes = 60
+    ): Promise<{ rows: { id: string }[]; rowCount: number }> {
+      return asTenant<{ id: string }>(
+        client,
+        TENANT_A,
+        `INSERT INTO "BreakGlassGrant"
+           ("id", "tenantId", "userId", "patientId", "reason", "grantedAt", "expiresAt", "updatedAt")
+         VALUES (gen_random_uuid(), $1, $2, $3, 'Collapsed in reception.', now(),
+                 now() + make_interval(mins => $4::int), now())
+         RETURNING "id"`,
+        [TENANT_A, reader, patient, minutes]
+      );
+    }
+
+    /*
+     * This block builds and removes its own second chart rather than adding one
+     * to the fixture.
+     *
+     * Five assertions above count the patients in a tenant, and a row seeded
+     * once for everybody turned all five red - each of them correct, and each
+     * failing for a reason that had nothing to do with what it asserts. A
+     * fixture shared by a whole file is not free to grow.
+     */
+    beforeEach(async () => {
+      // Each case starts from an empty table. The bounds count rows, so a case
+      // that inherited the previous one's grants would pass or fail for a
+      // reason that has nothing to do with what it asserts.
+      await asTenant(db().owner, TENANT_A, 'DELETE FROM "BreakGlassGrant"');
+      await asTenant(
+        db().owner,
+        TENANT_A,
+        `INSERT INTO "Patient"
+           ("id", "tenantId", "mrn", "givenName", "familyName", "birthDate", "updatedAt")
+           VALUES ($1, $2, 'OR-100483', 'Testolina', 'Patientsson', DATE '1988-11-19', now())`,
+        [SECOND_PATIENT_A, TENANT_A]
+      );
+    });
+
+    afterEach(async () => {
+      await asTenant(db().owner, TENANT_A, 'DELETE FROM "BreakGlassGrant"');
+      await asTenant(db().owner, TENANT_A, 'DELETE FROM "Patient" WHERE "id" = $1', [
+        SECOND_PATIENT_A,
+      ]);
+    });
+
+    it('files a first declaration', async () => {
+      /* The control. Every refusal below passes for a table nobody can write. */
+      const { rowCount } = await declare(db().app, READER_A, PATIENT_A);
+
+      expect(rowCount).toBe(1);
+    });
+
+    it('refuses a second unexpired declaration for the same chart', async () => {
+      await declare(db().app, READER_A, PATIENT_A);
+
+      await expect(declare(db().app, READER_A, PATIENT_A)).rejects.toMatchObject({
+        // `unique_violation`: at most one unexpired grant per reader per chart.
+        code: '23505',
+      });
+    });
+
+    it('files one row, not two, when the same chart is declared on two connections at once', async () => {
+      /*
+       * The race the handler cannot close on its own, and the reason this
+       * refusal is in the trigger rather than only in the application.
+       *
+       * Both statements are in flight before either commits. Under READ
+       * COMMITTED neither transaction can see the other's uncommitted row, so
+       * an existence check outside the lock passes in both. The advisory lock
+       * the trigger takes on (tenant, user) is what serialises them.
+       */
+      const other = await secondConnection();
+      try {
+        const results = await Promise.allSettled([
+          declare(db().app, READER_A, PATIENT_A),
+          declare(other, READER_A, PATIENT_A),
+        ]);
+
+        expect(results.map((result) => result.status).toSorted()).toEqual([
+          'fulfilled',
+          'rejected',
+        ]);
+        const { rows } = await asTenant<{ count: string }>(
+          db().app,
+          TENANT_A,
+          'SELECT count(*)::text AS count FROM "BreakGlassGrant"'
+        );
+        expect(rows[0]?.count).toBe('1');
+      } finally {
+        await other.end();
+      }
+    });
+
+    it('lets a second reader declare on the same chart', async () => {
+      /*
+       * The bound is per reader, not per chart. Two clinicians reaching the
+       * same emergency is the situation this route exists for, and a refusal
+       * here would be the control failing closed on the case it was built to
+       * serve.
+       */
+      await declare(db().app, READER_A, PATIENT_A);
+
+      await expect(declare(db().app, SECOND_READER_A, PATIENT_A)).resolves.toMatchObject({
+        rowCount: 1,
+      });
+    });
+
+    it('lets the same reader declare on a different chart', async () => {
+      /*
+       * The other half of "per reader per chart". One clinician walking a bad
+       * afternoon is what the ceiling and the rolling bound are for; refusing
+       * the second chart here would be this refusal doing their job badly.
+       */
+      await declare(db().app, READER_A, PATIENT_A);
+
+      await expect(declare(db().app, READER_A, SECOND_PATIENT_A)).resolves.toMatchObject({
+        rowCount: 1,
+      });
+    });
+
+    it('lets a reader re-declare once the first window has closed', async () => {
+      /*
+       * "Unexpired" has to mean unexpired. A refusal that outlived the window
+       * would turn a short grant into a lockout on the one chart a clinician
+       * has already been trusted with, and the window is deliberately short.
+       */
+      await asTenant(
+        db().app,
+        TENANT_A,
+        `INSERT INTO "BreakGlassGrant"
+           ("id", "tenantId", "userId", "patientId", "reason", "grantedAt", "expiresAt", "updatedAt")
+         VALUES (gen_random_uuid(), $1, $2, $3, 'Earlier today.',
+                 now() - interval '2 hours', now() - interval '1 hour', now())`,
+        [TENANT_A, READER_A, PATIENT_A]
+      );
+
+      await expect(declare(db().app, READER_A, PATIENT_A)).resolves.toMatchObject({ rowCount: 1 });
     });
   });
 });

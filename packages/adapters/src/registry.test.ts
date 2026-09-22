@@ -374,3 +374,120 @@ describe('call records never carry a payload', () => {
     expect(records[0]?.capability).toBe('labs');
   });
 });
+
+/**
+ * Entitlement is a different question from capability, and the registry is the
+ * only place that can answer it.
+ *
+ * A descriptor says what a VENDOR offers; `supportsFeature` reads it and is
+ * unchanged. Some of those features are also something the practice holds
+ * separately - the eRx contract says so of `epcs` in as many words - and that
+ * fact arrives with the configuration, which the registry keeps and never hands
+ * out. A route asking whether this deployment may prescribe a controlled
+ * substance has to ask both, and could previously ask only the first.
+ */
+describe('installation entitlements', () => {
+  it('answers for a capability registered with its configuration', () => {
+    const registry = new AdapterRegistry();
+    expectOk(registry.register('erx', new MockErxAdapter(), { config: MOCK_CONFIGS.erx }));
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(true);
+  });
+
+  it('answers false when the configuration records the entitlement as withheld', () => {
+    // The state the whole feature exists for: a vendor that offers controlled
+    // substances, and a practice that is not enrolled for them.
+    const registry = new AdapterRegistry();
+    expectOk(
+      registry.register('erx', new MockErxAdapter(), {
+        config: { ...MOCK_CONFIGS.erx, epcs: false },
+      })
+    );
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(false);
+    expect(
+      registry.descriptors()[0]?.supports.includes('epcs'),
+      'the vendor still declares the feature, which is the point of asking twice'
+    ).toBe(true);
+  });
+
+  it('answers false for a capability registered without a configuration', () => {
+    /*
+     * The one that must never be relaxed. `config` is optional because every
+     * caller written before it existed omits it, so "forgot to pass it" and
+     * "chose not to enrol" have to arrive at the same answer - a refusal
+     * somebody reports rather than a transmission nobody sees.
+     */
+    const registry = new AdapterRegistry();
+    expectOk(registry.register('erx', new MockErxAdapter()));
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(false);
+  });
+
+  it('answers false for a capability that was never registered', () => {
+    expect(new AdapterRegistry().entitledTo('erx', 'epcs')).toBe(false);
+  });
+
+  it('does not accept a vendor feature that is not an entitlement', () => {
+    /*
+     * A type-level case, and it is the only shape that can hold this one: the
+     * defect is a call that compiles and returns a well-formed `false` forever.
+     *
+     * `@ts-expect-error` is the assertion. If `entitledTo` widens back to
+     * `FeatureOf`, these calls compile, the directives become unused, and
+     * `run type-check` fails with TS2578 - so the mutation is red on the gate
+     * rather than green in the suite. `run type-check` is the command that sees
+     * this file; the package's default tsconfig excludes tests.
+     *
+     * `cancel` is not misspelt. It is spelled correctly, the vendor declares it,
+     * and the registry has nothing to say about it.
+     */
+    const registry = new AdapterRegistry();
+    expectOk(registry.register('erx', new MockErxAdapter(), { config: MOCK_CONFIGS.erx }));
+
+    // @ts-expect-error 'cancel' is a feature the vendor offers, not an entitlement this practice holds.
+    registry.entitledTo('erx', 'cancel');
+    // @ts-expect-error 'formulary' is likewise a vendor feature and not a configuration key.
+    registry.entitledTo('erx', 'formulary');
+    // @ts-expect-error labs records no entitlements at all, so EntitlementOf<'labs'> is never.
+    registry.entitledTo('labs', 'cancel');
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(true);
+  });
+
+  it('records nothing when the registration is refused', () => {
+    // Otherwise a rejected adapter leaves an entitlement behind for a
+    // capability the registry cannot perform at all.
+    const registry = new AdapterRegistry({ requiredVersions: { erx: '9.0.0' } });
+    expectErr(registry.register('erx', delegatingErx('1.0.0'), { config: MOCK_CONFIGS.erx }));
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(false);
+  });
+
+  it('forgets the entitlement when the adapter is unregistered', () => {
+    const registry = new AdapterRegistry();
+    expectOk(registry.register('erx', new MockErxAdapter(), { config: MOCK_CONFIGS.erx }));
+
+    expect(registry.unregister('erx')).toBe(true);
+
+    expect(registry.entitledTo('erx', 'epcs')).toBe(false);
+  });
+
+  it('keeps the configuration out of what a caller resolves', () => {
+    /*
+     * The reason this is a question the registry answers rather than a config a
+     * route reads. `ErxConfig` carries `credentialRef` and `networkAccountId`;
+     * the object a route holds is the descriptor and the contract's operations,
+     * and it stays that way.
+     */
+    const registry = new AdapterRegistry();
+    expectOk(registry.register('erx', new MockErxAdapter(), { config: MOCK_CONFIGS.erx }));
+
+    const resolved = expectOk(registry.resolve('erx'));
+    const exposed = JSON.stringify(resolved);
+
+    expect(Object.keys(resolved)).not.toContain('config');
+    expect(exposed).not.toContain(MOCK_CONFIGS.erx.credentialRef);
+    expect(exposed).not.toContain(MOCK_CONFIGS.erx.networkAccountId);
+  });
+});

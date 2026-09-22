@@ -53,13 +53,16 @@ function dueSentence(t: Translator, dueOn: string | null): string {
 function hasNothingToShow(home: HomeSummary): boolean {
   return (
     home.nextAppointment === null &&
-    home.balance.outstanding.amountMinor === 0 &&
+    home.balance.statementCount === 0 &&
     home.unreadMessages === 0 &&
     home.actionItems.length === 0
   );
 }
 
-function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointment | null }>) {
+function NextAppointmentCard({
+  appointment,
+  requestsSupported,
+}: Readonly<{ appointment: Appointment | null; requestsSupported: boolean }>) {
   const t = useTranslator();
   if (!appointment) {
     return (
@@ -68,11 +71,13 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
         title={t('portal.home.appointment.none')}
       >
         <p className="or-body">{t('portal.home.appointment.noneMessage')}</p>
-        <div className="portal-actions">
-          <Button href="/appointments" variant="secondary" iconLeft="calendar-plus">
-            {t('portal.home.appointment.request')}
-          </Button>
-        </div>
+        {requestsSupported ? (
+          <div className="portal-actions">
+            <Button href="/appointments" variant="secondary" iconLeft="calendar-plus">
+              {t('portal.home.appointment.request')}
+            </Button>
+          </div>
+        ) : null}
       </Card>
     );
   }
@@ -87,16 +92,16 @@ function NextAppointmentCard({ appointment }: Readonly<{ appointment: Appointmen
       <div className="portal-actions">
         {appointment.joinUrl ? (
           <Button href={appointment.joinUrl} iconLeft="video">
-            Join the video call
+            {t('portal.appointments.join')}
           </Button>
         ) : null}
         {appointment.directionsUrl ? (
           <Button href={appointment.directionsUrl} iconLeft="map-pin">
-            Get directions
+            {t('portal.appointments.directions')}
           </Button>
         ) : null}
         <Button href="/appointments" variant="secondary">
-          See all appointments
+          {t('portal.home.appointment.seeAll')}
         </Button>
       </div>
     </Card>
@@ -132,30 +137,37 @@ export function HomeScreen({ api = getPortalApi() }: Readonly<HomeScreenProps>) 
       >
         {(home) => (
           <div className="portal-stack">
-            <NextAppointmentCard appointment={home.nextAppointment} />
+            <NextAppointmentCard
+              appointment={home.nextAppointment}
+              requestsSupported={home.appointmentRequestsSupported !== false}
+            />
 
             <div className="portal-grid">
               <Card
                 overline={t('portal.home.balance.overline')}
                 title={t('portal.home.balance.title')}
               >
-                <p className="portal-figure">
-                  <Money value={home.balance.outstanding} showCode />
-                </p>
-                <p className="or-body">
-                  {home.balance.outstanding.amountMinor === 0
-                    ? t('portal.home.balance.nothing')
-                    : dueSentence(t, home.balance.dueOn)}
-                </p>
+                {home.balance.statementCount === 0 && (
+                  <p className="or-body">{t('portal.home.balance.nothing')}</p>
+                )}
+                {home.balance.statementCount !== 0 && home.balance.outstanding === null && (
+                  <p className="or-body">{t('portal.home.balance.multipleCurrencies')}</p>
+                )}
+                {home.balance.statementCount !== 0 && home.balance.outstanding !== null && (
+                  <>
+                    <p className="portal-figure">
+                      <Money value={home.balance.outstanding} showCode />
+                    </p>
+                    <p className="or-body">
+                      {home.balance.outstanding.amountMinor === 0
+                        ? t('portal.home.balance.nothing')
+                        : dueSentence(t, home.balance.dueOn)}
+                    </p>
+                  </>
+                )}
                 <div className="portal-actions">
-                  <Button
-                    href="/bills"
-                    variant={home.balance.outstanding.amountMinor === 0 ? 'secondary' : 'primary'}
-                    iconLeft="credit-card"
-                  >
-                    {home.balance.outstanding.amountMinor === 0
-                      ? t('portal.home.balance.seeBills')
-                      : t('portal.home.balance.pay')}
+                  <Button href="/bills" variant="secondary" iconLeft="credit-card">
+                    {t('portal.home.balance.seeBills')}
                   </Button>
                 </div>
               </Card>

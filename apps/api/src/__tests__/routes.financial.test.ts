@@ -289,6 +289,7 @@ function makeStatementRow(overrides: Partial<StatementRow> = {}): StatementRow {
     patientId: PATIENT_ID,
     status: 'DRAFT',
     balanceCents: 2_500,
+    currency: 'USD',
     dunningCycle: 0,
     lastNoticeAt: null,
     holdUntil: null,
@@ -612,6 +613,50 @@ describe('POST /bff/v0/coverage/:id/eligibility', () => {
       determination: 'local',
       serviceDate: '2026-06-15',
     });
+  });
+
+  it('stamps the determination with the clock the app was given', async () => {
+    /*
+     * The seam, proved by consuming it and by varying it.
+     *
+     * `CreateAppOptions.now` has been declared, defaulted and injected for as
+     * long as `fhirRoutes` has taken it, and no BFF router was ever passed it -
+     * so every handler under `/bff/v0` read the wall clock and no test could
+     * name the instant one of them stamped. The case below asserts eleven
+     * fields with `toMatchObject` and steps around this one, because before
+     * this there was nothing to assert.
+     *
+     * A clock supplied by the caller rather than the harness default, because
+     * `FIXED_NOW` alone would pass whether or not `createTestApp` respected
+     * what it was given - and until this change it did not: `now` sat after the
+     * spread and silently won. Measured rather than read: with the clock varied
+     * from `FIXED_NOW` to 2001, exactly one of the fourteen response fields
+     * moves, which is `determinedAt` and nothing else. That is what makes this
+     * the site the seam was proved on - `now` decides the stamp here and the
+     * four eligibility reasons turn on the service date and the row.
+     */
+    const WHEN = new Date('2001-02-03T04:05:06.000Z');
+    const { app, dataset } = createTestApp({ now: () => WHEN });
+    authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
+    seed(dataset, 'Coverage', makeCoverageRow());
+
+    const body = await json<EligibilityResult>(
+      await app.request(...check(testId(10), '2026-06-15'))
+    );
+
+    expect(body.determinedAt).toBe(WHEN.toISOString());
+    /* And the default still is the harness clock, so the line above is not
+       passing because a caller's clock is the only one that reaches here. */
+    const fallback = createTestApp();
+    authorise(fallback.dataset, PATIENT_ID, OTHER_PATIENT_ID);
+    seed(fallback.dataset, 'Coverage', makeCoverageRow());
+    expect(
+      (
+        await json<EligibilityResult>(
+          await fallback.app.request(...check(testId(10), '2026-06-15'))
+        )
+      ).determinedAt
+    ).toBe(FIXED_NOW.toISOString());
   });
 
   it('gives a reason for a cancelled policy, a draft one, and a date outside the window', async () => {
@@ -2139,6 +2184,26 @@ describe('audit', () => {
     });
   });
 
+  /**
+   * The write named by its action rather than by its position.
+   *
+   * A transition asks the chart gate, and asking it records a decision, so the
+   * domain event is no longer the first write on these routes. Indexing would
+   * make these assertions depend on how many decisions were recorded before the
+   * one they are about, which is not what any of them is testing.
+   */
+  function named(sink: ReturnType<typeof createTestApp>['sink'], action: string) {
+    const found = sink.writes().filter((entry) => entry.event.action === action);
+    expect(
+      found,
+      `no audit write named ${action}; saw ${sink
+        .writes()
+        .map((entry) => entry.event.action)
+        .join(', ')}`
+    ).toHaveLength(1);
+    return found[0];
+  }
+
   it('records a transition as a status move plus the history row it wrote', async () => {
     const { app, dataset, sink } = createTestApp();
     authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
@@ -2146,11 +2211,18 @@ describe('audit', () => {
 
     await app.request(...post(`/bff/v0/claims/${testId(30)}/submit`, TOKENS.billerA));
 
-    expect(sink.writes().map((entry) => entry.event.action)).toEqual([
-      'claim.updated',
-      'claimStatus.created',
-    ]);
-    expect(sink.writes()[0]?.event.metadata).toMatchObject({
+    // The DOMAIN writes, in order, with the access decision filtered out. A
+    // transition asks the care-relationship gate now (#322) and asking it
+    // records a `chart.access`, so the sequence this case is about is no longer
+    // the whole list and the move is no longer the first entry. The pair and
+    // their order is still what is asserted; what is dropped is a decision that
+    // belongs to a different test. Same repair as #320 and #327.
+    const domain = sink
+      .writes()
+      .map((entry) => entry.event.action)
+      .filter((action) => !action.startsWith('chart.access'));
+    expect(domain).toEqual(['claim.updated', 'claimStatus.created']);
+    expect(named(sink, 'claim.updated')?.event.metadata).toMatchObject({
       statusFrom: 'SCRUBBED',
       statusTo: 'SUBMITTED',
     });
@@ -2165,7 +2237,7 @@ describe('audit', () => {
       ...post(`/bff/v0/charges/${testId(20)}/void`, TOKENS.billerA, { voidReason: 'Duplicate.' })
     );
 
-    expect(sink.writes()[0]?.event).toMatchObject({
+    expect(named(sink, 'charge.updated')?.event).toMatchObject({
       action: 'charge.updated',
       targetType: 'ChargeItem',
       facilityId: DEMO_FACILITY_A,
@@ -3261,6 +3333,204 @@ describe('collections and dunning', () => {
 
 /* ----------------------------------------------------------------- contracts */
 
+/* ------------------------------- the chart gate on the hand-registered writes
+   ------------------------------- (#322) */
+
+/**
+ * Every route in this file that reads a chart-bearing parent by id, whatever it
+ * then does with it.
+ *
+ * The frame said "and WRITES to it" and that sentence is what missed
+ * `POST /coverage/{id}/eligibility` - a POST that READS, computing a
+ * determination and returning it with no update, under `coverage.read`. It
+ * hands back the payer, the plan and whether the policy answers for a date,
+ * which is a chart read however the verb is spelt. Raised in review, and the
+ * frame is corrected here rather than the one route added quietly, because the
+ * sentence is what will decide the next file.
+ *
+ * They are registered by hand rather than generated, so the CRUD seam's chart
+ * gate does not run on them. Driven on `dev` before the fix, as `billerA` with
+ * no relationship to the chart:
+ *
+ *   GET  /bff/v0/claims/{id}          404      the generated read IS gated
+ *   POST /bff/v0/claims/{id}/scrub    200
+ *   POST /bff/v0/payments/{id}/void   200
+ *   POST /bff/v0/charges/{id}/void    200
+ *   POST /bff/v0/statements/{id}/hold 200
+ *
+ * with the positive control - the same reader, the same rows, a relationship
+ * seeded - at 200 on the read. So the 404 is the care gate and not an unseeded
+ * row, and the asymmetry is the finding. `remittances` is deliberately absent:
+ * `Remittance` carries no `patientColumn`, and #306 already answers it by
+ * gating the claims its lines name.
+ *
+ * WHAT THE HARNESS INSTRUMENT DOES NOT SAY HERE, and it is worth writing down.
+ * On `orders` the transition describe seeded no relationship at all and sixteen
+ * cases went red the moment the gate landed. This file seeds one in every
+ * transition describe - 87 call sites - so the gate turned only two audit
+ * assertions red, and both for the ordering reason rather than the
+ * authorisation one. Reading what the harness never seeds would NOT have found
+ * this file. It had to be driven.
+ *
+ * Each door is seeded in a state its transition is legal from, so a 409 can
+ * never be mistaken for a refusal, and each gets its own reachable control.
+ */
+describe('a financial write on a chart is not a way round the gate', () => {
+  const STRANGER_CHART = testId(4_000);
+
+  interface Door {
+    readonly door: string;
+    readonly seedIt: (dataset: Parameters<typeof seed>[0]) => void;
+    readonly path: string;
+    readonly body?: unknown;
+  }
+
+  const DOORS: readonly Door[] = [
+    {
+      door: 'POST /claims/:id/scrub',
+      seedIt: (d) =>
+        seed(d, 'Claim', makeClaimRow({ id: testId(4_010), patientId: STRANGER_CHART })),
+      path: `/bff/v0/claims/${testId(4_010)}/scrub`,
+    },
+    {
+      door: 'POST /claims/:id/submit',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Claim',
+          makeClaimRow({ id: testId(4_011), patientId: STRANGER_CHART, status: 'SCRUBBED' })
+        ),
+      path: `/bff/v0/claims/${testId(4_011)}/submit`,
+    },
+    {
+      door: 'POST /claims/:id/status',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Claim',
+          makeClaimRow({ id: testId(4_012), patientId: STRANGER_CHART, status: 'SUBMITTED' })
+        ),
+      path: `/bff/v0/claims/${testId(4_012)}/status`,
+      body: { status: 'ACKNOWLEDGED', source: '277' },
+    },
+    {
+      door: 'POST /payments/:id/post',
+      seedIt: (d) =>
+        seed(d, 'Payment', makePaymentRow({ id: testId(4_020), patientId: STRANGER_CHART })),
+      path: `/bff/v0/payments/${testId(4_020)}/post`,
+    },
+    {
+      door: 'POST /payments/:id/void',
+      seedIt: (d) =>
+        seed(d, 'Payment', makePaymentRow({ id: testId(4_021), patientId: STRANGER_CHART })),
+      path: `/bff/v0/payments/${testId(4_021)}/void`,
+    },
+    {
+      door: 'POST /payments/:id/refund',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Payment',
+          makePaymentRow({ id: testId(4_022), patientId: STRANGER_CHART, status: 'POSTED' })
+        ),
+      path: `/bff/v0/payments/${testId(4_022)}/refund`,
+    },
+    {
+      door: 'POST /coverage/:id/eligibility',
+      seedIt: (d) =>
+        seed(d, 'Coverage', makeCoverageRow({ id: testId(4_050), patientId: STRANGER_CHART })),
+      path: `/bff/v0/coverage/${testId(4_050)}/eligibility`,
+      body: { serviceDate: '2026-08-01' },
+    },
+    {
+      door: 'POST /charges/:id/void',
+      seedIt: (d) =>
+        seed(d, 'ChargeItem', makeChargeRow({ id: testId(4_030), patientId: STRANGER_CHART })),
+      path: `/bff/v0/charges/${testId(4_030)}/void`,
+      body: { voidReason: 'Duplicate.' },
+    },
+    {
+      door: 'POST /statements/:id/generate',
+      seedIt: (d) =>
+        seed(d, 'Statement', makeStatementRow({ id: testId(4_040), patientId: STRANGER_CHART })),
+      path: `/bff/v0/statements/${testId(4_040)}/generate`,
+    },
+    {
+      door: 'POST /statements/:id/send',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Statement',
+          makeStatementRow({ id: testId(4_041), patientId: STRANGER_CHART, status: 'GENERATED' })
+        ),
+      path: `/bff/v0/statements/${testId(4_041)}/send`,
+      body: { deliveredVia: 'EMAIL' },
+    },
+    {
+      door: 'POST /statements/:id/notice',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Statement',
+          makeStatementRow({ id: testId(4_042), patientId: STRANGER_CHART, status: 'SENT' })
+        ),
+      path: `/bff/v0/statements/${testId(4_042)}/notice`,
+      body: { deliveredVia: 'EMAIL' },
+    },
+    {
+      door: 'POST /statements/:id/hold',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Statement',
+          makeStatementRow({ id: testId(4_043), patientId: STRANGER_CHART, status: 'SENT' })
+        ),
+      path: `/bff/v0/statements/${testId(4_043)}/hold`,
+      body: { reason: 'Disputed by the patient.', until: '2026-12-01T00:00:00.000Z' },
+    },
+    {
+      door: 'POST /statements/:id/write-off',
+      seedIt: (d) =>
+        seed(
+          d,
+          'Statement',
+          makeStatementRow({ id: testId(4_044), patientId: STRANGER_CHART, status: 'SENT' })
+        ),
+      path: `/bff/v0/statements/${testId(4_044)}/write-off`,
+      body: { reason: 'Uncollectable after three notices.' },
+    },
+  ];
+
+  it.each(DOORS.map((d) => [d.door, d] as const))(
+    '%s is refused on a chart nothing connects the writer to',
+    async (_label, door) => {
+      const { app, dataset } = createTestApp();
+      door.seedIt(dataset);
+
+      // 404 and not 403, the same as every read: a 403 confirms the row exists
+      // to somebody who may not see it.
+      const res = await app.request(...post(door.path, TOKENS.billerA, door.body));
+      expect(res.status).toBe(404);
+      expect((await json<ProblemDocument>(res)).detail).toBe('No such patient.');
+    }
+  );
+
+  it.each(DOORS.map((d) => [d.door, d] as const))(
+    '%s still answers a writer who is in that patient care',
+    async (_label, door) => {
+      const { app, dataset } = createTestApp();
+      authorise(dataset, STRANGER_CHART);
+      door.seedIt(dataset);
+
+      // A real 200, not merely "not 404": every door is seeded in a state its
+      // transition is legal from, so a 409 here would mean the state machine
+      // had taken the route out of the product while the pair still read as the
+      // gate working.
+      expect((await app.request(...post(door.path, TOKENS.billerA, door.body))).status).toBe(200);
+    }
+  );
+});
+
 describe('financialRouteContracts', () => {
   it('publishes exactly the endpoints this module mounts', () => {
     const inventory = financialRouteContracts()
@@ -3381,5 +3651,105 @@ describe('the claim status filter', () => {
   it('leaves the clause out when neither is given', () => {
     expect(financialSpecs.claims.where({ ...paged })).toEqual({});
     expect(financialSpecs.claims.matches(claim('PAID'), { ...paged })).toBe(true);
+  });
+});
+
+/* ------------------------------------------- a payment that names no chart (#336) */
+
+/**
+ * `Payment.patientId` is nullable and this is the state it is nullable FOR: a
+ * payer remittance arrives against a payer, and `paymentCreateInput` refines
+ * `patientId !== undefined || payerId !== undefined` rather than requiring the
+ * chart. The chart attaches at ALLOCATION, not at receipt.
+ *
+ * `gateCharts` skips a row whose chart column is null, so every gated payment
+ * door is inert on such a row - see the note on `gateCharts` itself, which is
+ * where this exemption is stated. These cases are what make it an assertion
+ * rather than a thing the next person discovers while writing a fixture, and
+ * they are here rather than in `routes.orders.test.ts` because the payment
+ * fixtures are here.
+ *
+ * All three arms per door, deliberately. A charted refusal alone cannot tell a
+ * working gate from a route that refuses everybody, a chartless success alone
+ * cannot tell an exemption from an ungated route, and neither says whether the
+ * exemption stops at the tenant. Driven at c636835: 404 / success / 404.
+ */
+describe('the chart gate is inert on a payment that names no chart, and bounded by the tenant', () => {
+  const CHARTLESS_PAYMENT = testId(9_270);
+
+  function exemptionApp(): ReturnType<typeof createTestApp> {
+    const harness = createTestApp();
+    seed(
+      harness.dataset,
+      'Payment',
+      makePaymentRow(),
+      makePaymentRow({
+        id: CHARTLESS_PAYMENT,
+        patientId: null,
+        payerId: PAYER_ID,
+        source: 'PAYER_ERA',
+      })
+    );
+    return harness;
+  }
+
+  const DOORS = [
+    ['GET /payments/:id', 'GET', (id: string) => `/bff/v0/payments/${id}`, undefined],
+    ['POST /payments/:id/post', 'POST', (id: string) => `/bff/v0/payments/${id}/post`, {}],
+    ['POST /payments/:id/void', 'POST', (id: string) => `/bff/v0/payments/${id}/void`, {}],
+  ] as const;
+
+  async function drive(
+    id: string,
+    token: string,
+    method: string,
+    path: (id: string) => string,
+    reqBody: unknown
+  ): Promise<number> {
+    const { app } = exemptionApp();
+    if (method === 'GET') return (await app.request(path(id), { headers: bearer(token) })).status;
+    return (await app.request(...post(path(id), token, reqBody))).status;
+  }
+
+  it.each(DOORS)(
+    '%s refuses a biller with no relationship on the payment that NAMES a chart',
+    async (_label, method, path, reqBody) => {
+      expect(await drive(testId(50), TOKENS.billerA, method, path, reqBody)).toBe(404);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s admits the same biller on the payment that names NONE - the exemption',
+    async (_label, method, path, reqBody) => {
+      // 200 rather than `not.toBe(404)`: a 409 from the payment state machine
+      // would satisfy a not-404 and would say nothing about the chart gate.
+      expect(await drive(CHARTLESS_PAYMENT, TOKENS.billerA, method, path, reqBody)).toBe(200);
+    }
+  );
+
+  it.each(DOORS)(
+    '%s still refuses the other tenant on the chartless payment',
+    async (_label, method, path, reqBody) => {
+      expect(await drive(CHARTLESS_PAYMENT, TOKENS.adminB, method, path, reqBody)).toBe(404);
+    }
+  );
+
+  /**
+   * The one door on this row that a chart gate still holds, and the reason the
+   * exemption above is not an escalation: a patch naming a chart is gated on
+   * the chart it NAMES (#421), not only on the one the row is already in. So a
+   * caller who reaches a chartless payment cannot use it to write into a chart
+   * they have no relationship with.
+   */
+  it('refuses a patch that attaches a chart the caller cannot read', async () => {
+    const { app } = exemptionApp();
+
+    const res = await app.request(
+      ...patch(`/bff/v0/payments/${CHARTLESS_PAYMENT}`, TOKENS.billerA, {
+        patientId: OTHER_PATIENT_ID,
+      })
+    );
+
+    expect(res.status).toBe(404);
   });
 });

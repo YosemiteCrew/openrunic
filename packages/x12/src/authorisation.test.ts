@@ -413,11 +413,13 @@ describe('a response with fields the payer left out or wrote badly', () => {
   }
 
   it('ignores a quantity that is not a number rather than reading it as zero', () => {
-    const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', 'HSD*VS*not-a-number'));
-    const [answer] = result.ok ? result.value : [];
+    for (const value of ['not-a-number', '3oops']) {
+      const result = decode278(response('TRN*2*TRACE-1*1', 'HCR*A1', `HSD*VS*${value}`));
+      const [answer] = result.ok ? result.value : [];
 
-    expect(answer?.certifiedUnit).toBe('VS');
-    expect(answer?.certifiedQuantity).toBeUndefined();
+      expect(answer?.certifiedUnit).toBe('VS');
+      expect(answer?.certifiedQuantity).toBeUndefined();
+    }
   });
 
   it('reads an RD8 span whose second half is missing as an open one', () => {

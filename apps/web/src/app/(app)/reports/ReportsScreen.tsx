@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import { Badge, Button, Card, Input, Select, Table } from '@openrunic/ui';
 import type { TableColumn } from '@openrunic/ui';
@@ -417,8 +418,8 @@ export function ReportsScreen({ client }: Readonly<ReportsScreenProps>): ReactEl
           summary={
             report.data
               ? t('reports.visits.summary', {
-                  visits: report.data.totals.visits,
-                  minutes: report.data.totals.minutes,
+                  visits: formatCount(report.data.totals.visits, t.locale),
+                  minutes: formatCount(report.data.totals.minutes, t.locale),
                   charges: formatMoney(t, report.data.totals.charges).text,
                 })
               : null

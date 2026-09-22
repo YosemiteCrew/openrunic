@@ -3,18 +3,14 @@
 /**
  * Health record: the same facts the practice holds, written so they can be understood.
  *
- * Two rules shape every row. A coded term never appears alone - the plain-language gloss
- * sits beside it, so "Hypothyroidism, E03.9" is always read as "Underactive thyroid". And a
- * measured value never appears alone either: it carries its unit, its usual range and a
+ * Two rules shape every row. A stored plain-language gloss sits beside its coded term. A
+ * measured value never appears alone: it carries its unit, its usual range and a
  * labelled verdict, plus an explicit way to ask about it. A patient should never be left
  * looking at a red number with no way to find out what it means.
  *
- * What the practice wrote down arrives already worded and is rendered as it
- * arrived: the condition, the dose label, the severity, the plain-language
- * gloss. Only the frame around it comes from the catalogue. Inventing a
- * translation for a clinical word this file never chose is the failure the rest
- * of the catalogue is careful to avoid, and it would be invisible: a wrong
- * Spanish word for a severity still renders as a severity.
+ * Clinical terms and patient wording render as recorded. Finite workflow
+ * statuses are translated by the interface so storage codes never reach the
+ * patient unchanged.
  */
 
 import { useCallback, useState } from 'react';
@@ -26,12 +22,56 @@ import { RangeBadge } from '@/components/RangeBadge';
 import { getPortalApi } from '@/lib/api';
 import type { HealthRecord, PortalApi, Result } from '@/lib/api/types';
 import { useTranslator } from '@/lib/i18n/messages';
-import { formatDate, formatMeasurement } from '@/lib/format';
+import type { DocumentKind, Measurement } from '@/lib/format';
+import {
+  documentKind,
+  formatDate,
+  formatFileSize,
+  formatMeasurement,
+  measurementText,
+} from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 export interface HealthRecordScreenProps {
   api?: PortalApi;
 }
+
+const RANGE_LABEL_KEYS: Record<Result['range'], string> = {
+  'in-range': 'portal.healthRecord.results.range.inRange',
+  'out-of-range': 'portal.healthRecord.results.range.outOfRange',
+  unknown: 'portal.healthRecord.results.range.unknown',
+};
+
+/**
+ * Every kind has a label, and `documentKind` answers with one of these and nothing else, so
+ * a media type the practice starts storing tomorrow renders as `File` rather than as itself.
+ */
+const DOCUMENT_KIND_KEYS: Record<DocumentKind, string> = {
+  pdf: 'portal.healthRecord.documents.kind.pdf',
+  image: 'portal.healthRecord.documents.kind.image',
+  document: 'portal.healthRecord.documents.kind.document',
+  spreadsheet: 'portal.healthRecord.documents.kind.spreadsheet',
+  text: 'portal.healthRecord.documents.kind.text',
+  other: 'portal.healthRecord.documents.kind.other',
+};
+
+const PROBLEM_STATUS_KEYS: Record<HealthRecord['problems'][number]['status'], string> = {
+  active: 'portal.healthRecord.problems.status.active',
+  recurrence: 'portal.healthRecord.problems.status.recurrence',
+  relapse: 'portal.healthRecord.problems.status.relapse',
+  inactive: 'portal.healthRecord.problems.status.inactive',
+  remission: 'portal.healthRecord.problems.status.remission',
+  resolved: 'portal.healthRecord.problems.status.resolved',
+};
+
+const ALLERGY_SEVERITY_KEYS: Record<
+  NonNullable<HealthRecord['allergies'][number]['severity']>,
+  string
+> = {
+  mild: 'portal.healthRecord.allergies.severity.mild',
+  moderate: 'portal.healthRecord.allergies.severity.moderate',
+  severe: 'portal.healthRecord.allergies.severity.severe',
+};
 
 function isRecordEmpty(record: HealthRecord): boolean {
   return (
@@ -41,6 +81,22 @@ function isRecordEmpty(record: HealthRecord): boolean {
     record.allergies.length === 0 &&
     record.immunisations.length === 0 &&
     record.documents.length === 0
+  );
+}
+
+/**
+ * A reading, with its number in a node of its own.
+ *
+ * The two halves break differently and one node cannot be both: splitting `1,234.56` across
+ * two lines invents a figure that is not there, while the unit is free text the record does
+ * not bound and has to wrap or it widens the page (#508). The space between them is a real
+ * text node, so the reading may break there and so it survives being copied.
+ */
+function Reading({ measurement }: Readonly<{ measurement: Measurement }>) {
+  return (
+    <span className="portal-record__value">
+      <span className="portal-record__number">{measurement.value}</span> {measurement.unit}
+    </span>
   );
 }
 
@@ -60,13 +116,11 @@ function ResultRow({ result }: Readonly<{ result: Result }>) {
     <li className="portal-record">
       <div className="portal-record__head">
         <PlainTerm term={result.name} plain={result.plain} />
-        <RangeBadge range={result.range} label={result.rangeLabel} />
+        <RangeBadge range={result.range} label={t(RANGE_LABEL_KEYS[result.range])} />
       </div>
 
       <p className="portal-record__reading">
-        <span className="portal-record__value">
-          {formatMeasurement(t, result.value, result.unit)}
-        </span>
+        <Reading measurement={formatMeasurement(t, result.value, result.unit)} />
         <span className="portal-record__meta">
           {result.referenceRange === ''
             ? t('portal.healthRecord.results.noRange')
@@ -164,7 +218,7 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                     <li className="portal-record" key={problem.id}>
                       <div className="portal-record__head">
                         <PlainTerm term={problem.term} code={problem.code} plain={problem.plain} />
-                        <Badge tone="neutral">{problem.status}</Badge>
+                        <Badge tone="neutral">{t(PROBLEM_STATUS_KEYS[problem.status])}</Badge>
                       </div>
                       <p className="portal-record__meta">
                         {t('portal.healthRecord.problems.recordedOn', {
@@ -189,16 +243,24 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                     <li className="portal-record" key={medication.id}>
                       <div className="portal-record__head">
                         <PlainTerm term={medication.name} plain={medication.plain} />
-                        <span className="portal-record__value">
-                          {formatMeasurement(t, medication.strength, medication.unit)}
-                        </span>
+                        {medication.strength === null || medication.unit === null ? null : (
+                          <Reading
+                            measurement={formatMeasurement(t, medication.strength, medication.unit)}
+                          />
+                        )}
                       </div>
-                      <p className="or-body">{medication.instruction}</p>
+                      {medication.instruction === null ? null : (
+                        <p className="or-body">{medication.instruction}</p>
+                      )}
                       <p className="portal-record__meta">
-                        {t('portal.healthRecord.medications.prescribedBy', {
-                          clinician: medication.prescribedBy,
-                          date: formatDate(t, medication.startedOn),
-                        })}
+                        {medication.prescribedBy === null
+                          ? t('portal.healthRecord.medications.startedOn', {
+                              date: formatDate(t, medication.startedOn),
+                            })
+                          : t('portal.healthRecord.medications.prescribedBy', {
+                              clinician: medication.prescribedBy,
+                              date: formatDate(t, medication.startedOn),
+                            })}
                       </p>
                     </li>
                   ))}
@@ -218,15 +280,19 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                     <li className="portal-record" key={allergy.id}>
                       <div className="portal-record__head">
                         <PlainTerm term={allergy.substance} plain={allergy.plain} />
-                        <Badge tone={allergy.severity === 'Severe' ? 'danger' : 'neutral'}>
-                          {allergy.severity}
-                        </Badge>
+                        {allergy.severity === null ? null : (
+                          <Badge tone={allergy.severity === 'severe' ? 'danger' : 'neutral'}>
+                            {t(ALLERGY_SEVERITY_KEYS[allergy.severity])}
+                          </Badge>
+                        )}
                       </div>
-                      <p className="or-body">
-                        {t('portal.healthRecord.allergies.reaction', {
-                          reaction: allergy.reaction,
-                        })}
-                      </p>
+                      {allergy.reaction === null ? null : (
+                        <p className="or-body">
+                          {t('portal.healthRecord.allergies.reaction', {
+                            reaction: allergy.reaction,
+                          })}
+                        </p>
+                      )}
                       <p className="portal-record__meta">
                         {t('portal.healthRecord.allergies.recordedOn', {
                           date: formatDate(t, allergy.recordedOn),
@@ -250,8 +316,23 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                     <li className="portal-record" key={immunisation.id}>
                       <div className="portal-record__head">
                         <PlainTerm term={immunisation.vaccine} plain={immunisation.plain} />
-                        <Badge tone="success">{immunisation.doseLabel}</Badge>
                       </div>
+                      {/*
+                        The dose reads on the meta line rather than in a badge. A badge is
+                        `white-space: nowrap` because a status pill is the size of its text,
+                        and a dose is not a status: its unit is free text on the record, so
+                        `0.5 millilitre per dose` in a pill widens the page (#507).
+                      */}
+                      {immunisation.doseQuantity === null ||
+                      immunisation.doseUnit === null ? null : (
+                        <p className="portal-record__meta">
+                          {t('portal.healthRecord.immunisations.dose', {
+                            dose: measurementText(
+                              formatMeasurement(t, immunisation.doseQuantity, immunisation.doseUnit)
+                            ),
+                          })}
+                        </p>
+                      )}
                       <p className="portal-record__meta">
                         {t('portal.healthRecord.immunisations.givenOn', {
                           date: formatDate(t, immunisation.givenOn),
@@ -276,12 +357,13 @@ export function HealthRecordScreen({ api = getPortalApi() }: Readonly<HealthReco
                       <div className="portal-record__head">
                         <PlainTerm term={document.title} plain={document.plain} />
                         <Badge tone="ink" icon="file-text">
-                          {document.format}
+                          {t(DOCUMENT_KIND_KEYS[documentKind(document.contentType)])}
                         </Badge>
                       </div>
                       <p className="portal-record__meta">
                         {t('portal.healthRecord.documents.addedOn', {
                           date: formatDate(t, document.addedOn),
+                          size: formatFileSize(t, document.byteSize),
                         })}
                       </p>
                     </li>

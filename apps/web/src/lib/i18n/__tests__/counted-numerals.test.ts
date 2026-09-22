@@ -1,7 +1,5 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { appCatalogue, createTranslator } from '@openrunic/i18n';
+import { appCatalogue, createTranslator, format, formatCount, verbatim } from '@openrunic/i18n';
+import type { Interpolations } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
 import { counted } from '../counted';
@@ -20,9 +18,10 @@ import { counted } from '../counted';
  * locale decisions, as `packages/i18n`'s own `formatCount` says, and a message
  * that gets one right and the other wrong is still wrong.
  *
- * There are two tests here because neither is enough on its own. The first
- * shows the digits actually change; the second stops the twenty-six call sites
- * that were fixed from becoming twenty-seven.
+ * There are two halves here because neither is enough on its own. The first
+ * shows the digits actually change. The second is the type that stops the class
+ * coming back at all, and the note above it records what the source scan it
+ * replaced could not see.
  */
 
 /** Arabic-Indic digits, which is the only cheap way to see a numeral change. */
@@ -48,59 +47,71 @@ describe('the digits in a counted message', () => {
 });
 
 /*
- * The source guard.
+ * WHAT REPLACED THE SOURCE GUARD, AND WHY IT IS NOT A REGEX ANY MORE.
  *
- * Deliberately narrow, for the reason #132 recorded: a loose pattern over source
- * matches things that are not what it thinks they are. This looks for exactly
- * one shape - a `count` property whose value is a bare identifier or member
- * expression, with no call in it - and nothing cleverer. `count: formatCount(n,
- * locale)` passes because it is a call; `count: rows.length` fails.
+ * There used to be a scan of `apps/web/src` for `count:` followed by a bare
+ * identifier. It was green while thirty raw interpolations were live, for three
+ * separate reasons rather than one bug:
+ *
+ * 1. Its call exemption was "the value contains a call" and the intent was "the
+ *    value calls `formatCount`". `count: lines.filter(...).length` walked past.
+ * 2. Property shorthand has no colon, so `{ count }` was invisible to it.
+ * 3. It knew one placeholder name. Twenty-six live sites carried a raw number
+ *    under `minutes`, `version`, `total`, `paid`, `percent`, `ms`, `days`,
+ *    `sequence`, `low` and `high`.
+ *
+ * A guard named for the instance covers the instance. `Interpolations` is now
+ * `Readonly<Record<string, string>>`, so the compiler enumerates the whole
+ * class in one pass and there is no name for it to have been named after. #285.
+ *
+ * What remains here is the assertion that the type is still the type. It is the
+ * one thing tsc cannot tell you on its own: widening it back is legal
+ * TypeScript, every call site keeps compiling, and nothing anywhere else goes
+ * red.
  */
-const SOURCE_ROOT = join(import.meta.dirname, '../../..');
+describe('the type of an interpolation', () => {
+  it('rejects a raw number, which is what stops the class coming back', () => {
+    /*
+     * `@ts-expect-error` inverts on its own. Widen `Interpolations` back to
+     * `string | number` and these stop being errors, the directives become
+     * unused, and TS2578 is red on the gate rather than green in a suite that
+     * only makes legal calls.
+     *
+     * THE COMMAND IS `pnpm run type-check` FROM THE ROOT, AND NOT
+     * `pnpm --filter web run type-check`.
+     *
+     * Measured with the type widened and nothing else touched: the filtered
+     * command is exit 0 with no TS2578, and the root command is exit 2 with
+     * two. `apps/web` has no `paths` entry for a workspace package, so it
+     * resolves `@openrunic/i18n` through that package's exports map to a built
+     * `dist/index.d.ts` - the filtered run checks this file against whatever
+     * was built last and cannot see the change. The root task is turbo's, and
+     * turbo's `type-check` declares `dependsOn: ["^build"]`, which is the whole
+     * of why the rebuild happens first.
+     *
+     * Naming the shorter command here would be worse than naming none: somebody
+     * checking whether these directives still do anything would get exit 0, and
+     * the honest reading of exit 0 is that they report nothing and are dead
+     * weight to delete.
+     */
+    const values: Interpolations = {
+      // @ts-expect-error a count belongs in formatCount, not in the message
+      count: 24,
+      // @ts-expect-error an identifier belongs in verbatim, not in the message
+      version: 3,
+    };
 
-/** `count: rows.length`, `count: total`. Not `count: formatCount(...)`, not `count: number`. */
-const RAW_COUNT = /\bcount:\s*(?<value>[A-Za-z_$][\w$]*(?:\.[\w$]+)*)\s*[,}]/gu;
-
-/** A type annotation, not a value. */
-const TYPES = new Set(['number', 'string', 'boolean']);
-
-function sourceFiles(directory: string): string[] {
-  const found: string[] = [];
-  for (const entry of readdirSync(directory)) {
-    const path = join(directory, entry);
-    if (statSync(path).isDirectory()) {
-      if (entry === '__tests__' || entry === 'node_modules') continue;
-      found.push(...sourceFiles(path));
-      continue;
-    }
-    if (/\.tsx?$/u.test(entry)) found.push(path);
-  }
-  return found;
-}
-
-describe('no screen interpolates a bare number into a count', () => {
-  it('finds the sites it is meant to be reading', () => {
-    // The guard on the guard. A pattern that matched nothing would make the
-    // assertion below pass while proving nothing, and this one is looking for
-    // an absence, which is the case where that failure is invisible.
-    const anyCount = sourceFiles(SOURCE_ROOT)
-      .map((path) => readFileSync(path, 'utf8'))
-      .filter((text) => /\bcount:/u.test(text)).length;
-
-    expect(anyCount).toBeGreaterThan(10);
+    // Not dead weight: it also pins that the runtime still refuses what the
+    // type refuses, for the JavaScript caller the type cannot reach.
+    expect(() => format('{count} of {version}', values, 'k')).toThrow(/not a string/u);
   });
 
-  it('routes every one of them through formatCount', () => {
-    const raw: string[] = [];
-    for (const path of sourceFiles(SOURCE_ROOT)) {
-      const text = readFileSync(path, 'utf8');
-      for (const match of text.matchAll(RAW_COUNT)) {
-        const value = match.groups?.['value'] ?? '';
-        if (TYPES.has(value)) continue;
-        raw.push(`${path.slice(SOURCE_ROOT.length + 1)}: count: ${value}`);
-      }
-    }
+  it('accepts what the two helpers return', () => {
+    const values: Interpolations = {
+      count: formatCount(24, 'en'),
+      version: verbatim(3),
+    };
 
-    expect(raw).toStrictEqual([]);
+    expect(format('{count} of {version}', values, 'k')).toBe('24 of 3');
   });
 });

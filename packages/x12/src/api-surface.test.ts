@@ -1,10 +1,21 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { FIXTURES } from './__fixtures__/index.js';
 import * as x12 from './index.js';
+import type {
+  AuthorisationDecision,
+  AuthorisationDependent,
+  AuthorisationRequest,
+  AuthorisationRequester,
+  AuthorisationResponse,
+  AuthorisationService,
+  AuthorisationServiceProvider,
+  AuthorisationSubscriber,
+  Encode278Options,
+} from './index.js';
 import {
   toFrequencyCode,
   toPayerResponsibilityCode,
@@ -29,6 +40,7 @@ const EXPECTED_EXPORTS = [
   'IMPLEMENTATION_270',
   'IMPLEMENTATION_271',
   'IMPLEMENTATION_277',
+  'IMPLEMENTATION_278',
   'IMPLEMENTATION_835',
   'IMPLEMENTATION_837P',
   'IMPLEMENTATION_999',
@@ -38,10 +50,12 @@ const EXPECTED_EXPORTS = [
   'createControlNumberSource',
   'decode271',
   'decode277',
+  'decode278',
   'decode835',
   'decode999',
   'detectDelimiters',
   'encode270',
+  'encode278',
   'encode837P',
   'firstTransactionOfType',
   'formatAmount',
@@ -51,7 +65,9 @@ const EXPECTED_EXPORTS = [
   'formatTime4',
   'formatTransactionControlNumber',
   'formatX12Error',
+  'isAuthorised',
   'isEmptyAt',
+  'isPending',
   'locate',
   'padRight',
   'parseAmount',
@@ -85,6 +101,7 @@ describe('public surface', () => {
       claim: x12.IMPLEMENTATION_837P,
       remittance: x12.IMPLEMENTATION_835,
       status: x12.IMPLEMENTATION_277,
+      authorisation: x12.IMPLEMENTATION_278,
       acknowledgement: x12.IMPLEMENTATION_999,
       inquiry: x12.IMPLEMENTATION_270,
       response: x12.IMPLEMENTATION_271,
@@ -92,10 +109,27 @@ describe('public surface', () => {
       claim: '005010X222A1',
       remittance: '005010X221A1',
       status: '005010X214',
+      authorisation: '005010X217',
       acknowledgement: '005010X231A1',
       inquiry: '005010X279A1',
       response: '005010X279A1',
     });
+  });
+
+  it('exports the documented 278 types from the package root', () => {
+    type AuthorisationTypes = readonly [
+      AuthorisationDecision,
+      AuthorisationDependent,
+      AuthorisationRequest,
+      AuthorisationRequester,
+      AuthorisationResponse,
+      AuthorisationService,
+      AuthorisationServiceProvider,
+      AuthorisationSubscriber,
+      Encode278Options,
+    ];
+
+    expectTypeOf<AuthorisationTypes>().toEqualTypeOf<AuthorisationTypes>();
   });
 });
 

@@ -8,6 +8,7 @@ export { PatientTable } from './PatientTable';
 export type { PatientTableProps } from './PatientTable';
 export {
   BLOCKING_SCORE,
+  CANDIDATE_SCORE,
   EMPTY_DRAFT,
   findDuplicates,
   isBlocking,
@@ -15,6 +16,7 @@ export {
   REQUIRED_FIELDS,
   toPatientCreateBody,
   validateRegistration,
+  withinOneEdit,
 } from './registration';
 export type {
   DuplicateMatch,

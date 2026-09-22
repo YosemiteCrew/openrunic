@@ -8,7 +8,9 @@ import {
   FIXED_NOW,
   makePatientRow,
   seed,
+  seedCareRelationship,
   storageColumns,
+  SUBJECTS,
   testId,
   TOKENS,
 } from './support.js';
@@ -25,6 +27,16 @@ const PROVIDER = testId(900);
 function harness(): ReturnType<typeof createTestApp> {
   const created = createTestApp();
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
+  // Screening answers a question about this chart - whether this patient is
+  // allergic to the drug you named - so it asks the care-relationship gate
+  // (#315). These tests are about the screening outcome and not about
+  // authorisation, so they get the cheapest relationship there is. The refusal
+  // has its own case in `policy.care-relationship.test.ts`.
+  seedCareRelationship(created.dataset, {
+    patientId: PATIENT,
+    providerId: SUBJECTS.clinicianA,
+    as: 'appointment',
+  });
   seed(created.dataset, 'AllergyIntolerance', {
     ...storageColumns(testId(24)),
     patientId: PATIENT,

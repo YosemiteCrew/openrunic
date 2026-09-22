@@ -1,3 +1,7 @@
+import { heldSession } from '@/lib/auth/store';
+
+import { capabilitiesForRoles } from '../capabilities';
+
 import { paginate } from '../pagination';
 import type { ApiError } from '../client';
 import type {
@@ -17,6 +21,8 @@ import type {
   FacilityDto,
   FacilityListQuery,
   FormDefinitionDto,
+  MedicationStatementDto,
+  MedicationStatementListQuery,
   NoteListQuery,
   Patient,
   PatientCreateBody,
@@ -25,6 +31,7 @@ import type {
   PaymentDto,
   RemittanceDto,
   ServiceRequestDto,
+  ServiceRequestListQuery,
   ServiceRequestStatus,
   StatementDto,
   TaskDto,
@@ -33,10 +40,13 @@ import type {
   UserListQuery,
 } from '../types';
 
+import { MOCK_CHARTS, mockChartFor } from './chart';
+import type { Medication } from '../chart/types';
 import {
   MOCK_APPOINTMENTS,
   MOCK_DIRECTORY_FACILITIES,
   MOCK_DIRECTORY_USERS,
+  MOCK_NOW,
   MOCK_PATIENTS,
 } from './fixtures';
 import { assertTransition, attempt, conflict, validationFailed } from './protocol';
@@ -131,6 +141,86 @@ export function filterPatients(
   });
 }
 
+/**
+ * The mock side of `GET /bff/v0/orders`, filtered and sorted the way
+ * `serviceRequestListQuerySchema` says the route is.
+ *
+ * The two halves of the predicate are separate functions because they are two
+ * different questions - which orders, and over what window - and the window has
+ * a semantic worth stating once where it is implemented.
+ */
+export function filterServiceRequests(
+  rows: readonly ServiceRequestDto[],
+  query: ServiceRequestListQuery = {}
+): readonly ServiceRequestDto[] {
+  const matched = rows.filter(
+    (order) => matchesServiceRequest(order, query) && withinRequestedWindow(order, query)
+  );
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort(byServiceRequest(query.sort ?? 'requestedAt', direction));
+}
+
+/** The exact-match half: every field the route narrows on by equality. */
+function matchesServiceRequest(
+  order: ServiceRequestDto,
+  { patientId, encounterId, status, category, priority, orderedById }: ServiceRequestListQuery
+): boolean {
+  if (patientId && order.patientId !== patientId) return false;
+  if (encounterId && order.encounterId !== encounterId) return false;
+  if (status && order.status !== status) return false;
+  if (category && order.category !== category) return false;
+  if (priority && order.priority !== priority) return false;
+  if (orderedById && order.orderedById !== orderedById) return false;
+  return true;
+}
+
+/**
+ * The window half, over `requestedAt`.
+ *
+ * Half-open - `from` inclusive, `to` exclusive - because that is what the
+ * published list description promises, and a mock that closes the far end
+ * double-counts the boundary row against every caller that pages a day at a
+ * time.
+ */
+function withinRequestedWindow(
+  order: ServiceRequestDto,
+  { from, to }: ServiceRequestListQuery
+): boolean {
+  if (from && order.requestedAt < from) return false;
+  if (to && order.requestedAt >= to) return false;
+  return true;
+}
+
+/**
+ * The comparator the orders list is sorted by.
+ *
+ * `scheduledFor` is the only key that can be absent, and the route sorts an
+ * absent one last ascending and FIRST descending: the spec reads it through
+ * `comparable()`, which answers `+Infinity`, and the memory port multiplies the
+ * whole comparison by the direction. Postgres agrees - `orderBy` names no
+ * `nulls` option, and its defaults are NULLS LAST on asc, NULLS FIRST on desc.
+ * So the null branch carries the direction like every other row.
+ */
+function byServiceRequest(
+  sort: NonNullable<ServiceRequestListQuery['sort']>,
+  direction: number
+): (a: ServiceRequestDto, b: ServiceRequestDto) => number {
+  if (sort === 'createdAt') {
+    return (a, b) => a.createdAt.localeCompare(b.createdAt) * direction;
+  }
+  if (sort === 'requestedAt') {
+    return (a, b) => a.requestedAt.localeCompare(b.requestedAt) * direction;
+  }
+  return (a, b) => {
+    if (a.scheduledFor === null || b.scheduledFor === null) {
+      const byAbsence = (a.scheduledFor === null ? 1 : 0) - (b.scheduledFor === null ? 1 : 0);
+      return byAbsence * direction;
+    }
+    return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
+  };
+}
+
 export function filterAppointments(
   rows: readonly Appointment[],
   query: AppointmentListQuery = {}
@@ -203,6 +293,73 @@ export function filterNotes(
     );
   }
   return [...matched].sort((a, b) => a.createdAt.localeCompare(b.createdAt) * direction);
+}
+
+/**
+ * One fixture medication in DTO shape.
+ *
+ * `reportedAt`, `createdAt` and `updatedAt` are synthetic INSTANTS stepped back
+ * from `MOCK_NOW`, and deliberately not `startedOn`. They used to be
+ * `startedOn ?? MOCK_NOW`, which is wrong twice: it asserts a medication was
+ * reported and stored on the day it was started, and `startedOn` is a date with
+ * no time, so a consumer formatting an instant rendered midnight UTC - or the
+ * previous calendar day, east of it - where the live route serialises a real
+ * `toISOString()`. Stepped by the caller's index so `sort: 'reportedAt'` has a
+ * defined order to produce rather than a column of equal values - which means
+ * the caller owes a unique index PER RESPONSE, not per chart. It did not, once:
+ * see the call site and #403.
+ */
+function toMedicationStatementDto(
+  patientId: string,
+  med: Medication,
+  index: number
+): MedicationStatementDto {
+  const reportedAt = new Date(Date.parse(MOCK_NOW) - index * 3_600_000).toISOString();
+  return {
+    id: med.id,
+    patientId,
+    encounterId: null,
+    rxnormCode: null,
+    display: med.drug,
+    sigText: med.sig,
+    status: med.status,
+    source: med.source,
+    effectiveStart: med.startedOn,
+    effectiveEnd: med.stoppedOn,
+    reportedAt,
+    note: null,
+    createdAt: reportedAt,
+    updatedAt: reportedAt,
+  };
+}
+
+/**
+ * The medication-statement query, applied.
+ *
+ * `encounterId`, `status`, `sort` and `order` are on the contract and were
+ * accepted and dropped here, so `readMedications` - which sends
+ * `sort: 'reportedAt', order: 'desc'` on every call - got fixture order in demo
+ * mode and newest-first against a real server. A difference that renders
+ * correctly in both and disagrees about which medication is at the top.
+ */
+export function filterMedicationStatements(
+  rows: readonly MedicationStatementDto[],
+  query: MedicationStatementListQuery = {}
+): readonly MedicationStatementDto[] {
+  const matched = rows.filter((row) => {
+    if (query.patientId && row.patientId !== query.patientId) return false;
+    if (query.encounterId && row.encounterId !== query.encounterId) return false;
+    if (query.status && row.status !== query.status) return false;
+    return true;
+  });
+
+  // Ascending by default, for the reason given in `filterEncounters`.
+  const direction = query.order === 'desc' ? -1 : 1;
+  const sort = query.sort ?? 'reportedAt';
+  return [...matched].sort((a, b) => {
+    if (sort === 'createdAt') return a.createdAt.localeCompare(b.createdAt) * direction;
+    return a.reportedAt.localeCompare(b.reportedAt) * direction;
+  });
 }
 
 export function filterFacilities(
@@ -548,6 +705,15 @@ export interface MockClientOptions {
   claims?: readonly ClaimDto[];
   payments?: readonly PaymentDto[];
   remittances?: readonly RemittanceDto[];
+  /**
+   * The roles the caller holds, for `session.me`.
+   *
+   * The demonstration reads the held session, because the caller is whoever
+   * signed in. A TEST has no sign-in, so it states the principal it is driving
+   * as - which is better than a default, since #313 is precisely about a screen
+   * behaving differently for two principals and a default would pick one.
+   */
+  roles?: readonly string[];
   statements?: readonly StatementDto[];
   formDefinitions?: readonly FormDefinitionDto[];
   /**
@@ -631,6 +797,18 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
   return {
     mode: 'mock',
 
+    /* The demonstration build has no API, and this is the answer one would have
+       given. Read from the held session for the same reason `config.ts` reads
+       `currentAccessToken` for the live client: the caller is whoever signed in,
+       and a client that had to be told would be told by every screen. */
+    session: {
+      me: () =>
+        answer(() => {
+          const roles = options.roles ?? heldSession()?.identity.roles ?? [];
+          return { roles: [...roles], permissions: capabilitiesForRoles(roles) };
+        }),
+    },
+
     facilities: {
       list: (query = {}) =>
         answer(() => paginate(filterFacilities(facilities, query), query.page, query.pageSize)),
@@ -691,6 +869,91 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
               ? { checkedInAt: clock.now() }
               : {};
           return appointments.patch(id, { ...defined(rest), ...type, ...arrival }, NO_APPOINTMENT);
+        }),
+    },
+
+    /*
+     * The demo build's medication statements, read back off the demo chart.
+     *
+     * The chart a reader sees in fixture mode is composed in
+     * `chart/client.ts` from `mock/chart.ts` and does not come through here -
+     * so this door could have returned an empty page and nothing would have
+     * noticed. An empty page is the wrong answer: it says this patient records
+     * no medications, which is the sentence the issue behind this work is
+     * about. It answers from the same fixture the chart shows instead, so the
+     * two cannot disagree.
+     *
+     * `prescriber` and `refillsRemaining` have no home in the DTO, which is why
+     * they are dropped here rather than invented - a statement is not a
+     * prescription.
+     */
+    medicationStatements: {
+      list: (query = {}) =>
+        answer(() => {
+          // Every accessible statement when no patient is named, which is what
+          // the live route does. Answering an empty page there said this
+          // deployment records no medications at all - the same wrong sentence
+          // the per-patient case was written to avoid, one level up.
+          const charts =
+            query.patientId === undefined ? MOCK_CHARTS : [mockChartFor(query.patientId)];
+          // `offset` carries the index ACROSS charts. A bare `map((med, i))`
+          // restarts at 0 for every chart, which made `reportedAt` unique
+          // within a patient and tied across them - 7 of 8 rows shared an
+          // instant with another row, so `sort: 'reportedAt'` had no defined
+          // order over most of this response. #403.
+          //
+          // The running offset rather than `.flatMap(...).map(...)`: the
+          // two-pass version reads better and costs 6 points of the react-doctor
+          // floor (`js-combine-iterations`, web 98 -> 92). That job is NOT on
+          // the dev ruleset's required list, which is the reason to keep this
+          // shape rather than a reason to ignore it - a red check that cannot
+          // block a merge is the one nobody has to look at. One pass, one
+          // counter.
+          //
+          // What this buys is a TOTAL order, not a correct one. There is no
+          // reported-at anywhere in the fixtures, so any value here is invented;
+          // what the mock owes is a distinct instant per row and the same shape
+          // the live DTO serialises, not agreement with a clock nobody wrote
+          // down.
+          //
+          // And the index is scoped to the RESPONSE, not to the row, which has
+          // a consequence worth stating rather than leaving to be found: the
+          // same statement carries a different `reportedAt` when it arrives in
+          // the all-patients list than when it is fetched with its own
+          // `patientId`. Measured in review: 4 of 8 rows move. A real server
+          // would not - `reportedAt` is a column, not a function of the query.
+          // Nothing correlates a row across the two shapes today, because
+          // `chart/live.ts` is the only consumer and always sends a
+          // `patientId`; a caller that did would need a row-scoped instant
+          // here.
+          let offset = 0;
+          const rows = charts.flatMap((chart) => {
+            const mapped = chart.medications.map((med, i) =>
+              toMedicationStatementDto(chart.patientId, med, offset + i)
+            );
+            offset += mapped.length;
+            return mapped;
+          });
+          return paginate(filterMedicationStatements(rows, query), query.page, query.pageSize);
+        }),
+    },
+
+    prescriptions: {
+      getRefillsRemaining: (id) =>
+        answer(() => {
+          // Fixed figures, because this mock keeps no fill store - but the
+          // arithmetic is the API's own, so a screen built against the mock sees
+          // the number the server would send. `authorisedRefills` is the repeats
+          // allowed in addition to the original dispense, so the first fill
+          // spends no refill and only the ones after it do.
+          const authorisedRefills = 5;
+          const fillsRecorded = 2;
+          return {
+            prescriptionId: id,
+            authorisedRefills,
+            fillsRecorded,
+            refillsRemaining: Math.max(0, authorisedRefills - Math.max(0, fillsRecorded - 1)),
+          };
         }),
     },
 
@@ -803,6 +1066,10 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     orders: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterServiceRequests(orders.all(), query), query.page, query.pageSize)
+        ),
       sign: (id) => moveOrder(id, 'SIGNED'),
       transmit: (id) => moveOrder(id, 'TRANSMITTED'),
       cancel: (id) => moveOrder(id, 'CANCELLED'),

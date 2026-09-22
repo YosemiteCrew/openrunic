@@ -15,7 +15,7 @@ import {
   slaLabel,
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, Toast } from '@/components/state';
+import { AsyncBoundary, FixtureDataNotice, Toast } from '@/components/state';
 import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
 import { counted } from '@/lib/i18n/counted';
@@ -220,6 +220,7 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
       }
     >
       <ScreenCommands commands={commands} />
+      <FixtureDataNotice />
       <InboxStreamFilter
         items={loaded.filter((item) => !done.has(item.id))}
         active={stream}

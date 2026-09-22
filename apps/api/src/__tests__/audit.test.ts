@@ -209,14 +209,32 @@ interface StoredAuditRow {
 function fakeAuditScope() {
   const rows: StoredAuditRow[] = [];
   const tenants: string[] = [];
+  /**
+   * Every call this scope received, in order.
+   *
+   * The order is the assertion, not the presence. A chain lock taken after the
+   * tail has been read serialises nothing: the two appenders have already read
+   * the same `seq`, and one of them is already going to lose. So the fake
+   * records a sequence rather than a set, and the test below reads it as one.
+   */
+  const ops: string[] = [];
+  /** The tenant each `lockAuditChain` call named, in order. */
+  const lockedTenants: string[] = [];
   const scope = {
+    lockAuditChain(tenantId: string): Promise<void> {
+      ops.push('lockAuditChain');
+      lockedTenants.push(tenantId);
+      return Promise.resolve();
+    },
     auditEvent: {
       create(args: { data: unknown }): Promise<{ id: string }> {
+        ops.push('create');
         const data = args.data as StoredAuditRow;
         rows.push(data);
         return Promise.resolve({ id: String(data.id) });
       },
       findFirst(): Promise<{ seq: bigint; hash: string } | null> {
+        ops.push('findFirst');
         const last = rows.at(-1);
         return Promise.resolve(last ? { seq: last.seq, hash: last.hash } : null);
       },
@@ -231,7 +249,7 @@ function fakeAuditScope() {
   // `scope` is exposed as well as `standalone`, because a caller's transaction
   // arrives at the sink as a bare scope: it is already inside the mutation's
   // own unit of work and must not open a second one.
-  return { rows, tenants, standalone, scope };
+  return { rows, tenants, ops, lockedTenants, standalone, scope };
 }
 
 const EVENT: AuditEvent = {
@@ -324,13 +342,76 @@ describe('createPrismaAuditSink', () => {
   });
 
   it('recognises a scope by the delegate it carries', () => {
+    const complete = {
+      auditEvent: { create: () => undefined, findFirst: () => undefined },
+      lockAuditChain: () => undefined,
+    };
+
     expect(isAuditWriteScope(undefined)).toBe(false);
     expect(isAuditWriteScope({})).toBe(false);
     expect(isAuditWriteScope({ auditEvent: {} })).toBe(false);
     expect(isAuditWriteScope({ auditEvent: { create: () => undefined } })).toBe(false);
-    expect(
-      isAuditWriteScope({ auditEvent: { create: () => undefined, findFirst: () => undefined } })
-    ).toBe(true);
+    expect(isAuditWriteScope(complete)).toBe(true);
+    /*
+     * The boundary, one property at a time, rather than a scope that is wrong
+     * about several things at once. Each of these differs from `complete` by
+     * exactly the property named, so a check that stopped looking at that
+     * property goes red here and nowhere else.
+     */
+    expect(isAuditWriteScope({ ...complete, lockAuditChain: undefined })).toBe(false);
+    expect(isAuditWriteScope({ ...complete, auditEvent: { findFirst: () => undefined } })).toBe(
+      false
+    );
+    expect(isAuditWriteScope({ ...complete, auditEvent: { create: () => undefined } })).toBe(false);
+  });
+
+  /**
+   * #399. Two appenders that both read the tail before either writes both
+   * compute the same `seq`, and `@@unique([tenantId, seq])` fails the loser.
+   * That kept the chain from forking and it reached the caller as a 500 -
+   * measured against Postgres, two concurrent chart reads in one tenant
+   * answered 500 about half the time and four concurrent registrations kept
+   * five patient rows of twenty.
+   *
+   * The lock is what makes the read and the write atomic against other
+   * appenders. Asserted as an ORDER because that is the property: taken after
+   * the tail read it changes nothing.
+   */
+  it('locks the tenant chain before reading the tail it links onto', async () => {
+    const fake = fakeAuditScope();
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
+
+    await sink.recordReadBatch(DEMO_TENANT_A, EVENT);
+
+    expect(fake.ops).toEqual(['lockAuditChain', 'findFirst', 'create']);
+    expect(fake.lockedTenants).toEqual([DEMO_TENANT_A]);
+  });
+
+  it('locks under the tenant the event names, not the one it was last called for', async () => {
+    const fake = fakeAuditScope();
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
+
+    await sink.recordWrite(DEMO_TENANT_A, EVENT);
+    await sink.recordReadBatch(DEMO_TENANT_B, { ...EVENT, action: 'phi.read' });
+
+    expect(fake.lockedTenants).toEqual([DEMO_TENANT_A, DEMO_TENANT_B]);
+  });
+
+  /**
+   * The mutation door, which is the half a fix sited at the read would miss.
+   * The lock has to be taken on the transaction that is about to write the row,
+   * because a lock taken on any other connection is released at that
+   * connection's COMMIT and not at this one's.
+   */
+  it('locks on the caller transaction, not on a standalone one', async () => {
+    const fake = fakeAuditScope();
+    const transaction = fakeAuditScope();
+    const sink = createPrismaAuditSink({ standalone: fake.standalone, now: () => FIXED_NOW });
+
+    await sink.recordWrite(DEMO_TENANT_A, EVENT, transaction.scope);
+
+    expect(transaction.ops).toEqual(['lockAuditChain', 'findFirst', 'create']);
+    expect(fake.ops).toEqual([]);
   });
 
   it('defaults its clock to the wall clock', async () => {

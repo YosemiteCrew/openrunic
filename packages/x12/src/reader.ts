@@ -142,7 +142,7 @@ export function readInterchange(raw: string): Result<X12Interchange, X12Error> {
     });
   }
 
-  const declaredGroups = Number(simpleAt(iea, 1));
+  const declaredGroups = readCount(simpleAt(iea, 1));
   if (!Number.isInteger(declaredGroups) || declaredGroups !== groups.length) {
     return err({
       kind: 'count_mismatch',
@@ -223,7 +223,7 @@ function readGroup(
     });
   }
 
-  const declared = Number(simpleAt(ge, 1));
+  const declared = readCount(simpleAt(ge, 1));
   if (!Number.isInteger(declared) || declared !== transactions.length) {
     return err({
       kind: 'count_mismatch',
@@ -307,7 +307,7 @@ function readTransaction(
 
   // SE01 counts every segment from ST through SE inclusive, which is why the
   // body length gets two added rather than being compared directly.
-  const declared = Number(simpleAt(se, 1));
+  const declared = readCount(simpleAt(se, 1));
   const actual = body.length + 2;
   if (!Number.isInteger(declared) || declared !== actual) {
     return err({
@@ -330,6 +330,10 @@ function readTransaction(
     },
     nextIndex: index,
   });
+}
+
+function readCount(value: string): number {
+  return /^\d+$/.test(value) ? Number(value) : Number.NaN;
 }
 
 /**

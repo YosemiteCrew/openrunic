@@ -10,7 +10,13 @@ import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { ReferralStatus } from '../repositories/specs/clinical.js';
 import type { ScopedRow } from '../repositories/types.js';
-import { idParamSchema, repositories, required } from './helpers.js';
+import {
+  gateCharts,
+  idParamSchema,
+  repositories,
+  required,
+  requiredParentChart,
+} from './helpers.js';
 
 /**
  * REFERRALS, AND THE LOOP THEY HAVE TO CLOSE.
@@ -95,7 +101,7 @@ const referralDtoSchema = z.object({
   updatedAt: z.string(),
 });
 
-const referralListQuerySchema = z.object({
+const referralListQuerySchema = z.strictObject({
   patientId: z.uuid().optional(),
   encounterId: z.uuid().optional(),
   referredById: z.uuid().optional(),
@@ -137,7 +143,11 @@ const reportSchema = z.object({
  * timestamps rather than a fact of its own - and a stored copy is one that goes
  * stale the first time somebody backfills a date.
  */
-function awaiting(row: ScopedRow<'Referral'>): string | null {
+/**
+ * The blocking item a referral is waiting on, shared with the administrative
+ * worklist so the two doors never disagree about what "waiting" means.
+ */
+export function awaiting(row: ScopedRow<'Referral'>): string | null {
   if (row.status === 'DRAFT') return 'to be sent';
   if (row.status === 'DECLINED') return 'a new recipient';
   if (row.status === 'CANCELLED' || row.status === 'ENTERED_IN_ERROR') return null;
@@ -191,8 +201,22 @@ function assertTransition(from: ReferralStatus, to: ReferralStatus): void {
 const MISSING = 'No such referral.';
 
 export function referralRoutes(router: Hono<AppEnv>): void {
+  /**
+   * The one read of a referral, and the one place the chart is asked about.
+   *
+   * This resource is registered by hand rather than generated, so none of it
+   * passed through the CRUD seam where `chartFrom` puts the care-relationship
+   * gate on a read - and the gate was missing from the read as well as from the
+   * seven transitions, which is not the shape #322 found on `orders.ts`. There
+   * the generated read was refused and only the writes were open. Here a
+   * clinician with `order.read` and no connection to the chart was answered
+   * 200 with the patient, the specialty and the reason code on it.
+   *
+   * `Referral.patientId` is non-null in the schema, so `chartIdOf` always finds
+   * a chart here and the gate is never vacuous.
+   */
   const load = async (c: Context<AppEnv>, id: string): Promise<ScopedRow<'Referral'>> =>
-    required(await repositories(c).referrals.findById(id), MISSING);
+    requiredParentChart(c, 'referrals', await repositories(c).referrals.findById(id), MISSING);
 
   /**
    * Applies a transition and answers the referral as it now stands.
@@ -236,6 +260,13 @@ export function referralRoutes(router: Hono<AppEnv>): void {
       ...(query.specialtyCode === undefined ? {} : { specialtyCode: query.specialtyCode }),
       ...(query.openOnly === 'true' ? { openOnly: true } : {}),
     });
+
+    // A list of chart data is a read of every chart it returns, so it needs a
+    // relationship with each - the same rule `defineCrud`'s list applies, and
+    // the reason an omitted `patientId` filter was answering with other
+    // people's referrals. Asked before the DTOs form, so a refused list never
+    // serialises the rows it read to decide.
+    await gateCharts(c, 'referrals', page.rows);
 
     return c.json({
       items: page.rows.map(toDto),

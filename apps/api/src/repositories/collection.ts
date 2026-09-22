@@ -210,6 +210,29 @@ export interface CollectionSpec<
    */
   readonly facilityScoped?: true;
   /**
+   * Whether {@link facilityColumn} is nullable in `schema.prisma`.
+   *
+   * The narrowing keeps unsited rows visible, which means a clause asking for
+   * the column to be null - and Prisma has no such filter for a required
+   * scalar. It is not a syntax to get right: the generated `where` type for a
+   * required column has no null in it, and the runtime validator agrees, so the
+   * query is refused rather than answered wrongly. On the seven models where
+   * the column is required that refusal is a 500 on every list, including the
+   * `Encounter` list every care-relationship check runs, which is most of the
+   * clinical surface.
+   *
+   * So the branch has to be omitted where it cannot apply, and it cannot be
+   * derived: the `prisma-client` generator emits TypeScript and the runtime
+   * `Prisma` namespace carries no `dmmf`, so there is no nullability to read at
+   * request time, and the generated types erase. Declared here and checked
+   * against `schema.prisma` by `repositories.facility-scope.test.ts`, which
+   * fails in BOTH directions - a flag on a required column, and a missing flag
+   * on a nullable one. Neither default is safe on its own: the first is a 500
+   * and the second silently drops every unsited row, which on `RoleAssignment`
+   * is all of them.
+   */
+  readonly facilityColumnOptional?: true;
+  /**
    * Whether a row addressed by its own id may also be hidden by the facility
    * narrowing. Defaults to true; only `Patient` sets it false.
    *

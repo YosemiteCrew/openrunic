@@ -178,3 +178,23 @@ export type {
   EligibilityRejection,
   EligibilityResponse271,
 } from './eligibility-271.js';
+
+// 278 prior authorisation, encode and decode.
+export {
+  IMPLEMENTATION_278,
+  decode278,
+  encode278,
+  isAuthorised,
+  isPending,
+} from './authorisation-278.js';
+export type {
+  AuthorisationDecision,
+  AuthorisationDependent,
+  AuthorisationRequest,
+  AuthorisationRequester,
+  AuthorisationResponse,
+  AuthorisationService,
+  AuthorisationServiceProvider,
+  AuthorisationSubscriber,
+  Encode278Options,
+} from './authorisation-278.js';

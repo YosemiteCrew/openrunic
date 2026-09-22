@@ -312,6 +312,30 @@ describe('announcementFor', () => {
   ])('announces %s', (_name, actions, expected) => {
     expect(announcementFor(t, run(actions as TranscriptAction[]))).toBe(expected);
   });
+
+  /*
+   * The digits, which the cases above cannot see.
+   *
+   * Every count they use renders the same through `formatCount` as through
+   * `String`, so they pass whether or not the number was formatted at all.
+   * `ar-EG` has no catalogue here, so the words fall back to English and the
+   * numerals do not - an Eastern Arabic-Indic digit inside an English sentence
+   * is the count having gone through `formatCount` rather than into the
+   * template, which is the only thing this pair is asserting.
+   */
+  const arabic = createTranslator(appCatalogue, 'ar-EG');
+
+  it.each([
+    ['one source', 1, 'Answer ready, drawn from ١ record.'],
+    ['several', 12, 'Answer ready, drawn from ١٢ records.'],
+  ])('writes the source count in the reader’s numerals: %s', (_name, howMany, expected) => {
+    const state = run([
+      ask(),
+      event({ type: 'sources', entries: Array.from({ length: howMany }, () => source()) }),
+      event(FINISHED),
+    ]);
+    expect(announcementFor(arabic, state)).toBe(expected);
+  });
 });
 
 describe('describeFailure', () => {

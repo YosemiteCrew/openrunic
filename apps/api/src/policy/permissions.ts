@@ -33,6 +33,14 @@ export const PERMISSIONS = [
   'patient.breakGlass',
   'appointment.read',
   'appointment.write',
+  /**
+   * Minting a credential that admits its bearer to a clinical video room.
+   *
+   * Separate from `appointment.read` because a billing role needs the schedule
+   * to collect for a visit but has no reason to enter its consultation. The
+   * front desk does: reception admits participants from the waiting room.
+   */
+  'telehealth.join',
   'encounter.read',
   'encounter.write',
   'document.read',
@@ -126,6 +134,22 @@ const READ_EVERYTHING: readonly Permission[] = PERMISSIONS.filter(
  * The seeded system roles. A tenant may fork these into its own `Role` rows;
  * this map is the default that ships, and the only one the static resolver
  * knows.
+ *
+ * THE FORK IS NOT YET READ, AND THIS IS THE FILE THAT DECIDES IT.
+ *
+ * `buildPolicyContext` resolves a caller's permissions by looking their role
+ * names up in this map, and the names come from the principal - a literal in
+ * the demo tables, or a claim in a verified token. Neither the `Role` table nor
+ * `RoleAssignment` is consulted anywhere in the enforcement path, so a grant
+ * written through `/bff/v0/users/{id}/roles` is stored, durable, and inert.
+ *
+ * The six BFF role operations say so in their published descriptions
+ * (`ROLE_MODEL_CAVEAT`, below), as does the FHIR `PractitionerRole` resource
+ * that projects the same rows. They are kept rather than
+ * withdrawn because the forked-`Role` model above is the stated forward path
+ * and those routes are its only implementation. When enforcement lands it lands
+ * here: this map stops being the only answer, and the caveat and this paragraph
+ * come out together.
  */
 export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> = {
   admin: PERMISSIONS,
@@ -138,6 +162,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'patient.breakGlass',
     'appointment.read',
     'appointment.write',
+    'telehealth.join',
     'encounter.read',
     'encounter.write',
     'document.read',
@@ -171,6 +196,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
     'patient.breakGlass',
     'appointment.read',
     'appointment.write',
+    // Reception admits participants from the waiting room. Billing does not.
+    'telehealth.join',
     'encounter.read',
     'document.read',
     'document.write',
@@ -256,8 +283,50 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> =
   'read-only': READ_EVERYTHING,
 };
 
+/**
+ * What every published surface onto the tenant role model has to say.
+ *
+ * `Role` and `RoleAssignment` are written by six BFF operations and projected by
+ * the FHIR `PractitionerRole` resource, and none of the enforcement path reads
+ * either table - `buildPolicyContext` above resolves permissions from
+ * `principal.roles`, which arrives as a literal or an IdP claim. So a grant
+ * recorded through any of those doors is stored, durable and inert, and a
+ * document that described the write without saying so would tell a client an
+ * access-control change had taken effect.
+ *
+ * It lives here rather than beside any one of those doors because the fact is
+ * about THIS file: `ROLE_PERMISSIONS` being the only thing consulted is what
+ * makes the sentence true, and this is the file that has to change for it to
+ * become false. When enforcement lands, the constant and the paragraph above it
+ * come out together.
+ */
+export const ROLE_MODEL_CAVEAT =
+  "Authorisation is resolved from the roles on the caller's token, not from these rows: recording a grant here does not change what any user may do. The tenant role model is stored and not yet enforced.";
+
 const PERMISSION_SET: ReadonlySet<string> = new Set(PERMISSIONS);
 
 export function isPermission(value: string): value is Permission {
   return PERMISSION_SET.has(value);
 }
+
+/**
+ * Orders machine identifiers by UTF-16 code unit.
+ *
+ * `localeCompare` reads the runtime's default locale, so it cannot provide the
+ * same promised order across independently configured API processes and
+ * clients. Naming a locale does not remove the dependency on the ICU data in
+ * that runtime either. Measured examples: `['order.Write', 'order.audit',
+ * 'order.write']` sorts two different ways across eight locales, and
+ * `['patient.Info', 'patient.index', 'patient.info']` sorts three.
+ *
+ * The default string comparison is stable across those runtimes. The
+ * comparator is written out because `typescript:S2871` requires one and so the
+ * next reader knows the plain form was rejected rather than forgotten.
+ */
+export function byIdentifier(left: string, right: string): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
+/** Permission-specific name retained for the public policy API. */
+export const byPermissionId = byIdentifier;

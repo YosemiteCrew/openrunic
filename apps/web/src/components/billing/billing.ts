@@ -121,7 +121,7 @@ export interface ScrubFinding {
    */
   messageKey: string | null;
   /** Placeholder values for `messageKey`. */
-  messageValues?: Readonly<Record<string, string | number>>;
+  messageValues?: Readonly<Record<string, string>>;
   /**
    * Text that arrived from the API rather than from the catalogue, which today
    * is the payer's own prior-authorisation warning. It is rendered in the words

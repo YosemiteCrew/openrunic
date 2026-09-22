@@ -96,6 +96,15 @@ export function servedResources(
  */
 const EXPORT_PARAMS: ReadonlySet<string> = new Set(['_type', '_since']);
 
+/**
+ * `_type` is the one parameter on this server that means a list.
+ * `?_type=Patient&_type=Encounter` is a legal way to send one and
+ * `parseTypeFilter` reads every occurrence, so it is exempt from the refusal
+ * every other repeated parameter gets. `_since` is not: two of those are two
+ * answers to one question.
+ */
+const EXPORT_REPEATABLE: ReadonlySet<string> = new Set(['_type']);
+
 export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
   const now = options.now ?? ((): Date => new Date());
   const modules = options.modules ?? SERVED_MODULES;
@@ -152,7 +161,7 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
       // Unknown parameters are refused for the reason params.ts gives about
       // search: `_typeFilter` or a misspelled `_since` that is quietly ignored
       // produces a complete export the client believes is narrowed.
-      rejectUnsupportedParams('$export', c.req.query(), EXPORT_PARAMS);
+      rejectUnsupportedParams('$export', c.req.queries(), EXPORT_PARAMS, EXPORT_REPEATABLE);
 
       const permitted = permittedModules(modules, principal, c.get('policy'), entry);
       const types = parseTypeFilter(
@@ -335,8 +344,15 @@ export function fhirRoutes(options: FhirRouterOptions): Hono<AppEnv> {
       requirePermission(module.permission),
       requireScope(module.type, 'search'),
       async (c) => {
+        // `queries()` for the check and `query()` for the search: the check has to
+        // see an occurrence the flattened record cannot carry, and everything
+        // below it is reached only once the parameter is known to be single.
+        rejectUnsupportedParams(
+          module.type,
+          c.req.queries(),
+          acceptedSearchParams(served, module.type)
+        );
         const query = c.req.query();
-        rejectUnsupportedParams(module.type, query, acceptedSearchParams(served, module.type));
         const paging = parsePaging(query);
         const page = await module.search(c, query, paging);
 

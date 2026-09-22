@@ -13,10 +13,17 @@ import { ApiError, type FieldIssue } from '../errors.js';
  * so the request was understood, and what failed was the content. Malformed
  * JSON is a 400 again, because nothing was understood.
  *
- * Every schema in this API is a `strictObject`, so an unexpected key is a
+ * Every schema on this boundary is a `strictObject`, so an unexpected key is a
  * rejection rather than a silent drop. Silently dropping is how a client ships
  * a typo'd field name and only finds out in production that the value never
  * arrived.
+ *
+ * That sentence used to be false for three of the forty-seven query schemas.
+ * `growthQuerySchema`, `pendingQuerySchema` and `referralListQuerySchema` were
+ * `z.object`, so `GET /referrals?openrunicNoSuchParam=1` answered 200 and
+ * ignored the parameter where the same request against `/patients` answered
+ * 400. One door, one helper, opposite answers, and the paragraph claiming the
+ * strict one covered both.
  */
 
 function toFieldIssues(error: z.ZodError): FieldIssue[] {
@@ -26,8 +33,44 @@ function toFieldIssues(error: z.ZodError): FieldIssue[] {
   }));
 }
 
-/** Parses the query string. Repeated parameters collapse to their first value. */
+/**
+ * A parameter sent more than once is refused, not answered with one of its
+ * values.
+ *
+ * `c.req.query()` keeps the first occurrence and discards the rest, so the
+ * multiplicity is gone before any schema sees the request. `?family=A&family=B`
+ * answered with A's rows and the reverse answered with B's - the response wider
+ * than the question, and order-dependent, with nothing in it saying so.
+ *
+ * It bypassed validation as well as filtering. `?birthDate=1994-03-02&
+ * birthDate=nonsense` answered 200 while the reverse answered 400, because a
+ * schema only ever saw the first occurrence. Every regex, `z.enum` and coercion
+ * on this boundary was reachable in the first position only. Refusing here, in
+ * front of the parse, makes that unreachable rather than unlikely.
+ *
+ * Refusing rather than combining them. These schemas are scalars: 0 of the 47
+ * query schemas has an array field, so there is no parameter that means a list
+ * and nothing to exempt - and `?sort=a&sort=b` is not a question with an
+ * answer. The FHIR boundary needed a per-parameter exemption because `$export`
+ * has `_type`; this one has no equivalent, checked rather than assumed.
+ */
+function rejectRepeated(occurrences: Record<string, readonly string[]>): void {
+  const repeated = Object.entries(occurrences)
+    .filter(([, values]) => values.length > 1)
+    .map(([name]) => name);
+  if (repeated.length === 0) return;
+
+  throw ApiError.malformed(
+    `Repeated query ${repeated.length === 1 ? 'parameter' : 'parameters'}: ${repeated.join(', ')}. Send each parameter once; this server does not combine two values for the same parameter.`,
+    {
+      issues: repeated.map((name) => ({ path: name, message: 'sent more than once' })),
+    }
+  );
+}
+
+/** Parses the query string, refusing a parameter that arrives more than once. */
 export function parseQuery<T>(c: Context<AppEnv>, schema: z.ZodType<T>): T {
+  rejectRepeated(c.req.queries());
   const result = schema.safeParse(c.req.query());
   if (!result.success) {
     throw ApiError.malformed('The query string is not valid.', {

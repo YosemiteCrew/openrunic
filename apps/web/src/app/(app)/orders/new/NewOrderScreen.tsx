@@ -16,14 +16,23 @@ import {
 import type { DraftOrder } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
-import { MOCK_NOW, patientProblems, rankCatalog, usePatients, warningsFor } from '@/lib/api';
+import {
+  MOCK_NOW,
+  patientProblems,
+  rankCatalog,
+  useOwnCapabilities,
+  usePatients,
+  warningsFor,
+} from '@/lib/api';
 import type {
   ApiClient,
+  AsyncState,
   ListResponse,
   OrderCatalogEntry,
   OrderWarning,
   Patient,
   PatientProblem,
+  PrincipalCapabilities,
 } from '@/lib/api';
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
 import type { Translator } from '@openrunic/i18n';
@@ -171,7 +180,7 @@ export function NewOrderScreen({
    * inside the shell; this one had it wrapped around the outside.
    */
   if (page !== null && !isEmptyList(page)) {
-    return <Composer patients={page} now={now} />;
+    return <Composer patients={page} now={now} client={client} />;
   }
 
   return (
@@ -202,6 +211,8 @@ export function NewOrderScreen({
 interface ComposerProps {
   patients: ListResponse<Patient>;
   now: string;
+  /** The screen's client, threaded so the capability read is the same one. */
+  client?: ApiClient;
 }
 
 /** The review table's columns, as catalogue keys. See `OrdersScreen` for why. */
@@ -344,6 +355,21 @@ function OrderingForRail({
 }
 
 /**
+ * Whether this principal may sign, as three states rather than two.
+ *
+ * `AsyncState` carries `loading | success | error` and the difference between
+ * them is a difference in what to SAY. Collapsed to a boolean, a clinician
+ * whose capability request failed was told their role cannot sign orders -
+ * #313 with the sign reversed. Both non-`yes` states still block.
+ */
+type SignPermission = 'yes' | 'no' | 'unknown';
+
+function signPermission(state: AsyncState<PrincipalCapabilities>): SignPermission {
+  if (state.status !== 'success' || state.data === null) return 'unknown';
+  return state.data.permissions.includes('order.write') ? 'yes' : 'no';
+}
+
+/**
  * What stands between this draft and a signature, in the order a person would
  * fix it: the criticals they must answer, then the diagnoses they must link.
  *
@@ -359,8 +385,26 @@ function signBlockers(
   t: Translator,
   drafts: readonly DraftOrder[],
   warnings: readonly OrderWarning[],
-  cleared: Readonly<Record<string, string>>
+  cleared: Readonly<Record<string, string>>,
+  maySign: SignPermission
 ): string[] {
+  /* First, because it is the one a person cannot fix by editing the draft. The
+     API refuses `order.write` for this principal either way (#313); before this
+     the refusal arrived after the whole order had been composed and pressed,
+     and in the demonstration build - which has no API - it did not arrive at
+     all and a biller appeared to sign clinical orders.
+  
+     A blocker rather than a hidden button: the screen stays readable, and the
+     reason is in the same `role="alert"` panel as every other reason. */
+  /* Three states, not two. `no` is resolved-and-denied; `unknown` is in flight
+     or failed, and saying "your role cannot sign orders" there tells a
+     clinician something false about their own authority - #313 with the sign
+     reversed. Both still block, so the gate direction is unchanged. */
+  const notPermitted = {
+    yes: [],
+    no: [t('orders.new.blocker.notPermitted')],
+    unknown: [t('orders.new.blocker.permissionUnknown')],
+  }[maySign];
   /* `flatMap` rather than `.filter().map()`: one pass over each list, and the
      empty array is the "not a blocker" case rather than a second traversal. */
   const openCriticals = warnings.flatMap((warning) =>
@@ -373,7 +417,7 @@ function signBlockers(
     draft.diagnosisCode ? [] : [t('orders.new.blocker.noDiagnosis', { order: draft.entry.name })]
   );
 
-  return [...openCriticals, ...missingDiagnosis];
+  return [...notPermitted, ...openCriticals, ...missingDiagnosis];
 }
 
 /**
@@ -475,7 +519,7 @@ function ReviewStep({
   );
 }
 
-function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
+function Composer({ patients, now, client }: Readonly<ComposerProps>): ReactElement {
   const t = useTranslator();
   const rows = patients.data;
   const [patientId, setPatientId] = useState(rows[0]?.id ?? '');
@@ -503,9 +547,17 @@ function Composer({ patients, now }: Readonly<ComposerProps>): ReactElement {
     [patient?.id, drafts]
   );
 
+  /* Blocked while it loads and blocked on failure - the permissive default is
+     the one that offers a signature because a request has not come back. The
+     status is carried through rather than collapsed to a boolean, because the
+     REASON differs: a denied clinician and an unreachable API are not the same
+     sentence to show someone. */
+  const capabilities = useOwnCapabilities({ client });
+  const maySign = signPermission(capabilities);
+
   const blockers = useMemo(
-    () => signBlockers(t, drafts, warnings, cleared),
-    [t, drafts, warnings, cleared]
+    () => signBlockers(t, drafts, warnings, cleared, maySign),
+    [t, drafts, warnings, cleared, maySign]
   );
 
   const addOrder = useCallback(

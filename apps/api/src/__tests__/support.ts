@@ -18,9 +18,10 @@ import {
   createEmptyDataset,
   createMemoryRepositoryRegistry,
   type MemoryDataset,
+  type MemoryRepositoryRegistry,
 } from '../repositories/memory.js';
 import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
-import type { AppointmentRow, PatientRow } from '../repositories/types.js';
+import type { AppointmentRow, PatientRow, RepositoryRegistry } from '../repositories/types.js';
 
 /**
  * Fixtures and harness for the API suite.
@@ -43,8 +44,12 @@ export const TOKENS = {
   portalA: 'dev-portal-a',
   /** A patient principal with no launch context, so no compartment is pinned. */
   portalNoCompartmentA: 'test-portal-no-compartment',
-  /** A portal role whose actor_type defaulted to user, and carries no compartment. */
+  /** A portal role whose actor type is user despite an otherwise valid launch compartment. */
   portalUserActorA: 'test-portal-user-actor',
+  /** A patient actor with a launch compartment but without the portal role. */
+  portalNoRoleA: 'test-portal-no-role',
+  /** A patient principal whose subject and launch compartment disagree. */
+  portalMismatchedCompartmentA: 'test-portal-mismatched-compartment',
   adminA: 'test-admin-a',
   /** A second administrator in the same organisation as `adminA`. */
   secondAdminA: 'test-second-admin-a',
@@ -270,6 +275,17 @@ export interface TestApp {
 
 export interface TestAppOptions extends Omit<CreateAppOptions, 'repositories' | 'auditSink'> {
   dataset?: MemoryDataset;
+  /**
+   * Wraps the in-memory registry before the app is built, for the few cases
+   * that need a repository call to fail or to be observed.
+   *
+   * It has to happen here rather than on `TestApp.repositories`, because the
+   * app closes over the registry it was given and a later replacement would be
+   * a second object nothing reads. Reach for it only where the failure cannot
+   * be produced through the port - the race between two real requests is a
+   * better test than a double, and is already written as one.
+   */
+  decorateRepositories?: (repositories: MemoryRepositoryRegistry) => RepositoryRegistry;
 }
 
 /**
@@ -326,10 +342,9 @@ export const DANGLING_PATIENT_SCOPE_PRINCIPAL: Principal = {
 
 /**
  * A patient principal with no launch context, so no chart is pinned and no
- * `compartmentPatientId` is set - the shape an OIDC patient carries when its
- * `actor_type` claim is present but its scope is a user one. A staff-only route
- * must refuse it on the actor type and the role, not on a compartment it does
- * not have. Test-only, because a denial fixture does not ship in the resolver.
+ * `compartmentPatientId` is set. The OIDC resolver refuses this shape; the
+ * fixture remains so routes using an injected resolver prove their own
+ * staff-only backstops too.
  */
 export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
   subject: DEMO_PORTAL_PATIENT,
@@ -343,14 +358,26 @@ export const PORTAL_NO_COMPARTMENT_PRINCIPAL: Principal = {
 };
 
 /**
- * The same portal identity again, but with `actor_type` absent so the resolver
- * defaults it to `user`. The compartment and actor-type signals both read as
- * staff here; only the `patient-portal` role gives it away. This is the token
- * shape that made the role a necessary backstop rather than a belt.
+ * The same portal identity again, but with the actor type set to `user`. Every
+ * other portal predicate is satisfied so this exercises the actor check alone.
  */
 export const PORTAL_USER_ACTOR_PRINCIPAL: Principal = {
   ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
   actorType: 'user',
+  compartmentPatientId: DEMO_PORTAL_PATIENT,
+};
+
+/** A patient launch with no portal role, exercising the role check alone. */
+export const PORTAL_NO_ROLE_PRINCIPAL: Principal = {
+  ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
+  roles: ['admin'],
+  compartmentPatientId: DEMO_PORTAL_PATIENT,
+};
+
+/** A patient-shaped principal whose asserted identity and launch chart disagree. */
+export const PORTAL_MISMATCHED_COMPARTMENT_PRINCIPAL: Principal = {
+  ...PORTAL_NO_COMPARTMENT_PRINCIPAL,
+  compartmentPatientId: testId(2),
 };
 
 /**
@@ -437,6 +464,8 @@ export function testPrincipalResolver(): PrincipalResolver {
       [TOKENS.danglingPatientScopeA, DANGLING_PATIENT_SCOPE_PRINCIPAL],
       [TOKENS.portalNoCompartmentA, PORTAL_NO_COMPARTMENT_PRINCIPAL],
       [TOKENS.portalUserActorA, PORTAL_USER_ACTOR_PRINCIPAL],
+      [TOKENS.portalNoRoleA, PORTAL_NO_ROLE_PRINCIPAL],
+      [TOKENS.portalMismatchedCompartmentA, PORTAL_MISMATCHED_COMPARTMENT_PRINCIPAL],
       [TOKENS.siteReaderA, SITE_READER_PRINCIPAL],
       [TOKENS.auditorA, AUDITOR_PRINCIPAL],
     ])
@@ -445,6 +474,7 @@ export function testPrincipalResolver(): PrincipalResolver {
 
 /** Builds the real app over the in-memory store, with a deterministic clock and ids. */
 export function createTestApp(options: TestAppOptions = {}): TestApp {
+  const { decorateRepositories, ...appOptions } = options;
   const dataset = options.dataset ?? createEmptyDataset();
   const auditStore = createAuditChainStore();
   const sink = createMemoryAuditSink({ store: auditStore, now: () => FIXED_NOW });
@@ -459,10 +489,15 @@ export function createTestApp(options: TestAppOptions = {}): TestApp {
 
   const app = createApp({
     principalResolver: testPrincipalResolver(),
-    ...options,
-    repositories,
-    auditSink: sink,
+    /* Before the spread, not after it. `repositories` and `auditSink` are built
+       here and a caller cannot supply them, so they override; the clock is not
+       like that - a test that passes `now` means it, and this line silently
+       won. Found by a probe that varied `now` and got an identical response
+       both times, which is what a dead arm looks like from outside. */
     now: () => FIXED_NOW,
+    ...appOptions,
+    repositories: decorateRepositories?.(repositories) ?? repositories,
+    auditSink: sink,
   });
 
   return { app, dataset, sink, auditStore };

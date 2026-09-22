@@ -37,6 +37,7 @@ const statementRowSchema = z.object({
   patientId: z.string(),
   status: z.string(),
   balanceCents: z.number(),
+  currency: z.string().length(3),
   generatedAt: z.string(),
   paidAt: z.string().nullable(),
 });
@@ -87,7 +88,7 @@ export const billsList = defineTool({
         id: row.id,
         label: `Bill dated ${dayOf(row.generatedAt)}`,
         fields: [
-          { name: 'Still to pay', value: amountOf(row.balanceCents) },
+          { name: 'Still to pay', value: amountOf(row.balanceCents, row.currency) },
           { name: 'Status', value: plainStatus(row.status) },
           ...(row.paidAt === null ? [] : [{ name: 'Paid on', value: dayOf(row.paidAt) }]),
         ],
@@ -99,14 +100,9 @@ export const billsList = defineTool({
 });
 
 /**
- * The balance as a figure, with no currency symbol on it.
- *
- * The stored statement carries minor units and no currency code, so a symbol
- * here would be one this code invented. The portal's bills screen holds the
- * practice's currency and renders it beside the same figure; a citation from
- * this tool opens exactly that screen. Naming an amount without a currency is a
- * gap, and it is a smaller one than naming the wrong currency.
+ * The stored balance and its ISO currency, without guessing a locale-specific
+ * symbol the model could repeat without its code.
  */
-function amountOf(minorUnits: number): string {
-  return (minorUnits / 100).toFixed(2);
+function amountOf(minorUnits: number, currency: string): string {
+  return `${(minorUnits / 100).toFixed(2)} ${currency}`;
 }

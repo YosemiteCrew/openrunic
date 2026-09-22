@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The openrunic agent loop: approval gating, tenant scoping, budget caps and audit emission over a deployer-configured inference endpoint.",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -40,10 +40,10 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.20.1",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.66.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.11"
   }
 }

@@ -106,7 +106,7 @@ describe('AppointmentsScreen', () => {
     const requestSpy = vi.spyOn(api, 'requestAppointment');
     render(<AppointmentsScreen api={api} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Request an appointment' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Request an appointment' }));
 
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('Nothing is booked until they do.');
@@ -160,7 +160,7 @@ describe('AppointmentsScreen', () => {
   it('keeps what was typed when the request fails to send', async () => {
     render(<AppointmentsScreen api={stubApi({ requestAppointment: fails })} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Request an appointment' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Request an appointment' }));
     const dialog = screen.getByRole('dialog');
     const reason = within(dialog).getByLabelText(/What do you need to be seen about\?/);
     await userEvent.type(reason, 'Sore throat');
@@ -173,7 +173,7 @@ describe('AppointmentsScreen', () => {
   it('will not send a request with no reason, and closes on request', async () => {
     render(<AppointmentsScreen api={stubApi()} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Request an appointment' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Request an appointment' }));
     expect(screen.getByRole('button', { name: 'Send the request' })).toBeDisabled();
 
     await userEvent.click(screen.getByRole('button', { name: 'Close without sending' }));
@@ -265,6 +265,49 @@ describe('AppointmentsScreen', () => {
     );
 
     expect(await screen.findByText('The practice will confirm the room.')).toBeInTheDocument();
+  });
+
+  it('does not offer unsupported live actions or invent missing appointment facts', async () => {
+    const appointment: Appointment = {
+      id: 'appt-read-only',
+      startsAt: '2026-09-24T14:00:00.000Z',
+      durationMinutes: 30,
+      reason: 'Review',
+      clinician: null,
+      department: null,
+      mode: null,
+      location: null,
+      joinUrl: null,
+      directionsUrl: null,
+      cancellationSupported: false,
+      rescheduleSupported: false,
+    };
+    const unexpectedMode = {
+      ...appointment,
+      id: 'appt-unexpected-mode',
+      mode: 'home-visit' as Appointment['mode'],
+    };
+
+    render(
+      <AppointmentsScreen
+        api={stubApi({
+          getAppointments: () =>
+            Promise.resolve({
+              upcoming: [appointment, unexpectedMode],
+              past: [],
+              requestsSupported: false,
+            }),
+        })}
+      />
+    );
+
+    expect(await screen.findAllByText('Your care team')).toHaveLength(2);
+    expect(screen.getAllByText('Appointment')).toHaveLength(2);
+    expect(
+      screen.queryByRole('button', { name: 'Request an appointment' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ask to move it' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
   });
 
   it('states the error and recovers when the reader tries again', async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ToolError } from '../errors.js';
 import type { ProposalResult } from '../proposal.js';
+import type { ToolContext } from '../registry.js';
 import {
   TEST_PATIENT_ID,
   recordingApiClient,
@@ -13,7 +14,13 @@ import { appointmentsFindSlots, freeSlots } from './appointments-find-slots.js';
 import { createAppointmentsPropose, DEFAULT_APPOINTMENT_ENVELOPE } from './appointments-propose.js';
 import { auditQuery } from './audit-query.js';
 import { chartSearch } from './chart-search.js';
-import { codingSuggest } from './coding-suggest.js';
+import {
+  codingSuggest,
+  createCodingSuggest,
+  type CodingCitation,
+  type CodingLevelRules,
+  type SupportedLevel,
+} from './coding-suggest.js';
 import { denialDraftAppeal } from './denial-draft-appeal.js';
 import { categorise, denialTriage } from './denial-triage.js';
 import { documentsExtractCandidates } from './documents-extract-candidates.js';
@@ -21,6 +28,7 @@ import { formsDraftDefinition } from './forms-draft-definition.js';
 import { inboxClassify } from './inbox-classify.js';
 import { messagesDraftReply } from './messages-draft-reply.js';
 import { priorauthAssemblePacket } from './priorauth-assemble-packet.js';
+import type { SourceRef } from './shared.js';
 
 /**
  * The catalogue, exercised. Every read tool is driven against a recording
@@ -72,6 +80,15 @@ describe('chart.search', () => {
       shown: 1,
       rows: [{ type: 'Patient', label: 'Patientsson, Testina' }],
     });
+  });
+
+  it('refuses an impossible patient birth date before calling the API', async () => {
+    const api = recordingApiClient(() => PATIENT_PAGE);
+
+    await expect(
+      chartSearch.run({ resource: 'patient', birthDate: '2025-02-29' }, stubToolContext({ api }))
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
+    expect(api.calls).toHaveLength(0);
   });
 
   it('carries a source reference on every row', async () => {
@@ -246,6 +263,24 @@ describe('priorauth.assemblePacket', () => {
     expect(proposal.commit.path).toBe('/bff/v0/forms');
     expect(proposal.commit.body['justification']).toBeTypeOf('string');
     expect(proposal.effect[0]).toEqual({ label: 'Payer', value: 'Example Health Plan' });
+  });
+
+  it('refuses an impossible service start date', async () => {
+    await expect(
+      priorauthAssemblePacket.run(
+        {
+          payer: { system: 'payer', code: 'PAYER-1', display: 'Example Health Plan' },
+          memberId: 'M-1',
+          serviceCode: { system: 'CPT', code: '97110' },
+          diagnosisCodes: [{ system: 'ICD-10-CM', code: 'M54.5' }],
+          requestedUnits: 12,
+          startDate: '2025-02-29',
+          renderingProviderId: PROVIDER_ID,
+          justification: 'Conservative management has been documented for six weeks.',
+        },
+        stubToolContext()
+      )
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
   });
 });
 
@@ -630,6 +665,25 @@ describe('documents.extractCandidates', () => {
       )
     ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
   });
+
+  it('refuses an impossible effective date', async () => {
+    await expect(
+      documentsExtractCandidates.run(
+        {
+          encounterId: ENCOUNTER_ID,
+          documentId: DOCUMENT_ID,
+          candidates: [
+            {
+              concept: { system: 'LOINC', code: '4548-4' },
+              effectiveDate: '2025-02-29',
+              source: { resourceType: 'Document', resourceId: DOCUMENT_ID, field: 'page1' },
+            },
+          ],
+        },
+        stubToolContext()
+      )
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
+  });
 });
 
 describe('messages.draftReply', () => {
@@ -651,25 +705,49 @@ describe('messages.draftReply', () => {
 });
 
 describe('coding.suggest', () => {
+  const PLAN: SourceRef = { resourceType: 'Encounter', resourceId: ENCOUNTER_ID, field: 'plan' };
+  const ASSESSMENT: SourceRef = {
+    resourceType: 'Encounter',
+    resourceId: ENCOUNTER_ID,
+    field: 'assessment',
+  };
+
+  interface RecordingRules extends CodingLevelRules {
+    readonly asked: CodingCitation[];
+    readonly contexts: ToolContext[];
+  }
+
+  /** A rule set that answers one fixed verdict and records everything it was asked. */
+  function rulesAnswering(answer: SupportedLevel): RecordingRules {
+    const asked: CodingCitation[] = [];
+    const contexts: ToolContext[] = [];
+    return {
+      asked,
+      contexts,
+      supportedLevelFor(citation, context) {
+        asked.push(citation);
+        contexts.push(context);
+        return Promise.resolve(answer);
+      },
+    };
+  }
+
+  function oneSuggestion(overrides: Record<string, unknown> = {}) {
+    return {
+      claimId: CLAIM_ID,
+      suggestions: [
+        { system: 'CPT', code: '99214', level: 4, supportedLevel: 4, source: PLAN, ...overrides },
+      ],
+    };
+  }
+
   it('orders by code and carries no money anywhere', async () => {
-    const result = await codingSuggest.run(
+    const result = await createCodingSuggest(rulesAnswering({ computed: true, level: 4 })).run(
       {
         claimId: CLAIM_ID,
         suggestions: [
-          {
-            system: 'ICD-10-CM',
-            code: 'M54.5',
-            level: 0,
-            supportedLevel: 0,
-            source: { resourceType: 'Encounter', resourceId: ENCOUNTER_ID, field: 'assessment' },
-          },
-          {
-            system: 'CPT',
-            code: '99213',
-            level: 3,
-            supportedLevel: 4,
-            source: { resourceType: 'Encounter', resourceId: ENCOUNTER_ID, field: 'plan' },
-          },
+          { system: 'ICD-10-CM', code: 'M54.5', level: 0, supportedLevel: 0, source: ASSESSMENT },
+          { system: 'CPT', code: '99213', level: 3, supportedLevel: 4, source: PLAN },
         ],
       },
       stubToolContext()
@@ -683,19 +761,13 @@ describe('coding.suggest', () => {
     expect(JSON.stringify(proposal)).not.toMatch(/cents|amount|reimburse/i);
   });
 
-  it('refuses a level above what the documentation supports', async () => {
+  it('refuses a level above the one the caller itself claims', async () => {
     await expect(
       codingSuggest.run(
         {
           claimId: CLAIM_ID,
           suggestions: [
-            {
-              system: 'CPT',
-              code: '99215',
-              level: 5,
-              supportedLevel: 3,
-              source: { resourceType: 'Encounter', resourceId: ENCOUNTER_ID, field: 'plan' },
-            },
+            { system: 'CPT', code: '99215', level: 5, supportedLevel: 3, source: PLAN },
           ],
         },
         stubToolContext()
@@ -721,5 +793,83 @@ describe('coding.suggest', () => {
         stubToolContext()
       )
     ).rejects.toMatchObject({ code: 'AGENT_TOOL_INPUT_INVALID' });
+  });
+
+  it('asks the rule set about the cited span, with the caller own context', async () => {
+    const rules = rulesAnswering({ computed: true, level: 4 });
+    const context = stubToolContext();
+
+    const result = await createCodingSuggest(rules).run(oneSuggestion(), context);
+
+    expect(proposalOf(result).commit.path).toContain(CLAIM_ID);
+    expect(rules.asked).toEqual([{ system: 'CPT', code: '99214', source: PLAN }]);
+    expect(rules.contexts).toEqual([context]);
+  });
+
+  /*
+   * The defect this issue is about: the caller supplies a self-consistent pair
+   * (level 4, supportedLevel 4) that the refine accepts, and the documentation
+   * supports 2. A refusal read off the suggestion cannot see this.
+   */
+  it('measures the level against the rule set and not against the field it was sent', async () => {
+    const result = await createCodingSuggest(rulesAnswering({ computed: true, level: 2 })).run(
+      oneSuggestion(),
+      stubToolContext()
+    );
+
+    expect(result).toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('supports level 2'),
+    });
+  });
+
+  it('defers a levelled suggestion when no rule set is loaded', async () => {
+    const result = await codingSuggest.run(oneSuggestion(), stubToolContext());
+
+    expect(result).toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('No coding level rule set is loaded'),
+    });
+  });
+
+  it('defers a citation that does not resolve rather than reading it as level 0', async () => {
+    const missing = 'the cited encounter note was not readable';
+
+    const result = await createCodingSuggest(rulesAnswering({ computed: false, missing })).run(
+      oneSuggestion(),
+      stubToolContext()
+    );
+
+    expect(result).toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining(missing),
+    });
+    /* Not "supports level 0": an unresolvable citation is not a documented zero. */
+    expect(result).not.toMatchObject({ reason: expect.stringContaining('supports level') });
+  });
+
+  it('needs no rule set for codes where levels do not apply', async () => {
+    const rules = rulesAnswering({ computed: true, level: 5 });
+
+    const result = await createCodingSuggest(rules).run(
+      oneSuggestion({ system: 'ICD-10-CM', code: 'M54.5', level: 0, supportedLevel: 0 }),
+      stubToolContext()
+    );
+
+    expect(proposalOf(result).effect).toContainEqual({
+      label: 'Codes',
+      value: 'ICD-10-CM M54.5',
+    });
+    expect(rules.asked).toEqual([]);
+  });
+
+  it('fails loudly when the rule set answers in a shape it cannot read', async () => {
+    const rules: CodingLevelRules = {
+      supportedLevelFor: () => Promise.resolve({ level: 4 } as unknown as SupportedLevel),
+    };
+
+    await expect(
+      createCodingSuggest(rules).run(oneSuggestion(), stubToolContext())
+    ).rejects.toMatchObject({ code: 'AGENT_TOOL_FAILED' });
   });
 });

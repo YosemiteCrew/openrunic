@@ -38,6 +38,17 @@ export function AppointmentFacts({
   t,
   videoLocation,
 }: Readonly<AppointmentFactsProps>) {
+  let who: string;
+  if (appointment.clinician === null) {
+    who = appointment.department ?? t('portal.appointment.careTeam');
+  } else if (appointment.department === null) {
+    who = appointment.clinician;
+  } else {
+    who = t('portal.appointment.whoWithValue', {
+      clinician: appointment.clinician,
+      department: appointment.department,
+    });
+  }
   /*
    * Both values are one message with two holes rather than two pieces joined by
    * a comma here. The comma is punctuation this language happens to use between
@@ -56,12 +67,7 @@ export function AppointmentFacts({
       </div>
       <div className="portal-data-list__row">
         <dt className="portal-data-list__term">{t('portal.appointment.whoWith')}</dt>
-        <dd className="portal-data-list__value">
-          {t('portal.appointment.whoWithValue', {
-            clinician: appointment.clinician,
-            department: appointment.department,
-          })}
-        </dd>
+        <dd className="portal-data-list__value">{who}</dd>
       </div>
       <div className="portal-data-list__row">
         <dt className="portal-data-list__term">{t('portal.appointment.where')}</dt>

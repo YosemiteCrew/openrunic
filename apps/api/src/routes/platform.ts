@@ -97,7 +97,8 @@ import {
   UNPROCESSABLE_RESPONSE,
   type CrudModule,
 } from './crud.js';
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { ROLE_MODEL_CAVEAT } from '../policy/permissions.js';
+import { idParamSchema, policyOf, repositories, required, requiredParentChart } from './helpers.js';
 
 /**
  * The platform surface: forms, the staff directory, places of service, the
@@ -299,6 +300,7 @@ function platformCrudModules(): CrudModule[] {
     }),
     defineCrud({
       segment: 'roles',
+      caveat: ROLE_MODEL_CAVEAT,
       singular: 'role',
       plural: 'roles',
       tag: 'roles',
@@ -505,7 +507,7 @@ function handWrittenContracts(): RouteContract[] {
       path: '/bff/v0/users/{id}/roles',
       operationId: 'listUserRoles',
       summary: "List a user's role assignments.",
-      description: 'A grant with no facility is organisation-wide.',
+      description: `A grant with no facility is organisation-wide. ${ROLE_MODEL_CAVEAT}`,
       tags: ['users'],
       permission: 'role.read',
       pathParams: [{ name: 'id', description: 'User id (UUIDv7).', schema: idParamSchema }],
@@ -525,8 +527,7 @@ function handWrittenContracts(): RouteContract[] {
       path: '/bff/v0/users/{id}/roles',
       operationId: 'assignUserRole',
       summary: 'Grant a user a role.',
-      description:
-        'Optionally narrowed to one facility; omitting the facility grants it across the organisation. The same grant cannot be handed out twice.',
+      description: `Optionally narrowed to one facility; omitting the facility grants it across the organisation. The same grant cannot be handed out twice. ${ROLE_MODEL_CAVEAT}`,
       tags: ['users'],
       permission: 'role.write',
       pathParams: [{ name: 'id', description: 'User id (UUIDv7).', schema: idParamSchema }],
@@ -715,7 +716,29 @@ export function platformRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, formSubmissionCompleteSchema);
     const collection = repositories(c).formSubmissions;
-    const existing = required(await collection.findById(id), MISSING_SUBMISSION);
+    /*
+     * A submission names a chart, and the generated read of one is gated by
+     * the `chartFrom` this module declares for it. These three transitions are
+     * registered by hand, so the CRUD seam never saw them (#322): driven on a
+     * clinician refused the read, each answered 200. Written without the
+     * declaration spelt out, because `bff.chart-crud-gate.test.ts` scans this
+     * file as TEXT and a comment quoting `chartFrom: '...'` is indistinguishable
+     * from one - it read this paragraph as `terminology` declaring a chart.
+     *
+     * Driven on `dev`, a
+     * clinician refused `GET /forms/submissions/{id}` with 404 could still
+     * complete, sign and amend the same submission, each answering 200.
+     *
+     * Signing is the one that decides it. A signed form is an attestation
+     * carrying `signedById`, so an ungated door stamps the refused caller's
+     * name on a document in a chart they cannot open.
+     */
+    const existing = await requiredParentChart(
+      c,
+      'formSubmissions',
+      await collection.findById(id),
+      MISSING_SUBMISSION
+    );
     assertTransition(FORM_SUBMISSION_TRANSITIONS, 'form submission', existing.status, 'COMPLETED');
 
     const row = await collection.update(id, {
@@ -733,7 +756,12 @@ export function platformRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, formSubmissionSignSchema);
     const collection = repositories(c).formSubmissions;
-    const existing = required(await collection.findById(id), MISSING_SUBMISSION);
+    const existing = await requiredParentChart(
+      c,
+      'formSubmissions',
+      await collection.findById(id),
+      MISSING_SUBMISSION
+    );
     assertTransition(FORM_SUBMISSION_TRANSITIONS, 'form submission', existing.status, 'SIGNED');
 
     const row = await collection.update(id, {
@@ -748,7 +776,12 @@ export function platformRoutes(): Hono<AppEnv> {
     const id = parseParam(c.req.param('id'), idParamSchema, 'id');
     const body = await parseJsonBody(c, formSubmissionAmendSchema);
     const collection = repositories(c).formSubmissions;
-    const existing = required(await collection.findById(id), MISSING_SUBMISSION);
+    const existing = await requiredParentChart(
+      c,
+      'formSubmissions',
+      await collection.findById(id),
+      MISSING_SUBMISSION
+    );
     assertTransition(FORM_SUBMISSION_TRANSITIONS, 'form submission', existing.status, 'AMENDED');
 
     const row = await collection.update(id, {
@@ -832,8 +865,8 @@ export function platformRoutes(): Hono<AppEnv> {
   });
 
   router.get('/audit/verify', requirePermission('audit.read'), async (c) => {
-    const result = await repositories(c).audit.verifyChain();
-    return c.json(toAuditVerificationDto(result));
+    const outcome = await repositories(c).audit.verifyChain();
+    return c.json(toAuditVerificationDto(outcome));
   });
 
   router.get('/audit/:id', requirePermission('audit.read'), async (c) => {

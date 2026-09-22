@@ -166,14 +166,23 @@ cannot be signed into yet.** That is the state of the project, not a fault in
 your install, and it is the same gap the [Security](#security) section is about.
 
 What the demo practice is reachable through in the meantime is the API, which
-accepts three demo tokens directly. Put one of these in an
+accepts six demo tokens directly. Put one of these in an
 `Authorization: Bearer` header on a request to port 4000:
 
-| Token             | Who they are                   |
-| ----------------- | ------------------------------ |
-| `dev-clinician-a` | Dr. Adaeze Okafor, a clinician |
-| `dev-frontdesk-a` | Front desk                     |
-| `dev-biller-a`    | Billing                        |
+| Token               | Who they are                                        |
+| ------------------- | --------------------------------------------------- |
+| `dev-clinician-a`   | Dr. Adaeze Okafor, a clinician                      |
+| `dev-frontdesk-a`   | Front desk                                          |
+| `dev-biller-a`      | Billing                                             |
+| `dev-auditor-a`     | Audita Trailmore, reads the audit trail and no more |
+| `dev-stockkeeper-a` | Stocka Shelfward, runs the stockroom and counts it  |
+| `dev-readonly-a`    | Reada Overlook, reads everything, writes nothing    |
+
+The last three exist so that the jobs that are not an administrator's can be
+done without one. Reviewing who opened which chart, reconciling a physical count
+against the ledger, and looking without touching are each a separate grant, and
+before these tokens existed the only bundle holding any of them was `admin` -
+which holds everything, including breaking glass on a chart.
 
 These are not passwords and they are not secret. They are in the source code,
 and they exist so the demo practice can be looked at. See [Security](#security).
@@ -362,6 +371,13 @@ do, the tokens above are published in the source, and anyone who can reach port
 `OIDC_CLIENT_ID` with `OIDC_REDIRECT_URI` gives staff a sign-in that redirects
 to your provider. See `.env.example` for the full list. Without them, openrunic
 must only run on a machine that only you can reach.
+
+The API refuses a half-set group on purpose: `OIDC_ISSUER`, `OIDC_AUDIENCE` and
+`OIDC_JWKS_URI` are set together or not at all, because an issuer with no key
+set would otherwise leave the stack quietly on the demo tokens while looking
+configured. All of these are read at runtime, so changing one means
+`docker compose up -d` and not a rebuild - unlike `NEXT_PUBLIC_API_BASE_URL`,
+which Next.js inlines into the image.
 
 **Do not put it on the internet.** Not behind a password-protected reverse
 proxy either. The gap is not the front door; there is no lock on any of the

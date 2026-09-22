@@ -12,6 +12,7 @@ import {
   telecom,
 } from './datatypes.js';
 import { CODE_SYSTEMS } from './oids.js';
+import { CcdaError } from './xml/errors.js';
 import { attr, childNamed, element, textOf } from './xml/tree.js';
 import { renderElement } from './xml/writer.js';
 
@@ -90,6 +91,10 @@ describe('effective times', () => {
 
     expect(attr(childNamed(node, 'low'), 'value')).toBe('20260101');
     expect(attr(childNamed(node, 'high'), 'value')).toBe('20260201');
+  });
+
+  it('refuses an impossible date instead of writing it into the document', () => {
+    expect(() => effectiveTime('2026-02-30')).toThrow(CcdaError);
   });
 
   /**

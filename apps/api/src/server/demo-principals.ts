@@ -70,6 +70,65 @@ export const DEMO_TOKENS: readonly DemoTokenSpec[] = [
     purposeOfUse: 'HPAYMT',
     scopes: ['user/*.read', 'user/*.write'],
   },
+  /*
+   * The three oversight principals.
+   *
+   * Without them `audit.read` and `inventory.adjust` are held by no token any
+   * deployment publishes, so the audit trail this API writes correctly cannot be
+   * read by anybody on a demo stack, and the reconciliation half of the stock
+   * ledger - deliberately separated from `inventory.write` so the person who
+   * dispenses is not the person who reconciles - cannot be exercised at all.
+   *
+   * What was missing was a principal, not a role: `auditor`, `stock-keeper` and
+   * `read-only` are already in `ROLE_PERMISSIONS`. Nothing instantiated them.
+   */
+  {
+    token: 'dev-auditor-a',
+    email: 'a.trailmore@demo.invalid',
+    roles: ['auditor'],
+    // Compliance. The auditor reviews who opened which chart and when; that is
+    // an oversight activity, not a treatment one, and the code is permanent in
+    // every audit event this token causes.
+    purposeOfUse: 'HCOMPL',
+    // Read only, and deliberately not a copy of the line above. This role holds
+    // `audit.read` and `facility.read` and nothing else; `user/*.write` would
+    // give the audit account FHIR write reach at the API layer that no
+    // permission it holds would ever ask for.
+    scopes: ['user/*.read'],
+  },
+  {
+    token: 'dev-stockkeeper-a',
+    email: 's.shelfward@demo.invalid',
+    roles: ['stock-keeper'],
+    // Healthcare operations, and the same code the front desk carries because
+    // running the stockroom genuinely is one - reused because it is right, not
+    // because it was next to this line.
+    purposeOfUse: 'HOPERAT',
+    // The one of the three that writes: booking in a delivery and reconciling a
+    // count are both writes.
+    scopes: ['user/*.read', 'user/*.write'],
+  },
+  {
+    token: 'dev-readonly-a',
+    email: 'r.overlook@demo.invalid',
+    roles: ['read-only'],
+    /*
+     * The weakest fit of the four codes in this file, and stated as such.
+     *
+     * `TREAT`, `HOPERAT`, `HPAYMT` and `HCOMPL` all name something a person is
+     * doing. `read-only` names how much of the system a person may see, which is
+     * not an activity, so no code describes it exactly. `HQUALIMP` is the
+     * closest: an account that may look at everything clinical and change none
+     * of it is a reviewer. Nothing in this system validates the field - it is a
+     * free string recorded into an audit trail that cannot be rewritten - so the
+     * choice is worth arguing here rather than looking as settled as its
+     * neighbours.
+     */
+    purposeOfUse: 'HQUALIMP',
+    // The bundle is every non-supervisory `.read` and nothing else, so a write
+    // scope here would contradict the role's entire name.
+    scopes: ['user/*.read'],
+  },
 ];
 
 /**

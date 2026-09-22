@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Everything below is counted from this repository at version **0.2.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
+Everything below is counted from this repository at version **0.3.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
 
 **45 available now. 5 next. 3 later.** 31 FHIR R4 resource types served at the boundary. 2 languages.
 
@@ -104,38 +104,38 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1775 of 2498 messages (71%).
+**es**: 1846 of 2600 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
 | admin     | 444 | 444 | `██████████████████` |
-| assistant |  55 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| assistant |  63 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | auth      |  21 |  21 | `██████████████████` |
-| billing   | 461 | 461 | `██████████████████` |
-| chart     | 175 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| billing   | 463 | 463 | `██████████████████` |
+| chart     | 187 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | clinical  |  10 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| common    |  29 |  29 | `██████████████████` |
+| common    |  33 |  33 | `██████████████████` |
 | downtime  |  14 |  14 | `██████████████████` |
 | encounter |  66 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | inbox     |  54 |  54 | `██████████████████` |
 | insurance |  63 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | marketing | 162 | 162 | `██████████████████` |
 | nav       |  44 |  44 | `██████████████████` |
-| orders    | 141 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| patients  | 131 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| portal    | 294 | 294 | `██████████████████` |
+| orders    | 150 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| patients  | 133 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| portal    | 357 | 357 | `██████████████████` |
 | reports   |  84 |  84 | `██████████████████` |
 | results   |  82 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | schedule  | 147 | 147 | `██████████████████` |
-| shell     |  21 |  21 | `██████████████████` |
+| shell     |  23 |  23 | `██████████████████` |
 
 ## Workspace
 
-26 workspaces, all at 0.2.0.
+27 workspaces, all at 0.3.0.
 
 **apps/** `api`, `@openrunic/e2e`, `portal`, `web`.
 
-**packages/** `@openrunic/adapters`, `@openrunic/agent`, `@openrunic/agent-tools`, `@openrunic/ccda`, `@openrunic/cds-hooks`, `@openrunic/clinical-safety`, `@openrunic/collections`, `@openrunic/database`, `@openrunic/fhir`, `@openrunic/forms-engine`, `@openrunic/growth`, `@openrunic/hl7v2`, `@openrunic/i18n`, `@openrunic/inventory`, `@openrunic/mips`, `@openrunic/ops`, `@openrunic/pricing`, `@openrunic/quality`, `@openrunic/terminology`, `@openrunic/types`, `@openrunic/ui`, `@openrunic/x12`.
+**packages/** `@openrunic/adapters`, `@openrunic/agent`, `@openrunic/agent-tools`, `@openrunic/ccda`, `@openrunic/cds-hooks`, `@openrunic/clinical-safety`, `@openrunic/collections`, `@openrunic/database`, `@openrunic/fhir`, `@openrunic/forms-engine`, `@openrunic/growth`, `@openrunic/hl7v2`, `@openrunic/i18n`, `@openrunic/inventory`, `@openrunic/mips`, `@openrunic/ops`, `@openrunic/pricing`, `@openrunic/quality`, `@openrunic/terminology`, `@openrunic/types`, `@openrunic/ui`, `@openrunic/voice`, `@openrunic/x12`.
 
 ---
 

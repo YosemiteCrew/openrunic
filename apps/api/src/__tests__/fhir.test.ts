@@ -16,8 +16,10 @@ import {
   dateWindow,
   parseDateOnly,
   referenceId,
+  referenceText,
   rejectUnsupportedParams,
   tokenValue,
+  uuidValue,
 } from '../fhir/params.js';
 import { acceptedSearchParams } from '../fhir/registry.js';
 import { toPatientDto } from '../schemas/patients.js';
@@ -320,10 +322,100 @@ describe('search parameter handling', () => {
   it('refuses an unsupported parameter rather than ignoring it', () => {
     const accepted = acceptedSearchParams(servedResources(), 'Patient');
 
-    expect(() => rejectUnsupportedParams('Patient', { telecom: 'x' }, accepted)).toThrow(
+    expect(() => rejectUnsupportedParams('Patient', { telecom: ['x'] }, accepted)).toThrow(
       /Unsupported search/
     );
-    expect(() => rejectUnsupportedParams('Patient', { family: 'x' }, accepted)).not.toThrow();
+    expect(() => rejectUnsupportedParams('Patient', { family: ['x'] }, accepted)).not.toThrow();
+  });
+
+  it('refuses a supported parameter that is present and empty', () => {
+    /*
+     * `?family=` is present-and-empty, not absent, and the three answers this
+     * boundary used to give it were an empty bundle, the whole practice, and a
+     * 400 - depending on which parameter it was. The whole-practice answer is
+     * what this exists for: a contains-filter on an empty needle matches every
+     * row, so a client that filtered received everything and could not tell.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { family: [''] }, accepted)).toThrow(
+      /Empty search parameter/u
+    );
+  });
+
+  it('refuses a parameter sent more than once', () => {
+    /*
+     * FHIR reads `?family=A&family=B` as AND. This server applied A and
+     * discarded B, so the answer was wider than the question and reversing the
+     * two changed it. The values arrive here as an array precisely so this can
+     * be seen: `c.req.query()` keeps the first occurrence, and a check reading
+     * that record cannot tell one occurrence from three.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { family: ['a', 'b'] }, accepted)).toThrow(
+      /Repeated search parameter/u
+    );
+    expect(() => rejectUnsupportedParams('Patient', { family: ['a'] }, accepted)).not.toThrow();
+  });
+
+  it('permits a repeat only for a parameter a call site names', () => {
+    /*
+     * `$export`'s `_type` means a list on purpose and `parseTypeFilter` reads
+     * every occurrence. The exemption is per parameter rather than per route:
+     * `_since` sent twice is still two answers to one question.
+     */
+    const accepted = new Set(['_type', '_since']);
+    const repeatable = new Set(['_type']);
+    expect(() =>
+      rejectUnsupportedParams('$export', { _type: ['Patient', 'Encounter'] }, accepted, repeatable)
+    ).not.toThrow();
+    expect(() =>
+      rejectUnsupportedParams('$export', { _since: ['a', 'b'] }, accepted, repeatable)
+    ).toThrow(/Repeated search parameter/u);
+  });
+
+  it('refuses an empty occurrence of a parameter that is allowed to repeat', () => {
+    /*
+     * The exemption is from the repetition rule alone. `?_type=Patient&_type=`
+     * is a client sending a blank field, and the reason the empty rule exists
+     * is that a blank field must not be read as an absent parameter.
+     */
+    const accepted = new Set(['_type']);
+    expect(() =>
+      rejectUnsupportedParams('$export', { _type: ['Patient', ''] }, accepted, new Set(['_type']))
+    ).toThrow(/Empty search parameter/u);
+  });
+
+  it('reports a repeated parameter as unknown when it is also unsupported', () => {
+    /*
+     * Order matters and is asserted, for the same reason the empty case is:
+     * "not a supported search parameter" tells the client what to fix, where
+     * "sent more than once" would send them to send an unsupported parameter
+     * once.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: ['a', 'b'] }, accepted)).toThrow(
+      /Unsupported search parameter/u
+    );
+  });
+
+  it('reports an unknown empty parameter as unknown rather than as empty', () => {
+    /* Both rules match; only one of them tells the client what to fix. */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { telecom: [''] }, accepted)).toThrow(
+      /Unsupported search parameter/u
+    );
+  });
+
+  it('leaves a value that is only whitespace alone', () => {
+    /*
+     * Deliberate, and the boundary between this rule and a different one. The
+     * rule is about a parameter carrying no value at all, which is what a blank
+     * form field produces; trimming would make this guard decide what counts as
+     * a meaningful search term, which is the value set's job and not the query
+     * parser's. A space is a legal character in a name.
+     */
+    const accepted = new Set(['family']);
+    expect(() => rejectUnsupportedParams('Patient', { family: [' '] }, accepted)).not.toThrow();
   });
 
   it('reads the value half of a token, and a bare value whole', () => {
@@ -339,6 +431,31 @@ describe('search parameter handling', () => {
     );
   });
 
+  it('refuses an id that is not a UUID, bare or behind a reference', () => {
+    expect(() => referenceId('does-not-exist', 'Patient', 'patient')).toThrow(/must be a UUID/);
+    expect(() => referenceId('Patient/does-not-exist', 'Patient', 'patient')).toThrow(
+      /must be a UUID/
+    );
+    // The type is read first: a wrong type is reported as a wrong type, not as
+    // a bad id, because that is the mistake the caller actually made.
+    expect(() => referenceId('Group/nope', 'Patient', 'patient')).toThrow(/must reference a/);
+  });
+
+  it('reads a text id without requiring a UUID, for a column that is not one', () => {
+    expect(referenceText('auth0|abc', 'Practitioner', 'agent')).toBe('auth0|abc');
+    expect(referenceText('Practitioner/auth0|abc', 'Practitioner', 'agent')).toBe('auth0|abc');
+    expect(() => referenceText('Group/abc', 'Practitioner', 'agent')).toThrow(
+      /must reference a Practitioner/
+    );
+  });
+
+  it('accepts a UUID and refuses everything else as a value', () => {
+    expect(uuidValue(testId(1), '_id')).toBe(testId(1));
+    for (const bad of ['', '123', 'does-not-exist', `${testId(1)}x`, "'; select 1--"]) {
+      expect(() => uuidValue(bad, '_id')).toThrow(/must be a UUID/);
+    }
+  });
+
   it('reads a date parameter as a half-open window, prefix by prefix', () => {
     const day = dateWindow('2026-08-14', 'date');
     expect(day.from?.toISOString()).toBe('2026-08-14T00:00:00.000Z');
@@ -351,6 +468,8 @@ describe('search parameter handling', () => {
     // A negation cannot be expressed as one window, so it is refused rather
     // than answered approximately.
     expect(() => dateWindow('ne2026-08-14', 'date')).toThrow(/does not support the ne prefix/);
+    expect(() => dateWindow('2025-02-29', 'date')).toThrow(/ISO 8601/);
+    expect(() => dateWindow('2026-08-14T09:30:00', 'date')).toThrow(/ISO 8601/);
     expect(() => dateWindow('not-a-date', 'date')).toThrow(/ISO 8601/);
   });
 
@@ -362,6 +481,7 @@ describe('search parameter handling', () => {
 
   it('refuses a date-only parameter that is not a calendar date', () => {
     expect(parseDateOnly('1994-03-02', 'birthdate').toISOString()).toBe('1994-03-02T00:00:00.000Z');
+    expect(() => parseDateOnly('1994-02-29', 'birthdate')).toThrow(/YYYY-MM-DD/);
     expect(() => parseDateOnly('1994-03', 'birthdate')).toThrow(/YYYY-MM-DD/);
   });
 });
@@ -517,6 +637,77 @@ describe('GET /fhir/Patient', () => {
     expect(await total('birthdate=1980-01-01')).toBe(1);
     expect(await total('gender=male')).toBe(1);
     expect(await total('given=Test')).toBe(1);
+  });
+
+  it('refuses a repeated parameter instead of answering the first value', async () => {
+    /*
+     * The defect this replaces was invisible from every other seat. Both
+     * repository ports receive an already-flattened `Record<string, string>`,
+     * so a port-agreement test finds them agreeing on the same wrong answer,
+     * and every `toQuery` sees one value because one value is all that
+     * survives. Only a request carrying a real query string reaches the
+     * flattening, which is why this test sends a URL rather than calling the
+     * check.
+     *
+     * The two rows below are what makes the pair meaningful: each family name
+     * selects a different patient on its own, so before this the two orders
+     * answered with different single rows - first-wins, and the second
+     * constraint dropped without a word.
+     */
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ id: testId(1) }),
+      makePatientRow({ id: testId(2), mrn: 'OR-100999', familyName: 'Nobody' })
+    );
+    const search = async (query: string): Promise<Response> =>
+      app.request(`/fhir/Patient?${query}`, { headers: bearer(TOKENS.clinicianA) });
+
+    expect(((await (await search('family=Patientsson')).json()) as Bundle<Patient>).total).toBe(1);
+    expect(((await (await search('family=Nobody')).json()) as Bundle<Patient>).total).toBe(1);
+
+    for (const query of ['family=Patientsson&family=Nobody', 'family=Nobody&family=Patientsson']) {
+      const res = await search(query);
+      expect(res.status).toBe(400);
+      const outcome = (await res.json()) as OperationOutcome;
+      expect(outcome.issue[0]).toMatchObject({
+        severity: 'error',
+        code: 'not-supported',
+        expression: ['family'],
+      });
+    }
+  });
+
+  it('refuses a repeated parameter in the order where the guards never looked', async () => {
+    /*
+     * The half of this that is not about filtering. A second occurrence
+     * bypassed validation as well as narrowing: `?_id=<uuid>&_id=nonsense`
+     * answered 200 with the valid patient's row while the reverse answered
+     * 400, so the UUID refusal was reachable only in the first position. The
+     * assertion is that the two orders now agree - not merely that one of them
+     * fails.
+     */
+    const { app, dataset } = createTestApp();
+    seed(dataset, 'Patient', makePatientRow({ id: testId(1) }));
+    seedCareRelationship(dataset, { patientId: testId(1), providerId: SUBJECTS.clinicianA });
+    const search = async (query: string): Promise<Response> =>
+      app.request(`/fhir/Patient?${query}`, { headers: bearer(TOKENS.clinicianA) });
+
+    const valid = await search(`_id=${testId(1)}`);
+    expect(valid.status).toBe(200);
+
+    for (const query of [
+      `_id=${testId(1)}&_id=openrunic-not-a-uuid`,
+      `_id=openrunic-not-a-uuid&_id=${testId(1)}`,
+    ]) {
+      const res = await search(query);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as OperationOutcome).issue[0]).toMatchObject({
+        code: 'not-supported',
+        expression: ['_id'],
+      });
+    }
   });
 
   it.each([
@@ -680,5 +871,94 @@ describe('the FHIR error contract', () => {
 
     expect(outcome.issue.at(-1)).toMatchObject({ severity: 'information', code: 'informational' });
     expect(outcome.issue.at(-1)?.diagnostics).toContain(res.headers.get('x-request-id') ?? '');
+  });
+});
+
+describe('a search parameter that cannot be an id', () => {
+  /*
+   * The defect these cover: `patient` was read straight through to a `@db.Uuid`
+   * column, so Postgres refused the cast and the caller got a 500 with an
+   * opaque body - while the same value on the internal routes was already a
+   * 400. The route suites run the in-memory repository, which casts nothing, so
+   * the 500 was invisible to every one of them. Validating at the parameter
+   * boundary is what makes the case expressible here at all.
+   */
+
+  /** Every served type that accepts `patient`, read from the registry. */
+  const patientSearchable = servedResources()
+    .filter((resource) => resource.params.includes('patient'))
+    .map((resource) => resource.type);
+
+  it('covers every compartment type the registry serves, not a list written by hand', () => {
+    /*
+     * The premise of the sweep below, pinned to the measured population rather
+     * than to a floor. A floor is not a canary: at `>= 17` - the figure the
+     * report gave, before the registry said 24 - seven types could stop
+     * accepting `patient` and the sweep would shrink in silence. Pinning it
+     * makes adding or removing a compartment type a line someone chose to
+     * write, which is the only version that can fail.
+     */
+    expect(patientSearchable).toHaveLength(24);
+    expect(patientSearchable).toContain('Observation');
+  });
+
+  it.each(patientSearchable)('400s a non-UUID patient on %s', async (type) => {
+    const { app } = createTestApp();
+    const res = await app.request(`/fhir/${type}?patient=does-not-exist`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+    const outcome = (await res.json()) as OperationOutcome;
+    expect(outcome.resourceType).toBe('OperationOutcome');
+    expect(outcome.issue[0]).toMatchObject({ severity: 'error', code: 'invalid' });
+  });
+
+  it('400s a non-UUID id behind a well-formed reference, not just a bare one', async () => {
+    const { app } = createTestApp();
+    const res = await app.request('/fhir/Observation?patient=Patient/does-not-exist', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('still answers a well-formed but absent patient with an empty bundle', async () => {
+    // The control. A gate that also refuses the correct caller is the failure
+    // that gets a gate deleted: "absent" and "malformed" are different answers
+    // and this is the one that must not have changed.
+    const { app } = createTestApp();
+    const res = await app.request(`/fhir/Observation?patient=${testId(9999)}`, {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(200);
+    const bundle = (await res.json()) as Bundle;
+    expect(bundle.resourceType).toBe('Bundle');
+    expect(bundle.entry ?? []).toHaveLength(0);
+  });
+
+  it('400s a non-UUID _id, which reached the same column by a different route', async () => {
+    const { app } = createTestApp();
+    const res = await app.request('/fhir/Patient?_id=does-not-exist', {
+      headers: bearer(TOKENS.adminA),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('does NOT refuse a non-UUID Provenance agent, whose column is text', async () => {
+    /*
+     * `actorId` stores an OIDC `sub`, which an issuer may mint as anything. The
+     * blanket version of this fix refused it, which would have broken audit
+     * search on every deployment that is not using demo tokens - a gate on the
+     * ordinary caller rather than the malformed one.
+     */
+    const { app } = createTestApp();
+    const res = await app.request('/fhir/Provenance?agent=auth0|not-a-uuid', {
+      headers: bearer(TOKENS.auditorA),
+    });
+
+    expect(res.status).not.toBe(400);
   });
 });

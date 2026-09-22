@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import { Button, Card, Tag } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
@@ -40,7 +41,9 @@ export function FindAvailablePanel({
   return (
     <Card
       overline={t('schedule.findAvailable.overline')}
-      title={t('schedule.findAvailable.title', { minutes: durationMinutes })}
+      title={t('schedule.findAvailable.title', {
+        minutes: formatCount(durationMinutes, t.locale),
+      })}
       footer={
         <Button variant="ghost" iconLeft="x" onClick={onClose}>
           {t('schedule.findAvailable.hide')}
@@ -48,7 +51,9 @@ export function FindAvailablePanel({
       }
     >
       {slots.length === 0 ? (
-        <p className="or-body">{t('schedule.findAvailable.none', { minutes: durationMinutes })}</p>
+        <p className="or-body">
+          {t('schedule.findAvailable.none', { minutes: formatCount(durationMinutes, t.locale) })}
+        </p>
       ) : (
         <ul className="or-slots">
           {slots.map((slot) => (

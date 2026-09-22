@@ -120,4 +120,28 @@ describe('Toast without resolvable icons', () => {
 
     expect(screen.getByRole('button', { name: 'Descartar' })).toBeInTheDocument();
   });
+
+  /**
+   * The tone word is the accessibility affordance, so it has to be sayable.
+   *
+   * `.or-toast__tone` is clipped to 1x1: a sighted reader never meets it and a
+   * screen reader always does, announced inside whatever `lang` the page
+   * carries. It was an English literal, so a Spanish page said an English word
+   * in a Spanish voice - the one string on this component nobody could see was
+   * wrong. See #312.
+   */
+  it.each(['info', 'success', 'danger'] as const)(
+    'says the %s tone in the language it is given',
+    (tone) => {
+      const { container } = render(
+        <Toast tone={tone} toneLabel="Precaución" title="Registro actualizado" />
+      );
+      expect(container.querySelector('.or-toast__tone')).toHaveTextContent('Precaución');
+    }
+  );
+
+  it('keeps its English default when nothing supplies one', () => {
+    const { container } = render(<Toast tone="danger" title="Something went wrong" />);
+    expect(container.querySelector('.or-toast__tone')).toHaveTextContent('Error');
+  });
 });

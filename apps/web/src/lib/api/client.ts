@@ -10,11 +10,14 @@ import type {
   FacilityDto,
   FormDefinitionDto,
   ListResponse,
+  MedicationStatementDto,
   NoteAddendumDto,
   Patient,
   PatientCreateBody,
   PatientUpdateBody,
   PaymentDto,
+  PrescriptionRefillsRemainingDto,
+  PrincipalCapabilities,
   ProblemDocument,
   RemittanceParseResult,
   RemittancePostResult,
@@ -200,6 +203,9 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
 
   return {
     mode: 'live',
+    session: {
+      me: (signal) => get<PrincipalCapabilities>('/me', signal),
+    },
     facilities: {
       list: (query, signal) =>
         get<ListResponse<FacilityDto>>(`/facilities${toSearchParams(query)}`, signal),
@@ -224,6 +230,20 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
       update: (id, body: AppointmentUpdateBody, signal) =>
         patch<Appointment>(`/appointments/${segment(id)}`, body, signal),
     },
+    medicationStatements: {
+      list: (query, signal) =>
+        get<ListResponse<MedicationStatementDto>>(
+          `/medications/statements${toSearchParams(query)}`,
+          signal
+        ),
+    },
+    prescriptions: {
+      getRefillsRemaining: (id, signal) =>
+        get<PrescriptionRefillsRemainingDto>(
+          `/medications/prescriptions/${segment(id)}/refills-remaining`,
+          signal
+        ),
+    },
     encounters: {
       list: (query, signal) =>
         get<ListResponse<EncounterDto>>(`/encounters${toSearchParams(query)}`, signal),
@@ -246,6 +266,8 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
         post<NoteAddendumDto>(`/notes/${segment(noteId)}/addenda`, body, signal),
     },
     orders: {
+      list: (query, signal) =>
+        get<ListResponse<ServiceRequestDto>>(`/orders${toSearchParams(query)}`, signal),
       sign: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/sign`, {}, signal),
       transmit: (id, signal) =>
         post<ServiceRequestDto>(`/orders/${segment(id)}/transmit`, {}, signal),

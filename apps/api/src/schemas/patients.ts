@@ -21,10 +21,7 @@ export const patientListQuerySchema = z.strictObject({
   /** Prefix match, case-insensitive, matching the FHIR `string` search semantic. */
   family: z.string().min(1).max(128).optional(),
   given: z.string().min(1).max(128).optional(),
-  birthDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
-    .optional(),
+  birthDate: z.iso.date('expected YYYY-MM-DD').optional(),
   active: z.enum(['true', 'false']).optional(),
   sort: z.enum(['familyName', 'birthDate', 'createdAt']).default('familyName'),
   order: sortOrderField,

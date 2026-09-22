@@ -207,10 +207,31 @@ RUN pnpm --filter=api --prod --legacy deploy /out
 # not an assertion - the compose smoke drill boots this image against a real
 # Postgres and reads seeded rows through this client, so a future Prisma release
 # that starts needing one of them fails the drill instead of failing a clinic.
+#
+# mysql2 and its four dependencies are on this list for a reason the others are
+# not. They are not part of the authoring toolchain; they are the MySQL driver
+# the Prisma CLI uses for `prisma db` against a MySQL URL, and they arrive as
+# the CLI's own dependencies. Deleting `prisma@*` removes the CLI's directory
+# and nothing else - pnpm does not garbage-collect its virtual store - so the
+# driver stayed behind, orphaned, in every published image.
+#
+# Measured on the deploy this file performs, not inferred: after the prune as
+# it stood, mysql2@3.24.2 (960 KB) plus aws-ssl-profiles, generate-function,
+# named-placeholders and iconv-lite survived, and no surviving package
+# references any of the five - each is reachable only from mysql2, and mysql2
+# only from the CLI that is already gone.
+#
+# This product talks to Postgres and no runtime here opens a MySQL connection,
+# so nothing about it was exposed. It is removed because a network client with
+# a plaintext-credential-leak history has no business sitting in the runtime
+# image of a service that never calls it, and because an orphan nothing can
+# reach is an orphan nothing will notice either.
 WORKDIR /out/node_modules/.pnpm
 RUN rm -rf prisma@* @prisma+studio-core@* @prisma+dev@* @prisma+engines@* \
            @prisma+get-platform@* @electric-sql+pglite@* effect@* elkjs@* \
-           typescript@* react-dom@* react@*
+           typescript@* react-dom@* react@* \
+           mysql2@* aws-ssl-profiles@* generate-function@* \
+           named-placeholders@* iconv-lite@*
 
 WORKDIR /out
 RUN find node_modules -name '*.d.ts' -delete \

@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { createApp } from '../app.js';
-import { toHonoPath } from '../openapi/registry.js';
-import { buildOpenApiDocument, toJsonSchema } from '../openapi/spec.js';
+import { toHonoPath, type RouteContract } from '../openapi/registry.js';
+import { buildOpenApiDocument, byTagName, toJsonSchema } from '../openapi/spec.js';
 import { internalRouteContracts } from '../routes/index.js';
 
-import { createTestApp } from './support.js';
+import { bearer, createTestApp, TOKENS } from './support.js';
 
 /**
  * The published spec, checked against the routes that exist.
@@ -112,12 +112,53 @@ describe('the OpenAPI document', () => {
 
   it('names the permission every operation requires', () => {
     const missing = internalRouteContracts().filter(
-      (contract) => contract.permission === undefined
+      (contract) => contract.permission === undefined && contract.authenticatedOnly !== true
     );
 
     // A route with no declared permission is a route nobody decided the
     // authorisation for, which is a worse failure than the wrong permission.
+    //
+    // `authenticatedOnly` is the other decision, stated: a bearer token and no
+    // capability. It is an opt-in rather than a default so that the undecided
+    // case still fails here - before it, the two were the same absent value.
     expect(missing.map((contract) => contract.operationId)).toEqual([]);
+  });
+
+  it('opens the no-capability hatch for exactly the routes named here', () => {
+    /* The set, not the shape. `authenticatedOnly` is a thing a developer can type
+       to stop a failing gate complaining, so a second one must not be able to
+       appear without editing a line that names it - a reviewer sees an edited
+       assertion in the diff, and cannot see an absence. This is how the
+       repository already handles accepted findings and advisory exceptions:
+       enumerated records rather than an open switch. */
+    const opened = internalRouteContracts()
+      .filter((contract) => contract.authenticatedOnly === true)
+      .map((contract) => contract.operationId)
+      .sort();
+
+    expect(opened).toEqual(['readOwnCapabilities']);
+  });
+
+  it('makes a no-capability route say so, in the contract and in the document', () => {
+    const open = internalRouteContracts().filter((contract) => contract.authenticatedOnly === true);
+
+    // Every one of them has to explain itself where a reader looks, because
+    // `authenticatedOnly` is the one flag that widens who may call a route.
+    for (const contract of open) {
+      expect(contract.permission, contract.operationId).toBeUndefined();
+      expect(contract.description ?? '', contract.operationId).toContain(
+        'bearer token and no capability'
+      );
+    }
+
+    const document = buildOpenApiDocument(internalRouteContracts());
+    for (const contract of open) {
+      const operation = (
+        document.paths[contract.path] as Record<string, Record<string, unknown>> | undefined
+      )?.[contract.method];
+      expect(operation?.['x-openrunic-authenticated'], contract.operationId).toBe(true);
+      expect(operation?.['x-openrunic-permission'], contract.operationId).toBeUndefined();
+    }
   });
 
   it('converts a braced OpenAPI path to the Hono form', () => {
@@ -177,13 +218,84 @@ describe('the OpenAPI document', () => {
     });
   });
 
-  it('lists one tag per aggregate, sorted', () => {
+  it('lists one tag per aggregate, sorted by the comparator the document uses', () => {
     const document = buildOpenApiDocument(internalRouteContracts());
     const tags = document.tags.map((tag) => tag.name);
 
-    expect(tags).toEqual([...tags].sort());
+    /* Asserted with `byTagName`, not a bare `.sort()`. Before #354 the source
+       ordered with `localeCompare` and this line expected code-unit order: two
+       different comparators that agree only because every tag is plain
+       lower-case ASCII, so the assertion passed without testing what it named. */
+    expect(tags).toEqual([...tags].sort(byTagName));
     expect(tags).toContain('patients');
     expect(tags).toContain('claims');
+  });
+
+  it('orders tag names by code unit, which is the same order in every runtime', () => {
+    /* The document's own 32 tags cannot exercise this: every one is plain
+       lower-case ASCII, and no comparator disagrees on those. The case the
+       comparator exists for is the one no fixture drawn from the document could
+       show, so the identifiers here are chosen to differ. */
+    const differing = ['orders.Write', 'orders.audit', 'orders.write'];
+
+    expect([...differing].sort(byTagName)).toEqual([
+      'orders.Write',
+      'orders.audit',
+      'orders.write',
+    ]);
+    expect([...differing].sort((a, b) => a.localeCompare(b))).not.toEqual(
+      [...differing].sort(byTagName)
+    );
+  });
+
+  /**
+   * THE COMPARATOR TEST ABOVE PROVES THE COMPARATOR. THIS PROVES THE CALL SITE.
+   *
+   * Reverting `byTagName`'s body to `localeCompare` reddens that test. Reverting
+   * only the *call site*, leaving the comparator correct, was declared uncaught
+   * when #354 shipped - carried across from #351, where the same limit is real.
+   * It is not real here, and the difference is not how the file is written:
+   *
+   *   #351   session.ts sorts the permissions `buildPolicyContext` derives from
+   *          `ROLE_PERMISSIONS[role]` - closed over a module constant, so no
+   *          synthetic identifier can reach the sort. Genuinely irreducible.
+   *   here   `buildOpenApiDocument(contracts)` takes its tags from the argument,
+   *          so a synthetic contract reaches the call site directly.
+   *
+   * **Whether the value under test arrives as an argument or is closed over a
+   * module constant is what decides it**, and a declared limit is a claim like
+   * any other: driving the mutation confirms the symptom and says nothing about
+   * whether it had to be that way.
+   *
+   * The document's own tags cannot show this - all of them are plain lower-case
+   * ASCII, which no comparator disagrees on. Same reason the comparator test
+   * constructs its identifiers rather than drawing them from the document.
+   */
+  it('sorts the document\u2019s tags with that comparator, not merely defining it', () => {
+    /* Typed as the real thing rather than cast. A cast that accepts anything is
+       never checked against the interface it stands in for, so it drifts
+       silently the moment `RouteContract` gains a required field - and a scoped
+       `test` run does not type-check test files, so the drift would surface as
+       a CI failure on somebody else's pull request. */
+    const contract = (tag: string): RouteContract => ({
+      method: 'get',
+      path: `/bff/v0/${tag}`,
+      operationId: `list${tag}`,
+      summary: 'A synthetic route, present only to carry its tag.',
+      tags: [tag],
+      permission: 'patient.read',
+      responses: [{ status: 200, description: 'ok', schema: z.object({}) }],
+    });
+
+    const document = buildOpenApiDocument(
+      ['orders.write', 'orders.Write', 'orders.audit'].map(contract)
+    );
+
+    expect(document.tags.map((tag) => tag.name)).toEqual([
+      'orders.Write',
+      'orders.audit',
+      'orders.write',
+    ]);
   });
 
   it('documents every error status the routes can produce', () => {
@@ -262,5 +374,170 @@ describe('zod to JSON Schema', () => {
     const document = buildOpenApiDocument(internalRouteContracts());
 
     expect(Object.keys(document.paths['/bff/v0/patients'] ?? {}).sort()).toEqual(['get', 'post']);
+  });
+});
+
+/**
+ * The document is a contract, so the tests that matter are the ones that make it
+ * answer to the routes rather than to itself.
+ *
+ * Every assertion here was red before the fix for #298, and each is red for a
+ * different reason, so a failure says which half broke:
+ *
+ *   - the round trip fails if `required` under-states the body OR if a
+ *     `localDate` publishes as `date-time`, because it builds its request out of
+ *     the document and sends it to the route;
+ *   - the `format` case fails only for the date/date-time confusion;
+ *   - the `required` case fails only for the preprocess omission.
+ *
+ * The first is the one worth having. A document checked against itself agreed
+ * with itself while `POST /bff/v0/patients` refused the exact body it described.
+ */
+describe('the OpenAPI document as a contract the routes honour', () => {
+  /** A value the document itself says is acceptable for this property. */
+  const sampleFor = (schema: { type?: string; format?: string }): unknown => {
+    if (schema.type !== 'string') return 1;
+    if (schema.format === 'date') return '1990-01-01';
+    if (schema.format === 'date-time') return '1990-01-01T00:00:00.000Z';
+    return 'QA-CONTRACT-1';
+  };
+
+  it('describes a create body the route accepts, built only from the document', async () => {
+    const document = buildOpenApiDocument(internalRouteContracts());
+    const post = document.paths['/bff/v0/patients']?.post as {
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              required?: string[];
+              properties: Record<string, { type?: string; format?: string }>;
+            };
+          };
+        };
+      };
+    };
+
+    const schema = post.requestBody.content['application/json'].schema;
+    const required = schema.required ?? [];
+
+    // A body that names no required field would satisfy the round trip for the
+    // wrong reason, so the set itself is pinned first.
+    expect(required).toContain('birthDate');
+
+    const body = Object.fromEntries(
+      required.map((name) => [name, sampleFor(schema.properties[name] ?? {})])
+    );
+
+    const { app } = createTestApp();
+    const response = await app.request('/bff/v0/patients', {
+      method: 'POST',
+      headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status, await response.text()).toBe(201);
+  });
+
+  /**
+   * `patientCreateInput` is the fixture rather than a constructed one, because
+   * it already holds both halves of the distinction in one object: `birthDate`
+   * is a required `localDate` and `deceasedAt` is an optional `timestamp`. A
+   * synthetic pair would prove the renderer works on a schema nothing ships.
+   */
+  const patientCreateSchema = (): {
+    required?: string[];
+    properties: Record<string, { type?: string; format?: string }>;
+  } => {
+    const document = buildOpenApiDocument(internalRouteContracts());
+    const post = document.paths['/bff/v0/patients']?.post as {
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              required?: string[];
+              properties: Record<string, { type?: string; format?: string }>;
+            };
+          };
+        };
+      };
+    };
+
+    return post.requestBody.content['application/json'].schema;
+  };
+
+  it('publishes a calendar date as `date` and an instant as `date-time`', () => {
+    const { properties } = patientCreateSchema();
+
+    // Asserted as a pair. Both were `date-time` before the fix, so pinning only
+    // the calendar date would still pass on a build that had collapsed the two
+    // the other way.
+    expect(properties.birthDate).toEqual({ type: 'string', format: 'date' });
+    expect(properties.deceasedAt).toEqual({ type: 'string', format: 'date-time' });
+  });
+
+  it('lists a required preprocess field, and still omits an optional one', () => {
+    const { required = [] } = patientCreateSchema();
+
+    // The optional half is what separates "required is computed from the shape"
+    // from "required lists every property it can see".
+    expect(required).toContain('birthDate');
+    expect(required).not.toContain('deceasedAt');
+    expect(required).toContain('mrn');
+  });
+
+  it('keeps a required `unknown`, which reads as omissible but is not', () => {
+    // `safeParse(undefined)` succeeds for a bare `z.unknown()` and `z.any()`, so
+    // the shape walk alone would drop them - while zod, asking whether the type
+    // admits `undefined`, correctly lists them. The first version of this fix
+    // replaced zod's list and lost them; the union is what this pins.
+    const rendered = toJsonSchema(
+      z.strictObject({
+        mrn: z.string(),
+        definition: z.unknown(),
+        anything: z.any(),
+        // The preprocess is the case the recomputation exists for, included so
+        // this asserts the union rather than "leave zod's list alone".
+        born: z.preprocess((value) => value, z.date()),
+      })
+    ) as { required?: string[] };
+
+    expect(rendered.required).toEqual(['mrn', 'definition', 'anything', 'born']);
+  });
+
+  it('keeps the `definition` a value-set response actually always sends', () => {
+    const document = buildOpenApiDocument(internalRouteContracts());
+    const path = document.paths['/bff/v0/value-sets'] as Record<
+      string,
+      {
+        responses: Record<
+          string,
+          {
+            content: {
+              'application/json': {
+                schema: {
+                  required?: string[];
+                  properties?: { data?: { items?: { required?: string[] } } };
+                };
+              };
+            };
+          }
+        >;
+      }
+    >;
+
+    const listItem =
+      path.get?.responses['200']?.content['application/json'].schema.properties?.data?.items;
+    const created = path.post?.responses['201']?.content['application/json'].schema;
+
+    // The live case that caught the replace-versus-union bug. The DTO is a
+    // strictObject and the route always sends `definition`, so a document that
+    // drops it from `required` under-states its own response - the same defect
+    // as #298, on the way back out. Asserted on both the list item and the
+    // created body, because the recomputation runs per object node and a fix
+    // that reached only the top level would pass on one of them.
+    // Optional chaining here cannot make the assertion vacuous: `toContain` on
+    // `undefined` fails rather than passing, so a missing node is still red.
+    expect(listItem?.required).toContain('definition');
+    expect(created?.required).toContain('definition');
   });
 });

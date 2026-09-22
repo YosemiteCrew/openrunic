@@ -179,13 +179,23 @@ function isTabEmpty(tab: ChartTabId, chart: ChartSummary): boolean {
   );
 }
 
+/**
+ * What the tab CONTAINS, for every tab.
+ *
+ * Medications used to count `status === 'ACTIVE'`, which was the only badge on
+ * the strip that did not count its own panel - and it contradicted `isTabEmpty`
+ * ten lines above, which has always used the whole list. The two disagree in the
+ * direction that misleads: a patient whose medications are all stopped is not an
+ * empty tab, so the panel renders every one of them under a badge reading `0`,
+ * and `0` is rendered rather than hidden because a zero is a real answer here.
+ * The active count is the more clinically interesting number, but it is not the
+ * number a badge beside a label is read as.
+ */
 function tabCount(tab: ChartTabId, chart: ChartSummary | null): number | null {
   if (!chart) return null;
   if (tab === 'visits') return chart.visits.length;
   if (tab === 'results') return chart.results.length;
-  if (tab === 'medications') {
-    return chart.medications.filter((med) => med.status === 'ACTIVE').length;
-  }
+  if (tab === 'medications') return chart.medications.length;
   if (tab === 'documents') return chart.documents.length;
   if (tab === 'care-team') return chart.careTeam.length;
   return null;

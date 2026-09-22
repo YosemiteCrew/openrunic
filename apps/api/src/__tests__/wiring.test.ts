@@ -1,7 +1,13 @@
 import type { PrismaClient } from '@openrunic/database';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildServerWiring, parseWiringEnv } from '../server/wiring.js';
+import {
+  announceAuthentication,
+  announceDemoTokenAuthentication,
+  announceIssuerAuthentication,
+  buildServerWiring,
+  parseWiringEnv,
+} from '../server/wiring.js';
 
 /**
  * The wiring module is the answer to "what does this process talk to".
@@ -184,17 +190,21 @@ describe('buildServerWiring', () => {
 
   const env = { DATABASE_URL: VALID_URL, OPENRUNIC_AUTH_MODE: 'demo-tokens' } as const;
 
-  it('shouts that the deployment has no authentication, on every boot', () => {
+  it('does not shout from here, because it cannot see whether an issuer is configured', () => {
     buildServerWiring(env, fakeClient().client);
 
-    const banner = printed.join('');
-
-    // Nobody should be able to reach a running self-hosted stack without having
-    // been told, in the boot log, that it has no authentication. The wording is
-    // asserted because a warning nobody can act on is decoration.
-    expect(banner).toContain('OPENRUNIC_AUTH_MODE=demo-tokens');
-    expect(banner).toContain('NO authentication');
-    expect(banner).toContain('Not safe for: real patient data');
+    // The warning itself still matters and is still asserted, word for word, in
+    // `announcing which resolver is in force` below - nobody should reach a
+    // running self-hosted stack without having been told in the boot log that it
+    // has no authentication.
+    //
+    // What changed is who says it. This function builds the demo resolver
+    // unconditionally and `index.ts` discards it when an issuer is configured,
+    // so a warning written here was written about a resolver that never served a
+    // request. #307 was filed as an authentication bypass on the strength of
+    // that line. Announcing from the composition is the fix; this assertion is
+    // what stops it moving back.
+    expect(printed.join('')).not.toContain('NO authentication');
   });
 
   it('reports ready when the database answers', async () => {
@@ -321,5 +331,165 @@ describe('buildServerWiring', () => {
     // A denial that restarted the chain at seq 1 would fork the tenant's audit
     // log, which is the one thing the hash chain exists to make impossible.
     expect(written[0]).toMatchObject({ seq: 42n, prevHash: 'f'.repeat(64) });
+  });
+});
+
+/**
+ * The boot announcement, which nothing asserted until #307.
+ *
+ * That issue was filed as an authentication bypass because a deployment with a
+ * complete, enforcing OIDC group printed "This deployment has NO
+ * authentication" on every boot. The resolver selection was correct; the
+ * message was about a resolver `index.ts` had already discarded. A log line
+ * that describes a security posture is part of that posture, and this is the
+ * first thing that holds it to the behaviour.
+ */
+describe('announcing which resolver is in force', () => {
+  it('warns loudly, and names the mode, when demo tokens are the resolver', () => {
+    const written: string[] = [];
+
+    announceDemoTokenAuthentication('demo-tokens', (message) => written.push(message));
+
+    const output = written.join('');
+    expect(output).toContain('NO authentication');
+    expect(output).toContain('OPENRUNIC_AUTH_MODE=demo-tokens');
+  });
+
+  it('names the issuer, and does NOT claim there is no authentication, when one is configured', () => {
+    const written: string[] = [];
+
+    announceIssuerAuthentication('https://issuer.example', (message) => written.push(message));
+
+    const output = written.join('');
+    // The pair is the point. Asserting only the issuer would pass on a build
+    // that printed the banner as well, which is exactly the state #307 reported.
+    expect(output).toContain('https://issuer.example');
+    expect(output).not.toContain('NO authentication');
+  });
+
+  it('carries the auth mode so the composition can name it without re-parsing', () => {
+    const wiring = buildServerWiring(
+      { DATABASE_URL: VALID_URL, OPENRUNIC_AUTH_MODE: 'demo-tokens' },
+      fakeClient().client
+    );
+
+    expect(wiring.authMode).toBe('demo-tokens');
+  });
+});
+
+/**
+ * Which announcement is CHOSEN, which is the layer #307 actually lived in.
+ *
+ * Every layer was individually correct - the resolver selection, the banner's
+ * wording, the wiring's construction - and the defect was in the composition of
+ * them. The tests above pin what each announcement says; these pin which one
+ * runs. Without them a regression reintroducing the exact reported symptom - the
+ * demo banner on a deployment enforcing OIDC - passes the suite.
+ */
+describe('announceAuthentication', () => {
+  const wiring = { authMode: 'demo-tokens' } as unknown as Parameters<
+    typeof announceAuthentication
+  >[0];
+
+  function announced(issuer: string | undefined): string {
+    const written: string[] = [];
+    announceAuthentication(wiring, issuer, (message) => written.push(message));
+    return written.join('');
+  }
+
+  it('warns about demo tokens when no issuer is configured', () => {
+    const output = announced(undefined);
+
+    expect(output).toContain('NO authentication');
+    expect(output).not.toContain('verified against');
+  });
+
+  it('names the issuer, and does not warn, when one is configured', () => {
+    const output = announced('https://issuer.example');
+
+    // The pair. Asserting only the issuer passes on a build that prints both,
+    // and printing both IS the state #307 reported.
+    expect(output).toContain('verified against https://issuer.example');
+    expect(output).not.toContain('NO authentication');
+  });
+
+  it('says nothing at all outside production, where there is no wiring', () => {
+    const written: string[] = [];
+
+    announceAuthentication(null, undefined, (message) => written.push(message));
+
+    expect(written).toEqual([]);
+  });
+});
+
+/**
+ * The default writer, which is the only one production ever uses.
+ *
+ * Every test above injects a writer, because injecting one is what makes the
+ * announcements assertable at all. The consequence is that the parameter
+ * default - `process.stderr.write` - is the one line on this path that no test
+ * reaches, and it is the line that runs on a real boot: `index.ts` calls
+ * `announceAuthentication(wiring, oidc?.issuer)` with two arguments.
+ *
+ * So the assertion is the STREAM, not just the text. A default rewritten to
+ * stdout still prints the banner and still passes any test that only reads what
+ * was written; it also puts a security warning on the channel a container
+ * operator pipes to their application log rather than the one they read for
+ * diagnostics. Both halves are asserted here: stderr got it, stdout did not.
+ */
+describe('the default writer', () => {
+  let toStderr: string[];
+  let toStdout: string[];
+
+  beforeEach(() => {
+    toStderr = [];
+    toStdout = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      toStderr.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      toStdout.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sends the demo-token banner to stderr when no writer is supplied', () => {
+    announceDemoTokenAuthentication('demo-tokens');
+
+    expect(toStderr.join('')).toContain('NO authentication');
+    expect(toStdout).toEqual([]);
+  });
+
+  it('sends the issuer line to stderr when no writer is supplied', () => {
+    announceIssuerAuthentication('https://issuer.example');
+
+    expect(toStderr.join('')).toContain('verified against https://issuer.example');
+    expect(toStdout).toEqual([]);
+  });
+
+  /**
+   * The production call shape. `announceAuthentication` forwards a `write` of
+   * `undefined` to whichever announcement it picks, and `undefined` reaching a
+   * parameter default is the only reason that works - a forward written as
+   * `write ?? console.error` or a callee that called `write(...)` unguarded
+   * would throw here and nowhere else in this file.
+   */
+  it('reaches the default through the composition, with two arguments as index.ts calls it', () => {
+    const wiring = { authMode: 'demo-tokens' } as unknown as Parameters<
+      typeof announceAuthentication
+    >[0];
+
+    announceAuthentication(wiring, undefined);
+    announceAuthentication(wiring, 'https://issuer.example');
+
+    const output = toStderr.join('');
+    expect(output).toContain('NO authentication');
+    expect(output).toContain('verified against https://issuer.example');
+    expect(toStdout).toEqual([]);
   });
 });

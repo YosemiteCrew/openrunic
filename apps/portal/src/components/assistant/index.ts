@@ -13,6 +13,12 @@ export type { AssistantContextValue, AssistantProviderProps } from './AssistantP
 export { AssistantComposer } from './AssistantComposer';
 export type { AssistantComposerProps } from './AssistantComposer';
 
+export { AssistantDictation } from './AssistantDictation';
+export type { AssistantDictationProps } from './AssistantDictation';
+
+export { AssistantReadback } from './AssistantReadback';
+export type { AssistantReadbackProps } from './AssistantReadback';
+
 export { AssistantTurnView } from './AssistantTurn';
 export type { AssistantTurnViewProps } from './AssistantTurn';
 
@@ -36,5 +42,30 @@ export type {
   WithheldReason,
 } from './transcript';
 
+export { speakableAnswer } from './readback';
+
+/* The voice itself is shared with the staff surface. Re-exported here so that
+   everything this surface knows about readback still arrives from one import. */
+export { SILENT, readbackReducer, useReadback } from '@openrunic/voice';
+export type {
+  Readback,
+  ReadbackAction,
+  ReadbackEnding,
+  ReadbackState,
+  Speaking,
+} from '@openrunic/voice';
+
 export { useConversation } from './useConversation';
 export type { Conversation } from './useConversation';
+
+export { IDLE, appendDictation, dictationReducer } from './dictation';
+export type {
+  DictationAction,
+  DictationEnding,
+  DictationPhase,
+  DictationSession,
+  DictationState,
+} from './dictation';
+
+export { useDictation } from './useDictation';
+export type { Dictation } from './useDictation';

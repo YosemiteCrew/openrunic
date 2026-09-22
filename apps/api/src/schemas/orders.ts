@@ -1023,6 +1023,7 @@ export function toMessageListQuery(
 export const messageDtoSchema = z.strictObject({
   id: z.uuid(),
   threadId: z.uuid(),
+  patientId: z.uuid().nullable(),
   senderType: z.enum(MESSAGE_SENDER_TYPES),
   senderUserId: z.uuid().nullable(),
   senderPatientId: z.uuid().nullable(),
@@ -1039,6 +1040,7 @@ export function toMessageDto(row: MessageRow): MessageDto {
   return {
     id: row.id,
     threadId: row.threadId,
+    patientId: row.patientId,
     senderType: row.senderType,
     senderUserId: row.senderUserId,
     senderPatientId: row.senderPatientId,

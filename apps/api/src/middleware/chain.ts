@@ -37,6 +37,8 @@ export interface ChainDependencies {
   auditSink: AuditSink;
   publicPaths?: Iterable<string>;
   generateRequestId?: () => string;
+  /** The application's clock. Threaded to stage 1, which stamps `receivedAt`. */
+  now?: () => Date;
   /** Chooses problem+json or OperationOutcome, per path. */
   responseFormatFor?: (path: string) => 'problem' | 'fhir';
   /**
@@ -64,6 +66,7 @@ export function buildMiddlewareChain(deps: ChainDependencies): ChainLink[] {
       stage: 'request-id',
       handler: requestId({
         ...(deps.generateRequestId === undefined ? {} : { generate: deps.generateRequestId }),
+        ...(deps.now === undefined ? {} : { now: deps.now }),
         ...(deps.responseFormatFor === undefined
           ? {}
           : { responseFormatFor: deps.responseFormatFor }),

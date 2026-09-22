@@ -34,25 +34,9 @@ describe('createPortalApi', () => {
     );
     vi.stubGlobal('fetch', platform);
 
-    await createPortalApi({ mode: 'live', baseUrl: 'https://api.example.invalid' }).getPatient();
-
-    expect(platform).toHaveBeenCalledWith(
-      'https://api.example.invalid/portal/patient',
-      expect.anything()
-    );
-  });
-
-  it('falls back to a relative base url when live mode is configured without one', async () => {
-    const platform = vi.fn(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({}), { headers: { 'content-type': 'application/json' } })
-      )
-    );
-    vi.stubGlobal('fetch', platform);
-
     await createPortalApi({ mode: 'live' }).getPatient();
 
-    expect(platform).toHaveBeenCalledWith('/portal/patient', expect.anything());
+    expect(platform).toHaveBeenCalledWith('/api/portal/patient', expect.anything());
   });
 });
 

@@ -2,8 +2,10 @@
 
 import { formatCount } from '@openrunic/i18n';
 import { IconButton } from '@openrunic/ui';
+import { createPlatformReadback, speakableTurns, useReadback } from '@openrunic/voice';
+import type { ReadbackPort } from '@openrunic/voice';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { ReactElement } from 'react';
 
 import { chartPatientIdFromPath } from '@/lib/agent';
@@ -12,7 +14,9 @@ import { useTranslator } from '@/lib/i18n/messages';
 
 import { useAssistant } from './AssistantProvider';
 import { AssistantComposer } from './AssistantComposer';
+import { AssistantReadback } from './AssistantReadback';
 import { AssistantTurnView } from './AssistantTurn';
+import { speakableAnswer } from './readback';
 import { announcementFor } from './transcript';
 import { useConversation } from './useConversation';
 
@@ -35,16 +39,58 @@ import { useConversation } from './useConversation';
 
 export const ASSISTANT_PANEL_ID = 'or-assistant-panel';
 
-export function AssistantPanel(): ReactElement | null {
+export interface AssistantPanelProps {
+  /**
+   * The voice that reads an answer aloud.
+   *
+   * Absent means the device's own, which is nothing at all on a browser without
+   * speech and on the server render. `null` is a different answer: a caller
+   * saying there is no voice, which is what the tests drive and what a
+   * deployment that turned readback off would pass.
+   */
+  readback?: ReadbackPort | null;
+}
+
+export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): ReactElement | null {
   const t = useTranslator();
   const { availability, capabilities, isOpen, close, runTurn } = useAssistant();
   const pathname = usePathname();
   const chartPatientId = chartPatientIdFromPath(pathname);
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
+
   const panelRef = useRef<HTMLElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
 
   const onScreen = availability.status === 'enabled' && capabilities !== null && isOpen;
+
+  /* Built once per opening, and deliberately gone while the panel is not on
+     screen. A voice with nothing beside it is the one case this surface must
+     not produce: the rule that makes reading a record aloud safe at all is that
+     the words are on the screen as they are spoken, and a dismissed panel can
+     honour neither half. Handing the hook `null` is how the surface says the
+     voice is not there, which is already the path that stops an utterance and
+     forgets the consent - so closing the panel needs no second mechanism.
+
+     Built through a memo for the ordinary reason as well: a new port every
+     render would resubscribe to the device's voice list on every keystroke, and
+     the effect that speaks would take a new dependency each time and read the
+     last answer again. */
+  const port = useMemo(() => {
+    if (!onScreen) return null;
+    return readback === undefined ? createPlatformReadback() : readback;
+  }, [onScreen, readback]);
+
+  /* The rule runs here, beside the rule about what this surface will show. What
+     reaches the voice is a turn id and the string on screen, and nothing that
+     could be used to ask for another one. */
+  const speakable = useMemo(() => speakableTurns(state.turns, speakableAnswer), [state.turns]);
+
+  /* The chart the panel is beside is the scope the consent was given for, and
+     an empty string is a real value for it rather than a missing one: it is the
+     scope of a conversation about no chart in particular, which is what a biller
+     asking about an authorisation case has. Moving between the two stops the
+     voice and asks again, the same as moving between two charts. */
+  const voice = useReadback(port, t.locale, speakable, chartPatientId ?? '');
 
   /* Focus goes to the field on open and back to whatever opened the panel on
      close. Both live in one effect so the grab and the restore cannot drift
@@ -147,6 +193,14 @@ export function AssistantPanel(): ReactElement | null {
           </ol>
         )}
       </div>
+
+      <AssistantReadback
+        availability={voice.availability}
+        state={voice.state}
+        lastTurnId={state.turns.at(-1)?.id ?? null}
+        onToggle={voice.toggle}
+        onStop={voice.stop}
+      />
 
       <AssistantComposer
         streaming={state.streaming}

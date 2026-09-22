@@ -1,7 +1,13 @@
 import { withTenantSession } from '@openrunic/database';
 import type { PrismaClient, TenantTransactionClient } from '@openrunic/database';
 
-import { delegateKey, type DbPort, type DbTransaction, type ModelDelegate } from './db-port.js';
+import {
+  delegateKey,
+  lockAuditChain,
+  type DbPort,
+  type DbTransaction,
+  type ModelDelegate,
+} from './db-port.js';
 import type { PrismaModelName } from './rows.js';
 import type { DbPortFactory } from './prisma.js';
 
@@ -60,12 +66,22 @@ export type TenantSessionRunner = <R>(
  * implements one method rather than forty-seven. This is the same adapter
  * `createDbPort` applies, and it is applied here for the same reason: what
  * `withTenantSession` hands back is a Prisma client, not a `DbTransaction`.
+ *
+ * Exported for the suite, and for one property that is worth pinning directly:
+ * `lockAuditChain` has to close over THIS transaction client. Bound to any
+ * other handle it would take the lock on a different connection, which Postgres
+ * releases at that connection's COMMIT rather than at this one's - so the
+ * append it is meant to serialise runs unprotected while the call looks right.
+ * Reaching it through `createRlsDbPortFactory` needs a real PrismaClient,
+ * because `createTenantClient` is a Prisma extension; a fake gets no further
+ * than `$extends`.
  */
-function toDbTransaction(tx: TenantTransactionClient): DbTransaction {
+export function toDbTransaction(tx: TenantTransactionClient): DbTransaction {
   return {
     model: <M extends PrismaModelName>(name: M): ModelDelegate<M> =>
       (tx as unknown as Record<string, ModelDelegate<M>>)[delegateKey(name)] as ModelDelegate<M>,
     auditEvent: tx.auditEvent,
+    lockAuditChain: (tenantId) => lockAuditChain(tx, tenantId),
   };
 }
 
@@ -142,12 +158,20 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
      * The marker carries no rule id because Aikido's syntax has none to give,
      * so it silences every SAST rule on its line rather than just this one.
      * That is the cost, recorded so it is not mistaken for a narrow exemption.
-     * Revisit: if a caller ever writes through the port outside a transaction.
+     *
+     * The re-review date sits on the two lines below rather than here, because
+     * that is where `exception-expiry.mjs` reads it and where a reader deleting
+     * a marker would look. This block is the reasoning it is a date for.
      */
     const model = <M extends PrismaModelName>(name: M): ModelDelegate<M> => ({
       findMany: (args) => inSession((tx) => tx.model(name).findMany(args)),
       count: (args) => inSession((tx) => tx.model(name).count(args)),
       findFirst: (args) => inSession((tx) => tx.model(name).findFirst(args)),
+      // The accepted finding the block above records, and its expiry. A
+      // condition on its own was what this exception used to carry, and nothing
+      // is told when a condition comes true.
+      // Owner: ankit-yc. Re-review by: 2026-12-05. Revisit condition: sooner, if
+      // a caller ever writes through this port outside a transaction.
       create: (args) => inSession((tx) => tx.model(name).create(args)), // nosec
       updateMany: (args) => inSession((tx) => tx.model(name).updateMany(args)), // nosec
     });

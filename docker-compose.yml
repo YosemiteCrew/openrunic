@@ -160,6 +160,44 @@ services:
       # demo tokens to demo users and prints a warning saying so on every boot.
       # See docs/self-hosting.md before pointing anything real at this.
       OPENRUNIC_AUTH_MODE: ${OPENRUNIC_AUTH_MODE:-demo-tokens}
+      # The canonical base the Questionnaires this deployment publishes claim.
+      # Passed through rather than left out: unset in the container, a published
+      # form claims a canonical URL on the openrunic project's own domain, which
+      # this practice does not run and nobody can resolve to its forms - the
+      # exact outcome the setting exists to prevent, and it was unreachable from
+      # a self-hosted stack while this line was missing.
+      #
+      # `:-` and not `:?`: most deployments serve no Questionnaires and need
+      # nothing here. It resolves to an empty string when .env leaves the key
+      # blank, which is what .env.example ships, and the API reads a blank
+      # setting as unset rather than as a malformed URL.
+      OPENRUNIC_FHIR_BASE_URL: ${OPENRUNIC_FHIR_BASE_URL:-}
+      # The identity provider, and the reason all six are named here.
+      #
+      # The API reads every one of them from its own process, and a variable
+      # this file does not name is not in that process however carefully it was
+      # written into .env. So a deployment that configured its provider and
+      # restarted went on verifying nothing and went on accepting the demo
+      # tokens above - which are printed in the source of a public repository -
+      # while `docs/self-hosting.md` told the operator otherwise. The boot
+      # banner that says demo mode is in force is printed on every start, so it
+      # reads as expected noise rather than as the thing that is wrong.
+      #
+      # `:-` on all of them, never `:?`. The first three are required as a group
+      # and refused half-set; the last two are an optional pair that also
+      # requires the group. Both rules live in `apps/api/src/env.ts` and both
+      # need "absent" to be expressible, which `:?` would take away. A key left
+      # blank in .env arrives as an empty string and the schema reads that as
+      # absent, so an unconfigured stack behaves exactly as it did before this
+      # block existed.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
+      OIDC_CLOCK_SKEW_SECONDS: ${OIDC_CLOCK_SKEW_SECONDS:-}
+      # The optional pair. Set both and /fhir/.well-known/smart-configuration
+      # publishes a launch a third-party SMART app can use.
+      OIDC_AUTHORIZATION_ENDPOINT: ${OIDC_AUTHORIZATION_ENDPOINT:-}
+      OIDC_TOKEN_ENDPOINT: ${OIDC_TOKEN_ENDPOINT:-}
     ports:
       - '${API_PORT:-4000}:4000'
     deploy:
@@ -215,6 +253,28 @@ services:
       # health route runs inside the network and reaches the API by service
       # name, which is what keeps the probe free of CORS.
       OPENRUNIC_API_INTERNAL_URL: http://api:4000
+      # The sign-in flow, for the same reason the API block above names its own
+      # copies. `oidcWebConfig` reads these from the process and returns null -
+      # meaning "stay on the demo path" - the moment issuer, client id or
+      # redirect URI is missing. A deployment that had configured its provider
+      # and never reached this service got exactly that, silently, behind a page
+      # that still rendered a working-looking sign-in button.
+      #
+      # Runtime rather than build arguments: none of them is NEXT_PUBLIC_, so
+      # they are read server-side per request and changing one needs a restart
+      # and not a rebuild.
+      #
+      # OIDC_ISSUER is deliberately the same value the API verifies against. A
+      # deployment whose front door and whose token check disagree about the
+      # issuer signs people in and then rejects them.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      # Optional: the browser flow uses PKCE and needs no secret, but some
+      # providers insist on one even for the authorization code grant.
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      # Optional. Blank falls back to `openid profile email`.
+      OIDC_SCOPES: ${OIDC_SCOPES:-}
     ports:
       - '${WEB_PORT:-3000}:3000'
     deploy:

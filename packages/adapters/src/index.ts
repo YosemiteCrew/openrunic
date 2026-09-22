@@ -69,7 +69,13 @@ export type {
 } from './contracts/core.js';
 
 export { CONTRACTS } from './contracts/index.js';
-export type { AnyCapabilityAdapter, CapabilityAdapterMap } from './contracts/index.js';
+export type {
+  AnyCapabilityAdapter,
+  CapabilityAdapterMap,
+  ConfigOf,
+  EntitlementOf,
+  FeatureOf,
+} from './contracts/index.js';
 
 export {
   ERX_CONTRACT,

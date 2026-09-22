@@ -256,6 +256,7 @@ describe('999 implementation acknowledgement, rejected', () => {
 
 describe('999 edge cases', () => {
   const base = readFixture('999-rejected.edi');
+  const oversizedPosition = '9'.repeat(400);
 
   it('refuses a document that is not a 999', () => {
     expect(expectErr(decode999(readFixture('277-accepted.edi'))).kind).toBe(
@@ -290,6 +291,31 @@ describe('999 edge cases', () => {
     const report = expectOk(decode999(base.replace('IK4*1:2*234*', 'IK4*1:2:3*234*')));
     expect(report.transactions[0]?.segmentErrors[1]?.elementErrors[0]?.repeatPosition).toBe(3);
   });
+
+  it.each([
+    ['IK302', 'IK3*NM1*8*2010AA*8~', 'IK3*NM1*8e0*2010AA*8~', 'IK3', 2, '8e0'],
+    ['IK401-1', 'IK4*1:2*234*7*9921X~', 'IK4*1e0:2*234*7*9921X~', 'IK4', 1, '1e0'],
+    ['IK401-2', 'IK4*1:2*234*7*9921X~', 'IK4*1:2e0*234*7*9921X~', 'IK4', 1, '2e0'],
+    ['IK401-3', 'IK4*1:2*234*7*9921X~', 'IK4*1:2:3e0*234*7*9921X~', 'IK4', 1, '3e0'],
+    ['zero IK302', 'IK3*NM1*8*2010AA*8~', 'IK3*NM1*0*2010AA*8~', 'IK3', 2, '0'],
+    [
+      'oversized IK302',
+      'IK3*NM1*8*2010AA*8~',
+      `IK3*NM1*${oversizedPosition}*2010AA*8~`,
+      'IK3',
+      2,
+      oversizedPosition,
+    ],
+  ] as const)(
+    'rejects an invalid positive integer in %s',
+    (_position, valid, invalid, segmentTag, elementPosition, value) => {
+      expect(expectErr(decode999(base.replace(valid, invalid)))).toMatchObject({
+        kind: 'invalid_element',
+        at: { segmentTag, elementPosition },
+        value,
+      });
+    }
+  );
 
   it('reads a non-numeric group count as zero rather than failing the parse', () => {
     const report = expectOk(decode999(base.replace('AK9*R*1*1*0*5~', 'AK9*R**1*0*5~')));

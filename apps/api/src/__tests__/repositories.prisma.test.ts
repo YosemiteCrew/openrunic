@@ -17,12 +17,13 @@ import {
   delegateKey,
   tenantClientSatisfiesPort,
   type DbPort,
+  type DbTransaction,
 } from '../repositories/db-port.js';
 import { createEmptyDataset, type MemoryDataset } from '../repositories/memory.js';
 import { createPrismaCollection, createPrismaRepositoryRegistry } from '../repositories/prisma.js';
-import type { ScopedRow } from '../repositories/rows.js';
+import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
 import type { RequestScope } from '../repositories/registry.js';
-import { patientSpec } from '../repositories/specs/core.js';
+import { appointmentSpec, patientSpec } from '../repositories/specs/core.js';
 
 import { createFakePort, matchesWhere, type FakePort } from './fake-port.js';
 import {
@@ -125,20 +126,34 @@ describe('the port', () => {
     // A structural stand-in for the generated client. The compile-time
     // assertion above is what proves the real one fits; this only exercises the
     // property-name arithmetic and the transaction hand-off.
+    const locked: unknown[][] = [];
     const client = {
       patient: delegate,
       auditEvent: { create: () => Promise.resolve({ id: testId(1) }), findFirst: () => null },
       $transaction: (fn: (tx: unknown) => unknown) =>
-        fn({ patient: inner, auditEvent: { create: () => null, findFirst: () => null } }),
+        fn({
+          patient: inner,
+          auditEvent: { create: () => null, findFirst: () => null },
+          $executeRaw: (_query: TemplateStringsArray, ...values: unknown[]) => {
+            locked.push(values);
+            return Promise.resolve(1);
+          },
+        }),
     };
     const port: DbPort = createDbPort(client as unknown as Parameters<typeof createDbPort>[0]);
 
     await port.model('Patient').findFirst({});
     await port.$transaction(async (tx) => {
       await tx.model('Patient').findFirst({});
+      // The chain lock reaches the TRANSACTION's client, not the outer one.
+      // Bound to the outer client it would be released immediately, and the
+      // append it serialises would run alone; nothing about the call site would
+      // look different.
+      await tx.lockAuditChain(testId(9));
     });
 
     expect(seen).toEqual(['outer', 'inner']);
+    expect(locked).toEqual([[expect.anything(), testId(9)]]);
   });
 });
 
@@ -396,6 +411,37 @@ describe('the patient compartment', () => {
     ]);
   });
 
+  /**
+   * #329: `facilityIds` is a staff coverage grant, and it meant nothing for a
+   * patient reading their own chart until this was found reaching production -
+   * `MedicationDispense` at a second site was invisible to the portal, not
+   * because the compartment refused it but because the facility clause, ANDed
+   * on for a staff reader, excluded it regardless of whose chart it was.
+   *
+   * `appointmentSpec` reproduces the mechanism rather than the one resource:
+   * it is `facilityScoped` and compartment-columned the same way
+   * `stockPostingSpec` is, and the fixtures already live in this file.
+   */
+  it('is not additionally narrowed by facility when the row is the caller’s own chart', async () => {
+    const h = harness(testId(1));
+    const scope: RequestScope = { ...h.scope, facilityIds: [DEMO_FACILITY_A] };
+    h.dataset.table('Appointment').push(
+      makeAppointmentRow({ id: testId(10), patientId: testId(1), facilityId: DEMO_FACILITY_A }),
+      makeAppointmentRow({ id: testId(11), patientId: testId(1), facilityId: DEMO_FACILITY_B }),
+      // The control: another chart at the one facility this token IS granted.
+      // Without it, a compartment that failed open would pass every assertion
+      // above for the wrong reason.
+      makeAppointmentRow({ id: testId(12), patientId: testId(2), facilityId: DEMO_FACILITY_A })
+    );
+    const collection = createPrismaCollection(appointmentSpec, h.port, scope);
+
+    const page = await collection.list({ page: 1, pageSize: 25, sort: 'start', order: 'asc' });
+
+    expect(page.rows.map((row) => row.id).sort()).toEqual([testId(10), testId(11)]);
+    await expect(collection.findById(testId(11))).resolves.not.toBeNull();
+    await expect(collection.findById(testId(12))).resolves.toBeNull();
+  });
+
   it('refuses a collection that reaches a chart only through a join', async () => {
     const h = harness(testId(1));
     const spec = closedSpec();
@@ -417,6 +463,35 @@ describe('the patient compartment', () => {
     await expect(collection.update(testId(3), {})).resolves.toBeNull();
     // Refused without asking Postgres: a query that cannot return a row should
     // not be sent at all.
+    expect(h.port.calls).toEqual([]);
+  });
+
+  it('confines creates to the launch context before writing', async () => {
+    const h = harness(testId(1));
+    const collection = createPrismaCollection(appointmentSpec, h.port, h.scope);
+
+    await expect(
+      collection.create({
+        facilityId: DEMO_FACILITY_A,
+        patientId: testId(2),
+        providerId: testId(900),
+        typeCode: 'OFFICE-30',
+        typeDisplay: 'Office visit, 30 minutes',
+        start: new Date('2026-08-14T15:00:00.000Z'),
+        end: new Date('2026-08-14T15:30:00.000Z'),
+        durationMinutes: 30,
+      })
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(h.dataset.table('Appointment')).toHaveLength(0);
+    expect(h.port.calls).toEqual([]);
+  });
+
+  it('refuses closed-compartment creates without querying', async () => {
+    const h = harness(testId(1));
+    const collection = createPrismaCollection(closedSpec(), h.port, h.scope);
+
+    await expect(collection.create(undefined as never)).rejects.toMatchObject({ status: 404 });
     expect(h.port.calls).toEqual([]);
   });
 });
@@ -751,7 +826,10 @@ describe('the Prisma audit query', () => {
     seedChain(h);
     const query = createPrismaAuditQuery(h.port, h.scope);
 
-    await expect(query.verifyChain()).resolves.toMatchObject({ valid: true, checked: 3 });
+    await expect(query.verifyChain()).resolves.toMatchObject({
+      verification: { valid: true, checked: 3 },
+      recorded: true,
+    });
   });
 
   it('reports where a tampered chain first breaks', async () => {
@@ -761,9 +839,8 @@ describe('the Prisma audit query', () => {
     tampered.action = 'patient.definitely-not-deleted';
 
     await expect(createPrismaAuditQuery(h.port, h.scope).verifyChain()).resolves.toMatchObject({
-      valid: false,
-      brokenAtSeq: 2n,
-      reason: 'hash-mismatch',
+      verification: { valid: false, brokenAtSeq: 2n, reason: 'hash-mismatch' },
+      recorded: true,
     });
   });
 });
@@ -923,5 +1000,189 @@ describe('the Prisma set read', () => {
     expect(flattened).toContain(first);
     // Three copies in, one out.
     expect(flattened.split(first).length - 1).toBe(1);
+  });
+});
+
+/**
+ * Losing the race to a natural key.
+ *
+ * The `uniqueBy` check runs inside the create's transaction and is followed by
+ * an insert, so under READ COMMITTED it is check-then-write: two connections
+ * both find no clash, both insert, and the table's unique index decides. That
+ * cannot be reproduced against the fake port, which has no concurrency - so
+ * what is reproduced here is the state the loser arrives in. The insert fails
+ * with Prisma's unique-violation code, and by then the winner's row is
+ * committed and visible.
+ *
+ * The fake stands in for the database rather than for a second request: it
+ * pushes the winner's row and then throws, which is exactly what the loser
+ * sees. The two-connection half - that Postgres really raises this for this
+ * constraint, and that Prisma really spells it `P2002` - is asserted against a
+ * real server in `packages/database/src/rls.integration.test.ts`, because no
+ * fake can be evidence for how another process reports an error.
+ */
+describe('a create that loses a race to the unique index', () => {
+  const CLASHING_MRN = 'OR-100482';
+
+  /** Prisma's shape for a unique violation. Only `code` is read. */
+  function uniqueViolation(): Error & { code: string } {
+    return Object.assign(new Error('Unique constraint failed on the fields: (`mrn`)'), {
+      code: 'P2002',
+    });
+  }
+
+  /**
+   * A port whose insert fails the way the loser's does.
+   *
+   * `onCreate` runs before the throw, which is where the winner's row is
+   * pushed: the point of the test is the order, since a re-read that happened
+   * before the winner committed would find nothing and rethrow.
+   */
+  function racingPort(h: Harness, error: Error, onCreate?: () => void): DbPort {
+    const failing = (tx: DbTransaction): DbTransaction => ({
+      ...tx,
+      model<M extends PrismaModelName>(name: M) {
+        const delegate = tx.model(name);
+        if (name !== 'Patient') return delegate;
+        return {
+          ...delegate,
+          create: () => {
+            onCreate?.();
+            return Promise.reject(error);
+          },
+        };
+      },
+    });
+    return {
+      ...h.port,
+      $transaction: <R>(fn: (tx: DbTransaction) => Promise<R>): Promise<R> =>
+        h.port.$transaction((tx) => fn(failing(tx))),
+    };
+  }
+
+  function winner(h: Harness): void {
+    h.dataset
+      .table('Patient')
+      .push(makePatientRow({ id: testId(77), mrn: CLASHING_MRN, tenantId: DEMO_TENANT_A }));
+  }
+
+  it('answers a conflict carrying the spec its own message, not a raw error', async () => {
+    const h = harness();
+    const collection = createPrismaCollection(
+      patientSpec,
+      racingPort(h, uniqueViolation(), () => {
+        winner(h);
+      }),
+      h.scope
+    );
+
+    await expect(collection.create({ ...NEW_PATIENT, mrn: CLASHING_MRN })).rejects.toMatchObject({
+      kind: 'conflict',
+      status: 409,
+    });
+  });
+
+  it('rethrows when the key is not in fact taken', async () => {
+    /*
+     * The reason the mapping re-reads instead of trusting the code. `P2002` is
+     * raised for a violation of any unique constraint on the table, the primary
+     * key included, so an id collision would otherwise be reported to a client
+     * as "that already exists" - a server fault dressed up as their mistake.
+     * Nothing is pushed here, so the key is free and the original error stands.
+     */
+    const h = harness();
+    const error = uniqueViolation();
+    const collection = createPrismaCollection(patientSpec, racingPort(h, error), h.scope);
+
+    await expect(collection.create({ ...NEW_PATIENT, mrn: CLASHING_MRN })).rejects.toBe(error);
+  });
+
+  it('rethrows when a row exists but this key is free', async () => {
+    /*
+     * The case that tells "map only if THIS key is taken" apart from "map if
+     * any row exists", and the only one of these that does.
+     *
+     * Without it the suite pins that the mapping re-reads and not what it
+     * re-reads for: the free-key case has an empty table, so a filter matching
+     * everything still finds nothing, and the clash case has the winner as its
+     * only row, so any filter finds it. Both pass with the re-read's `where`
+     * replaced by `{}` - and under that filter a create in a tenant that
+     * already holds one row of the model maps every `P2002` to a 409, id
+     * collision included, which is precisely the server fault dressed as a
+     * client fault the re-read exists to prevent.
+     *
+     * So this pushes a row with a DIFFERENT natural key. Present, and not this
+     * one.
+     */
+    const h = harness();
+    const error = uniqueViolation();
+    const collection = createPrismaCollection(
+      patientSpec,
+      racingPort(h, error, () => {
+        h.dataset
+          .table('Patient')
+          .push(makePatientRow({ id: testId(78), mrn: 'OR-900001', tenantId: DEMO_TENANT_A }));
+      }),
+      h.scope
+    );
+
+    await expect(collection.create({ ...NEW_PATIENT, mrn: CLASHING_MRN })).rejects.toBe(error);
+  });
+
+  it('rethrows an error that is not a unique violation, clash or no clash', async () => {
+    // A deadlock, a dropped connection, a check constraint. The re-read must
+    // not turn an unrelated failure into a 409 just because the row exists -
+    // and a row does exist here, so this is the case that would.
+    const h = harness();
+    const error = Object.assign(new Error('deadlock detected'), { code: 'P2034' });
+    const collection = createPrismaCollection(
+      patientSpec,
+      racingPort(h, error, () => {
+        winner(h);
+      }),
+      h.scope
+    );
+
+    await expect(collection.create({ ...NEW_PATIENT, mrn: CLASHING_MRN })).rejects.toBe(error);
+  });
+
+  it('leaves a spec with no natural key alone', async () => {
+    /*
+     * Nothing has declared a conflict to be a client-facing outcome on such a
+     * model, so there is no message to answer with and a unique violation is
+     * what it looks like: this server failing. Appointments carry no
+     * `uniqueBy`.
+     */
+    const h = harness();
+    expect(appointmentSpec.uniqueBy).toBeUndefined();
+    const error = uniqueViolation();
+    const failing: DbPort = {
+      ...h.port,
+      $transaction: <R>(fn: (tx: DbTransaction) => Promise<R>): Promise<R> =>
+        h.port.$transaction((tx) =>
+          fn({
+            ...tx,
+            model<M extends PrismaModelName>(name: M) {
+              const delegate = tx.model(name);
+              if (name !== 'Appointment') return delegate;
+              return { ...delegate, create: () => Promise.reject(error) };
+            },
+          })
+        ),
+    };
+    const collection = createPrismaCollection(appointmentSpec, failing, h.scope);
+
+    await expect(
+      collection.create({
+        patientId: testId(1),
+        facilityId: DEMO_FACILITY_A,
+        providerId: testId(900),
+        typeCode: 'FOLLOWUP',
+        typeDisplay: 'Follow-up',
+        durationMinutes: 15,
+        start: FIXED_NOW,
+        end: new Date(FIXED_NOW.getTime() + 900_000),
+      })
+    ).rejects.toBe(error);
   });
 });

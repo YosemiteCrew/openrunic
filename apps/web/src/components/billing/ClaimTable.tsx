@@ -101,7 +101,9 @@ export function ClaimTable({
       ),
       age: (
         <span className="or-claim-age">
-          <span className="or-mono">{t('billing.claimTable.ageDays', { days })}</span>
+          <span className="or-mono">
+            {t('billing.claimTable.ageDays', { days: formatCount(days, t.locale) })}
+          </span>
           <span className="or-small">{t(ageing.labelKey)}</span>
         </span>
       ),

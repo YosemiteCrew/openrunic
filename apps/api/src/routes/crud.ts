@@ -5,19 +5,14 @@ import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseParam, parseQuery } from '../http/validate.js';
-import {
-  assertCareRelationship,
-  assertFacilityAccess,
-  requirePermission,
-} from '../middleware/policy.js';
-import { chartIdOf } from '../policy/chart.js';
+import { assertFacilityAccess, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import type { Permission } from '../policy/permissions.js';
 import type { BaseQuery, Collection } from '../repositories/collection.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 import { listResponseSchema, toListResponse } from '../schemas/pagination.js';
 
-import { idParamSchema, policyOf, repositories, required } from './helpers.js';
+import { gateCharts, idParamSchema, policyOf, repositories, required } from './helpers.js';
 
 /**
  * List, read, create and amend, written once.
@@ -64,6 +59,17 @@ export const CONFLICT_RESPONSE = {
   schema: problemDocumentSchema,
 } as const;
 
+/**
+ * Joins an operation's own description with its aggregate's standing caveat.
+ *
+ * Spread into a contract so that "no description at all" stays absent rather
+ * than becoming an empty string, which the document would publish.
+ */
+function describe(own: string | undefined, caveat: string | undefined): { description?: string } {
+  const parts = [own, caveat].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? {} : { description: parts.join(' ') };
+}
+
 /** Everything the factory needs to serve one aggregate. */
 export interface CrudResource<
   TRow,
@@ -107,6 +113,24 @@ export interface CrudResource<
   toQuery(input: TQueryInput): TQuery;
   /** What the list query means, in one line, for the published spec. */
   readonly listDescription?: string;
+  /**
+   * A sentence true of every operation on this aggregate, appended to each
+   * one's description in the published document.
+   *
+   * It exists because a caveat that belongs to the *aggregate* would otherwise
+   * be written out four times and drift: a reader who arrives at `PATCH` must
+   * be told what a reader who arrives at `GET` was told. Written once here, it
+   * cannot say different things on different verbs.
+   *
+   * THAT INVARIANT IS THE WHOLE FIELD, AND IT IS WHAT A SECOND USER WOULD COST.
+   * A sentence belongs here only when it is true of the aggregate on every verb
+   * and would be a defect if one operation disagreed. Anything true of a single
+   * operation goes in that operation's own description. A field used twice for
+   * unrelated reasons is no longer a guarantee about an aggregate; it is a
+   * place to put sentences, and every reader after that has to check which kind
+   * it is holding.
+   */
+  readonly caveat?: string;
   readonly createSchema: z.ZodType<TCreateBody>;
   toCreate(body: TCreateBody): TCreate;
   readonly patchSchema: z.ZodType<TPatchBody>;
@@ -219,7 +243,7 @@ function crudContracts<
       path: base,
       operationId: `list${resource.operation}s`,
       summary: `List ${resource.plural}.`,
-      ...(resource.listDescription === undefined ? {} : { description: resource.listDescription }),
+      ...describe(resource.listDescription, resource.caveat),
       tags: [resource.tag],
       permission: resource.readPermission,
       query: resource.listQuerySchema,
@@ -237,6 +261,7 @@ function crudContracts<
       path: `${base}/{id}`,
       operationId: `read${resource.operation}`,
       summary: `Read one ${resource.singular}.`,
+      ...describe(undefined, resource.caveat),
       tags: [resource.tag],
       permission: resource.readPermission,
       pathParams: [idParam],
@@ -251,6 +276,7 @@ function crudContracts<
       path: base,
       operationId: `create${resource.operation}`,
       summary: `Record a ${resource.singular}.`,
+      ...describe(undefined, resource.caveat),
       tags: [resource.tag],
       permission: resource.writePermission,
       body: resource.createSchema,
@@ -270,6 +296,7 @@ function crudContracts<
       path: `${base}/{id}`,
       operationId: `update${resource.operation}`,
       summary: `Amend a ${resource.singular}.`,
+      ...describe(undefined, resource.caveat),
       tags: [resource.tag],
       permission: resource.writePermission,
       pathParams: [idParam],
@@ -317,8 +344,50 @@ function crudRoutes<
   // before the row is serialised, so the body never forms for a refused read.
   const guardChart = async (c: Context<AppEnv>, res: typeof resource, row: TRow): Promise<void> => {
     if (res.chartFrom === undefined) return;
-    const chart = chartIdOf(res.chartFrom, row);
-    if (chart !== undefined) await assertCareRelationship(c, chart);
+    await gateCharts(c, res.chartFrom, [row]);
+  };
+
+  /**
+   * The update and the chart gate on what it will write, as one expression.
+   *
+   * Written this way because the two were adjacent statements and the gate's
+   * value was used by nothing, so swapping them compiled, type-checked and
+   * answered the same 404 while the row had already moved into a chart the
+   * caller cannot read. That is measured rather than supposed: the suite was
+   * green through exactly that reordering until #421 added a read-back
+   * assertion, and an assertion is a thing a later change can delete.
+   *
+   * This does not make the unpaired write unspellable - `collection.update` is
+   * still in scope, as `findById` is beside `requiredParentChart`. What it
+   * removes is the two-statement form: there is no longer an ordering here to
+   * get wrong, so producing the defect means editing this function rather than
+   * moving a line, which is a different and much more visible change. That is
+   * `requiredParentChart`'s property - *no way to spell the read that omits the
+   * guard* - applied to the write path instead of the read one.
+   *
+   * The gate asks about the row AS PATCHED, so a patch naming a chart the
+   * caller has no relationship with is refused before the collection sees it.
+   */
+  const updateGated = async (
+    c: Context<AppEnv>,
+    id: string,
+    existing: TRow,
+    patch: TPatch
+  ): Promise<TRow> => {
+    await guardChart(c, resource, { ...existing, ...patch });
+    // Derived from `resource` rather than taken as a parameter, which is a
+    // tidiness change and not a safety one. The argument at the one call site
+    // was literally `resource.collection(repositories(c))`, so the parameter
+    // restated a value this closure already reaches.
+    //
+    // It was raised in review as a pair that must agree - gate on
+    // `resource.chartFrom`, write to a collection somebody else chose - and
+    // measured, which refuted it. Inside this factory the four generics are
+    // already bound to the resource's own types, so the only assignable
+    // collection is the one carrying exactly them: passing a concrete other one
+    // with no cast is `TS2345`, not a silent disagreement. Written down because
+    // the first version of this comment claimed the hazard.
+    return required(await resource.collection(repositories(c)).update(id, patch), missing);
   };
 
   router.get(base, requirePermission(resource.readPermission), async (c) => {
@@ -335,14 +404,7 @@ function crudRoutes<
     // check; a broad clinical list of other patients' rows is refused, which is
     // the FHIR search's rule on this boundary. Only the DTOs form after the
     // gate, so a refused list never serialises the rows it read to decide.
-    if (resource.chartFrom !== undefined) {
-      const chartFrom = resource.chartFrom;
-      for (const chart of new Set(
-        page.rows.map((row) => chartIdOf(chartFrom, row)).filter((id) => id !== undefined)
-      )) {
-        await assertCareRelationship(c, chart);
-      }
-    }
+    if (resource.chartFrom !== undefined) await gateCharts(c, resource.chartFrom, page.rows);
     return c.json(toListResponse(page, (row) => resource.toDto(row)));
   });
 
@@ -354,6 +416,21 @@ function crudRoutes<
     return c.json(resource.toDto(row));
   });
 
+  // No `guardChart` on create, and this is the settled half of #330 rather
+  // than an omission. Unlike a patch moving a row between charts (below), a
+  // create's chart is not gated by care relationship: the person triaging an
+  // inbox of unclaimed faxes has, by definition, no relationship with the
+  // chart the fax turns out to belong to, and `care-relationship.ts` already
+  // accepts that shape of argument for reception and billing. `POST
+  // /documents/:id/file` already relies on exactly this - naming a chart with
+  // no prior relationship is the triage action, not a bypass of one - and
+  // `records every optional column a full document carries` /
+  // `POST /documents may name a chart the writer has no relationship with
+  // (#330)` in `routes.orders.test.ts` are the coverage for it. `write`
+  // grants no `read` back - the one relationship-establishing source is
+  // `assigned-task`, stamped from the token rather than the body - so a
+  // create the writer cannot then read is one-directional and audited, not an
+  // escalation.
   router.post(base, requirePermission(resource.writePermission), async (c) => {
     const parsed = resource.toCreate(await parseJsonBody(c, resource.createSchema));
     const input = resource.stampCreate?.(parsed, c) ?? parsed;
@@ -376,10 +453,24 @@ function crudRoutes<
     guardRow(c, existing);
     await guardChart(c, resource, existing);
     const patch = resource.toPatch(body, existing);
-    const row = required(
-      await collection.update(id, resource.stampPatch?.(patch, c) ?? patch),
-      missing
-    );
+    const stamped = resource.stampPatch?.(patch, c) ?? patch;
+    // The chart the patch NAMES, and not only the one the row is already in.
+    // `guardChart` above asked about the origin, which is the chart the caller
+    // is reading out of; a patch that carries the chart column moves the row
+    // into a different one, and nothing asked about that. The caller ends up
+    // having written into a chart they have no relationship with, and the row
+    // leaves their own view in the same request - so the write cannot be read
+    // back, reviewed or undone by the person who made it.
+    //
+    // Merged rather than checked for a difference: a patch that names no chart
+    // re-asks the question `guardChart` just answered, which costs one lookup
+    // and cannot be got wrong, while a comparison would have to decide what
+    // `undefined` means on a nullable chart column. Runs before the update, so
+    // a refused move never reaches the collection.
+    //
+    // Through `updateGated`, which pairs the write with that gate so the two
+    // are one expression rather than two statements in an order nothing holds.
+    const row = await updateGated(c, id, existing, stamped);
     return c.json(resource.toDto(row));
   });
 

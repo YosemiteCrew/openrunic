@@ -1,6 +1,6 @@
 {
   "name": "portal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "openrunic patient portal \u2014 what a patient sees of their own care",
   "license": "AGPL-3.0-only",
@@ -10,12 +10,14 @@
     "start": "next start -p 3300",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:layout": "vitest run --config vitest.layout.config.mts"
   },
   "dependencies": {
     "@openrunic/i18n": "workspace:*",
     "@openrunic/ui": "workspace:*",
-    "next": "^16.3.0",
+    "@openrunic/voice": "workspace:*",
+    "next": "^16.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -27,11 +29,13 @@
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@vitest/coverage-istanbul": "^4.1.0",
+    "@vitest/browser-playwright": "^4.1.11",
+    "@vitest/coverage-istanbul": "^4.1.11",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.0",
-    "jsdom": "^26.1.0",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.11"
   }
 }

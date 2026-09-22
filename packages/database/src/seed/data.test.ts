@@ -56,6 +56,64 @@ describe('buildDemoPractice', () => {
     expect(practice.payments.length).toBeGreaterThan(0);
     expect(practice.statements.length).toBeGreaterThan(0);
     expect(practice.formPromotedValues.length).toBeGreaterThan(0);
+    // The pharmacy pillar. Omitted from this list until 2026-09-06, which is
+    // why the seed shipped ten prescriptions and nothing to fill them from:
+    // every inventory read answered 200 with an empty page.
+    expect(practice.stockItems.length).toBeGreaterThan(0);
+    expect(practice.stockLots.length).toBeGreaterThan(0);
+    expect(practice.stockPostings.length).toBeGreaterThan(0);
+    expect(practice.stockMovements.length).toBeGreaterThan(0);
+  });
+
+  it('gives the pharmacy pillar a ledger each of its reads can answer from', () => {
+    // Not a count. Each assertion is a route that answers [] without it:
+    // `/inventory/lots`, `/inventory/expiring`, `/inventory/reorder`, and the
+    // dispense a prescription is filled by.
+    const facilities = new Set(practice.stockLots.map((lot) => lot.facilityId));
+    expect(facilities.size).toBeGreaterThan(1);
+
+    // `/inventory/expiring` defaults to a 30-day window that STARTS at today, so
+    // the lot has to be unexpired and inside it. Measured against the receipt
+    // instead, this assertion passes over a lot that expired months ago and the
+    // route still answers [].
+    const today = new Date('2026-08-17T00:00:00.000Z');
+    const windowEnd = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    expect(
+      practice.stockLots.some(
+        (lot) => (lot.expiresOn as Date) > today && (lot.expiresOn as Date) <= windowEnd
+      )
+    ).toBe(true);
+
+    const dispenses = practice.stockPostings.filter((posting) => posting.kind === 'DISPENSE');
+    expect(dispenses.length).toBeGreaterThan(0);
+    expect(dispenses.every((posting) => posting.prescriptionId !== undefined)).toBe(true);
+    const prescriptionIds = new Set(practice.medicationRequests.map((row) => row.id));
+    expect(
+      dispenses.every((posting) => prescriptionIds.has(posting.prescriptionId as string))
+    ).toBe(true);
+
+    // `lotSeq` is the lot's ledger position and the concurrency guard, so a
+    // duplicate or a gap is a defect rather than untidiness.
+    const seqByLot = new Map<string, number[]>();
+    for (const movement of practice.stockMovements) {
+      const lotId = movement.lotId as string;
+      seqByLot.set(lotId, [...(seqByLot.get(lotId) ?? []), movement.lotSeq as number]);
+    }
+    for (const [, seqs] of seqByLot) {
+      expect([...seqs].sort((x, y) => x - y)).toStrictEqual(
+        seqs.map((_, position) => position + 1)
+      );
+    }
+
+    // A movement filed under the wrong item vanishes from `balancesByLot`, and
+    // the schema comment says the package cross-checks nothing here.
+    const lotById = new Map(practice.stockLots.map((lot) => [lot.id as string, lot]));
+    for (const movement of practice.stockMovements) {
+      const lot = lotById.get(movement.lotId as string);
+      expect(lot).toBeDefined();
+      expect(movement.itemId).toBe(lot!.itemId);
+      expect(movement.facilityId).toBe(lot!.facilityId);
+    }
   });
 
   it('leaves real work in the inbox: at least one unreviewed abnormal result', () => {

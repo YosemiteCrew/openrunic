@@ -147,6 +147,21 @@ describe('FormsScreen', () => {
     expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
 
+  it('lists a read-only form with no invented due date or edit control', async () => {
+    const forms = await stubApi().getForms();
+    const readOnly: FormTask = {
+      ...(forms[0] as FormTask),
+      dueOn: null,
+      editable: false,
+    };
+
+    render(<FormsScreen api={stubApi({ getForms: () => Promise.resolve([readOnly]) })} />);
+
+    expect(await screen.findByText('No due date recorded')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue the form' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open the form' })).not.toBeInTheDocument();
+  });
+
   it('states the loading fact while the forms are on their way', () => {
     render(<FormsScreen api={stubApi({ getForms: never })} />);
 

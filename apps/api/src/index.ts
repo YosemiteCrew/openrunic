@@ -4,7 +4,12 @@ import { AdapterRegistry } from '@openrunic/adapters';
 import { createApp, type CreateAppOptions } from './app.js';
 import { createOidcPrincipalResolver } from './auth/oidc-resolver.js';
 import { oidcSettings, parseEnv, smartLaunchSettings } from './env.js';
-import { buildServerWiring, parseWiringEnv, type ServerWiring } from './server/wiring.js';
+import {
+  announceAuthentication,
+  buildServerWiring,
+  parseWiringEnv,
+  type ServerWiring,
+} from './server/wiring.js';
 
 const env = parseEnv();
 const oidc = oidcSettings(env);
@@ -30,8 +35,9 @@ const wiring: ServerWiring | null =
  *
  * `buildServerWiring` always supplies a principal resolver, but in the absence
  * of an issuer that resolver is the demo one: a short list of tokens printed in
- * this repository, granting full access to the seeded tenant. It announces
- * itself in the boot log for exactly that reason.
+ * this repository, granting full access to the seeded tenant. The boot log says
+ * so - announced below rather than by the wiring, because the wiring builds
+ * that resolver whether or not this file goes on to use it.
  *
  * So a configured issuer takes precedence over it. A deployment that set one
  * gets real signature verification even though the wiring offered a resolver of
@@ -66,6 +72,13 @@ const options: CreateAppOptions =
                 clockSkewSeconds: oidc.clockSkewSeconds,
               }),
       };
+
+/**
+ * Announce which resolver is in force. The choice itself lives in
+ * `announceAuthentication` so that it is reachable from a test - see the comment
+ * there, and #307, which was a defect of composition rather than of any layer.
+ */
+announceAuthentication(wiring, oidc?.issuer);
 
 const app = createApp(options);
 

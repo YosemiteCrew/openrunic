@@ -48,6 +48,108 @@ describe('questions that are for a person', () => {
     expect(needsCareTeam(question)).toBe(false);
   });
 
+  it.each([
+    'Is 5.9 potassium too high?',
+    'Why is my creatinine higher than last time?',
+    'My haemoglobin is low, what now?',
+    'Is this result out of range?',
+    'Are my liver numbers abnormal?',
+    'Is my blood pressure 150/95 raised?',
+    'Is 140 over 90 worse than before?',
+    'HbA1c came back at 7.9 percent',
+    'It came back at 5.9 mmol/L',
+    'Potassium on my last blood test',
+    'My LDL on the last report',
+  ])('sends the result question %j to the care team', (question) => {
+    /*
+     * A reader with a result in front of them asks about the result, and often
+     * without a speech act anywhere in the sentence. The first seven carry a
+     * magnitude word; the last four carry none at all and name only the
+     * measurement, or only the number and its unit. ADR-0006 grants this
+     * surface no capability that returns a measured value, so the care team is
+     * not the cautious answer to these, it is the only one there is.
+     */
+    expect(needsCareTeam(question)).toBe(true);
+  });
+
+  it.each([
+    'Do I keep taking the metformin with this result?',
+    'Carry on taking the tablets or not',
+    'Reduce the insulin tonight',
+    '¿Sigo tomando la metformina con este resultado?',
+    'Dejar la insulina ya',
+  ])('sends the medicine plan %j to the care team', (question) => {
+    /*
+     * "Can I stop the tablets" is a request for permission and was already
+     * carried. These are the same question with the asking taken out of it: a
+     * plan, stated. The verb and the thing it acts on are both required, which
+     * is what keeps `change` and `dejar` ordinary words everywhere else on
+     * this screen.
+     */
+    expect(needsCareTeam(question)).toBe(true);
+  });
+
+  it.each([
+    '¿Está alto mi potasio?',
+    '¿Por qué mi creatinina está más alta que la última vez?',
+    '¿Mis análisis están fuera de rango?',
+    'Potasio en mi último análisis',
+    'Colesterol 6,2 mmol/L',
+  ])('sends the Spanish result question %j to the care team', (question) => {
+    /*
+     * The same two classes in Spanish, written out rather than assumed. A
+     * language that shipped the words and not the speech acts would match
+     * nothing and look fine, which is the failure the module note describes
+     * and the reason each language is listed rather than derived.
+     */
+    expect(needsCareTeam(question)).toBe(true);
+  });
+
+  it.each([
+    'How do I change my address?',
+    'How do I book a blood test?',
+    'Can I download my records?',
+    'How many tablets are left on my repeat?',
+    'Who is my registered doctor?',
+    'What time does the surgery open?',
+    'How much do I owe for the dressing change?',
+    'Please send my prescription to the pharmacy',
+    '¿Cómo cambio mi dirección?',
+    '¿Dónde está la consulta?',
+    '¿Cuántas pastillas me quedan?',
+    '¿Puedo pedir cita para un análisis de sangre?',
+  ])('still answers %j from the record', (question) => {
+    /*
+     * The other half of the two classes above, and the shape of each one is
+     * deliberate. `change` and `cambio` appear with no medicine after them.
+     * `tablets` and `pastillas` appear with no verb before them. "blood test"
+     * and "análisis de sangre" name a visit rather than a measurement, which
+     * is why the set holds "blood pressure" and "blood sugar" and never
+     * "blood" on its own.
+     */
+    expect(needsCareTeam(question)).toBe(false);
+  });
+
+  it('treats every measurement it knows the same way', () => {
+    /*
+     * The set of measurement names has no weights and no order that changes an
+     * answer, and the way to see that from outside is to swap one name for
+     * another in the same sentence and get the same result back. A set that
+     * cannot express a rank cannot apply one, which is the whole of what
+     * ADR-0004 rule 3 asks of this module.
+     */
+    const answers = [
+      'potassium',
+      'creatinine',
+      'vitamin D',
+      'cholesterol',
+      'troponin',
+      'folate',
+    ].map((measurement) => needsCareTeam(`What is my ${measurement} on file?`));
+
+    expect(answers).toEqual([true, true, true, true, true, true]);
+  });
+
   it('reads a question the same way however it is punctuated or capitalised', () => {
     expect(needsCareTeam('SHOULD I...?!')).toBe(true);
     expect(needsCareTeam('should    i')).toBe(true);

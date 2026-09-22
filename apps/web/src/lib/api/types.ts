@@ -394,6 +394,58 @@ export interface NoteListQuery extends PaginationQuery {
   order?: 'asc' | 'desc';
 }
 
+/**
+ * A medication statement, as `/bff/v0/medications/statements` returns it.
+ *
+ * A statement is what somebody says the patient takes. It is not a
+ * prescription, which is why there is no prescriber and no refill count here -
+ * those belong to `prescriptionDtoSchema` and inferring them from a statement
+ * would put a name against a record nobody wrote.
+ */
+export interface MedicationStatementDto {
+  id: string;
+  patientId: string;
+  encounterId: string | null;
+  rxnormCode: string | null;
+  display: string;
+  sigText: string | null;
+  status: MedicationStatementStatus;
+  source: MedicationStatementSource;
+  effectiveStart: string | null;
+  effectiveEnd: string | null;
+  reportedAt: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PrescriptionRefillsRemainingDto {
+  prescriptionId: string;
+  authorisedRefills: number;
+  fillsRecorded: number;
+  refillsRemaining: number;
+}
+
+export type MedicationStatementStatus =
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'ENTERED_IN_ERROR'
+  | 'INTENDED'
+  | 'NOT_TAKEN'
+  | 'ON_HOLD'
+  | 'STOPPED'
+  | 'UNKNOWN';
+
+export type MedicationStatementSource = 'REPORTED' | 'PRESCRIBED' | 'RECONCILED' | 'IMPORTED';
+
+export interface MedicationStatementListQuery extends PaginationQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: MedicationStatementStatus;
+  sort?: 'reportedAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
 /** Mirrors `encounterListQuerySchema`. */
 export interface EncounterListQuery extends PaginationQuery {
   patientId?: string;
@@ -458,6 +510,22 @@ export interface ServiceRequestDto {
   transmittedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Mirrors `serviceRequestListQuerySchema`. Wider than `OrderListQuery`, which is a view. */
+export interface ServiceRequestListQuery extends PaginationQuery {
+  patientId?: string;
+  encounterId?: string;
+  status?: ServiceRequestStatus;
+  category?: ServiceRequestCategory;
+  priority?: ServiceRequestPriority;
+  orderedById?: string;
+  /** Inclusive ISO instant, over `requestedAt`. */
+  from?: string;
+  /** Exclusive ISO instant, over `requestedAt`. */
+  to?: string;
+  sort?: 'requestedAt' | 'scheduledFor' | 'createdAt';
+  order?: 'asc' | 'desc';
 }
 
 /** Mirrors `DIAGNOSTIC_REPORT_STATUSES`. */
@@ -867,8 +935,25 @@ export interface UserListQuery extends PaginationQuery {
  * ahead of the route: a contract that promises more than the server does is how
  * a screen ends up reporting a save that never happened.
  */
+/**
+ * What the signed-in principal may do, as the API resolved it.
+ *
+ * The staff application uses this to stop offering an action the server will
+ * refuse (#313). It is not a security boundary: every route enforces its own
+ * permission, and this only decides what the interface offers.
+ */
+export interface PrincipalCapabilities {
+  readonly roles: readonly string[];
+  /** Sorted, so two answers that mean the same thing compare equal. */
+  readonly permissions: readonly string[];
+}
+
 export interface ApiClient {
   readonly mode: 'live' | 'mock';
+  /** The caller, as this deployment sees them. */
+  session: {
+    me: (signal?: AbortSignal) => Promise<PrincipalCapabilities>;
+  };
   /**
    * The facility directory. Read-only here: a screen books into a facility, it
    * does not create one, and the admin surface that does is its own client.
@@ -894,6 +979,18 @@ export interface ApiClient {
     get: (id: string, signal?: AbortSignal) => Promise<Appointment>;
     create: (body: AppointmentCreateBody, signal?: AbortSignal) => Promise<Appointment>;
     update: (id: string, body: AppointmentUpdateBody, signal?: AbortSignal) => Promise<Appointment>;
+  };
+  medicationStatements: {
+    list: (
+      query?: MedicationStatementListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<MedicationStatementDto>>;
+  };
+  prescriptions: {
+    getRefillsRemaining: (
+      id: string,
+      signal?: AbortSignal
+    ) => Promise<PrescriptionRefillsRemainingDto>;
   };
   encounters: {
     list: (query?: EncounterListQuery, signal?: AbortSignal) => Promise<ListResponse<EncounterDto>>;
@@ -922,6 +1019,10 @@ export interface ApiClient {
     ) => Promise<NoteAddendumDto>;
   };
   orders: {
+    list: (
+      query?: ServiceRequestListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<ServiceRequestDto>>;
     sign: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;
     transmit: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;
     cancel: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;

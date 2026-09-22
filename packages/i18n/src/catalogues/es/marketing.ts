@@ -198,7 +198,7 @@ export const marketing: Messages = {
     'La pantalla de inicio responde las dos preguntas con las que un paciente realmente abre un portal: qué sigue, y si hay algo esperando por mí. Las citas, próximas y pasadas, tienen su propia pantalla.',
   'marketing.patients.portal.record.title': 'Su expediente de salud, en palabras',
   'marketing.patients.portal.record.body':
-    'Resultados, condiciones, medicamentos, alergias, vacunas y documentos. Un término codificado nunca aparece solo: la redacción en lenguaje claro va a su lado, para que un código de diagnóstico se lea como aquello que significa. Un valor medido tampoco aparece solo, sino con su unidad, su rango habitual y un veredicto expresado en palabras.',
+    'Resultados, condiciones, medicamentos, alergias, vacunas y documentos. Cuando el registro contiene una explicación dirigida al paciente, aparece junto al término clínico. Un valor medido nunca aparece solo, sino con su unidad, su rango registrado y un estado del rango expresado en palabras.',
   'marketing.patients.portal.messages.title': 'Mensajes, formularios y cuentas',
   'marketing.patients.portal.messages.body':
     'Mensajería segura con la consulta, formularios de ingreso y consentimiento por completar, y saldos y estados de cuenta. Un resultado que usted no entiende abre una forma de preguntar por él, en lugar de dejarlo buscando solo la bandeja de mensajes.',
@@ -210,7 +210,7 @@ export const marketing: Messages = {
     'El servicio habla FHIR R4, el estándar de interoperabilidad alrededor del cual está escrito el trabajo regulatorio tanto en Estados Unidos como en la Unión Europea. Un expediente guardado así puede ser leído por cualquier otro sistema que lo hable, que es la diferencia entre tener sus datos y tener una impresión de ellos.',
   'marketing.patients.ownership.interpretation.title': 'Nada se interpreta por usted',
   'marketing.patients.ownership.interpretation.body':
-    'El proyecto ya decidió, por escrito y antes de construir la función, que la redacción en lenguaje claro proviene de una correspondencia curada de los códigos que ya están en su expediente, y nunca de un modelo que decida qué significa un valor para usted. Aquí el software explica un término. No le dice cuánto preocuparse.',
+    'El proyecto ya decidió, por escrito y antes de construir la función, que la redacción dirigida al paciente debe proceder del registro o de una correspondencia curada, y nunca de un modelo que decida qué significa un valor para usted. Si falta esa explicación, no se inventa, y el software no le dice cuánto preocuparse.',
   'marketing.patients.ownership.product.title': 'Usted no es el producto',
   'marketing.patients.ownership.product.body':
     'openrunic no transmite nada al proyecto ni a quienes lo mantienen. No hay una tubería de analítica leyendo un expediente, y el proyecto se comprometió a que cualquier telemetría futura sea opcional, documentada y estructuralmente incapaz de transportar datos de salud.',

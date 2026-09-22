@@ -5,7 +5,12 @@ import { err, ok } from '@openrunic/types';
 
 import type { AdapterErrorKind, Capability, CapabilityDescriptor } from './contracts/core.js';
 import { isMajorCompatible, isoDateTimeOf, parseContractVersion } from './contracts/core.js';
-import type { AnyCapabilityAdapter, CapabilityAdapterMap } from './contracts/index.js';
+import type {
+  AnyCapabilityAdapter,
+  CapabilityAdapterMap,
+  ConfigOf,
+  EntitlementOf,
+} from './contracts/index.js';
 import { CONTRACTS } from './contracts/index.js';
 
 /**
@@ -158,6 +163,19 @@ function noRecording(): undefined {
 /** Resolves adapters, polices seam versions, and records every call it hands out. */
 export class AdapterRegistry {
   private readonly adapters = new Map<Capability, AnyCapabilityAdapter>();
+  /**
+   * The configuration this installation registered a capability with.
+   *
+   * Held here and never handed out. An `ErxConfig` carries `credentialRef` and
+   * `networkAccountId`, so the object a route resolves stays `{ descriptor,
+   * ...operations }` and questions about the installation are answered by
+   * {@link AdapterRegistry.entitledTo} rather than by reading the config.
+   *
+   * A capability registered without one has no entry, which is not the same as
+   * an entry saying `false` only in how it arose - both answer "not entitled".
+   * That is deliberate: see {@link AdapterRegistry.entitledTo}.
+   */
+  private readonly installations = new Map<Capability, Record<string, unknown>>();
   private readonly requiredVersions: Partial<Record<Capability, string>>;
   private readonly clock: () => Date;
   private readonly sink: (record: AdapterCallRecord) => void;
@@ -183,7 +201,8 @@ export class AdapterRegistry {
    */
   register<C extends Capability>(
     capability: C,
-    adapter: CapabilityAdapterMap[C]
+    adapter: CapabilityAdapterMap[C],
+    installation?: { readonly config: ConfigOf<C> }
   ): Result<CapabilityDescriptor, RegistryError> {
     const existing = this.adapters.get(capability);
     if (existing !== undefined) {
@@ -225,6 +244,11 @@ export class AdapterRegistry {
     }
 
     this.adapters.set(capability, this.instrument(adapter, methods.value));
+    if (installation !== undefined) {
+      // Recorded only on success, so a refused registration cannot leave an
+      // entitlement behind for a capability that has no adapter.
+      this.installations.set(capability, installation.config as Record<string, unknown>);
+    }
     return ok(adapter.descriptor);
   }
 
@@ -246,7 +270,44 @@ export class AdapterRegistry {
 
   /** Removes an adapter, for a plugin being disabled. Reports whether there was one. */
   unregister(capability: Capability): boolean {
+    // The installation goes with it. A configuration outliving its adapter would
+    // answer `entitledTo` for a capability nothing can perform.
+    this.installations.delete(capability);
     return this.adapters.delete(capability);
+  }
+
+  /**
+   * Whether this installation is recorded as entitled to a feature.
+   *
+   * A feature is what a VENDOR may offer - `supportsFeature(descriptor, …)`
+   * answers that, off the descriptor, and it is a different question. Some
+   * features are also an entitlement the practice holds separately: the eRx
+   * contract states it in as many words for `epcs`, because "a network may
+   * support controlled substances while a given installation is not enrolled,
+   * and the practice must be able to say so". Both have to be true, and a caller
+   * gating a regulated operation must ask both.
+   *
+   * ## Only entitlements, not every feature
+   *
+   * The parameter is {@link EntitlementOf}, not `FeatureOf`. The lookup is a
+   * configuration key, so a feature that is not one - `cancel`, `formulary`, and
+   * 23 others across the eight contracts - could only ever come back `false`,
+   * and "not entitled" and "not an entitlement" would be the same value with no
+   * way for a caller or a reviewer to tell them apart at the call site. Asking
+   * about one is now TS2345 rather than a well-formed permanent refusal.
+   *
+   * ## It fails closed, and that is the point
+   *
+   * `false` is returned when no configuration was recorded, when the feature is
+   * not a key of it, and when the value is anything other than `true`. So the
+   * state a future caller reaches by FORGETTING to pass a config - which every
+   * caller written before this parameter existed does - is "not entitled", which
+   * is a refusal somebody reports rather than a transmission nobody sees.
+   *
+   * Never widen this to treat a missing configuration as permission.
+   */
+  entitledTo<C extends Capability>(capability: C, feature: EntitlementOf<C>): boolean {
+    return this.installations.get(capability)?.[feature] === true;
   }
 
   /** What this installation can do, for an admin screen, without calling any partner. */

@@ -3,9 +3,8 @@
  * principal rather than as staff.
  *
  * The portal never chooses which patient it is reading. There is no patient id in any path
- * below: the bearer token identifies the subject and the API scopes every response to it,
- * so a tampered client cannot widen its own access. The token is attached by the caller's
- * `authorization` supplier rather than read from storage here.
+ * below: the sealed same-origin proxy supplies the bearer token and the API scopes every
+ * response to it, so a tampered client cannot widen its own access.
  */
 
 import type {
@@ -16,17 +15,17 @@ import type {
   MessageThread,
   Patient,
   PortalApi,
-  Receipt,
   Statement,
 } from './types';
+import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 
 export interface HttpApiOptions {
   /** API origin without a trailing slash, e.g. 'https://api.example.invalid'. */
   baseUrl: string;
-  /** Returns the current `Authorization` header value, or undefined while signed out. */
-  authorization?: () => string | undefined;
   /** Injected in tests; defaults to the platform fetch. */
   fetchImpl?: typeof fetch;
+  /** Called after the server rejects the sealed patient session. */
+  onUnauthorized?: () => void;
 }
 
 /** A failed request, carrying the status so a screen can tell 404 from a network fault. */
@@ -40,17 +39,22 @@ export class HttpApiError extends Error {
   }
 }
 
+function unsupported(): Promise<never> {
+  return Promise.reject(new HttpApiError(405, 'This portal operation is read-only.'));
+}
+
 export function createHttpApi(options: HttpApiOptions): PortalApi {
   const doFetch = options.fetchImpl ?? fetch;
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const authorization = options.authorization?.();
-    const headers: Record<string, string> = { accept: 'application/json' };
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      [SESSION_FETCH_HEADER]: SESSION_FETCH_MARKER,
+    };
     if (init?.body !== undefined) headers['content-type'] = 'application/json';
-    if (authorization !== undefined) headers.authorization = authorization;
-
     const response = await doFetch(`${options.baseUrl}${path}`, { ...init, headers });
     if (!response.ok) {
+      if (response.status === 401) options.onUnauthorized?.();
       throw new HttpApiError(response.status, `Request to ${path} failed.`);
     }
     if (response.status === 204) return undefined as T;
@@ -72,15 +76,12 @@ export function createHttpApi(options: HttpApiOptions): PortalApi {
     sendMessage: (threadId, body) =>
       post<Message>(`/portal/messages/${encodeURIComponent(threadId)}/replies`, { body }),
     getAppointments: () => request<Appointments>('/portal/appointments'),
-    requestAppointment: (input) => post<void>('/portal/appointment-requests', input),
-    cancelAppointment: (id) =>
-      post<void>(`/portal/appointments/${encodeURIComponent(id)}/cancellation`),
+    requestAppointment: unsupported,
+    cancelAppointment: unsupported,
     getForms: () => request('/portal/forms'),
-    saveForm: (id, answers) =>
-      post<void>(`/portal/forms/${encodeURIComponent(id)}/draft`, { answers }),
-    submitForm: (id, answers) =>
-      post<void>(`/portal/forms/${encodeURIComponent(id)}/submission`, { answers }),
+    saveForm: unsupported,
+    submitForm: unsupported,
     getStatements: () => request<Statement[]>('/portal/statements'),
-    payStatement: (id) => post<Receipt>(`/portal/statements/${encodeURIComponent(id)}/payment`),
+    payStatement: unsupported,
   };
 }

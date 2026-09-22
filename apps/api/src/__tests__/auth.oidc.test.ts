@@ -543,10 +543,40 @@ describe('the patient compartment', () => {
     expect(principal?.compartmentPatientId).toBe(PATIENT);
   });
 
+  it('confines the portal role even when the actor type defaults to user', async () => {
+    const resolver = resolverFor(fakeProvider());
+
+    const principal = await resolveToken(
+      resolver,
+      rs256({
+        roles: ['patient-portal'],
+        patient: PATIENT,
+        scope: 'launch/patient patient/Observation.rs',
+      })
+    );
+
+    expect(principal?.actorType).toBe('user');
+    expect(principal?.compartmentPatientId).toBe(PATIENT);
+  });
+
   it('refuses a patient scope with no launch context to confine it to', async () => {
     const resolver = resolverFor(fakeProvider());
 
     expect(await resolveToken(resolver, rs256({ scope: 'patient/Observation.rs' }))).toBeNull();
+  });
+
+  it.each([
+    ['patient actor', { actor_type: 'patient' }],
+    ['patient portal role', { roles: ['patient-portal'] }],
+  ])('refuses a %s with no patient compartment', async (_label, identity) => {
+    const resolver = resolverFor(fakeProvider());
+
+    expect(
+      await resolveToken(
+        resolver,
+        rs256({ ...identity, patient: PATIENT, scope: 'user/Observation.rs' })
+      )
+    ).toBeNull();
   });
 
   it('leaves a launch context without a patient scope as no restriction at all', async () => {

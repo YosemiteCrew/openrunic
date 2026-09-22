@@ -16,6 +16,7 @@ export {
   filterFacilities,
   filterNotes,
   filterPatients,
+  filterServiceRequests,
 } from './mock/client';
 export type { MockClientOptions } from './mock/client';
 export {
@@ -49,6 +50,7 @@ export {
   useAppointments,
   useMutation,
   usePatient,
+  useOwnCapabilities,
   usePatients,
 } from './hooks';
 export type { AsyncState, AsyncStatus, HookOptions, MutationOutcome, MutationState } from './hooks';
@@ -164,6 +166,7 @@ export {
   filterResults,
   INBOX_STREAMS,
   isBulkSignable,
+  liveOrders,
   ORDER_CATEGORIES,
   ORDER_PRIORITIES,
   ORDER_STATUSES,
@@ -172,12 +175,15 @@ export {
   RESULT_FLAGS,
   RESULT_STATUSES,
   slaState,
+  toOrder,
+  toOrderPage,
   useInbox,
   useOrders,
   useResults,
   WARNING_TIERS,
   warningsFor,
   worklist,
+  WORKLIST_IS_FIXTURE_BACKED,
 } from './worklist';
 export type {
   Assignment,
@@ -188,6 +194,7 @@ export type {
   OrderCatalogEntry,
   OrderCategory,
   OrderListQuery,
+  OrderPage,
   OrderPriority,
   OrderStatus,
   OrderWarning,

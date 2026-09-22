@@ -49,6 +49,8 @@ import type {
   ObservationListQuery,
   ObservationPatchInput,
   ObservationRow,
+  PrescriptionFillListQuery,
+  PrescriptionFillRow,
 } from '../repositories/specs/clinical.js';
 
 import { paginationQueryFields, sortOrderField } from './pagination.js';
@@ -76,7 +78,7 @@ import { toDateOnly } from './patients.js';
 const instantField = z.iso.datetime({ offset: true });
 
 /** A `@db.Date` column on the wire: a bare calendar date, no time, no zone. */
-const dateOnlyField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
+const dateOnlyField = z.iso.date('expected YYYY-MM-DD');
 
 /** A block of a note document. Its shape is the editor's, not storage's. */
 const blockField = z.record(z.string(), z.unknown());
@@ -1070,3 +1072,61 @@ export function toObservationDto(row: ObservationRow): ObservationDto {
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+
+/* --------------------------------------------------- prescription fills */
+
+export const prescriptionFillListQuerySchema = z.strictObject({
+  ...paginationQueryFields,
+  patientId: z.uuid().optional(),
+  prescriptionId: z.uuid().optional(),
+  sort: z.enum(['filledOn', 'createdAt']).default('filledOn'),
+  order: sortOrderField,
+});
+
+export type PrescriptionFillListQueryInput = z.infer<typeof prescriptionFillListQuerySchema>;
+
+export function toPrescriptionFillListQuery(
+  input: PrescriptionFillListQueryInput
+): PrescriptionFillListQuery {
+  return {
+    page: input.page,
+    pageSize: input.pageSize,
+    ...(input.patientId === undefined ? {} : { patientId: input.patientId }),
+    ...(input.prescriptionId === undefined ? {} : { prescriptionId: input.prescriptionId }),
+    sort: input.sort,
+    order: input.order,
+  };
+}
+
+export const prescriptionFillDtoSchema = z.strictObject({
+  id: z.uuid(),
+  patientId: z.uuid(),
+  prescriptionId: z.uuid(),
+  stockPostingId: z.uuid(),
+  filledOn: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type PrescriptionFillDto = z.infer<typeof prescriptionFillDtoSchema>;
+
+export function toPrescriptionFillDto(row: PrescriptionFillRow): PrescriptionFillDto {
+  return {
+    id: row.id,
+    patientId: row.patientId,
+    prescriptionId: row.prescriptionId,
+    stockPostingId: row.stockPostingId,
+    filledOn: toDateOnly(row.filledOn),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export const prescriptionRefillsRemainingDtoSchema = z.strictObject({
+  prescriptionId: z.uuid(),
+  authorisedRefills: z.int(),
+  fillsRecorded: z.int(),
+  refillsRemaining: z.int(),
+});
+
+export type PrescriptionRefillsRemainingDto = z.infer<typeof prescriptionRefillsRemainingDtoSchema>;

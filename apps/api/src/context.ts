@@ -16,6 +16,19 @@ import type { Repositories } from './repositories/types.js';
 export interface AppVariables {
   /** Correlates logs, audit events and the `x-request-id` response header. */
   requestId: string;
+  /**
+   * One instant for the whole request, read once by `request-id`.
+   *
+   * A decision that depends on time must not depend on WHEN inside the response
+   * it is taken. `gateCharts` asks the care-relationship question once per
+   * distinct chart on a page, sequentially, and three of the seven relationship
+   * sources are bounded by a period or a window - so a grant, a membership or
+   * the facility-activity window expiring between two of those calls
+   * authorises one chart and refuses another inside one answer, or records the
+   * same page under two compliance classifications. Neither is decided by
+   * anything the reader did (#426).
+   */
+  receivedAt: Date;
   principal?: Principal;
   /** The organisation every query in this request is confined to. */
   tenantId?: string;

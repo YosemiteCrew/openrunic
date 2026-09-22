@@ -36,7 +36,7 @@ const CONTEXT: RowContext = {
   nextId: () => testId(99),
 };
 
-function postingRow(): ScopedRow<'StockPosting'> {
+function postingRow(overrides: Partial<ScopedRow<'StockPosting'>> = {}): ScopedRow<'StockPosting'> {
   return {
     ...storageColumns(POSTING),
     kind: 'WASTAGE',
@@ -50,6 +50,7 @@ function postingRow(): ScopedRow<'StockPosting'> {
     witnessedById: null,
     reference: null,
     note: null,
+    ...overrides,
   };
 }
 
@@ -216,6 +217,68 @@ describe('the write door', () => {
 
     expect(batches?.map((batch) => batch.model)).toEqual(['StockMovement']);
     expect(batches?.[0]?.rows).toEqual([]);
+  });
+
+  it('writes a prescription fill in the posting transaction', () => {
+    const patientId = testId(41);
+    const prescriptionId = testId(42);
+    const occurredOn = new Date('2026-08-17T00:00:00.000Z');
+    const input: Parameters<NonNullable<typeof stockPostingSpec.childRows>>[0] = {
+      kind: 'DISPENSE',
+      facilityId: DEMO_FACILITY_A,
+      patientId,
+      prescriptionId,
+      occurredOn,
+      postedById: testId(951),
+      lines: [
+        {
+          movement: {
+            id: testId(30),
+            lotId: LOT,
+            itemId: ITEM,
+            kind: 'DISPENSE',
+            quantity: 20,
+            occurredOn: '2026-08-17',
+            actorId: testId(951),
+          },
+          lotSeq: 3,
+        },
+      ],
+    };
+    const batches = stockPostingSpec.childRows?.(
+      input,
+      postingRow({ kind: 'DISPENSE', patientId, prescriptionId }),
+      CONTEXT
+    );
+
+    expect(batches?.map((batch) => batch.model)).toEqual(['StockMovement', 'PrescriptionFill']);
+    expect(batches?.[1]?.rows).toEqual([
+      {
+        id: testId(99),
+        patientId,
+        prescriptionId,
+        stockPostingId: POSTING,
+        filledOn: occurredOn,
+      },
+    ]);
+  });
+
+  it.each([
+    ['a non-dispense', { kind: 'WASTAGE' as const, patientId: testId(41) }],
+    ['no patient chart', { kind: 'DISPENSE' as const, patientId: undefined }],
+  ])('refuses a prescription fill on %s', (_label, fields) => {
+    expect(() =>
+      stockPostingSpec.childRows?.(
+        {
+          ...reasonlessWaste(),
+          ...fields,
+          prescriptionId: testId(42),
+          lines: [],
+        },
+        postingRow(),
+        CONTEXT
+      )
+    ).toThrow('must be a dispense recorded on a patient chart');
   });
 });
 

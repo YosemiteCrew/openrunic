@@ -26,11 +26,19 @@ export interface ToastProps extends HTMLAttributes<HTMLElement> {
   onClose?: () => void;
   /**
    * The accessible name of the dismiss control. A prop rather than a literal
-   * because a design system has no translator: "Dismiss" is the only word this
-   * component says, and a consumer rendering in another language has to be able
-   * to say it. Defaults to the English it used to hardcode.
+   * because a design system has no translator, and a consumer rendering in
+   * another language has to be able to say it. Defaults to the English it used
+   * to hardcode.
    */
   closeLabel?: string;
+  /**
+   * The tone word a screen reader hears before the message, for the same reason
+   * and by the same route as {@link closeLabel}. `.or-toast__tone` is clipped,
+   * so this is the one word here that only a screen reader meets - announced
+   * inside whatever `lang` the page carries. Defaults to the English it used to
+   * hardcode.
+   */
+  toneLabel?: string;
 }
 
 /**
@@ -48,10 +56,12 @@ export function Toast({
   action,
   onClose,
   closeLabel = 'Dismiss',
+  toneLabel,
   className,
   ...rest
 }: ToastProps) {
-  const { icon, label } = TONE[tone];
+  const { icon, label: defaultToneLabel } = TONE[tone];
+  const label = toneLabel ?? defaultToneLabel;
   const ToneIcon = resolveLucideIcon(icon);
   const CloseIcon = resolveLucideIcon('x');
 

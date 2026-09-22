@@ -77,7 +77,7 @@ describe('asking whether there is an assistant', () => {
     });
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://api.example.invalid/bff/v0/agent/tools',
-      expect.objectContaining({ headers: { accept: 'application/json' } })
+      expect.objectContaining({ headers: expect.objectContaining({ accept: 'application/json' }) })
     );
   });
 
@@ -117,7 +117,10 @@ describe('asking whether there is an assistant', () => {
     expect(fetchImpl).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        headers: { accept: 'application/json', authorization: 'Bearer t' },
+        headers: expect.objectContaining({
+          accept: 'application/json',
+          authorization: 'Bearer t',
+        }),
       })
     );
   });

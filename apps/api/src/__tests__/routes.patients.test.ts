@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '../errors.js';
 import type { ProblemDocument } from '../http/problem.js';
+import type { Repositories } from '../repositories/types.js';
 import type { PatientDto } from '../schemas/patients.js';
 import type { ListResponse } from '../schemas/pagination.js';
 
@@ -19,6 +21,8 @@ import {
   seedCareRelationship,
   SUBJECTS,
   seed,
+  storageColumns,
+  type TestAppOptions,
 } from './support.js';
 
 const VALID_BODY = {
@@ -93,6 +97,69 @@ describe('GET /bff/v0/patients', () => {
     const body = (await res.json()) as ProblemDocument;
     expect(body.type).toBe('https://openrunic.org/problems/malformed-request');
     expect(body.errors?.length).toBeGreaterThan(0);
+  });
+
+  it('refuses a repeated parameter rather than answering the first value', async () => {
+    /*
+     * `c.req.query()` keeps the first occurrence, so the multiplicity was gone
+     * before any schema saw the request: `?family=A&family=B` answered with A's
+     * row and the reverse answered with B's. The two single-value rows are what
+     * make the pair mean anything - each name selects a different patient, so
+     * before this the two orders returned different rows rather than the same
+     * one twice.
+     *
+     * The assertion has to be made here rather than against the schema. A
+     * schema receives the already-flattened record and cannot tell one
+     * occurrence from three, which is why these send a real query string.
+     */
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ id: testId(1), mrn: 'OR-100482' }),
+      makePatientRow({ id: testId(2), mrn: 'OR-100999', familyName: 'Nobody' })
+    );
+    const get = async (query: string): Promise<Response> =>
+      app.request(`/bff/v0/patients?${query}`, { headers: bearer(TOKENS.frontDeskA) });
+
+    const one = (await (await get('family=Patientsson')).json()) as ListResponse<PatientDto>;
+    const other = (await (await get('family=Nobody')).json()) as ListResponse<PatientDto>;
+    expect(one.data[0]?.id).toBe(testId(1));
+    expect(other.data[0]?.id).toBe(testId(2));
+
+    for (const query of ['family=Patientsson&family=Nobody', 'family=Nobody&family=Patientsson']) {
+      const res = await get(query);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as ProblemDocument;
+      expect(body.errors).toEqual([{ path: 'family', message: 'sent more than once' }]);
+    }
+  });
+
+  it('refuses a repeat in the position the schema never reached', async () => {
+    /*
+     * The half of this that is not about filtering. A second occurrence
+     * bypassed validation as well: `?birthDate=<valid>&birthDate=nonsense`
+     * answered 200 while the reverse answered 400, so every regex, `z.enum` and
+     * coercion on this boundary was reachable in the first position only.
+     *
+     * Both orders now answer 400 and both name the REPETITION rather than the
+     * malformed value - which is what says the refusal runs in front of the
+     * parse rather than the parse happening to catch one of the two.
+     */
+    const { app } = createTestApp();
+    const get = async (query: string): Promise<Response> =>
+      app.request(`/bff/v0/patients?${query}`, { headers: bearer(TOKENS.frontDeskA) });
+
+    for (const query of [
+      'birthDate=1994-03-02&birthDate=openrunic-not-a-date',
+      'birthDate=openrunic-not-a-date&birthDate=1994-03-02',
+    ]) {
+      const res = await get(query);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ProblemDocument).errors).toEqual([
+        { path: 'birthDate', message: 'sent more than once' },
+      ]);
+    }
   });
 
   it('denies a principal whose roles grant no permissions', async () => {
@@ -455,6 +522,185 @@ describe('a site-limited clinician and a chart registered somewhere else', () =>
     expect(((await second.json()) as { id: string }).id).toBe(
       ((await first.json()) as { id: string }).id
     );
+  });
+
+  /**
+   * A repository double, and why these two are the exception.
+   *
+   * The race above is a real reproduction - two requests, the handler's own
+   * interleaving, the in-memory store's own natural key - and it is a better
+   * test than any double. These two cannot be written that way: one needs the
+   * create to fail for a reason the re-read cannot then explain away, and the
+   * other needs to see the argument the re-read was built with. Neither is
+   * reachable through the port, so the double is confined to `create` and
+   * `list` on this one collection and everything else is the real registry.
+   */
+  function decorateGrants(
+    decorate: (grants: Repositories['breakGlassGrants']) => Repositories['breakGlassGrants']
+  ): TestAppOptions['decorateRepositories'] {
+    return (registry) => ({
+      forRequest: (scope) => {
+        const repos = registry.forRequest(scope);
+        return { ...repos, breakGlassGrants: decorate(repos.breakGlassGrants) };
+      },
+    });
+  }
+
+  it("rethrows the create's own error when the re-read finds no winner", async () => {
+    /*
+     * The branch the block's own comment commits to, asserted on the error
+     * rather than on the status, because the status cannot see it.
+     *
+     * `if (won === undefined) throw error` is what makes a create that failed
+     * for a reason this route does not recover - the ceiling race the comment
+     * names - surface as the error it actually was. Delete that line and
+     * `toBreakGlassGrantDto(undefined)` dereferences `row.id` and throws a
+     * `TypeError`, so the caller gets a 500 either way and no assertion on the
+     * status code can tell the two apart. A 409 carrying the create's own
+     * message can.
+     */
+    const { app, dataset } = createTestApp({
+      decorateRepositories: decorateGrants((grants) => ({
+        ...grants,
+        create: () => Promise.reject(ApiError.conflict('The ceiling refused this declaration.')),
+      })),
+    });
+    seedElsewhere(dataset);
+
+    const res = await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.clinicianA),
+      body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as ProblemDocument).detail).toContain('The ceiling refused');
+    expect(dataset.table('BreakGlassGrant')).toHaveLength(0);
+  });
+
+  it('re-reads against a fresh clock rather than the one the checks were taken against', async () => {
+    /*
+     * The one place in this handler that reads the clock twice, pinned by the
+     * argument the re-read is built with.
+     *
+     * Everything else threads the single `now` from the top, and the create's
+     * own comment says why: three readings give three answers to "is that grant
+     * still in force" near a boundary. The recovery deliberately does not - it
+     * asks whether the winner's grant is unexpired *now*, so it can never
+     * answer a 200 carrying a window that has already closed.
+     *
+     * This asserts that choice; it does not endorse it. The other branch has a
+     * real argument - a winner that expires in the gap rethrows, turning a
+     * recoverable race into a 500 where retrying would succeed - and choosing
+     * between them is a behaviour change with its own decision to make. What
+     * was missing is that flipping it was invisible, and this is what makes it
+     * visible.
+     *
+     * Asserted on the emitted argument because nothing downstream can see it:
+     * `routes/patients.ts` reads the wall clock directly. `CreateAppOptions.now`
+     * exists and every test injects it, but `app.ts` threads it to the FHIR
+     * routes only, so freezing time here would not reach this handler. The
+     * double burns past a millisecond boundary so the two readings cannot land
+     * in the same millisecond: strictly later under `new Date()`, exactly equal
+     * under `now`.
+     */
+    const WINNER = testId(4243);
+    let grantedAt: Date | undefined;
+    let reReadAt: Date | undefined;
+
+    const { app, dataset } = createTestApp({
+      decorateRepositories: decorateGrants((grants) => ({
+        ...grants,
+        create: (input) => {
+          grantedAt = input.grantedAt;
+          /* The winner's row, filed between this handler's read and its write,
+             which is the race the recovery exists for. */
+          seed(dataset, 'BreakGlassGrant', {
+            ...storageColumns(WINNER),
+            userId: SUBJECTS.clinicianA,
+            patientId: ELSEWHERE,
+            reason: 'Won the race.',
+            grantedAt: input.grantedAt,
+            expiresAt: new Date(input.grantedAt.getTime() + 60 * 60_000),
+          });
+          const until = Date.now() + 2;
+          while (Date.now() < until) {
+            /* Deliberate: two clock reads in the same millisecond would make
+               this case pass under either branch. */
+          }
+          return Promise.reject(ApiError.conflict('Lost the race.'));
+        },
+        list: (query) => {
+          /* The recovery is the only one of the three list calls scoped to a
+             chart; the ceiling and rolling-window reads are per reader. */
+          if (query.patientId !== undefined && query.unexpiredAt !== undefined) {
+            reReadAt = query.unexpiredAt;
+          }
+          return grants.list(query);
+        },
+      })),
+    });
+    seedElsewhere(dataset);
+
+    const res = await app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.clinicianA),
+      body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { id: string }).id).toBe(WINNER);
+    expect(grantedAt, 'the create was never reached').toBeDefined();
+    expect(reReadAt, 'the recovery never re-read').toBeDefined();
+    expect(
+      reReadAt === undefined || grantedAt === undefined
+        ? -1
+        : reReadAt.getTime() - grantedAt.getTime(),
+      "the re-read reused the handler's `now` instead of reading the clock again"
+    ).toBeGreaterThan(0);
+  });
+
+  it('files one grant, not two, when the same chart is declared twice at once', async () => {
+    /*
+     * The race the sequential test above cannot see.
+     *
+     * That test declares twice in a row, so the second read finds the first
+     * row and the handler returns it without ever reaching the create. Sent
+     * together, both requests read no grant - the handler awaits between the
+     * read and the create, so the two interleave at exactly that point - and
+     * both went on to file one. The documented idempotency held only for
+     * requests that happened not to overlap, which is not a property, and near
+     * the ceiling the loser surfaced a limit error where this route documents
+     * a 200.
+     *
+     * This is a real reproduction rather than a simulation: the in-memory store
+     * is a real implementation of the same port, and the interleaving is the
+     * handler's own, not something the test arranges.
+     *
+     * What closes it is the natural key on the spec, which both stores enforce
+     * inside the create. Against Postgres there is a second race underneath
+     * this one - two connections can pass a check-then-write that one event
+     * loop cannot - and `break_glass_ceiling` refuses that loser under the
+     * advisory lock it already holds. `packages/database` asserts that half
+     * against a real server; this asserts the half the API owns, which is that
+     * losing is answered with the winner's grant rather than with an error.
+     */
+    const { app, dataset } = createTestApp();
+    seedElsewhere(dataset);
+    const declare = async (): Promise<Response> =>
+      app.request(`/bff/v0/patients/${ELSEWHERE}/break-glass`, {
+        method: 'POST',
+        headers: { ...bearer(TOKENS.clinicianA), 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'Collapsed in reception.' }),
+      });
+
+    const [first, second] = await Promise.all([declare(), declare()]);
+    const bodies = await Promise.all([first.json(), second.json()]);
+
+    // One of the two won; which one is not a property worth asserting.
+    expect([first.status, second.status].toSorted((a, b) => a - b)).toEqual([200, 201]);
+    expect((bodies[0] as { id: string }).id).toBe((bodies[1] as { id: string }).id);
+    expect(dataset.table('BreakGlassGrant')).toHaveLength(1);
   });
 
   it('refuses a break-glass declaration with no reason', async () => {

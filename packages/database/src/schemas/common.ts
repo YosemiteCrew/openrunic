@@ -21,9 +21,13 @@ import { z } from 'zod';
 /** A UUIDv7 primary key or foreign key. */
 export const uuid = z.uuid();
 
+const isoInstant = z.iso.datetime({ offset: true });
+const isoDate = z.iso.date();
+
 /** An instant. Accepts a Date or an ISO 8601 string; rejects anything else. */
 export const timestamp = z.preprocess(
-  (value) => (typeof value === 'string' ? new Date(value) : value),
+  (value) =>
+    typeof value === 'string' && isoInstant.safeParse(value).success ? new Date(value) : value,
   z.date()
 );
 
@@ -32,14 +36,23 @@ export const timestamp = z.preprocess(
  * date, service date, onset). Accepts `YYYY-MM-DD` or a Date; a bare
  * `YYYY-MM-DD` is read as UTC midnight so a clinic's timezone can never shift a
  * date of birth by a day.
+ *
+ * The `format` metadata is what the published OpenAPI document reads. Both this
+ * and `timestamp` are a `z.preprocess` around `z.date()`, so the document
+ * generator sees the same inner node for each and cannot tell a calendar date
+ * from an instant. Without the tag every one of these published as
+ * `date-time`, and a client generated from the document sent an RFC 3339
+ * date-time that the route then refused - see `apps/api/src/openapi/spec.ts`.
  */
-export const localDate = z.preprocess(
-  (value) =>
-    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
-      ? new Date(`${value}T00:00:00.000Z`)
-      : value,
-  z.date()
-);
+export const localDate = z
+  .preprocess(
+    (value) =>
+      typeof value === 'string' && isoDate.safeParse(value).success
+        ? new Date(`${value}T00:00:00.000Z`)
+        : value,
+    z.date()
+  )
+  .meta({ format: 'date' });
 
 /** Money, always integer minor units. Signed, because ledgers reverse. */
 export const cents = z.int();

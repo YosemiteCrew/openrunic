@@ -81,7 +81,7 @@ truthful-looking "no claims". The domain names are no longer accepted through th
 | Resource                | Search parameters implemented                                         |
 | ----------------------- | --------------------------------------------------------------------- |
 | `Patient`               | `_id`, `identifier`, `name`, `family`, `given`, `birthdate`, `gender` |
-| `Practitioner`          | `name`                                                                |
+| `Practitioner`          | `identifier`, `name`                                                  |
 | `PractitionerRole`      | `practitioner`, `specialty`                                           |
 | `Organization`          | `name`                                                                |
 | `Location`              | `name`                                                                |

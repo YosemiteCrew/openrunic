@@ -83,7 +83,7 @@ export function apiListSchema<T extends z.ZodType>(item: T) {
 }
 
 /** `YYYY-MM-DD`. A date of birth has no time and no timezone. */
-export const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD.');
+export const dateOnlySchema = z.iso.date('Expected YYYY-MM-DD.');
 
 /** An instant, as the API renders one. */
 export const instantSchema = z.iso.datetime();

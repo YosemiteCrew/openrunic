@@ -78,4 +78,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Aikido declines Deep Review on any head whose latest commit was
+          # authored by a bot, so every dependabot pull request was permanently
+          # red on a check nothing could turn green. The guard excuses that one
+          # context and nothing else; `check code` stays required of a bot head,
+          # where it does run. #549. The fact is passed in from here rather than
+          # read off the vendor's summary, for the same reason `draft` is.
+          HEAD_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: node scripts/ci/aikido-coverage.mjs "$REPO" "$HEAD_SHA"

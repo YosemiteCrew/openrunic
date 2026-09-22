@@ -5,10 +5,13 @@ import { test } from 'node:test';
 
 import {
   AIKIDO_APP,
+  BOT_EXEMPT,
   REACHED_A_VERDICT,
   awaitReview,
   classify,
   describe,
+  headIsBot,
+  isBotExempt,
   listCheckRuns,
 } from './aikido-coverage.mjs';
 
@@ -19,6 +22,7 @@ import {
 // nobody meant to scan yet.
 const NO_CREDITS = 'Aikido skipped this review because there are no credits left in the wallet.';
 const DRAFT = 'Aikido skipped this check because the PR is in draft status.';
+const BOT = 'Aikido skipped this review because the latest commit was authored by a bot.';
 
 /** A check run with only the fields the gate reads. */
 const run = (name, conclusion, summary, slug = AIKIDO_APP) => ({
@@ -452,4 +456,177 @@ test('absent and no-checks say different things', () => {
   const absent = describe(classify([other('CI Required', 'success')]), 'abc');
   assert.match(absent, /none from aikido-pr-checks/u);
   assert.match(describe(classify([]), 'abc'), /no check runs at all/u);
+});
+
+// --- the bot-authored head exemption (#549) -------------------------------
+//
+// Aikido declines Deep Review on any head whose latest commit was authored by a
+// bot. `Aikido Security: check code` runs there and is the required context, so
+// the exemption is one context and one conclusion wide and the tests below are
+// mostly about the edges of it rather than the middle.
+
+const bot = { headAuthoredByBot: true };
+
+test('a bot-authored head passes on check code alone, with Deep Review excused', () => {
+  const result = classify(
+    [checkCode('success', 'Aikido Security check OK.'), deepReview('skipped', BOT)],
+    2,
+    bot
+  );
+  assert.equal(result.verdict, 'reviewed');
+  assert.deepEqual(
+    result.runs.map((entry) => entry.name),
+    ['Aikido Security: check code'],
+    'the excused check is not counted as one that ran'
+  );
+  assert.deepEqual(
+    result.exempt.map((entry) => entry.name),
+    ['Aikido Security: Deep Review']
+  );
+});
+
+test('the same head without the bot flag still declines, so the flag is what moves it', () => {
+  // The two arms differ in one input. Without this, the arm above passes
+  // equally well on a classify that stopped declining skips altogether.
+  const runs = [checkCode('success', 'Aikido Security check OK.'), deepReview('skipped', BOT)];
+  assert.equal(classify(runs, 2, bot).verdict, 'reviewed');
+  assert.equal(classify(runs, 2).verdict, 'declined');
+  assert.equal(classify(runs, 2, { headAuthoredByBot: false }).verdict, 'declined');
+});
+
+test('a skipped check code on a bot-authored head is still red, which is the whole point', () => {
+  // GitHub satisfies a required status check on "a successful, skipped, or
+  // neutral status", so a `check code` that reported `skipped` MERGES. This
+  // gate is the only thing on the head that says otherwise, and the exemption
+  // must not reach it. The wide form of #549's option (b) - not running the job
+  // at all on a bot head - is what this test exists to refuse.
+  const result = classify([checkCode('skipped', NO_CREDITS), deepReview('skipped', BOT)], 2, bot);
+  assert.equal(result.verdict, 'declined');
+  assert.deepEqual(
+    result.runs.map((entry) => entry.name),
+    ['Aikido Security: check code']
+  );
+});
+
+test('a bot-authored head carrying only the excused check has not been scanned', () => {
+  // `rest` is empty, and reading an empty declining set as a review is the
+  // false pass one layer in. Reported as its own verdict so the message can say
+  // which context is missing rather than that everything was fine.
+  const result = classify([deepReview('skipped', BOT)], 1, bot);
+  assert.equal(result.verdict, 'only-exempt');
+  assert.match(describe(result, 'abc'), /check code/u);
+  assert.match(describe(result, 'abc'), /nothing scanned it/u);
+});
+
+test('a bot-authored head with no Aikido check at all is absent, not excused', () => {
+  assert.equal(classify([other('CI Required', 'success')], 1, bot).verdict, 'absent');
+  assert.equal(classify([], 0, bot).verdict, 'no-checks');
+});
+
+test('the exemption is exactly one name and one conclusion, and widening either fails here', () => {
+  // The anti-widening assertion, and it is a direct one because a widening is
+  // invisible to every test that only makes legal calls: broadening the
+  // predicate to all Aikido contexts, or to all non-verdict conclusions, leaves
+  // every case above passing.
+  assert.deepEqual(Object.keys(BOT_EXEMPT).sort(), ['conclusion', 'name']);
+  assert.equal(BOT_EXEMPT.name, 'Aikido Security: Deep Review');
+  assert.equal(BOT_EXEMPT.conclusion, 'skipped');
+  assert.ok(Object.isFrozen(BOT_EXEMPT));
+
+  assert.equal(isBotExempt(deepReview('skipped', BOT)), true);
+
+  // Every neighbouring cell of the two-field grid is NOT exempt. The name axis
+  // includes the other real context and the renamed-vendor case; the conclusion
+  // axis includes every member of both published enums bar `skipped`.
+  for (const name of ['Aikido Security: check code', 'Aikido Security: Deep review', 'x']) {
+    assert.equal(isBotExempt(run(name, 'skipped', BOT)), false, `${name} must not be exempt`);
+  }
+  for (const conclusion of [
+    'action_required',
+    'cancelled',
+    'failure',
+    'neutral',
+    'stale',
+    'success',
+    'timed_out',
+    '',
+    null,
+  ]) {
+    assert.equal(
+      isBotExempt(deepReview(conclusion, BOT)),
+      false,
+      `Deep Review ${JSON.stringify(conclusion)} must not be exempt`
+    );
+  }
+});
+
+test('a bot-authored head still declines a Deep Review that did not skip', () => {
+  // `action_required` on Deep Review is the wallet asking for a human. It is
+  // not the bot rule and it is not excused, on a bot head or anywhere else.
+  const result = classify(
+    [checkCode('success', 'ok'), deepReview('action_required', 'Add credits to continue.')],
+    2,
+    bot
+  );
+  assert.equal(result.verdict, 'declined');
+  assert.deepEqual(result.exempt, []);
+});
+
+test('the exemption is reported in the announcement rather than applied silently', () => {
+  const message = describe(
+    classify([checkCode('success', 'ok'), deepReview('skipped', BOT)], 2, bot),
+    'abc123'
+  );
+  assert.match(message, /EXEMPT/u);
+  assert.match(message, /bot-authored/u);
+  // Dated, so the acceptance carries the day it was made into the log it prints.
+  assert.match(message, /2026-09-22, #549/u);
+});
+
+test('main reads the bot fact from HEAD_AUTHOR_TYPE and nothing else', async () => {
+  // Threaded end to end: the env var the workflow sets has to reach `classify`,
+  // through the same `headIsBot` the gate calls rather than a copy of its
+  // expression. Four arms, and the three that matter are the negative ones - a
+  // missing, wrongly-cased or differently-valued variable must leave the gate
+  // strict rather than open.
+  const head = [checkCode('success', 'ok'), deepReview('skipped', BOT)];
+  const verdictFor = async (env) => {
+    const fetchImpl = stubFetch(page(2, head), page(2, head));
+    const result = await awaitReview('o/r', 'abc', 't', {
+      fetchImpl,
+      sleep: () => Promise.resolve(),
+      now: clock(1000),
+      deadlineMs: 60_000,
+      intervalMs: 15_000,
+      headAuthoredByBot: headIsBot(env),
+    });
+    return result.verdict;
+  };
+  assert.equal(await verdictFor({ HEAD_AUTHOR_TYPE: 'Bot' }), 'reviewed');
+  assert.equal(await verdictFor({ HEAD_AUTHOR_TYPE: 'User' }), 'declined');
+  assert.equal(await verdictFor({}), 'declined');
+  assert.equal(await verdictFor({ HEAD_AUTHOR_TYPE: 'bot' }), 'declined');
+});
+
+test('docs/security-gates.md names the same exempt pair the code does', () => {
+  // The verdict list in that document drifted once and nothing said so (#524 /
+  // #526, see the test above). This is the same check for the exemption, which
+  // is the other thing in the file a reader has to be able to trust from the
+  // prose. It pins the DOCUMENT against the constant, not the constant - if
+  // BOT_EXEMPT widens, the test above is what fails, and this one follows it.
+  const docPath = path.join(import.meta.dirname, '..', '..', 'docs', 'security-gates.md');
+  const doc = readFileSync(docPath, 'utf8');
+
+  const section = /^### The bot-authored head exemption[^\n]*$([\s\S]*?)^## /mu.exec(doc)?.[1];
+  assert.ok(section, `no bot-authored head exemption section in ${docPath}`);
+  assert.ok(section.length > 500, `the exemption section read as ${String(section.length)} chars`);
+
+  assert.ok(
+    section.includes(`\`${BOT_EXEMPT.name}\` + \`${BOT_EXEMPT.conclusion}\``),
+    'the section must name the exempt pair exactly as the code holds it'
+  );
+  // The other context is named as the one that stays required. A section that
+  // stopped saying so would read as excusing the head.
+  assert.ok(section.includes('`Aikido Security: check code`'));
+  assert.match(section, /required/u);
 });

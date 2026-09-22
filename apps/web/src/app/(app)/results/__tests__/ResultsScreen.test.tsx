@@ -46,7 +46,10 @@ describe('ResultsScreen', () => {
     const rows = within(
       await screen.findByRole('list', { name: 'Results to review' })
     ).getAllByRole('listitem');
-    expect(at(rows)).toHaveTextContent('Testperson, Exampla');
+    // Awaited rather than read: the patient column is a SECOND read now, over
+    // the ids the queue came back with, so the row exists a tick before the
+    // name in it does. See `lib/api/names.ts`.
+    await within(at(rows)).findByText('Testperson, Exampla');
     expect(at(rows)).toHaveTextContent('Critical value');
     expect(at(rows)).toHaveTextContent(/Potassium 6.2 mmol\/L, above range/);
   });
@@ -62,6 +65,11 @@ describe('ResultsScreen', () => {
     expect(within(table).getAllByText('In range').length).toBeGreaterThan(0);
     // Cumulative context: one value is a number, three are a direction.
     expect(within(table).getByText(/5.4 on 14 Jun/)).toBeInTheDocument();
+    /* The ordering clinician, from the staff directory. Awaited because it is
+       a second read, and asserted as a NAME rather than as the absence the
+       pane renders for a report with no service request behind it - the two
+       were the same word in a live build before #559. */
+    await screen.findByText(/Ordered by Ada Okafor, MD\./);
   });
 
   it('moves through the queue with the arrow keys', async () => {

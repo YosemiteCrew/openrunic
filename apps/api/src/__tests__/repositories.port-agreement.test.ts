@@ -311,6 +311,7 @@ const FILTERS: {
     sort: 'familyName',
     order: 'asc',
     id: 'id-id',
+    ids: ['id-id'],
     q: 'needle',
     mrn: 'id-mrn',
     sexAtBirth: 'FEMALE',
@@ -1415,6 +1416,52 @@ describe('every spec answers the same question through both ports', () => {
  * That conspiracy is the point. It holds today across three files that never
  * change together, and this is what notices when one of them moves.
  */
+/**
+ * The two ways of naming a patient id, where they disagree.
+ *
+ * `FILTERS` above deliberately sends a scalar and a set that AGREE, so the pair
+ * is exercised rather than short-circuiting to "matches nothing". That leaves
+ * the arm `patientIdFilter` exists for - a scalar outside the set - driven by
+ * nothing, and it is the arm with a wrong answer available: taking the last
+ * clause written wins, which is the failure the function was added to prevent.
+ *
+ * Driven at the spec rather than through a route, because no route can send
+ * both today: `patientListQuerySchema` is strict and carries no `id`, and the
+ * FHIR `_id` path sets `id` and never `ids`. A route-level case would therefore
+ * be asserting on a request nothing can make.
+ */
+describe('a patient id filter that names two different things', () => {
+  const base = { page: 1, pageSize: 25, sort: 'familyName', order: 'asc' } as const;
+  const wanted = { id: '0192f1a0-0000-7000-8000-00000000a001' };
+  const other = { id: '0192f1a0-0000-7000-8000-00000000a002' };
+
+  it('intersects to nothing, through both ports', () => {
+    const query = { ...base, id: wanted.id, ids: [other.id] };
+    const where = COLLECTION_SPECS.patients.where(query);
+
+    for (const row of [wanted, other]) {
+      expect(COLLECTION_SPECS.patients.matches(row as never, query), `memory ${row.id}`).toBe(
+        false
+      );
+      expect(matchesWhere(row, where), `Prisma ${row.id}`).toBe(false);
+    }
+  });
+
+  it('keeps the scalar when the set contains it, rather than either one alone', () => {
+    /* The positive half, and what says the case above is about the
+       INTERSECTION. A filter that answered with the set would accept `other`
+       here; one that answered with the scalar and ignored a set it is not in
+       would accept `wanted` above. */
+    const query = { ...base, id: wanted.id, ids: [wanted.id, other.id] };
+    const where = COLLECTION_SPECS.patients.where(query);
+
+    expect(COLLECTION_SPECS.patients.matches(wanted as never, query)).toBe(true);
+    expect(matchesWhere(wanted, where)).toBe(true);
+    expect(COLLECTION_SPECS.patients.matches(other as never, query)).toBe(false);
+    expect(matchesWhere(other, where)).toBe(false);
+  });
+});
+
 describe('the patient birth-date filter states one rule, not two', () => {
   const query = {
     page: 1,

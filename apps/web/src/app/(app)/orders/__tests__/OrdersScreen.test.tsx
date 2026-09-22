@@ -90,7 +90,14 @@ describe('OrdersScreen', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getAllByText('HbA1c').length).toBeGreaterThan(0);
     expect(within(table).getAllByText('In progress').length).toBeGreaterThan(0);
-    expect(within(table).getAllByText('OR-100482').length).toBeGreaterThan(0);
+    // Awaited rather than read: the patient column is a SECOND read now, over
+    // the ids the ledger came back with, so the table exists a tick before the
+    // names in it do. See `lib/api/names.ts`.
+    expect((await within(table).findAllByText('OR-100482')).length).toBeGreaterThan(0);
+    /* The ordering clinician, from the staff directory rather than from a
+       fixture table of display names - so the ledger calls them what the chart
+       calls them, credential included. */
+    expect((await within(table).findAllByText('Ada Okafor, MD')).length).toBeGreaterThan(0);
   });
 
   it('names an unacknowledged requisition and offers a retry in the row', async () => {

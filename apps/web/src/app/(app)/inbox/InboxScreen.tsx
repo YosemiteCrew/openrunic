@@ -18,7 +18,7 @@ import {
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast } from '@/components/state';
-import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox } from '@/lib/api';
+import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox, usePatientNames } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
 
 import { counted } from '@/lib/i18n/counted';
@@ -119,6 +119,12 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
 
   const loaded = useMemo(() => inbox.data?.data ?? [], [inbox.data]);
   const done = new Set(doneIds);
+
+  /* Off the PAGE rather than off `visible`: the stream chips and the completed
+     rows narrow what is rendered, not what was read, and keying the name read
+     on the filtered set would refetch the same patients every time somebody
+     picked a stream. */
+  const patientNamed = usePatientNames(loaded.map((item) => item.patientId));
 
   /* Overdue first, then due soonest: the queue orders itself by what will hurt.
      Completed rows leave the list, and the toast holds the undo. */
@@ -309,6 +315,7 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
               onComplete={complete}
               onClaim={claim}
               claimedIds={claimedIds}
+              patientNamed={patientNamed}
             />
           )}
         </AsyncBoundary>

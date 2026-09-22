@@ -152,6 +152,15 @@ export interface PaginationQuery {
 
 /** Mirrors `patientListQuerySchema`. The API rejects unknown keys with a 400. */
 export interface PatientListQuery extends PaginationQuery {
+  /**
+   * A named set of logical ids, at most one page of them.
+   *
+   * What a worklist sends to name its rows. Serialised comma-separated by
+   * {@link toSearchParams}; the route splits it back and refuses an empty
+   * value, a trailing comma or one malformed id rather than answering with a
+   * shorter set.
+   */
+  ids?: readonly string[];
   /** Free text over family, given, preferred name and MRN. */
   q?: string;
   mrn?: string;

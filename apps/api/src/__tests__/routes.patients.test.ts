@@ -78,8 +78,57 @@ describe('GET /bff/v0/patients', () => {
     expect((await search('given=Nemo&sort=birthDate&order=desc')).data[0]?.id).toBe(testId(2));
   });
 
+  it('names a set of ids in one request, and says nothing about the ones it cannot', async () => {
+    /*
+     * What a worklist sends. A page of orders, results or tasks carries patient
+     * ids and no names, and this is the port that answers a page of them at
+     * once rather than one request per row.
+     *
+     * The unknown id in the middle is the half that matters: the response is
+     * SHORTER than the request, with no placeholder row, which is how a caller
+     * learns that an id it holds cannot be named here. A row invented for it
+     * would put a name on the wrong chart.
+     */
+    const { app, dataset } = createTestApp();
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ id: testId(1), mrn: 'OR-100482' }),
+      makePatientRow({ id: testId(2), mrn: 'OR-100999', familyName: 'Nobody' }),
+      makePatientRow({ id: testId(3), mrn: 'OR-100777', familyName: 'Elsewhere' })
+    );
+
+    const named = async (separator: string): Promise<ListResponse<PatientDto>> => {
+      const res = await app.request(
+        `/bff/v0/patients?ids=${[testId(1), testId(9), testId(3)].join(separator)}`,
+        { headers: bearer(TOKENS.frontDeskA) }
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()) as ListResponse<PatientDto>;
+    };
+
+    // Both spellings of the separator. `URLSearchParams` percent-encodes a
+    // comma, so the web client sends `%2C` and a hand-written URL sends `,`;
+    // asserting only the literal one would leave the shape the app actually
+    // emits unexercised.
+    for (const separator of [',', '%2C']) {
+      const body = await named(separator);
+      expect(body.data.map((patient) => patient.id)).toEqual([testId(3), testId(1)]);
+      // The total is the filtered set, not the index: a pager over a named set
+      // that counted every patient would page off the end of its own request.
+      expect(body.page.total).toBe(2);
+    }
+  });
+
   it.each([
     ['an unknown parameter', 'famliy=Pat'],
+    ['an empty id set', 'ids='],
+    ['a trailing comma in the id set', `ids=${testId(1)},`],
+    ['an id that is not a UUID', 'ids=openrunic-not-an-id'],
+    [
+      'more ids than one page can hold',
+      `ids=${Array.from({ length: 101 }, (_unused, index) => testId(index + 1)).join(',')}`,
+    ],
     ['a page below one', 'page=0'],
     ['a page size over the cap', 'pageSize=1000'],
     ['a non-numeric page', 'page=first'],

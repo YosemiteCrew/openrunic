@@ -32,8 +32,6 @@ export {
   MOCK_ROOMS,
   MOCK_STATUS_SINCE,
   mockCoveragesForPatient,
-  mockPatientById,
-  mockProviderName,
   mockStatusSince,
   mockVerifyEligibility,
 } from './mock/fixtures';
@@ -54,6 +52,11 @@ export {
   usePatients,
 } from './hooks';
 export type { AsyncState, AsyncStatus, HookOptions, MutationOutcome, MutationState } from './hooks';
+/* Names for a page of rows that carries ids and no names. See `names.ts`: a
+   name is decoration, so these answer with a lookup and never with a state a
+   screen could fail on. */
+export { usePatientNames, useProviderNames } from './names';
+export type { PatientLookup, ProviderLookup } from './names';
 export * from './types';
 
 /* Admin, developer platform and reports, on a fixture-only client.
@@ -152,11 +155,12 @@ export type { AdminMockOptions } from './mock/admin';
 
 /* Orders, results and the typed inbox.
 
-   Orders read `GET /bff/v0/orders` and results `GET /bff/v0/results` in live
-   mode, mapped onto the view types below. The inbox is still fixture-only in
-   every mode: `GET /bff/v0/tasks` is the aggregate behind it - one work engine
-   whose five streams are `type` filters - and the mapping onto `InboxItem` is
-   not written, three of that type's fields having no served shape at all. */
+   All three read the API in live mode, mapped onto the view types below:
+   orders from `GET /bff/v0/orders`, results from `GET /bff/v0/results`, and the
+   inbox from `GET /bff/v0/tasks` - one work engine whose five streams are
+   `type` filters (#535). None of the three DTOs carries a patient or a
+   clinician, only their ids, so the screens name their rows through
+   `names.ts` rather than through the fixtures (#559). */
 export {
   ASSIGNMENTS,
   createWorklistClient,

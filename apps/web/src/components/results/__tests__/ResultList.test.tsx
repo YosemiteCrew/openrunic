@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ResultList } from '@/components/results/ResultList';
-import { MOCK_RESULTS } from '@/lib/api/mock/fixtures';
+import { MOCK_PATIENTS, MOCK_RESULTS } from '@/lib/api/mock/fixtures';
 import type { ResultReport } from '@/lib/api/worklist';
 
 /**
@@ -14,6 +14,13 @@ import type { ResultReport } from '@/lib/api/worklist';
  * which is a real arrival order, because a result can land before the demo
  * fixture that names the patient does.
  */
+
+/* The screen's name read, as a lookup the component can be handed directly.
+   The queue takes one rather than reading the fixtures itself, which is what
+   makes a real id nameable in a live build (#559); here it stands in for the
+   read so the keyboard contract is asserted without one. */
+const patientNamed = (id: string | null) =>
+  id === null ? undefined : MOCK_PATIENTS.find((patient) => patient.id === id);
 
 /** Strict indexing makes `[0]` optional; this asserts the match exists. */
 function at<T>(items: T[], index = 0): T {
@@ -32,6 +39,7 @@ function renderQueue(reports: readonly ResultReport[] = MOCK_RESULTS) {
       onSelect={onSelect}
       onSign={onSign}
       signedIds={[]}
+      patientNamed={patientNamed}
     />
   );
   const list = screen.getByRole('list', { name: 'Results to review' });

@@ -1398,8 +1398,8 @@ function catalogEntry(code: string): OrderCatalogEntry {
   return entry;
 }
 
-/** Thirteen orders across the practice, newest first, as the ledger reads them. */
-export const MOCK_ORDERS: readonly Order[] = ORDER_SEEDS.map((seed): Order => {
+/** The clinically distinct orders used to exercise each ledger state and action. */
+const CORE_ORDERS: readonly Order[] = ORDER_SEEDS.map((seed): Order => {
   const entry = catalogEntry(seed.code);
   return {
     id: seed.id,
@@ -1419,7 +1419,55 @@ export const MOCK_ORDERS: readonly Order[] = ORDER_SEEDS.map((seed): Order => {
     resultId: seed.resultId ?? null,
     cancelReason: seed.cancelReason ?? null,
   };
-}).sort((a, b) => b.placedAt.localeCompare(a.placedAt));
+});
+
+const HISTORICAL_ORDER_COUNT = 88;
+const HISTORICAL_PATIENTS = Object.values(PATIENT_ID);
+const HISTORICAL_CODES = ['LAB-BMP', 'LAB-CBC', 'LAB-LIPID', 'LAB-TSH'] as const;
+
+/**
+ * Enough older routine work to put the demo ledger over its 100-row window.
+ *
+ * The screen has to explain that its full table is still only one page. Keeping
+ * that state in the fixture makes the explanation reachable in the running
+ * product, where its wording and wrapping can be inspected, instead of only in
+ * a unit test with a synthetic response. These rows deliberately carry no
+ * result link: the richer core rows above remain the fixtures for transitions
+ * and result navigation.
+ */
+const HISTORICAL_ORDERS: readonly Order[] = Array.from(
+  { length: HISTORICAL_ORDER_COUNT },
+  (_, index): Order => {
+    const code = HISTORICAL_CODES[index % HISTORICAL_CODES.length] ?? HISTORICAL_CODES[0];
+    const entry = catalogEntry(code);
+    const serial = String(index + 1).padStart(3, '0');
+    const placedAt = new Date(Date.UTC(2026, 6, 1, 9, 0) - index * 86_400_000).toISOString();
+
+    return {
+      id: `0192f1a0-0000-7000-8000-00000000h${serial}`,
+      patientId: HISTORICAL_PATIENTS[index % HISTORICAL_PATIENTS.length] ?? PATIENT_ID.testina,
+      code: entry.code,
+      name: entry.name,
+      category: entry.category,
+      status: 'SIGNED',
+      priority: 'ROUTINE',
+      placedAt,
+      lastEventAt: placedAt,
+      providerId: index % 2 === 0 ? PROVIDER_ID.okafor : PROVIDER_ID.lindqvist,
+      destination: entry.destination,
+      specimen: entry.specimen,
+      diagnosisCode: null,
+      diagnosisDisplay: null,
+      resultId: null,
+      cancelReason: null,
+    };
+  }
+);
+
+/** 101 orders, newest first, so the demo reaches the ledger's 100-row window. */
+export const MOCK_ORDERS: readonly Order[] = [...CORE_ORDERS, ...HISTORICAL_ORDERS].sort((a, b) =>
+  b.placedAt.localeCompare(a.placedAt)
+);
 
 /**
  * Eight reports, abnormal-heavy on purpose: a results queue that is all normal

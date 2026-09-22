@@ -82,7 +82,12 @@ jobs:
           # authored by a bot, so every dependabot pull request was permanently
           # red on a check nothing could turn green. The guard excuses that one
           # context and nothing else; `check code` stays required of a bot head,
-          # where it does run. #549. The fact is passed in from here rather than
-          # read off the vendor's summary, for the same reason `draft` is.
-          HEAD_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          # where it does run. #549.
+          #
+          # The commit author is NOT passed in from here. `pull_request.user` is
+          # the pull request's author, which is a different account the moment a
+          # human pushes onto a dependabot branch, and excusing that head would
+          # silence a skip with some other cause. The script reads
+          # `commits/<sha>.author.type` instead - one request, same host, and
+          # the predicate it implements is then the one Aikido documents.
         run: node scripts/ci/aikido-coverage.mjs "$REPO" "$HEAD_SHA"

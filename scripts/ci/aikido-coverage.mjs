@@ -44,7 +44,8 @@
 // green when the scanner is absent - is the defect this exists to remove.
 //
 // There is one exemption and it is narrow: `Aikido Security: Deep Review`,
-// conclusion `skipped`, on a head whose author GitHub reports as a `Bot`. The
+// conclusion `skipped`, on a head whose COMMIT author GitHub reports as a
+// `Bot` - the pull request's author is a different fact and the wrong one. The
 // vendor declines that context on a bot-authored head before any other reason
 // is consulted, so there is no signal there to lose - see BOT_EXEMPT, which
 // carries the argument and the measurement. `check code` is still required of a
@@ -155,9 +156,17 @@ export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
  * is invisible to every test that only makes legal calls, so the membership is
  * asserted directly in the tests rather than only exercised.
  *
- * Keyed on `pull_request.user.type`, which the workflow passes in - the fact
- * GitHub supplies - and never on the summary prose, for the same reason the
- * draft exemption lives in the workflow rather than here.
+ * Keyed on the HEAD COMMIT's author, read from the API, and never on the
+ * summary prose.
+ *
+ * The commit's author and not the pull request's. Those are the same fact on a
+ * clean dependabot branch and different the moment a human pushes onto one - a
+ * hand-fixed lockfile conflict, a review fix. There `pull_request.user.type` is
+ * still `Bot` while Aikido's rule does not fire, so an exemption keyed on the
+ * pull request author would excuse a Deep Review that skipped for some OTHER
+ * cause. With the wallet empty, as it was on this branch's own head, that other
+ * cause is #408 - and the exemption would have printed "whatever the wallet
+ * says" while silencing exactly it.
  */
 export const BOT_EXEMPT = Object.freeze({
   name: 'Aikido Security: Deep Review',
@@ -169,18 +178,35 @@ export const isBotExempt = (run) =>
   run.name === BOT_EXEMPT.name && run.conclusion === BOT_EXEMPT.conclusion;
 
 /**
- * Whether the workflow reported this head's author as a bot.
+ * The type of the GitHub account this commit is AUTHORED by, or null.
  *
- * Exported so the tests read the same expression the gate runs rather than a
- * copy of it. A test that retypes `env.X === 'Bot'` in its own body pins
- * nothing: the constant and the fixture come from the same place, and changing
- * the gate to `Boolean(env.X)` leaves it green.
+ * `.author`, never `.committer`. On a dependabot commit the committer is
+ * GitHub's own web-flow account and reads `User`, so the two fields disagree on
+ * exactly the head this exemption is about - measured on `2cbbf64`, PR #546:
+ * `.author.type` `Bot`, `.committer.type` `User`.
  *
- * Strict equality on the exact string, so an absent, empty or differently-cased
- * value is not a bot and the gate stays strict. Fail-closed is the direction
- * that a typo in the workflow recovers from.
+ * `.author` is the account GitHub matched to the commit's author email and is
+ * null when it matched nothing. Null reads as not-a-bot, which is the
+ * fail-closed direction the rest of this file takes: an unrecognised head keeps
+ * the gate strict rather than excusing a context on it.
+ *
+ * A non-ok response throws, for the same reason - the gate cannot decide an
+ * exemption it could not read, and the recoverable direction is red.
  */
-export const headIsBot = (env) => env.HEAD_AUTHOR_TYPE === 'Bot';
+export async function fetchHeadAuthorType(repo, sha, token, fetchImpl = fetch) {
+  const response = await fetchImpl(`https://api.github.com/repos/${repo}/commits/${sha}`, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${token}`,
+      'x-github-api-version': '2022-11-28',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`commit ${sha} returned ${String(response.status)}`);
+  }
+  const body = await response.json();
+  return body.author?.type ?? null;
+}
 
 /** How long to wait for the app to post, and how often to look. */
 export const DEADLINE_MS = 5 * 60 * 1000;
@@ -391,10 +417,11 @@ async function main(argv, env) {
     );
     return 2;
   }
-  // `pull_request.user.type`, handed in by the workflow. Absent reads as not a
-  // bot, so a missing or misspelled variable leaves the gate strict.
+  // One extra request, on the same host the gate already talks to, so the
+  // predicate it implements is the one the vendor documents.
+  const headAuthorType = await fetchHeadAuthorType(repo, sha, token);
   const result = await awaitReview(repo, sha, token, {
-    headAuthoredByBot: headIsBot(env),
+    headAuthoredByBot: headAuthorType === 'Bot',
   });
   process.stdout.write(describe(result, sha));
   return result.verdict === 'reviewed' ? 0 : 1;

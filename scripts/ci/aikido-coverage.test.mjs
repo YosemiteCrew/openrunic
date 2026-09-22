@@ -10,7 +10,7 @@ import {
   awaitReview,
   classify,
   describe,
-  headIsBot,
+  fetchHeadAuthorType,
   isBotExempt,
   listCheckRuns,
 } from './aikido-coverage.mjs';
@@ -583,14 +583,37 @@ test('the exemption is reported in the announcement rather than applied silently
   assert.match(message, /2026-09-22, #549/u);
 });
 
-test('main reads the bot fact from HEAD_AUTHOR_TYPE and nothing else', async () => {
-  // Threaded end to end: the env var the workflow sets has to reach `classify`,
-  // through the same `headIsBot` the gate calls rather than a copy of its
-  // expression. Four arms, and the three that matter are the negative ones - a
-  // missing, wrongly-cased or differently-valued variable must leave the gate
-  // strict rather than open.
-  const head = [checkCode('success', 'ok'), deepReview('skipped', BOT)];
-  const verdictFor = async (env) => {
+test('the bot fact is read off the commit author, not the committer', async () => {
+  // The two fields DISAGREE on exactly the head this exemption is about: a
+  // dependabot commit is committed by GitHub's web-flow account, so
+  // `.committer.type` is `User` while `.author.type` is `Bot`. Measured on
+  // 2cbbf64, PR #546. A fixture where both fields agree cannot separate the two
+  // readings, so each arm below sets them to opposite values.
+  const commit = (author, committer) => ({
+    body: { author: author && { type: author }, committer: committer && { type: committer } },
+  });
+  const read = async (page) => {
+    const fetchImpl = stubFetch(page);
+    const type = await fetchHeadAuthorType('o/r', 'abc', 't', fetchImpl);
+    assert.match(fetchImpl.calls[0].url, /\/repos\/o\/r\/commits\/abc$/u);
+    return type;
+  };
+
+  assert.equal(await read(commit('Bot', 'User')), 'Bot', 'the real dependabot shape');
+  assert.equal(await read(commit('User', 'Bot')), 'User', 'reading the committer would say Bot');
+  // An unmatched author email resolves to null, and null is not a bot. The
+  // fail-closed direction: an unrecognised head keeps the gate strict.
+  assert.equal(await read(commit(null, 'Bot')), null);
+});
+
+test('the commit author decides the exemption, and the pull request author does not', async () => {
+  // The case the review found, and the one that makes this the commit's author
+  // rather than the pull request's: a human pushes onto a dependabot branch to
+  // fix a lockfile conflict. The pull request author is still the bot; Aikido's
+  // rule looks at the commit and does not fire; a Deep Review that skipped for
+  // want of credits would be excused by a gate keyed on the wrong field.
+  const head = [checkCode('success', 'ok'), deepReview('skipped', NO_CREDITS)];
+  const verdictFor = async (authorType) => {
     const fetchImpl = stubFetch(page(2, head), page(2, head));
     const result = await awaitReview('o/r', 'abc', 't', {
       fetchImpl,
@@ -598,14 +621,21 @@ test('main reads the bot fact from HEAD_AUTHOR_TYPE and nothing else', async () 
       now: clock(1000),
       deadlineMs: 60_000,
       intervalMs: 15_000,
-      headAuthoredByBot: headIsBot(env),
+      headAuthoredByBot: authorType === 'Bot',
     });
     return result.verdict;
   };
-  assert.equal(await verdictFor({ HEAD_AUTHOR_TYPE: 'Bot' }), 'reviewed');
-  assert.equal(await verdictFor({ HEAD_AUTHOR_TYPE: 'User' }), 'declined');
-  assert.equal(await verdictFor({}), 'declined');
-  assert.equal(await verdictFor({ HEAD_AUTHOR_TYPE: 'bot' }), 'declined');
+  assert.equal(await verdictFor('Bot'), 'reviewed');
+  assert.equal(await verdictFor('User'), 'declined', 'a hand-pushed commit is not excused');
+  assert.equal(await verdictFor(null), 'declined', 'an unmatched author is not excused');
+});
+
+test('an unreadable commit is red rather than unexcused-by-default', async () => {
+  // The gate cannot decide an exemption it could not read. Throwing fails the
+  // job, which is the recoverable direction; returning null would quietly make
+  // every bot head strict again and look like the exemption never landed.
+  const fetchImpl = stubFetch({ ok: false, status: 404, body: {} });
+  await assert.rejects(() => fetchHeadAuthorType('o/r', 'abc', 't', fetchImpl), /returned 404/u);
 });
 
 test('docs/security-gates.md names the same exempt pair the code does', () => {

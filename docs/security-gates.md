@@ -233,14 +233,26 @@ and every dependabot pull request was a permanent red row on this check
 ([#549](https://github.com/YosemiteCrew/openrunic/issues/549)).
 
 The guard excuses that, and only that: the pair `Aikido Security: Deep Review` + `skipped`, on a
-head whose `pull_request.user.type` the workflow reports as `Bot`. It is keyed on that fact rather
-than on the vendor's sentence, for the same reason the draft exemption lives in the workflow.
+head whose **commit author** GitHub reports as a `Bot`, read from `commits/<sha>` as `.author.type`.
+It is keyed on that fact rather than on the vendor's sentence, for the same reason the draft
+exemption lives in the workflow.
+
+The commit's author, and not the pull request's. Those are the same account on a clean dependabot
+branch and different the moment a human pushes onto one - a hand-fixed lockfile conflict, a review
+fix. There `pull_request.user.type` is still `Bot` while Aikido's rule does not fire, so a gate
+keyed on the pull request author would excuse a Deep Review that skipped for some other cause;
+with the wallet empty, that other cause is
+[#408](https://github.com/YosemiteCrew/openrunic/issues/408). It is also `.author` and not
+`.committer`: a dependabot commit is committed by GitHub's web-flow account, so the two fields
+disagree on exactly the head this is about (`2cbbf64`, `.author.type` `Bot`, `.committer.type`
+`User`). An unmatched author resolves to null and reads as not-a-bot, and a commit that cannot be
+read fails the job - both the fail-closed direction.
 `BOT_EXEMPT` in `scripts/ci/aikido-coverage.mjs` is the pair; widening either half fails a test
 that asserts its membership directly, because a widening is invisible to every test that only
 makes legal calls.
 
 This is an acceptance rather than a silencing, and the difference is what is observable. On a
-bot-authored head there is no Deep Review signal of any cause: the vendor declines the context
+head whose commit is bot-authored there is no Deep Review signal of any cause: the vendor declines the context
 before the wallet, the strictness or the path filter is consulted, so an empty wallet and a full
 one produce the identical `skipped` there. The empty wallet stays observable on every
 human-authored head, where this exemption does not apply.

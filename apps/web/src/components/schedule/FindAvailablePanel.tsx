@@ -14,6 +14,7 @@ import type { OpenSlot } from './schedule';
 import type { ScheduleProvider } from './ScheduleGrid';
 import { parseSlotRequest, slotRequestVocabulary } from './slot-request';
 import type { SlotRequestQuestion } from './slot-request';
+import type { SlotAsk, SlotCriteria } from './useSlotAsk';
 
 /**
  * Find available, as an answer rather than a search form.
@@ -28,34 +29,6 @@ import type { SlotRequestQuestion } from './slot-request';
  * reader got wrong is corrected where it landed rather than by saying the whole
  * thing again. Nothing here books: a slot is still a button a person presses.
  */
-
-/** What the slots are computed from. Held by the screen, so a day change keeps it. */
-export interface SlotCriteria {
-  /** Empty for every provider showing on the day. */
-  providerId: string;
-  /** Minutes past midnight, clinic time. */
-  notBefore: number | null;
-  notAfter: number | null;
-  durationMinutes: number;
-}
-
-export interface SlotAsk {
-  /** The sentence as it was typed or dictated. */
-  text: string;
-  criteria: SlotCriteria;
-  questions: readonly SlotRequestQuestion[];
-  /** The day the sentence named, when it was not the day on screen. */
-  day: string | null;
-}
-
-export function initialAsk(durationMinutes: number): SlotAsk {
-  return {
-    text: '',
-    criteria: { providerId: '', notBefore: null, notAfter: null, durationMinutes },
-    questions: [],
-    day: null,
-  };
-}
 
 export interface FindAvailablePanelProps {
   slots: readonly OpenSlot[];

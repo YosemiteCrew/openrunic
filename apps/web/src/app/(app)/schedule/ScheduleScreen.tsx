@@ -15,12 +15,13 @@ import {
   FindAvailablePanel,
   findOpenSlots,
   givenName,
-  initialAsk,
+  minutesBetween,
   ScheduleGrid,
   shiftDay,
   useClinicDay,
+  useSlotAsk,
 } from '@/components/schedule';
-import type { BookingDetails, OpenSlot, ScheduleProvider, SlotAsk } from '@/components/schedule';
+import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
 import { ScheduleOverlays } from './ScheduleOverlays';
 import { AppShell } from '@/components/shell';
 import { Alert, AsyncBoundary } from '@/components/state';
@@ -281,9 +282,6 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
   const [providerId, setProviderId] = useState<string>('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [findingSlots, setFindingSlots] = useState(false);
-  /* Held here rather than in the panel, which unmounts while a new day loads:
-     "tomorrow with Okafor" has to survive the page to tomorrow it asked for. */
-  const [ask, setAsk] = useState<SlotAsk>(() => initialAsk(DEFAULT_SLOT_MINUTES));
   const [bookingSlot, setBookingSlot] = useState<OpenSlot | null>(null);
   const [confirming, setConfirming] = useState<Appointment | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -323,11 +321,8 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       typeDisplay: details.visitType,
       start: details.slot.start,
       end: details.slot.end,
-      /* The slot's own length: a 45-minute request books 45 minutes, not the
-         default the walk-in path uses. */
-      durationMinutes: Math.round(
-        (Date.parse(details.slot.end) - Date.parse(details.slot.start)) / 60_000
-      ),
+      /* A 45-minute request books 45 minutes, not the walk-in default. */
+      durationMinutes: minutesBetween(details.slot.start, new Date(details.slot.end)),
       ...(details.reason.trim() ? { reasonText: details.reason.trim() } : {}),
     })
   );
@@ -351,12 +346,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
     [appointments, columns, day, now]
   );
 
-  /* The panel's answer, from the same engine and the same rows as the walk-in. */
-  const askedSlots = useMemo(() => {
-    const { providerId: asked, notBefore, notAfter, durationMinutes } = ask.criteria;
-    const ids = columns.map((provider) => provider.id).filter((id) => !asked || id === asked);
-    return findOpenSlots(appointments, ids, day, now, { durationMinutes, notBefore, notAfter });
-  }, [appointments, ask.criteria, columns, day, now]);
+  const [ask, setAsk, asked] = useSlotAsk(appointments, columns, day, now, DEFAULT_SLOT_MINUTES);
 
   const selected = appointments.find((appointment) => appointment.id === selectedId) ?? null;
 
@@ -537,7 +527,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
 
       {findingSlots && facility !== null ? (
         <FindAvailablePanel
-          slots={askedSlots}
+          slots={asked}
           providers={columns}
           ask={ask}
           onAskChange={setAsk}

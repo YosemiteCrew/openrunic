@@ -93,9 +93,10 @@ function escape(word: string): string {
 /** One alternation over a word list, matched on whole words. */
 function anyOf(words: readonly string[]): string {
   return words
-    .map((word) => fold(word))
-    .filter((word) => word !== '')
-    .map(escape)
+    .flatMap((word) => {
+      const folded = fold(word);
+      return folded === '' ? [] : [escape(folded)];
+    })
     .join('|');
 }
 
@@ -201,7 +202,7 @@ function readProvider(
   }));
   const best = Math.max(0, ...scored.map((entry) => entry.score));
   if (best === 0) return { id: null, question: null };
-  const top = scored.filter((entry) => entry.score === best).map((entry) => entry.id);
+  const top = scored.flatMap((entry) => (entry.score === best ? [entry.id] : []));
   if (top.length === 1) return { id: top[0]!, question: null };
   return { id: null, question: { field: 'providerId', kind: 'ambiguous', candidates: top } };
 }

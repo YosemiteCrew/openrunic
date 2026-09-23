@@ -830,6 +830,19 @@ describe('ScheduleScreen, asking for a slot in words', () => {
     expect(offered()).toEqual(fromWords);
   });
 
+  it('lists only slots that end by the time asked for', async () => {
+    await openPanel();
+    ask('before 11 am');
+
+    expect(screen.getByLabelText('Ending by')).toHaveValue('11:00');
+    const slots = offered();
+    expect(slots.length).toBeGreaterThan(0);
+    for (const label of slots) {
+      /* Twenty minutes, so the last start that still ends by 11:00 is 10:40. */
+      expect(label.slice(5, 10) <= '10:40').toBe(true);
+    }
+  });
+
   it('books the length that was asked for, not the default', async () => {
     const { client, created } = recording();
     await openPanel(client);

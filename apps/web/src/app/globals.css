@@ -767,6 +767,39 @@ fieldset {
   gap: var(--space-3);
 }
 
+/* Asking by voice sits inside the composer, below the field it types into, and
+   with no hairline of its own: it is a way of filling the box, not a setting. */
+.or-assistant__dictation {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.or-assistant__dictation-live {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.or-assistant__dictation p,
+.or-assistant__dictation-status {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-assistant__dictation-status:empty {
+  display: none;
+}
+
+/* The words as they are recognised: the clinician's own sentence, being
+   checked, so body ink rather than secondary, and italic because it is
+   provisional until it lands in the box. */
+.or-assistant__dictation .or-assistant__dictation-heard {
+  font-style: italic;
+  color: var(--text-ink);
+}
+
 .or-assistant__composer {
   display: flex;
   flex-direction: column;

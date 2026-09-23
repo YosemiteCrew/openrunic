@@ -20,6 +20,35 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * The one path this module ever reads, derived from where this file sits rather
+ * than taken as an argument.
+ *
+ * It was a parameter, and Aikido was right to call that file inclusion: an
+ * exported function whose argument reaches `readFileSync` reads whatever its
+ * caller names, and "the only caller passes a constant" is a fact about today's
+ * callers, not about the function. Splitting the read from the judgement makes
+ * the path unreachable from outside and leaves the logic testable as a pure
+ * function of the report's text.
+ */
+export const REPORT_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'test-results',
+  'drill-report.json'
+);
+
+/** @returns {{ raw?: string, error?: string }} */
+export function readReport() {
+  try {
+    return { raw: fs.readFileSync(REPORT_PATH, 'utf8') };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 /**
  * Playwright nests a suite per file and then one per `describe`, so the specs
@@ -53,20 +82,21 @@ export function summarize(report) {
 }
 
 /**
- * @param {string} reportPath
+ * @param {{ raw?: string, error?: string }} read The result of readReport().
  * @returns {{ ok: boolean, lines: string[] }} `ok` false means the artifact
  * cannot say what ran, which is the defect this guards against.
  */
-export function checkReport(reportPath) {
+export function checkReport({ raw, error }) {
   let parsed;
   try {
-    parsed = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-  } catch (error) {
+    if (error !== undefined) throw new Error(error);
+    parsed = JSON.parse(raw);
+  } catch (failure) {
     return {
       ok: false,
       lines: [
-        `The drill produced no readable report at ${reportPath}`,
-        `  ${error instanceof Error ? error.message : String(error)}`,
+        `The drill produced no readable report at ${REPORT_PATH}`,
+        `  ${failure.message}`,
         'The run cannot be reviewed from its artifact, so it does not count as having run.',
       ],
     };

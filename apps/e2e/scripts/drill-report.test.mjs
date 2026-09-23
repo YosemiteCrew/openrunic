@@ -1,7 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 
 import { checkReport, summarize } from './drill-report.mjs';
@@ -48,11 +45,14 @@ const report = {
   ],
 };
 
-function writeReport(value) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drill-report-'));
-  const file = path.join(dir, 'drill-report.json');
-  fs.writeFileSync(file, JSON.stringify(value));
-  return file;
+/**
+ * The shape `readReport()` hands back. The read itself takes no argument - it
+ * resolves one constant path - so the logic is exercised as a function of the
+ * report's text, with no temporary files and no filesystem state to leak
+ * between cases.
+ */
+function read(value) {
+  return { raw: JSON.stringify(value) };
 }
 
 test('summarize counts every test and names both projects and specs', () => {
@@ -73,7 +73,7 @@ test('summarize reaches specs nested inside a describe block', () => {
 });
 
 test('a report naming projects, specs and tests passes and says what ran', () => {
-  const result = checkReport(writeReport(report));
+  const result = checkReport(read(report));
   assert.equal(result.ok, true);
   const text = result.lines.join('\n');
   assert.match(text, /3 test\(s\) across 2 project\(s\) and 2 spec\(s\)/);
@@ -82,23 +82,30 @@ test('a report naming projects, specs and tests passes and says what ran', () =>
 });
 
 test('a report that names nothing fails rather than reading as a pass', () => {
-  const result = checkReport(writeReport({ suites: [] }));
+  const result = checkReport(read({ suites: [] }));
   assert.equal(result.ok, false);
   assert.match(result.lines.join('\n'), /names no project, spec or test/);
 });
 
 test('a report whose suites ran no tests fails even though its files are named', () => {
   const result = checkReport(
-    writeReport({ suites: [{ title: 'clinical-day.spec.ts', specs: [], suites: [] }] })
+    read({ suites: [{ title: 'clinical-day.spec.ts', specs: [], suites: [] }] })
   );
   assert.equal(result.ok, false);
 });
 
 test('a missing report fails and names the path it looked for', () => {
-  const missing = path.join(os.tmpdir(), 'drill-report-absent', 'drill-report.json');
-  const result = checkReport(missing);
+  const result = checkReport({ error: 'ENOENT: no such file or directory' });
   assert.equal(result.ok, false);
-  assert.match(result.lines.join('\n'), /no readable report at .*drill-report\.json/);
+  const text = result.lines.join('\n');
+  assert.match(text, /no readable report at .*drill-report\.json/);
+  assert.match(text, /ENOENT/);
+});
+
+test('a report that is not JSON fails rather than reading as an empty run', () => {
+  const result = checkReport({ raw: '<!doctype html>' });
+  assert.equal(result.ok, false);
+  assert.match(result.lines.join('\n'), /no readable report at/);
 });
 
 test('a report carrying the web server config fails before its env is published', () => {
@@ -106,7 +113,7 @@ test('a report carrying the web server config fails before its env is published'
     ...report,
     config: { webServer: { command: 'pnpm start', env: { SESSION_COOKIE_SECRET: 'CANARY' } } },
   };
-  const result = checkReport(writeReport(leaky));
+  const result = checkReport(read(leaky));
   assert.equal(result.ok, false);
   const text = result.lines.join('\n');
   assert.match(text, /uploaded as a public artifact/);

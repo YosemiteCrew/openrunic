@@ -25,7 +25,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { checkReport } from './drill-report.mjs';
+import { checkReport, readReport } from './drill-report.mjs';
 import { inspect } from './required-routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -190,6 +190,6 @@ const drilled = run('pnpm', ['exec', 'playwright', 'test'], {
  * failed has a better failure to report, and restating it as "the artifact is
  * thin" would bury the cause.
  */
-const report = checkReport(path.join(e2eDir, 'test-results', 'drill-report.json'));
+const report = checkReport(readReport());
 process.stdout.write(`\n${report.lines.join('\n')}\n`);
 process.exit(drilled !== 0 || report.ok ? drilled : 1);

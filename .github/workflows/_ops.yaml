@@ -147,7 +147,8 @@ jobs:
           cat > apps/e2e/voice-probe.mjs <<'PROBE'
           import { chromium } from '@playwright/test';
           const headless = process.env.PROBE_HEADLESS !== 'false';
-          const browser = await chromium.launch({ channel: 'chrome', headless });
+          const args = (process.env.PROBE_ARGS ?? '').split(',').filter(Boolean);
+          const browser = await chromium.launch({ channel: 'chrome', headless, args });
           const page = await browser.newPage();
           await page.goto('about:blank');
           const voices = await page.evaluate(async () => {
@@ -161,15 +162,24 @@ jobs:
             });
             return read();
           });
-          const label = headless ? 'HEADLESS' : 'HEADFUL';
+          const label = `${headless ? 'HEADLESS' : 'HEADFUL'} args=[${args.join(' ')}]`;
           console.log(`${label} speechSynthesis: ${voices === null ? 'ABSENT' : `${voices.length} voice(s)`}`);
-          for (const v of voices ?? []) console.log(`  ${v}`);
+          for (const v of (voices ?? []).slice(0, 5)) console.log(`  ${v}`);
           await browser.close();
           PROBE
           echo "--- speech-dispatcher English voices: $(spd-say -L | grep -c '^English' || true) ---"
-          echo '--- Chrome ---'
-          PROBE_HEADLESS=true pnpm --filter @openrunic/e2e exec node voice-probe.mjs
-          PROBE_HEADLESS=false xvfb-run -a pnpm --filter @openrunic/e2e exec node voice-probe.mjs
+          # Start the daemon explicitly. Chrome autospawns it through libspeechd,
+          # but an autospawn that fails and a browser that never asks produce the
+          # same empty list, and only one of them is fixable here.
+          speech-dispatcher --spawn || echo 'speech-dispatcher --spawn returned non-zero'
+          echo '--- headless, no flag ---'
+          PROBE_HEADLESS=true pnpm --filter @openrunic/e2e exec node voice-probe.mjs || echo '  arm failed'
+          echo '--- headless, flag ---'
+          PROBE_HEADLESS=true PROBE_ARGS=--enable-speech-dispatcher \
+            pnpm --filter @openrunic/e2e exec node voice-probe.mjs || echo '  arm failed'
+          echo '--- headful, flag ---'
+          PROBE_HEADLESS=false PROBE_ARGS=--enable-speech-dispatcher \
+            xvfb-run -a pnpm --filter @openrunic/e2e exec node voice-probe.mjs || echo '  arm failed'
 
       # The clinical drill runs apps/web in mock mode, so it needs no database,
       # API or seed. The portal scenarios start apps/portal in live mode and

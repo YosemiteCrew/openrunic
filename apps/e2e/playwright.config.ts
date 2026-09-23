@@ -37,6 +37,13 @@ const PORTAL_BASE_URL =
 const reporter: ReporterDescription[] = [
   ['list'],
   ['html', { open: 'never', outputFolder: 'playwright-report' }],
+  // The HTML report carries its data as a base64 zip inside index.html, so the
+  // downloaded artifact answers no plain-text search: a full run and an empty
+  // one grep the same (#575). This writes the same run in a form a reviewer -
+  // or the check at the end of scripts/run-drill.mjs - can just read. It lands
+  // in test-results rather than in playwright-report because the HTML reporter
+  // owns that folder and clears it.
+  ['json', { outputFile: 'test-results/drill-report.json' }],
 ];
 if (process.env.CI === 'true') reporter.push(['github']);
 

@@ -31,8 +31,7 @@ import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
 import type { CapturePort } from '@/lib/voice';
 import { AssistantDictation } from './AssistantDictation';
-import { appendDictation } from './dictation';
-import { useDictation } from './useDictation';
+import { appendDictation, useDictation } from '@openrunic/voice';
 
 /** The API refuses a longer turn. Saying so beats a rejection after the fact. */
 const MAX_QUESTION = 8000;

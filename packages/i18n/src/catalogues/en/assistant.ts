@@ -57,6 +57,28 @@ export const assistant: Messages = {
   'assistant.readback.interrupted': 'Stopped reading. The answer is still on screen.',
   'assistant.readback.failed': 'The answer could not be read aloud. It is on screen above.',
 
+  /* Asking by voice. The copy says where the words go before the microphone is
+     opened, because a clinician deciding whether to speak a question about a
+     patient in a shared room is deciding on the strength of this sentence. */
+  'assistant.dictation.speak': 'Speak your question',
+  'assistant.dictation.stop': 'Stop the microphone',
+  'assistant.dictation.hint':
+    'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the box above, where you can check names, numbers and negations before you ask.',
+  'assistant.dictation.starting': 'Opening the microphone.',
+  'assistant.dictation.listening': 'The microphone is on. Your words go into the box above.',
+  'assistant.dictation.noLanguage':
+    'This device cannot turn speech into writing in the language this page is in without sending the sound away, so you can only type here.',
+  'assistant.dictation.notInstalled':
+    'This device could do this once its language pack for this page is installed, and nothing would be sent anywhere. Until then you can only type here.',
+  'assistant.dictation.denied':
+    'The microphone was not allowed, so nothing was heard. You can allow it in your browser settings, or type your question.',
+  'assistant.dictation.noSpeech': 'Nothing was heard. You can try again, or type your question.',
+  'assistant.dictation.noAudio':
+    'No microphone could be opened, so nothing was heard. You can type your question instead.',
+  'assistant.dictation.offDevice':
+    'This device would only have done this by sending the sound away, so nothing was heard. You can type your question instead.',
+  'assistant.dictation.failed': 'The microphone stopped. You can try again, or type your question.',
+
   'assistant.composer.label': 'Ask about this record',
   'assistant.composer.placeholder': 'What did the last visit record about the knee?',
   'assistant.composer.hint': 'Enter sends, Shift and Enter start a new line.',

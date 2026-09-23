@@ -35,7 +35,7 @@ import type { MessageKey } from '@openrunic/i18n';
 import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
 import type { CaptureAvailability } from '@/lib/voice';
-import type { DictationState } from './dictation';
+import type { DictationState } from '@openrunic/voice';
 
 export interface AssistantDictationProps {
   availability: CaptureAvailability;

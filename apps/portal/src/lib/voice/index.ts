@@ -9,8 +9,8 @@
  * The readback half is `@openrunic/voice` and is re-exported rather than
  * re-stated: the staff surface reads answers aloud under the same port and the
  * same reducer, and a second copy of either is the thing that would let the two
- * drift. The microphone stays here, because it is still one app's decision -
- * see `capture.ts` for why it could ship at all.
+ * drift. The microphone followed it once the staff surface needed to ask by
+ * voice too, for the same reason.
  */
 
 export { createPlatformReadback, platformSpeech, readbackAvailability } from '@openrunic/voice';
@@ -24,15 +24,15 @@ export type {
   Utterance,
 } from '@openrunic/voice';
 
-export { createPlatformCapture, platformRecognition } from './platform-capture';
-export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture';
-
-export { captureAvailability } from './capture';
+export { captureAvailability, createPlatformCapture, platformRecognition } from '@openrunic/voice';
 export type {
+  OnDeviceQuery,
+  PlatformRecognition,
+  Recognition,
   CaptureAvailability,
   CaptureEvent,
   CaptureFailure,
   CapturePort,
   CaptureSession,
   CaptureUnavailable,
-} from './capture';
+} from '@openrunic/voice';

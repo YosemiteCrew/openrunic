@@ -105,7 +105,9 @@ export default defineConfig({
         baseURL: PORTAL_BASE_URL,
         storageState: PORTAL_STORAGE_STATE,
         // Bundled headless Chromium crashes when the portal asks whether its
-        // on-device recogniser is available. Stock Chrome answers normally.
+        // on-device recogniser is available. Stock Chrome answers normally;
+        // the drill workflow installs this system package on every run because
+        // it cannot be restored from the Playwright browser cache.
         channel: 'chrome',
       },
     },

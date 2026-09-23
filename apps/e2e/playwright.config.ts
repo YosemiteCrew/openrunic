@@ -1,6 +1,11 @@
 import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
 
-import { DRILL_COOKIE_SECRET, STORAGE_STATE } from './global-setup.js';
+import {
+  DRILL_COOKIE_SECRET,
+  PORTAL_COOKIE_SECRET,
+  PORTAL_STORAGE_STATE,
+  STORAGE_STATE,
+} from './global-setup.js';
 
 /**
  * The full-day clinical drill.
@@ -14,6 +19,9 @@ import { DRILL_COOKIE_SECRET, STORAGE_STATE } from './global-setup.js';
 
 const PORT = Number.parseInt(process.env.OPENRUNIC_E2E_PORT ?? '3100', 10);
 const BASE_URL = process.env.OPENRUNIC_E2E_BASE_URL ?? `http://127.0.0.1:${String(PORT)}`;
+const PORTAL_PORT = Number.parseInt(process.env.OPENRUNIC_PORTAL_E2E_PORT ?? '3300', 10);
+const PORTAL_BASE_URL =
+  process.env.OPENRUNIC_PORTAL_E2E_BASE_URL ?? `http://127.0.0.1:${String(PORTAL_PORT)}`;
 
 /**
  * Typed explicitly rather than inlined.
@@ -74,33 +82,57 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-1440',
+      testIgnore: /portal\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
     },
     {
       // Below 1024 the navigation rail collapses behind a Menu button, so this
       // project exercises a genuinely different shell, not just a narrower one.
       name: 'tablet-768',
+      testIgnore: /portal\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } },
     },
     {
       name: 'phone-375',
+      testIgnore: /portal\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } },
+    },
+    {
+      name: 'portal-chrome',
+      testMatch: /portal\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: PORTAL_BASE_URL,
+        storageState: PORTAL_STORAGE_STATE,
+        // Bundled headless Chromium crashes when the portal asks whether its
+        // on-device recogniser is available. Stock Chrome answers normally.
+        channel: 'chrome',
+      },
     },
   ],
 
-  webServer: {
-    command: `pnpm --filter web run start --port ${String(PORT)}`,
-    url: BASE_URL,
-    reuseExistingServer: process.env.CI !== 'true',
-    timeout: 120_000,
-    cwd: '../..',
-    env: {
-      NEXT_PUBLIC_API_MODE: 'mock',
-      // `next start` is NODE_ENV=production, and outside development the seal
-      // key has no fallback: without this the server would mint no sessions and
-      // recognise none, which is the correct production behaviour and would
-      // reject the drill's cookie along with everything else.
-      SESSION_COOKIE_SECRET: DRILL_COOKIE_SECRET,
+  webServer: [
+    {
+      command: `pnpm --filter web run start --port ${String(PORT)}`,
+      url: BASE_URL,
+      reuseExistingServer: process.env.CI !== 'true',
+      timeout: 120_000,
+      cwd: '../..',
+      env: {
+        NEXT_PUBLIC_API_MODE: 'mock',
+        SESSION_COOKIE_SECRET: DRILL_COOKIE_SECRET,
+      },
     },
-  },
+    {
+      command: `pnpm --filter portal run start --port ${String(PORTAL_PORT)}`,
+      url: PORTAL_BASE_URL,
+      reuseExistingServer: process.env.CI !== 'true',
+      timeout: 120_000,
+      cwd: '../..',
+      env: {
+        NEXT_PUBLIC_API_MODE: 'live',
+        SESSION_COOKIE_SECRET: PORTAL_COOKIE_SECRET,
+      },
+    },
+  ],
 });

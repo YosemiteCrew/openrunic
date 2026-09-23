@@ -156,6 +156,15 @@ if (built !== 0) {
   process.exit(built);
 }
 
+process.stdout.write('Building the portal application in live mode\n');
+const portalBuilt = run('pnpm', ['turbo', 'run', 'build', '--filter=portal'], {
+  env: { NEXT_PUBLIC_API_MODE: 'live', NEXT_TELEMETRY_DISABLED: '1' },
+});
+if (portalBuilt !== 0) {
+  process.stdout.write('\nThe portal application did not build; its browser harness cannot run.\n');
+  process.exit(portalBuilt);
+}
+
 // Playwright runs from THIS package, and the working directory is load-bearing.
 // Playwright discovers its config by walking up from the working directory; run
 // it from the repository root and it finds no config, falls back to defaults,

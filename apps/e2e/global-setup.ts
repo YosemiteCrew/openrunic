@@ -54,9 +54,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * away, against a server holding nothing but mock data.
  */
 export const DRILL_COOKIE_SECRET = 'openrunic-drill-cookie-seal-not-a-secret';
+export const PORTAL_COOKIE_SECRET = 'openrunic-portal-drill-cookie-seal-not-a-secret';
 
 /** The cookie name `proxy.ts` reads. */
 const SESSION_COOKIE = 'or_session';
+const PORTAL_SESSION_COOKIE = 'or_portal_session';
 
 /**
  * The clinician from the API's own development fixtures, copied from
@@ -107,6 +109,21 @@ export async function sealDrillSession(now: number): Promise<string> {
 
 /** Where the storage state lands. `playwright.config.ts` reads the same path. */
 export const STORAGE_STATE = path.join(here, '.auth', 'drill.json');
+export const PORTAL_STORAGE_STATE = path.join(here, '.auth', 'portal.json');
+
+/** The portal record has no staff identity: its bearer token names exactly one patient upstream. */
+async function sealPortalSession(now: number): Promise<string> {
+  const payload = JSON.stringify({ token: 'portal-drill-patient', issuedAt: now, lastSeenAt: now });
+  const key = await globalThis.crypto.subtle.importKey(
+    'raw',
+    utf8(PORTAL_COOKIE_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify']
+  );
+  const signature = await globalThis.crypto.subtle.sign('HMAC', key, utf8(payload));
+  return `${base64Url(signature)}.${payload}`;
+}
 
 export default async function globalSetup(): Promise<void> {
   // Stamped at setup rather than frozen, because both of the session's clocks
@@ -114,6 +131,7 @@ export default async function globalSetup(): Promise<void> {
   // written, and would fail as a redirect to sign-in rather than as anything
   // that pointed at the cause.
   const sealed = await sealDrillSession(Date.now());
+  const portalSealed = await sealPortalSession(Date.now());
 
   // Created here rather than committed as an empty directory: the file written
   // into it is a credential, so the directory is git-ignored, and a git-ignored
@@ -131,6 +149,26 @@ export default async function globalSetup(): Promise<void> {
           path: '/',
           // The session's own clocks are inside the sealed record and are what
           // the proxy enforces. This one only has to outlive the run.
+          expires: Math.floor(Date.now() / 1000) + 60 * 60,
+          httpOnly: true,
+          secure: false,
+          sameSite: 'Lax',
+        },
+      ],
+      origins: [],
+    }),
+    'utf8'
+  );
+
+  await writeFile(
+    PORTAL_STORAGE_STATE,
+    JSON.stringify({
+      cookies: [
+        {
+          name: PORTAL_SESSION_COOKIE,
+          value: portalSealed,
+          domain: '127.0.0.1',
+          path: '/',
           expires: Math.floor(Date.now() / 1000) + 60 * 60,
           httpOnly: true,
           secure: false,

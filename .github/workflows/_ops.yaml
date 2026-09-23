@@ -139,9 +139,12 @@ jobs:
       # fixes, and the drill runs headless. The headful arm needs a display, so
       # it goes under xvfb-run.
       - name: Probe the voice list
+        # A probe, not a gate: a broken probe must not stand between this run and
+        # the drill result it exists to explain.
+        continue-on-error: true
         run: |
           set -euo pipefail
-          cat > /tmp/voices.mjs <<'PROBE'
+          cat > apps/e2e/voice-probe.mjs <<'PROBE'
           import { chromium } from '@playwright/test';
           const headless = process.env.PROBE_HEADLESS !== 'false';
           const browser = await chromium.launch({ channel: 'chrome', headless });
@@ -163,11 +166,10 @@ jobs:
           for (const v of voices ?? []) console.log(`  ${v}`);
           await browser.close();
           PROBE
-          echo '--- speech-dispatcher own voice list ---'
-          spd-say -L || echo 'spd-say could not list voices'
+          echo "--- speech-dispatcher English voices: $(spd-say -L | grep -c '^English' || true) ---"
           echo '--- Chrome ---'
-          PROBE_HEADLESS=true pnpm --filter @openrunic/e2e exec node /tmp/voices.mjs
-          PROBE_HEADLESS=false xvfb-run -a pnpm --filter @openrunic/e2e exec node /tmp/voices.mjs
+          PROBE_HEADLESS=true pnpm --filter @openrunic/e2e exec node voice-probe.mjs
+          PROBE_HEADLESS=false xvfb-run -a pnpm --filter @openrunic/e2e exec node voice-probe.mjs
 
       # The clinical drill runs apps/web in mock mode, so it needs no database,
       # API or seed. The portal scenarios start apps/portal in live mode and

@@ -274,13 +274,27 @@ only thing on the head that would say so. That is why the exemption is one conte
 the whole job: skipping the job on a bot head - the draft analogue - would remove the detector
 from the one class of pull request that both merges and carries dependency changes.
 
-The open half is a vendor question, and it is not closed by this. Aikido's published Deep Review
-settings are the per-repository toggle, strictness, linked repositories, excluded paths, the
-inherited gating threshold and a monthly credit cap
+The open half is a vendor question, and it is not closed by this. Two published pages carry it, and
+both are closed. The configuration page lists every Deep Review setting - the per-repository
+toggle, strictness, linked repositories, excluded paths, the inherited gating threshold and a
+monthly credit cap
 ([Configure Deep Review](https://help.aikido.dev/deep-review/configure-deep-review), read
-2026-09-22); none of them is author-based, and the documentation corpus has nothing on bot authors
-either way. If Deep Review can be enabled for bot authors, this exemption should be reverted
-rather than kept.
+2026-09-23); none of them is author-based. The sibling page is the one that enumerates when the
+review does not run, and it names two conditions and no others: an excluded-path pull request -
+_"If a pull request only changes excluded files, Aikido skips Deep Review and you are not
+charged"_ - and credits, both the empty wallet - _"When you're out of credits, Deep Reviews are
+skipped"_ - and a reached spending limit, which skips _"Deep Reviews that would charge a credit
+... until the next calendar month"_
+([How Deep Review Works](https://help.aikido.dev/deep-review/how-deep-review-works), read
+2026-09-23). Neither page mentions a bot, an automated commit or Dependabot.
+
+That is a stronger statement than an absent setting. The skip this section accepts is undocumented
+vendor behaviour, so there is no toggle anyone overlooked and no page left to read - which is why
+the question can only be put to support, and is
+[#552](https://github.com/YosemiteCrew/openrunic/issues/552) rather than a code change. If Deep
+Review can be enabled for bot authors, this exemption should be reverted rather than kept; if it
+cannot, the vendor's answer belongs in this section, so that the next reader does not re-derive it
+from the absence of a setting.
 
 ## Release provenance
 

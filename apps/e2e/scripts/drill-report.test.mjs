@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 
-import { checkReport, summarize } from './drill-report.mjs';
+import { REPORT_PATH, checkReport, summarize } from './drill-report.mjs';
 
 /**
  * Shaped like Playwright's JSON report, and deliberately asymmetric: three
@@ -120,4 +121,19 @@ test('a report carrying the web server config fails before its env is published'
   // The report is the thing that must not travel, so the check must not quote
   // the value it is refusing to publish.
   assert.doesNotMatch(text, /CANARY/);
+});
+
+/**
+ * The path is the one thing here no other test can reach: `checkReport` judges
+ * text, so a `REPORT_PATH` pointing at the wrong directory passes every case
+ * above and fails only in a real drill. The expected tail is written out rather
+ * than rebuilt from the constant - it is the same statement `playwright.config`
+ * makes with `outputFile: 'test-results/drill-report.json'`, from the package
+ * root, and two spellings of it that must agree is the point.
+ */
+test('REPORT_PATH resolves to the file the reporter is configured to write', () => {
+  assert.ok(
+    REPORT_PATH.endsWith(path.join('apps', 'e2e', 'test-results', 'drill-report.json')),
+    `REPORT_PATH is ${REPORT_PATH}`
+  );
 });

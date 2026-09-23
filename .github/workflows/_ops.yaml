@@ -114,6 +114,41 @@ jobs:
       - name: Build the workspace packages the application imports
         run: pnpm turbo run build --filter='./packages/*'
 
+      # EXPERIMENT (#578): Chrome on Linux takes its voice list from the system
+      # speech service rather than from the browser, so a runner with none
+      # installed answers speechSynthesis.getVoices() with an empty list and the
+      # read-aloud scenario skips itself. This is the measurement that decides
+      # whether that is the reason.
+      - name: Install a system speech service
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y speech-dispatcher espeak-ng
+
+      # TEMPORARY probe: prints the count rather than leaving it to be inferred
+      # from whether a scenario skipped, because an empty list and a list with
+      # no English voice produce the same skip.
+      - name: Probe the voice list
+        run: |
+          cat > /tmp/voices.mjs <<'PROBE'
+          import { chromium } from '@playwright/test';
+          const browser = await chromium.launch({ channel: 'chrome' });
+          const page = await browser.newPage();
+          await page.goto('about:blank');
+          const voices = await page.evaluate(async () => {
+            const read = () => globalThis.speechSynthesis.getVoices().map((v) => `${v.name} [${v.lang}]`);
+            if (read().length > 0) return read();
+            await new Promise((resolve) => {
+              globalThis.speechSynthesis.addEventListener('voiceschanged', resolve, { once: true });
+              setTimeout(resolve, 5000);
+            });
+            return read();
+          });
+          console.log(`VOICE COUNT: ${voices.length}`);
+          for (const v of voices) console.log(`  ${v}`);
+          await browser.close();
+          PROBE
+          pnpm --filter @openrunic/e2e exec node /tmp/voices.mjs
+
       # The clinical drill runs apps/web in mock mode, so it needs no database,
       # API or seed. The portal scenarios start apps/portal in live mode and
       # exercise its real session gate and its two speech adapters; the handful

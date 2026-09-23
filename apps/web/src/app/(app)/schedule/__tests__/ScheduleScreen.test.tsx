@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ScheduleScreen } from '@/app/(app)/schedule/ScheduleScreen';
@@ -757,5 +757,142 @@ describe('ScheduleScreen, more than one facility', () => {
 
     await screen.findByRole('region', { name: 'Day view grid' });
     expect(screen.queryByLabelText('Facility')).not.toBeInTheDocument();
+  });
+});
+
+describe('ScheduleScreen, asking for a slot in words', () => {
+  /** Records every create body, and still writes it to the store underneath. */
+  function recording(): { client: ApiClient; created: AppointmentCreateBody[] } {
+    const client = createMockClient();
+    const created: AppointmentCreateBody[] = [];
+    return {
+      created,
+      client: {
+        ...client,
+        appointments: {
+          ...client.appointments,
+          create: (body, signal) => {
+            created.push(body);
+            return client.appointments.create(body, signal);
+          },
+        },
+      },
+    };
+  }
+
+  async function openPanel(client: ApiClient = createMockClient()): Promise<void> {
+    render(<ScheduleScreen client={client} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Find available' })[0] as HTMLElement);
+    await screen.findByLabelText('Ask for a slot');
+  }
+
+  function ask(said: string): void {
+    fireEvent.change(screen.getByLabelText('Ask for a slot'), { target: { value: said } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read request' }));
+  }
+
+  function offered(): string[] {
+    return screen
+      .queryAllByRole('button', { name: /^Book \d\d:\d\d with/ })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+  }
+
+  const LINDQVIST = MOCK_PROVIDERS.find((provider) => provider.name.includes('Lindqvist'))!;
+
+  it('reads the request into editable fields and lists only slots that meet them', async () => {
+    await openPanel();
+    ask('after 3 pm with Lindqvist, 45 minutes');
+
+    expect(screen.getByLabelText('Clinician')).toHaveValue(LINDQVIST.id);
+    expect(screen.getByLabelText('Length')).toHaveValue('45');
+    expect(screen.getByLabelText('Not before')).toHaveValue('15:00');
+    expect(screen.getByText('Next open 45-minute slots')).toBeInTheDocument();
+
+    const slots = offered();
+    expect(slots.length).toBeGreaterThan(0);
+    for (const label of slots) {
+      expect(label).toMatch(/^Book 1[5-9]:\d\d with Ingrid Lindqvist/);
+    }
+  });
+
+  it('finds the same slots from the words as from the same fields set by hand', async () => {
+    await openPanel();
+    ask('after 3 pm with Lindqvist, 45 minutes');
+    const fromWords = offered();
+    cleanup();
+
+    await openPanel();
+    fireEvent.change(screen.getByLabelText('Clinician'), { target: { value: LINDQVIST.id } });
+    fireEvent.change(screen.getByLabelText('Length'), { target: { value: '45' } });
+    fireEvent.change(screen.getByLabelText('Not before'), { target: { value: '15:00' } });
+
+    expect(offered()).toEqual(fromWords);
+  });
+
+  it('books the length that was asked for, not the default', async () => {
+    const { client, created } = recording();
+    await openPanel(client);
+    ask('45 minutes');
+    fireEvent.click(screen.getAllByRole('button', { name: /^Book \d\d:\d\d with/ })[0]!);
+    const dialog = await screen.findByRole('dialog', { name: 'Book appointment' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Book \w/ }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Appointment booked');
+    expect(created[0]?.durationMinutes).toBe(45);
+    expect(Date.parse(created[0]!.end) - Date.parse(created[0]!.start)).toBe(45 * 60_000);
+  });
+
+  it('asks about an hour with no morning or afternoon, until the field is edited', async () => {
+    await openPanel();
+    ask('after 2');
+
+    expect(screen.getByText('Check this before booking')).toBeInTheDocument();
+    expect(screen.getByLabelText('Not before')).toHaveValue('14:00');
+
+    fireEvent.change(screen.getByLabelText('Not before'), { target: { value: '10:40' } });
+    expect(screen.queryByText('Check this before booking')).not.toBeInTheDocument();
+  });
+
+  it('corrects a morning to an afternoon without keeping the old noon ceiling', async () => {
+    await openPanel();
+    ask('morning');
+    expect(screen.getByLabelText('Ending by')).toHaveValue('12:00');
+
+    ask('afternoon');
+    expect(screen.getByLabelText('Not before')).toHaveValue('12:00');
+    expect(screen.getByLabelText('Ending by')).toHaveValue('');
+    expect(offered().length).toBeGreaterThan(0);
+  });
+
+  it('keeps what a correction does not mention', async () => {
+    await openPanel();
+    ask('with Lindqvist');
+    ask('45 minutes');
+    expect(screen.getByLabelText('Clinician')).toHaveValue(LINDQVIST.id);
+    expect(screen.getByLabelText('Length')).toHaveValue('45');
+  });
+
+  it('lists nothing for another day until the desk moves to it, and keeps the request', async () => {
+    await openPanel();
+    ask('tomorrow, 30 minutes');
+
+    expect(offered()).toEqual([]);
+    expect(screen.getByText(/The request asks for .*13 Aug 2026/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Show .*13 Aug 2026/ }));
+
+    expect(await screen.findByText('Next open 30-minute slots')).toBeInTheDocument();
+    await waitFor(() => expect(offered().length).toBeGreaterThan(0));
+    expect(dayHeading()).toContain('13 Aug 2026');
+  });
+
+  it('can search the day on screen instead of the one the request named', async () => {
+    await openPanel();
+    ask('tomorrow');
+    fireEvent.click(screen.getByRole('button', { name: /^Search .*12 Aug 2026 instead/ }));
+
+    expect(offered().length).toBeGreaterThan(0);
+    expect(dayHeading()).toContain('12 Aug 2026');
   });
 });

@@ -10,8 +10,15 @@ export { clinicNow, clinicToday, dayBounds, shiftDay } from './clock';
 export type { DayBounds } from './clock';
 export { DayRail } from './DayRail';
 export type { DayRailProps } from './DayRail';
-export { FindAvailablePanel } from './FindAvailablePanel';
-export type { FindAvailablePanelProps } from './FindAvailablePanel';
+export { FindAvailablePanel, initialAsk } from './FindAvailablePanel';
+export type { FindAvailablePanelProps, SlotAsk, SlotCriteria } from './FindAvailablePanel';
+export { parseSlotRequest, slotRequestVocabulary, wordList } from './slot-request';
+export type {
+  SlotRequest,
+  SlotRequestProvider,
+  SlotRequestQuestion,
+  SlotRequestVocabulary,
+} from './slot-request';
 export { FlowCard } from './FlowCard';
 export type { FlowCardProps } from './FlowCard';
 export {

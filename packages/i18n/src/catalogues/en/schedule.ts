@@ -161,6 +161,39 @@ export const schedule: Messages = {
     'No slot fits {minutes} minutes on this day. Add the patient to the waitlist, or look at tomorrow with the day pager.',
   'schedule.findAvailable.book': 'Book {time} with {provider}',
 
+  /* The request line. The word lists are what the reader recognises in this
+     language: comma-separated, matched as whole words, accents ignored. */
+  'schedule.findAvailable.ask.label': 'Ask for a slot',
+  'schedule.findAvailable.ask.hint':
+    'Type or dictate, for example "tomorrow afternoon with Okafor, 30 minutes". Every field below stays editable.',
+  'schedule.findAvailable.ask.read': 'Read request',
+  'schedule.findAvailable.ask.checkTitle': 'Check this before booking',
+  'schedule.findAvailable.ask.providerAmbiguous':
+    'More than one clinician matches that name: {names}. Choose one in the Clinician field.',
+  'schedule.findAvailable.ask.meridiem':
+    '"{hour}" could be morning or afternoon. It was read as {time}; change the time field if that is wrong.',
+  'schedule.findAvailable.ask.otherDay':
+    'The request asks for {asked}, and the schedule is showing {shown}. No slots are listed until the day is settled.',
+  'schedule.findAvailable.ask.showDay': 'Show {date}',
+  'schedule.findAvailable.ask.keepDay': 'Search {date} instead',
+  'schedule.findAvailable.field.provider': 'Clinician',
+  'schedule.findAvailable.field.anyProvider': 'Any clinician on this day',
+  'schedule.findAvailable.field.duration': 'Length',
+  'schedule.findAvailable.field.minutes': '{minutes} minutes',
+  'schedule.findAvailable.field.notBefore': 'Not before',
+  'schedule.findAvailable.field.notAfter': 'Ending by',
+  'schedule.findAvailable.clinicTime': 'Clinic time ({zone})',
+  'schedule.findAvailable.words.today': 'today',
+  'schedule.findAvailable.words.tomorrow': 'tomorrow',
+  'schedule.findAvailable.words.morning': 'morning',
+  'schedule.findAvailable.words.afternoon': 'afternoon',
+  'schedule.findAvailable.words.minutes': 'minutes, minute, mins, min',
+  'schedule.findAvailable.words.hours': 'hours, hour, hrs, hr',
+  'schedule.findAvailable.words.halfHour': 'half an hour, half hour',
+  'schedule.findAvailable.words.oneHour': 'an hour, one hour',
+  'schedule.findAvailable.words.after': 'after, from, not before',
+  'schedule.findAvailable.words.before': 'before, by, until, not after',
+
   /* ----------------------------------------------------------- flow board */
   'schedule.flowBoard.title': 'Flow Board',
   'schedule.flowBoard.description':

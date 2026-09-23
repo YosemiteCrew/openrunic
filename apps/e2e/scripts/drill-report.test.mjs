@@ -13,6 +13,10 @@ import { checkReport, summarize } from './drill-report.mjs';
  * would let a walk that never recurses pass.
  */
 const report = {
+  // Playwright nulls this field for the array form of `webServer` and passes a
+  // single object through with its env; the report is a public artifact, so the
+  // accepted shape is pinned here rather than assumed.
+  config: { webServer: null },
   suites: [
     {
       title: 'clinical-day.spec.ts',
@@ -95,4 +99,18 @@ test('a missing report fails and names the path it looked for', () => {
   const result = checkReport(missing);
   assert.equal(result.ok, false);
   assert.match(result.lines.join('\n'), /no readable report at .*drill-report\.json/);
+});
+
+test('a report carrying the web server config fails before its env is published', () => {
+  const leaky = {
+    ...report,
+    config: { webServer: { command: 'pnpm start', env: { SESSION_COOKIE_SECRET: 'CANARY' } } },
+  };
+  const result = checkReport(writeReport(leaky));
+  assert.equal(result.ok, false);
+  const text = result.lines.join('\n');
+  assert.match(text, /uploaded as a public artifact/);
+  // The report is the thing that must not travel, so the check must not quote
+  // the value it is refusing to publish.
+  assert.doesNotMatch(text, /CANARY/);
 });

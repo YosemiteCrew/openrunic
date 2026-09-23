@@ -72,6 +72,27 @@ export function checkReport(reportPath) {
     };
   }
 
+  /**
+   * `config.webServer` is `null` in this report only because the config
+   * declares its servers as an ARRAY. Playwright passes a single object
+   * straight through - `Array.isArray(webServers) ? null : webServers` in
+   * common/index.js - and the JSON reporter emits it verbatim, `env` included.
+   * This file is uploaded whole as a public CI artifact and no gate reads
+   * artifacts, so the array form is load-bearing for something nothing else
+   * would catch. It is checked here rather than written down in a comment.
+   */
+  if (parsed?.config?.webServer != null) {
+    return {
+      ok: false,
+      lines: [
+        'The report carries the web server configuration, which includes its env.',
+        'This file is uploaded as a public artifact, so that env would go out with it.',
+        'Declare `webServer` as an array of one in playwright.config.ts: Playwright',
+        'serialises the array form as null and runs it identically.',
+      ],
+    };
+  }
+
   const { tests, projects, specs } = summarize(parsed);
   const lines = [
     `Drill report: ${String(tests)} test(s) across ${String(projects.length)} project(s) and ${String(specs.length)} spec(s)`,

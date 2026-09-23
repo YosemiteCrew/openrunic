@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureAvailability } from '@/lib/voice';
+import { captureAvailability } from '../index.js';
 
 /**
  * The browser's four answers, as the three things the reader is told.

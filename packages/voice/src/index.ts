@@ -22,6 +22,31 @@ export type {
 export { SILENT, endingFor, readbackReducer, speakableTurns } from './readback.js';
 export type { ReadbackAction, ReadbackEnding, ReadbackState, Speaking } from './readback.js';
 
+export { captureAvailability } from './capture.js';
+export type {
+  CaptureAvailability,
+  CaptureEvent,
+  CaptureFailure,
+  CapturePort,
+  CaptureSession,
+  CaptureUnavailable,
+} from './capture.js';
+
+export { createPlatformCapture, platformRecognition } from './platform-capture.js';
+export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture.js';
+
+export { IDLE, appendDictation, dictationReducer } from './dictation.js';
+export type {
+  DictationAction,
+  DictationEnding,
+  DictationPhase,
+  DictationSession,
+  DictationState,
+} from './dictation.js';
+
+export { useDictation } from './useDictation.js';
+export type { Dictation } from './useDictation.js';
+
 export { usePageHidden } from './usePageHidden.js';
 
 export { useReadback } from './useReadback.js';

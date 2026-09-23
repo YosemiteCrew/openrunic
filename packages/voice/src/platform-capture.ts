@@ -30,8 +30,8 @@
  * it renders as no dictation at all.
  */
 
-import { captureAvailability } from './capture';
-import type { CaptureEvent, CaptureFailure, CapturePort, CaptureSession } from './capture';
+import { captureAvailability } from './capture.js';
+import type { CaptureEvent, CaptureFailure, CapturePort, CaptureSession } from './capture.js';
 
 /**
  * The parts of a `SpeechRecognition` this adapter uses.

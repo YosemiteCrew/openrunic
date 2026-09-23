@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPlatformCapture, platformRecognition } from '@/lib/voice';
-import type { CaptureEvent, PlatformRecognition, Recognition } from '@/lib/voice';
+import { createPlatformCapture, platformRecognition } from '../index.js';
+import type { CaptureEvent, PlatformRecognition, Recognition } from '../index.js';
 
 /**
  * The device's own recogniser, driven through fakes.

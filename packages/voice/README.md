@@ -29,4 +29,18 @@ under ADR-0005 a hosted voice would need an endpoint, a credential and a
 separate acknowledgement before it could ship, and the operating system's own
 synthesiser has none of those to name.
 
-The microphone is a separate decision and is not here.
+## Asking by voice
+
+`CapturePort` is the mirror of `ReadbackPort`: a session is a language and an id
+the caller made up, and nothing else. `createPlatformCapture` is the only adapter
+shipped, and it is the recogniser **on the device** - a browser that cannot be
+asked whether it recognises the page's language locally is refused rather than
+tried, because the default recogniser sends the audio to its vendor and ADR-0005
+rule 6 forbids that egress without a named endpoint and agreement.
+
+`useDictation` writes what it hears into the box a person types in, through a
+callback, and has no way to reach the assistant. One press is one question, the
+status says what the microphone is doing rather than what was pressed, and
+changing the record, hiding the page or losing on-device support closes it and
+drops the words in flight. What goes in the box, and whether it is sent, stays
+the surface's decision and a person's press.

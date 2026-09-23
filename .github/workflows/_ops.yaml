@@ -115,8 +115,10 @@ jobs:
         run: pnpm turbo run build --filter='./packages/*'
 
       # The clinical drill runs apps/web in mock mode, so it needs no database,
-      # API or seed. The portal scenario starts apps/portal in live mode and
-      # exercises its real session gate without making an API request.
+      # API or seed. The portal scenarios start apps/portal in live mode and
+      # exercise its real session gate and its two speech adapters; the handful
+      # of API responses they need are fulfilled in the browser, so this job
+      # still needs no API running.
       - name: Run the full clinical day
         run: pnpm --filter @openrunic/e2e run drill
         env:

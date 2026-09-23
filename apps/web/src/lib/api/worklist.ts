@@ -921,9 +921,9 @@ export function liveInbox(client: ApiClient, userId: string): WorklistClient['in
 /**
  * The app's client.
  *
- * Orders read the API in live mode. Results and the inbox do not, because
- * `apps/api` still has no aggregate behind them - the inbox in particular is a
- * composition across results, messages and tasks that no route assembles. Mock
+ * In live mode orders and the unfiltered results queue read the API here. The
+ * inbox and the queue's ME/TEAM filter are defined in terms of the signed-in
+ * clinician and so are wired a request later, by {@link worklistFor}. Mock
  * mode keeps the fixture rows for all three: `MOCK_SERVICE_REQUESTS` is a
  * thinner set than `MOCK_ORDERS` and carries no cancellation reason or linked
  * report, so routing the demo through it would empty three columns of the

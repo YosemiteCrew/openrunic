@@ -44,10 +44,6 @@ exception file (`.grype.yaml`).
 It also runs weekly on a schedule, because a base layer becomes vulnerable when a CVE is published,
 not when somebody commits.
 
-**Currently dormant.** No Dockerfile exists on this branch yet. Discovery exits 0 with an explanatory
-message, and the gate starts working on the first pull request that adds one - there is no switch to
-remember to flip.
-
 ## Infrastructure misconfiguration
 
 Two scanners, for a reason worth knowing before you go looking for the second one:
@@ -89,8 +85,6 @@ Run it locally:
 yq -o=json '.' docker-compose.yml | node scripts/ci/compose-guard.mjs -
 pnpm run check:compose:test
 ```
-
-**Currently dormant** for the same reason as the container scan, with the same automatic activation.
 
 ## Workflow security
 

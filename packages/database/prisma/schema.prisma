@@ -814,7 +814,9 @@ model Organisation {
 
   valueSets        ValueSet[]
   imagingStudies   ImagingStudy[]
-  breakGlassGrants BreakGlassGrant[]
+  breakGlassGrants    BreakGlassGrant[]
+  contactIntakes     ContactIntake[]
+  contactIntakeOutboxes ContactIntakeOutbox[]
 
   @@index([status])
 }
@@ -3500,6 +3502,108 @@ enum DeviceStatus {
 /// simple: the reader declares one, and every subsequent read inside the window
 /// is authorised the same way any other relationship authorises one, and every
 /// one of them is attributable to this row.
+/// A contact submission forwarded from the Yosemite Crew marketing site.
+///
+/// The SuperAdmin panel mirrors public contact-us and accessibility-report
+/// submissions into its CRM for the growth team. The Yosemite Crew backend
+/// forwards each submission to `/api/contact` with a shared secret in the
+/// `x-contact-key` header. The `sourceRequestId` is the Yosemite Crew
+/// `contactRequest.id` and serves as the idempotency key - duplicate forwards
+/// of the same submission are silently ignored.
+model ContactIntake {
+  id              String   @id @db.Uuid
+  tenantId        String   @db.Uuid
+  /// The Yosemite Crew contactRequest.id. Unique per tenant so a replay of
+  /// the same submission is idempotent.
+  sourceRequestId String
+  /// Type of contact: GENERAL_ENQUIRY, FEATURE_REQUEST, DSAR, COMPLAINT.
+  type            String
+  /// Source of the submission: PMS_WEB, MARKETING_SITE.
+  source          String
+  /// The visitor's message.
+  message         String
+  /// Full name from the web form (mapped from complaintContext.fullName).
+  fullName        String
+  /// Email from the web form.
+  email           String
+  /// Optional phone number.
+  phone           String?
+  /// Optional organisation ID from the web form.
+  organisationId  String?
+  /// Optional DSAR details JSON.
+  dsarDetails     Json?
+  /// Optional attachments JSON.
+  attachments     Json?
+  /// When the submission was received by the panel.
+  receivedAt      DateTime @default(now())
+  /// When the original submission was created in Yosemite Crew.
+  sourceCreatedAt DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceRequestId])
+  @@index([tenantId, receivedAt])
+  @@index([tenantId, sourceCreatedAt])
+  @@index([tenantId, type])
+  @@index([tenantId, source])
+}
+
+/// A failed contact intake submission that will be retried.
+///
+/// When the SuperAdmin contact intake is not configured or the forward fails,
+/// the submission is stored here for later retry. This provides the "queue"
+/// that the mirror was missing - allowing backfill once the key is configured.
+model ContactIntakeOutbox {
+  id              String   @id @db.Uuid
+  tenantId        String   @db.Uuid
+  /// The Yosemite Crew contactRequest.id. Unique per tenant so a replay of
+  /// the same submission is idempotent.
+  sourceRequestId String
+  /// Type of contact: GENERAL_ENQUIRY, FEATURE_REQUEST, DSAR, COMPLAINT.
+  type            String
+  /// Source of the submission: PMS_WEB, MARKETING_SITE.
+  source          String
+  /// The visitor's message.
+  message         String
+  /// Full name from the web form.
+  fullName        String
+  /// Email from the web form.
+  email           String
+  /// Optional phone number.
+  phone           String?
+  /// Optional organisation ID from the web form.
+  organisationId  String?
+  /// Optional DSAR details JSON.
+  dsarDetails     Json?
+  /// Optional attachments JSON.
+  attachments     Json?
+  /// When the original submission was created in Yosemite Crew.
+  sourceCreatedAt DateTime
+  /// Error message from the last failed attempt.
+  lastError       String?
+  /// Number of retry attempts.
+  attempts        Int      @default(0)
+  /// Maximum retry attempts before giving up.
+  maxAttempts     Int      @default(5)
+  /// When the submission was first received.
+  receivedAt      DateTime @default(now())
+  /// When the submission was last attempted.
+  lastAttemptAt   DateTime?
+  /// When the submission was successfully processed.
+  processedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceRequestId])
+  @@index([tenantId, receivedAt])
+  @@index([tenantId, processedAt])
+  @@index([tenantId, attempts])
+}
+
 model BreakGlassGrant {
   id        String   @id @db.Uuid
   tenantId  String   @db.Uuid

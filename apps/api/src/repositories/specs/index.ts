@@ -1,4 +1,5 @@
 import { clinicalSpecs } from './clinical.js';
+import { contactIntakeOutboxSpec, contactIntakeSpec } from './contact.js';
 import { coreSpecs } from './core.js';
 import { financialSpecs } from './financial.js';
 import { inventorySpecs } from './inventory.js';
@@ -20,6 +21,17 @@ export const COLLECTION_SPECS = {
   ...financialSpecs,
   ...inventorySpecs,
   ...platformSpecs,
+  contactIntakes: contactIntakeSpec,
+  contactIntakeOutboxes: contactIntakeOutboxSpec,
 } as const;
 
-export { clinicalSpecs, coreSpecs, financialSpecs, inventorySpecs, orderSpecs, platformSpecs };
+export {
+  clinicalSpecs,
+  contactIntakeOutboxSpec,
+  contactIntakeSpec,
+  coreSpecs,
+  financialSpecs,
+  inventorySpecs,
+  orderSpecs,
+  platformSpecs,
+};

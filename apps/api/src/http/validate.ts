@@ -118,4 +118,16 @@ export function parseParam<T>(
   return result.data;
 }
 
+/** Parses a header value with a schema. */
+export function parseHeader<T>(c: Context<AppEnv>, name: string, schema: z.ZodType<T>): T {
+  const value = c.req.header(name);
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    throw ApiError.malformed(`The ${name} header is not valid.`, {
+      issues: [{ path: name, message: result.error.issues[0]?.message ?? 'invalid' }],
+    });
+  }
+  return result.data;
+}
+
 export { toFieldIssues };

@@ -162,6 +162,11 @@ export class ApiError extends Error {
     return new ApiError('upstream-failed', { ...options, detail });
   }
 
+  /** The service is temporarily unavailable (503). */
+  static serviceUnavailable(detail: string, options: ApiErrorOptions = {}): ApiError {
+    return new ApiError('upstream-failed', { ...options, detail });
+  }
+
   /**
    * A refused state transition, reported with the states involved.
    *

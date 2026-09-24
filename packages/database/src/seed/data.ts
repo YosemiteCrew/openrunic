@@ -526,6 +526,8 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
     'claim.submit',
     'payment.post',
     'admin.manage',
+    'contact.read',
+    'contact.write',
   ] as const;
 
   const permissions: Prisma.PermissionCreateManyInput[] = permissionKeys.map((key) => ({
@@ -541,6 +543,7 @@ export function buildDemoPractice(options: DemoPracticeOptions = {}): DemoPracti
     { key: 'front-desk', name: 'Front desk', grants: permissionKeys.slice(0, 2) },
     { key: 'biller', name: 'Biller', grants: ['patient.read', 'claim.submit', 'payment.post'] },
     { key: 'administrator', name: 'Administrator', grants: permissionKeys },
+    { key: 'growth', name: 'Growth', grants: ['contact.read', 'contact.write'] },
   ] as const;
 
   const roles: Prisma.RoleCreateManyInput[] = roleDefinitions.map((role) => ({

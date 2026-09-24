@@ -97,6 +97,11 @@ export const PERMISSIONS = [
   /** Reading the audit log is itself privileged, and is itself audited. */
   'audit.read',
   /**
+   * Contact intake from Yosemite Crew marketing site.
+   */
+  'contact.read',
+  'contact.write',
+  /**
    * Organisation-wide facility access. Without it a principal reaches only the
    * facilities named in its grants, so an empty grant list denies rather than
    * permits.

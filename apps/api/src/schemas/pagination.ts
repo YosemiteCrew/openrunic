@@ -23,6 +23,16 @@ export const paginationQueryFields = {
 
 export const sortOrderField = z.enum(['asc', 'desc']).default('asc');
 
+export const idParamSchema = z.string().uuid();
+
+export const paginationQuerySchema = z.strictObject({
+  ...paginationQueryFields,
+  sort: z.string().optional(),
+  order: sortOrderField.optional(),
+});
+
+export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+
 /** The pager block every list response carries. */
 export const pageMetaSchema = z.strictObject({
   page: z.int().min(1),

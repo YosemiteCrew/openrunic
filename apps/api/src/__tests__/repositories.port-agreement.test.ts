@@ -648,6 +648,28 @@ const FILTERS: {
     q: 'needle',
   },
   valueSets: { page: 1, pageSize: 25, sort: 'url', order: 'asc', url: 'id-url' },
+  contactIntakes: {
+    page: 1,
+    pageSize: 25,
+    sort: 'receivedAt',
+    order: 'desc',
+    type: 'GENERAL_ENQUIRY',
+    source: 'MARKETING_SITE',
+    receivedAtFrom: new Date('2026-01-01T00:00:00.000Z'),
+    receivedAtTo: new Date('2026-12-31T00:00:00.000Z'),
+  },
+  contactIntakeOutboxes: {
+    page: 1,
+    pageSize: 25,
+    sort: 'receivedAt',
+    order: 'desc',
+    type: 'GENERAL_ENQUIRY',
+    source: 'MARKETING_SITE',
+    processed: false,
+    tenantId: 'id-tenantId',
+    receivedAtFrom: new Date('2026-01-01T00:00:00.000Z'),
+    receivedAtTo: new Date('2026-12-31T00:00:00.000Z'),
+  },
 };
 
 /** Marker for a clause no value can satisfy, e.g. `{ in: [] }`. */

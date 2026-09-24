@@ -216,6 +216,19 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
     );
   });
 
+  // Intake health: reports whether contact and consent intake are configured.
+  // This is read by the Yosemite Crew backend's /health/controls endpoint.
+  app.get('/api/health', (c) => {
+    const contactKey = process.env.SUPERADMIN_CONTACT_INTAKE_KEY;
+    const consentKey = process.env.SUPERADMIN_CONSENT_INTAKE_KEY;
+    return c.json({
+      intake: {
+        contact: contactKey ? 'configured' : 'unconfigured',
+        consent: consentKey ? 'configured' : 'unconfigured',
+      },
+    });
+  });
+
   app.get('/openapi.json', (c) =>
     c.json(
       buildOpenApiDocument([

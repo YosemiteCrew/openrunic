@@ -7,6 +7,7 @@ import type { RouteContract } from '../openapi/registry.js';
 import { adminRouteContracts, adminRoutes } from './admin.js';
 import { appointmentRouteContracts, appointmentRoutes } from './appointments.js';
 import { clinicalRouteContracts, clinicalRoutes } from './clinical.js';
+import { contactRouteContracts, contactRoutes } from './contact.js';
 import { financialRouteContracts, financialRoutes } from './financial.js';
 import { inventoryRouteContracts, inventoryRoutes } from './inventory.js';
 import { orderRouteContracts, orderRoutes } from './orders.js';
@@ -69,6 +70,7 @@ export function internalRoutes(options: InternalRouteOptions): Hono<AppEnv> {
   router.route('/', qualityRoutes(options.quality));
   router.route('/', sessionRoutes());
   router.route('/', telehealthRoutes(options.adapters));
+  router.route('/', contactRoutes());
 
   return router;
 }
@@ -88,5 +90,6 @@ export function internalRouteContracts(): RouteContract[] {
     ...qualityRouteContracts(),
     ...sessionRouteContracts(),
     ...telehealthRouteContracts(),
+    ...contactRouteContracts(),
   ];
 }

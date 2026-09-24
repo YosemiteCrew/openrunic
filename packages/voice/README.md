@@ -73,3 +73,26 @@ The contract suite runs the same dictation rules through all three recognisers:
 a push-to-talk double, a streaming double and this adapter over a scripted
 connection. Swapping one for another is an adapter change. The adapter has been
 exercised against that scripted connection only, not against a live service.
+
+### Minting the credential
+
+The API mints it: `POST /bff/v0/agent/realtime/sessions` (`apps/api/src/agent/realtime.ts`). The
+route exists only when the assistant is enabled, the deployer has passed a `RealtimeSessionMinter`
+to `createApp` (their code, holding their vendor key), and the environment below names the endpoint
+and its agreement. Otherwise it answers 404.
+
+| Variable                                          | Meaning                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------- |
+| `OPENRUNIC_REALTIME_ENDPOINT`                     | `https` or `wss` address of the service. Absent means off.       |
+| `OPENRUNIC_REALTIME_PHI_EGRESS_AGREEMENT`         | Names the executed agreement. Required.                          |
+| `OPENRUNIC_REALTIME_PHI_EGRESS_RESPONSIBLE_PARTY` | Names who is answerable for it. Required.                        |
+| `OPENRUNIC_REALTIME_LANGUAGES`                    | Comma-separated BCP-47 tags the service transcribes. Required.   |
+| `OPENRUNIC_REALTIME_TURN_DETECTION`               | `server` (default) or `manual`.                                  |
+| `OPENRUNIC_REALTIME_MAX_TTL_SECONDS`              | Longest a credential may live. Default 60, at most 600.          |
+| `OPENRUNIC_REALTIME_DAILY_SESSIONS`               | Per-tenant sessions per day before dictation stops. Default 500. |
+
+The route checks the caller, and any chart the client names the way the chart route does, before a
+credential exists. The minter is told a language, a surface and a lifetime, never a person, a chart
+or a tool; a client asking for tools, instructions, a model or audio output is refused. A
+credential longer-lived than the ceiling, expired or empty is not passed on, and the credential is
+never stored or audited.

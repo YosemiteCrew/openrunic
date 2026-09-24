@@ -133,9 +133,16 @@ FROM ${NODE_IMAGE} AS runtime
 # Alpine's current packages, for the reason spelled out at the `base` stage.
 # This stage starts from ${NODE_IMAGE} rather than from `base`, so it does not
 # inherit that upgrade and needs its own.
+#
+# Nothing in this image installs packages at runtime, so apk and the libraries
+# only it uses are removed as well. The CA bundle is named in the world file
+# first so that it stays.
 ARG APK_UPGRADE_STAMP=pinned
 RUN echo "apk upgrade stamp: ${APK_UPGRADE_STAMP}" >/dev/null \
-    && apk --no-cache upgrade
+    && apk --no-cache upgrade \
+    && echo ca-certificates-bundle >> /etc/apk/world \
+    && apk --no-cache del apk-tools \
+    && test ! -e /sbin/apk
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

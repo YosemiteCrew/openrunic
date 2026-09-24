@@ -266,7 +266,23 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
   app.route(BFF_BASE_PATH, internalRoutes({ adapters, quality: options.quality, now }));
 
   if (agent.status === 'enabled') {
-    app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));
+    app.route(
+      BFF_BASE_PATH,
+      agentRoutes({
+        runtime: agent,
+        audit: auditBridge,
+        ...(realtime === undefined
+          ? {}
+          : {
+              dictation: {
+                endpoint: realtime.config.endpoint,
+                agreement: realtime.config.agreement,
+                languages: [...realtime.config.languages],
+                turnDetection: realtime.config.turnDetection,
+              },
+            }),
+      })
+    );
   }
   if (realtime !== undefined) {
     app.route(BFF_BASE_PATH, realtimeRoutes({ ...realtime, now }));

@@ -34,12 +34,19 @@
 import type { MessageKey } from '@openrunic/i18n';
 import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
-import type { CaptureAvailability } from '@/lib/voice';
+import type { CaptureAvailability, DictationEgress } from '@/lib/voice';
 import type { DictationState } from '@openrunic/voice';
 
 export interface AssistantDictationProps {
   availability: CaptureAvailability;
   state: DictationState;
+  /**
+   * Where the audio goes when the practice configured a hosted service. The
+   * device's own recogniser sends nothing and says so; this one does, and the
+   * note under the button names where and under what agreement before the
+   * microphone is pressed.
+   */
+  egress?: DictationEgress | null;
   onStart: () => void;
   onStop: () => void;
 }
@@ -78,6 +85,7 @@ function statusKey(state: DictationState): MessageKey | null {
 export function AssistantDictation({
   availability,
   state,
+  egress = null,
   onStart,
   onStop,
 }: Readonly<AssistantDictationProps>) {
@@ -85,10 +93,23 @@ export function AssistantDictation({
 
   if (availability.status === 'unavailable' && availability.reason === 'no-adapter') return null;
 
-  const unavailable =
-    availability.status === 'unavailable' && availability.reason !== 'no-adapter'
-      ? t(UNAVAILABLE_KEYS[availability.reason])
-      : null;
+  /* A hosted service that does not transcribe this page's language has nothing
+     to do with the device, so the on-device sentence would be wrong about why. */
+  let unavailable: string | null = null;
+  if (availability.status === 'unavailable' && availability.reason !== 'no-adapter') {
+    unavailable = t(
+      egress === null
+        ? UNAVAILABLE_KEYS[availability.reason]
+        : 'portal.assistant.dictation.noLanguageHosted'
+    );
+  }
+  const hint =
+    egress === null
+      ? t('portal.assistant.dictation.hint')
+      : t('portal.assistant.dictation.hintHosted', {
+          host: egress.host,
+          agreement: egress.agreement,
+        });
 
   const sentence = statusKey(state);
   const status = sentence === null ? '' : t(sentence);
@@ -127,9 +148,7 @@ export function AssistantDictation({
         <p className="portal-assistant__dictation-heard">{state.heard}</p>
       )}
 
-      <p className="portal-assistant__dictation-note">
-        {unavailable ?? t('portal.assistant.dictation.hint')}
-      </p>
+      <p className="portal-assistant__dictation-note">{unavailable ?? hint}</p>
     </div>
   );
 }

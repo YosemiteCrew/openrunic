@@ -1,3 +1,6 @@
+import { readHostedDictation } from '@openrunic/voice';
+import type { HostedDictation } from '@openrunic/voice';
+
 /**
  * The assistant wire contract, as the portal reads it.
  *
@@ -31,6 +34,11 @@ export interface AssistantCapability {
 export interface AssistantCapabilities {
   service: AssistantService;
   capabilities: readonly AssistantCapability[];
+  /**
+   * A hosted transcription service the practice configured, or null. Null is
+   * the default, and means the device's own recogniser or none.
+   */
+  dictation: HostedDictation | null;
 }
 
 /** One record the turn read. It is what a citation points at. */
@@ -172,5 +180,6 @@ export function parseAssistantCapabilities(value: unknown): AssistantCapabilitie
           .map(parseCapability)
           .filter((entry): entry is AssistantCapability => entry !== null)
       : [],
+    dictation: readHostedDictation(value.dictation),
   };
 }

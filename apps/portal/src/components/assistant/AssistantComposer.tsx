@@ -29,7 +29,7 @@
 import { useCallback, useState } from 'react';
 import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
-import type { CapturePort } from '@/lib/voice';
+import type { CapturePort, DictationEgress } from '@/lib/voice';
 import { AssistantDictation } from './AssistantDictation';
 import { appendDictation, useDictation } from '@openrunic/voice';
 
@@ -52,6 +52,8 @@ export interface AssistantComposerProps {
    * tests, where jsdom has no microphone to drive.
    */
   capture?: CapturePort | null;
+  /** Where that microphone sends the audio, or null while it stays on the device. */
+  dictationEgress?: DictationEgress | null;
 }
 
 export function AssistantComposer({
@@ -60,6 +62,7 @@ export function AssistantComposer({
   onStop,
   chartPatientId,
   capture = null,
+  dictationEgress = null,
 }: Readonly<AssistantComposerProps>) {
   const t = useTranslator();
   const [question, setQuestion] = useState('');
@@ -93,6 +96,7 @@ export function AssistantComposer({
 
       <AssistantDictation
         availability={dictation.availability}
+        egress={dictationEgress}
         onStart={dictation.start}
         onStop={dictation.stop}
         state={dictation.state}

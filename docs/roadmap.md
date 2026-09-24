@@ -104,12 +104,12 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1885 of 2663 messages (71%).
+**es**: 1887 of 2667 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
 | admin     | 444 | 444 | `██████████████████` |
-| assistant |  75 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| assistant |  77 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | auth      |  21 |  21 | `██████████████████` |
 | billing   | 463 | 463 | `██████████████████` |
 | chart     | 187 |   0 | `░░░░░░░░░░░░░░░░░░` |
@@ -123,7 +123,7 @@ These cannot be started inside this repository. Each needs an external body, and
 | nav       |  44 |  44 | `██████████████████` |
 | orders    | 151 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | patients  | 135 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| portal    | 357 | 357 | `██████████████████` |
+| portal    | 359 | 359 | `██████████████████` |
 | reports   |  84 |  84 | `██████████████████` |
 | results   |  91 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | schedule  | 173 | 173 | `██████████████████` |

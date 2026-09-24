@@ -48,8 +48,9 @@ import type { PortalApi } from '@/lib/api/types';
 import type { AssistantCapabilities } from '@/lib/assistant';
 import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
-import { createPlatformCapture, createPlatformReadback } from '@/lib/voice';
-import type { CapturePort, ReadbackPort } from '@/lib/voice';
+import { defaultMintRealtime } from '@/lib/assistant';
+import { chooseCapture, createPlatformReadback } from '@/lib/voice';
+import type { BrowserMedia, CapturePort, ReadbackPort, RealtimeMint } from '@/lib/voice';
 
 export interface AssistantScreenProps {
   api?: PortalApi;
@@ -60,17 +61,27 @@ export interface AssistantScreenProps {
    */
   readback?: ReadbackPort | null;
   /**
-   * The microphone a question may be dictated into. Absent means none, which is
-   * what the server render and every browser without an on-device recogniser
-   * both produce. Injected in tests, where jsdom has none to drive.
+   * The microphone a question may be dictated into. Absent means the hosted
+   * service the API named, when it named one and this browser can reach it, and
+   * otherwise the device's own recogniser or none. Injected in tests, where
+   * jsdom has none to drive.
    */
   capture?: CapturePort | null;
+  /**
+   * Asks the API for a hosted dictation credential. Only used when the API
+   * named a transcription service; injected in tests.
+   */
+  mintRealtime?: RealtimeMint;
+  /** The browser's microphone, peer connection and fetch. Injected in tests. */
+  realtimeMedia?: BrowserMedia | null;
 }
 
 export function AssistantScreen({
   api = getPortalApi(),
   readback,
   capture,
+  mintRealtime = defaultMintRealtime,
+  realtimeMedia,
 }: Readonly<AssistantScreenProps>) {
   const { availability, settled } = useAssistant();
 
@@ -89,7 +100,9 @@ export function AssistantScreen({
       api={api}
       capabilities={availability.capabilities}
       capture={capture}
+      mintRealtime={mintRealtime}
       readback={readback}
+      realtimeMedia={realtimeMedia}
     />
   );
 }
@@ -99,6 +112,8 @@ interface ConfiguredAssistantProps {
   capabilities: AssistantCapabilities;
   readback?: ReadbackPort | null;
   capture?: CapturePort | null;
+  mintRealtime: RealtimeMint;
+  realtimeMedia?: BrowserMedia | null;
 }
 
 function ConfiguredAssistant({
@@ -106,6 +121,8 @@ function ConfiguredAssistant({
   capabilities,
   readback,
   capture,
+  mintRealtime,
+  realtimeMedia,
 }: Readonly<ConfiguredAssistantProps>) {
   const t = useTranslator();
   const load = useCallback(() => api.getPatient(), [api]);
@@ -138,6 +155,8 @@ function ConfiguredAssistant({
             capabilities={capabilities}
             capture={capture}
             chartPatientId={patient.id}
+            mintRealtime={mintRealtime}
+            realtimeMedia={realtimeMedia}
             readback={readback}
           />
         )}
@@ -151,6 +170,8 @@ interface ConversationProps {
   chartPatientId: string;
   readback?: ReadbackPort | null;
   capture?: CapturePort | null;
+  mintRealtime: RealtimeMint;
+  realtimeMedia?: BrowserMedia | null;
 }
 
 function Conversation({
@@ -158,6 +179,8 @@ function Conversation({
   chartPatientId,
   readback,
   capture,
+  mintRealtime,
+  realtimeMedia,
 }: Readonly<ConversationProps>) {
   const t = useTranslator();
   const { runTurn } = useAssistant();
@@ -182,9 +205,13 @@ function Conversation({
      down an open microphone to do it. `undefined` means nobody injected one,
      which is the device's own recogniser or nothing; `null` means a caller said
      there is none, and is not the same answer. */
+  const dictation = capabilities.dictation;
   const microphone = useMemo(
-    () => (capture === undefined ? createPlatformCapture() : capture),
-    [capture]
+    () =>
+      capture === undefined
+        ? chooseCapture(dictation, mintRealtime, realtimeMedia)
+        : { port: capture, egress: null },
+    [capture, dictation, mintRealtime, realtimeMedia]
   );
 
   return (
@@ -236,8 +263,9 @@ function Conversation({
 
       <AssistantComposer
         answering={state.answering}
-        capture={microphone}
+        capture={microphone.port}
         chartPatientId={chartPatientId}
+        dictationEgress={microphone.egress}
         onAsk={ask}
         onStop={stop}
       />

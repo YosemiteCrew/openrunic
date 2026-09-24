@@ -501,6 +501,10 @@ export const portal: Messages = {
   'portal.assistant.dictation.stop': 'Stop the microphone',
   'portal.assistant.dictation.hint':
     'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the box above, where you can change them, and nothing is asked until you press Ask.',
+  'portal.assistant.dictation.hintHosted':
+    'The microphone button sends what you say to {host} to be turned into writing, under {agreement}, and nothing is sent until you press it. The words go into the box above, where you can change them, and nothing is asked until you press Ask.',
+  'portal.assistant.dictation.noLanguageHosted':
+    'The speech service your practice uses does not write in the language this page is in, so you can only type here.',
   'portal.assistant.dictation.starting': 'Opening the microphone.',
   'portal.assistant.dictation.listening': 'The microphone is on. Your words go into the box above.',
   'portal.assistant.dictation.noLanguage':

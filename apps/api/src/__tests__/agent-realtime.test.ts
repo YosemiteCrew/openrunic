@@ -156,6 +156,44 @@ describe('when the route exists', () => {
   });
 });
 
+describe('advertising dictation to the surfaces', () => {
+  async function tools(app: ReturnType<typeof build>['app'], token: string) {
+    const response = await app.request('/bff/v0/agent/tools', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  it('names the endpoint, the agreement, the languages and the turn detection', async () => {
+    const body = await tools(build(recorder(), { turnDetection: 'manual' }).app, TOKENS.clinicianA);
+    expect(body.dictation).toEqual({
+      endpoint: ENV[REALTIME_ENV.endpoint],
+      agreement: ENV[REALTIME_ENV.agreement],
+      languages: ['en-US', 'es'],
+      turnDetection: 'manual',
+    });
+  });
+
+  it('tells a portal caller the same', async () => {
+    const body = await tools(build().app, TOKENS.portalA);
+    expect(body.dictation).toMatchObject({ endpoint: ENV[REALTIME_ENV.endpoint] });
+  });
+
+  it('says nothing about dictation when none is configured', async () => {
+    const body = await tools(createTestApp({ agent: AGENT }).app, TOKENS.clinicianA);
+    expect(body).not.toHaveProperty('dictation');
+  });
+
+  it('says nothing about dictation when the configuration is incomplete', async () => {
+    const { app } = createTestApp({
+      agent: AGENT,
+      realtime: { minter: recorder(), subsystem: loadRealtimeSubsystem({}) },
+    });
+    expect(await tools(app, TOKENS.clinicianA)).not.toHaveProperty('dictation');
+  });
+});
+
 describe('minting a session', () => {
   it('hands back a short-lived credential and what the capture adapter needs', async () => {
     const minter = recorder();

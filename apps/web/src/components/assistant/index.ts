@@ -32,7 +32,7 @@ export type {
   TurnOutcome,
   WithheldReason,
 } from './transcript';
-export { defaultProbe, defaultRunTurn } from './transport';
+export { defaultMintRealtime, defaultProbe, defaultRunTurn } from './transport';
 export type { ProbeAssistant, RunAgentTurn } from './transport';
 export { useConversation } from './useConversation';
 export type { Conversation } from './useConversation';

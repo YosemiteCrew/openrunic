@@ -2,7 +2,7 @@
 
 import { Button, Textarea } from '@openrunic/ui';
 import { appendDictation, useDictation } from '@openrunic/voice';
-import type { CapturePort } from '@openrunic/voice';
+import type { CapturePort, DictationEgress } from '@openrunic/voice';
 import { useCallback, useRef, useState } from 'react';
 import type {
   FormEvent,
@@ -58,6 +58,8 @@ export interface AssistantComposerProps {
    * render and every browser without an on-device recogniser both produce.
    */
   capture?: CapturePort | null;
+  /** Where that microphone sends the audio, or null while it stays on the device. */
+  dictationEgress?: DictationEgress | null;
 }
 
 export function AssistantComposer({
@@ -67,6 +69,7 @@ export function AssistantComposer({
   fieldRef,
   chartPatientId = '',
   capture = null,
+  dictationEgress = null,
 }: Readonly<AssistantComposerProps>): ReactElement {
   const t = useTranslator();
   const [question, setQuestion] = useState('');
@@ -113,6 +116,7 @@ export function AssistantComposer({
       <AssistantDictation
         availability={dictation.availability}
         state={dictation.state}
+        egress={dictationEgress}
         onStart={dictation.start}
         onStop={dictation.stop}
       />

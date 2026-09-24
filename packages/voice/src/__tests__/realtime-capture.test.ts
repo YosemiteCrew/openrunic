@@ -27,6 +27,7 @@ function wire(
   const asked: unknown[] = [];
   const sent: unknown[] = [];
   let closes = 0;
+  let mutes = 0;
   const transport: RealtimeTransport = {
     languages,
     turnDetection,
@@ -38,10 +39,13 @@ function wire(
         close: () => {
           closes += 1;
         },
+        mute: () => {
+          mutes += 1;
+        },
       };
     },
   };
-  return { transport, handlers, asked, sent, closes: () => closes };
+  return { transport, handlers, asked, sent, closes: () => closes, mutes: () => mutes };
 }
 
 function capture(transport: RealtimeTransport) {
@@ -454,5 +458,36 @@ describe('ending a question', () => {
     handlers[0]?.listening();
 
     expect(seen).toEqual([]);
+  });
+});
+
+describe('stop and the microphone', () => {
+  it('tells the transport to stop sending audio on the press, once', () => {
+    const connection = wire();
+    const { port } = capture(connection.transport);
+    port.start(SESSION);
+    connection.handlers[0]?.listening();
+    port.stop();
+    port.stop();
+    expect(connection.mutes()).toBe(1);
+  });
+
+  it('asks nothing of a transport that has no mute', () => {
+    const connection = wire();
+    const bare: RealtimeTransport = {
+      ...connection.transport,
+      open: (session, handed) => {
+        const opened = connection.transport.open(session, handed);
+        return { send: opened.send, close: opened.close };
+      },
+    };
+    const { port, seen } = capture(bare);
+    port.start(SESSION);
+    connection.handlers[0]?.listening();
+    port.stop();
+    expect(connection.mutes()).toBe(0);
+    // Server turn detection with nothing uncommitted: the session simply ends.
+    expect(connection.sent).toEqual([]);
+    expect(seen.at(-1)).toEqual({ type: 'ended', id: SESSION.id });
   });
 });

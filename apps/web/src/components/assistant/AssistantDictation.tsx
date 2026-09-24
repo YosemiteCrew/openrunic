@@ -32,7 +32,7 @@
 
 import type { MessageKey } from '@openrunic/i18n';
 import { Button } from '@openrunic/ui';
-import type { CaptureAvailability, DictationState } from '@openrunic/voice';
+import type { CaptureAvailability, DictationEgress, DictationState } from '@openrunic/voice';
 import type { ReactElement } from 'react';
 
 import { useTranslator } from '@/lib/i18n/messages';
@@ -40,6 +40,13 @@ import { useTranslator } from '@/lib/i18n/messages';
 export interface AssistantDictationProps {
   availability: CaptureAvailability;
   state: DictationState;
+  /**
+   * Where the audio goes when a deployer configured a hosted service. The
+   * device's own recogniser sends nothing, and says so; this one does, and the
+   * sentence under the button names where and under what agreement before the
+   * microphone is pressed.
+   */
+  egress?: DictationEgress | null;
   onStart: () => void;
   onStop: () => void;
 }
@@ -76,6 +83,7 @@ function statusKey(state: DictationState): MessageKey | null {
 export function AssistantDictation({
   availability,
   state,
+  egress = null,
   onStart,
   onStop,
 }: Readonly<AssistantDictationProps>): ReactElement | null {
@@ -83,10 +91,20 @@ export function AssistantDictation({
 
   if (availability.status === 'unavailable' && availability.reason === 'no-adapter') return null;
 
-  const unavailable =
-    availability.status === 'unavailable' && availability.reason !== 'no-adapter'
-      ? t(UNAVAILABLE_KEYS[availability.reason])
-      : null;
+  /* A hosted service that does not transcribe this page's language has nothing
+     to do with the device, so the on-device sentence would be wrong about why. */
+  let unavailable: string | null = null;
+  if (availability.status === 'unavailable' && availability.reason !== 'no-adapter') {
+    unavailable = t(
+      egress === null
+        ? UNAVAILABLE_KEYS[availability.reason]
+        : 'assistant.dictation.noLanguageHosted'
+    );
+  }
+  const hint =
+    egress === null
+      ? t('assistant.dictation.hint')
+      : t('assistant.dictation.hintHosted', { host: egress.host, agreement: egress.agreement });
 
   const sentence = statusKey(state);
   const status = sentence === null ? '' : t(sentence);
@@ -122,7 +140,7 @@ export function AssistantDictation({
         <p className="or-caption or-assistant__dictation-heard">{state.heard}</p>
       )}
 
-      <p className="or-caption">{unavailable ?? t('assistant.dictation.hint')}</p>
+      <p className="or-caption">{unavailable ?? hint}</p>
     </div>
   );
 }

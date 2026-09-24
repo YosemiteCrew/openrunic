@@ -2720,6 +2720,33 @@ fieldset {
   align-items: center;
 }
 
+/* The request above the open slots: the sentence and its button on one line
+   while there is room, the button under the field when there is not. */
+.or-slot-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-slot-request__ask {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+.or-slot-request__ask > :first-child {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.or-slot-request__day {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
 /* --- Schedule right rail -------------------------------------------------- */
 
 .or-day-rail {

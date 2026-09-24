@@ -232,6 +232,27 @@ describe('findOpenSlots', () => {
     expect(slots[0]?.start).toBe(`${DAY}T09:00:00.000Z`);
   });
 
+  it('keeps every slot inside a requested window', () => {
+    const slots = findOpenSlots([], ['p1'], DAY, new Date(`${DAY}T08:00:00.000Z`), {
+      durationMinutes: 30,
+      notBefore: 14 * 60 + 5,
+      notAfter: 15 * 60,
+      limit: 10,
+    });
+    expect(slots.map((slot) => slot.start)).toEqual([
+      `${DAY}T14:10:00.000Z`,
+      `${DAY}T14:20:00.000Z`,
+      `${DAY}T14:30:00.000Z`,
+    ]);
+  });
+
+  it('does not carry the clock into a later day, and offers nothing on an earlier one', () => {
+    const afternoon = new Date(`${DAY}T16:00:00.000Z`);
+    const tomorrow = findOpenSlots([], ['p1'], '2026-08-13', afternoon);
+    expect(tomorrow[0]?.start).toBe('2026-08-13T08:00:00.000Z');
+    expect(findOpenSlots([], ['p1'], '2026-08-11', afternoon)).toEqual([]);
+  });
+
   it('returns nothing when the visit does not fit the remaining day', () => {
     const slots = findOpenSlots([], ['p1'], DAY, new Date(`${DAY}T16:55:00.000Z`), {
       durationMinutes: 60,

@@ -144,6 +144,37 @@ export const schedule: Messages = {
     'Ningún espacio de {minutes} minutos entra en este día. Agregue al paciente a la lista de espera o revise mañana con el paginador de días.',
   'schedule.findAvailable.book': 'Reservar las {time} con {provider}',
 
+  'schedule.findAvailable.ask.label': 'Pedir un espacio',
+  'schedule.findAvailable.ask.hint':
+    'Escriba o dicte, por ejemplo "mañana por la tarde con Okafor, 30 minutos". Todos los campos siguen siendo editables.',
+  'schedule.findAvailable.ask.read': 'Leer la solicitud',
+  'schedule.findAvailable.ask.checkTitle': 'Revise esto antes de reservar',
+  'schedule.findAvailable.ask.providerAmbiguous':
+    'Más de un profesional coincide con ese nombre: {names}. Elija uno en el campo Profesional.',
+  'schedule.findAvailable.ask.meridiem':
+    '"{hour}" puede ser de la mañana o de la tarde. Se leyó como {time}; cambie el campo de hora si no es correcto.',
+  'schedule.findAvailable.ask.otherDay':
+    'La solicitud pide {asked} y la agenda muestra {shown}. No se listan espacios hasta aclarar el día.',
+  'schedule.findAvailable.ask.showDay': 'Mostrar {date}',
+  'schedule.findAvailable.ask.keepDay': 'Buscar en {date}',
+  'schedule.findAvailable.field.provider': 'Profesional',
+  'schedule.findAvailable.field.anyProvider': 'Cualquier profesional de este día',
+  'schedule.findAvailable.field.duration': 'Duración',
+  'schedule.findAvailable.field.minutes': '{minutes} minutos',
+  'schedule.findAvailable.field.notBefore': 'No antes de',
+  'schedule.findAvailable.field.notAfter': 'Terminar antes de',
+  'schedule.findAvailable.clinicTime': 'Hora de la clínica ({zone})',
+  'schedule.findAvailable.words.today': 'hoy',
+  'schedule.findAvailable.words.tomorrow': 'mañana',
+  'schedule.findAvailable.words.morning': 'por la mañana, en la mañana',
+  'schedule.findAvailable.words.afternoon': 'por la tarde, en la tarde, tarde',
+  'schedule.findAvailable.words.minutes': 'minutos, minuto, min',
+  'schedule.findAvailable.words.hours': 'horas, hora',
+  'schedule.findAvailable.words.halfHour': 'media hora',
+  'schedule.findAvailable.words.oneHour': 'una hora',
+  'schedule.findAvailable.words.after': 'después de, desde, a partir de',
+  'schedule.findAvailable.words.before': 'antes de, hasta',
+
   'schedule.flowBoard.title': 'Panel de flujo',
   'schedule.flowBoard.description':
     'Dónde está cada paciente en este momento y cuánto tiempo lleva ahí.',

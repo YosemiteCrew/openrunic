@@ -15,9 +15,11 @@ import {
   FindAvailablePanel,
   findOpenSlots,
   givenName,
+  minutesBetween,
   ScheduleGrid,
   shiftDay,
   useClinicDay,
+  useSlotAsk,
 } from '@/components/schedule';
 import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
 import { ScheduleOverlays } from './ScheduleOverlays';
@@ -319,7 +321,8 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       typeDisplay: details.visitType,
       start: details.slot.start,
       end: details.slot.end,
-      durationMinutes: DEFAULT_SLOT_MINUTES,
+      /* A 45-minute request books 45 minutes, not the walk-in default. */
+      durationMinutes: minutesBetween(details.slot.start, new Date(details.slot.end)),
       ...(details.reason.trim() ? { reasonText: details.reason.trim() } : {}),
     })
   );
@@ -342,6 +345,8 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       ),
     [appointments, columns, day, now]
   );
+
+  const [ask, setAsk, asked] = useSlotAsk(appointments, columns, day, now, DEFAULT_SLOT_MINUTES);
 
   const selected = appointments.find((appointment) => appointment.id === selectedId) ?? null;
 
@@ -522,9 +527,13 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
 
       {findingSlots && facility !== null ? (
         <FindAvailablePanel
-          slots={slots}
+          slots={asked}
           providers={columns}
-          durationMinutes={DEFAULT_SLOT_MINUTES}
+          ask={ask}
+          onAskChange={setAsk}
+          day={day}
+          today={clinicToday()}
+          onDayChange={setDay}
           onBook={setBookingSlot}
           onClose={() => setFindingSlots(false)}
         />

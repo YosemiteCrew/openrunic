@@ -19,13 +19,17 @@ const EGRESS = {
 
 const SESSION = { id: 'session-1', language: 'en' };
 
-function wire(languages: readonly string[] = ['en-US']) {
+function wire(
+  languages: readonly string[] = ['en-US'],
+  turnDetection: RealtimeTransport['turnDetection'] = 'server'
+) {
   const handlers: RealtimeHandlers[] = [];
   const asked: unknown[] = [];
   const sent: unknown[] = [];
   let closes = 0;
   const transport: RealtimeTransport = {
     languages,
+    turnDetection,
     open: (session, handed) => {
       asked.push(session);
       handlers.push(handed);
@@ -53,6 +57,9 @@ const delta = (item: string, text: string) => ({
   item_id: item,
   delta: text,
 });
+
+const started = (item: string) => ({ type: 'input_audio_buffer.speech_started', item_id: item });
+const committed = (item: string) => ({ type: 'input_audio_buffer.committed', item_id: item });
 
 const completed = (item: string, text: string) => ({
   type: 'conversation.item.input_audio_transcription.completed',
@@ -218,6 +225,7 @@ describe('a session', () => {
   it('reports a transport that throws as a failure, not an exception', () => {
     const { port, seen } = capture({
       languages: ['en'],
+      turnDetection: 'server',
       open: () => {
         throw new Error('no microphone device');
       },
@@ -227,10 +235,26 @@ describe('a session', () => {
     expect(seen).toEqual([{ type: 'failed', id: 'session-1', reason: 'failed' }]);
   });
 
+  it('reports a transport that fails and then throws only once', () => {
+    const { port, seen } = capture({
+      languages: ['en'],
+      turnDetection: 'server',
+      open: (_session, handlers) => {
+        handlers.failed('denied');
+        throw new Error('and then gave up');
+      },
+    });
+
+    port.start(SESSION);
+
+    expect(seen).toEqual([{ type: 'failed', id: 'session-1', reason: 'denied' }]);
+  });
+
   it('closes the connection a transport returns after failing inside open', () => {
     let closed = 0;
     const { port, seen } = capture({
       languages: ['en'],
+      turnDetection: 'server',
       open: (_session, handlers) => {
         handlers.failed('no-audio');
         return {
@@ -251,15 +275,18 @@ describe('a session', () => {
 });
 
 describe('ending a question', () => {
-  it('commits once on stop, and ends with the words that commit settled', () => {
+  it('commits once on stop while speech is uncommitted, and ends when it settles', () => {
     const { transport, handlers, sent, closes } = wire();
     const { port, seen } = capture(transport);
     port.start(SESSION);
 
+    handlers[0]?.message(started('a'));
     handlers[0]?.message(delta('a', 'what do'));
     port.stop();
     port.stop();
     expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
+
+    handlers[0]?.message(committed('a'));
     expect(closes()).toBe(0);
 
     handlers[0]?.message(completed('a', 'what do I owe'));
@@ -269,6 +296,93 @@ describe('ending a question', () => {
       { type: 'ended', id: 'session-1' },
     ]);
     expect(closes()).toBe(1);
+  });
+
+  it('waits for every item in flight, not the first to settle', () => {
+    const { transport, handlers, sent } = wire();
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+    const on = handlers[0];
+
+    /* The service's own turn detection has already cut the question in two. */
+    on?.message(started('a'));
+    on?.message(committed('a'));
+    on?.message(delta('a', 'my knee'));
+    on?.message(started('b'));
+    on?.message(committed('b'));
+    on?.message(delta('b', 'still hurts'));
+
+    port.stop();
+    /* Both stretches are committed: the buffer is empty, so no commit. */
+    expect(sent).toEqual([]);
+
+    on?.message(completed('a', 'my knee'));
+    expect(seen.at(-1)).toEqual({ type: 'heard', id: 'session-1', text: 'my knee', final: true });
+
+    on?.message(completed('b', 'still hurts'));
+    expect(seen.slice(-2)).toEqual([
+      { type: 'heard', id: 'session-1', text: 'still hurts', final: true },
+      { type: 'ended', id: 'session-1' },
+    ]);
+  });
+
+  it('ends at once, without a commit, when everything has already settled', () => {
+    const { transport, handlers, sent, closes } = wire();
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+
+    handlers[0]?.message(started('a'));
+    handlers[0]?.message(committed('a'));
+    handlers[0]?.message(completed('a', 'when is my visit'));
+    port.stop();
+
+    expect(sent).toEqual([]);
+    expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+    expect(closes()).toBe(1);
+  });
+
+  it('commits for speech the service heard start but has not transcribed a word of', () => {
+    const { transport, handlers, sent } = wire();
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+
+    handlers[0]?.message(started('a'));
+    port.stop();
+
+    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
+    expect(seen).toEqual([]);
+  });
+
+  it('under manual turn detection, always commits and waits for the item it made', () => {
+    const { transport, handlers, sent } = wire(['en'], 'manual');
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+
+    port.stop();
+    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
+    /* Nothing is pending yet, and that is not the end: the commit is unanswered. */
+    expect(seen).toEqual([]);
+
+    handlers[0]?.message(committed('c'));
+    expect(seen).toEqual([]);
+
+    handlers[0]?.message(completed('c', 'what do I owe'));
+    expect(seen).toEqual([
+      { type: 'heard', id: 'session-1', text: 'what do I owe', final: true },
+      { type: 'ended', id: 'session-1' },
+    ]);
+  });
+
+  it('ignores bookkeeping events that name no item', () => {
+    const { transport, handlers } = wire();
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+
+    handlers[0]?.message({ type: 'input_audio_buffer.speech_started' });
+    handlers[0]?.message({ type: 'input_audio_buffer.committed' });
+    port.stop();
+
+    expect(seen).toEqual([{ type: 'ended', id: 'session-1' }]);
   });
 
   it('does nothing on stop when nothing is open', () => {

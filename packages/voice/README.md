@@ -65,6 +65,10 @@ into either app: nothing in the default configuration sends audio anywhere.
   server should mint, short-lived, after the checks the product already makes.
   The transport is handed a language and nothing about the record.
 
+Stop waits for every stretch the service is still transcribing, not the first
+one to settle, and commits only audio the service has not committed itself, as
+the transport's declared `turnDetection` says.
+
 The contract suite runs the same dictation rules through all three recognisers:
 a push-to-talk double, a streaming double and this adapter over a scripted
 connection. Swapping one for another is an adapter change. The adapter has been

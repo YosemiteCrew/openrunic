@@ -78,12 +78,24 @@ export interface RealtimeConnection {
 export interface RealtimeTransport {
   /** BCP-47 tags the configured recogniser transcribes. */
   languages: readonly string[];
+  /**
+   * Who decides where a question's audio ends, as the deployer configured it.
+   *
+   * `server`: the service detects speech and commits each stretch itself, so
+   * by the time stop is pressed some of what was said may already be committed
+   * and still being transcribed. `manual`: nothing is committed until this
+   * adapter commits it. Stop has to know which, because a commit the service
+   * did not expect either errors or is never answered.
+   */
+  turnDetection: 'server' | 'manual';
   open: (session: { language: string }, handlers: RealtimeHandlers) => RealtimeConnection;
 }
 
 const DELTA = 'conversation.item.input_audio_transcription.delta';
 const COMPLETED = 'conversation.item.input_audio_transcription.completed';
 const TRANSCRIPTION_FAILED = 'conversation.item.input_audio_transcription.failed';
+const SPEECH_STARTED = 'input_audio_buffer.speech_started';
+const COMMITTED = 'input_audio_buffer.committed';
 
 /** A message as far as this adapter reads it. Everything is checked; nothing is trusted. */
 interface Wire {
@@ -133,10 +145,16 @@ export function createRealtimeCapture(
   let live: string | null = null;
   let open: RealtimeConnection | null = null;
   let stopping = false;
-  /* Per vendor item: the words so far, and whether it has already settled.
-     A duplicate or late event for a settled item is dropped rather than put in
+  /* Stop sent a commit and the service has not yet said which item it made. */
+  let awaitingCommit = false;
+  /* Per vendor item: the words so far, whether the service has committed it,
+     and whether it has already settled. `pending` is every item the service has
+     told us about that has not settled - the words stop must wait for. A
+     duplicate or late event for a settled item is dropped rather than put in
      the box twice. */
   let partial = new Map<string, string>();
+  let pending = new Set<string>();
+  let committed = new Set<string>();
   let settled = new Set<string>();
 
   const emit = (event: CaptureEvent) => {
@@ -148,7 +166,10 @@ export function createRealtimeCapture(
     live = null;
     open = null;
     stopping = false;
+    awaitingCommit = false;
     partial = new Map();
+    pending = new Set();
+    committed = new Set();
     settled = new Set();
     current?.close();
   };
@@ -156,7 +177,20 @@ export function createRealtimeCapture(
   const finish = (id: string, event: CaptureEvent) => {
     close();
     emit(event);
-    if (event.type === 'heard') emit({ type: 'ended', id });
+  };
+
+  /**
+   * After stop, the question is over once every item the service knows about
+   * has settled and the commit stop sent (if it sent one) has been answered -
+   * not on the first transcript that happens to arrive, which with server-side
+   * turn detection can be an earlier stretch while a later one is in flight.
+   */
+  const settleIfDone = (id: string) => {
+    if (stopping && !awaitingCommit && pending.size === 0) finish(id, { type: 'ended', id });
+  };
+
+  const track = (itemId: string) => {
+    if (!settled.has(itemId)) pending.add(itemId);
   };
 
   const onMessage = (id: string, message: unknown) => {
@@ -167,6 +201,7 @@ export function createRealtimeCapture(
     switch (wire.type) {
       case DELTA: {
         if (wire.itemId === null || wire.text === null || settled.has(wire.itemId)) return;
+        track(wire.itemId);
         const text = (partial.get(wire.itemId) ?? '') + wire.text;
         partial.set(wire.itemId, text);
         emit({ type: 'heard', id, text, final: false });
@@ -175,13 +210,22 @@ export function createRealtimeCapture(
       case COMPLETED: {
         if (wire.itemId === null || wire.text === null || settled.has(wire.itemId)) return;
         settled.add(wire.itemId);
+        pending.delete(wire.itemId);
         partial.delete(wire.itemId);
-        const heard: CaptureEvent = { type: 'heard', id, text: wire.text, final: true };
-        /* The reader pressed stop and this is the question they finished. */
-        if (stopping) finish(id, heard);
-        else emit(heard);
+        emit({ type: 'heard', id, text: wire.text, final: true });
+        settleIfDone(id);
         return;
       }
+      case SPEECH_STARTED:
+        if (wire.itemId !== null) track(wire.itemId);
+        return;
+      case COMMITTED:
+        if (wire.itemId === null) return;
+        track(wire.itemId);
+        committed.add(wire.itemId);
+        awaitingCommit = false;
+        settleIfDone(id);
+        return;
       case TRANSCRIPTION_FAILED:
       case 'error':
         finish(id, { type: 'failed', id, reason: 'failed' });
@@ -235,17 +279,34 @@ export function createRealtimeCapture(
         else connection.close();
       } catch {
         /* A transport that cannot even begin is a failure the reader is told
-           about, not an exception thrown through their button press. */
-        finish(session.id, { type: 'failed', id: session.id, reason: 'failed' });
+           about, not an exception thrown through their button press - once:
+           a transport that reported the failure before throwing has already
+           said it. */
+        if (live === session.id)
+          finish(session.id, { type: 'failed', id: session.id, reason: 'failed' });
       }
     },
 
     stop: () => {
-      /* Keeps what was said: the service is asked to settle the audio it has,
-         and the session stays live until that transcript arrives. */
+      /* Keeps what was said: the session stays live until every stretch the
+         reader spoke has been transcribed.
+
+         A commit is sent only when there is audio the service has not
+         committed itself. Under manual turn detection that is always. Under
+         server turn detection it is only while speech it has seen start is
+         still uncommitted: once everything is committed, the buffer is empty,
+         and a commit on an empty buffer is an error that would end a
+         dictation that worked as a failure. */
       if (open === null || stopping) return;
       stopping = true;
-      open.send({ type: 'input_audio_buffer.commit' });
+      const uncommitted =
+        transport.turnDetection === 'manual' ||
+        [...pending].some((itemId) => !committed.has(itemId));
+      if (uncommitted) {
+        awaitingCommit = true;
+        open.send({ type: 'input_audio_buffer.commit' });
+      }
+      if (live !== null) settleIfDone(live);
     },
 
     abort: () => {

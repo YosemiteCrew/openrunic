@@ -193,6 +193,10 @@ function realtime(answer = 'available'): Double {
 
   const transport: RealtimeTransport = {
     languages: answer === 'available' ? ['en-US'] : ['fr'],
+    /* Manual, so a stop always commits and the question ends when the service
+       answers - the shape the other two doubles share. Server-side turn
+       detection is covered in realtime-capture.test.ts. */
+    turnDetection: 'manual',
     open: (_session, handlers) => {
       wires.set(current, handlers);
       handlers.listening();

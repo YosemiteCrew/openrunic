@@ -8,6 +8,13 @@ import type { AgentRuntime } from '@openrunic/agent';
 import pkg from '../package.json' with { type: 'json' };
 
 import { agentRouteContracts, agentRoutes } from './agent/routes.js';
+import {
+  loadRealtimeSubsystem,
+  realtimeRouteContracts,
+  realtimeRoutes,
+  type RealtimeSessionMinter,
+  type RealtimeSubsystem,
+} from './agent/realtime.js';
 import { createAuditBridge, loadAgentRuntime, type AuditBridge } from './agent/runtime.js';
 import { createAuditChainStore, type AuditChainStore } from './audit/chain-store.js';
 import { createMemoryAuditSink } from './audit/memory-sink.js';
@@ -83,6 +90,15 @@ export interface CreateAppOptions {
    * and a different one would drop every event on the floor.
    */
   agentAudit?: AuditBridge;
+  /**
+   * Hosted realtime transcription for the assistant's dictation (#583).
+   *
+   * The minter is deployer code holding the vendor key; the configuration
+   * defaults to the environment. The session route is mounted only when the
+   * assistant is enabled, a minter is supplied AND the configuration names the
+   * endpoint and its agreement, so the default is three reasons absent.
+   */
+  realtime?: { minter: RealtimeSessionMinter; subsystem?: RealtimeSubsystem };
   /**
    * Whether the API can actually serve data right now.
    *
@@ -197,6 +213,20 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
       },
     });
 
+  const realtimeSubsystem =
+    options.realtime === undefined
+      ? undefined
+      : (options.realtime.subsystem ?? loadRealtimeSubsystem(process.env));
+  if (realtimeSubsystem?.status === 'misconfigured') {
+    console.error(`openrunic realtime dictation disabled: ${realtimeSubsystem.reason}`);
+  }
+  const realtime =
+    agent.status === 'enabled' &&
+    options.realtime !== undefined &&
+    realtimeSubsystem?.status === 'enabled'
+      ? { minter: options.realtime.minter, config: realtimeSubsystem.config }
+      : undefined;
+
   // Liveness: is this process running. Deliberately checks nothing else, so a
   // restart loop cannot be caused by a dependency being briefly slow.
   app.get('/healthz', (c) => c.json({ status: 'ok', service: 'openrunic-api' }));
@@ -223,6 +253,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
         // Documented only where it exists. An endpoint in the specification
         // that answers 404 is worse than an undocumented one.
         ...(agent.status === 'enabled' ? agentRouteContracts : []),
+        ...(realtime === undefined ? [] : realtimeRouteContracts),
       ])
     )
   );
@@ -236,6 +267,9 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
 
   if (agent.status === 'enabled') {
     app.route(BFF_BASE_PATH, agentRoutes({ runtime: agent, audit: auditBridge }));
+  }
+  if (realtime !== undefined) {
+    app.route(BFF_BASE_PATH, realtimeRoutes({ ...realtime, now }));
   }
 
   app.notFound(() => {

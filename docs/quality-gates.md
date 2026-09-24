@@ -205,12 +205,21 @@ read.
 Three rules, each learned from a grouped bump that carried thirteen updates and four independent
 breaks.
 
-**`engines.node` states what CI tests, not what happens to work.** It reads `^22.12`, matching
-`.nvmrc` and the Node the workflows install. It used to read `>=22.12`, which admitted Node 25 and
-26 - versions nothing here has ever run. A contributor on one of those gets a local result that
-disagrees with CI, and the disagreement is invisible: during that bump a failure was diagnosed twice
-as "an artifact of my local Node" and was neither time. Say the supported range and let the install
-refuse rather than let the drift happen quietly.
+**`engines.node` states the floor, and the install checks the major.** `engines.node` reads
+`>=22.12`, and with `engine-strict` pnpm refuses an older Node before it resolves anything. The
+major is checked by the root `preinstall` script, `scripts/ci/node-version.mjs`: on any major other
+than the one in `.nvmrc`, which is the Node the workflows install, it prints the reason and
+`pnpm install` exits non-zero. It does not stop the install from starting. pnpm 10 runs the root
+`preinstall` only after it has resolved the tree, written the lockfile, linked `node_modules` and
+run the dependency build scripts it allows, so on the wrong major all of that has already happened
+when the check fails. What the check guarantees is that such an install does not finish green and
+that the root `prepare` step does not run. `--ignore-scripts` skips it.
+
+A contributor on another major would get a local result that disagrees with CI, and the
+disagreement is invisible: during one bump a failure was diagnosed twice as "an artifact of my local
+Node" and was neither time. The major is checked at install rather than in `engines` because
+lockfile-only updates run no package code and do not have to run on the same Node; `--lockfile-only`
+runs no lifecycle scripts, so it never reaches the check.
 
 **Majors arrive in their own pull request.** Minor and patch updates - which are nearly always safe,
 and which carry most security fixes - stay pooled and land quickly. Majors are the ones that break,

@@ -37,13 +37,13 @@ export function nodeMismatch(nvmrc, running) {
   );
 }
 
-function main(nvmrcPath = NVMRC) {
-  const reason = nodeMismatch(readFileSync(nvmrcPath, 'utf8'), process.versions.node);
+function main() {
+  const reason = nodeMismatch(readFileSync(NVMRC, 'utf8'), process.versions.node);
   if (reason === '') return 0;
   process.stderr.write(`${reason}\n`);
   return 1;
 }
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  process.exit(main(process.argv[2]));
+  process.exit(main());
 }

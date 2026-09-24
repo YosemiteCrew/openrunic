@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -51,31 +51,36 @@ describe('nodeMismatch', () => {
 describe('node-version.mjs as the preinstall script', () => {
   const running = process.versions.node;
   const major = running.split('.')[0];
-  const nvmrc = (text) => {
-    const file = path.join(mkdtempSync(path.join(tmpdir(), 'node-version-')), '.nvmrc');
-    writeFileSync(file, text);
-    return file;
+  // The script reads the .nvmrc two directories above itself and nothing else,
+  // so each case runs a copy of it inside a scratch tree with its own .nvmrc.
+  const withNvmrc = (text) => {
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'node-version-')));
+    const script = path.join(root, 'scripts', 'ci', 'node-version.mjs');
+    mkdirSync(path.dirname(script), { recursive: true });
+    copyFileSync(SCRIPT, script);
+    writeFileSync(path.join(root, '.nvmrc'), text);
+    return script;
   };
-  const run = (file) => spawnSync(process.execPath, [SCRIPT, file], { encoding: 'utf8' });
+  const run = (script) => spawnSync(process.execPath, [script], { encoding: 'utf8' });
 
   it('exits 0 and prints nothing on the major .nvmrc names', () => {
-    const result = run(nvmrc(`${major}\n`));
+    const result = run(withNvmrc(`${major}\n`));
 
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, '');
   });
 
   it('exits 1 with the reason on any other major', () => {
-    const result = run(nvmrc(`${Number(major) + 2}\n`));
+    const result = run(withNvmrc(`${Number(major) + 2}\n`));
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, new RegExp(`this is Node v${running.replaceAll('.', '\\.')}`, 'u'));
   });
 
-  it('reads the repository .nvmrc when given no path, and this Node matches it', () => {
+  it('reads the repository .nvmrc, and this Node matches it', () => {
     // The same call `pnpm install` makes. CI runs the Node in .nvmrc, so a
     // failure here means the two have drifted apart.
-    const result = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' });
+    const result = run(SCRIPT);
 
     assert.equal(result.status, 0, result.stderr);
   });

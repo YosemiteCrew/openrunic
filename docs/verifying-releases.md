@@ -10,11 +10,13 @@ This page is how you answer that.
 
 For every release, CI publishes:
 
-| Artefact                     | Where                                 | Produced by                            |
-| ---------------------------- | ------------------------------------- | -------------------------------------- |
-| Container images             | `ghcr.io/yosemitecrew/openrunic-*`    | `.github/workflows/release-attest.yml` |
-| Build provenance attestation | Alongside each image, in the registry | `.github/workflows/release-attest.yml` |
-| SBOMs (SPDX and CycloneDX)   | Attached to the GitHub release        | `.github/workflows/supply-chain.yml`   |
+| Artefact                               | Where                                 | Produced by                            |
+| -------------------------------------- | ------------------------------------- | -------------------------------------- |
+| Container images                       | `ghcr.io/yosemitecrew/openrunic-*`    | `.github/workflows/release-attest.yml` |
+| Build provenance attestation           | Alongside each image, in the registry | `.github/workflows/release-attest.yml` |
+| Image SBOMs (SPDX and CycloneDX)       | Attached to the GitHub release        | `.github/workflows/release-attest.yml` |
+| Image SBOM attestation (SPDX)          | Alongside each image, in the registry | `.github/workflows/release-attest.yml` |
+| Source-tree SBOMs (SPDX and CycloneDX) | Attached to the GitHub release        | `.github/workflows/supply-chain.yml`   |
 
 Two images, one per deployable component: `ghcr.io/yosemitecrew/openrunic-api` and
 `ghcr.io/yosemitecrew/openrunic-web`.
@@ -91,8 +93,32 @@ cosign verify-attestation \
 
 ## Verify the SBOM
 
+Each image is published with an SPDX and a CycloneDX SBOM of the image itself, generated from the
+published digest and attached to the release as `openrunic-api-image.spdx.json` and
+`openrunic-api-image.cdx.json` (or `openrunic-web-image.*`). They list the operating-system packages
+in the image as well as the JavaScript packages it runs, so they describe what you install. Releases
+up to 0.3.0 predate them.
+
+The SPDX one is also attested against the image digest, so you can check that the SBOM belongs to
+the image you are about to run:
+
+```bash
+gh attestation verify \
+  "oci://ghcr.io/yosemitecrew/openrunic-api@${DIGEST}" \
+  --repo YosemiteCrew/openrunic \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+To scan an image SBOM yourself:
+
+```bash
+gh release download <tag> --repo YosemiteCrew/openrunic --pattern 'openrunic-api-image.spdx.json'
+grype sbom:openrunic-api-image.spdx.json
+```
+
 Each release also carries an SPDX and a CycloneDX SBOM of the source tree, attached as release
-assets. To see what is in a release before installing it:
+assets. It covers every workspace and its development dependencies, not only what ships in an image.
+To see what is in a release before installing it:
 
 ```bash
 gh release download api-v0.3.0 --repo YosemiteCrew/openrunic --pattern 'openrunic.spdx.json'

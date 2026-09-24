@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { browserMedia, createBrowserRealtimeTransport, createRealtimeCapture } from '../index.js';
 import type {
   BrowserMedia,
@@ -155,7 +155,7 @@ function transport(
   media: BrowserMedia,
   mint: (language: string, signal: AbortSignal) => Promise<RealtimeCredential> = () =>
     Promise.resolve({ endpoint: ENDPOINT, credential: 'synthetic-short-lived-value' }),
-  extra: { channel?: string } = {}
+  extra: { channel?: string; settleMs?: number } = {}
 ): RealtimeTransport {
   const built = createBrowserRealtimeTransport({
     endpoint: ENDPOINT,
@@ -289,6 +289,7 @@ describe('opening a session', () => {
         authorization: 'Bearer synthetic-short-lived-value',
         'content-type': 'application/sdp',
       },
+      redirect: 'error',
     });
     expect(peer?.answered).toEqual({ type: 'answer', sdp: 'synthetic-answer' });
     // Nothing is reported until the channel is really open.
@@ -557,5 +558,89 @@ describe('under the capture adapter', () => {
       { type: 'listening', id: 's1' },
       { type: 'heard', id: 's1', text: 'is the dose due', final: true },
     ]);
+  });
+});
+
+describe('stop', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function listening(settleMs?: number) {
+    const granted = stream();
+    const media = rig({ microphone: () => Promise.resolve(granted) });
+    const record = recorder();
+    const connection = transport(
+      media.media,
+      undefined,
+      settleMs === undefined ? {} : { settleMs }
+    ).open({ language: 'en' }, record.handlers);
+    await tick();
+    const channel = media.peers[0]?.channels[0];
+    if (channel === undefined) throw new Error('expected a channel');
+    channel.opens();
+    return { granted, media, record, connection, channel };
+  }
+
+  it('turns the microphone off at once and still hears the words already sent', async () => {
+    const { granted, record, connection, channel, media } = await listening();
+    connection.mute?.();
+    expect(granted.tracks[0]?.stopped).toBe(true);
+    expect(media.peers[0]?.closed).toBe(0);
+
+    channel.onmessage?.({ data: '{"type":"late.but.wanted"}' });
+    expect(record.messages).toEqual([{ type: 'late.but.wanted' }]);
+    connection.close();
+  });
+
+  it('ends a session the service never finishes, once, after the settle time', async () => {
+    const { record, connection, media } = await listening(500);
+    vi.useFakeTimers();
+    connection.mute?.();
+    connection.mute?.();
+    vi.advanceTimersByTime(499);
+    expect(record.calls).toEqual(['listening']);
+    vi.advanceTimersByTime(1);
+    expect(record.calls).toEqual(['listening', 'closed']);
+    expect(media.peers[0]?.closed).toBe(1);
+    vi.advanceTimersByTime(10_000);
+    expect(record.calls).toEqual(['listening', 'closed']);
+  });
+
+  it('waits ten seconds by default', async () => {
+    const { record, connection } = await listening();
+    vi.useFakeTimers();
+    connection.mute?.();
+    vi.advanceTimersByTime(9_999);
+    expect(record.calls).toEqual(['listening']);
+    vi.advanceTimersByTime(1);
+    expect(record.calls).toEqual(['listening', 'closed']);
+  });
+
+  it('forgets the deadline once the session has ended', async () => {
+    const { record, connection, channel } = await listening(500);
+    vi.useFakeTimers();
+    connection.mute?.();
+    channel.onclose?.();
+    vi.advanceTimersByTime(1_000);
+    expect(record.calls).toEqual(['listening', 'closed']);
+    connection.mute?.();
+    vi.advanceTimersByTime(1_000);
+    expect(record.calls).toEqual(['listening', 'closed']);
+  });
+});
+
+describe('a browser that refuses the peer connection', () => {
+  it('reports a failure and turns the microphone off', async () => {
+    const granted = stream();
+    const media = rig({ microphone: () => Promise.resolve(granted) });
+    media.media.peer = () => {
+      throw new Error('too many peer connections');
+    };
+    const { calls, handlers } = recorder();
+    transport(media.media).open({ language: 'en' }, handlers);
+    await tick();
+    expect(calls).toEqual(['failed:failed']);
+    expect(granted.tracks[0]?.stopped).toBe(true);
   });
 });

@@ -66,6 +66,12 @@ export interface RealtimeConnection {
   send: (message: { type: string }) => void;
   /** Closes the connection and releases the microphone. Safe to call twice. */
   close: () => void;
+  /**
+   * The reader pressed stop: no more audio may leave, while the connection
+   * stays open for the words already sent. Optional, because a transport whose
+   * media ends with the commit has nothing more to do.
+   */
+  mute?: () => void;
 }
 
 /**
@@ -299,6 +305,9 @@ export function createRealtimeCapture(
          dictation that worked as a failure. */
       if (open === null || stopping) return;
       stopping = true;
+      /* Stop means the microphone is off now, not once the service has caught
+         up: anything said after the press is not part of the question. */
+      open.mute?.();
       const uncommitted =
         transport.turnDetection === 'manual' ||
         [...pending].some((itemId) => !committed.has(itemId));

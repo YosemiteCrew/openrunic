@@ -79,9 +79,15 @@ export interface BrowserRealtimeOptions {
   channel?: string;
   /** Absent means the browser's own; null means there is none. */
   media?: BrowserMedia | null;
+  /**
+   * How long after stop the service has to deliver the last words before the
+   * session is ended without them. Milliseconds.
+   */
+  settleMs?: number;
 }
 
 const DEFAULT_CHANNEL = 'events';
+const DEFAULT_SETTLE_MS = 10_000;
 
 function isHttps(endpoint: string): boolean {
   try {
@@ -116,6 +122,7 @@ export function createBrowserRealtimeTransport(
   const media = options.media === undefined ? browserMedia() : options.media;
   if (media === null || !isHttps(options.endpoint)) return null;
   const label = options.channel ?? DEFAULT_CHANNEL;
+  const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
 
   const open = (session: { language: string }, handlers: RealtimeHandlers): RealtimeConnection => {
     const controller = new AbortController();
@@ -123,16 +130,22 @@ export function createBrowserRealtimeTransport(
     let peer: RTCPeerConnection | null = null;
     let channel: RTCDataChannel | null = null;
     let done = false;
+    let deadline: ReturnType<typeof setTimeout> | null = null;
+
+    const stopMicrophone = () => {
+      for (const track of stream?.getTracks() ?? []) track.stop();
+    };
 
     /* Every exit comes through here, once: the microphone light goes off on
        every path, including the ones where the page never heard back. */
     const release = () => {
       if (done) return;
       done = true;
+      if (deadline !== null) clearTimeout(deadline);
       controller.abort();
       channel?.close();
       peer?.close();
-      for (const track of stream?.getTracks() ?? []) track.stop();
+      stopMicrophone();
     };
     const fail = (reason: CaptureFailure) => {
       if (done) return;
@@ -174,31 +187,34 @@ export function createBrowserRealtimeTransport(
         return;
       }
 
-      const connection = media.peer();
-      peer = connection;
-      connection.addTransceiver(track, { direction: 'sendonly' });
-      const events = connection.createDataChannel(label);
-      channel = events;
-      events.onopen = () => {
-        if (!done) handlers.listening();
-      };
-      /* A data channel frame from the peer this session opened, not a message
-         from another window: there is no origin to check, and the capture
-         adapter reads every frame as untrusted anyway. */
-      const received = (frame: { data: unknown }) => {
-        if (!done) handlers.message(parse(frame.data));
-      };
-      events.onmessage = received;
-      events.onclose = () => {
-        if (done) return;
-        release();
-        handlers.closed();
-      };
-      connection.onconnectionstatechange = () => {
-        if (connection.connectionState === 'failed') fail('failed');
-      };
-
+      /* Everything from here can throw - a browser can refuse another peer
+         connection - and the microphone is already open, so every throw has
+         to reach the release below rather than escape as a rejection. */
       try {
+        const connection = media.peer();
+        peer = connection;
+        connection.addTransceiver(track, { direction: 'sendonly' });
+        const events = connection.createDataChannel(label);
+        channel = events;
+        events.onopen = () => {
+          if (!done) handlers.listening();
+        };
+        /* A data channel frame from the peer this session opened, not a message
+           from another window: there is no origin to check, and the capture
+           adapter reads every frame as untrusted anyway. */
+        const received = (frame: { data: unknown }) => {
+          if (!done) handlers.message(parse(frame.data));
+        };
+        events.onmessage = received;
+        events.onclose = () => {
+          if (done) return;
+          release();
+          handlers.closed();
+        };
+        connection.onconnectionstatechange = () => {
+          if (connection.connectionState === 'failed') fail('failed');
+        };
+
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
         const response = await media.fetch(minted.endpoint, {
@@ -209,6 +225,8 @@ export function createBrowserRealtimeTransport(
             'content-type': 'application/sdp',
           },
           signal: controller.signal,
+          // The offer goes to the named endpoint and nowhere it points onward.
+          redirect: 'error',
         });
         if (!response.ok) throw new Error('The service refused the offer.');
         const answer = await response.text();
@@ -234,6 +252,15 @@ export function createBrowserRealtimeTransport(
         handlers.closed();
       },
       close: release,
+      mute: () => {
+        if (done) return;
+        stopMicrophone();
+        /* A service that never answers must not hold the session open. */
+        deadline ??= setTimeout(() => {
+          release();
+          handlers.closed();
+        }, settleMs);
+      },
     };
   };
 

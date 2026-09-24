@@ -302,7 +302,11 @@ export function realtimeRoutes(options: RealtimeRoutesOptions): Hono<AppEnv> {
       throw ApiError.badGateway('The transcription service did not issue a session.');
     }
 
-    const lifetimeMs = minted.expiresAt.getTime() - instant.getTime();
+    /* Measured from when the credential came back, not from when it was asked
+       for: a minter that grants exactly the lifetime it was told stamps the
+       expiry from its own later clock, and the mint's latency would otherwise
+       read as a credential outliving the ceiling. */
+    const lifetimeMs = minted.expiresAt.getTime() - now().getTime();
     if (
       typeof minted.credential !== 'string' ||
       minted.credential === '' ||

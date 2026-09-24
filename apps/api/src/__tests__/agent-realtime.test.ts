@@ -364,6 +364,30 @@ describe('a minter that misbehaves', () => {
     expect(await response.text()).not.toContain('synthetic-ephemeral-session-value');
   });
 
+  it.each([
+    ['exactly the requested lifetime', 0, 200],
+    ['a millisecond past it', 1, 502],
+  ])(
+    'judges a credential stamped with %s from when it came back, not when it was asked for',
+    async (_label, extraMs, status) => {
+      let now = FIXED_NOW;
+      const minter = recorder((request) => {
+        // The vendor takes its time and stamps the expiry from its own clock.
+        now = new Date(FIXED_NOW.getTime() + 750);
+        return Promise.resolve({
+          credential: 'synthetic-ephemeral-session-value',
+          expiresAt: new Date(now.getTime() + request.expiresInSeconds * 1000 + extraMs),
+        });
+      });
+      const { app } = createTestApp({
+        agent: AGENT,
+        now: () => now,
+        realtime: { minter, subsystem: { status: 'enabled', config: config() } },
+      });
+      expect((await post(app, TOKENS.clinicianA, { language: 'en-US' })).status).toBe(status);
+    }
+  );
+
   it('does not pass on one whose expiry is not a date', async () => {
     const minter = recorder(() =>
       Promise.resolve({

@@ -44,3 +44,32 @@ status says what the microphone is doing rather than what was pressed, and
 changing the record, hiding the page or losing on-device support closes it and
 drops the words in flight. What goes in the box, and whether it is sent, stays
 the surface's decision and a person's press.
+
+## A hosted recogniser
+
+`createRealtimeCapture` is a second `CapturePort`, for a deployer who chooses a
+hosted realtime transcription service instead of the device. It is not wired
+into either app: nothing in the default configuration sends audio anywhere.
+
+- **Named egress, or nothing.** It takes the endpoint and a separate
+  acknowledgement naming the executed agreement (ADR-0005 rule 6), and throws at
+  construction without both. There is no silent fallback between the device and
+  a service, in either direction.
+- **Transcription only.** It reads the service's input-transcription events and
+  drops everything else, including any reply the service produces in text,
+  audio or tool calls. It never asks for one. What a reader hears back is the
+  assistant's source-checked answer through `ReadbackPort`, never audio a model
+  generated on its own.
+- **The media is the deployer's.** A `RealtimeTransport` owns the microphone
+  track, the codec, WebRTC or a socket, the model and the credential - which a
+  server should mint, short-lived, after the checks the product already makes.
+  The transport is handed a language and nothing about the record.
+
+Stop waits for every stretch the service is still transcribing, not the first
+one to settle, and commits only audio the service has not committed itself, as
+the transport's declared `turnDetection` says.
+
+The contract suite runs the same dictation rules through all three recognisers:
+a push-to-talk double, a streaming double and this adapter over a scripted
+connection. Swapping one for another is an adapter change. The adapter has been
+exercised against that scripted connection only, not against a live service.

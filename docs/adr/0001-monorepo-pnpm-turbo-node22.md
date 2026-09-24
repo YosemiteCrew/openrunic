@@ -27,8 +27,8 @@ We will build openrunic as a single monorepo:
   through corepack.
 - **Turborepo** for task orchestration (`build`, `lint`, `type-check`, `test`, `dev`) with
   dependency-aware caching.
-- **Node.js 22** as the single runtime version, enforced with `engines` plus `engine-strict` and
-  recorded in `.nvmrc`.
+- **Node.js 22** as the single runtime version, recorded in `.nvmrc` and enforced when installing,
+  with `engines` plus `engine-strict` holding the minimum.
 - **Vitest** as the test runner across all workspaces.
 - **ESLint 9 flat config** for linting, with Prettier owning formatting.
 

@@ -205,12 +205,13 @@ read.
 Three rules, each learned from a grouped bump that carried thirteen updates and four independent
 breaks.
 
-**`engines.node` states what CI tests, not what happens to work.** It reads `^22.12`, matching
-`.nvmrc` and the Node the workflows install. It used to read `>=22.12`, which admitted Node 25 and
-26 - versions nothing here has ever run. A contributor on one of those gets a local result that
-disagrees with CI, and the disagreement is invisible: during that bump a failure was diagnosed twice
-as "an artifact of my local Node" and was neither time. Say the supported range and let the install
-refuse rather than let the drift happen quietly.
+**`engines.node` states the floor, and the install enforces the major.** `engines.node` reads
+`>=22.12`, and `pnpm install` refuses any Node major other than the one in `.nvmrc`, which is the
+Node the workflows install (`scripts/ci/node-version.mjs`, run as `preinstall`). A contributor on
+another major would get a local result that disagrees with CI, and the disagreement is invisible:
+during one bump a failure was diagnosed twice as "an artifact of my local Node" and was neither
+time. The major is checked at install rather than in `engines` because lockfile-only updates run no
+package code and do not have to run on the same Node.
 
 **Majors arrive in their own pull request.** Minor and patch updates - which are nearly always safe,
 and which carry most security fixes - stay pooled and land quickly. Majors are the ones that break,

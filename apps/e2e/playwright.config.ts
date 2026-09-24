@@ -116,6 +116,10 @@ export default defineConfig({
         // the drill workflow installs this system package on every run because
         // it cannot be restored from the Playwright browser cache.
         channel: 'chrome',
+        // Without this Chrome on Linux never asks the system speech service for
+        // voices, and the read-aloud scenario finds none. Other platforms
+        // ignore it.
+        launchOptions: { args: ['--enable-speech-dispatcher'] },
       },
     },
   ],

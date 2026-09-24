@@ -284,8 +284,17 @@ test('reads an answer aloud through the voice already on this device', async ({ 
   const language = await pageLanguage(page);
 
   const voices = await deviceVoices(page);
+  const speaks = (voices ?? []).some((tag) => primarySubtag(tag) === language);
+  /* The drill installs a speech service, so on CI a missing voice is a broken
+     runner rather than a device without one, and skipping would hide it. */
+  if (process.env.CI === 'true') {
+    expect(
+      speaks,
+      `the drill runner has no ${language} speech voice; check the speech service install and the --enable-speech-dispatcher flag`
+    ).toBe(true);
+  }
   test.skip(
-    !(voices ?? []).some((tag) => primarySubtag(tag) === language),
+    !speaks,
     `this machine has no ${language} speech voice, so there is nothing here to read an answer aloud with; the rendering that absence produces is asserted by the readback control spec`
   );
 

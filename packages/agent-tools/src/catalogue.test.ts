@@ -35,6 +35,12 @@ const EXPECTED: Readonly<Record<string, Expected>> = {
     approval: 'always',
     roles: ['biller'],
   },
+  'referrals.reviewPreparation': {
+    tier: 'READ',
+    trustClass: 'reader',
+    approval: 'never',
+    roles: ['clinician'],
+  },
   'authorisation.reviewEvidence': {
     tier: 'READ',
     trustClass: 'reader',
@@ -123,6 +129,7 @@ describe('the v1 catalogue', () => {
       'appointments.propose',
       'documents.extractCandidates',
       'messages.draftReply',
+      'referrals.reviewPreparation',
       'coding.suggest',
     ]);
   });

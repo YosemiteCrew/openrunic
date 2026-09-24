@@ -1,7 +1,9 @@
 'use client';
 
 import { Button, Textarea } from '@openrunic/ui';
-import { useRef, useState } from 'react';
+import { appendDictation, useDictation } from '@openrunic/voice';
+import type { CapturePort } from '@openrunic/voice';
+import { useCallback, useRef, useState } from 'react';
 import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -10,6 +12,8 @@ import type {
 } from 'react';
 
 import { useTranslator } from '@/lib/i18n/messages';
+
+import { AssistantDictation } from './AssistantDictation';
 
 /**
  * Where the question is typed, and the control that stops an answer.
@@ -26,6 +30,11 @@ import { useTranslator } from '@/lib/i18n/messages';
  * document, and a keyboard user then has to find their way back; asking again
  * mid-answer settles the previous turn rather than being ignored, so no
  * keystroke is silently dropped either.
+ *
+ * **Speech writes into the box and stops there.** Dictated words arrive where
+ * typed ones do, so a misheard name, a dropped "no" or a wrong number is on
+ * screen to correct before it becomes a question, and the only thing that asks
+ * is the same Enter or press that asks anything else.
  */
 
 /** The API caps a turn at 8000 characters. Saying so beats a rejection after the fact. */
@@ -37,6 +46,18 @@ export interface AssistantComposerProps {
   onStop: () => void;
   /** The panel focuses the field through this on open. */
   fieldRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * The chart this box is asking about, or `''` for none. Not sent anywhere from
+   * here: it is what the microphone is scoped to, so moving to another chart
+   * closes it rather than finishing a sentence into a question about somebody
+   * else.
+   */
+  chartPatientId?: string;
+  /**
+   * The microphone. Absent or null means no dictation, which is what the server
+   * render and every browser without an on-device recogniser both produce.
+   */
+  capture?: CapturePort | null;
 }
 
 export function AssistantComposer({
@@ -44,10 +65,17 @@ export function AssistantComposer({
   onAsk,
   onStop,
   fieldRef,
+  chartPatientId = '',
+  capture = null,
 }: Readonly<AssistantComposerProps>): ReactElement {
   const t = useTranslator();
   const [question, setQuestion] = useState('');
   const fallbackRef = useRef<HTMLDivElement>(null);
+
+  const dictated = useCallback((text: string) => {
+    setQuestion((current) => appendDictation(current, text, MAX_QUESTION));
+  }, []);
+  const dictation = useDictation(capture, t.locale, chartPatientId, dictated);
 
   const send = () => {
     if (question.trim() === '') return;
@@ -81,6 +109,13 @@ export function AssistantComposer({
           onKeyDown={onKeyDown}
         />
       </div>
+
+      <AssistantDictation
+        availability={dictation.availability}
+        state={dictation.state}
+        onStart={dictation.start}
+        onStop={dictation.stop}
+      />
 
       <div className="or-assistant__controls">
         {streaming ? (

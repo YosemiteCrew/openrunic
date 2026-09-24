@@ -58,14 +58,12 @@ export type {
 export { useConversation } from './useConversation';
 export type { Conversation } from './useConversation';
 
-export { IDLE, appendDictation, dictationReducer } from './dictation';
+export { IDLE, appendDictation, dictationReducer, useDictation } from '@openrunic/voice';
 export type {
   DictationAction,
   DictationEnding,
   DictationPhase,
   DictationSession,
+  Dictation,
   DictationState,
-} from './dictation';
-
-export { useDictation } from './useDictation';
-export type { Dictation } from './useDictation';
+} from '@openrunic/voice';

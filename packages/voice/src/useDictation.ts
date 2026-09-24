@@ -27,10 +27,10 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import type { CaptureAvailability, CapturePort } from '@/lib/voice';
-import { IDLE, dictationReducer } from './dictation';
-import { usePageHidden } from '@openrunic/voice';
-import type { DictationState } from './dictation';
+import type { CaptureAvailability, CapturePort } from './capture.js';
+import { IDLE, dictationReducer } from './dictation.js';
+import { usePageHidden } from './usePageHidden.js';
+import type { DictationState } from './dictation.js';
 
 export interface Dictation {
   availability: CaptureAvailability;

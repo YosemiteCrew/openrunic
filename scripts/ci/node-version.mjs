@@ -1,12 +1,18 @@
 #!/usr/bin/env node
-// The `preinstall` script: an install runs on the Node major named in `.nvmrc`
-// and on no other.
+// The root `preinstall` script: `pnpm install` on a Node major other than the
+// one named in `.nvmrc` exits non-zero with the reason.
 //
-// `engines.node` carries only the floor. A lockfile-only update resolves
-// versions without running any package code, so it can run on a newer Node, but
-// an install builds and tests the tree, and that has to happen on the Node CI
-// uses. Lockfile-only commands skip lifecycle scripts, so this check reaches
-// every install and nothing else.
+// It does not stop the install from starting. pnpm 10 runs the root project's
+// `preinstall` only after it has resolved the tree, written the lockfile,
+// linked node_modules and run the dependency build scripts it allows, so on the
+// wrong major all of that has already happened when this fails. What it
+// guarantees is that such an install does not finish green and that the root
+// `prepare` step does not run.
+//
+// `engines.node` carries only the floor, which `engine-strict` enforces before
+// anything is resolved. A lockfile-only update resolves versions without running
+// any package code, so it can run on a newer Node; `--lockfile-only` runs no
+// lifecycle scripts, and neither does `--ignore-scripts`, so both skip this check.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

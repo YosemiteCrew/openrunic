@@ -93,14 +93,14 @@ export function AssistantDictation({
 
   /* A hosted service that does not transcribe this page's language has nothing
      to do with the device, so the on-device sentence would be wrong about why. */
-  const unavailable =
-    availability.status === 'unavailable' && availability.reason !== 'no-adapter'
-      ? t(
-          egress === null
-            ? UNAVAILABLE_KEYS[availability.reason]
-            : 'assistant.dictation.noLanguageHosted'
-        )
-      : null;
+  let unavailable: string | null = null;
+  if (availability.status === 'unavailable' && availability.reason !== 'no-adapter') {
+    unavailable = t(
+      egress === null
+        ? UNAVAILABLE_KEYS[availability.reason]
+        : 'assistant.dictation.noLanguageHosted'
+    );
+  }
   const hint =
     egress === null
       ? t('assistant.dictation.hint')

@@ -182,9 +182,13 @@ export function createBrowserRealtimeTransport(
       events.onopen = () => {
         if (!done) handlers.listening();
       };
-      events.onmessage = (event: MessageEvent) => {
-        if (!done) handlers.message(parse(event.data));
+      /* A data channel frame from the peer this session opened, not a message
+         from another window: there is no origin to check, and the capture
+         adapter reads every frame as untrusted anyway. */
+      const received = (frame: { data: unknown }) => {
+        if (!done) handlers.message(parse(frame.data));
       };
+      events.onmessage = received;
       events.onclose = () => {
         if (done) return;
         release();
@@ -208,8 +212,9 @@ export function createBrowserRealtimeTransport(
         });
         if (!response.ok) throw new Error('The service refused the offer.');
         const answer = await response.text();
-        if (done) return;
-        await connection.setRemoteDescription({ type: 'answer', sdp: answer });
+        /* Closed while the answer was in flight: the connection is already
+           gone, and applying the answer to it would only throw. */
+        if (!done) await connection.setRemoteDescription({ type: 'answer', sdp: answer });
       } catch {
         fail('failed');
       }

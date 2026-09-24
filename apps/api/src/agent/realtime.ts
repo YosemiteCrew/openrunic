@@ -279,11 +279,24 @@ export function realtimeRoutes(options: RealtimeRoutesOptions): Hono<AppEnv> {
       );
     }
 
+    /* Taken now, before the first await, and given back if no credential goes
+       out. Counting only after the mint let every request overlapping a slow
+       vendor read the same count and pass the check together, so under load
+       the ceiling held nothing. The check above and this line run with no
+       await between them, which is the whole of the lock. */
+    ledger.set(principal.tenantId, { day, count: count + 1 });
+    const giveBack = () => {
+      const held = ledger.get(principal.tenantId);
+      // A slot taken yesterday is not returned to today's allowance.
+      if (held?.day === day) ledger.set(principal.tenantId, { day, count: held.count - 1 });
+    };
+
     const surface = principal.actorType === 'patient' ? 'patient' : 'staff';
     let minted: MintedRealtimeSession;
     try {
       minted = await minter.mint({ language, surface, expiresInSeconds: config.maxTtlSeconds });
     } catch {
+      giveBack();
       // The vendor's message is not passed on: it can name the account, the
       // model or the key, none of which a browser has any business reading.
       throw ApiError.badGateway('The transcription service did not issue a session.');
@@ -296,14 +309,12 @@ export function realtimeRoutes(options: RealtimeRoutesOptions): Hono<AppEnv> {
       !(lifetimeMs > 0) ||
       lifetimeMs > config.maxTtlSeconds * 1000
     ) {
+      giveBack();
       throw ApiError.badGateway(
         'The transcription service issued a session this API will not pass on.'
       );
     }
 
-    // Counted once a credential is actually handed out: a refusal or a vendor
-    // failure spends nothing on anyone's account.
-    ledger.set(principal.tenantId, { day, count: count + 1 });
     await c.get('audit')?.write({
       action: 'agent.realtimeSession',
       targetType: 'RealtimeSession',

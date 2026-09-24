@@ -88,8 +88,12 @@ function build(
   });
 }
 
-function post(app: ReturnType<typeof build>['app'], token: string, body: unknown) {
-  return app.request(PATH, {
+async function post(
+  app: ReturnType<typeof build>['app'],
+  token: string,
+  body: unknown
+): Promise<Response> {
+  return await app.request(PATH, {
     method: 'POST',
     headers: jsonBearer(token),
     body: JSON.stringify(body),
@@ -369,6 +373,81 @@ describe('the daily ceiling', () => {
           entry.event.action === 'agent.realtimeSession' && entry.event.outcome === 'failure'
       )?.event.metadata
     ).toMatchObject({ reason: 'daily-session-budget-exhausted' });
+  });
+
+  it('holds under parallel requests while the vendor is slow', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const minter = recorder(async (request) => {
+      await gate;
+      return {
+        credential: 'synthetic-ephemeral-session-value',
+        expiresAt: new Date(FIXED_NOW.getTime() + request.expiresInSeconds * 1000),
+      };
+    });
+    const { app } = build(minter, { dailySessions: 1 });
+
+    const pending = Array.from({ length: 10 }, () =>
+      post(app, TOKENS.clinicianA, { language: 'en-US' })
+    );
+    // Every request is past its checks and waiting on the vendor, or refused.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+    const statuses = (await Promise.all(pending)).map((response) => response.status);
+
+    expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+    expect(statuses.filter((status) => status === 409)).toHaveLength(9);
+    expect(minter.calls).toHaveLength(1);
+  });
+
+  it('gives back a slot whose credential it refused to pass on', async () => {
+    let expired = true;
+    const minter = recorder((request) =>
+      Promise.resolve({
+        credential: 'synthetic-ephemeral-session-value',
+        expiresAt: new Date(FIXED_NOW.getTime() + (expired ? 0 : request.expiresInSeconds * 1000)),
+      })
+    );
+    const { app } = build(minter, { dailySessions: 1 });
+
+    expect((await post(app, TOKENS.clinicianA, { language: 'en-US' })).status).toBe(502);
+    expired = false;
+    expect((await post(app, TOKENS.clinicianA, { language: 'en-US' })).status).toBe(200);
+  });
+
+  it('does not give a slot taken yesterday back to today', async () => {
+    let now = FIXED_NOW;
+    let failFirst: (error: Error) => void = () => undefined;
+    const first = new Promise<MintedRealtimeSession>((_resolve, reject) => {
+      failFirst = reject;
+    });
+    let calls = 0;
+    const minter = recorder((request) => {
+      calls += 1;
+      if (calls === 1) return first;
+      return Promise.resolve({
+        credential: 'synthetic-ephemeral-session-value',
+        expiresAt: new Date(now.getTime() + request.expiresInSeconds * 1000),
+      });
+    });
+    const { app } = createTestApp({
+      agent: AGENT,
+      now: () => now,
+      realtime: { minter, subsystem: { status: 'enabled', config: config({ dailySessions: 1 }) } },
+    });
+
+    // Yesterday's request takes its slot and waits on the vendor past midnight.
+    const straddling = post(app, TOKENS.clinicianA, { language: 'en-US' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    now = new Date(FIXED_NOW.getTime() + 86_400_000);
+    // Today's only slot is taken.
+    expect((await post(app, TOKENS.clinicianA, { language: 'en-US' })).status).toBe(200);
+    // Yesterday's mint fails; its slot must not come back as one of today's.
+    failFirst(new Error('down'));
+    expect((await straddling).status).toBe(502);
+    expect((await post(app, TOKENS.clinicianA, { language: 'en-US' })).status).toBe(409);
   });
 
   it('spends nothing on a session the vendor failed to issue', async () => {

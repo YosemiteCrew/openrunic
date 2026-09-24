@@ -43,6 +43,14 @@ export type {
   RealtimeTransport,
 } from './realtime-capture.js';
 
+export { browserMedia, createBrowserRealtimeTransport } from './browser-realtime.js';
+export type {
+  BrowserMedia,
+  BrowserRealtimeOptions,
+  RealtimeCredential,
+  RealtimeMint,
+} from './browser-realtime.js';
+
 export { IDLE, appendDictation, dictationReducer } from './dictation.js';
 export type {
   DictationAction,

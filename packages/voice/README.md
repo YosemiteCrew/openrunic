@@ -48,8 +48,10 @@ the surface's decision and a person's press.
 ## A hosted recogniser
 
 `createRealtimeCapture` is a second `CapturePort`, for a deployer who chooses a
-hosted realtime transcription service instead of the device. It is not wired
-into either app: nothing in the default configuration sends audio anywhere.
+hosted realtime transcription service instead of the device. Both apps use it
+only when the assistant's capabilities response names a `dictation` endpoint and
+agreement, which the API does only when the session route below is configured:
+nothing in the default configuration sends audio anywhere.
 
 - **Named egress, or nothing.** It takes the endpoint and a separate
   acknowledgement naming the executed agreement (ADR-0005 rule 6), and throws at
@@ -73,6 +75,22 @@ The contract suite runs the same dictation rules through all three recognisers:
 a push-to-talk double, a streaming double and this adapter over a scripted
 connection. Swapping one for another is an adapter change. The adapter has been
 exercised against that scripted connection only, not against a live service.
+
+### The browser transport
+
+`createBrowserRealtimeTransport` is the `RealtimeTransport` both apps use. On
+each press it asks the app's `mint` function for a credential, opens the
+microphone, adds it to a WebRTC peer connection send-only, and posts the offer
+to the endpoint over `https`. The service's events arrive on a data channel and
+go to the capture adapter unread.
+
+- It contacts only the endpoint it was built with. A credential issued for any
+  other address is refused before the microphone is asked for.
+- No receiving audio track is offered, so a service that speaks cannot be
+  heard on the page.
+- Every way out - stop, a refusal, a dropped network, closing during the
+  permission prompt - stops the microphone track.
+- A `wss` endpoint gets no browser transport, and so no hosted dictation.
 
 ### Minting the credential
 

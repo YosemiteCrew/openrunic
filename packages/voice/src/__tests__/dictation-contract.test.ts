@@ -1,8 +1,15 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { hidePage, showPage } from './visibility.js';
-import { useDictation } from '../index.js';
-import type { CaptureAvailability, CaptureEvent, CapturePort, CaptureSession } from '../index.js';
+import { createRealtimeCapture, useDictation } from '../index.js';
+import type {
+  CaptureAvailability,
+  CaptureEvent,
+  CapturePort,
+  CaptureSession,
+  RealtimeHandlers,
+  RealtimeTransport,
+} from '../index.js';
 
 /**
  * One contract, two adapters that share nothing but it.
@@ -166,6 +173,105 @@ function streaming(answer = 'available'): Double {
   };
 }
 
+/**
+ * The hosted realtime adapter this package ships, over a scripted connection.
+ *
+ * Unlike the two above, the rules here are the real adapter's, and only the wire
+ * is a double: it speaks the vendor's event vocabulary, and like the streaming
+ * double it suppresses nothing - a connection that was closed keeps delivering
+ * what it had in flight. Its `ghost` is the case only a hosted service can
+ * produce: the service answering on its own, in text and in audio, on the live
+ * connection. None of that is the reader's words and none of it may reach the box.
+ */
+function realtime(answer = 'available'): Double {
+  const opened: CaptureSession[] = [];
+  const wires = new Map<string, RealtimeHandlers>();
+  let aborts = 0;
+  let stops = 0;
+  let current = '';
+  let item = 0;
+
+  const transport: RealtimeTransport = {
+    languages: answer === 'available' ? ['en-US'] : ['fr'],
+    open: (_session, handlers) => {
+      wires.set(current, handlers);
+      handlers.listening();
+      return { send: () => undefined, close: () => undefined };
+    },
+  };
+  const adapter = createRealtimeCapture(transport, {
+    endpoint: 'the endpoint a deployer configured',
+    agreement: 'the agreement a deployer named',
+  });
+  if (adapter === null) throw new Error('unreachable: a transport was supplied');
+
+  const wire = (id: string) => wires.get(id);
+
+  return {
+    opened,
+    aborts: () => aborts,
+    stops: () => stops,
+    port: {
+      ...adapter,
+      start: (session) => {
+        opened.push(session);
+        current = session.id;
+        adapter.start(session);
+      },
+      stop: () => {
+        stops += 1;
+        adapter.stop();
+      },
+      abort: () => {
+        aborts += 1;
+        adapter.abort();
+      },
+    },
+    say: (id, text, settled) => {
+      item += 1;
+      const itemId = `item-${String(item)}`;
+      wire(id)?.message(
+        settled
+          ? {
+              type: 'conversation.item.input_audio_transcription.completed',
+              item_id: itemId,
+              transcript: text,
+            }
+          : {
+              type: 'conversation.item.input_audio_transcription.delta',
+              item_id: itemId,
+              delta: text,
+            }
+      );
+    },
+    finish: (id) => {
+      wire(id)?.closed();
+    },
+    fail: (id, reason) => {
+      wire(id)?.failed(reason);
+    },
+    ghost: () => {
+      const handlers = wire(current);
+      handlers?.message({
+        type: 'response.output_text.done',
+        item_id: 'reply',
+        text: 'somebody else',
+      });
+      handlers?.message({
+        type: 'response.output_audio_transcript.done',
+        item_id: 'reply',
+        transcript: 'somebody else',
+      });
+      handlers?.message({ type: 'response.output_audio.delta', item_id: 'reply', delta: 'AAAA' });
+      handlers?.message({
+        type: 'response.function_call_arguments.done',
+        item_id: 'reply',
+        arguments: '{}',
+      });
+    },
+  };
+}
+
 /* The reason each double gives when it says no. They differ so that a test
    waiting for "unavailable" cannot be satisfied by the `no-adapter` this hook
    reports before the browser has answered - which is already true at mount, and
@@ -173,6 +279,7 @@ function streaming(answer = 'available'): Double {
 const ADAPTERS = [
   ['a push-to-talk stage', pushToTalk, 'language'],
   ['a streaming session', streaming, 'not-installed'],
+  ['the hosted realtime adapter', realtime, 'language'],
 ] as const;
 
 function harness(double: Double, chart = 'patient-1') {

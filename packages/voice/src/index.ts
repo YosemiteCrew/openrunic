@@ -35,6 +35,14 @@ export type {
 export { createPlatformCapture, platformRecognition } from './platform-capture.js';
 export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture.js';
 
+export { createRealtimeCapture } from './realtime-capture.js';
+export type {
+  RealtimeConnection,
+  RealtimeEgress,
+  RealtimeHandlers,
+  RealtimeTransport,
+} from './realtime-capture.js';
+
 export { IDLE, appendDictation, dictationReducer } from './dictation.js';
 export type {
   DictationAction,

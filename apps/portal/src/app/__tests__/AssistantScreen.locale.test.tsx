@@ -43,6 +43,7 @@ vi.mock('next/link', () => ({
 const ENABLED: AssistantAvailability = {
   status: 'enabled',
   capabilities: {
+    dictation: null,
     service: {
       modelId: 'a-model',
       endpointHost: 'inference.example.invalid',

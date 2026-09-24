@@ -51,6 +51,9 @@ export type {
   RealtimeMint,
 } from './browser-realtime.js';
 
+export { chooseCapture, readHostedDictation, readRealtimeCredential } from './hosted-dictation.js';
+export type { ChosenCapture, DictationEgress, HostedDictation } from './hosted-dictation.js';
+
 export { IDLE, appendDictation, dictationReducer } from './dictation.js';
 export type {
   DictationAction,

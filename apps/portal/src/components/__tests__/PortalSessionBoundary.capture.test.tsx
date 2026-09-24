@@ -53,6 +53,7 @@ const NOON = Date.parse('2026-09-18T12:00:00Z');
 const ENABLED: AssistantAvailability = {
   status: 'enabled',
   capabilities: {
+    dictation: null,
     service: {
       modelId: 'a-model',
       endpointHost: 'inference.example.invalid',

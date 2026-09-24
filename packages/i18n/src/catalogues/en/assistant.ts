@@ -64,6 +64,10 @@ export const assistant: Messages = {
   'assistant.dictation.stop': 'Stop the microphone',
   'assistant.dictation.hint':
     'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the box above, where you can check names, numbers and negations before you ask.',
+  'assistant.dictation.hintHosted':
+    'The microphone button sends what you say to {host} to be turned into writing, under {agreement}, and nothing is sent until you press it. The words go into the box above, where you can check names, numbers and negations before you ask.',
+  'assistant.dictation.noLanguageHosted':
+    'The speech service this practice uses does not write in the language this page is in, so you can only type here.',
   'assistant.dictation.starting': 'Opening the microphone.',
   'assistant.dictation.listening': 'The microphone is on. Your words go into the box above.',
   'assistant.dictation.noLanguage':

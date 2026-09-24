@@ -316,3 +316,64 @@ test('reads an answer aloud through the voice already on this device', async ({ 
      default, which on several of them is the system language. */
   expect(primarySubtag(spoken?.voiceLang ?? '')).toBe(language);
 });
+
+/**
+ * Hosted dictation, in a real browser (#585).
+ *
+ * The practice configured a transcription service, so the capabilities carry a
+ * `dictation` block and the page builds its microphone on the browser's real
+ * peer connection rather than the device's recogniser. The credential route is
+ * answered at the network boundary with a refusal - the ceiling-spent answer -
+ * so no microphone is opened and no service is contacted, and what is asserted
+ * is the part a person sees: where their voice would go before they press, and
+ * a refusal reading as a stopped microphone rather than as nothing.
+ */
+const HOSTED = {
+  endpoint: 'https://speech.drill.invalid/v1/realtime',
+  agreement: 'the drill agreement with a fictional provider',
+  languages: ['en-US', 'es'],
+  turnDetection: 'server',
+};
+
+test('hosted dictation says where the voice goes before the press, and a refusal reads as a stopped microphone', async ({
+  page,
+}) => {
+  const minted: unknown[] = [];
+  const offered: string[] = [];
+  await page.route('**/api/bff/v0/agent/tools', (route) =>
+    route.fulfill({ json: { ...CAPABILITIES, dictation: HOSTED } })
+  );
+  await page.route('**/api/portal/patient', (route) => route.fulfill({ json: PATIENT }));
+  await page.route('**/api/bff/v0/agent/realtime/sessions', (route) => {
+    minted.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 409,
+      json: { title: 'daily-session-budget-exhausted', status: 409 },
+    });
+  });
+  await page.route('https://speech.drill.invalid/**', (route) => {
+    offered.push(route.request().url());
+    return route.abort();
+  });
+
+  await page.goto('/assistant');
+  await expect(page.getByRole('heading', { level: 1, name: 'Assistant' })).toBeVisible();
+
+  await expect(
+    page.getByText('The microphone button sends what you say to speech.drill.invalid', {
+      exact: false,
+    })
+  ).toBeVisible();
+  await expect(page.getByText(HOSTED.agreement, { exact: false })).toBeVisible();
+
+  const speak = page.getByRole('button', { name: 'Speak your question' });
+  await expect(speak).toBeEnabled();
+  await speak.click();
+
+  await expect(
+    page.getByText('The microphone stopped. You can try again, or type your question.')
+  ).toBeVisible();
+  await expect(speak).toBeEnabled();
+  expect(minted).toEqual([{ language: await pageLanguage(page) }]);
+  expect(offered).toEqual([]);
+});

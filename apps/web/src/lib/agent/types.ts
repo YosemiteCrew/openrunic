@@ -1,3 +1,6 @@
+import { readHostedDictation } from '@openrunic/voice';
+import type { HostedDictation } from '@openrunic/voice';
+
 /**
  * The assistant wire contract, as this app reads it.
  *
@@ -31,10 +34,19 @@ export interface AgentToolSummary {
   approval: string;
 }
 
+/**
+ * Hosted dictation, as the API names it. Present only when the deployer has
+ * configured a transcription service and named the agreement that covers it;
+ * absent is the default and means the device's own recogniser or none. Read by
+ * `@openrunic/voice`, which is browser-safe, so both surfaces read it one way.
+ */
+export type AgentDictation = HostedDictation;
+
 /** The capabilities response. Its presence is the only signal that the agent is on. */
 export interface AgentCapabilities {
   model: AgentModelIdentity;
   tools: readonly AgentToolSummary[];
+  dictation: AgentDictation | null;
 }
 
 /** One row the turn read. The ledger says what was seen; it is what a citation points at. */
@@ -256,5 +268,6 @@ export function parseAgentCapabilities(value: unknown): AgentCapabilities | null
     tools: Array.isArray(value.tools)
       ? value.tools.map(parseTool).filter((tool): tool is AgentToolSummary => tool !== null)
       : [],
+    dictation: readHostedDictation(value.dictation),
   };
 }

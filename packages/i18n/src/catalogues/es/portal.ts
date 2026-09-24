@@ -365,6 +365,10 @@ export const portal: Messages = {
   'portal.assistant.dictation.stop': 'Apagar el micrófono',
   'portal.assistant.dictation.hint':
     'Su dispositivo convierte su voz en texto en el propio dispositivo, y no se envía nada a ningún sitio para hacerlo. Las palabras van al cuadro de arriba, donde puede cambiarlas, y no se pregunta nada hasta que pulse Preguntar.',
+  'portal.assistant.dictation.hintHosted':
+    'El botón del micrófono envía lo que diga a {host} para convertirlo en texto, según {agreement}, y no se envía nada hasta que lo pulse. Las palabras van al cuadro de arriba, donde puede cambiarlas, y no se pregunta nada hasta que pulse Preguntar.',
+  'portal.assistant.dictation.noLanguageHosted':
+    'El servicio de voz que usa su consulta no escribe en el idioma de esta página, así que aquí solo puede escribir.',
   'portal.assistant.dictation.starting': 'Abriendo el micrófono.',
   'portal.assistant.dictation.listening':
     'El micrófono está encendido. Sus palabras van al cuadro de arriba.',

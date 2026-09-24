@@ -63,6 +63,20 @@ const modelIdentitySchema = z.strictObject({
   dataLeavesDeployment: z.boolean(),
 });
 
+/**
+ * Present only when hosted dictation is configured (#585). It names the same
+ * endpoint and agreement the session route hands out, so a browser can build
+ * its capture adapter - which refuses to exist without both - before it has
+ * asked for any credential, and so a clinic sees where the audio would go
+ * before the microphone is pressed.
+ */
+const dictationSchema = z.strictObject({
+  endpoint: z.string(),
+  agreement: z.string(),
+  languages: z.array(z.string()),
+  turnDetection: z.enum(['server', 'manual']),
+});
+
 const toolSummarySchema = z.strictObject({
   id: z.string(),
   tier: z.string(),
@@ -91,6 +105,7 @@ export const agentRouteContracts: RouteContract[] = [
         schema: z.strictObject({
           model: modelIdentitySchema,
           tools: z.array(toolSummarySchema),
+          dictation: dictationSchema.optional(),
         }),
       },
       ...ERROR_RESPONSES,
@@ -155,6 +170,8 @@ export interface AgentRoutesOptions {
   runtime: Extract<AgentRuntime, { status: 'enabled' }>;
   /** Carries the request-scoped collector into the loop, so the human stays the actor. */
   audit: AuditBridge;
+  /** Hosted dictation, when the session route is mounted beside these. Absent otherwise. */
+  dictation?: z.infer<typeof dictationSchema>;
 }
 
 export function agentRoutes(options: AgentRoutesOptions): Hono<AppEnv> {
@@ -181,6 +198,7 @@ export function agentRoutes(options: AgentRoutesOptions): Hono<AppEnv> {
         requiredScopes: [...tool.requiredScopes],
         approval: tool.approval,
       })),
+      ...(options.dictation === undefined ? {} : { dictation: options.dictation }),
     });
   });
 

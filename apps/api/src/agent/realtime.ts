@@ -356,7 +356,8 @@ function requirePrincipal(c: Context<AppEnv>): Principal {
 }
 
 function primarySubtag(tag: string): string {
-  return (tag.split('-')[0] ?? '').toLowerCase();
+  const dash = tag.indexOf('-');
+  return (dash === -1 ? tag : tag.slice(0, dash)).toLowerCase();
 }
 
 function trimmed(value: string | undefined): string | undefined {

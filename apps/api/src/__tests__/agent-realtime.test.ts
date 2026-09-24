@@ -461,6 +461,7 @@ describe('reading the configuration', () => {
       REALTIME_ENV.responsibleParty,
     ],
     ['no languages', { [REALTIME_ENV.languages]: ' , ' }, REALTIME_ENV.languages],
+    ['languages left unset', { [REALTIME_ENV.languages]: undefined }, REALTIME_ENV.languages],
     ['an unknown turn detection', { [REALTIME_ENV.turnDetection]: 'auto' }, 'server or manual'],
     ['a lifetime past the ceiling', { [REALTIME_ENV.maxTtlSeconds]: '601' }, 'from 1 to 600'],
     ['a zero lifetime', { [REALTIME_ENV.maxTtlSeconds]: '0' }, 'from 1 to 600'],

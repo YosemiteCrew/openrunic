@@ -326,6 +326,18 @@ describe('a minter that misbehaves', () => {
     expect(await response.text()).not.toContain('synthetic-ephemeral-session-value');
   });
 
+  it('does not pass on one whose expiry is not a date', async () => {
+    const minter = recorder(() =>
+      Promise.resolve({
+        credential: 'synthetic-ephemeral-session-value',
+        expiresAt: new Date(Number.NaN),
+      })
+    );
+    const response = await post(build(minter).app, TOKENS.clinicianA, { language: 'en-US' });
+    expect(response.status).toBe(502);
+    expect(await response.text()).not.toContain('synthetic-ephemeral-session-value');
+  });
+
   it('passes on one exactly at the ceiling', async () => {
     const minter = recorder(() =>
       Promise.resolve({

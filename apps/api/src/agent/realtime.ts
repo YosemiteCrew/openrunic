@@ -306,7 +306,8 @@ export function realtimeRoutes(options: RealtimeRoutesOptions): Hono<AppEnv> {
     if (
       typeof minted.credential !== 'string' ||
       minted.credential === '' ||
-      !(lifetimeMs > 0) ||
+      !Number.isFinite(lifetimeMs) ||
+      lifetimeMs <= 0 ||
       lifetimeMs > config.maxTtlSeconds * 1000
     ) {
       giveBack();

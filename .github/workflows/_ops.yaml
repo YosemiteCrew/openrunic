@@ -106,6 +106,18 @@ jobs:
         # package, so the Playwright browser cache cannot satisfy it.
         run: pnpm --filter @openrunic/e2e exec playwright install chrome
 
+      # The read-aloud scenario needs a voice for the page's language. Chrome on
+      # Linux reads its voice list from speech-dispatcher, and the runner has
+      # none installed, so without this step the list is empty and the scenario
+      # has nothing to speak with. espeak-ng is the synthesiser and
+      # speech-dispatcher-espeak-ng joins the two; without it the daemon has no
+      # voices. Chrome only talks to the daemon when started with
+      # --enable-speech-dispatcher, which the portal project passes.
+      - name: Install a system speech service
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y speech-dispatcher speech-dispatcher-espeak-ng espeak-ng
+
       # apps/web imports @openrunic/ui and the other workspace packages by their
       # built output, so the shared packages have to exist before Next can
       # resolve them. Without this the drill fails as 74 "Module not found"

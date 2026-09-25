@@ -11,6 +11,8 @@ import type {
 
 import { useTranslator } from '@/lib/i18n/messages';
 
+import { VoiceControls } from './VoiceControls';
+
 /**
  * Where the question is typed, and the control that stops an answer.
  *
@@ -81,6 +83,13 @@ export function AssistantComposer({
           onKeyDown={onKeyDown}
         />
       </div>
+
+      <VoiceControls
+        value={question}
+        onChange={setQuestion}
+        onSubmit={send}
+        streaming={streaming}
+      />
 
       <div className="or-assistant__controls">
         {streaming ? (

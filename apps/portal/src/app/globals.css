@@ -1051,3 +1051,112 @@ output {
 .portal-assistant__compose {
   padding-top: var(--space-2);
 }
+
+/* Voice controls */
+.portal-assistant__voice {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.portal-assistant__captions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-wash);
+  font-size: var(--text-small);
+  color: var(--text-ink);
+}
+
+.portal-assistant__captions-label {
+  font-weight: var(--wght-medium);
+  color: var(--text-secondary);
+}
+
+.portal-assistant__captions-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-assistant__voice-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.portal-assistant__voice-primary {
+  display: flex;
+  justify-content: center;
+}
+
+.portal-assistant__mic-button {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.portal-assistant__mic-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-assistant__mic-button[data-variant='primary'] {
+  background: var(--action-accent);
+  color: var(--text-inverse);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-accent) 30%, transparent);
+  animation: portal-mic-pulse 1.5s var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-assistant__mic-button[data-variant='primary'] {
+    animation: none;
+  }
+}
+
+@keyframes portal-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-accent) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--action-accent) 10%, transparent);
+  }
+}
+
+.portal-assistant__mic-button--error {
+  background: var(--status-danger-wash);
+  color: var(--status-danger);
+}
+
+.portal-assistant__voice-secondary {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.portal-assistant__voice-error {
+  text-align: center;
+  color: var(--status-danger);
+}
+
+.portal-assistant__typed-hint {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.portal-assistant__voice--unsupported {
+  text-align: center;
+  padding: var(--space-4);
+}

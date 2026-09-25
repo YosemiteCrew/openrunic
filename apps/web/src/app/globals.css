@@ -753,6 +753,115 @@ fieldset {
   gap: var(--space-3);
 }
 
+/* Voice controls */
+.or-assistant__voice {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-assistant__captions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-wash);
+  font-size: var(--text-small);
+  color: var(--text-ink);
+}
+
+.or-assistant__captions-label {
+  font-weight: var(--wght-medium);
+  color: var(--text-secondary);
+}
+
+.or-assistant__captions-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-assistant__voice-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.or-assistant__voice-primary {
+  display: flex;
+  justify-content: center;
+}
+
+.or-assistant__mic-button {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.or-assistant__mic-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.or-assistant__mic-button[data-variant='primary'] {
+  background: var(--action-accent);
+  color: var(--text-inverse);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-accent) 30%, transparent);
+  animation: or-mic-pulse 1.5s var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .or-assistant__mic-button[data-variant='primary'] {
+    animation: none;
+  }
+}
+
+@keyframes or-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-accent) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--action-accent) 10%, transparent);
+  }
+}
+
+.or-assistant__mic-button--error {
+  background: var(--status-danger-wash);
+  color: var(--status-danger);
+}
+
+.or-assistant__voice-secondary {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.or-assistant__voice-error {
+  text-align: center;
+  color: var(--status-danger);
+}
+
+.or-assistant__typed-hint {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.or-assistant__voice--unsupported {
+  text-align: center;
+  padding: var(--space-4);
+}
+
 /* --- Loading, error ------------------------------------------------------- */
 
 .or-loading {

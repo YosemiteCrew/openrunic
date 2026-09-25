@@ -49,6 +49,19 @@ export const assistant: Messages = {
   'assistant.composer.stop': 'Stop',
   'assistant.composer.ask': 'Ask',
 
+  /* Voice controls */
+  'assistant.voice.start': 'Start voice input',
+  'assistant.voice.stop': 'Stop voice input',
+  'assistant.voice.pause': 'Pause voice input',
+  'assistant.voice.resume': 'Resume voice input',
+  'assistant.voice.listening': 'Listening...',
+  'assistant.voice.paused': 'Voice input paused',
+  'assistant.voice.error': 'Voice input could not start. Check microphone permissions.',
+  'assistant.voice.notSupported': 'Voice input is not supported in this browser.',
+  'assistant.voice.typedAlternative': 'Or type your question instead',
+  'assistant.captions.label': 'Live captions',
+  'assistant.captions.empty': 'Captions will appear here as you speak',
+
   'assistant.command.open': 'Ask the assistant',
   'assistant.command.open.keywords': 'assistant, ask, question, search the chart',
 

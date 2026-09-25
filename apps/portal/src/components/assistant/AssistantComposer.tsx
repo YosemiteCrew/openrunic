@@ -20,6 +20,8 @@ import { useState } from 'react';
 import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
 
+import { VoiceControls } from './VoiceControls';
+
 /** The API refuses a longer turn. Saying so beats a rejection after the fact. */
 const MAX_QUESTION = 8000;
 
@@ -52,6 +54,13 @@ export function AssistantComposer({ answering, onAsk, onStop }: Readonly<Assista
         onChange={(event) => setQuestion(event.target.value)}
         placeholder={t('portal.assistant.compose.placeholder')}
         value={question}
+      />
+
+      <VoiceControls
+        value={question}
+        onChange={setQuestion}
+        onSubmit={send}
+        answering={answering}
       />
 
       <div className="portal-actions">

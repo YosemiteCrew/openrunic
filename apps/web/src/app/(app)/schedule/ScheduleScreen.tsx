@@ -483,6 +483,7 @@ export function ScheduleScreen({ client, capture }: Readonly<ScheduleScreenProps
         facility: facility.name,
       })
     : t('schedule.day.description', { date: formatDate(t, day) });
+  const captureProps = capture === undefined ? {} : { capture };
 
   return (
     <AppShell
@@ -539,7 +540,7 @@ export function ScheduleScreen({ client, capture }: Readonly<ScheduleScreenProps
           onDayChange={setDay}
           onBook={setBookingSlot}
           onClose={() => setFindingSlots(false)}
-          {...(capture === undefined ? {} : { capture })}
+          {...captureProps}
         />
       ) : null}
 

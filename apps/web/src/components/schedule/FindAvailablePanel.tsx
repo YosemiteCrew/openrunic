@@ -3,9 +3,13 @@
 import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import { Button, Card, Input, Select, Tag } from '@openrunic/ui';
-import { useState } from 'react';
+import { appendDictation, createPlatformCapture, useDictation } from '@openrunic/voice';
+import type { CapturePort } from '@openrunic/voice';
+import { useCallback, useMemo, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 
+import { ASSISTANT_DICTATION_MESSAGES, AssistantDictation } from '@/components/assistant';
+import type { DictationMessages } from '@/components/assistant';
 import { Alert } from '@/components/state';
 import { CLINIC_TIME_ZONE, formatDate, formatTime } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
@@ -28,6 +32,11 @@ import type { SlotAsk, SlotCriteria } from './useSlotAsk';
  * slots are computed from, and every one of them stays editable, so a word the
  * reader got wrong is corrected where it landed rather than by saying the whole
  * thing again. Nothing here books: a slot is still a button a person presses.
+ *
+ * **Speech writes into the field and stops there.** The microphone is the
+ * device's own recogniser only, so nothing said at the front desk leaves the
+ * machine, and what it heard is read the same way typed words are: by pressing
+ * Read request once the sentence on screen is right.
  */
 
 export interface FindAvailablePanelProps {
@@ -42,7 +51,28 @@ export interface FindAvailablePanelProps {
   onDayChange: (day: string) => void;
   onBook: (slot: OpenSlot) => void;
   onClose: () => void;
+  /**
+   * The microphone. Absent means the device's own on-device recogniser, which
+   * is nothing at all where the browser cannot promise the audio stays on the
+   * device; `null` is a caller saying there is none.
+   */
+  capture?: CapturePort | null;
 }
+
+/** What one dictation can add to the field: a request is a sentence, not a letter. */
+const MAX_REQUEST = 500;
+
+const SLOT_DICTATION_MESSAGES: DictationMessages = {
+  ...ASSISTANT_DICTATION_MESSAGES,
+  speak: 'schedule.findAvailable.dictation.speak',
+  hint: 'schedule.findAvailable.dictation.hint',
+  listening: 'schedule.findAvailable.dictation.listening',
+  denied: 'schedule.findAvailable.dictation.denied',
+  noSpeech: 'schedule.findAvailable.dictation.noSpeech',
+  noAudio: 'schedule.findAvailable.dictation.noAudio',
+  offDevice: 'schedule.findAvailable.dictation.offDevice',
+  failed: 'schedule.findAvailable.dictation.failed',
+};
 
 /** The lengths offered in the field, plus whatever length was asked for. */
 const DURATIONS = [10, 15, 20, 30, 45, 60, 90];
@@ -78,9 +108,21 @@ export function FindAvailablePanel({
   onDayChange,
   onBook,
   onClose,
+  capture,
 }: Readonly<FindAvailablePanelProps>): ReactElement {
   const t = useTranslator();
   const [text, setText] = useState(ask.text);
+
+  /* Built once for the panel's life. Closing the panel unmounts the hook, which
+     is the path that already aborts an open session. */
+  const port = useMemo(
+    () => (capture === undefined ? createPlatformCapture() : capture),
+    [capture]
+  );
+  const dictated = useCallback((words: string) => {
+    setText((current) => appendDictation(current, words, MAX_REQUEST));
+  }, []);
+  const dictation = useDictation(port, t.locale, '', dictated);
   const { criteria } = ask;
   const providerName = (id: string): string =>
     providers.find((provider) => provider.id === id)?.name ?? t('schedule.provider.unassigned');
@@ -148,6 +190,14 @@ export function FindAvailablePanel({
             {t('schedule.findAvailable.ask.read')}
           </Button>
         </form>
+
+        <AssistantDictation
+          availability={dictation.availability}
+          state={dictation.state}
+          onStart={dictation.start}
+          onStop={dictation.stop}
+          messages={SLOT_DICTATION_MESSAGES}
+        />
 
         <div className="or-fd-form-grid">
           <Select

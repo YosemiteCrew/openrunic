@@ -3,8 +3,8 @@ export type { AssistantComposerProps } from './AssistantComposer';
 export { AssistantLauncher } from './AssistantLauncher';
 export { ASSISTANT_PANEL_ID, AssistantPanel } from './AssistantPanel';
 export type { AssistantPanelProps } from './AssistantPanel';
-export { AssistantDictation } from './AssistantDictation';
-export type { AssistantDictationProps } from './AssistantDictation';
+export { ASSISTANT_DICTATION_MESSAGES, AssistantDictation } from './AssistantDictation';
+export type { AssistantDictationProps, DictationMessages } from './AssistantDictation';
 
 export { AssistantReadback } from './AssistantReadback';
 export type { AssistantReadbackProps } from './AssistantReadback';

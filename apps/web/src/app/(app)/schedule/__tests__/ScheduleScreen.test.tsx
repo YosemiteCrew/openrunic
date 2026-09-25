@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { CaptureEvent, CapturePort, CaptureSession } from '@openrunic/voice';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ScheduleScreen } from '@/app/(app)/schedule/ScheduleScreen';
@@ -907,5 +908,146 @@ describe('ScheduleScreen, asking for a slot in words', () => {
 
     expect(offered().length).toBeGreaterThan(0);
     expect(dayHeading()).toContain('12 Aug 2026');
+  });
+});
+
+describe('ScheduleScreen, saying the slot request', () => {
+  /** A deterministic microphone double: no audio is produced and no recogniser is contacted. */
+  function microphone() {
+    const opened: CaptureSession[] = [];
+    const listeners = new Set<(event: CaptureEvent) => void>();
+    let aborts = 0;
+    const emit = (event: CaptureEvent) => {
+      for (const listener of listeners) listener(event);
+    };
+    const last = () => opened.at(-1)?.id ?? '';
+    const port: CapturePort = {
+      available: async () => ({ status: 'available' }),
+      onEvent: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      start: (session) => {
+        opened.push(session);
+      },
+      stop: () => emit({ type: 'ended', id: last() }),
+      abort: () => {
+        aborts += 1;
+      },
+    };
+    return {
+      port,
+      opened,
+      aborts: () => aborts,
+      listening: () => emit({ type: 'listening', id: last() }),
+      say: (text: string) => emit({ type: 'heard', id: last(), text, final: true }),
+      sayFor: (id: string, text: string) => emit({ type: 'heard', id, text, final: true }),
+      end: () => emit({ type: 'ended', id: last() }),
+    };
+  }
+
+  const LINDQVIST = MOCK_PROVIDERS.find((provider) => provider.name.includes('Lindqvist'))!;
+
+  async function openPanel(capture: CapturePort | null): Promise<void> {
+    render(<ScheduleScreen client={createMockClient()} capture={capture} />);
+    await screen.findByRole('region', { name: 'Day view grid' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Find available' })[0] as HTMLElement);
+    await screen.findByLabelText('Ask for a slot');
+  }
+
+  async function pressSay(): Promise<void> {
+    const say = await screen.findByRole('button', { name: 'Say the request' });
+    await waitFor(() => expect(say).toBeEnabled());
+    fireEvent.click(say);
+  }
+
+  function offered(): string[] {
+    return screen
+      .queryAllByRole('button', { name: /^Book \d\d:\d\d with/ })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+  }
+
+  it('puts what was heard in the field and reads nothing until Read request', async () => {
+    const mic = microphone();
+    await openPanel(mic.port);
+    await pressSay();
+    expect(mic.opened).toHaveLength(1);
+
+    act(() => {
+      mic.listening();
+    });
+    expect(
+      screen.getByText('The microphone is on. Your words go into the field above.')
+    ).toBeInTheDocument();
+
+    act(() => {
+      mic.say('after 3 pm with Lindqvist, 45 minutes');
+      mic.end();
+    });
+
+    expect(screen.getByLabelText('Ask for a slot')).toHaveValue(
+      'after 3 pm with Lindqvist, 45 minutes'
+    );
+    /* Heard is not read: every field is still what it was before anyone spoke. */
+    expect(screen.getByLabelText('Clinician')).toHaveValue('');
+    expect(screen.getByLabelText('Not before')).toHaveValue('');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Read request' }));
+    expect(screen.getByLabelText('Clinician')).toHaveValue(LINDQVIST.id);
+    expect(screen.getByLabelText('Length')).toHaveValue('45');
+    expect(screen.getByLabelText('Not before')).toHaveValue('15:00');
+    const spoken = offered();
+    expect(spoken.length).toBeGreaterThan(0);
+    cleanup();
+
+    /* The same sentence typed finds the same slots: one path, whichever way in. */
+    await openPanel(null);
+    fireEvent.change(screen.getByLabelText('Ask for a slot'), {
+      target: { value: 'after 3 pm with Lindqvist, 45 minutes' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Read request' }));
+    expect(offered()).toEqual(spoken);
+  });
+
+  it('adds to a correction rather than replacing it', async () => {
+    const mic = microphone();
+    await openPanel(mic.port);
+    fireEvent.change(screen.getByLabelText('Ask for a slot'), {
+      target: { value: 'with Lindqvist' },
+    });
+    await pressSay();
+    act(() => {
+      mic.listening();
+      mic.say('45 minutes');
+      mic.end();
+    });
+    expect(screen.getByLabelText('Ask for a slot')).toHaveValue('with Lindqvist 45 minutes');
+  });
+
+  it('closes the microphone with the panel, and a late word lands nowhere', async () => {
+    const mic = microphone();
+    await openPanel(mic.port);
+    await pressSay();
+    act(() => {
+      mic.listening();
+    });
+    const session = mic.opened[0]!.id;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide open slots' }));
+    expect(mic.aborts()).toBe(1);
+
+    act(() => {
+      mic.sayFor(session, 'tomorrow with Lindqvist');
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Find available' })[0] as HTMLElement);
+    expect(await screen.findByLabelText('Ask for a slot')).toHaveValue('');
+  });
+
+  it('shows no microphone where there is none', async () => {
+    await openPanel(null);
+    expect(screen.queryByRole('button', { name: 'Say the request' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Read request' })).toBeInTheDocument();
   });
 });

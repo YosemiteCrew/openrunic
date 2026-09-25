@@ -157,6 +157,21 @@ export const schedule: Messages = {
     'La solicitud pide {asked} y la agenda muestra {shown}. No se listan espacios hasta aclarar el día.',
   'schedule.findAvailable.ask.showDay': 'Mostrar {date}',
   'schedule.findAvailable.ask.keepDay': 'Buscar en {date}',
+  'schedule.findAvailable.dictation.speak': 'Decir la solicitud',
+  'schedule.findAvailable.dictation.hint':
+    'Su dispositivo convierte su voz en texto en el propio dispositivo, sin enviar nada a ningún lugar. Las palabras aparecen en el campo de arriba, donde puede corregirlas antes de leer la solicitud.',
+  'schedule.findAvailable.dictation.listening':
+    'El micrófono está encendido. Sus palabras aparecen en el campo de arriba.',
+  'schedule.findAvailable.dictation.denied':
+    'No se permitió el micrófono, así que no se oyó nada. Puede permitirlo en la configuración del navegador o escribir la solicitud.',
+  'schedule.findAvailable.dictation.noSpeech':
+    'No se oyó nada. Puede intentarlo de nuevo o escribir la solicitud.',
+  'schedule.findAvailable.dictation.noAudio':
+    'No se pudo abrir ningún micrófono, así que no se oyó nada. Puede escribir la solicitud.',
+  'schedule.findAvailable.dictation.offDevice':
+    'Este dispositivo solo podía hacerlo enviando el sonido fuera, así que no se oyó nada. Puede escribir la solicitud.',
+  'schedule.findAvailable.dictation.failed':
+    'El micrófono se detuvo. Puede intentarlo de nuevo o escribir la solicitud.',
   'schedule.findAvailable.field.provider': 'Profesional',
   'schedule.findAvailable.field.anyProvider': 'Cualquier profesional de este día',
   'schedule.findAvailable.field.duration': 'Duración',

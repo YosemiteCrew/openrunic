@@ -49,25 +49,62 @@ export interface AssistantDictationProps {
   egress?: DictationEgress | null;
   onStart: () => void;
   onStop: () => void;
+  /** The sentences, when this is not the assistant's microphone. */
+  messages?: DictationMessages;
 }
+
+/**
+ * Every sentence this control says, by what it is saying. The assistant's are
+ * the default; a surface that asks something other than a question - the
+ * schedule's slot request - hands its own, and the rules stay the same ones.
+ */
+export interface DictationMessages {
+  speak: MessageKey;
+  stop: MessageKey;
+  hint: MessageKey;
+  hintHosted: MessageKey;
+  noLanguage: MessageKey;
+  noLanguageHosted: MessageKey;
+  notInstalled: MessageKey;
+  starting: MessageKey;
+  listening: MessageKey;
+  denied: MessageKey;
+  noSpeech: MessageKey;
+  noAudio: MessageKey;
+  offDevice: MessageKey;
+  failed: MessageKey;
+}
+
+export const ASSISTANT_DICTATION_MESSAGES: DictationMessages = {
+  speak: 'assistant.dictation.speak',
+  stop: 'assistant.dictation.stop',
+  hint: 'assistant.dictation.hint',
+  hintHosted: 'assistant.dictation.hintHosted',
+  noLanguage: 'assistant.dictation.noLanguage',
+  noLanguageHosted: 'assistant.dictation.noLanguageHosted',
+  notInstalled: 'assistant.dictation.notInstalled',
+  starting: 'assistant.dictation.starting',
+  listening: 'assistant.dictation.listening',
+  denied: 'assistant.dictation.denied',
+  noSpeech: 'assistant.dictation.noSpeech',
+  noAudio: 'assistant.dictation.noAudio',
+  offDevice: 'assistant.dictation.offDevice',
+  failed: 'assistant.dictation.failed',
+};
 
 /** Why nothing can be dictated, in the reader's words. */
 const UNAVAILABLE_KEYS = {
-  language: 'assistant.dictation.noLanguage',
-  'not-installed': 'assistant.dictation.notInstalled',
+  language: 'noLanguage',
+  'not-installed': 'notInstalled',
 } as const;
 
+/** How a session ended without words, as the sentence that says so. */
 const ENDING_KEYS = {
-  denied: 'assistant.dictation.denied',
-  'no-speech': 'assistant.dictation.noSpeech',
-  'no-audio': 'assistant.dictation.noAudio',
-  'off-device': 'assistant.dictation.offDevice',
-  failed: 'assistant.dictation.failed',
-} as const;
-
-const PHASE_KEYS = {
-  starting: 'assistant.dictation.starting',
-  listening: 'assistant.dictation.listening',
+  denied: 'denied',
+  'no-speech': 'noSpeech',
+  'no-audio': 'noAudio',
+  'off-device': 'offDevice',
+  failed: 'failed',
 } as const;
 
 /**
@@ -75,8 +112,8 @@ const PHASE_KEYS = {
  * open, how the last attempt ended is history; a question that was heard says
  * nothing at all, because the words in the box are the better answer.
  */
-function statusKey(state: DictationState): MessageKey | null {
-  if (state.phase !== 'idle') return PHASE_KEYS[state.phase];
+function statusKey(state: DictationState): keyof DictationMessages | null {
+  if (state.phase !== 'idle') return state.phase;
   return state.ended === 'none' ? null : ENDING_KEYS[state.ended];
 }
 
@@ -86,6 +123,7 @@ export function AssistantDictation({
   egress = null,
   onStart,
   onStop,
+  messages = ASSISTANT_DICTATION_MESSAGES,
 }: Readonly<AssistantDictationProps>): ReactElement | null {
   const t = useTranslator();
 
@@ -96,18 +134,16 @@ export function AssistantDictation({
   let unavailable: string | null = null;
   if (availability.status === 'unavailable' && availability.reason !== 'no-adapter') {
     unavailable = t(
-      egress === null
-        ? UNAVAILABLE_KEYS[availability.reason]
-        : 'assistant.dictation.noLanguageHosted'
+      messages[egress === null ? UNAVAILABLE_KEYS[availability.reason] : 'noLanguageHosted']
     );
   }
   const hint =
     egress === null
-      ? t('assistant.dictation.hint')
-      : t('assistant.dictation.hintHosted', { host: egress.host, agreement: egress.agreement });
+      ? t(messages.hint)
+      : t(messages.hintHosted, { host: egress.host, agreement: egress.agreement });
 
   const sentence = statusKey(state);
-  const status = sentence === null ? '' : t(sentence);
+  const status = sentence === null ? '' : t(messages[sentence]);
 
   return (
     <div className="or-assistant__dictation">
@@ -120,11 +156,11 @@ export function AssistantDictation({
             disabled={unavailable !== null}
             onClick={onStart}
           >
-            {t('assistant.dictation.speak')}
+            {t(messages.speak)}
           </Button>
         ) : (
           <Button type="button" variant="secondary" iconLeft="square" onClick={onStop}>
-            {t('assistant.dictation.stop')}
+            {t(messages.stop)}
           </Button>
         )}
 

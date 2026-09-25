@@ -23,11 +23,19 @@ The surface decides _which_ turns may be read at all: `useReadback` takes that
 rule as an argument, because "this answer is fit to show" is the app's sentence
 and reading it aloud must be the same sentence rather than a second one.
 
-`createPlatformReadback` is the only adapter shipped. It is the voice already on
-the device, which is what lets readback exist with no configuration surface:
-under ADR-0005 a hosted voice would need an endpoint, a credential and a
-separate acknowledgement before it could ship, and the operating system's own
-synthesiser has none of those to name.
+`createPlatformReadback` is the default adapter. It is the voice already on the
+device, which is what lets readback exist with no configuration surface: the
+operating system's own synthesiser has no endpoint, credential or agreement to
+name.
+
+`createHostedReadback` is the second, for a deployer who chooses a hosted
+text-to-speech service. Like the hosted recogniser below, it takes the endpoint
+and a separate acknowledgement naming the executed agreement (ADR-0005 rule 6)
+and throws at construction without both. Its `HostedSynthesiser` owns the
+request, the audio and the credential, and is handed the answer's text and
+language - never the turn id or anything about the record. It is not wired into
+either app, and the readback contract suite runs it over a scripted synthesiser
+only, not a live service.
 
 ## Asking by voice
 

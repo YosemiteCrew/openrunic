@@ -24,6 +24,16 @@ export type {
   Utterance,
 } from '@openrunic/voice';
 
+export { createHostedReadback } from '@openrunic/voice';
+export type {
+  HostedReadbackEgress,
+  HostedSynthesiser,
+  Playback,
+  PlaybackHandlers,
+} from '@openrunic/voice';
+
+export { createPortalHostedSynthesiser, createPortalHostedReadbackEgress } from './hosted-readback';
+
 export { createPlatformCapture, platformRecognition } from './platform-capture';
 export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture';
 

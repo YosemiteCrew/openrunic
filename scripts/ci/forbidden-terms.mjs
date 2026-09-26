@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Forbidden-terms gate.
 //
-// This repository is public, and no external product is named in it - not in
-// code, comments, tests, fixtures, docs, commit messages, branch names, or
-// pull-request text. This script is the check that enforces that on every pull
-// request.
+// This repository is public, and a list of external product names must never
+// appear in it - not in code, comments, tests, fixtures, docs, commit messages,
+// branch names, or pull-request text. This script checks every pull request
+// against that list.
 //
 // WHAT THIS SCRIPT MUST NEVER DO
 //
@@ -626,8 +626,8 @@ function runScan(argv) {
       process.stderr.write(`  [${finding.surface}] ${where}\n`);
     }
     process.stderr.write(
-      '\nThis repository is public. Never name an external product in code, comments, tests,\n' +
-        'fixtures, docs, commit messages, branch names or pull-request text.\n' +
+      '\nThis repository is public. The names on this list must not appear in code, comments,\n' +
+        'tests, fixtures, docs, commit messages, branch names or pull-request text.\n' +
         'Describe the behaviour and the clinical need instead.\n\n' +
         'The match itself is deliberately not printed: this log is public.\n'
     );

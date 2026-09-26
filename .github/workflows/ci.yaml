@@ -230,9 +230,9 @@ jobs:
           echo "$RESULTS"
           # `skipped` passes: a packages-only change legitimately skips test's
           # coverage set, migration only runs for database changes, and sonar
-          # only runs where it can publish. `cancelled` fails: an
-          # aggregate built on !cancelled() lets a cancelled dependency through
-          # as a pass.
+          # runs only under the conditions on its `if:` above. `cancelled`
+          # fails: an aggregate built on !cancelled() lets a cancelled
+          # dependency through as a pass.
           #
           # Because `skipped` passes, a stage that can skip is a stage that can
           # go quiet. The `repo` stage above is therefore unconditional: it has

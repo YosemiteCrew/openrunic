@@ -239,6 +239,9 @@ What is _not_ excused is the head. `Aikido Security: check code` is the required
 rulesets and it runs on a bot-authored head, so it stays fully required there, and a head carrying
 only the excused check is its own verdict rather than a pass.
 
+Revisit condition: if the vendor adds a way to run Deep Review on a bot-authored head, remove this
+exemption rather than keep it.
+
 ## Release provenance
 
 See [verifying-releases.md](verifying-releases.md) for the operator-facing side: what is published,

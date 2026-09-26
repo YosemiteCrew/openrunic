@@ -20,4 +20,6 @@
 ignore:
   # CVE-2025-60876 in busybox: accepted, the affected component is not used
   # by the shipped images. Owner: maintainers. Re-review by: 2026-11-18.
+  # Revisit condition: sooner, if a fixed busybox reaches the base image or a
+  # shipped image starts using the affected component.
   - vulnerability: CVE-2025-60876

@@ -52,6 +52,10 @@ useDefault = true
   # is lost: what makes this safe to allowlist is the shape of the value, not
   # the punctuation around it.
   #
+  # Checked by scanning a probe file with and without this config: a catalogue
+  # key is reported only without it, and a credential-shaped value on a
+  # `labelKey:` line is still reported with it.
+  #
   # Owner: maintainers. No re-review date, per the header. Revisit condition: if
   # this ever has to be widened - a different key shape, a value with a
   # character this does not allow - that is a signal the two gates have stopped

@@ -1,7 +1,8 @@
 name: Forbidden Terms
 
-# No external product is named anywhere in this repository - in code, comments,
-# tests, fixtures, docs, commit messages, branch names, or pull-request text.
+# A list of external product names must never appear in this repository - in
+# code, comments, tests, fixtures, docs, commit messages, branch names, or
+# pull-request text. This workflow checks every pull request against that list.
 #
 # scripts/ci/forbidden-terms.mjs is the implementation and carries the reasoning
 # for every decision here; scripts/ci/forbidden-terms.test.mjs pins the

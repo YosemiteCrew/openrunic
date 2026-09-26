@@ -348,6 +348,12 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
   'portal.assistant.compose.ask': 'Preguntar',
   'portal.assistant.compose.stop': 'Parar',
+  'portal.assistant.help.visits.lead': '¿Tiene una pregunta sobre sus citas?',
+  'portal.assistant.help.visits.link': 'Pregunte al asistente sobre sus citas',
+  'portal.assistant.help.visits.question': '¿Cuándo es mi próxima cita y para qué es?',
+  'portal.assistant.help.bills.lead': '¿Tiene una pregunta sobre sus facturas?',
+  'portal.assistant.help.bills.link': 'Pregunte al asistente sobre sus facturas',
+  'portal.assistant.help.bills.question': '¿Qué me queda por pagar y a qué visitas corresponde?',
 
   'portal.assistant.readback.label': 'Leer las respuestas en voz alta',
   'portal.assistant.readback.hint':

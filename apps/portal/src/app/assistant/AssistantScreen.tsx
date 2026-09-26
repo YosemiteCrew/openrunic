@@ -40,6 +40,8 @@ import { AssistantComposer } from '@/components/assistant/AssistantComposer';
 import { useAssistant } from '@/components/assistant/AssistantProvider';
 import { AssistantReadback } from '@/components/assistant/AssistantReadback';
 import { AssistantTurnView } from '@/components/assistant/AssistantTurn';
+import { helpQuestionKey, helpTopicGranted } from '@/components/assistant/help';
+import type { HelpTopic } from '@/components/assistant/help';
 import { speakableAnswer } from '@/components/assistant/readback';
 import { announcementFor } from '@/components/assistant/transcript';
 import { useConversation } from '@/components/assistant/useConversation';
@@ -74,6 +76,11 @@ export interface AssistantScreenProps {
   mintRealtime?: RealtimeMint;
   /** The browser's microphone, peer connection and fetch. Injected in tests. */
   realtimeMedia?: BrowserMedia | null;
+  /**
+   * The screen the reader came from asked about this. Its suggested question is
+   * written into the box, unsent, when the practice granted what answers it.
+   */
+  about?: HelpTopic | null;
 }
 
 export function AssistantScreen({
@@ -82,6 +89,7 @@ export function AssistantScreen({
   capture,
   mintRealtime = defaultMintRealtime,
   realtimeMedia,
+  about = null,
 }: Readonly<AssistantScreenProps>) {
   const { availability, settled } = useAssistant();
 
@@ -97,6 +105,7 @@ export function AssistantScreen({
 
   return (
     <ConfiguredAssistant
+      about={about}
       api={api}
       capabilities={availability.capabilities}
       capture={capture}
@@ -108,6 +117,7 @@ export function AssistantScreen({
 }
 
 interface ConfiguredAssistantProps {
+  about: HelpTopic | null;
   api: PortalApi;
   capabilities: AssistantCapabilities;
   readback?: ReadbackPort | null;
@@ -117,6 +127,7 @@ interface ConfiguredAssistantProps {
 }
 
 function ConfiguredAssistant({
+  about,
   api,
   capabilities,
   readback,
@@ -152,6 +163,7 @@ function ConfiguredAssistant({
       >
         {(patient) => (
           <Conversation
+            about={about}
             capabilities={capabilities}
             capture={capture}
             chartPatientId={patient.id}
@@ -166,6 +178,7 @@ function ConfiguredAssistant({
 }
 
 interface ConversationProps {
+  about: HelpTopic | null;
   capabilities: AssistantCapabilities;
   chartPatientId: string;
   readback?: ReadbackPort | null;
@@ -175,6 +188,7 @@ interface ConversationProps {
 }
 
 function Conversation({
+  about,
   capabilities,
   chartPatientId,
   readback,
@@ -185,6 +199,8 @@ function Conversation({
   const t = useTranslator();
   const { runTurn } = useAssistant();
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
+  const suggested =
+    about !== null && helpTopicGranted(capabilities, about) ? t(helpQuestionKey(about)) : '';
 
   /* Built once. A new port every render would resubscribe to the device's voice
      list on every keystroke, and the effect that speaks would take a new
@@ -266,6 +282,7 @@ function Conversation({
         capture={microphone.port}
         chartPatientId={chartPatientId}
         dictationEgress={microphone.egress}
+        initialQuestion={suggested}
         onAsk={ask}
         onStop={stop}
       />

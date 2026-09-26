@@ -54,6 +54,12 @@ export interface AssistantComposerProps {
   capture?: CapturePort | null;
   /** Where that microphone sends the audio, or null while it stays on the device. */
   dictationEgress?: DictationEgress | null;
+  /**
+   * A question already in the box when it first draws, from the screen the
+   * reader came from. It is written in and never sent: the reader still presses
+   * the same button to ask it, and can change or clear it first.
+   */
+  initialQuestion?: string;
 }
 
 export function AssistantComposer({
@@ -63,9 +69,10 @@ export function AssistantComposer({
   chartPatientId,
   capture = null,
   dictationEgress = null,
+  initialQuestion = '',
 }: Readonly<AssistantComposerProps>) {
   const t = useTranslator();
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState(initialQuestion);
 
   const dictated = useCallback((text: string) => {
     setQuestion((current) => appendDictation(current, text, MAX_QUESTION));

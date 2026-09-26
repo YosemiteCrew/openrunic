@@ -18,45 +18,32 @@ rules:
       # `matrix.workspace`, `matrix.shard` and `matrix.shards` are interpolated
       # into `run:` blocks in the reusable core and test stages. The values come
       # from scripts/ci/affected-matrix.mjs and scripts/ci/test-matrix.mjs, not
-      # from pull-request input, so they are not attacker-controllable today -
-      # but the correct fix is still to pass them through `env:` so that stays
-      # true by construction rather than by inspection.
-      #
-      # Not fixed here because a concurrent pull request (chore/lint-gates) owned
-      # ci.yaml and the reusable _*.yaml set; editing them from this branch
-      # would have guaranteed a merge conflict.
-      #
-      # THAT CONDITION IS NOW MET: chore/lint-gates landed as #35. Moving these
-      # interpolations into `env:` is unblocked and is the next change to make
-      # here. It is deliberately not folded into this pull request, which is
-      # already a large security-gate addition and would become harder to review
-      # for a fix that touches five unrelated workflow files.
-      # Revisit condition: DELETE this whole ignore block once that follow-up
-      # lands. If you are reading this and #35 is merged, the follow-up is
-      # overdue rather than optional.
+      # from pull-request input - but the correct fix is still to pass them
+      # through `env:` so that stays true by construction rather than by
+      # inspection.
+      # Revisit condition: DELETE this whole ignore block once these
+      # interpolations move into `env:`.
       - _core.yaml
       - _test.yaml
       # ci.yaml and storybook.yml interpolate `contains(needs.*.result, ...)`
       # into their aggregate gates' `run:` blocks. The expression evaluates to a
       # bare `true`/`false` produced by GitHub, not by any user, so there is
       # nothing to inject - but the same `env:` fix applies.
-      # Revisit condition: same as above - fix on chore/lint-gates, then delete.
+      # Revisit condition: same as above - move it into `env:`, then delete.
       - ci.yaml
       - storybook.yml
       # `matrix.app_key` is interpolated into the Sonar stage's token-selection
       # `run:` block. Its values come from the matrix literal in ci.yaml, never
       # from pull-request input; the `env:` fix applies here too.
-      # Revisit condition: same as above - fix on chore/lint-gates, then delete.
+      # Revisit condition: same as above - move it into `env:`, then delete.
       - _sonar.yaml
 
   unpinned-images:
     ignore:
       # `postgres:17-alpine` as the migration stage's service container. Pinning
-      # it to a digest is the right answer and it is a one-line change, but
-      # _migration.yaml is part of the reusable set the concurrent pull request
-      # owns.
-      # Revisit condition: once chore/lint-gates has landed, pin the service
-      # image to a sha256 digest and DELETE this entry.
+      # it to a digest is the right answer and it is a one-line change.
+      # Revisit condition: pin the service image to a sha256 digest and DELETE
+      # this entry.
       - _migration.yaml
 
   concurrency-limits:

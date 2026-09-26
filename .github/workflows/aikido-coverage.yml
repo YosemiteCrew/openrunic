@@ -1,18 +1,15 @@
 name: Aikido Coverage
 
-# `Aikido Security: Deep Review` reported `skipped` on every pull request for an
-# unmeasured number of weeks, with the summary "Aikido skipped this review
-# because there are no credits left in the wallet." Nothing said so: `skipped`
-# is neither a failure nor a success, so there was no red row, no notification,
-# and no entry in any list a reviewer reads. A security review was off and the
-# pull request page rendered what it renders when the review passes. #408.
+# The Aikido contexts are posted by a GitHub App, and a review that declines
+# reports `skipped`, which is neither a failure nor a success: no red row, no
+# notification, and no entry in any list a reviewer reads. The pull request page
+# renders what it renders when the review passes. #408.
 #
-# Topping the wallet up is an owner action and no file here configures it. This
-# is the other half: make the state announce itself. The job reads the checks
-# the Aikido app posted on this head and fails when one it requires (see the
-# plan below) declined to run, printing the check's own `output.summary` - the sentence that names the cause,
-# which the conclusion does not, because `skipped` is the same word for a wallet,
-# a path filter and a draft.
+# This job makes that state announce itself. It reads the checks the Aikido app
+# posted on this head and fails when one it requires (see the plan below)
+# declined to run, printing the check's own `output.summary` - the sentence that
+# names the cause, which the conclusion does not, because `skipped` is the same
+# word for several causes, a path filter and a draft among them.
 #
 # Not run on a draft, and that is deliberate rather than an omission. Aikido
 # skips a draft on purpose and says so in the same `skipped` conclusion; keying
@@ -34,20 +31,15 @@ name: Aikido Coverage
 # included. A file that is not exactly that shape fails the job and says why.
 # With no file, every Aikido check has to run, as before the file existed.
 #
-# The plan does not include Deep Review today, so `Aikido Security: Deep Review`
-# reports `skipped` and appears as a notice on every pull request except one
-# whose head commit is bot-authored, where the bot exemption below covers it. If
-# the plan later includes it, add "Aikido Security: Deep Review" to `included`
-# in that file, and from then on a skipped Deep Review fails this job again.
+# `Aikido Security: Deep Review` is not listed in that file, so a skipped Deep
+# Review appears as a notice, except on a pull request whose head commit is
+# bot-authored, where the bot exemption below covers it. Add
+# "Aikido Security: Deep Review" to `included` in that file and a skipped Deep
+# Review fails this job again.
 #
 # No `merge_group` and no `push`: both Aikido contexts are posted by a GitHub
 # App on the pull request, and it does not scan a bare branch push. Running
 # there would fail every time and say nothing.
-#
-# This is not a required context on either ruleset, so today it is a red row
-# rather than a block. That is the owner's call to make in the ruleset; what
-# this changes is that there is now something to look at. A red row is read
-# badly, but it is read - `skipped` is not rendered as anything at all.
 #
 # scripts/ci/aikido-coverage.mjs is the implementation; its tests run first,
 # because a guard whose own tests are broken has no business reporting on a pull

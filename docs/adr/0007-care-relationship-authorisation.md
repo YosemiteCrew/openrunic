@@ -285,7 +285,7 @@ name.
 The `facility-activity` source authorises every current member of a facility on the strength of any
 activity there. Unbounded, "any activity" means any activity ever: a single visit years ago let
 today's entire front desk read the chart with no break-glass and no reason, which is the "knowing of
-them is enough" this whole change removes, one step out. Codex found it after the withdrawn-status
+them is enough" this whole change removes, one step out. Review found it after the withdrawn-status
 fix, which had only stopped withdrawn rows counting and left every valid historical row timeless.
 
 The evidence now goes stale after a year. A visit inside the window is current enough that opening

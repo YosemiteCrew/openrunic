@@ -1,7 +1,7 @@
 # Brand assets
 
 These files are **vendored copies of openrunic's own brand assets**, exported from the openrunic
-design-system project in Claude Design (the canonical source for the openrunic brand). They are
+design-system project in the design tool (the canonical source for the openrunic brand). They are
 shipped artefacts, not generated at build time.
 
 ## Provenance

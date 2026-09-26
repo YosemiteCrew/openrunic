@@ -1,23 +1,18 @@
 #!/usr/bin/env node
 // Aikido has to have actually reviewed this pull request.
 //
-// `Aikido Security: Deep Review` reported `skipped` on every pull request for
-// an unmeasured number of weeks with the summary "Aikido skipped this review
-// because there are no credits left in the wallet." Nothing said so. #408 is
-// the report; this is the half of it that lives in the repository.
-//
-// The problem is not that the wallet emptied - that is an owner action and no
-// file here configures it. The problem is that emptying it produced `skipped`,
-// and `skipped` is neither a failure nor a success: no red row, no
-// notification, no entry in any list a reviewer reads. A security review was
-// off and the pull request page rendered exactly what it renders when the
-// review passes. `GUIDES/A_CHECK_THAT_DID_NOT_RUN_IS_NOT_A_CHECK_THAT_PASSED`
-// collects six of these; this is the one that ran for weeks.
+// The Aikido contexts are posted by a GitHub App, so nothing in this repository
+// decides whether they run. A review that declines reports `skipped`, and
+// `skipped` is neither a failure nor a success: no red row, no notification, no
+// entry in any list a reviewer reads, and the pull request page renders exactly
+// what it renders when the review passes. #408 is the report; this is the half
+// of it that lives in the repository.
 //
 // So: read the checks Aikido posted on this head, and fail when one of them
 // declined to run. The conclusion alone cannot say that - `skipped` is the same
-// word for a wallet, a path filter and a draft - so the check's own
-// `output.summary` is printed, which is the sentence that names the cause.
+// word for several causes, a path filter and a draft among them - so the
+// check's own `output.summary` is printed, which is the sentence that names the
+// cause.
 //
 // ## What counts as declining
 //
@@ -187,9 +182,8 @@ export const isOutsidePlan = (run, plan) =>
  *   muted for it.
  *
  * Everything else declines, `action_required` included - what an app posts
- * when it needs a human to go and do something, an empty wallet being the
- * example this file exists for. The denylist this replaced did not name it,
- * so it was scoring exit 0 and a green row.
+ * when it needs a human to go and do something. The denylist this replaced did
+ * not name it, so it was scoring exit 0 and a green row.
  *
  * ## Why the direction matters more than the membership
  *
@@ -225,17 +219,15 @@ export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
  * Exempting a skip is the move #408 exists to argue against, so the reason it
  * is right here has to be the thing that is different, and it is this: on a
  * bot-authored head there is no Deep Review signal to lose, of any cause. The
- * vendor declines it before the wallet, the strictness or the path filter is
- * ever consulted, so a wallet that emptied and a wallet that is full produce
- * the identical `skipped` on that context. A gate cannot report a state it
- * cannot observe, and the empty wallet remains observable on every
+ * vendor declines it before any other setting is consulted, so every cause
+ * produces the identical `skipped` on that context. A gate cannot report a
+ * state it cannot observe, and every other cause remains observable on every
  * human-authored head, where this exemption does not apply.
  *
  * What would be a silencing is exempting the head. `Aikido Security: check
  * code` is the required context, it carries the SCA, and it RUNS on a
  * bot-authored head - `success` on all three of this repository's dependabot
- * pull requests, measured on #546, #491 and #414. It is also the context the
- * wallet does not reach (docs/security-gates.md). So it is observable there,
+ * pull requests, measured on #546, #491 and #414. So it is observable there,
  * and it is left fully guarded.
  *
  * That guard is not redundant with the ruleset. GitHub's required status checks
@@ -259,9 +251,7 @@ export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
  * hand-fixed lockfile conflict, a review fix. There `pull_request.user.type` is
  * still `Bot` while Aikido's rule does not fire, so an exemption keyed on the
  * pull request author would excuse a Deep Review that skipped for some OTHER
- * cause. With the wallet empty, as it was on this branch's own head, that other
- * cause is #408 - and the exemption would have printed "whatever the wallet
- * says" while silencing exactly it.
+ * cause, and silence exactly the state this gate exists to report.
  */
 export const BOT_EXEMPT = Object.freeze({
   name: 'Aikido Security: Deep Review',
@@ -352,10 +342,9 @@ export function classify(checkRuns, total = checkRuns.length, options = {}) {
 /**
  * The Aikido contexts on a head, as one comparable string.
  *
- * Keyed on the check name rather than a count, so the owner disabling
- * `Deep Review` - one of the two remedies #408 asks for - settles on the
- * remaining context instead of waiting out the deadline for a second one that
- * is never coming.
+ * Keyed on the check name rather than a count, so a repository with
+ * `Deep Review` disabled settles on the remaining context instead of waiting
+ * out the deadline for a second one that is never coming.
  */
 const contextsOf = (result) =>
   result.runs
@@ -427,7 +416,7 @@ export async function listCheckRuns(repo, sha, token, fetchImpl = fetch) {
  * earlier read would otherwise be vouching for.
  *
  * The gap is narrower than `intervalMs`, so this costs one extra poll on a
- * fully-reviewed head and nothing at all today, where every head declines.
+ * fully-reviewed head and nothing on a head that declines.
  */
 export async function awaitReview(repo, sha, token, options = {}) {
   const {
@@ -482,7 +471,7 @@ export function describe(result, sha) {
     .map(
       (run) =>
         `  ${oneLine(run.name)}  ${String(run.conclusion)}  EXEMPT: the head is bot-authored, and\n` +
-        '    Aikido declines this context on a bot-authored head whatever the wallet says.\n' +
+        '    Aikido declines this context on every bot-authored head.\n' +
         '    Accepted 2026-09-22, #549. See docs/security-gates.md.\n'
     )
     .join('');
@@ -513,9 +502,8 @@ export function describe(result, sha) {
       return (
         `${head}: Aikido did not review this pull request.\n\n${lines.join('\n')}\n\n` +
         'A declined check is not a passed check. Read the summary above: it names the\n' +
-        'cause, and the conclusion does not. An empty credit wallet is an owner action -\n' +
-        'nothing in this repository configures it - and until it is resolved no Aikido\n' +
-        'review is happening on any pull request, whatever the pull request page shows.\n' +
+        'cause, and the conclusion does not. Until that cause is resolved, no Aikido\n' +
+        'review is happening on this pull request, whatever the pull request page shows.\n' +
         notices
       );
     case 'missing':

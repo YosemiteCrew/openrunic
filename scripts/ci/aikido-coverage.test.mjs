@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 
@@ -685,16 +685,23 @@ const failingWith = (code) => () => {
   throw Object.assign(new Error(`${code}: ${PLAN_FILE}`), { code });
 };
 
-test('the committed plan file is the default, parses, and lists check code', () => {
+test('the committed plan file is the default, and parses when it is there', () => {
   // The file the job reads, not a fixture: a broken plan fails here, in the step
-  // that runs before the gate, rather than only as the gate's own red row.
+  // that runs before the gate, rather than only as the gate's own red row. An
+  // absent file is accepted, because no file is the strict mode and deleting the
+  // file has to reach it rather than fail this step first.
+  const file = path.join(REPO_ROOT, PLAN_FILE);
   const plan = loadPlan();
-  assert.ok(Array.isArray(plan), `${PLAN_FILE} must exist and parse`);
+  if (!existsSync(file)) {
+    assert.equal(plan, null);
+    return;
+  }
+  assert.ok(Array.isArray(plan), `${PLAN_FILE} must parse`);
   assert.ok(plan.includes(ALWAYS_INCLUDED));
   assert.ok(Object.isFrozen(plan));
   assert.deepEqual(
     plan,
-    parsePlan(readFileSync(path.join(REPO_ROOT, PLAN_FILE), 'utf8')),
+    parsePlan(readFileSync(file, 'utf8')),
     'loadPlan() with no argument reads the committed file'
   );
   assert.equal(ALWAYS_INCLUDED, 'Aikido Security: check code');
@@ -775,6 +782,55 @@ test('a check name cannot cut the workflow notice short', () => {
     describe(result, 'abc'),
     /^::notice::Aikido Security: 100%25 x%0A::error::second line reported skipped\. /mu
   );
+});
+
+test('no value from the API reaches the log as a line of its own', () => {
+  // A line break in a name, title or summary would start a new log line, and
+  // one that begins with `::` is read by the runner as a workflow command. So
+  // every verdict's message is checked whole: the only line allowed to start
+  // with `::` is the gate's own notice.
+  const injected = (name, conclusion) => ({
+    ...run(`${name}\n::error::from the name`, conclusion, 'ok\r\n::error::from the summary'),
+    output: { title: 'Scan\r::error::from the title', summary: 'x\r::error::from the summary' },
+  });
+  const messages = [
+    describe(classify([injected('A', 'skipped')]), 'abc'),
+    describe(classify([checkCode('success', 'ok'), injected('B', 'success')]), 'abc'),
+    describe(classify([injected('C', 'skipped')], 1, { plan: checkCodeOnly }), 'abc'),
+    describe(classify([checkCode(null, undefined), injected('D', 'skipped')], 2), 'abc'),
+    describe(
+      classify([checkCode('success', 'ok')], 1, {
+        plan: Object.freeze([ALWAYS_INCLUDED, 'E\n::error::from the plan']),
+      }),
+      'abc'
+    ),
+  ];
+  assert.deepEqual(
+    messages.map((message) => /^aikido-coverage: abc: /u.exec(message)?.[0]),
+    Array(messages.length).fill('aikido-coverage: abc: ')
+  );
+  for (const message of messages) {
+    assert.doesNotMatch(message, /^\s*::(?!notice::)/mu, message);
+    assert.doesNotMatch(message, /\r/u, 'no carriage return either');
+  }
+});
+
+test('a skipped check outside the plan is reported while another is still running', () => {
+  // A head still running at the deadline fails the job, and the notice for the
+  // check that already finished belongs in that output as much as in a pass.
+  const result = classify([checkCode(null, undefined), deepReview('skipped', NO_CREDITS)], 2, {
+    plan: checkCodeOnly,
+  });
+  assert.equal(result.verdict, 'running');
+  assert.deepEqual(
+    result.runs.map((entry) => entry.name),
+    ['Aikido Security: check code']
+  );
+  assert.deepEqual(
+    result.notices.map((entry) => entry.name),
+    ['Aikido Security: Deep Review']
+  );
+  assert.match(describe(result, 'abc'), /^::notice::Aikido Security: Deep Review reported /mu);
 });
 
 test('with a plan, an unlisted check that declined without skipping still fails', () => {

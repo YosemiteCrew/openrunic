@@ -324,11 +324,14 @@ export function classify(checkRuns, total = checkRuns.length, options = {}) {
   const mine = checkRuns.filter((run) => run.app?.slug === AIKIDO_APP);
   const none = { total, runs: [], exempt: [], notices: [] };
   if (mine.length === 0) return { verdict: total === 0 ? 'no-checks' : 'absent', ...none };
-  if (mine.some((run) => run.status !== 'completed')) {
-    return { verdict: 'running', total, runs: mine, exempt: [], notices: [] };
-  }
   const exempt = headAuthoredByBot ? mine.filter(isBotExempt) : [];
+  // Before the running check, so a skipped check outside the plan is still
+  // reported on a head where another check is outstanding at the deadline.
   const notices = mine.filter((run) => !exempt.includes(run) && isOutsidePlan(run, plan));
+  if (mine.some((run) => run.status !== 'completed')) {
+    const runs = mine.filter((run) => !notices.includes(run));
+    return { verdict: 'running', total, runs, exempt: [], notices };
+  }
   const rest = mine.filter((run) => !exempt.includes(run) && !notices.includes(run));
   const declined = rest.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
   if (declined.length > 0) return { verdict: 'declined', total, runs: declined, exempt, notices };
@@ -458,19 +461,27 @@ export async function awaitReview(repo, sha, token, options = {}) {
 const escapeCommand = (text) =>
   text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 
+/**
+ * One line of log text. Check names, titles and summaries come from the API,
+ * and a line break inside one would start a line of its own, which the runner
+ * reads as a workflow command when it begins with `::`.
+ */
+const oneLine = (text) => String(text).replaceAll(/[\r\n]+/gu, ' ');
+const summaryOf = (run) => oneLine((run.output?.summary ?? '(no summary)').split('\n')[0]);
+
 /** The announcement, which is the whole point of the gate. */
 export function describe(result, sha) {
   const head = `aikido-coverage: ${sha}`;
   const lines = result.runs.map(
     (run) =>
-      `  ${run.name}  ${run.conclusion ?? run.status}\n` +
-      `    ${run.output?.title ?? '(no title)'}\n` +
-      `    ${(run.output?.summary ?? '(no summary)').split('\n')[0]}`
+      `  ${oneLine(run.name)}  ${oneLine(run.conclusion ?? run.status)}\n` +
+      `    ${oneLine(run.output?.title ?? '(no title)')}\n` +
+      `    ${summaryOf(run)}`
   );
   const exemptions = (result.exempt ?? [])
     .map(
       (run) =>
-        `  ${run.name}  ${String(run.conclusion)}  EXEMPT: the head is bot-authored, and\n` +
+        `  ${oneLine(run.name)}  ${String(run.conclusion)}  EXEMPT: the head is bot-authored, and\n` +
         '    Aikido declines this context on a bot-authored head whatever the wallet says.\n' +
         '    Accepted 2026-09-22, #549. See docs/security-gates.md.\n'
     )
@@ -480,9 +491,9 @@ export function describe(result, sha) {
   const notices = (result.notices ?? [])
     .map(
       (run) =>
-        `  ${run.name}  ${String(run.conclusion)}  NOTICE: not a check this repository's plan\n` +
-        `    includes (${PLAN_FILE}), so it is reported and not required.\n` +
-        `    ${(run.output?.summary ?? '(no summary)').split('\n')[0]}\n` +
+        `  ${oneLine(run.name)}  ${String(run.conclusion)}  NOTICE: not a check this repository's\n` +
+        `    plan includes (${PLAN_FILE}), so it is reported and not required.\n` +
+        `    ${summaryOf(run)}\n` +
         `::notice::${escapeCommand(
           `${run.name} reported ${String(run.conclusion)}. It is not a check this ` +
             `repository's plan includes (${PLAN_FILE}), so it is not required.`
@@ -510,7 +521,7 @@ export function describe(result, sha) {
     case 'missing':
       return (
         `${head}: a check this repository's plan includes was not posted.\n\n` +
-        result.missing.map((name) => `  missing: ${name}\n`).join('') +
+        result.missing.map((name) => `  missing: ${oneLine(name)}\n`).join('') +
         `\n${lines.join('\n')}\n\n` +
         `Every check listed in ${PLAN_FILE} has to run on the head. Check that the app is\n` +
         'still installed and has not renamed the context, or correct the name in the file.\n' +
@@ -520,7 +531,8 @@ export function describe(result, sha) {
       return (
         `${head}: Aikido was still running at the deadline.\n\n${lines.join('\n')}\n\n` +
         'A review that has not finished has not reviewed anything. Re-run this check once\n' +
-        'the Aikido checks above have completed.\n'
+        'the Aikido checks above have completed.\n' +
+        notices
       );
     case 'only-exempt':
       return (

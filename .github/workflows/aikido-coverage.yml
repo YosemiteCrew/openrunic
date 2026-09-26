@@ -9,8 +9,8 @@ name: Aikido Coverage
 #
 # Topping the wallet up is an owner action and no file here configures it. This
 # is the other half: make the state announce itself. The job reads the checks
-# the Aikido app posted on this head and fails when one of them declined to run,
-# printing the check's own `output.summary` - the sentence that names the cause,
+# the Aikido app posted on this head and fails when one it requires (see the
+# plan below) declined to run, printing the check's own `output.summary` - the sentence that names the cause,
 # which the conclusion does not, because `skipped` is the same word for a wallet,
 # a path filter and a draft.
 #
@@ -27,16 +27,18 @@ name: Aikido Coverage
 # checks this repository's plan includes, as `{ "included": [<check name>] }`.
 # Each listed check has to be posted on the head and reach a verdict. An Aikido
 # check that is not listed and reports `skipped` is printed as a notice in the
-# job output and on the run summary, and does not fail the job; any other
-# conclusion from it still does. `Aikido Security: check code` has to be listed,
-# so a skipped `check code` fails on every head, bot-authored ones included. A
-# file that is not exactly that shape fails the job and says why. With no file,
-# every Aikido check has to run.
+# job output and on the run summary, and does not fail the job; one that reports
+# any other conclusion outside the three that count as a verdict (`success`,
+# `failure`, `timed_out`) still fails it. `Aikido Security: check code` has to be
+# listed, so a skipped `check code` fails on every head, bot-authored ones
+# included. A file that is not exactly that shape fails the job and says why.
+# With no file, every Aikido check has to run, as before the file existed.
 #
 # The plan does not include Deep Review today, so `Aikido Security: Deep Review`
-# reports `skipped` on every pull request and appears as a notice. If the plan
-# later includes it, add "Aikido Security: Deep Review" to `included` in that
-# file, and from then on a skipped Deep Review fails this job again.
+# reports `skipped` and appears as a notice on every pull request except one
+# whose head commit is bot-authored, where the bot exemption below covers it. If
+# the plan later includes it, add "Aikido Security: Deep Review" to `included`
+# in that file, and from then on a skipped Deep Review fails this job again.
 #
 # No `merge_group` and no `push`: both Aikido contexts are posted by a GitHub
 # App on the pull request, and it does not scan a bare branch push. Running

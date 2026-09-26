@@ -21,7 +21,7 @@ stated explicitly.
 | **Synthetic data only**                          | `phi-guard.yml`         | Real patient data reaching the repository                         | Allowlists in `scripts/ci/phi-guard.mjs` |
 | **Release provenance**                           | `release-attest.yml`    | An operator installing an image nobody can trace                  | Not applicable                           |
 | **Exception expiry**                             | `exception-expiry.yml`  | An accepted finding outliving the reasoning that accepted it      | None, deliberately: it guards the others |
-| **Aikido coverage**                              | `aikido-coverage.yml`   | The Aikido review declining to run and reporting nothing at all   | None, deliberately: it guards a scanner  |
+| **Aikido coverage**                              | `aikido-coverage.yml`   | The Aikido review declining to run and reporting nothing at all   | `.github/aikido-plan.json` (see below)   |
 | PR governance                                    | `pr-governance.yml`     | Untitled or unscoped changes entering history                     | None                                     |
 
 The gates in bold are the subject of the rest of this page. The others are documented where they are
@@ -180,7 +180,8 @@ Topping the wallet up is an owner action. `aikido-coverage.yml` is the other hal
 check runs the app posted on the head and fails unless the conclusion is one of the three that mean
 Aikido reached a verdict - `success`, `failure`, `timed_out` - printing the check's own
 `output.summary`, which names the cause where the conclusion cannot. Everything else declines,
-`skipped` and `action_required` included.
+`skipped` and `action_required` included, with one change once a plan file exists: a check outside
+this repository's plan that reports `skipped` is a notice rather than a failure (see below).
 
 The list is stated in that direction on purpose, and only the closed side of it is written down
 here. Naming the conclusions that decline leaves every value nobody thought of falling through to
@@ -223,15 +224,16 @@ code` reporting `success` with a scan id on twelve consecutive heads while the w
 `.github/aikido-plan.json` lists the Aikido checks this repository's plan includes, as
 `{ "included": [<check name>] }`. Each listed check has to be posted on the head and reach a verdict.
 An Aikido check that is not listed and reports `skipped` is printed as a notice in the job output
-and on the run summary instead of failing the job; any other conclusion from it still fails.
+and on the run summary instead of failing the job; one that reports any other conclusion outside
+the three that count as a verdict still fails it.
 `Aikido Security: check code` has to be listed - the code refuses a plan without it - so a skipped
 `check code` fails on every head, bot-authored ones included. A file that is not valid JSON or not
 exactly that shape fails the job with a message naming the problem. With no file at all, every
-Aikido check has to run.
+Aikido check has to run, as it did before the file existed.
 
 The plan does not include Deep Review, so `Aikido Security: Deep Review` appears as a notice on
-every pull request. When the plan includes it, add it to `included`, and a skipped Deep Review fails
-the job again.
+every pull request except one whose head commit is bot-authored, where the exemption below covers
+it. When the plan includes it, add it to `included`, and a skipped Deep Review fails the job again.
 
 ### The bot-authored head exemption, accepted 2026-09-22
 

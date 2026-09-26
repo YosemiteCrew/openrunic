@@ -90,19 +90,34 @@ export default defineConfig({
     {
       name: 'desktop-1440',
       testIgnore: /portal\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      // Stock Chrome for the same reason as the portal project below: Find
+      // available carries a microphone, and bundled headless Chromium crashes
+      // when it asks whether the on-device recogniser is available.
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 1440, height: 900 },
+      },
     },
     {
       // Below 1024 the navigation rail collapses behind a Menu button, so this
       // project exercises a genuinely different shell, not just a narrower one.
       name: 'tablet-768',
       testIgnore: /portal\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 768, height: 1024 },
+      },
     },
     {
       name: 'phone-375',
       testIgnore: /portal\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 375, height: 812 },
+      },
     },
     {
       name: 'portal-chrome',

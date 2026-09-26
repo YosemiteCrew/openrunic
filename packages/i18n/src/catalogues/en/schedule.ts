@@ -176,6 +176,23 @@ export const schedule: Messages = {
     'The request asks for {asked}, and the schedule is showing {shown}. No slots are listed until the day is settled.',
   'schedule.findAvailable.ask.showDay': 'Show {date}',
   'schedule.findAvailable.ask.keepDay': 'Search {date} instead',
+  /* Saying the request. The words land in the field above and are read only
+     when the reader presses Read request, so a misheard name is corrected first. */
+  'schedule.findAvailable.dictation.speak': 'Say the request',
+  'schedule.findAvailable.dictation.hint':
+    'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the field above, where you can correct them before you read the request.',
+  'schedule.findAvailable.dictation.listening':
+    'The microphone is on. Your words go into the field above.',
+  'schedule.findAvailable.dictation.denied':
+    'The microphone was not allowed, so nothing was heard. You can allow it in your browser settings, or type the request.',
+  'schedule.findAvailable.dictation.noSpeech':
+    'Nothing was heard. You can try again, or type the request.',
+  'schedule.findAvailable.dictation.noAudio':
+    'No microphone could be opened, so nothing was heard. You can type the request instead.',
+  'schedule.findAvailable.dictation.offDevice':
+    'This device would only have done this by sending the sound away, so nothing was heard. You can type the request instead.',
+  'schedule.findAvailable.dictation.failed':
+    'The microphone stopped. You can try again, or type the request.',
   'schedule.findAvailable.field.provider': 'Clinician',
   'schedule.findAvailable.field.anyProvider': 'Any clinician on this day',
   'schedule.findAvailable.field.duration': 'Length',

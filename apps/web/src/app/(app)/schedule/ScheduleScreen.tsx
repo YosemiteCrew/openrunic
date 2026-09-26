@@ -2,6 +2,7 @@
 
 import type { Translator } from '@openrunic/i18n';
 import { Button, IconButton, Select } from '@openrunic/ui';
+import type { CapturePort } from '@openrunic/voice';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
@@ -56,6 +57,8 @@ import { useTranslator } from '@/lib/i18n/messages';
 export interface ScheduleScreenProps {
   /** Injectable for tests. Defaults to the app's `api`. */
   client?: ApiClient;
+  /** The Find available microphone. Absent means the device's own; injected in tests. */
+  capture?: CapturePort | null;
 }
 
 interface ToastMessage {
@@ -275,7 +278,7 @@ function DayGrid({
   );
 }
 
-export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): ReactElement {
+export function ScheduleScreen({ client, capture }: Readonly<ScheduleScreenProps>): ReactElement {
   const t = useTranslator();
   const [day, setDay] = useState<string>(() => clinicToday());
   const [facilityId, setFacilityId] = useState<string>('');
@@ -480,6 +483,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
         facility: facility.name,
       })
     : t('schedule.day.description', { date: formatDate(t, day) });
+  const captureProps = capture === undefined ? {} : { capture };
 
   return (
     <AppShell
@@ -536,6 +540,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
           onDayChange={setDay}
           onBook={setBookingSlot}
           onClose={() => setFindingSlots(false)}
+          {...captureProps}
         />
       ) : null}
 

@@ -9,6 +9,14 @@
 export { createPlatformReadback, platformSpeech } from './platform.js';
 export type { PlatformSpeech } from './platform.js';
 
+export { createHostedReadback } from './hosted-readback.js';
+export type {
+  HostedReadbackEgress,
+  HostedSynthesiser,
+  Playback,
+  PlaybackHandlers,
+} from './hosted-readback.js';
+
 export { readbackAvailability } from './ports.js';
 export type {
   ReadbackAvailability,

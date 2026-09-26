@@ -218,6 +218,21 @@ scanning, and a credited feature that runs out declines rather than passing. It 
 rather than a measurement taken here, so it is dated; what agrees with it from this side is `check
 code` reporting `success` with a scan id on twelve consecutive heads while the wallet was empty.
 
+### The checks this repository's plan includes
+
+`.github/aikido-plan.json` lists the Aikido checks this repository's plan includes, as
+`{ "included": [<check name>] }`. Each listed check has to be posted on the head and reach a verdict.
+An Aikido check that is not listed and reports `skipped` is printed as a notice in the job output
+and on the run summary instead of failing the job; any other conclusion from it still fails.
+`Aikido Security: check code` has to be listed - the code refuses a plan without it - so a skipped
+`check code` fails on every head, bot-authored ones included. A file that is not valid JSON or not
+exactly that shape fails the job with a message naming the problem. With no file at all, every
+Aikido check has to run.
+
+The plan does not include Deep Review, so `Aikido Security: Deep Review` appears as a notice on
+every pull request. When the plan includes it, add it to `included`, and a skipped Deep Review fails
+the job again.
+
 ### The bot-authored head exemption, accepted 2026-09-22
 
 Aikido declines `Aikido Security: Deep Review` on any head whose latest commit was authored by a

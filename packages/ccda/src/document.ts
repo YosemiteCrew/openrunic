@@ -1,6 +1,7 @@
 import type { CcdDocument } from './domain.js';
 import { clinicalDocument, headerElements, readHeader } from './header.js';
-import { readSection, renderSection } from './section.js';
+import { renderSection } from './section.js';
+import type { SectionSpec } from './section.js';
 import { allergiesSection } from './sections/allergies.js';
 import {
   encountersSection,
@@ -79,17 +80,26 @@ function readCcd(root: XmlElement): CcdDocument {
     throw new CcdaError(`Expected a ClinicalDocument, found <${root.name}>`);
   }
 
+  const sourceSections = sectionsOf(root);
+  const selected = new Set<XmlElement>();
+  const read = <T>(spec: SectionSpec<T>): T[] => {
+    const section = preferredSection(sourceSections, descriptorFor(spec), selected);
+    if (section === undefined) return [];
+    selected.add(section);
+    return spec.read(section);
+  };
+
   return {
     ...readHeader(root),
-    allergies: readSection(root, allergiesSection),
-    medications: readSection(root, medicationsSection),
-    problems: readSection(root, problemsSection),
-    results: readSection(root, resultsSection),
-    vitals: readSection(root, vitalsSection),
-    immunisations: readSection(root, immunisationsSection),
-    encounters: readSection(root, encountersSection),
-    plan: readSection(root, planSection),
-    socialHistory: readSection(root, socialHistorySection),
+    allergies: read(allergiesSection),
+    medications: read(medicationsSection),
+    problems: read(problemsSection),
+    results: read(resultsSection),
+    vitals: read(vitalsSection),
+    immunisations: read(immunisationsSection),
+    encounters: read(encountersSection),
+    plan: read(planSection),
+    socialHistory: read(socialHistorySection),
   };
 }
 
@@ -133,6 +143,7 @@ export interface CcdPreviewUnidentified {
 
 export interface CcdPreview {
   readonly document: CcdDocument;
+  readonly patientMrnAuthority?: string;
   readonly sections: readonly CcdSectionPreview[];
   readonly rejections: readonly CcdPreviewRejection[];
   readonly unidentified: readonly CcdPreviewUnidentified[];
@@ -169,7 +180,7 @@ function descriptor<T>(
     readonly template: { readonly root: string };
     read(section: XmlElement): T[];
   },
-  unidentified: (entry: T) => readonly string[]
+  displays: (entry: T) => readonly string[]
 ): SectionDescriptor {
   return {
     name,
@@ -178,7 +189,7 @@ function descriptor<T>(
     templateRoot: spec.template.root,
     inspect: (section) =>
       spec.read(section).map((entry) => ({
-        unidentified: unidentified(entry).filter((display) => display.startsWith('Unknown')),
+        unidentified: displays(entry).filter(isUnidentifiedDisplay),
       })),
   };
 }
@@ -204,6 +215,20 @@ const SECTION_DESCRIPTORS: readonly SectionDescriptor[] = [
   ]),
 ];
 
+const MISSING_CODE_FALLBACKS = new Set(['Encounter', 'Planned activity', 'Observation', 'Unknown']);
+
+function isUnidentifiedDisplay(display: string): boolean {
+  return display.startsWith('Unknown') || MISSING_CODE_FALLBACKS.has(display);
+}
+
+function descriptorFor<T>(spec: SectionSpec<T>): SectionDescriptor {
+  const result = SECTION_DESCRIPTORS.find(
+    (candidate) => candidate.templateRoot === spec.template.root
+  );
+  if (result === undefined) throw new CcdaError(`No preview descriptor for ${spec.title}`);
+  return result;
+}
+
 /** Parses one document and accounts for every section and machine-readable entry. */
 export function previewCcd(xml: string): CcdPreview {
   const root = parseXml(xml);
@@ -215,21 +240,8 @@ export function previewCcd(xml: string): CcdPreview {
   const unidentified: CcdPreviewUnidentified[] = [];
 
   for (const sectionDescriptor of SECTION_DESCRIPTORS) {
-    const section = preferredSection(sourceSections, sectionDescriptor);
+    const section = preferredSection(sourceSections, sectionDescriptor, selected);
     if (section === undefined) {
-      sections.push({
-        name: sectionDescriptor.name,
-        title: sectionDescriptor.title,
-        code: sectionDescriptor.code,
-        status: 'absent',
-        sourceEntries: 0,
-        mappedEntries: 0,
-        rejectedEntries: 0,
-      });
-      continue;
-    }
-
-    if (selected.has(section)) {
       sections.push({
         name: sectionDescriptor.name,
         title: sectionDescriptor.title,
@@ -274,6 +286,7 @@ export function previewCcd(xml: string): CcdPreview {
 
   return {
     document,
+    ...patientMrnAuthority(root),
     sections,
     rejections,
     unidentified,
@@ -302,16 +315,29 @@ function sectionsOf(root: XmlElement): XmlElement[] {
 
 function preferredSection(
   sections: readonly XmlElement[],
-  sectionDescriptor: SectionDescriptor
+  sectionDescriptor: SectionDescriptor,
+  selected: ReadonlySet<XmlElement>
 ): XmlElement | undefined {
   return (
-    sections.find((section) =>
-      childrenNamed(section, 'templateId').some(
-        (template) => attr(template, 'root') === sectionDescriptor.templateRoot
-      )
+    sections.find(
+      (section) =>
+        !selected.has(section) &&
+        childrenNamed(section, 'templateId').some(
+          (template) => attr(template, 'root') === sectionDescriptor.templateRoot
+        )
     ) ??
-    sections.find((section) => attr(childNamed(section, 'code'), 'code') === sectionDescriptor.code)
+    sections.find(
+      (section) =>
+        !selected.has(section) &&
+        attr(childNamed(section, 'code'), 'code') === sectionDescriptor.code
+    )
   );
+}
+
+function patientMrnAuthority(root: XmlElement): { patientMrnAuthority?: string } {
+  const ids = childrenNamed(path(root, 'recordTarget', 'patientRole'), 'id');
+  const authority = attr(ids[1], 'root');
+  return authority === undefined ? {} : { patientMrnAuthority: authority };
 }
 
 function sectionMatches(section: XmlElement, sectionDescriptor: SectionDescriptor): boolean {
@@ -329,16 +355,16 @@ function inspectSection(
   unidentified: CcdPreviewUnidentified[]
 ): CcdSectionPreview {
   const entries = childrenNamed(section, 'entry');
+  const nonEntries = section.children.filter(
+    (child) => !isElement(child) || child.name !== 'entry'
+  );
   let mappedEntries = 0;
   let rejectedEntries = 0;
 
   for (const entry of entries) {
     const isolated = {
       ...section,
-      children: [
-        ...section.children.filter((child) => !isElement(child) || child.name !== 'entry'),
-        entry,
-      ],
+      children: [...nonEntries, entry],
     };
     const inspected = sectionDescriptor.inspect(isolated);
     if (inspected.length === 0) {

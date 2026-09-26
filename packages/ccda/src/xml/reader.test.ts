@@ -239,7 +239,12 @@ describe('what it must not refuse', () => {
   });
 
   it('skips a byte-order mark, which real files carry', () => {
-    expect(parseXml('﻿<a/>').name).toBe('a');
+    const source = '﻿<a><b/></a>';
+    const root = parseXml(source);
+
+    expect(root.name).toBe('a');
+    expect(root.sourceOffset).toBe(source.indexOf('<a>'));
+    expect(childNamed(root, 'b')?.sourceOffset).toBe(source.indexOf('<b/>'));
   });
 
   it('keeps namespace prefixes as written, because CDA depends on them', () => {

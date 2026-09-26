@@ -365,6 +365,40 @@ describe('a document arriving from somebody else', () => {
     expect(summary.identity).toEqual({ status: 'no-match', comparedBy: 'mrn', differences: [] });
   });
 
+  it('does not compare an MRN whose assigning authority is not local', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+    const foreign = ours.replace(
+      /(<patientRole>\s*<id[^>]*\/>\s*<id root=")[^"]+(")/,
+      '$1foreign-authority$2'
+    );
+
+    const summary = (await (await importDocument(app, foreign)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'insufficient',
+      comparedBy: 'none',
+      differences: [],
+    });
+  });
+
+  it('does not report a tenant-wide no-match from a facility-scoped search', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+
+    const summary = (await (await importDocument(app, ours, TOKENS.frontDeskA)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'not-checked',
+      comparedBy: 'none',
+      differences: [],
+    });
+  });
+
   /**
    * Merging is a clinical decision - which of these problems are already on our
    * list, is this the same allergy under another name - and a machine that took

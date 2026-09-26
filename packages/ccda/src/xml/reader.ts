@@ -119,6 +119,7 @@ export function parseXml(source: string, limits: XmlLimits = DEFAULT_XML_LIMITS)
 
 class Scanner {
   private readonly source: string;
+  private readonly sourceDisplacement: number;
   private index = 0;
   private elements = 0;
   private depth = 0;
@@ -130,7 +131,8 @@ class Scanner {
     // A leading byte-order mark is legal in a UTF-8 file and is not part of the
     // document. Systems that write one are common enough that refusing it would
     // reject correct files.
-    this.source = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source;
+    this.sourceDisplacement = source.charCodeAt(0) === 0xfeff ? 1 : 0;
+    this.source = this.sourceDisplacement === 1 ? source.slice(1) : source;
   }
 
   readDocument(): XmlElement {
@@ -183,7 +185,7 @@ class Scanner {
     if (this.source[this.index] !== '<') {
       throw new CcdaError('Expected an element', this.index);
     }
-    const sourceOffset = this.index;
+    const sourceOffset = this.index + this.sourceDisplacement;
     this.index += 1;
 
     this.elements += 1;

@@ -135,4 +135,46 @@ describe('a C-CDA migration preview', () => {
       })
     );
   });
+
+  it('uses a template identifier ahead of a conflicting section code everywhere', () => {
+    const source = `<ClinicalDocument xmlns="urn:hl7-org:v3"><id root="doc-1"/>
+      <component><structuredBody><component><section>
+        <templateId root="2.16.840.1.113883.10.20.22.2.6.1"/>
+        <code code="11450-4"/>
+        <entry><act classCode="ACT" moodCode="EVN"><id root="allergy-1"/></act></entry>
+      </section></component></structuredBody></component>
+    </ClinicalDocument>`;
+    const preview = previewCcd(source);
+
+    expect(preview.document.allergies).toHaveLength(1);
+    expect(preview.document.problems).toEqual([]);
+    expect(preview.sections.find((section) => section.name === 'allergies')).toMatchObject({
+      status: 'mapped',
+      mappedEntries: 1,
+    });
+    expect(preview.sections.find((section) => section.name === 'problems')).toMatchObject({
+      status: 'absent',
+      mappedEntries: 0,
+    });
+    expect(preview.totals).toMatchObject({ sourceEntries: 1, mappedEntries: 1 });
+  });
+
+  it('identifies coded fields that are absent even when their fallback display is readable', () => {
+    const source = `<ClinicalDocument xmlns="urn:hl7-org:v3"><id root="doc-1"/>
+      <component><structuredBody>
+        <component><section><code code="46240-8"/><entry><encounter><id root="e-1"/></encounter></entry></section></component>
+        <component><section><code code="18776-5"/><entry><act><id root="p-1"/></act></entry></section></component>
+        <component><section><code code="29762-2"/><entry><observation><id root="s-1"/></observation></entry></section></component>
+      </structuredBody></component>
+    </ClinicalDocument>`;
+    const preview = previewCcd(source);
+
+    expect(preview.unidentified.map(({ display }) => display)).toEqual([
+      'Encounter',
+      'Planned activity',
+      'Observation',
+      'Unknown',
+    ]);
+    expect(preview.totals.unidentifiedEntries).toBe(4);
+  });
 });

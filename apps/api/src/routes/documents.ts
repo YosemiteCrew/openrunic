@@ -247,10 +247,10 @@ export function documentRoutes(router: Hono<AppEnv>): void {
   /**
    * Reads a document somebody else sent, and writes nothing.
    *
-   * `document.write` rather than a read permission: nothing in this practice's
-   * record is read, and the caller is preparing to bring a document in. It is
-   * also what stops the endpoint being an XML parser anybody with a token can
-   * post to.
+   * `document.write` opens the parser because the caller is preparing to bring a
+   * document in. Identity comparison is separate and conservative: it reads the
+   * patient collection only when the caller also holds organisation-wide patient
+   * access and the document's MRN authority names a facility in this practice.
    */
   router.post('/ccd/import', requirePermission('document.write'), async (c) => {
     const { document } = await parseJsonBody(c, importBodySchema);
@@ -268,7 +268,7 @@ export function documentRoutes(router: Hono<AppEnv>): void {
       throw error;
     }
 
-    const identity = await identityPreview(c, preview.document);
+    const identity = await identityPreview(c, preview.document, preview.patientMrnAuthority);
     const summary = summarise(preview, sha256(document), identity);
 
     await c.get('audit')?.write({
@@ -582,15 +582,26 @@ function sha256(value: string): string {
 
 async function identityPreview(
   c: Context<AppEnv>,
-  document: CcdDocument
+  document: CcdDocument,
+  mrnAuthority: string | undefined
 ): Promise<z.infer<typeof importSummarySchema>['identity']> {
   const mrn = document.patient.mrn.trim();
-  if (mrn === '') return { status: 'insufficient', comparedBy: 'none', differences: [] };
-  if (c.get('policy')?.can('patient.read') !== true) {
+  if (mrn === '' || mrnAuthority === undefined) {
+    return { status: 'insufficient', comparedBy: 'none', differences: [] };
+  }
+  if (
+    c.get('policy')?.can('patient.read') !== true ||
+    c.get('policy')?.can('facility.all') !== true
+  ) {
     return { status: 'not-checked', comparedBy: 'none', differences: [] };
   }
 
-  const matches = await repositories(c).patients.list({
+  const repos = repositories(c);
+  if ((await repos.facilities.findById(mrnAuthority)) === null) {
+    return { status: 'insufficient', comparedBy: 'none', differences: [] };
+  }
+
+  const matches = await repos.patients.list({
     page: 1,
     pageSize: 2,
     sort: 'familyName',

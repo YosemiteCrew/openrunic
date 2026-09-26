@@ -91,3 +91,8 @@ react-doctor.json
 # against a mock-mode server - but it is a credential shaped thing with a clock
 # in it, and a stale one committed here would fail as a confusing redirect.
 apps/e2e/.auth/
+
+# Git worktrees checked out inside the repository. Prettier reads this file, so
+# without this line `pnpm run format` and `format:check` would also walk the
+# other working copies.
+worktrees/

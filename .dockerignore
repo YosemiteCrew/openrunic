@@ -43,7 +43,13 @@ packages/database/src/generated
 
 # Operational data written next to the repository by the backup scripts.
 backups
+**/backups
 .tmp
+**/.tmp
+
+# Git worktrees checked out inside the repository are separate working copies,
+# not build inputs.
+**/worktrees
 
 # Test, docs and tooling output that no runtime stage reads.
 coverage

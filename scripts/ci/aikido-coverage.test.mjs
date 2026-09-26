@@ -23,8 +23,8 @@ import {
 // The two summaries below are the measured ones, copied off
 // `commits/<sha>/check-runs` rather than paraphrased. They are the whole reason
 // the gate reads `output.summary`: both arrive with conclusion `skipped`, and
-// only the sentence separates a wallet that has emptied from a draft that
-// nobody meant to scan yet.
+// only the sentence separates a review the service declined to run from a draft
+// that nobody meant to scan yet.
 const NO_CREDITS = 'Aikido skipped this review because there are no credits left in the wallet.';
 const DRAFT = 'Aikido skipped this check because the PR is in draft status.';
 const BOT = 'Aikido skipped this review because the latest commit was authored by a bot.';
@@ -52,7 +52,7 @@ test('a completed scan is a review', () => {
   assert.equal(result.runs.length, 2);
 });
 
-test('an empty wallet is a decline, not a pass', () => {
+test('a skipped Deep Review is a decline, not a pass', () => {
   const result = classify([
     checkCode('success', 'Aikido Security check OK. No new issues were introduced.'),
     deepReview('skipped', NO_CREDITS),
@@ -452,7 +452,7 @@ test('the announcement carries the sentence that names the cause', () => {
   assert.match(message, /skipped/u);
   // The whole defect in one assertion: the conclusion is the same word for
   // three causes, so the gate has to print the summary.
-  assert.ok(message.includes(NO_CREDITS), 'the wallet sentence must reach the log');
+  assert.ok(message.includes(NO_CREDITS), 'the skip sentence must reach the log');
 });
 
 test('absent and no-checks say different things', () => {
@@ -564,7 +564,7 @@ test('the exemption is exactly one name and one conclusion, and widening either 
 });
 
 test('a bot-authored head still declines a Deep Review that did not skip', () => {
-  // `action_required` on Deep Review is the wallet asking for a human. It is
+  // `action_required` on Deep Review is the service asking for a human. It is
   // not the bot rule and it is not excused, on a bot head or anywhere else.
   const result = classify(
     [checkCode('success', 'ok'), deepReview('action_required', 'Add credits to continue.')],
@@ -618,7 +618,7 @@ test('the commit author decides the exemption, and the pull request author does 
   // rather than the pull request's: a human pushes onto a dependabot branch to
   // fix a lockfile conflict. The pull request author is still the bot; Aikido's
   // rule looks at the commit and does not fire; a Deep Review that skipped for
-  // want of credits would be excused by a gate keyed on the wrong field.
+  // any other reason would be excused by a gate keyed on the wrong field.
   const head = [checkCode('success', 'ok'), deepReview('skipped', NO_CREDITS)];
   const verdictFor = async (authorType) => {
     const fetchImpl = stubFetch(page(2, head), page(2, head));

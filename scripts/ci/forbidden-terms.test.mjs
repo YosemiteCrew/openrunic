@@ -446,9 +446,9 @@ for (const [name, char, ascii] of FOLD_ONLY_TO_ASCII) {
     assert.equal(p.test(`ACME${ascii.toUpperCase()}ARE`), true, 'upper case must match');
 
     // The assertion. `u` folds this code point onto its ASCII letter, and the
-    // guard would then match a string the machine-local `grep -inE` does not -
-    // making the secret a TRANSLATION between the two implementations rather
-    // than one value used twice, which is the whole argument for PATTERN_SHAPE.
+    // guard would then match a string POSIX `grep -inE` does not - making the
+    // pattern mean different things in the two dialects, which is the whole
+    // argument for PATTERN_SHAPE.
     assert.equal(p.test(`acme${char}are`), false, `${name} must not fold onto '${ascii}'`);
 
     // ...and the control that earns that `false`. Built from a literal `'iu'`
@@ -557,9 +557,9 @@ test('the compiled pattern folds case the way the other implementation does', ()
   // because `u` changes folding on the HAYSTACK rather than on the pattern.
   //
   // Under `iu`, `k` matches U+212A KELVIN SIGN. Under `i` it does not, and
-  // neither does the machine-local hook's POSIX `grep -inE`. So the missing `u`
-  // is what makes "one secret used in two implementations" true rather than
-  // "two implementations that agree on ASCII". Raised in review.
+  // neither does POSIX `grep -inE`. So the missing `u` is what makes the pattern
+  // mean the same thing in both dialects rather than "two implementations that
+  // agree on ASCII". Raised in review.
   const kelvin = 'a\u212Ab';
 
   // The haystack asserted by its BYTES. A literal that silently degraded to
@@ -800,8 +800,8 @@ test('a corpus with more entries than alternatives is fine', () => {
 test('a pattern outside the accepted shape is refused, and says why without quoting it', () => {
   // Fails CLOSED. Counting alternatives by splitting on `|` is exact for a plain
   // alternation and wrong for a group, an escaped pipe or a class containing
-  // one - and the same alphabet is what lets one value serve both this
-  // `new RegExp(source, 'i')` and the machine-local hook's POSIX `grep -inE`.
+  // one - and the same alphabet is what lets one value read the same way under
+  // this `new RegExp(source, 'i')` and under POSIX `grep -inE`.
   // So the shape carries two jobs and a pattern outside it makes neither sound.
   const problems = selfTest({
     pattern: compilePattern('(acmehealth|acme health)'),
@@ -1046,16 +1046,8 @@ test("this repository's own prose passes every surface", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * The assistant name a trailer has to carry, assembled rather than written.
- *
- * MEASURED rather than defensive: the local pre-commit hook that has been the
- * only enforcement of this rule scans the STAGED DIFF for the same shape, so a
- * verbatim trailer in this file cannot be committed from a machine we
- * provision - `BLOCKED: an AI-attribution line appears in this commit`, exit 1.
- * The hook is right and the fixture is what bends. The collision is also the
- * issue's own argument arriving on its test file: the hook reaches this commit
- * and cannot reach one made anywhere else, which is why the arm belongs in CI
- * as well as in the hook.
+ * The assistant name a trailer has to carry, assembled rather than written, so
+ * that no line in this file is itself a complete trailer.
  */
 const ASSISTANT = 'cla' + 'ude';
 const AI_TRAILER = `Co-authored-by: ${ASSISTANT} <assistant@example.invalid>`;

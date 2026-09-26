@@ -89,8 +89,8 @@ test('action_required is a decline, and it is the one the denylist missed', () =
   // everything it did not name fell through to the pass. Two of those -
   // `failure` and `timed_out` - are deliberate (see above). `action_required`
   // was not: it is what an app posts when it needs a human to go and do
-  // something, which is precisely the empty wallet this file exists for, and
-  // it was scoring exit 0.
+  // something, which is precisely the case this file exists for, and it was
+  // scoring exit 0.
   assert.equal(
     classify([deepReview('action_required', 'Add credits to continue reviewing.')]).verdict,
     'declined'
@@ -232,9 +232,7 @@ test('listCheckRuns follows pages until it has what the API said there was', asy
   // here would notice it going. Without it the endpoint returns every attempt
   // on the sha, so a pull request opened as a draft and then marked ready
   // carries its stale draft `skipped` beside the fresh run and reports
-  // `declined` for a state that has already been resolved. Moot while Deep
-  // Review skips unconditionally; live the moment the wallet is funded, which
-  // is the state this gate exists to survive into.
+  // `declined` for a state that has already been resolved.
   assert.match(fetchImpl.calls[0].url, /[?&]filter=latest\b/u);
   assert.equal(fetchImpl.calls[0].init.headers.authorization, 'Bearer t');
 });
@@ -386,9 +384,9 @@ test('a growing set of contexts is not a settled one', async () => {
 test('a pass settles on the second look, not the tenth', async () => {
   // The confirmation is one extra poll and it is keyed on the set of contexts,
   // not on there being two of them: `check code` alone, twice, is a settled
-  // pass. That is the shape #408 asks the owner for as an alternative to
-  // credits - disable `Deep Review` - and it must not hang the gate to its
-  // deadline waiting for a context nobody is going to post. The stub holds
+  // pass. That is the shape of a repository with `Deep Review` disabled, and it
+  // must not hang the gate to its deadline waiting for a context nobody is
+  // going to post. The stub holds
   // exactly two pages, so a third fetch throws rather than quietly succeeding.
   const fetchImpl = stubFetch(
     page(1, [checkCode('success', 'ok')]),

@@ -1,8 +1,7 @@
 name: Forbidden Terms
 
-# Both repositories are public. Prior art may be studied freely; the source may
-# never be NAMED - in code, comments, tests, fixtures, docs, commit messages,
-# branch names, or pull-request text.
+# No external product is named anywhere in this repository - in code, comments,
+# tests, fixtures, docs, commit messages, branch names, or pull-request text.
 #
 # scripts/ci/forbidden-terms.mjs is the implementation and carries the reasoning
 # for every decision here; scripts/ci/forbidden-terms.test.mjs pins the
@@ -20,126 +19,20 @@ name: Forbidden Terms
 # treats as red. That is the honest report for it: an outside contribution
 # needs a maintainer, and it is never silently green.
 #
-# This USED to be `pull_request_target`, which runs in the base repository's
-# context and does carry secrets on a fork. It was safe only by a convention
-# written in this comment - check out the base, read the head as data, run
-# nothing from the head - and CodeQL was right that a convention is not a
-# mechanism: `actions/untrusted-checkout/high`, this file, the head fetch.
-# One future step running anything head-provided would hand a fork the secret,
-# and nothing but review stood between us and that step.
-#
-# Be accurate about what changed, because it is narrower than the rule's
-# wording: the head is never checked out and never runs, so `later potential
-# execution` is the heuristic's assumption rather than a fact about this file.
-# Nothing here was leaking. THE PROPERTY WAS HELD BY PROSE AND IS NOW HELD BY
-# THE TRIGGER - that is the whole before-and-after, and it is worth having.
-#
-# THIS DECISION IS ABOUT THIS REPOSITORY AND MUST NOT TRAVEL WITH THE GATE.
-# Counted rather than assumed, and re-counted 2026-09-06: this repository has
-# had 270 pull requests and ZERO from a fork. The sibling repository has had
-# 596 fork pull requests with 536 merged across 23 authors - roughly half its
-# merged work - and the same change there would land on all of them. Whoever
-# ports this gate makes the trade again for that repository; the answer here is
-# not evidence about it.
-#
-# WHAT RED-ON-FORK COSTS CHANGED ON 2026-09-06 AT 13:08 UTC, when `No named
-# external product` was added to the `dev` ruleset's required contexts. Read
-# that as a DATED OBSERVATION and not a standing fact: rulesets change without
-# touching this file, which is why nothing else here asserts one.
-#
-# What it meant on that date is that a fork's red stopped being advisory. NO
-# BRANCH STATE A CONTRIBUTOR CAN REACH TURNS IT GREEN - GitHub withholds the
-# secrets from a fork's `pull_request` run, so the guard exits 2 rather than
-# reporting clean. That half is structural and holds whatever the ruleset says.
-#
-# It is not a dead end. `dev` carries an admin `always` bypass, so a maintainer
-# has two paths and they record different things: merge the fork pull request
-# over the red, which logs that an admin overrode a failing required check, or
-# push the branch into this repository and reopen it from there, which logs a
-# maintainer's own pull request and drops the contributor as its author. Prefer
-# the first. The audit trail should say what actually happened, and the second
-# reads as if no outside contribution ever arrived.
-#
-# THE COST HERE IS STILL ZERO AND THE REASON GOT WEAKER: not because the red is
-# advisory, but because this repository has never had a fork pull request (270
-# to date, none from a fork). That is a fact about history rather than about
-# configuration, and it is the kind that changes without anyone deciding to
-# change it. The two things not to do when the fork red becomes annoying are
-# immediately below, and they stopped being hypothetical on that date.
+# `pull_request` and not `pull_request_target`: the head is never checked out
+# and never runs, and it is the trigger rather than a convention written here
+# that keeps the secret out of reach of anything a fork provides.
 #
 # ---------------------------------------------------------------------------
 # DEPENDABOT IS A SECOND WITHHOLDING RULE, AND IT IS NOT A FORK
 # ---------------------------------------------------------------------------
 #
-# Everything above reasons about forks because that was the only way a run
-# could arrive without the pattern. It is not. GitHub serves a Dependabot pull
-# request the DEPENDABOT secret store, not the Actions one, so a repository
-# secret that exists is empty in that run while `head.repo.fork` is false.
-#
-# Two different rules, one symptom, and the only thing separating them is the
-# actor - which is why the Preconditions step reads it. The diagnostic used to
-# have two branches for three cases, so a Dependabot run was told the secrets
-# were missing from the repository and that the gate had never run on any pull
-# request. Both false, and provably so from the run history of the same day.
-#
-# Measured 2026-09-07: #414 is the first Dependabot pull request since this
-# context became required, and it cannot be merged without an admin overriding
-# a failing required check. The remedy is to set the same two values a second
-# time in the Dependabot store, which ARMS the gate for Dependabot rather than
-# exempting it. Do not make this job skip for Dependabot: an unscanned actor is
-# exactly what the gate exists to prevent, and Dependabot writes branch names
-# and pull-request text like anyone else.
-
-# ---------------------------------------------------------------------------
-# THIS CONTEXT IS REQUIRED ON `dev` AS OF 2026-09-06, AND THAT CHANGED THE COST
-# OF EVERY SENTENCE ABOVE
-# ---------------------------------------------------------------------------
-#
-# Until then it was advisory: it went red and merges proceeded, which is how it
-# sat red on every pull request for weeks while both `FORBIDDEN_TERMS_*` secrets
-# were absent and nobody was obliged to notice. It is now one of five required
-# contexts on the `dev` ruleset, and the external pre-commit hook is no longer
-# the only blocking enforcement of this rule.
-#
-# Three consequences, none of which the paragraphs above account for:
-#
-# 1. THE FORK TRADE IS NOW ENFORCED, AND HAS NEVER BEEN EXECUTED. The count
-#    above ("243 pull requests and ZERO from a fork") was a sound basis for
-#    "red-on-fork costs nothing". It is not a basis for "BLOCKED-on-fork costs
-#    nothing", because the two differ only in the case that has never happened.
-#    Nobody in this organisation can drive that path without opening a fork pull
-#    request, so the fork branch below is reasoned about, never executed, and now
-#    blocking. The first fork contributor finds out.
-#
-# 2. FAIL-CLOSED NOW COSTS THE BRANCH. This job exits 2 when the pattern or the
-#    corpus is missing, which is correct and is stated below. While it was
-#    advisory that cost a red decoration; now it makes every pull request on
-#    `dev` unmergeable. Both secrets were created 2026-09-06T11:09Z - hours
-#    before they became load-bearing - so a rotation, an accidental deletion or
-#    an org policy change is a merge-blocking event for everyone, and restoring
-#    them needs whoever holds their contents. That is an operational dependency
-#    with no owner named anywhere; name one before assuming it is covered.
-#
-# 3. A REQUIRED CONTEXT IS MATCHED BY STRING, so a typo in the ruleset blocks
-#    forever and passes every check of this workflow. There are THREE objects
-#    here and two edges, and it is worth naming which check covers which:
-#
-#      the ruleset's `context`   <-A->   this job's `name:`   <-B->   what GitHub
-#                                                                     reports
-#
-#    A is the edge a rename breaks, and nothing in the system compares those two
-#    strings. Checked by reading both: `forbidden-terms.yml`'s `name:` and the
-#    `dev` ruleset context are byte-identical.
-#
-#    B is GitHub's own mapping. Observing it does NOT verify A - a rollup shows
-#    what was reported, so a ruleset entry matching a reported name says the
-#    entry is currently satisfiable and says nothing about where that string
-#    came from. Checked separately: all five required contexts appear in a
-#    merged pull request's rollup.
-#
-#    So after ANY job rename, re-run the A check - compare the ruleset context
-#    against the workflow's `name:` field. A green rollup on an older pull
-#    request will not show you the break.
+# GitHub serves a Dependabot pull request the DEPENDABOT secret store, not the
+# Actions one, so a repository secret that exists is empty in that run while
+# `head.repo.fork` is false. Two different rules, one symptom, and the only
+# thing separating them is the actor - which is why the Preconditions step
+# reads it. Do not make this job skip for Dependabot: Dependabot writes branch
+# names and pull-request text like anyone else.
 #
 # ---------------------------------------------------------------------------
 # TWO THINGS NOT TO DO WHEN THE FORK RED BECOMES ANNOYING
@@ -161,14 +54,13 @@ name: Forbidden Terms
 #    Whether that API represents a symlink type change the way `--diff-filter=T`
 #    does is untested, not fine.
 #
-# WHAT IS KEPT FROM THE OLD DESIGN, because it is worth keeping on its own:
+# WHAT THE CHECKOUT GUARANTEES:
 #
 #   * the checkout is pinned to the BASE commit, so the guard, its tests and
 #     the must-pass corpus are the reviewed versions rather than whatever the
 #     pull request says they are. A pull request still cannot edit the thing
-#     that checks it. Under this trigger that pin is LOAD-BEARING rather than
-#     redundant: the default here is the MERGE ref, which carries the head's
-#     copy of the guard.
+#     that checks it. Under this trigger that pin is LOAD-BEARING: the default
+#     here is the MERGE ref, which carries the head's copy of the guard.
 #   * the head is fetched as DATA through refs/pull/<n>/head and never merged,
 #     built, installed or executed.
 #
@@ -196,8 +88,8 @@ name: Forbidden Terms
 # `.gitattributes` and configuring the driver turns these `git diff` lines into
 # an execution sink WITHOUT ANYONE TOUCHING THIS FILE. As of this commit the
 # tracked `.gitattributes` carries only `text=auto eol=lf` and `linguist-*`,
-# and no tracked config defines a driver. This survives the move off
-# `pull_request_target` because it was never about the trigger.
+# and no tracked config defines a driver. It is a property of the base rather
+# than of the trigger.
 #
 # ---------------------------------------------------------------------------
 # MASKING
@@ -227,13 +119,7 @@ on:
       - dev
       - main
 
-  # IT CANNOT SWEEP HISTORY, and that is what someone will reach for it to do.
-  # The surfaces are one pull request's title, body, head ref and merge-base
-  # diff - there is no path from here to an issue, a comment, or a pull request
-  # that already closed. Auditing what is ALREADY in the repository is a
-  # separate job, run once against the API with the same pattern.
-  #
-  # What a dispatched run does instead, and why it ends red on purpose, is at
+  # What a dispatched run does, and why it ends red on purpose, is at
   # `Refuse to report clean without having scanned`. Deliberately not repeated
   # here: two copies of it would have to be kept in step with each other.
   workflow_dispatch:
@@ -270,12 +156,9 @@ jobs:
 
       # EVERY precondition, reported together, before anything that can die on
       # one of them. The steps below fail fast and in order, so the FIRST thing
-      # missing is the only thing anyone learns - and on the pull request that
-      # introduces this guard that first thing is the guard's own test file,
-      # absent from the base by design. Six runs died there, and the message
-      # written to tell a maintainer the secrets are missing was never printed
-      # by any of them. A guard that cannot run should say what it needs, not
-      # the first thing it happened to touch. Raised in review.
+      # missing would otherwise be the only thing anyone learns. A guard that
+      # cannot run should say what it needs, not the first thing it happened to
+      # touch.
       #
       # `set -u` and NOT `-e`: an early exit here is the defect this step
       # exists to remove.
@@ -367,11 +250,7 @@ jobs:
       # request: the pattern compiles, it catches every known positive, it stays
       # silent on this repository's own prose, and the corpus is not truncated.
       # An empty or rotated secret is red here rather than quietly green there.
-      #
-      # MIN_CORPUS is in the clear on purpose. A number is not a term list, and
-      # it turns "the secret lost half its entries" from silent into red. Six
-      # because the pattern carries six alternatives; raise it with the corpus,
-      # never lower it to make a run pass.
+      # Never lower `--min-corpus` to make a run pass.
       - name: Self-test
         env:
           FORBIDDEN_TERMS_PATTERN_B64: ${{ secrets.FORBIDDEN_TERMS_PATTERN_B64 }}
@@ -400,10 +279,7 @@ jobs:
       # through an earlier pull request sits in the BASE of every later `dev`
       # comparison and is never looked at again - but a `main` pull request's
       # merge base is the previous promotion, so the whole of `dev` since then
-      # is in scope. That is why this workflow RUNS on BOTH branches - which is
-      # this file's `on:` block, not a ruleset. Whether it is also REQUIRED on a
-      # ruleset is a separate fact that changes without touching this file, so
-      # it is not asserted here; the header covers it.
+      # is in scope. That is why this workflow runs on both branches.
       - name: Collect the surfaces
         if: ${{ github.event_name == 'pull_request' }}
         env:

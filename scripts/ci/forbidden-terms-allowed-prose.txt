@@ -6,11 +6,11 @@
 #
 # Why this file is checked in while the must-block half is not: the must-block
 # half IS the term list, and committing it to a public repository publishes
-# exactly what the pattern exists to withhold. That half lives with the pattern
-# in a repository secret. This half is the reviewable one, and it is not the
-# consolation half - broadening a pattern under deadline pressure is what makes
-# it fire on ordinary prose, and this is the file that catches that, in the
-# open, where a reviewer can see what "our own documentation" actually says.
+# exactly what the pattern exists to withhold. This half is the reviewable one,
+# and it is not the consolation half - broadening a pattern under deadline
+# pressure is what makes it fire on ordinary prose, and this is the file that
+# catches that, in the open, where a reviewer can see what "our own
+# documentation" actually says.
 #
 # Drawn from real sentences rather than invented near-misses on purpose:
 # invented ones drift towards what the author imagines the pattern does.

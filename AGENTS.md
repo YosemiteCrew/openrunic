@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Instructions for coding agents working in this repository. CLAUDE.md carries the same content for
-Claude Code; keep the two files in sync when editing either.
+other agent runtimes; keep the two files in sync when editing either.
 
 ## What this repo is
 

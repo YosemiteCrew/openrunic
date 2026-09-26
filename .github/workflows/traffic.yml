@@ -13,26 +13,16 @@ name: Traffic
 # snapshots would count those twice. Re-recording a date overwrites it with the
 # later, more complete figure instead.
 #
-# The history and the badge payloads live on the `traffic-data` branch, which no
-# ruleset covers, so this never writes to `dev` or `main`. Two checkouts, not
-# one: the script comes from the code branch, the history from the data branch,
-# because a single checkout of `traffic-data` would not contain the script that
-# maintains it.
+# The history and the badge payloads live on the `traffic-data` branch, so this
+# never writes to `dev` or `main`. Two checkouts, not one: the script comes from
+# the code branch, the history from the data branch, because a single checkout
+# of `traffic-data` would not contain the script that maintains it.
 #
-# THE READ NEEDS A CREDENTIAL THIS WORKFLOW CANNOT GRANT ITSELF.
-# `GET /repos/{owner}/{repo}/traffic/{clones,views}` requires Administration:
-# read, and `administration` is not one of the scopes a workflow `permissions:`
-# block accepts, so no combination of `contents:`, `metadata:` or anything else
-# gets GITHUB_TOKEN past it. The read therefore uses the `TRAFFIC_READ_TOKEN`
-# secret - a fine-grained token with Administration: read on this repository -
-# while the data branch is still written with the built-in token.
-#
-# Until that secret exists this job records nothing and says so on the run
-# summary, rather than either failing every morning or pretending it worked.
-# Before this, the 403 was swallowed and the run reported success while
-# recording nothing, which is why the README's traffic figures were zeros for
-# as long as they were published: a scheduled job that claims to have worked is
-# harder to notice than one that does not.
+# The traffic API needs a credential a workflow's own token cannot be granted,
+# so the read uses the `TRAFFIC_READ_TOKEN` secret while the data branch is
+# still written with the built-in token. Until that secret exists this job
+# records nothing and says so on the run summary, rather than either failing
+# every morning or pretending it worked.
 
 on:
   schedule:

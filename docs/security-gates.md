@@ -4,8 +4,7 @@ Every automated control that runs against a change, what it protects, and where 
 process lives. If you are here because a gate failed, find it in the table and read its row.
 
 Nothing in this document is aspirational: each gate is a workflow in `.github/workflows/` that runs
-today. Where a gate is dormant because the files it inspects have not been written yet, that is
-stated explicitly.
+today.
 
 ## The gates
 
@@ -31,7 +30,7 @@ configured.
 
 `supply-chain.yml` runs `syft scan dir:.`, which inventories the **dependency tree**. It never sees a
 built image, so the operating-system packages in the base layer - openssl, zlib, busybox, the
-packages CVEs are actually filed against - were scanned by nothing.
+packages CVEs are actually filed against - need a scan of their own.
 
 That matters more here than in a typical project: openrunic ships images that clinics install and
 run on their own hardware. A vulnerable base layer is a vulnerable hospital server.
@@ -76,8 +75,7 @@ What the Compose guard checks, and why each one:
 The guard reads the Compose file as JSON, converted by a pinned, checksum-verified `yq`. It does not
 parse YAML itself, because hand-rolled parsing is how static analysis quietly starts passing files it
 never understood. Its unit tests (`scripts/ci/compose-guard.test.mjs`) run on **every** pull request,
-even while no Compose file exists, so a regression in the guard is caught by the change that causes
-it.
+so a regression in the guard is caught by the change that causes it.
 
 Run it locally:
 
@@ -170,14 +168,13 @@ exception or renew it with a fresh date and a note saying what was checked.
 ## Aikido coverage
 
 The two `Aikido Security:` contexts are posted by a GitHub App, so nothing in this repository
-decides whether they run. `Aikido Security: Deep Review` reported `skipped` on every pull request
-for an unmeasured number of weeks with the summary _"Aikido skipped this review because there are
-no credits left in the wallet"_, and that produced no red row, no notification, and no entry in any
-list a reviewer reads. `skipped` is neither a failure nor a success; the pull request page rendered
-what it renders when the review passes ([#408](https://github.com/YosemiteCrew/openrunic/issues/408)).
+decides whether they run. A review that declines reports `skipped`, which is neither a failure nor a
+success: it produces no red row, no notification, and no entry in any list a reviewer reads, and the
+pull request page renders what it renders when the review passes
+([#408](https://github.com/YosemiteCrew/openrunic/issues/408)).
 
-Topping the wallet up is an owner action. `aikido-coverage.yml` is the other half: it reads the
-check runs the app posted on the head and fails unless the conclusion is one of the three that mean
+`aikido-coverage.yml` makes that state visible. It reads the check runs the app posted on the
+head and fails unless the conclusion is one of the three that mean
 Aikido reached a verdict - `success`, `failure`, `timed_out` - printing the check's own
 `output.summary`, which names the cause where the conclusion cannot. Everything else declines,
 `skipped` and `action_required` included, with one change once a plan file exists: a check outside
@@ -208,17 +205,6 @@ would put an unchecked claim in the one place the gate may skip itself - `pull_r
 the fact, and a draft cannot merge. `ready_for_review` is a trigger so the gate starts the moment
 the exemption stops applying.
 
-The wallet does not reach `Aikido Security: check code`. Credits are consumed by six named
-features - Libraries, Deep Review, Security Audit, Pentest, Code Quality and CVE Exploitability
-Analysis - and the SAST/SCA pull request check is not one of them; on a cap the vendor's own
-sentence is that Aikido _"skips actions that would charge a credit until the limit resets"_
-([Wallet & Credits](https://help.aikido.dev/miscellaneous-info/wallet-and-credits), read
-2026-09-21). That is the question #408 left open and deliberately would not infer from `Deep
-Review`'s behaviour: an empty wallet silences the optional review and leaves the required context
-scanning, and a credited feature that runs out declines rather than passing. It is a vendor page
-rather than a measurement taken here, so it is dated; what agrees with it from this side is `check
-code` reporting `success` with a scan id on twelve consecutive heads while the wallet was empty.
-
 ### The checks this repository's plan includes
 
 `.github/aikido-plan.json` lists the Aikido checks this repository's plan includes, as
@@ -231,81 +217,27 @@ the three that count as a verdict still fails it.
 exactly that shape fails the job with a message naming the problem. With no file at all, every
 Aikido check has to run, as it did before the file existed.
 
-The plan does not include Deep Review, so `Aikido Security: Deep Review` appears as a notice on
-every pull request except one whose head commit is bot-authored, where the exemption below covers
-it. When the plan includes it, add it to `included`, and a skipped Deep Review fails the job again.
+`Aikido Security: Deep Review` is not listed in that file, so a skipped Deep Review appears as a
+notice, except on a pull request whose head commit is bot-authored, where the exemption below
+covers it. Once it is added to `included`, a skipped Deep Review fails the job again.
 
 ### The bot-authored head exemption, accepted 2026-09-22
 
 Aikido declines `Aikido Security: Deep Review` on any head whose latest commit was authored by a
 bot, with the summary _"Aikido skipped this review because the latest commit was authored by a
-bot"_. The condition is true by construction of the head, so nothing on the branch can change it
-and every dependabot pull request was a permanent red row on this check
+bot"_. Nothing on such a branch can change that, so every dependabot pull request would otherwise
+carry a permanent red row on this check
 ([#549](https://github.com/YosemiteCrew/openrunic/issues/549)).
 
 The guard excuses that, and only that: the pair `Aikido Security: Deep Review` + `skipped`, on a
 head whose **commit author** GitHub reports as a `Bot`, read from `commits/<sha>` as `.author.type`.
 It is keyed on that fact rather than on the vendor's sentence, for the same reason the draft
-exemption lives in the workflow.
-
-The commit's author, and not the pull request's. Those are the same account on a clean dependabot
-branch and different the moment a human pushes onto one - a hand-fixed lockfile conflict, a review
-fix. There `pull_request.user.type` is still `Bot` while Aikido's rule does not fire, so a gate
-keyed on the pull request author would excuse a Deep Review that skipped for some other cause;
-with the wallet empty, that other cause is
-[#408](https://github.com/YosemiteCrew/openrunic/issues/408). It is also `.author` and not
-`.committer`: a dependabot commit is committed by GitHub's web-flow account, so the two fields
-disagree on exactly the head this is about (`2cbbf64`, `.author.type` `Bot`, `.committer.type`
-`User`). An unmatched author resolves to null and reads as not-a-bot, and a commit that cannot be
-read fails the job - both the fail-closed direction.
-`BOT_EXEMPT` in `scripts/ci/aikido-coverage.mjs` is the pair; widening either half fails a test
-that asserts its membership directly, because a widening is invisible to every test that only
-makes legal calls.
-
-This is an acceptance rather than a silencing, and the difference is what is observable. On a
-head whose commit is bot-authored there is no Deep Review signal of any cause: the vendor declines the context
-before the wallet, the strictness or the path filter is consulted, so an empty wallet and a full
-one produce the identical `skipped` there. The empty wallet stays observable on every
-human-authored head, where this exemption does not apply.
+exemption lives in the workflow. `BOT_EXEMPT` in `scripts/ci/aikido-coverage.mjs` is the pair;
+widening either half fails a test that asserts its membership directly.
 
 What is _not_ excused is the head. `Aikido Security: check code` is the required context on both
-rulesets, it carries the SCA, it is the context the wallet does not reach (above), and it runs on
-a bot-authored head - `success` on all three of this repository's dependabot pull requests,
-[#546](https://github.com/YosemiteCrew/openrunic/pull/546),
-[#491](https://github.com/YosemiteCrew/openrunic/pull/491) and
-[#414](https://github.com/YosemiteCrew/openrunic/pull/414), read off
-`commits/<sha>/check-runs` on 2026-09-22. So it is left fully required there, and a head carrying
+rulesets and it runs on a bot-authored head, so it stays fully required there, and a head carrying
 only the excused check is its own verdict rather than a pass.
-
-Leaving it required is not redundant with the ruleset. GitHub satisfies a required status check on
-_"a successful, skipped, or neutral status"_
-([about protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches),
-read 2026-09-22), so a required `check code` reporting `skipped` would merge, and this gate is the
-only thing on the head that would say so. That is why the exemption is one context wide and not
-the whole job: skipping the job on a bot head - the draft analogue - would remove the detector
-from the one class of pull request that both merges and carries dependency changes.
-
-The open half is a vendor question, and it is not closed by this. Two published pages carry it, and
-both are closed. The configuration page lists every Deep Review setting - the per-repository
-toggle, strictness, linked repositories, excluded paths, the inherited gating threshold and a
-monthly credit cap
-([Configure Deep Review](https://help.aikido.dev/deep-review/configure-deep-review), read
-2026-09-23); none of them is author-based. The sibling page is the one that enumerates when the
-review does not run, and it names two conditions and no others: an excluded-path pull request -
-_"If a pull request only changes excluded files, Aikido skips Deep Review and you are not
-charged"_ - and credits, both the empty wallet - _"When you're out of credits, Deep Reviews are
-skipped"_ - and a reached spending limit, which skips _"Deep Reviews that would charge a credit
-... until the next calendar month"_
-([How Deep Review Works](https://help.aikido.dev/deep-review/how-deep-review-works), read
-2026-09-23). Neither page mentions a bot, an automated commit or Dependabot.
-
-That is a stronger statement than an absent setting. The skip this section accepts is undocumented
-vendor behaviour, so there is no toggle anyone overlooked and no page left to read - which is why
-the question can only be put to support, and is
-[#552](https://github.com/YosemiteCrew/openrunic/issues/552) rather than a code change. If Deep
-Review can be enabled for bot authors, this exemption should be reverted rather than kept; if it
-cannot, the vendor's answer belongs in this section, so that the next reader does not re-derive it
-from the absence of a setting.
 
 ## Release provenance
 

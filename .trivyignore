@@ -10,7 +10,7 @@
 # not an exception, it is a hole. Example:
 #
 #   # AVD-DS-0026 (no HEALTHCHECK) on the migration image: it is a one-shot job
-#   # that exits, so a healthcheck has nothing to report. Owner: ankit-yc.
+#   # that exits, so a healthcheck has nothing to report. Owner: maintainers.
 #   # Re-review by: YYYY-MM-DD.
 #   AVD-DS-0026
 #

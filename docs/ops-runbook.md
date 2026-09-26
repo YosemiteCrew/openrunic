@@ -345,27 +345,22 @@ top, `persist-credentials: false` on every checkout, and no `secrets: inherit`.
 states, because they need three different messages: `online`, `degraded` (the
 server is up, the database is not) and `offline` (nothing answers).
 
-Two design decisions here were both found by running it, not by reading it.
-
 **The probe is same-origin.** The browser must not fetch the API directly: it is
 a different origin, it sends no CORS headers, and a request the browser blocks is
-indistinguishable from a server that is down. The first version did exactly that
-and produced a permanent "cannot reach openrunic" banner on a completely healthy
-stack - the worst possible failure, because a banner that is always on is one
-staff stop reading. `/api/health` is a Next route handler that makes the check
-server-side, inside the network, by service name.
+indistinguishable from a server that is down, which would show a permanent
+"cannot reach openrunic" banner on a completely healthy stack. `/api/health` is a
+Next route handler that makes the check server-side, inside the network, by
+service name.
 
 **Readiness, not liveness.** `/healthz` proves the API process is running, and a
 process whose database has gone is running perfectly while unable to answer a
-single clinical question. Probing it reported a database outage as healthy.
-`/readyz` runs `SELECT 1` and answers 503 when it fails, so the outage is visible
-to the web application _and_ to the container runtime - the API's Docker
-healthcheck reads `/readyz` for the same reason.
+single clinical question. `/readyz` runs `SELECT 1` and answers 503 when it
+fails, so the outage is visible to the web application _and_ to the container
+runtime - the API's Docker healthcheck reads `/readyz` for the same reason.
 
 Both endpoints are in `DEFAULT_PUBLIC_PATHS`. A healthcheck has no credentials
-and never will; an authenticated readiness probe answers 401 forever, the
-container never turns healthy, and nothing depending on it starts. That was the
-third bug this sequence found.
+and never will; an authenticated readiness probe would answer 401 forever, the
+container would never turn healthy, and nothing depending on it would start.
 
 The health route distinguishes the two failures by status code, and the
 distinction carries the whole message: **503** means the API answered and cannot

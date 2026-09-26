@@ -168,20 +168,9 @@ jobs:
     needs: [core, test]
     # Gated on the test stage's own output rather than on the affected booleans,
     # so this can never ask for a coverage artifact that was not produced.
-    # vars.DISABLE_SONAR is a kill switch that works on every trigger, unlike a
-    # workflow_dispatch input, which is null on pull_request and would silently
-    # skip the stage on exactly the events that matter most. It is currently
-    # unset, so the stage runs; the aggregate below counts a skipped stage as a
-    # pass, which is exactly what makes setting it a decision rather than a
-    # convenience. Adding an app to the stage takes three things: a SonarCloud
-    # project, a sonar-project.properties in the app directory, and a
-    # SONAR_TOKEN_* secret wired through the secrets block below.
-    #
-    # Dependabot PRs run with the Dependabot secret store, which does not carry
-    # the SONAR_TOKEN* values, so the scan can only fail with "Not authorized".
-    # Skip Sonar for them (the roll-up below counts a skipped stage as a pass);
-    # every dependency change is re-scanned by the push-to-main analysis once it
-    # is promoted.
+    # Adding an app to the stage takes three things: a SonarCloud project, a
+    # sonar-project.properties in the app directory, and a SONAR_TOKEN_* secret
+    # wired through the secrets block below.
     #
     # Sonar can only publish from a pull_request event (PR analysis) or from
     # main (the SonarCloud plan accepts analysis of each project's MAIN BRANCH
@@ -241,7 +230,7 @@ jobs:
           echo "$RESULTS"
           # `skipped` passes: a packages-only change legitimately skips test's
           # coverage set, migration only runs for database changes, and sonar
-          # is skipped while DISABLE_SONAR is set. `cancelled` fails: an
+          # only runs where it can publish. `cancelled` fails: an
           # aggregate built on !cancelled() lets a cancelled dependency through
           # as a pass.
           #

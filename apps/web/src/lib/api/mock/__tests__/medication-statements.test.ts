@@ -144,7 +144,7 @@ describe('the medication statement mock', () => {
  * gets some states wrong, and it names how many. It said FOUR and the answer is
  * FIVE - it omitted `UNKNOWN`, which is the strongest example it had, since a
  * pair has to answer "nobody knows" as one or the other and is wrong either
- * way. Codex found it; nothing in the suite could have.
+ * way. Review found it; nothing in the suite could have.
  *
  * A number in prose beside a union is the cheapest place to put a claim nothing
  * checks, so it is checked here: add a ninth state and this goes red at the

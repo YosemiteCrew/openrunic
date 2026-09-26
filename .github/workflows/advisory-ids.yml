@@ -38,10 +38,8 @@ name: Advisory Identifiers
 # UNREACHABLE IS RED, AND THAT IS A DELIBERATE DISAGREEMENT
 #
 # The guard exits 2 when a registry cannot be reached, and 2 fails this job. The
-# opposite convention exists in this organisation - Yosemite Crew's override
-# checker returns 0 on unavailable data, on the argument that a flaky security
-# check gets routed around, which is worse than one that says it could not run.
-# That argument is right for a check with other gates behind it. This one is the
+# opposite convention, passing on unavailable data, suits a check with other
+# gates behind it. This one is the
 # only thing standing between a fabricated justification and `dev`, and a
 # silent pass would let one merge in exactly the window nobody could check it.
 #

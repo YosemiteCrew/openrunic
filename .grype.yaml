@@ -9,7 +9,7 @@
 #
 # ignore:
 #   # GHSA-xxxx-xxxx-xxxx in foo@1.2.3: not reachable - the vulnerable code
-#   # path needs server-side rendering we never enable. Owner: ankit-yc.
+#   # path needs server-side rendering we never enable. Owner: maintainers.
 #   # Re-review by: YYYY-MM-DD. (a real date here - the placeholder is
 #   # deliberate so this example never trips the expiry guard)
 #   - vulnerability: GHSA-xxxx-xxxx-xxxx
@@ -18,19 +18,6 @@
 #       version: 1.2.3
 
 ignore:
-  # CVE-2025-60876 in busybox: busybox wget writes the URL path and query into
-  # the HTTP request line without rejecting CR/LF or raw-space control bytes, so
-  # a crafted URL can split the request line (request-line splitting). Accepted
-  # as unreachable: both images build FROM node:22-alpine and never invoke
-  # busybox wget - the healthchecks use `node -e fetch(...)` (apps/api/Dockerfile
-  # lines 216-217 and apps/web/Dockerfile line 107-108) and no layer shells out
-  # to wget. There is nothing to upgrade to: Alpine has shipped no fixed busybox
-  # on any in-support branch, so re-resolving the pinned digest cannot clear it
-  # today. The rule matches on the CVE id alone rather than the documented
-  # name+version shape because the flaw spans the busybox, busybox-binsh and
-  # ssl_client subpackages and the two images may pin different -rNN revisions,
-  # so a version pin would silently stop matching. Owner: ankit-yc.
-  # Re-review by: 2026-11-18. Revisit condition: once Alpine publishes a patched
-  # busybox, the fix is to bump the node:22-alpine digest in both Dockerfiles
-  # and delete this entry.
+  # CVE-2025-60876 in busybox: accepted, the affected component is not used
+  # by the shipped images. Owner: maintainers. Re-review by: 2026-11-18.
   - vulnerability: CVE-2025-60876

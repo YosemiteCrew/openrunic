@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { BillsScreen } from '@/app/bills/BillsScreen';
 import { emptyApi, fails, never, stubApi } from '@/__tests__/support';
+import { AssistantProvider } from '@/components/assistant';
+import type { AssistantAvailability } from '@/lib/assistant';
 
 async function openFirstStatement(api = stubApi()) {
   render(<BillsScreen api={api} />);
@@ -231,5 +233,32 @@ describe('BillsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
     expect(await screen.findByText('Statement ST-2026-0418')).toBeInTheDocument();
+  });
+});
+
+describe('BillsScreen and the assistant', () => {
+  const enabled: AssistantAvailability = {
+    status: 'enabled',
+    capabilities: {
+      dictation: null,
+      service: {
+        modelId: 'a-model',
+        endpointHost: 'inference.example.invalid',
+        dataLeavesDeployment: false,
+      },
+      capabilities: [{ id: 'bills.list', summary: 'Reads your own bills.' }],
+    },
+  };
+
+  it('offers to ask the assistant about bills where one is configured', async () => {
+    render(
+      <AssistantProvider probe={() => Promise.resolve(enabled)}>
+        <BillsScreen api={stubApi()} />
+      </AssistantProvider>
+    );
+
+    expect(
+      await screen.findByRole('link', { name: 'Ask the assistant about your bills' })
+    ).toHaveAttribute('href', '/assistant?about=bills');
   });
 });

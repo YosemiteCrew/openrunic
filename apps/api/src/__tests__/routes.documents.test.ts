@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { parseCcd } from '@openrunic/ccda';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +8,7 @@ import {
   createTestApp,
   DEMO_FACILITY_A,
   DEMO_TENANT_A,
+  DEMO_TENANT_B,
   FIXED_NOW,
   jsonBearer,
   makePatientRow,
@@ -284,6 +287,11 @@ describe('a document arriving from somebody else', () => {
     const summary = (await res.json()) as {
       patient: { mrn: string };
       counts: Record<string, number>;
+      source: { sha256: string };
+      provenance: { documentId: string; custodianName: string };
+      totals: Record<string, number>;
+      sections: { name: string; status: string }[];
+      identity: { status: string; comparedBy: string; differences: string[] };
       allergies: { substance: { display: string } }[];
       problems: { problem: { display: string } }[];
       unidentified: unknown[];
@@ -293,8 +301,121 @@ describe('a document arriving from somebody else', () => {
     expect(summary.patient.mrn).toBe('OR-100482');
     expect(summary.counts.allergies).toBe(1);
     expect(summary.counts.problems).toBe(1);
+    expect(summary.counts.plan).toBe(0);
+    expect(summary.counts.socialHistory).toBe(0);
     expect(summary.allergies[0]?.substance.display).toBe('Penicillin');
+    expect(summary.source.sha256).toBe(createHash('sha256').update(ours).digest('hex'));
+    expect(summary.provenance.custodianName).toBe('Example Family Practice');
+    expect(summary.provenance.documentId).not.toBe('');
+    expect(summary.totals).toMatchObject({
+      sourceSections: 9,
+      supportedSections: 9,
+      absentSections: 0,
+      unsupportedSections: 0,
+      sourceEntries: 2,
+      mappedEntries: 2,
+      rejectedEntries: 0,
+    });
+    expect(summary.sections).toHaveLength(9);
+    expect(summary.identity).toEqual({ status: 'match', comparedBy: 'mrn', differences: [] });
     expect(summary.unidentified).toEqual([]);
+  });
+
+  it('returns the same preview when the same document is run again', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+
+    const first = await (await importDocument(app, ours)).json();
+    const second = await (await importDocument(app, ours)).json();
+
+    expect(second).toEqual(first);
+  });
+
+  it('reports a potential identity conflict without selecting a patient record', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+    const conflicting = ours.replace('<family>Patientsson</family>', '<family>Different</family>');
+
+    const summary = (await (await importDocument(app, conflicting)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'conflict',
+      comparedBy: 'mrn',
+      differences: ['familyName'],
+    });
+    expect(summary.identity).not.toHaveProperty('patientId');
+  });
+
+  it('does not use another tenant patient as an identity match', async () => {
+    const { app, dataset } = harness();
+    seed(
+      dataset,
+      'Patient',
+      makePatientRow({ tenantId: DEMO_TENANT_B, id: testId(902), mrn: 'OTHER-902' })
+    );
+    const ours = (await ccdFor(app)).document;
+    const otherTenantMrn = ours.replace('OR-100482', 'OTHER-902');
+
+    const summary = (await (await importDocument(app, otherTenantMrn)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({ status: 'no-match', comparedBy: 'mrn', differences: [] });
+  });
+
+  it('does not compare an MRN whose assigning authority is not local', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+    const foreign = ours.replace(
+      /(<patientRole>\s*<id[^>]*\/>\s*<id root=")[^"]+(")/,
+      '$1foreign-authority$2'
+    );
+
+    const summary = (await (await importDocument(app, foreign)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'insufficient',
+      comparedBy: 'none',
+      differences: [],
+    });
+  });
+
+  it('does not claim an identity match from a reduced-precision birth date', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+    const reducedPrecision = ours.replace(
+      /<birthTime value="[^"]+"\/>/,
+      '<birthTime value="1994"/>'
+    );
+
+    const summary = (await (await importDocument(app, reducedPrecision)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'insufficient',
+      comparedBy: 'none',
+      differences: [],
+    });
+  });
+
+  it('does not report a tenant-wide no-match from a facility-scoped search', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+
+    const summary = (await (await importDocument(app, ours, TOKENS.frontDeskA)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'not-checked',
+      comparedBy: 'none',
+      differences: [],
+    });
   });
 
   /**
@@ -328,10 +449,48 @@ describe('a document arriving from somebody else', () => {
     </ClinicalDocument>`;
 
     const summary = (await (await importDocument(app, document)).json()) as {
-      unidentified: { section: string; display: string }[];
+      unidentified: { section: string; display: string; sourceOffset: number }[];
     };
 
-    expect(summary.unidentified).toEqual([{ section: 'allergies', display: 'Unknown substance' }]);
+    expect(summary.unidentified).toEqual([
+      {
+        section: 'allergies',
+        display: 'Unknown substance',
+        sourceOffset: document.indexOf('<entry>'),
+      },
+    ]);
+  });
+
+  it('accounts for unsupported and unmapped source elements', async () => {
+    const { app } = harness();
+    const document = `<ClinicalDocument xmlns="urn:hl7-org:v3">
+      <id root="doc-1"/>
+      <component><structuredBody>
+        <component><section><code code="48765-2"/><entry><observation/></entry></section></component>
+        <component><section><code code="99999-9"/><title>Unsupported history</title><entry><act/></entry></section></component>
+      </structuredBody></component>
+    </ClinicalDocument>`;
+    const summary = (await (await importDocument(app, document)).json()) as {
+      totals: Record<string, number>;
+      rejections: { reason: string; sourceOffset?: number }[];
+    };
+
+    expect(summary.totals).toMatchObject({
+      sourceSections: 2,
+      supportedSections: 1,
+      absentSections: 8,
+      unsupportedSections: 1,
+      sourceEntries: 2,
+      mappedEntries: 0,
+      rejectedEntries: 2,
+    });
+    expect(summary.rejections.map((rejection) => rejection.reason)).toEqual([
+      'unmapped-entry',
+      'unsupported-section',
+    ]);
+    expect(summary.rejections.every((rejection) => rejection.sourceOffset !== undefined)).toBe(
+      true
+    );
   });
 
   it('refuses a document it cannot read, and says where it failed', async () => {
@@ -378,6 +537,19 @@ describe('a document arriving from somebody else', () => {
     const { app } = harness();
 
     expect((await importDocument(app, '')).status).toBe(422);
+  });
+
+  it('refuses an artifact path because this surface accepts content, not filesystem locations', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+
+    const res = await app.request('/bff/v0/ccd/import', {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.adminA),
+      body: JSON.stringify({ document: ours, artifactPath: '../../outside.xml' }),
+    });
+
+    expect(res.status).toBe(422);
   });
 
   it('refuses a caller without document.write', async () => {

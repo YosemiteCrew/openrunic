@@ -1,4 +1,4 @@
-import type { CcdDocument } from './domain.js';
+import type { CcdDocument, CodedValue } from './domain.js';
 import { clinicalDocument, headerElements, readHeader } from './header.js';
 import { renderSection } from './section.js';
 import type { SectionSpec } from './section.js';
@@ -143,7 +143,9 @@ export interface CcdPreviewUnidentified {
 
 export interface CcdPreview {
   readonly document: CcdDocument;
+  readonly sourceDocumentId: string;
   readonly patientMrnAuthority?: string;
+  readonly patientBirthDatePrecision: number;
   readonly sections: readonly CcdSectionPreview[];
   readonly rejections: readonly CcdPreviewRejection[];
   readonly unidentified: readonly CcdPreviewUnidentified[];
@@ -180,7 +182,7 @@ function descriptor<T>(
     readonly template: { readonly root: string };
     read(section: XmlElement): T[];
   },
-  displays: (entry: T) => readonly string[]
+  codedValues: (entry: T) => readonly CodedValue[]
 ): SectionDescriptor {
   return {
     name,
@@ -189,30 +191,29 @@ function descriptor<T>(
     templateRoot: spec.template.root,
     inspect: (section) =>
       spec.read(section).map((entry) => ({
-        unidentified: displays(entry).filter(isUnidentifiedDisplay),
+        unidentified: codedValues(entry)
+          .filter((value) => value.code === undefined && isUnidentifiedDisplay(value.display))
+          .map((value) => value.display),
       })),
   };
 }
 
 const SECTION_DESCRIPTORS: readonly SectionDescriptor[] = [
-  descriptor('allergies', allergiesSection, (entry) => [entry.substance.display]),
-  descriptor('medications', medicationsSection, (entry) => [entry.medication.display]),
-  descriptor('problems', problemsSection, (entry) => [entry.problem.display]),
+  descriptor('allergies', allergiesSection, (entry) => [entry.substance]),
+  descriptor('medications', medicationsSection, (entry) => [entry.medication]),
+  descriptor('problems', problemsSection, (entry) => [entry.problem]),
   descriptor('results', resultsSection, (entry) => [
-    entry.panel.display,
-    ...entry.observations.map((observation) => observation.code.display),
+    entry.panel,
+    ...entry.observations.map((observation) => observation.code),
   ]),
   descriptor('vitals', vitalsSection, (entry) => [
-    entry.panel.display,
-    ...entry.observations.map((observation) => observation.code.display),
+    entry.panel,
+    ...entry.observations.map((observation) => observation.code),
   ]),
-  descriptor('immunisations', immunisationsSection, (entry) => [entry.vaccine.display]),
-  descriptor('encounters', encountersSection, (entry) => [entry.type.display]),
-  descriptor('plan', planSection, (entry) => [entry.activity.display]),
-  descriptor('socialHistory', socialHistorySection, (entry) => [
-    entry.observation.display,
-    entry.value.display,
-  ]),
+  descriptor('immunisations', immunisationsSection, (entry) => [entry.vaccine]),
+  descriptor('encounters', encountersSection, (entry) => [entry.type]),
+  descriptor('plan', planSection, (entry) => [entry.activity]),
+  descriptor('socialHistory', socialHistorySection, (entry) => [entry.observation, entry.value]),
 ];
 
 const MISSING_CODE_FALLBACKS = new Set(['Encounter', 'Planned activity', 'Observation', 'Unknown']);
@@ -286,7 +287,10 @@ export function previewCcd(xml: string): CcdPreview {
 
   return {
     document,
+    sourceDocumentId: compositeIdentifier(childNamed(root, 'id')),
     ...patientMrnAuthority(root),
+    patientBirthDatePrecision:
+      attr(path(root, 'recordTarget', 'patientRole', 'patient', 'birthTime'), 'value')?.length ?? 0,
     sections,
     rejections,
     unidentified,
@@ -340,6 +344,12 @@ function patientMrnAuthority(root: XmlElement): { patientMrnAuthority?: string }
   return authority === undefined ? {} : { patientMrnAuthority: authority };
 }
 
+function compositeIdentifier(node: XmlElement | undefined): string {
+  const root = attr(node, 'root') ?? '';
+  const extension = attr(node, 'extension');
+  return extension === undefined ? root : `${root}^${extension}`;
+}
+
 function sectionMatches(section: XmlElement, sectionDescriptor: SectionDescriptor): boolean {
   return (
     childrenNamed(section, 'templateId').some(
@@ -356,7 +366,7 @@ function inspectSection(
 ): CcdSectionPreview {
   const entries = childrenNamed(section, 'entry');
   const nonEntries = section.children.filter(
-    (child) => !isElement(child) || child.name !== 'entry'
+    (child) => !isElement(child) || (child.name !== 'entry' && child.name !== 'text')
   );
   let mappedEntries = 0;
   let rejectedEntries = 0;

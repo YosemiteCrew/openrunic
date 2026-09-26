@@ -268,7 +268,12 @@ export function documentRoutes(router: Hono<AppEnv>): void {
       throw error;
     }
 
-    const identity = await identityPreview(c, preview.document, preview.patientMrnAuthority);
+    const identity = await identityPreview(
+      c,
+      preview.document,
+      preview.patientMrnAuthority,
+      preview.patientBirthDatePrecision
+    );
     const summary = summarise(preview, sha256(document), identity);
 
     await c.get('audit')?.write({
@@ -528,7 +533,7 @@ function summarise(
   return {
     source: { sha256: sourceSha256 },
     provenance: {
-      documentId: document.id,
+      documentId: preview.sourceDocumentId,
       custodianId: document.custodian.id,
       custodianName: document.custodian.name,
       authorId: document.author.id,
@@ -583,10 +588,11 @@ function sha256(value: string): string {
 async function identityPreview(
   c: Context<AppEnv>,
   document: CcdDocument,
-  mrnAuthority: string | undefined
+  mrnAuthority: string | undefined,
+  birthDatePrecision: number
 ): Promise<z.infer<typeof importSummarySchema>['identity']> {
   const mrn = document.patient.mrn.trim();
-  if (mrn === '' || mrnAuthority === undefined) {
+  if (mrn === '' || mrnAuthority === undefined || birthDatePrecision < 8) {
     return { status: 'insufficient', comparedBy: 'none', differences: [] };
   }
   if (

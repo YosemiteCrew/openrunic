@@ -177,4 +177,14 @@ describe('a C-CDA migration preview', () => {
     ]);
     expect(preview.totals.unidentifiedEntries).toBe(4);
   });
+
+  it('does not classify a coded concept by its display text', () => {
+    const source = `<ClinicalDocument><id root="authority" extension="document-42"/><component><structuredBody>
+      <component><section><code code="46240-8"/><entry><encounter><code code="123" codeSystem="1.2.3" displayName="Encounter"/></encounter></entry></section></component>
+    </structuredBody></component></ClinicalDocument>`;
+    const preview = previewCcd(source);
+
+    expect(preview.sourceDocumentId).toBe('authority^document-42');
+    expect(preview.unidentified).toEqual([]);
+  });
 });

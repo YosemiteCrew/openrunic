@@ -384,6 +384,25 @@ describe('a document arriving from somebody else', () => {
     });
   });
 
+  it('does not claim an identity match from a reduced-precision birth date', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+    const reducedPrecision = ours.replace(
+      /<birthTime value="[^"]+"\/>/,
+      '<birthTime value="1994"/>'
+    );
+
+    const summary = (await (await importDocument(app, reducedPrecision)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({
+      status: 'insufficient',
+      comparedBy: 'none',
+      differences: [],
+    });
+  });
+
   it('does not report a tenant-wide no-match from a facility-scoped search', async () => {
     const { app } = harness();
     const ours = (await ccdFor(app)).document;

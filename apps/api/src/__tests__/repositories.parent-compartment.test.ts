@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AuditCollector } from '../audit/collector.js';
-import { createMemoryAuditSink } from '../audit/memory-sink.js';
+import { createMemoryAuditSink, type MemoryAuditSink } from '../audit/memory-sink.js';
 import { createEmptyDataset, createMemoryRepositoryRegistry } from '../repositories/memory.js';
 import { createPrismaRepositoryRegistry } from '../repositories/prisma.js';
 import type { ScopedRow } from '../repositories/rows.js';
@@ -51,7 +51,9 @@ function visit(id: string, appointmentId: string): ScopedRow<'TelehealthVisit'> 
 
 type Ports = 'memory' | 'prisma';
 
-function harness(port: Ports): (compartmentPatientId?: string) => Repositories {
+function harness(
+  port: Ports
+): (compartmentPatientId?: string, audit?: AuditCollector) => Repositories {
   const dataset = createEmptyDataset();
   dataset.table('Appointment').push(
     makeAppointmentRow({ id: APPOINTMENT_A, patientId: PATIENT_A }),
@@ -78,20 +80,23 @@ function harness(port: Ports): (compartmentPatientId?: string) => Repositories {
       : createPrismaRepositoryRegistry((tenantId) =>
           createFakePort({ dataset, tenantId, now: () => FIXED_NOW, nextId })
         );
-  const sink = createMemoryAuditSink();
-  return (compartmentPatientId) =>
+  return (compartmentPatientId, audit = collector(createMemoryAuditSink())) =>
     registry.forRequest({
       tenantId: DEMO_TENANT_A,
       ...(compartmentPatientId === undefined ? {} : { compartmentPatientId }),
-      audit: new AuditCollector(sink, {
-        tenantId: DEMO_TENANT_A,
-        actorType: 'user',
-        actorId: testId(900),
-        requestId: 'req-1',
-        method: 'GET',
-        path: '/test',
-      }),
+      audit,
     });
+}
+
+function collector(sink: MemoryAuditSink): AuditCollector {
+  return new AuditCollector(sink, {
+    tenantId: DEMO_TENANT_A,
+    actorType: 'user',
+    actorId: testId(900),
+    requestId: 'req-1',
+    method: 'GET',
+    path: '/test',
+  });
 }
 
 const LIST = { page: 1, pageSize: 25, sort: 'scheduledStart', order: 'asc' } as const;
@@ -145,6 +150,39 @@ describe.each<Ports>(['memory', 'prisma'])(
       await expect(
         repos(PATIENT_B).telehealthVisits.create({ ...input, appointmentId: APPOINTMENT_B })
       ).resolves.toMatchObject({ appointmentId: APPOINTMENT_B });
+    });
+
+    it('attributes a visit it reads and writes to the caller’s patient', async () => {
+      const sink = createMemoryAuditSink();
+      const audit = collector(sink);
+      const visits = harness(port)(PATIENT_A, audit).telehealthVisits;
+
+      await visits.findById(VISIT_A);
+      await visits.update(VISIT_A, { status: 'ENDED' });
+      await audit.flush();
+
+      // The visit has no patient column, so without the compartment standing in
+      // for it the patient access report would never list this disclosure.
+      const read = sink.events.find((entry) => entry.event.action === 'phi.read');
+      expect(read?.event.patientId).toBe(PATIENT_A);
+      const write = sink.events.find((entry) => entry.event.action === 'appointment.updated');
+      expect(write?.event.patientId).toBe(PATIENT_A);
+    });
+
+    it('refuses a create whose appointment key is shaped like a filter', async () => {
+      // A value that is not an id must be compared as a value. Read as filter
+      // operators, `{ not: '' }` would match the caller's own appointment and
+      // the ownership check would pass for a visit bound to no appointment.
+      await expect(
+        harness(port)(PATIENT_A).telehealthVisits.create({
+          appointmentId: { not: '' } as unknown as string,
+          vendorId: 'demo-vendor',
+          roomRef: 'room-shaped',
+          joinUrl: 'https://video.example.test/shaped',
+          scheduledStart: new Date('2026-08-15T15:00:00.000Z'),
+          expiresAt: new Date('2026-08-15T16:00:00.000Z'),
+        })
+      ).rejects.toMatchObject({ status: 404 });
     });
 
     it('leaves a caller with no compartment the whole organisation', async () => {

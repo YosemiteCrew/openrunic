@@ -188,8 +188,22 @@ export function createMemoryCollection<
   const mine = (narrowFacility: boolean): ScopedRow<M>[] =>
     table().filter((row) => inScope(row, narrowFacility));
 
+  /**
+   * The chart an audit event belongs to. A row with its own patient column
+   * answers for itself. A `through` row has none, but a compartment-pinned
+   * caller only ever reaches one whose parent carries that caller's patient, so
+   * the compartment is the answer and the patient access report can list it.
+   * Mirrors the Prisma port.
+   */
+  const chartOf = (row: ScopedRow<M>): { patientId?: string } =>
+    compartment !== undefined &&
+    typeof spec.compartment === 'object' &&
+    'through' in spec.compartment
+      ? { patientId: compartment }
+      : patientOf(spec, row);
+
   const recordRead = (row: ScopedRow<M>): void => {
-    audit.read({ targetType: spec.targetType, targetId: row.id, ...patientOf(spec, row) });
+    audit.read({ targetType: spec.targetType, targetId: row.id, ...chartOf(row) });
   };
 
   const recordWrite = async (
@@ -202,7 +216,7 @@ export function createMemoryCollection<
         action: `${spec.action}.${before === null ? 'created' : 'updated'}`,
         targetType: spec.targetType,
         targetId: row.id,
-        ...patientOf(spec, row),
+        ...chartOf(row),
         ...facilityOf(spec, row),
         ...encounterOf(spec, row),
         metadata: { fields: [...fields], ...spec.writeMetadata?.(row, before) },

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isToolError } from '../errors.js';
+import { ToolError, isToolError } from '../errors.js';
 import { defineTool, type ToolContext } from '../registry.js';
 
 import { assertChartBound } from './patient-shared.js';
@@ -86,9 +86,10 @@ const outputSchema = z.strictObject({
   referralId: z.string(),
   patientId: z.string(),
   /**
-   * The referral's `updatedAt`. A surface that asked about version A drops an
-   * answer that comes back for version B, so a late result from before a
-   * report arrived can never be read out after it.
+   * The referral's `updatedAt`, the same on a read before the report was
+   * checked and on a read after it. A referral that changed in between is not
+   * described: the tool fails and asks for a fresh read rather than answer
+   * from two versions.
    */
   sourceVersion: z.string(),
   status: z.string().max(32),
@@ -127,16 +128,30 @@ export const referralsReviewPreparation = defineTool({
   async execute(input, context) {
     assertChartBound(context, 'referrals.reviewPreparation');
 
-    const referral = referralSchema.parse(
-      await context.api.call(
-        { method: 'GET', path: `/bff/v0/referrals/${input.referralId}` },
-        context
-      )
-    );
+    const referral = await readReferral(input.referralId, context);
+    const report = await reportState(referral, context);
 
-    return reviewPreparation(referral, await reportState(referral, context));
+    /* The report was checked against this version of the referral. If a
+       report was recorded, or anything else changed, while it was being
+       checked, the answer would describe a referral that no longer exists. */
+    const current = await readReferral(input.referralId, context);
+    if (current.updatedAt !== referral.updatedAt) {
+      throw new ToolError(
+        'AGENT_TOOL_FAILED',
+        'The referral changed while it was being read. Ask again for its current state.',
+        { toolId: 'referrals.reviewPreparation' }
+      );
+    }
+
+    return reviewPreparation(referral, report);
   },
 });
+
+async function readReferral(referralId: string, context: ToolContext): Promise<Referral> {
+  return referralSchema.parse(
+    await context.api.call({ method: 'GET', path: `/bff/v0/referrals/${referralId}` }, context)
+  );
+}
 
 /** Pure: the whole answer, from the referral and what the report read found. */
 export function reviewPreparation(referral: Referral, report: ChecklistItem): ReferralPreparation {

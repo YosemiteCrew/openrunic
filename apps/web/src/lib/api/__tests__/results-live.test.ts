@@ -187,7 +187,7 @@ describe('toResultAnalyte', () => {
     updatedAt: '2026-02-01T07:00:00.000Z',
   };
 
-  it('carries the label, value, unit and both bounds', () => {
+  it('carries the label, value, unit, both bounds and the laboratory flag', () => {
     expect(toResultAnalyte(observation)).toEqual({
       code: '2823-3',
       label: 'Potassium',
@@ -195,6 +195,9 @@ describe('toResultAnalyte', () => {
       unit: 'mmol/L',
       low: 3.5,
       high: 5.1,
+      text: null,
+      rangeText: '3.5 - 5.1 mmol/L',
+      flag: 'ABNORMAL',
     });
   });
 
@@ -212,6 +215,23 @@ describe('toResultAnalyte', () => {
     const analyte = toResultAnalyte({ ...observation, valueNumber: null, unit: null });
     expect(analyte.value).toBeNull();
     expect(analyte.unit).toBeNull();
+  });
+
+  /* A reading in words is still a reading. Dropped, the pane would say the
+     laboratory reported nothing, beside a flag it could no longer show. */
+  it('carries what a qualitative analyte reported, in words or as a code', () => {
+    const worded = toResultAnalyte({
+      ...observation,
+      valueNumber: null,
+      valueText: 'Positive',
+      valueCode: 'POS',
+      referenceRangeText: 'Negative',
+      abnormalFlag: 'CRITICAL',
+    });
+    expect(worded).toMatchObject({ text: 'Positive', rangeText: 'Negative', flag: 'CRITICAL' });
+
+    const coded = toResultAnalyte({ ...observation, valueNumber: null, valueCode: 'POS' });
+    expect(coded.text).toBe('POS');
   });
 
   /* `decimals` and `previous` have no served shape. Absent rather than invented:

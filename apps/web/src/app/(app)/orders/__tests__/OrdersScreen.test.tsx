@@ -101,13 +101,14 @@ describe('OrdersScreen', () => {
     expect((await within(table).findAllByText('Ada Okafor, MD')).length).toBeGreaterThan(0);
   });
 
-  it('names an unacknowledged requisition and offers a retry in the row', async () => {
+  /* The age and the state say the requisition has sat unacknowledged. Nothing
+     re-sends one yet, so no button offers to: a control that does nothing when
+     pressed would read as a retry that was tried. */
+  it('names an unacknowledged requisition and offers no retry it cannot send', async () => {
     render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
 
     expect(await screen.findByText(/Unacknowledged 1 d/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /Retry Ankle X-ray, three views/ })
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
   });
 
   it('filters the ledger to one status', async () => {

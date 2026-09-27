@@ -113,6 +113,9 @@ export const inbox: Messages = {
   'inbox.empty.streamTitle': 'No {stream} waiting',
   'inbox.empty.streamMessage':
     'Nothing in this stream needs you. Clear the filter to see the rest of the queue.',
+  'inbox.empty.streamPageTitle': 'No {stream} on this page',
+  'inbox.empty.streamPageMessage':
+    'The inbox holds more than this page. Any among the rest are not listed here.',
   'inbox.empty.allTitle': 'Inbox zero, for now',
   'inbox.empty.allMessage': 'New results, messages, refills and cosigns land here as they arrive.',
   'inbox.empty.goToSchedule': 'Go to the schedule',

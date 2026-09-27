@@ -276,6 +276,20 @@ export interface ResultAnalyte {
   decimals?: number;
   /** Newest first, at most three. */
   previous?: PriorValue[];
+  /**
+   * What the laboratory reported in words or as a code where it reported no
+   * number - a culture, a presence. A reading like this has a value; showing it
+   * as "not recorded" would say the laboratory reported nothing.
+   */
+  text?: string | null;
+  /** The laboratory's reference in words, for one that is not two bounds: "Negative". */
+  rangeText?: string | null;
+  /**
+   * The laboratory's own flag on this analyte. A reading in words has no bounds
+   * to be measured against, so this is the only statement of whether it is
+   * normal.
+   */
+  flag?: ResultFlag;
 }
 
 export interface ResultReport {
@@ -373,6 +387,9 @@ export function toResultAnalyte(dto: ResultObservationDto): ResultAnalyte {
     unit: dto.unit,
     ...(dto.referenceLow === null ? {} : { low: dto.referenceLow }),
     ...(dto.referenceHigh === null ? {} : { high: dto.referenceHigh }),
+    text: dto.valueText ?? dto.valueCode,
+    rangeText: dto.referenceRangeText,
+    flag: dto.abnormalFlag,
   };
 }
 

@@ -10,7 +10,6 @@ import type { ChangeEvent, ReactElement, ReactNode } from 'react';
 import { ScreenCommands } from '@/components/command';
 import type { Command } from '@/components/command';
 import {
-  isStuck,
   OrderAge,
   ORDER_PRIORITY_LABELS,
   ORDER_STATUS_LABELS,
@@ -325,11 +324,6 @@ function toRow(
         {order.resultId ? (
           <Button variant="ghost" size="sm" href="/results" iconLeft="flask-conical">
             {t('orders.list.openResult', { order: order.name })}
-          </Button>
-        ) : null}
-        {isStuck(order, now) ? (
-          <Button variant="secondary" size="sm" iconLeft="rotate-ccw">
-            {t('orders.list.retry', { order: order.name })}
           </Button>
         ) : null}
       </span>

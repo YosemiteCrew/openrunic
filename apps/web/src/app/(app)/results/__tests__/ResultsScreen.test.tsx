@@ -940,3 +940,78 @@ describe('ResultsScreen, recording a sign-off', () => {
     expect(screen.queryByText(/^Signed by Ada Okafor/)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * A reading in words - a culture, a presence - has no number and no bounds.
+ * The pane shows what the laboratory said, its reference in words and its own
+ * flag, instead of "Not recorded" beside a neutral state.
+ */
+describe('ResultsScreen, a reading in words', () => {
+  function withAnalytes(analytes: WorklistClient['results']['analytes']): WorklistClient {
+    const base = createWorklistClient();
+    return { ...base, results: { ...base.results, analytes } };
+  }
+  const page = { page: 1, pageSize: 100, total: 1, totalPages: 1 };
+
+  it('shows what the laboratory reported, its reference and its flag', async () => {
+    const analytes = () =>
+      Promise.resolve({
+        data: [
+          {
+            code: '600-7',
+            label: 'Blood culture',
+            value: null,
+            unit: null,
+            text: 'Staphylococcus aureus',
+            rangeText: 'No growth',
+            flag: 'CRITICAL' as const,
+          },
+        ],
+        page,
+      });
+    render(<ResultsScreen client={withAnalytes(analytes)} now={MOCK_NOW} />);
+
+    /* Awaited on the fetched value: the row's own analytes render first. */
+    await screen.findByText('Staphylococcus aureus');
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Staphylococcus aureus')).toBeInTheDocument();
+    expect(within(table).getByText('No growth')).toBeInTheDocument();
+    expect(within(table).getByText('Critical value')).toBeInTheDocument();
+    expect(within(table).queryByText('Not recorded')).not.toBeInTheDocument();
+  });
+
+  it('says the state is not recorded when the laboratory flagged nothing', async () => {
+    const analytes = () =>
+      Promise.resolve({
+        data: [{ code: '5778-6', label: 'Urine colour', value: null, unit: null, text: 'Amber' }],
+        page,
+      });
+    render(<ResultsScreen client={withAnalytes(analytes)} now={MOCK_NOW} />);
+
+    await screen.findByText('Amber');
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Not recorded')).toBeInTheDocument();
+    expect(within(table).getByText('No range recorded')).toBeInTheDocument();
+  });
+
+  it('uses the laboratory reference in words for a number with no bounds', async () => {
+    const analytes = () =>
+      Promise.resolve({
+        data: [
+          {
+            code: '2345-7',
+            label: 'Glucose',
+            value: 5.2,
+            unit: 'mmol/L',
+            rangeText: 'Fasting below 5.6',
+          },
+        ],
+        page,
+      });
+    render(<ResultsScreen client={withAnalytes(analytes)} now={MOCK_NOW} />);
+
+    await screen.findByText('5.2 mmol/L');
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Fasting below 5.6')).toBeInTheDocument();
+  });
+});

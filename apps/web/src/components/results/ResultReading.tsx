@@ -286,14 +286,6 @@ function clinicianName(
 }
 
 function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {
-  const reading = formatVital(t, {
-    label: analyte.label,
-    value: analyte.value,
-    unit: analyte.unit ?? '',
-    range: { low: analyte.low, high: analyte.high },
-    decimals: analyte.decimals,
-  });
-
   return {
     id: analyte.code,
     analyte: (
@@ -302,16 +294,9 @@ function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode>
         <span className="or-mono or-muted">{analyte.code}</span>
       </span>
     ),
-    // The unit rides with the value: a bare number is never a reading. The
-    // trim is for the analyte that has no unit to ride with - a culture, a
-    // presence - rather than for a unit nobody filled in.
-    value: `${reading.value} ${reading.unit}`.trim(),
-    range: reading.rangeText ?? t('results.reading.noRange'),
-    state: (
-      <Badge tone={STATE_TONE[reading.state] ?? 'neutral'} icon={null}>
-        {reading.stateLabel}
-      </Badge>
-    ),
+    ...(analyte.value === null && analyte.text
+      ? described(t, analyte, analyte.text)
+      : measured(t, analyte)),
     previous:
       analyte.previous && analyte.previous.length > 0
         ? analyte.previous
@@ -330,5 +315,47 @@ function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode>
             )
             .join(', ')
         : t('results.reading.noPrior'),
+  };
+}
+
+/** A reading with a number: its value, range and state measured against its bounds. */
+function measured(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {
+  const reading = formatVital(t, {
+    label: analyte.label,
+    value: analyte.value,
+    unit: analyte.unit ?? '',
+    range: { low: analyte.low, high: analyte.high },
+    decimals: analyte.decimals,
+  });
+  return {
+    // The unit rides with the value: a bare number is never a reading. The
+    // trim is for the analyte that has no unit to ride with - a culture, a
+    // presence - rather than for a unit nobody filled in.
+    value: `${reading.value} ${reading.unit}`.trim(),
+    range: reading.rangeText ?? analyte.rangeText ?? t('results.reading.noRange'),
+    state: (
+      <Badge tone={STATE_TONE[reading.state] ?? 'neutral'} icon={null}>
+        {reading.stateLabel}
+      </Badge>
+    ),
+  };
+}
+
+/**
+ * A reading in words or a code - a culture, a presence. There are no bounds to
+ * measure it against, so the range is the laboratory's own words and the state
+ * is the laboratory's own flag, both as they arrived.
+ */
+function described(t: Translator, analyte: ResultAnalyte, text: string): Record<string, ReactNode> {
+  return {
+    value: `${text} ${analyte.unit ?? ''}`.trim(),
+    range: analyte.rangeText ?? t('results.reading.noRange'),
+    state: analyte.flag ? (
+      <ResultFlagBadge flag={analyte.flag} />
+    ) : (
+      <Badge tone="neutral" icon={null}>
+        {t('common.notRecorded')}
+      </Badge>
+    ),
   };
 }

@@ -235,21 +235,16 @@ async function appointmentsFor(repos: Repositories, now: Date) {
     )
   ).filter((row) => row.status !== 'ENTERED_IN_ERROR');
 
-  // Fetch all telehealth visits for this patient's appointments
-  const appointmentIds = rows.map((row) => row.id);
-  const telehealthVisits =
-    appointmentIds.length > 0
-      ? await repos.telehealthVisits.list({
-          page: 1,
-          pageSize: appointmentIds.length,
-          sort: 'scheduledStart',
-          order: 'asc',
-        })
-      : { rows: [], total: 0 };
-
-  const telehealthByAppointment = new Map(
-    telehealthVisits.rows.map((visit) => [visit.appointmentId, visit])
+  const openVisits = await readAll((page, pageSize) =>
+    repos.telehealthVisits.list({
+      status: 'OPEN',
+      page,
+      pageSize,
+      sort: 'scheduledStart',
+      order: 'asc',
+    })
   );
+  const telehealthByAppointment = new Map(openVisits.map((visit) => [visit.appointmentId, visit]));
 
   const facilities = new Map(
     (await repos.facilities.findByIds(rows.map((row) => row.facilityId))).map((row) => [
@@ -260,7 +255,7 @@ async function appointmentsFor(repos: Repositories, now: Date) {
   const mapped = rows.map((row) => {
     const facility = facilities.get(row.facilityId);
     const telehealth = telehealthByAppointment.get(row.id);
-    const isVideo = telehealth !== undefined && telehealth.status === 'OPEN';
+    const isVideo = telehealth !== undefined;
     return {
       id: row.id,
       startsAt: row.start.toISOString(),

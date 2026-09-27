@@ -206,19 +206,23 @@ export function createPrismaCollection<
     const compartmented =
       compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed'
         ? (where ?? {})
-        : {
-            // ANDed rather than merged, so a filter the caller supplied on the
-            // same column cannot widen the compartment: the outer AND still has
-            // to hold.
-            AND: [
-              where ?? {},
-              {
-                [spec.model === 'Patient' ? 'id' : spec.compartment.column]: {
-                  equals: compartment,
+        : spec.compartment === 'appointment'
+          ? {
+              AND: [where ?? {}, { appointment: { patientId: { equals: compartment } } }],
+            }
+          : {
+              // ANDed rather than merged, so a filter the caller supplied on the
+              // same column cannot widen the compartment: the outer AND still has
+              // to hold.
+              AND: [
+                where ?? {},
+                {
+                  [spec.model === 'Patient' ? 'id' : spec.compartment.column]: {
+                    equals: compartment,
+                  },
                 },
-              },
-            ],
-          };
+              ],
+            };
     // Same reasoning again one level out: the facility narrowing is ANDed on
     // top, so nothing a caller sends can widen it either.
     return facility === null ? compartmented : { AND: [compartmented, facility] };

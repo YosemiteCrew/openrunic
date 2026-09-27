@@ -161,12 +161,14 @@ export interface UniqueBy<M extends PrismaModelName, TCreate> {
  * and a default here is either "leak the table to a patient-scoped token" or
  * "hide the provider directory from every portal user". `open` is for rows
  * that carry no chart and are safe for any principal to read, such as the
- * facility list. `closed` is for rows that belong to a chart only through a
- * join this layer does not perform: a compartment-restricted principal is
- * refused them wholesale rather than served a table nobody narrowed.
+ * facility list. `appointment` is the one supported parent relationship: the
+ * row is narrowed through its appointment's patient. `closed` is for every
+ * other row that belongs to a chart only through a join this layer does not
+ * perform: a compartment-restricted principal is refused it wholesale rather
+ * than served a table nobody narrowed.
  */
 export type CompartmentRule<M extends PrismaModelName> =
-  { readonly column: keyof Row<M> & string } | 'open' | 'closed';
+  { readonly column: keyof Row<M> & string } | 'open' | 'appointment' | 'closed';
 
 export interface CollectionSpec<
   M extends PrismaModelName,

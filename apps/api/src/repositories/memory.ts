@@ -174,6 +174,18 @@ export function createMemoryCollection<
     if (!ownChart && narrowFacility && !inFacility(row)) return false;
     if (compartment === undefined || spec.compartment === 'open') return true;
     if (spec.compartment === 'closed') return false;
+    if (spec.compartment === 'appointment') {
+      const appointmentId = readColumn(row, 'appointmentId');
+      if (typeof appointmentId !== 'string') return false;
+      return dataset
+        .table('Appointment')
+        .some(
+          (appointment) =>
+            appointment.id === appointmentId &&
+            appointment.tenantId === tenantId &&
+            appointment.patientId === compartment
+        );
+    }
     return readColumn(row, spec.compartment.column) === compartment;
   };
 

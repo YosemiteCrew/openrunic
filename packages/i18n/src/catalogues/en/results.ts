@@ -44,6 +44,8 @@ export const results: Messages = {
     '{count} of the results on this page are not listed, because this queue has no word for their category.',
   /* Noun phrase, lower case: the loading and error copy build a sentence
      around it. */
+  'results.list.unlistedOne': '{count} more assigned task is past this page and not listed.',
+  'results.list.unlistedOther': '{count} more assigned tasks are past this page and not listed.',
   'results.list.subject': 'the results queue',
   'results.list.empty.title': 'All results reviewed',
   'results.list.empty.message':
@@ -108,6 +110,10 @@ export const results: Messages = {
   'results.reading.noteHeading': 'Note on signing',
   'results.reading.caption': '{panel}, values against their reference ranges',
   'results.reading.noRange': 'No range recorded',
+  'results.reading.valuesLoading': 'Loading the values. Sign-off waits until they are shown.',
+  'results.reading.valuesFailed': 'The values did not load. Sign-off waits until they are shown.',
+  'results.reading.valuesIncomplete':
+    'This result cannot be signed here until every value can be shown.',
   'results.reading.noPrior': 'No prior value',
   'results.reading.prior': '{value} on {at}',
 
@@ -123,6 +129,12 @@ export const results: Messages = {
   'results.signed.message': 'The result is released to the patient and has left the queue.',
 
   /* ------------------------------------------------------- signing a batch */
+  'results.signFailed.title': '{panel} not signed',
+  'results.signFailed.message':
+    'The sign-off was not recorded, so the result is still in the queue.',
+  'results.signConflict.title': '{panel} was already signed',
+  'results.signConflict.message':
+    'It was signed before this sign-off was recorded. The queue has been read again.',
   'results.bulk.actionOne': 'Sign {count} in-range result',
   'results.bulk.actionOther': 'Sign {count} in-range results',
   'results.bulk.actionNone': 'No in-range results to batch',
@@ -139,6 +151,10 @@ export const results: Messages = {
     'Critical and out-of-range results stay in the queue for a person to read.',
 
   /* ---------------------------------------------------- signing with a note */
+  'results.bulk.unsignedOne':
+    '{count} result was not recorded here. The queue has been read again to show where it stands.',
+  'results.bulk.unsignedOther':
+    '{count} results were not recorded here. The queue has been read again to show where they stand.',
   'results.note.title': 'Sign with a note',
   'results.note.description':
     'Signing {panel} for {patient} moves it out of the queue and releases it to the portal with your note attached.',

@@ -18,7 +18,8 @@ import {
 } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, isEmptyList } from '@/components/state';
-import { MOCK_NOW, ORDER_STATUSES, useOrders, usePatientNames, useProviderNames } from '@/lib/api';
+import { ORDER_STATUSES, useOrders, usePatientNames, useProviderNames } from '@/lib/api';
+import { clinicNow } from '@/lib/api/chart';
 import type {
   Order,
   OrderPage,
@@ -119,11 +120,11 @@ const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] 
   { key: 'actions', headerKey: 'orders.list.column.actions' },
 ];
 
-export function OrdersScreen({
-  client,
-  now = MOCK_NOW,
-}: Readonly<OrdersScreenProps>): ReactElement {
+export function OrdersScreen({ client, now: fixedNow }: Readonly<OrdersScreenProps>): ReactElement {
   const t = useTranslator();
+  /* The clinic's clock: the fixtures' instant in the demo build, the wall clock
+     against the API, so an age is measured against today there. */
+  const [now] = useState(() => fixedNow ?? clinicNow());
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const orders = useOrders({ pageSize: PAGE_SIZE, status: status || undefined }, { client });
 

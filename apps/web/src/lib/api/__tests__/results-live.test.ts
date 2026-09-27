@@ -70,11 +70,23 @@ describe('toResultReport', () => {
       flag: 'ABNORMAL',
       status: 'UNREVIEWED',
       performer: 'Cedar Valley Laboratory',
+      signedBy: null,
       orderedBy: null,
       assignedTo: null,
       analytes: [],
       narrative: null,
     });
+  });
+
+  /* The signer is `reviewedById` and nothing else. The ordering clinician is a
+     different person on a different row, and naming them under "Signed by" puts
+     somebody who may never have read the result on its signature. */
+  it('names the signer from the reviewer the API recorded', () => {
+    const report = toResultReport(
+      dto({ reviewedAt: '2026-02-02T00:00:00.000Z', reviewedById: 'user-9' })
+    );
+    expect(report?.signedBy).toBe('user-9');
+    expect(report?.orderedBy).toBeNull();
   });
 
   /* The four instants on the DTO are distinct above, so a mapper reading
@@ -460,7 +472,8 @@ describe('liveResults', () => {
   function stub(
     rows: readonly DiagnosticReportDto[],
     observations: readonly ResultObservationDto[] = [],
-    tasks: readonly TaskDto[] = []
+    tasks: readonly TaskDto[] = [],
+    taskTotal: number = tasks.length
   ): {
     client: ApiClient;
     queries: unknown[];
@@ -495,7 +508,7 @@ describe('liveResults', () => {
           taskQueries.push(query);
           return Promise.resolve({
             data: [...tasks],
-            page: { page: 1, pageSize: 100, total: tasks.length, totalPages: 1 },
+            page: { page: 1, pageSize: 100, total: taskTotal, totalPages: 1 },
           });
         },
       },
@@ -653,5 +666,91 @@ describe('liveResults', () => {
 
     expect(analytes.page.total).toBe(MOCK_RESULT_OBSERVATIONS.length);
     expect(analytes.page.pageSize).toBe(100);
+  });
+
+  /* The join reads one page of tasks, so the tasks past it name reports the
+     report read was never asked for. Left unsaid, the statement under the queue
+     would read the first page as the whole of somebody's work; added to the
+     total, it would count tasks as results, and two tasks can name one report. */
+  it('states the tasks past the page it read beside the total, not in it', async () => {
+    const { client } = stub([dto({ id: 'report-7' })], [], [task({ subjectId: 'report-7' })], 130);
+
+    const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
+
+    expect(page.unlisted).toBe(129);
+    expect(page.page).toEqual({ page: 1, pageSize: 25, total: 25, totalPages: 1 });
+  });
+
+  it('states nothing past the page when every task was on it', async () => {
+    const { client } = stub([dto({ id: 'report-7' })], [], [task({ subjectId: 'report-7' })]);
+
+    const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
+
+    expect(page.unlisted).toBeUndefined();
+  });
+
+  it('states them when no task on the page named a report, too', async () => {
+    const { client, queries } = stub([], [], [task({ subjectType: 'Encounter' })], 3);
+
+    const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
+
+    expect(queries).toEqual([]);
+    expect(page.data).toEqual([]);
+    expect(page.page.total).toBe(0);
+    expect(page.unlisted).toBe(2);
+  });
+
+  /* The sign-off is the API's record, not the screen's: who signed comes from
+     the credential and when from the server's clock, and the screen's own "now"
+     is not what the pane then states. */
+  it('signs through the review route and answers the sign-off it recorded', async () => {
+    const review = vi.fn((id: string) =>
+      Promise.resolve(dto({ id, reviewedAt: '2026-02-03T10:00:00.000Z', reviewedById: 'user-9' }))
+    );
+    const client = { results: { review } } as unknown as ApiClient;
+    const report = toResultReport(dto());
+    if (!report) throw new Error('the fixture report did not map');
+
+    const signature = await liveResults(client, null).sign(
+      report,
+      null,
+      '2026-01-01T00:00:00.000Z'
+    );
+
+    expect(review).toHaveBeenCalledWith('report-1');
+    expect(signature).toEqual({ at: '2026-02-03T10:00:00.000Z', by: 'user-9', note: null });
+  });
+
+  it('falls back to the screen instant only when the answer carries no time', async () => {
+    const review = vi.fn(() => Promise.resolve(dto({ reviewedById: 'user-9' })));
+    const client = { results: { review } } as unknown as ApiClient;
+    const report = toResultReport(dto());
+    if (!report) throw new Error('the fixture report did not map');
+
+    const signature = await liveResults(client, null).sign(
+      report,
+      null,
+      '2026-01-01T00:00:00.000Z'
+    );
+
+    expect(signature.at).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('rejects when the review was refused, so nothing reads as signed', async () => {
+    const client = {
+      results: { review: () => Promise.reject(new Error('already reviewed')) },
+    } as unknown as ApiClient;
+    const report = toResultReport(dto());
+    if (!report) throw new Error('the fixture report did not map');
+
+    await expect(
+      liveResults(client, null).sign(report, null, '2026-01-01T00:00:00.000Z')
+    ).rejects.toThrow('already reviewed');
+  });
+
+  /* The review records who and when and nothing typed, so a note offered here
+     would be dropped on the way to the API. */
+  it('offers no note on a sign-off', () => {
+    expect(liveResults(stub([]).client, null).notes).toBe(false);
   });
 });

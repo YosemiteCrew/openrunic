@@ -203,6 +203,54 @@ describe('liveInbox', () => {
  * a screen that narrows in one mode and not the other - the defect the
  * medication-statement filter above it carries a note about.
  */
+/**
+ * What the live inbox can record. One disposition only - closing a general
+ * task - because every other stream's verb changes something other than the
+ * task, and closing the task alone would tell the reader it had been done.
+ */
+describe('liveInbox writes', () => {
+  function item(type: TaskKind) {
+    const mapped = toInboxItem(dto({ id: `task-${type}`, type }), ME);
+    if (!mapped) throw new Error(`${type} did not map`);
+    return mapped;
+  }
+
+  it.each([
+    ['GENERAL', true],
+    ['REFILL', false],
+    ['COSIGN', false],
+    ['MESSAGE', false],
+    ['RESULT', false],
+  ] as const)('records the disposition of a %s task: %s', (type, expected) => {
+    const inbox = liveInbox({} as ApiClient, ME);
+    expect(inbox.completes(item(type))).toBe(expected);
+  });
+
+  it('closes the task through the completion route', async () => {
+    const complete = vi.fn().mockResolvedValue(dto({ status: 'DONE' }));
+    const inbox = liveInbox({ tasks: { complete } } as unknown as ApiClient, ME);
+
+    await expect(inbox.complete(item('GENERAL'))).resolves.toBeUndefined();
+
+    expect(complete).toHaveBeenCalledWith('task-GENERAL');
+  });
+
+  it('rejects when the completion was refused, so the row stays', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('already done'));
+    const inbox = liveInbox({ tasks: { complete } } as unknown as ApiClient, ME);
+
+    await expect(inbox.complete(item('GENERAL'))).rejects.toThrow('already done');
+  });
+
+  /* No route claims a pooled task or reopens a finished one, so neither is a
+     function a screen could call and read as recorded. */
+  it('offers neither a claim nor a reopen', () => {
+    const inbox = liveInbox({} as ApiClient, ME);
+    expect(inbox.claim).toBeNull();
+    expect(inbox.reopen).toBeNull();
+  });
+});
+
 describe('filterTasks', () => {
   const rows: readonly TaskDto[] = [
     dto({ id: 'mine', assigneeType: 'USER', assigneeUserId: ME }),

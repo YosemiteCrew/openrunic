@@ -1,9 +1,9 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ResultsScreen } from '@/app/(app)/results/ResultsScreen';
 import { ApiError } from '@/lib/api/client';
-import { MOCK_NOW, MOCK_RESULTS } from '@/lib/api/mock/fixtures';
+import { MOCK_NOW, MOCK_PROVIDERS, MOCK_RESULTS } from '@/lib/api/mock/fixtures';
 import { createWorklistClient } from '@/lib/api/worklist';
 import type { WorklistClient } from '@/lib/api/worklist';
 
@@ -21,15 +21,26 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
+  const base = createWorklistClient();
   return {
     orders: { list: fail },
-    results: { list: fail, analytes: fail },
-    inbox: { list: fail },
+    results: { ...base.results, list: fail, analytes: fail },
+    inbox: { ...base.inbox, list: fail },
   };
 }
 
 function queue(): HTMLElement {
   return screen.getByRole('list', { name: 'Results to review' });
+}
+
+/**
+ * Presses a sign-off control once it is live. Sign-off waits for the report's
+ * values to be on screen, and they are a read of their own that lands a tick
+ * after the queue does.
+ */
+async function press(button: HTMLElement): Promise<void> {
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
 }
 
 /** Strict indexing makes `[0]` optional; this asserts the match exists. */
@@ -92,11 +103,11 @@ describe('ResultsScreen', () => {
     render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Results to review' });
 
-    fireEvent.click(at(screen.getAllByRole('button', { name: /^Sign$/ })));
+    await press(at(screen.getAllByRole('button', { name: /^Sign$/ })));
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/releases it to the portal/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign result' }));
+    await press(within(dialog).getByRole('button', { name: 'Sign result' }));
 
     expect(await screen.findByText('Comprehensive metabolic panel signed')).toBeInTheDocument();
   });
@@ -105,16 +116,18 @@ describe('ResultsScreen', () => {
     render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Results to review' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign with note' }));
+    await press(screen.getByRole('button', { name: 'Sign with note' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('Note for the record'), {
       target: { value: 'Repeat potassium today and call the patient.' },
     });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign with note' }));
+    await press(within(dialog).getByRole('button', { name: 'Sign with note' }));
 
-    expect(
-      await screen.findByText('Repeat potassium today and call the patient.')
-    ).toBeInTheDocument();
+    /* The dialog holds the note until the sign-off is recorded, so the pane's
+       copy is read once it is. */
+    expect(await screen.findByText('Comprehensive metabolic panel signed')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Repeat potassium today and call the patient.')).toBeInTheDocument();
   });
 
   it('never batches a critical value, and says so', async () => {
@@ -185,7 +198,7 @@ describe('ResultsScreen, driven from the command palette', () => {
     expect(
       within(dialog).getByText(/Signing Full blood count with differential for Fictitia Notreal/)
     ).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign result' }));
+    await press(within(dialog).getByRole('button', { name: 'Sign result' }));
 
     expect(
       await screen.findByText('Full blood count with differential signed')
@@ -255,7 +268,7 @@ describe('ResultsScreen, signing from the queue row', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/Signing Lipid panel/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign result' }));
+    await press(within(dialog).getByRole('button', { name: 'Sign result' }));
 
     expect(await screen.findByText('Lipid panel signed')).toBeInTheDocument();
     expect(
@@ -281,7 +294,7 @@ describe('ResultsScreen, signing from the queue row', () => {
     await screen.findByRole('list', { name: 'Results to review' });
 
     fireEvent.click(within(queue()).getByRole('button', { name: 'Sign Lipid panel' }));
-    fireEvent.click(
+    await press(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign result' })
     );
     const toast = await screen.findByRole('status');
@@ -317,7 +330,7 @@ describe('ResultsScreen, signing from the queue row', () => {
     await screen.findByRole('list', { name: 'Results to review' });
 
     fireEvent.click(within(queue()).getByRole('button', { name: 'Sign Lipid panel' }));
-    fireEvent.click(
+    await press(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign result' })
     );
 
@@ -484,6 +497,7 @@ function withFetchedAnalytes(): WorklistClient {
   return {
     ...base,
     results: {
+      ...base.results,
       list: async (query) => {
         const page = await base.results.list(query);
         return { ...page, data: page.data.map((report) => ({ ...report, analytes: [] })) };
@@ -625,5 +639,304 @@ describe('ResultsScreen, the assignment control', () => {
 
     expect(screen.getByRole('option', { name: /Show my results/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Show the team pool/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * A sign-off is the client's record, not the screen's.
+ *
+ * The screen used to mark a report signed and say so whatever happened to the
+ * write, which against the API meant a toast saying "signed" over a report the
+ * API still held as unreviewed. Each case below drives the client's answer and
+ * asserts what the clinician is then told.
+ */
+describe('ResultsScreen, recording a sign-off', () => {
+  const LINDQVIST = MOCK_PROVIDERS[1].id;
+  const refused = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
+  const alreadySigned = () =>
+    Promise.reject(
+      new ApiError('That result has already been reviewed.', { kind: 'http', status: 409 })
+    );
+
+  function withResults(results: Partial<WorklistClient['results']>): WorklistClient {
+    const base = createWorklistClient();
+    return { ...base, results: { ...base.results, ...results } };
+  }
+
+  async function signLipidPanel(): Promise<void> {
+    await screen.findByRole('list', { name: 'Results to review' });
+    fireEvent.click(within(queue()).getByRole('button', { name: 'Sign Lipid panel' }));
+    const confirm = within(await screen.findByRole('dialog')).getByRole('button', {
+      name: 'Sign result',
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+  }
+
+  it('hands the sign-off to the client and states the one it recorded', async () => {
+    const sign = vi.fn(() =>
+      Promise.resolve({ at: '2026-08-12T11:05:00.000Z', by: LINDQVIST, note: null })
+    );
+    render(<ResultsScreen client={withResults({ sign })} now={MOCK_NOW} />);
+
+    await signLipidPanel();
+
+    expect(await screen.findByText('Lipid panel signed')).toBeInTheDocument();
+    expect(sign).toHaveBeenCalledWith(
+      expect.objectContaining({ panel: 'Lipid panel' }),
+      null,
+      MOCK_NOW
+    );
+    /* The signer the client recorded, not the clinician who ordered the test. */
+    expect(await screen.findByText(/Signed .* by Ingrid Lindqvist/)).toBeInTheDocument();
+  });
+
+  it('marks nothing signed when the sign-off is refused, and says so', async () => {
+    render(<ResultsScreen client={withResults({ sign: refused })} now={MOCK_NOW} />);
+
+    await signLipidPanel();
+
+    expect(await screen.findByText('Lipid panel not signed')).toBeInTheDocument();
+    expect(
+      screen.getByText('The sign-off was not recorded, so the result is still in the queue.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Lipid panel signed')).not.toBeInTheDocument();
+    /* The dialog stays open for the retry; backing out of it finds the row
+       still waiting. */
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Sign result' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(within(queue()).getByRole('button', { name: 'Sign Lipid panel' })).toBeInTheDocument();
+  });
+
+  /* Signed by somebody else after this page loaded: the row is stale, and a
+     retry would meet the same refusal every time. So the queue is read again. */
+  it('reads the queue again when the result was already signed elsewhere', async () => {
+    const base = createWorklistClient();
+    const list = vi.fn(base.results.list);
+    render(<ResultsScreen client={withResults({ list, sign: alreadySigned })} now={MOCK_NOW} />);
+
+    await signLipidPanel();
+
+    expect(await screen.findByText('Lipid panel was already signed')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'It was signed before this sign-off was recorded. The queue has been read again.'
+      )
+    ).toBeInTheDocument();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the note typed when the sign-off is refused, for the retry', async () => {
+    render(<ResultsScreen client={withResults({ sign: refused })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    await press(screen.getByRole('button', { name: 'Sign with note' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Note for the record'), {
+      target: { value: 'Repeat potassium today.' },
+    });
+    await press(within(dialog).getByRole('button', { name: 'Sign with note' }));
+
+    expect(await screen.findByText(/not signed$/)).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByLabelText('Note for the record')).toHaveValue(
+      'Repeat potassium today.'
+    );
+
+    /* Backing out forgets it: the next note starts empty. */
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    await press(screen.getByRole('button', { name: 'Sign with note' }));
+    expect(
+      within(await screen.findByRole('dialog')).getByLabelText('Note for the record')
+    ).toHaveValue('');
+  });
+
+  /* A report longer than the page the pane reads cannot be read in full there,
+     so it cannot be signed there either, and the pane says why. */
+  it('holds sign-off for a report with more values than the pane holds', async () => {
+    const base = createWorklistClient();
+    const analytes = vi.fn(async (id: string) => {
+      const page = await base.results.analytes(id);
+      return { ...page, page: { ...page.page, total: page.page.total + 3 } };
+    });
+    render(<ResultsScreen client={withResults({ analytes })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(
+      await screen.findByText(/This result cannot be signed here until every value can be shown\./)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Sign$/ })).toBeDisabled();
+    fireEvent.click(within(queue()).getByRole('button', { name: 'Sign Lipid panel' }));
+    expect(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign result' })
+    ).toBeDisabled();
+  });
+
+  it('states the assigned tasks past the page it read', async () => {
+    const base = createWorklistClient();
+    const list = vi.fn(async (query?: Parameters<typeof base.results.list>[0]) => ({
+      ...(await base.results.list(query)),
+      unlisted: 12,
+    }));
+    render(<ResultsScreen client={withResults({ list })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(
+      screen.getByText('12 more assigned tasks are past this page and not listed.')
+    ).toBeInTheDocument();
+  });
+
+  it('counts the part of a batch that was not recorded, and leaves it in the queue', async () => {
+    const candidates = MOCK_RESULTS.filter(
+      (report) =>
+        report.assignedTo === 'ME' && report.status === 'UNREVIEWED' && report.flag === 'NORMAL'
+    );
+    const [kept, lost] = candidates;
+    if (!kept || !lost)
+      throw new Error('the fixtures carry fewer than two in-range results of mine');
+    const sign = vi.fn((report: (typeof MOCK_RESULTS)[number]) =>
+      report.id === lost.id
+        ? refused()
+        : Promise.resolve({ at: MOCK_NOW, by: LINDQVIST, note: null })
+    );
+    render(<ResultsScreen client={withResults({ sign })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Sign 2 in-range results/ }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign 2 results' })
+    );
+
+    expect(await screen.findByText('1 in-range result signed')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '1 result was not recorded here. The queue has been read again to show where it stands.'
+      )
+    ).toBeInTheDocument();
+    /* Read again after the refusal, so the rows below are the fresh read. */
+    const reread = await screen.findByRole('list', { name: 'Results to review' });
+    expect(within(reread).getByRole('button', { name: `Sign ${lost.panel}` })).toBeInTheDocument();
+    expect(
+      within(reread).queryByRole('button', { name: `Sign ${kept.panel}` })
+    ).not.toBeInTheDocument();
+  });
+
+  it('says so when no part of a batch was recorded, and reads the queue again', async () => {
+    const base = createWorklistClient();
+    const list = vi.fn(base.results.list);
+    render(<ResultsScreen client={withResults({ list, sign: refused })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Sign 2 in-range results/ }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign 2 results' })
+    );
+
+    expect(await screen.findByText('0 in-range results signed')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '2 results were not recorded here. The queue has been read again to show where they stand.'
+      )
+    ).toBeInTheDocument();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  });
+
+  /* The note is typed into a dialog and would be dropped on the way to a client
+     that records none, so the pane and the palette offer none. */
+  it('offers no note where the client records none', async () => {
+    render(<ResultsScreen client={withResults({ notes: false })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(screen.queryByRole('button', { name: 'Sign with note' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+    await screen.findByRole('option', { name: /Sign the open result(?! with)/ });
+    expect(
+      screen.queryByRole('option', { name: /Sign the open result with a note/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('holds sign-off while the values are loading, and says why', async () => {
+    const analytes = vi.fn(() => new Promise<never>(() => undefined));
+    render(<ResultsScreen client={withResults({ analytes })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(
+      await screen.findByText('Loading the values. Sign-off waits until they are shown.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Sign$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign with note' })).toBeDisabled();
+
+    fireEvent.click(within(queue()).getByRole('button', { name: 'Sign Lipid panel' }));
+    expect(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign result' })
+    ).toBeDisabled();
+  });
+
+  it('holds sign-off when the values fail to load, and asks for them again', async () => {
+    const base = createWorklistClient();
+    const analytes = vi
+      .fn(base.results.analytes)
+      .mockImplementationOnce(() => Promise.reject(new ApiError('offline', { kind: 'network' })));
+    render(<ResultsScreen client={withResults({ analytes })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(
+      await screen.findByText('The values did not load. Sign-off waits until they are shown.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Sign$/ })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Sign$/ })).toBeEnabled());
+    expect(
+      screen.queryByText('The values did not load. Sign-off waits until they are shown.')
+    ).not.toBeInTheDocument();
+    expect(analytes).toHaveBeenCalledTimes(2);
+  });
+
+  /* A second press while the first sign-off is outstanding would send a second
+     review, which the API refuses as already reviewed - and that refusal would
+     then be the last thing the clinician is told. */
+  it('holds the confirmation while a sign-off is outstanding', async () => {
+    const sign = vi.fn(() => new Promise<never>(() => undefined));
+    render(<ResultsScreen client={withResults({ sign })} now={MOCK_NOW} />);
+
+    await signLipidPanel();
+
+    const confirm = within(screen.getByRole('dialog')).getByRole('button', { name: 'Sign result' });
+    await waitFor(() => expect(confirm).toBeDisabled());
+    fireEvent.click(confirm);
+    expect(sign).toHaveBeenCalledTimes(1);
+  });
+
+  /* No client given is the app's own: the fixtures here, the API in a live
+     build. The sign-off still goes through it rather than around it. */
+  it('signs through the app client when given none', async () => {
+    render(<ResultsScreen now={MOCK_NOW} />);
+
+    await signLipidPanel();
+
+    expect(await screen.findByText('Lipid panel signed')).toBeInTheDocument();
+    expect(
+      within(queue()).queryByRole('button', { name: 'Sign Lipid panel' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('names the signer a signed report records, not the clinician who ordered it', async () => {
+    const [first] = MOCK_RESULTS;
+    if (!first) throw new Error('MOCK_RESULTS is empty');
+    const signedElsewhere = {
+      ...first,
+      id: 'signed-elsewhere',
+      status: 'SIGNED' as const,
+      signedBy: LINDQVIST,
+    };
+    render(
+      <ResultsScreen client={createWorklistClient({ results: [signedElsewhere] })} now={MOCK_NOW} />
+    );
+
+    expect(await screen.findByText(/^Signed by Ingrid Lindqvist/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Signed by Ada Okafor/)).not.toBeInTheDocument();
   });
 });

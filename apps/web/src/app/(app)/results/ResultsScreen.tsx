@@ -78,6 +78,12 @@ const RESULT_COUNT: CountedMessage = {
   otherKey: 'results.list.countOther',
 };
 
+/** Assigned tasks past the page the ME/TEAM filter reads. See `ResultPage.unlisted`. */
+const UNLISTED: CountedMessage = {
+  oneKey: 'results.list.unlistedOne',
+  otherKey: 'results.list.unlistedOther',
+};
+
 /** The rows the queue refused, because `SERVICE_REQUEST_CATEGORIES` is wider than OR-01's three. */
 const NOT_SHOWN: CountedMessage = {
   oneKey: 'results.list.notShownOne',
@@ -157,6 +163,11 @@ function QueueStatement({ page }: Readonly<{ page: ResultPage }>): ReactElement 
       {page.refused > 0 ? (
         <p className="or-caption">
           <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+        </p>
+      ) : null}
+      {page.unlisted ? (
+        <p className="or-caption">
+          <strong>{counted(t, UNLISTED, page.unlisted)}</strong>
         </p>
       ) : null}
     </>
@@ -259,7 +270,7 @@ function useResultCommands({
  * recorded is marked, what was not is counted, and the requests are settled
  * rather than awaited as one so a single refusal cannot hide the rest.
  */
-function useSignOff(writer: WorklistClient, now: string) {
+function useSignOff(writer: WorklistClient, now: string, refresh: () => void) {
   const t = useTranslator();
   const [signed, setSigned] = useState<Record<string, SignedNote>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -271,13 +282,25 @@ function useSignOff(writer: WorklistClient, now: string) {
   const signOne = useCallback(
     async (report: ResultReport, note: string | null) => {
       const outcome = await signOff.run(report, note);
+      /* Signed by somebody else between this page loading and the press: the
+         row is stale rather than unsigned, so the queue is read again instead
+         of offering a sign-off the record will refuse every time. */
+      if (!outcome.ok && outcome.error.status === 409) {
+        refresh();
+        setNotice({
+          tone: 'danger',
+          title: t('results.signConflict.title', { panel: report.panel }),
+          message: t('results.signConflict.message'),
+        });
+        return true;
+      }
       if (!outcome.ok) {
         setNotice({
           tone: 'danger',
           title: t('results.signFailed.title', { panel: report.panel }),
           message: t('results.signFailed.message'),
         });
-        return;
+        return false;
       }
       setSigned((previous) => ({ ...previous, [report.id]: outcome.value }));
       setNotice({
@@ -287,8 +310,9 @@ function useSignOff(writer: WorklistClient, now: string) {
           ? t('results.signed.messageWithNote')
           : t('results.signed.message'),
       });
+      return true;
     },
-    [t, signOff]
+    [t, signOff, refresh]
   );
 
   const signBatch = useCallback(
@@ -306,13 +330,16 @@ function useSignOff(writer: WorklistClient, now: string) {
       const recorded = Object.keys(stamped).length;
       const unsigned = reports.length - recorded;
       setSigned((previous) => ({ ...previous, ...stamped }));
+      /* A refusal can be a report somebody else has signed meanwhile, so the
+         queue is read again rather than left showing it as waiting. */
+      if (unsigned > 0) refresh();
       setNotice({
         tone: unsigned === 0 ? 'success' : 'danger',
         title: counted(t, BATCH_SIGNED, recorded),
         message: unsigned === 0 ? t('results.bulk.message') : counted(t, BATCH_UNSIGNED, unsigned),
       });
     },
-    [t, writer, now]
+    [t, writer, now, refresh]
   );
 
   const dismiss = useCallback(() => setNotice(null), []);
@@ -340,13 +367,13 @@ export function ResultsScreen({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [signing, setSigning] = useState<Signing | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const signOffs = useSignOff(writer, now);
-  const { signed, busy } = signOffs;
 
   const results = useResults(
     { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
     { client }
   );
+  const signOffs = useSignOff(writer, now, results.refetch);
+  const { signed, busy } = signOffs;
 
   const assignmentFilters = useMemo<SelectOption[]>(
     () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
@@ -377,10 +404,6 @@ export function ResultsScreen({
      the list, because one call per row is N+1 on a queue built to be scanned
      and the values of a report nobody opened are never looked at. */
   const analytes = useResultAnalytes(selected?.id ?? null, { client });
-  /* Sign-off waits until the values are on screen. The list does not carry
-     them, so while they load - or after they fail to - the pane would show a
-     report with nothing in it and still offer to sign it. */
-  const readable = analytes.status === 'success';
   const reading =
     selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
   /* What the laboratory reported and this page of the report does not hold. The
@@ -389,11 +412,17 @@ export function ResultsScreen({
   const unshownAnalytes = analytes.data
     ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
     : 0;
+  /* Sign-off waits until every value is on screen. The list does not carry
+     them, so while they load - or after they fail to, or when the report holds
+     more than one page of them - the pane would show a report short of its
+     values and still offer to sign it. */
+  const readable = analytes.status === 'success' && unshownAnalytes === 0;
 
   const signOne = useCallback(
     async (report: ResultReport, note: string | null) => {
-      await signOffs.signOne(report, note);
-      setSigning(null);
+      /* The dialog stays open on a refusal, note and all, so a retry is one
+         press rather than the note typed again. */
+      if (await signOffs.signOne(report, note)) setSigning(null);
     },
     [signOffs]
   );
@@ -544,7 +573,10 @@ export function ResultsScreen({
         }
       />
 
+      {/* Keyed on the report being signed, so a note survives a refused
+          sign-off and its retry but never carries over to another result. */}
       <SignNoteModal
+        key={signing?.withNote ? signing.report.id : 'closed'}
         open={signing?.withNote === true}
         subject={signing?.report.panel ?? ''}
         patientName={selectedPatientName}

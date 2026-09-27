@@ -116,7 +116,9 @@ export function ResultReading({
      the report's own signer. Never the ordering clinician: they asked for the
      test and may never have seen its result. */
   const signer = signed === null ? report.signedBy : signed.by;
-  const readable = values === 'success';
+  /* A report longer than the page the pane reads cannot be read in full here,
+     so it cannot be signed here either. */
+  const readable = values === 'success' && unshownAnalytes === 0;
   const columns = useMemo<TableColumn[]>(
     () => COLUMNS.map(({ headerKey, ...column }) => ({ ...column, header: t(headerKey) })),
     [t]
@@ -244,7 +246,8 @@ export function ResultReading({
 
       {unshownAnalytes > 0 ? (
         <p className="or-caption">
-          <strong>{counted(t, MORE_ANALYTES, unshownAnalytes)}</strong>
+          <strong>{counted(t, MORE_ANALYTES, unshownAnalytes)}</strong>{' '}
+          {t('results.reading.valuesIncomplete')}
         </p>
       ) : null}
     </Card>

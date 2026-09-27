@@ -669,41 +669,35 @@ describe('liveResults', () => {
   });
 
   /* The join reads one page of tasks, so the tasks past it name reports the
-     report read was never asked for. Left out of the total, the statement under
-     the queue would read the first page as the whole of somebody's work. */
-  it('counts the tasks past the page it read into the total', async () => {
+     report read was never asked for. Left unsaid, the statement under the queue
+     would read the first page as the whole of somebody's work; added to the
+     total, it would count tasks as results, and two tasks can name one report. */
+  it('states the tasks past the page it read beside the total, not in it', async () => {
     const { client } = stub([dto({ id: 'report-7' })], [], [task({ subjectId: 'report-7' })], 130);
 
     const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
 
-    expect(page.page.total).toBe(25 + 129);
-    expect(page.page.totalPages).toBe(Math.ceil(154 / 25));
+    expect(page.unlisted).toBe(129);
+    expect(page.page).toEqual({ page: 1, pageSize: 25, total: 25, totalPages: 1 });
   });
 
-  it('leaves the total as the report read gave it when every task was on the page', async () => {
+  it('states nothing past the page when every task was on it', async () => {
     const { client } = stub([dto({ id: 'report-7' })], [], [task({ subjectId: 'report-7' })]);
 
     const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
 
-    expect(page.page).toEqual({ page: 1, pageSize: 25, total: 25, totalPages: 1 });
+    expect(page.unlisted).toBeUndefined();
   });
 
-  it('counts them when no task on the page named a report, too', async () => {
+  it('states them when no task on the page named a report, too', async () => {
     const { client, queries } = stub([], [], [task({ subjectType: 'Encounter' })], 3);
 
     const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME' });
 
     expect(queries).toEqual([]);
     expect(page.data).toEqual([]);
-    expect(page.page).toEqual({ page: 1, pageSize: 100, total: 2, totalPages: 1 });
-  });
-
-  it('keeps a page of no width at one page rather than dividing by it', async () => {
-    const { client } = stub([], [], [task({ subjectType: 'Encounter' })], 3);
-
-    const page = await liveResults(client, 'user-1').list({ assignedTo: 'ME', pageSize: 0 });
-
-    expect(page.page).toEqual({ page: 1, pageSize: 0, total: 2, totalPages: 1 });
+    expect(page.page.total).toBe(0);
+    expect(page.unlisted).toBe(2);
   });
 
   /* The sign-off is the API's record, not the screen's: who signed comes from

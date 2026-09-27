@@ -430,6 +430,14 @@ export function toResultReport(dto: DiagnosticReportDto): ResultReport | null {
 export interface ResultPage extends ListResponse<ResultReport> {
   /** Rows on this page the queue has no word for. Counted in `page.total`, absent from `data`. */
   refused: number;
+  /**
+   * Assigned tasks past the one page of them the ME/TEAM filter reads, and so
+   * past anything this page could list. Counted as tasks, not results: two
+   * tasks can name one report, and a task can name something else, so the
+   * number is stated beside the total rather than added to it. Absent where
+   * the queue was not narrowed by assignment.
+   */
+  unlisted?: number;
 }
 
 /** One page of diagnostic reports, as the sign-off queue reads it. */
@@ -790,9 +798,9 @@ const RESULT_TASK_PAGE_SIZE = 100;
  * ME/TEAM split the sign-off queue offers. `type` is `RESULT` because a task
  * about a report is the only kind whose subject can be one.
  *
- * `open` matters here in a way it does not on the inbox chips: a signed-off
- * result closes its task, and without this the ME queue would keep answering
- * with work the clinician has already finished.
+ * `open` matters here in a way it does not on the inbox chips: a finished or
+ * cancelled task is nobody's work any more, and without this the ME queue
+ * would keep answering with it.
  */
 function toResultTaskQuery(assignedTo: Assignment, userId: string): TaskListQuery {
   return {
@@ -829,25 +837,18 @@ function noResults(pageSize: number): ResultPage {
 }
 
 /**
- * The page, with the tasks past the one page of them that was read counted
- * into its total.
+ * The page, with the tasks past the one page of them that was read.
  *
  * The report ids come from one page of `RESULT` tasks, so a clinician holding
  * more than {@link RESULT_TASK_PAGE_SIZE} open results sees the first page of
  * them. The report read cannot know about the rest - they were never asked for
  * - so without this the statement under the queue would read the shown rows as
- * the whole of it. One task per report is the assumption: it is what the task
- * stream is for, and the residual is stated as the tasks it came from.
+ * the whole of it. They are not added to the total: they are tasks nobody has
+ * matched to a report yet. See {@link ResultPage.unlisted}.
  */
-function withUnreadTasks(results: ResultPage, tasks: ListResponse<TaskDto>): ResultPage {
+function withUnlisted(results: ResultPage, tasks: ListResponse<TaskDto>): ResultPage {
   const beyond = tasks.page.total - tasks.data.length;
-  if (beyond <= 0) return results;
-  const total = results.page.total + beyond;
-  const { pageSize } = results.page;
-  return {
-    ...results,
-    page: { ...results.page, total, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 1 },
-  };
+  return beyond > 0 ? { ...results, unlisted: beyond } : results;
 }
 
 /**
@@ -878,9 +879,9 @@ export function liveResults(client: ApiClient, userId: string | null): WorklistC
       // absent `ids` would widen this to every result in the practice, which is
       // the one answer a ME filter must never give.
       if (ids.length === 0) {
-        return withUnreadTasks(noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE), tasks);
+        return withUnlisted(noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE), tasks);
       }
-      return withUnreadTasks(
+      return withUnlisted(
         toResultPage(await client.results.list(toReportQuery(query, ids))),
         tasks
       );

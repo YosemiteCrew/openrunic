@@ -56,14 +56,7 @@ export function SignNoteModal({
           <Button variant="ghost" onClick={onCancel}>
             {t('results.note.cancel')}
           </Button>
-          <Button
-            iconLeft="pen-line"
-            disabled={disabled}
-            onClick={() => {
-              onConfirm(note.trim());
-              setNote('');
-            }}
-          >
+          <Button iconLeft="pen-line" disabled={disabled} onClick={() => onConfirm(note.trim())}>
             {t('results.note.confirm')}
           </Button>
         </>

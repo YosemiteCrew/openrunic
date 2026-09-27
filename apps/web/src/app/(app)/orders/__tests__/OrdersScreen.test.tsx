@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrdersScreen } from '@/app/(app)/orders/OrdersScreen';
@@ -221,12 +221,13 @@ describe('OrdersScreen, its own clock', () => {
   it('ages every order against the clinic clock when no instant is fixed', async () => {
     const fixed = render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByText(/Unacknowledged 1 d/);
+    // The patient names are a second read; the comparison is of the settled page.
+    await screen.findAllByText(/Patientsson, Tess/);
     const expected = document.body.textContent;
     fixed.unmount();
 
     render(<OrdersScreen client={createWorklistClient()} />);
-    await screen.findByText(/Unacknowledged 1 d/);
 
-    expect(document.body.textContent).toBe(expected);
+    await waitFor(() => expect(document.body.textContent).toBe(expected));
   });
 });

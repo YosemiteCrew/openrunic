@@ -410,3 +410,45 @@ describe('InboxScreen, its own defaults', () => {
     expect(screen.getAllByText(/Overdue by/).length).toBe(2);
   });
 });
+
+/* The streams are filtered in the browser from one page. On a page that is not
+   the whole inbox, a stream with nothing on it has nothing here - which is not
+   the same as nothing waiting, and the empty state says which it is. */
+describe('InboxScreen, a stream on a partial page', () => {
+  function pageOf(total: number): WorklistClient {
+    const base = createWorklistClient();
+    const items = MOCK_INBOX_ITEMS.filter((item) => item.stream !== 'REFILLS');
+    return {
+      ...base,
+      inbox: {
+        ...base.inbox,
+        list: () =>
+          Promise.resolve({
+            data: [...items],
+            page: { page: 1, pageSize: 100, total, totalPages: 1 },
+            refused: 0,
+          }),
+      },
+    };
+  }
+
+  it('says a stream has nothing on this page when the inbox holds more', async () => {
+    render(<InboxScreen client={pageOf(250)} now={MOCK_NOW} />);
+    const filters = await screen.findByRole('group', { name: 'Filter by stream' });
+
+    fireEvent.click(within(filters).getByRole('button', { name: /Refills 0/ }));
+
+    expect(await screen.findByText('No refills on this page')).toBeInTheDocument();
+    expect(screen.queryByText('No refills waiting')).not.toBeInTheDocument();
+  });
+
+  it('says nothing is waiting when the page is the whole inbox', async () => {
+    const whole = MOCK_INBOX_ITEMS.filter((item) => item.stream !== 'REFILLS').length;
+    render(<InboxScreen client={pageOf(whole)} now={MOCK_NOW} />);
+    const filters = await screen.findByRole('group', { name: 'Filter by stream' });
+
+    fireEvent.click(within(filters).getByRole('button', { name: /Refills 0/ }));
+
+    expect(await screen.findByText('No refills waiting')).toBeInTheDocument();
+  });
+});

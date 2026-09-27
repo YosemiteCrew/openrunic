@@ -119,6 +119,62 @@ const OVERDUE_SUMMARY: CountedMessage = {
   otherKey: 'inbox.rail.overdueSummaryOther',
 };
 
+/**
+ * The verbs this screen offers the command palette: a stream, every stream, and
+ * the two assignment filters. A hook rather than a block inside the screen,
+ * because it is the one part of `InboxScreen` with no markup in it.
+ */
+function useInboxCommands(
+  setStream: (stream: InboxStream | null) => void,
+  setAssignment: (assignment: Assignment | '') => void
+): Command[] {
+  const t = useTranslator();
+  return useMemo<Command[]>(
+    () => [
+      ...INBOX_STREAMS.map((candidate) => ({
+        id: `inbox.stream.${candidate.toLowerCase()}`,
+        group: 'actions' as const,
+        label: t('inbox.command.showStream', {
+          stream: t(INBOX_STREAM_INLINE_KEYS[candidate]),
+        }),
+        /* The enum member itself joins the reader's own search words: somebody
+           who knows the stream by its API name should still find the command,
+           and that name is a code rather than a word to translate. */
+        keywords: [...synonyms(t('inbox.command.showStream.keywords')), candidate.toLowerCase()],
+        icon: 'filter',
+        perform: () => setStream(candidate),
+      })),
+      {
+        id: 'inbox.stream.all',
+        group: 'actions',
+        label: t('inbox.command.showAll'),
+        keywords: synonyms(t('inbox.command.showAll.keywords')),
+        icon: 'inbox',
+        perform: () => setStream(null),
+      },
+      {
+        id: 'inbox.mine',
+        group: 'actions',
+        label: t('inbox.command.mine'),
+        keywords: synonyms(t('inbox.command.mine.keywords')),
+        icon: 'user-round',
+        perform: () => setAssignment('ME'),
+      },
+      {
+        id: 'inbox.team',
+        group: 'actions',
+        label: t('inbox.command.team'),
+        keywords: synonyms(t('inbox.command.team.keywords')),
+        icon: 'users',
+        perform: () => setAssignment('TEAM'),
+      },
+    ],
+    /* The setters are `useState`'s own and stable, but they arrive here as
+       parameters, so they are named rather than assumed. */
+    [t, setStream, setAssignment]
+  );
+}
+
 export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps>): ReactElement {
   const t = useTranslator();
   const [now] = useState(() => fixedNow ?? clinicNow());
@@ -232,48 +288,7 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
 
   const busy = completing.pending || claiming.pending || reopening.pending;
 
-  const commands = useMemo<Command[]>(
-    () => [
-      ...INBOX_STREAMS.map((candidate) => ({
-        id: `inbox.stream.${candidate.toLowerCase()}`,
-        group: 'actions' as const,
-        label: t('inbox.command.showStream', {
-          stream: t(INBOX_STREAM_INLINE_KEYS[candidate]),
-        }),
-        /* The enum member itself joins the reader's own search words: somebody
-           who knows the stream by its API name should still find the command,
-           and that name is a code rather than a word to translate. */
-        keywords: [...synonyms(t('inbox.command.showStream.keywords')), candidate.toLowerCase()],
-        icon: 'filter',
-        perform: () => setStream(candidate),
-      })),
-      {
-        id: 'inbox.stream.all',
-        group: 'actions',
-        label: t('inbox.command.showAll'),
-        keywords: synonyms(t('inbox.command.showAll.keywords')),
-        icon: 'inbox',
-        perform: () => setStream(null),
-      },
-      {
-        id: 'inbox.mine',
-        group: 'actions',
-        label: t('inbox.command.mine'),
-        keywords: synonyms(t('inbox.command.mine.keywords')),
-        icon: 'user-round',
-        perform: () => setAssignment('ME'),
-      },
-      {
-        id: 'inbox.team',
-        group: 'actions',
-        label: t('inbox.command.team'),
-        keywords: synonyms(t('inbox.command.team.keywords')),
-        icon: 'users',
-        perform: () => setAssignment('TEAM'),
-      },
-    ],
-    [t]
-  );
+  const commands = useInboxCommands(setStream, setAssignment);
 
   /* Read off the page rather than off `visible`, which the stream chips and the
      completed rows have already narrowed: the two absences below are facts
@@ -282,6 +297,18 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
   const page = inbox.data?.page ?? null;
   const refused = inbox.data?.refused ?? 0;
   const windowed = inbox.data ? inbox.data.data.length + refused : null;
+
+  /* The streams are filtered in the browser from one page, so a stream with
+     nothing on a page that is not the whole inbox has nothing HERE, which is
+     not the same as nothing waiting. */
+  const truncated = windowed !== null && page !== null && windowed < page.total;
+  const streamEmptyTitle = (chosen: InboxStream): string =>
+    t(truncated ? 'inbox.empty.streamPageTitle' : 'inbox.empty.streamTitle', {
+      stream: t(INBOX_STREAM_INLINE_KEYS[chosen]),
+    });
+  const streamEmptyMessage = t(
+    truncated ? 'inbox.empty.streamPageMessage' : 'inbox.empty.streamMessage'
+  );
 
   const overdue = visible.filter((item) => slaState(item.dueAt, now) === 'OVERDUE');
   /* The instant rather than the item: an item with no due date is never
@@ -354,10 +381,8 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
           isEmpty={() => visible.length === 0}
           loadingRows={6}
           empty={{
-            title: stream
-              ? t('inbox.empty.streamTitle', { stream: t(INBOX_STREAM_INLINE_KEYS[stream]) })
-              : t('inbox.empty.allTitle'),
-            message: stream ? t('inbox.empty.streamMessage') : t('inbox.empty.allMessage'),
+            title: stream ? streamEmptyTitle(stream) : t('inbox.empty.allTitle'),
+            message: stream ? streamEmptyMessage : t('inbox.empty.allMessage'),
             icon: 'inbox',
             action: (
               <Button href="/schedule" iconLeft="calendar-days">

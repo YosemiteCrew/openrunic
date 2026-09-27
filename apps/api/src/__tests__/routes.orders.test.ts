@@ -1164,6 +1164,25 @@ describe('results', () => {
     expect((await problem(again)).detail).toContain('already been reviewed');
   });
 
+  it('completes the RESULT task assigned to the reviewing clinician', async () => {
+    const { app, dataset } = seededApp();
+    await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+
+    const tasks = dataset.table('Task');
+    const task = tasks.find(
+      (t) =>
+        t.type === 'RESULT' &&
+        t.subjectType === 'DiagnosticReport' &&
+        t.subjectId === REPORT_A &&
+        t.assigneeUserId === CLINICIAN
+    );
+    expect(task).toBeDefined();
+    expect(task!.status).toBe('DONE');
+    expect(task!.completedById).toBe(CLINICIAN);
+    expect(task!.outcome).toBe('Reviewed and signed off');
+    expect(task!.completedAt).not.toBeNull();
+  });
+
   it('refuses a sign-off from a service account holding the permission', async () => {
     const { app, dataset } = serviceApp();
     seed(dataset, 'DiagnosticReport', makeReportRow());

@@ -791,6 +791,8 @@ export interface TaskListQuery extends BaseQuery {
   assigneeUserId?: string;
   assigneeTeamKey?: string;
   slaState?: TaskSlaState;
+  subjectType?: string;
+  subjectId?: string;
   /** Inclusive lower bound on `dueAt`. */
   from?: Date;
   /** Exclusive upper bound on `dueAt`. */
@@ -916,6 +918,8 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
       return false;
     }
     if (query.slaState !== undefined && row.slaState !== query.slaState) return false;
+    if (query.subjectType !== undefined && row.subjectType !== query.subjectType) return false;
+    if (query.subjectId !== undefined && row.subjectId !== query.subjectId) return false;
     return inWindow(row.dueAt, query.from, query.to);
   },
 
@@ -930,6 +934,8 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
       ...(query.assigneeUserId === undefined ? {} : { assigneeUserId: query.assigneeUserId }),
       ...(query.assigneeTeamKey === undefined ? {} : { assigneeTeamKey: query.assigneeTeamKey }),
       ...(query.slaState === undefined ? {} : { slaState: query.slaState }),
+      ...(query.subjectType === undefined ? {} : { subjectType: query.subjectType }),
+      ...(query.subjectId === undefined ? {} : { subjectId: query.subjectId }),
       ...(dueAt === undefined ? {} : { dueAt }),
     };
   },

@@ -134,7 +134,17 @@ export const referralsReviewPreparation = defineTool({
       )
     );
 
-    return reviewPreparation(referral, await reportState(referral, context));
+    const report = await reportState(referral, context);
+    const current = referralSchema.parse(
+      await context.api.call(
+        { method: 'GET', path: `/bff/v0/referrals/${input.referralId}` },
+        context
+      )
+    );
+    return reviewPreparation(
+      current,
+      current.updatedAt === referral.updatedAt ? report : await reportState(current, context)
+    );
   },
 });
 

@@ -297,6 +297,8 @@ export interface ResultReport {
    * behind it - and null on every live row until that join lands (#535).
    */
   orderedBy: string | null;
+  /** The clinician who signed the report, when it has been reviewed. */
+  reviewedBy?: string | null;
   /**
    * Whose queue this sits in, null where nothing records it.
    *
@@ -387,6 +389,7 @@ export function toResultReport(dto: DiagnosticReportDto): ResultReport | null {
        request one join away, and assignment is a `Task` fact. Null is the row
        rather than a placeholder for it, and the screen renders both as absent. */
     orderedBy: null,
+    reviewedBy: dto.reviewedById,
     assignedTo: null,
     /* One `/results/{id}/observations` call per row would be N+1 on a list, so
        the list does not fetch them and the reading pane does, for the one
@@ -610,8 +613,13 @@ export interface WorklistClient {
      * mention is the one shape this screen must not take.
      */
     analytes: (reportId: string) => Promise<ListResponse<ResultAnalyte>>;
+    review?: (reportId: string) => Promise<ResultReport>;
   };
-  inbox: { list: (query?: InboxListQuery) => Promise<InboxPage> };
+  inbox: {
+    list: (query?: InboxListQuery) => Promise<InboxPage>;
+    complete?: (itemId: string) => Promise<void>;
+    claim?: (itemId: string) => Promise<void>;
+  };
 }
 
 export interface WorklistData {
@@ -649,11 +657,20 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
       list: (query) => Promise.resolve({ ...page(filterResults(results, query)), refused: 0 }),
       analytes: (reportId) =>
         Promise.resolve(page(results.find((report) => report.id === reportId)?.analytes ?? [])),
+      review: async (reportId) => {
+        const report = results.find((candidate) => candidate.id === reportId);
+        if (!report) throw new Error('No such result.');
+        return { ...report, status: 'SIGNED' };
+      },
     },
     /* The fixture rows are the whole inbox and every one of them is typed, so
        nothing is refused here. The field still travels: a screen reading it
        only in live mode would be a screen nothing in the demo build exercises. */
-    inbox: { list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }) },
+    inbox: {
+      list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }),
+      complete: () => Promise.resolve(),
+      claim: () => Promise.resolve(),
+    },
   };
 }
 
@@ -790,7 +807,8 @@ export function liveResults(client: ApiClient, userId: string | null): WorklistC
       // absent `ids` would widen this to every result in the practice, which is
       // the one answer a ME filter must never give.
       if (ids.length === 0) return noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE);
-      return toResultPage(await client.results.list(toReportQuery(query, ids)));
+      const resultPage = toResultPage(await client.results.list(toReportQuery(query, ids)));
+      return { ...resultPage, page: { ...resultPage.page, total: tasks.page.total } };
     },
     analytes: (reportId) =>
       client.results
@@ -799,6 +817,11 @@ export function liveResults(client: ApiClient, userId: string | null): WorklistC
           data: response.data.map(toResultAnalyte),
           page: response.page,
         })),
+    review: async (reportId) => {
+      const report = toResultReport(await client.results.review(reportId));
+      if (report === null) throw new Error('The reviewed result cannot be shown in this queue.');
+      return report;
+    },
   };
 }
 
@@ -915,6 +938,12 @@ export function liveInbox(client: ApiClient, userId: string): WorklistClient['in
   return {
     list: (query = {}) =>
       client.tasks.list(toTaskQuery(query, userId)).then((page) => toInboxPage(page, userId)),
+    complete: async (itemId) => {
+      await client.tasks.complete(itemId);
+    },
+    claim: async (itemId) => {
+      await client.tasks.update(itemId, { assigneeType: 'USER', assigneeUserId: userId });
+    },
   };
 }
 

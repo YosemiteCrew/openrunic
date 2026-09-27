@@ -386,6 +386,8 @@ describe('ending a question', () => {
     handlers[0]?.message({ type: 'input_audio_buffer.committed' });
     port.stop();
 
+    expect(seen).toEqual([]);
+    handlers[0]?.closed();
     expect(seen).toEqual([{ type: 'ended', id: 'session-1' }]);
   });
 
@@ -486,8 +488,10 @@ describe('stop and the microphone', () => {
     connection.handlers[0]?.listening();
     port.stop();
     expect(connection.mutes()).toBe(0);
-    // Server turn detection with nothing uncommitted: the session simply ends.
+    // No local event can prove the server did not receive a final short utterance.
     expect(connection.sent).toEqual([]);
+    expect(seen.at(-1)).toEqual({ type: 'listening', id: SESSION.id });
+    connection.handlers[0]?.closed();
     expect(seen.at(-1)).toEqual({ type: 'ended', id: SESSION.id });
   });
 });

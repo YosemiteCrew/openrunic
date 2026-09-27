@@ -718,6 +718,12 @@ export interface TaskCompleteBody {
   outcome?: string;
 }
 
+export interface TaskPatchBody {
+  assigneeType?: 'USER' | 'TEAM';
+  assigneeUserId?: string;
+  assigneeTeamKey?: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /* The revenue cycle                                                           */
 /* -------------------------------------------------------------------------- */
@@ -1156,6 +1162,7 @@ export interface ApiClient {
   };
   tasks: {
     list: (query?: TaskListQuery, signal?: AbortSignal) => Promise<ListResponse<TaskDto>>;
+    update: (id: string, body: TaskPatchBody, signal?: AbortSignal) => Promise<TaskDto>;
     complete: (id: string, body?: TaskCompleteBody, signal?: AbortSignal) => Promise<TaskDto>;
   };
   claims: {

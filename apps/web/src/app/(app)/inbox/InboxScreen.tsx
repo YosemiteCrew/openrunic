@@ -18,7 +18,7 @@ import {
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast } from '@/components/state';
-import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox, usePatientNames } from '@/lib/api';
+import { INBOX_STREAMS, slaState, useInbox, usePatientNames, worklist } from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
 
 import { counted } from '@/lib/i18n/counted';
@@ -107,7 +107,10 @@ const OVERDUE_SUMMARY: CountedMessage = {
   otherKey: 'inbox.rail.overdueSummaryOther',
 };
 
-export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProps>): ReactElement {
+export function InboxScreen({
+  client,
+  now = new Date().toISOString(),
+}: Readonly<InboxScreenProps>): ReactElement {
   const t = useTranslator();
   const [stream, setStream] = useState<InboxStream | null>(null);
   const [assignment, setAssignment] = useState<Assignment | ''>('');
@@ -145,11 +148,14 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
   }, [loaded, doneIds, stream, now]);
 
   const complete = useCallback(
-    (item: InboxItem) => {
+    async (item: InboxItem) => {
+      const completeItem = (client ?? worklist).inbox.complete;
+      if (!completeItem) throw new Error('This inbox client cannot complete tasks.');
+      await completeItem(item.id);
       setDoneIds((previous) => [...previous, item.id]);
       setCompletion({ item, label: t(INBOX_STREAM_DONE_KEYS[item.stream]) });
     },
-    [t]
+    [t, client]
   );
 
   /* One undo for both dispositions: whichever list the row landed in, this puts
@@ -167,11 +173,14 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
   }, [completion]);
 
   const claim = useCallback(
-    (item: InboxItem) => {
+    async (item: InboxItem) => {
+      const claimItem = (client ?? worklist).inbox.claim;
+      if (!claimItem) throw new Error('This inbox client cannot claim tasks.');
+      await claimItem(item.id);
       setClaimedIds((previous) => [...previous, item.id]);
       setCompletion({ item, label: t('inbox.list.assigned') });
     },
-    [t]
+    [t, client]
   );
 
   const commands = useMemo<Command[]>(

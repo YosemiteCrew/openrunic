@@ -58,7 +58,7 @@ describe('ResultsScreen', () => {
     render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Results to review' });
 
-    const table = screen.getByRole('table');
+    const table = await screen.findByRole('table');
     expect(within(table).getByText('6.2 mmol/L')).toBeInTheDocument();
     expect(within(table).getByText('3.5 to 5.1 mmol/L')).toBeInTheDocument();
     expect(within(table).getAllByText('Above range').length).toBeGreaterThan(0);
@@ -75,6 +75,7 @@ describe('ResultsScreen', () => {
   it('moves through the queue with the arrow keys', async () => {
     render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Results to review' });
+    await screen.findByRole('table');
 
     const openers = within(queue()).getAllByRole('button', { name: /Reported/ });
     at(openers).focus();
@@ -91,6 +92,7 @@ describe('ResultsScreen', () => {
   it('signs one result behind a confirmation that states the consequence', async () => {
     render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Results to review' });
+    await screen.findByRole('table');
 
     fireEvent.click(at(screen.getAllByRole('button', { name: /^Sign$/ })));
 
@@ -104,6 +106,7 @@ describe('ResultsScreen', () => {
   it('attaches a note when signing with one', async () => {
     render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
     await screen.findByRole('list', { name: 'Results to review' });
+    await screen.findByRole('table');
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign with note' }));
     const dialog = await screen.findByRole('dialog');

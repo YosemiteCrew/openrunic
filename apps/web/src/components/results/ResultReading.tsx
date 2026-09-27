@@ -47,6 +47,7 @@ export interface ResultReadingProps {
   signed: SignedNote | null;
   onSign: () => void;
   onSignWithNote: () => void;
+  signDisabled?: boolean;
   /** Fixed "now" for the age line. */
   now: string;
   /**
@@ -89,6 +90,7 @@ export function ResultReading({
   unshownAnalytes = 0,
   patientNamed,
   providerNamed,
+  signDisabled = false,
 }: Readonly<ResultReadingProps>): ReactElement {
   const t = useTranslator();
   const patient = patientNamed(report.patientId);
@@ -115,19 +117,24 @@ export function ResultReading({
                 {signed
                   ? t('results.reading.signedAtBy', {
                       at: formatDateTime(t, signed.at, 'dense'),
-                      clinician: clinicianName(t, providerNamed, report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, report.reviewedBy ?? null),
                     })
                   : t('results.reading.signedBy', {
-                      clinician: clinicianName(t, providerNamed, report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, report.reviewedBy ?? null),
                     })}
               </span>
             </>
           ) : (
             <>
-              <Button iconLeft="pen-line" onClick={onSign}>
+              <Button iconLeft="pen-line" onClick={onSign} disabled={signDisabled}>
                 {t('results.reading.sign')}
               </Button>
-              <Button variant="secondary" iconLeft="message-square" onClick={onSignWithNote}>
+              <Button
+                variant="secondary"
+                iconLeft="message-square"
+                onClick={onSignWithNote}
+                disabled={signDisabled}
+              >
                 {t('results.reading.signWithNote')}
               </Button>
               <Button variant="ghost" href="/orders/new" iconLeft="circle-plus">

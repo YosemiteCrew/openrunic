@@ -18,6 +18,7 @@ import {
   useProviderNames,
   useResultAnalytes,
   useResults,
+  worklist,
 } from '@/lib/api';
 import type { Assignment, ResultFlag, ResultPage, ResultReport, WorklistClient } from '@/lib/api';
 import { formatName } from '@/lib/format';
@@ -275,8 +276,7 @@ export function ResultsScreen({
      the list, because one call per row is N+1 on a queue built to be scanned
      and the values of a report nobody opened are never looked at. */
   const analytes = useResultAnalytes(selected?.id ?? null, { client });
-  const reading =
-    selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
+  const reading = selected && analytes.data ? { ...selected, analytes: analytes.data.data } : null;
   /* What the laboratory reported and this page of the report does not hold. The
      route paginates these too, so the pane states its own residual the way the
      queue states the rows it refused. */
@@ -285,7 +285,10 @@ export function ResultsScreen({
     : 0;
 
   const signOne = useCallback(
-    (report: ResultReport, note: string | null) => {
+    async (report: ResultReport, note: string | null) => {
+      const review = (client ?? worklist).results.review;
+      if (!review) throw new Error('This results client cannot review reports.');
+      await review(report.id);
       setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
       setSigning(null);
       setToast({
@@ -293,10 +296,13 @@ export function ResultsScreen({
         message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
       });
     },
-    [t, now]
+    [t, now, client]
   );
 
-  const signBulk = useCallback(() => {
+  const signBulk = useCallback(async () => {
+    const review = (client ?? worklist).results.review;
+    if (!review) throw new Error('This results client cannot review reports.');
+    await Promise.all(bulkCandidates.map((report) => review(report.id)));
     const stamped: Record<string, SignedNote> = {};
     for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
     setSigned((previous) => ({ ...previous, ...stamped }));
@@ -305,7 +311,7 @@ export function ResultsScreen({
       title: counted(t, BATCH_SIGNED, bulkCandidates.length),
       message: t('results.bulk.message'),
     });
-  }, [t, bulkCandidates, now]);
+  }, [t, bulkCandidates, now, client]);
 
   const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
     if (!report) return;
@@ -401,17 +407,33 @@ export function ResultsScreen({
               <QueueStatement page={page} />
             </Card>
 
-            {reading ? (
-              <ResultReading
-                report={reading}
-                signed={signed[reading.id] ?? null}
-                now={now}
-                onSign={() => requestSign(reading, false)}
-                onSignWithNote={() => requestSign(reading, true)}
-                unshownAnalytes={unshownAnalytes}
-                patientNamed={patientNamed}
-                providerNamed={providerNamed}
-              />
+            {selected ? (
+              <AsyncBoundary
+                state={analytes}
+                subject={selected.panel}
+                isEmpty={() => false}
+                loadingRows={4}
+                empty={{
+                  title: t('results.list.empty.title'),
+                  message: t('results.list.empty.message'),
+                  icon: 'flask-conical',
+                }}
+              >
+                {() =>
+                  reading ? (
+                    <ResultReading
+                      report={reading}
+                      signed={signed[reading.id] ?? null}
+                      now={now}
+                      onSign={() => requestSign(reading, false)}
+                      onSignWithNote={() => requestSign(reading, true)}
+                      unshownAnalytes={unshownAnalytes}
+                      patientNamed={patientNamed}
+                      providerNamed={providerNamed}
+                    />
+                  ) : null
+                }
+              </AsyncBoundary>
             ) : null}
           </div>
         )}

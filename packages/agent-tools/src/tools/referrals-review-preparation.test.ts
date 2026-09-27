@@ -87,12 +87,14 @@ function checklistState(
 }
 
 describe('referrals.reviewPreparation', () => {
-  it('reads the referral the caller selected, with the caller credential, and nothing else', async () => {
+  it('re-reads the referral after its related document, with the caller credential', async () => {
     const { api } = await review(referral());
     expect(api.calls.map((call) => call.request)).toEqual([
       { method: 'GET', path: `/bff/v0/referrals/${REFERRAL_ID}` },
+      { method: 'GET', path: `/bff/v0/referrals/${REFERRAL_ID}` },
     ]);
     expect(api.calls[0]?.context.credential.authorization).toBe('Bearer test-token');
+    expect(api.calls[1]?.context.credential.authorization).toBe('Bearer test-token');
   });
 
   it('says a sent referral is sent, not received and not completed', async () => {

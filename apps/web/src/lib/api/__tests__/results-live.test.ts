@@ -71,6 +71,7 @@ describe('toResultReport', () => {
       status: 'UNREVIEWED',
       performer: 'Cedar Valley Laboratory',
       orderedBy: null,
+      reviewedBy: null,
       assignedTo: null,
       analytes: [],
       narrative: null,

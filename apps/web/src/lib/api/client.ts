@@ -25,6 +25,7 @@ import type {
   ServiceRequestDto,
   StatementDto,
   TaskDto,
+  TaskPatchBody,
   UserDto,
 } from './types';
 
@@ -290,6 +291,8 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
     },
     tasks: {
       list: (query, signal) => get<ListResponse<TaskDto>>(`/tasks${toSearchParams(query)}`, signal),
+      update: (id, body: TaskPatchBody, signal) =>
+        patch<TaskDto>(`/tasks/${segment(id)}`, body, signal),
       complete: (id, body, signal) =>
         post<TaskDto>(`/tasks/${segment(id)}/complete`, body ?? {}, signal),
     },

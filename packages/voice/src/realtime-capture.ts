@@ -162,6 +162,7 @@ export function createRealtimeCapture(
   let pending = new Set<string>();
   let committed = new Set<string>();
   let settled = new Set<string>();
+  let sawSpeech = false;
 
   const emit = (event: CaptureEvent) => {
     for (const listener of listeners) listener(event);
@@ -177,6 +178,7 @@ export function createRealtimeCapture(
     pending = new Set();
     committed = new Set();
     settled = new Set();
+    sawSpeech = false;
     current?.close();
   };
 
@@ -196,6 +198,7 @@ export function createRealtimeCapture(
   };
 
   const track = (itemId: string) => {
+    sawSpeech = true;
     if (!settled.has(itemId)) pending.add(itemId);
   };
 
@@ -315,7 +318,13 @@ export function createRealtimeCapture(
         awaitingCommit = true;
         open.send({ type: 'input_audio_buffer.commit' });
       }
-      if (live !== null) settleIfDone(live);
+      /* With server VAD, an empty local set does not prove silence: the stop
+         press can race the service's first speech event. Leave that muted
+         connection to its transport timeout unless at least one speech item
+         has reached us. */
+      if (live !== null && (transport.turnDetection === 'manual' || sawSpeech)) {
+        settleIfDone(live);
+      }
     },
 
     abort: () => {

@@ -1293,6 +1293,7 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     tasks: {
       list: (query = {}) =>
         answer(() => paginate(filterTasks(tasks.all(), query), query.page, query.pageSize)),
+      update: (id, body) => answer(() => tasks.patch(id, body, NO_TASK)),
       complete: (id, body = {}) =>
         answer(() => {
           const before = tasks.require(id, NO_TASK);

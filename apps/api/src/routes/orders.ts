@@ -585,7 +585,8 @@ function transitionRoutes(): Hono<AppEnv> {
     const id = pathId(c.req.param('id'));
     await parseTransitionBody(c, emptyBodySchema);
     const reviewedById = actingUserId(c);
-    const reports = repositories(c).reports;
+    const repos = repositories(c);
+    const reports = repos.reports;
     const before = await requiredParentChart(c, 'reports', await reports.findById(id), NO_REPORT);
     if (before.reviewedAt !== null) {
       // An already-reviewed result is a result somebody has already acted on,
@@ -596,6 +597,30 @@ function transitionRoutes(): Hono<AppEnv> {
       await reports.update(id, { reviewedAt: new Date(), reviewedById }),
       NO_REPORT
     );
+
+    // Finish every open RESULT task for this report, whoever holds it: the
+    // team pool and a colleague's queue should not keep a signed-off result.
+    const tasks = repos.tasks;
+    const taskPage = await tasks.list({
+      page: 1,
+      pageSize: 100,
+      type: 'RESULT',
+      subjectType: 'DiagnosticReport',
+      subjectId: id,
+      statusIn: ['OPEN', 'IN_PROGRESS', 'ON_HOLD'] as const,
+      sort: 'createdAt',
+      order: 'asc',
+    });
+    const completedAt = new Date();
+    for (const task of taskPage.rows) {
+      await tasks.update(task.id, {
+        status: 'DONE',
+        completedAt,
+        completedById: reviewedById,
+        outcome: 'Reviewed and signed off',
+      });
+    }
+
     return c.json(toDiagnosticReportDto(row));
   });
 

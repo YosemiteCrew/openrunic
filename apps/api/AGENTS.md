@@ -22,6 +22,9 @@ asks for another practice's data, which is a stronger guarantee than remembering
 
 A compartment-restricted principal reading a model with no chart column is refused outright rather
 than served an unsatisfiable filter: a query that cannot return a row should not reach Postgres.
+The exception is a model whose chart is one parent row away, such as `TelehealthVisit` through its
+`Appointment`: its spec declares a `through` compartment, and both ports narrow it to rows whose
+parent carries the caller's patient.
 
 Answer **404, not 403**, for a row outside the caller's scope. A 403 confirms the row exists, which
 turns the API into an enumeration oracle for patient identifiers.

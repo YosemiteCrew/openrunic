@@ -55,7 +55,7 @@ const APPS = join(ROOT, 'apps');
 /* `withFileTypes`, because the alternative scans every entry in `apps/` and a
    stray FILE there throws `ENOTDIR` at module scope - which takes the whole
    guard with it and reports `no tests`. `.DS_Store` is gitignored so CI cannot
-   meet it; a desk that has opened `apps/` in Finder can, and would get a
+   meet it; a checkout browsed in Finder can, and would get a
    baffling local failure rather than a tracking report. */
 const nextApps = readdirSync(APPS, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())

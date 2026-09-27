@@ -18,8 +18,16 @@ import {
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast } from '@/components/state';
-import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox, usePatientNames } from '@/lib/api';
+import {
+  INBOX_STREAMS,
+  slaState,
+  useInbox,
+  useMutation,
+  usePatientNames,
+  worklist,
+} from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
+import { clinicNow } from '@/lib/api/chart';
 
 import { counted } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
@@ -65,7 +73,11 @@ interface Completion {
 export interface InboxScreenProps {
   /** Injectable for tests. Defaults to the app's worklist client. */
   client?: WorklistClient;
-  /** Fixed "now", so SLA labels are deterministic. */
+  /**
+   * Fixed "now", so SLA labels are deterministic. Defaults to the clinic's
+   * clock: the fixtures' instant in the demo build, the wall clock against the
+   * API, where a due date is measured against today rather than the demo's day.
+   */
   now?: string;
 }
 
@@ -107,74 +119,17 @@ const OVERDUE_SUMMARY: CountedMessage = {
   otherKey: 'inbox.rail.overdueSummaryOther',
 };
 
-export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProps>): ReactElement {
+/**
+ * The verbs this screen offers the command palette: a stream, every stream, and
+ * the two assignment filters. A hook rather than a block inside the screen,
+ * because it is the one part of `InboxScreen` with no markup in it.
+ */
+function useInboxCommands(
+  setStream: (stream: InboxStream | null) => void,
+  setAssignment: (assignment: Assignment | '') => void
+): Command[] {
   const t = useTranslator();
-  const [stream, setStream] = useState<InboxStream | null>(null);
-  const [assignment, setAssignment] = useState<Assignment | ''>('');
-  const [doneIds, setDoneIds] = useState<string[]>([]);
-  const [claimedIds, setClaimedIds] = useState<string[]>([]);
-  const [completion, setCompletion] = useState<Completion | null>(null);
-
-  const inbox = useInbox(assignment ? { assignedTo: assignment } : {}, { client });
-
-  const loaded = useMemo(() => inbox.data?.data ?? [], [inbox.data]);
-  const done = new Set(doneIds);
-
-  /* Off the PAGE rather than off `visible`: the stream chips and the completed
-     rows narrow what is rendered, not what was read, and keying the name read
-     on the filtered set would refetch the same patients every time somebody
-     picked a stream. */
-  const patientNamed = usePatientNames(loaded.map((item) => item.patientId));
-
-  /* Overdue first, then due soonest: the queue orders itself by what will hurt.
-     Completed rows leave the list, and the toast holds the undo. */
-  const visible = useMemo(() => {
-    const rank = { OVERDUE: 0, DUE_SOON: 1, ON_TIME: 2 } as const;
-    const completed = new Set(doneIds);
-    const open = loaded.filter(
-      (item) => !completed.has(item.id) && (!stream || item.stream === stream)
-    );
-    /* A task with no due date is not the most urgent one, so it sorts last -
-       the same decision the route's own comparator makes, so the two orderings
-       do not disagree about the top of the queue. */
-    return open.sort(
-      (a, b) =>
-        rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
-        (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff')
-    );
-  }, [loaded, doneIds, stream, now]);
-
-  const complete = useCallback(
-    (item: InboxItem) => {
-      setDoneIds((previous) => [...previous, item.id]);
-      setCompletion({ item, label: t(INBOX_STREAM_DONE_KEYS[item.stream]) });
-    },
-    [t]
-  );
-
-  /* One undo for both dispositions: whichever list the row landed in, this puts
-     it back exactly where it was. Reversible acts get an undo, not a dialog. */
-  const undo = useCallback(() => {
-    if (!completion) return;
-    // Read from state rather than from inside a setter: React may replay an
-    // updater, and an updater that queues two more updates would replay those
-    // too. Nothing here needs the freshest value; the toast holding the undo is
-    // the same render's completion.
-    const { id } = completion.item;
-    setDoneIds((previous) => previous.filter((candidate) => candidate !== id));
-    setClaimedIds((previous) => previous.filter((candidate) => candidate !== id));
-    setCompletion(null);
-  }, [completion]);
-
-  const claim = useCallback(
-    (item: InboxItem) => {
-      setClaimedIds((previous) => [...previous, item.id]);
-      setCompletion({ item, label: t('inbox.list.assigned') });
-    },
-    [t]
-  );
-
-  const commands = useMemo<Command[]>(
+  return useMemo<Command[]>(
     () => [
       ...INBOX_STREAMS.map((candidate) => ({
         id: `inbox.stream.${candidate.toLowerCase()}`,
@@ -214,8 +169,126 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
         perform: () => setAssignment('TEAM'),
       },
     ],
-    [t]
+    /* The setters are `useState`'s own and stable, but they arrive here as
+       parameters, so they are named rather than assumed. */
+    [t, setStream, setAssignment]
   );
+}
+
+export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps>): ReactElement {
+  const t = useTranslator();
+  const [now] = useState(() => fixedNow ?? clinicNow());
+  /* Writes go through the client the reads came from; in live mode the
+     module-level one, since a disposition names its actor from the credential
+     and does not wait for `/bff/v0/me`. */
+  const writer = client ?? worklist;
+  const { claim: recordClaim, reopen: recordReopen } = writer.inbox;
+  /* A row whose disposition was refused, so the toast can say it is still open. */
+  const [refusal, setRefusal] = useState<InboxItem | null>(null);
+  const [stream, setStream] = useState<InboxStream | null>(null);
+  const [assignment, setAssignment] = useState<Assignment | ''>('');
+  const [doneIds, setDoneIds] = useState<string[]>([]);
+  const [claimedIds, setClaimedIds] = useState<string[]>([]);
+  const [completion, setCompletion] = useState<Completion | null>(null);
+
+  const inbox = useInbox(assignment ? { assignedTo: assignment } : {}, { client });
+
+  const loaded = useMemo(() => inbox.data?.data ?? [], [inbox.data]);
+  const done = new Set(doneIds);
+
+  /* Off the PAGE rather than off `visible`: the stream chips and the completed
+     rows narrow what is rendered, not what was read, and keying the name read
+     on the filtered set would refetch the same patients every time somebody
+     picked a stream. */
+  const patientNamed = usePatientNames(loaded.map((item) => item.patientId));
+
+  /* Overdue first, then due soonest: the queue orders itself by what will hurt.
+     Completed rows leave the list, and the toast holds the undo. */
+  const visible = useMemo(() => {
+    const rank = { OVERDUE: 0, DUE_SOON: 1, ON_TIME: 2 } as const;
+    const completed = new Set(doneIds);
+    const open = loaded.filter(
+      (item) => !completed.has(item.id) && (!stream || item.stream === stream)
+    );
+    /* A task with no due date is not the most urgent one, so it sorts last -
+       the same decision the route's own comparator makes, so the two orderings
+       do not disagree about the top of the queue. */
+    return open.sort(
+      (a, b) =>
+        rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
+        (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff')
+    );
+  }, [loaded, doneIds, stream, now]);
+
+  /* A row leaves the list once the client says its disposition was recorded,
+     and not before: a row that vanished over a refusal would read as done. */
+  const completing = useMutation((item: InboxItem) => writer.inbox.complete(item));
+  const complete = useCallback(
+    async (item: InboxItem) => {
+      const outcome = await completing.run(item);
+      if (!outcome.ok) {
+        setCompletion(null);
+        setRefusal(item);
+        return;
+      }
+      setRefusal(null);
+      setDoneIds((previous) => [...previous, item.id]);
+      setCompletion({ item, label: t(INBOX_STREAM_DONE_KEYS[item.stream]) });
+    },
+    [t, completing]
+  );
+
+  /* One undo for both dispositions: whichever list the row landed in, this puts
+     it back exactly where it was. Reversible acts get an undo, not a dialog -
+     where the client can reverse them. Where it cannot, no undo is offered. */
+  const reopening = useMutation((record: (item: InboxItem) => Promise<void>, item: InboxItem) =>
+    record(item)
+  );
+  const undo = useCallback(
+    async (record: (item: InboxItem) => Promise<void>) => {
+      if (!completion) return;
+      // Read from state rather than from inside a setter: React may replay an
+      // updater, and an updater that queues two more updates would replay those
+      // too. Nothing here needs the freshest value; the toast holding the undo is
+      // the same render's completion.
+      const { item } = completion;
+      const outcome = await reopening.run(record, item);
+      if (!outcome.ok) {
+        setCompletion(null);
+        setRefusal(item);
+        return;
+      }
+      setDoneIds((previous) => previous.filter((candidate) => candidate !== item.id));
+      setClaimedIds((previous) => previous.filter((candidate) => candidate !== item.id));
+      setCompletion(null);
+    },
+    [completion, reopening]
+  );
+
+  /* Handed the client's claim rather than reading it here: the row only offers
+     Assign to me where the client has one, so there is no absent claim to
+     answer for. */
+  const claiming = useMutation((record: (item: InboxItem) => Promise<void>, item: InboxItem) =>
+    record(item)
+  );
+  const claim = useCallback(
+    async (record: (item: InboxItem) => Promise<void>, item: InboxItem) => {
+      const outcome = await claiming.run(record, item);
+      if (!outcome.ok) {
+        setCompletion(null);
+        setRefusal(item);
+        return;
+      }
+      setRefusal(null);
+      setClaimedIds((previous) => [...previous, item.id]);
+      setCompletion({ item, label: t('inbox.list.assigned') });
+    },
+    [t, claiming]
+  );
+
+  const busy = completing.pending || claiming.pending || reopening.pending;
+
+  const commands = useInboxCommands(setStream, setAssignment);
 
   /* Read off the page rather than off `visible`, which the stream chips and the
      completed rows have already narrowed: the two absences below are facts
@@ -224,6 +297,18 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
   const page = inbox.data?.page ?? null;
   const refused = inbox.data?.refused ?? 0;
   const windowed = inbox.data ? inbox.data.data.length + refused : null;
+
+  /* The streams are filtered in the browser from one page, so a stream with
+     nothing on a page that is not the whole inbox has nothing HERE, which is
+     not the same as nothing waiting. */
+  const truncated = windowed !== null && page !== null && windowed < page.total;
+  const streamEmptyTitle = (chosen: InboxStream): string =>
+    t(truncated ? 'inbox.empty.streamPageTitle' : 'inbox.empty.streamTitle', {
+      stream: t(INBOX_STREAM_INLINE_KEYS[chosen]),
+    });
+  const streamEmptyMessage = t(
+    truncated ? 'inbox.empty.streamPageMessage' : 'inbox.empty.streamMessage'
+  );
 
   const overdue = visible.filter((item) => slaState(item.dueAt, now) === 'OVERDUE');
   /* The instant rather than the item: an item with no due date is never
@@ -296,10 +381,8 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
           isEmpty={() => visible.length === 0}
           loadingRows={6}
           empty={{
-            title: stream
-              ? t('inbox.empty.streamTitle', { stream: t(INBOX_STREAM_INLINE_KEYS[stream]) })
-              : t('inbox.empty.allTitle'),
-            message: stream ? t('inbox.empty.streamMessage') : t('inbox.empty.allMessage'),
+            title: stream ? streamEmptyTitle(stream) : t('inbox.empty.allTitle'),
+            message: stream ? streamEmptyMessage : t('inbox.empty.allMessage'),
             icon: 'inbox',
             action: (
               <Button href="/schedule" iconLeft="calendar-days">
@@ -312,8 +395,10 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
             <InboxList
               items={visible}
               now={now}
-              onComplete={complete}
-              onClaim={claim}
+              completes={writer.inbox.completes}
+              onComplete={(item) => void complete(item)}
+              onClaim={recordClaim === null ? undefined : (item) => void claim(recordClaim, item)}
+              busy={busy}
               claimedIds={claimedIds}
               patientNamed={patientNamed}
             />
@@ -328,11 +413,29 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
             title={completion.label}
             message={completion.item.summary}
             action={
-              <Button variant="ghost" size="sm" onClick={undo}>
-                {t('inbox.list.undo')}
-              </Button>
+              recordReopen === null ? undefined : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void undo(recordReopen)}
+                >
+                  {t('inbox.list.undo')}
+                </Button>
+              )
             }
             onClose={() => setCompletion(null)}
+          />
+        </div>
+      ) : null}
+
+      {refusal ? (
+        <div className="or-toast-dock">
+          <Toast
+            tone="danger"
+            title={t('inbox.list.notRecorded')}
+            message={refusal.summary}
+            onClose={() => setRefusal(null)}
           />
         </div>
       ) : null}

@@ -459,7 +459,7 @@ describe('the patient compartment', () => {
       where: {
         AND: [
           { appointmentId: testId(10), status: 'OPEN' },
-          { appointment: { patientId: { equals: testId(1) } } },
+          { appointment: { is: { patientId: { equals: testId(1) } } } },
         ],
       },
     });

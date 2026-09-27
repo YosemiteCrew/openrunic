@@ -10,6 +10,7 @@ import {
   type ChildPatch,
   type Collection,
   type CollectionSpec,
+  type CompartmentRule,
   type Page,
   type RowContext,
 } from './collection.js';
@@ -206,23 +207,12 @@ export function createPrismaCollection<
     const compartmented =
       compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed'
         ? (where ?? {})
-        : spec.compartment === 'appointment'
-          ? {
-              AND: [where ?? {}, { appointment: { patientId: { equals: compartment } } }],
-            }
-          : {
-              // ANDed rather than merged, so a filter the caller supplied on the
-              // same column cannot widen the compartment: the outer AND still has
-              // to hold.
-              AND: [
-                where ?? {},
-                {
-                  [spec.model === 'Patient' ? 'id' : spec.compartment.column]: {
-                    equals: compartment,
-                  },
-                },
-              ],
-            };
+        : {
+            // ANDed rather than merged, so a filter the caller supplied on the
+            // same column cannot widen the compartment: the outer AND still has
+            // to hold.
+            AND: [where ?? {}, compartmentClause(spec.model, spec.compartment, compartment)],
+          };
     // Same reasoning again one level out: the facility narrowing is ANDed on
     // top, so nothing a caller sends can widen it either.
     return facility === null ? compartmented : { AND: [compartmented, facility] };
@@ -230,8 +220,21 @@ export function createPrismaCollection<
 
   const delegate = port.model(spec.model);
 
+  /**
+   * The chart an audit event belongs to. A row with its own patient column
+   * answers for itself. A `through` row has none, but a compartment-pinned
+   * caller only ever reaches one whose parent carries that caller's patient, so
+   * the compartment is the answer and the patient access report can list it.
+   */
+  const chartOf = (row: ScopedRow<M>): { patientId?: string } =>
+    compartment !== undefined &&
+    typeof spec.compartment === 'object' &&
+    'through' in spec.compartment
+      ? { patientId: compartment }
+      : patientOf(spec, row);
+
   const recordRead = (row: ScopedRow<M>): void => {
-    audit.read({ targetType: spec.targetType, targetId: row.id, ...patientOf(spec, row) });
+    audit.read({ targetType: spec.targetType, targetId: row.id, ...chartOf(row) });
   };
 
   const writeEvent = (
@@ -242,7 +245,7 @@ export function createPrismaCollection<
     action: `${spec.action}.${before === null ? 'created' : 'updated'}`,
     targetType: spec.targetType,
     targetId: row.id,
-    ...patientOf(spec, row),
+    ...chartOf(row),
     ...facilityOf(spec, row),
     ...encounterOf(spec, row),
     metadata: { fields: [...fields], ...spec.writeMetadata?.(row, before) },
@@ -256,12 +259,18 @@ export function createPrismaCollection<
       const now = new Date();
       const context: RowContext = { tenantId: scope.tenantId, now, nextId: uuidv7 };
       const columns = spec.newRow(input, context);
-      if (
-        compartment !== undefined &&
-        typeof spec.compartment === 'object' &&
-        (columns as Record<string, unknown>)[spec.compartment.column] !== compartment
-      ) {
-        throw ApiError.notFound('No such patient.');
+      if (compartment !== undefined && typeof spec.compartment === 'object') {
+        const rule = spec.compartment;
+        const owned =
+          'through' in rule
+            ? (await tx.model(rule.through.model).findFirst({
+                where: {
+                  id: { equals: (columns as Record<string, unknown>)[rule.through.key] },
+                  [rule.through.column]: { equals: compartment },
+                },
+              } as FindFirstArgs<PrismaModelName>)) !== null
+            : (columns as Record<string, unknown>)[rule.column] === compartment;
+        if (!owned) throw ApiError.notFound('No such patient.');
       }
 
       if (unique !== undefined) {
@@ -454,6 +463,22 @@ async function patchChild(tx: DbTransaction, patch: ChildPatch): Promise<void> {
  */
 function omitNulls(columns: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(columns).filter(([, value]) => value !== null));
+}
+
+/**
+ * The filter that confines a model to one chart. A `through` rule follows the
+ * relation to the parent and filters on the parent's patient column, which is
+ * what the memory port's `inScope` does by looking the parent up.
+ */
+function compartmentClause<M extends PrismaModelName>(
+  model: M,
+  rule: Exclude<CompartmentRule<M>, 'open' | 'closed'>,
+  patientId: string
+): Record<string, unknown> {
+  if ('through' in rule) {
+    return { [rule.through.relation]: { is: { [rule.through.column]: { equals: patientId } } } };
+  }
+  return { [model === 'Patient' ? 'id' : rule.column]: { equals: patientId } };
 }
 
 function readColumn(row: Record<string, unknown>, column: string | undefined): string | undefined {

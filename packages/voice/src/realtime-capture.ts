@@ -68,8 +68,11 @@ export interface RealtimeConnection {
   close: () => void;
   /**
    * The reader pressed stop: no more audio may leave, while the connection
-   * stays open for the words already sent. Optional, because a transport whose
-   * media ends with the commit has nothing more to do.
+   * stays open for the words already sent. A transport that mutes also bounds
+   * that wait: if the service has not finished within its settle time, it
+   * closes and reports `closed`, because stop may be waiting on speech the
+   * service has not reported yet. Optional, because a transport whose media
+   * ends with the commit has nothing more to do.
    */
   mute?: () => void;
 }
@@ -153,6 +156,13 @@ export function createRealtimeCapture(
   let stopping = false;
   /* Stop sent a commit and the service has not yet said which item it made. */
   let awaitingCommit = false;
+  /* The transport has said audio is flowing: until then nothing can have been
+     heard, whatever was said. */
+  let flowing = false;
+  /* Stop found nothing reported at all, so what was said may still be on its
+     way. From here the question ends when the connection does, so every
+     stretch the service reports late is transcribed, not just the first. */
+  let lingering = false;
   /* Per vendor item: the words so far, whether the service has committed it,
      and whether it has already settled. `pending` is every item the service has
      told us about that has not settled - the words stop must wait for. A
@@ -173,6 +183,7 @@ export function createRealtimeCapture(
     open = null;
     stopping = false;
     awaitingCommit = false;
+    flowing = false;
     partial = new Map();
     pending = new Set();
     committed = new Set();
@@ -192,7 +203,9 @@ export function createRealtimeCapture(
    * turn detection can be an earlier stretch while a later one is in flight.
    */
   const settleIfDone = (id: string) => {
-    if (stopping && !awaitingCommit && pending.size === 0) finish(id, { type: 'ended', id });
+    if (stopping && !lingering && !awaitingCommit && pending.size === 0) {
+      finish(id, { type: 'ended', id });
+    }
   };
 
   const track = (itemId: string) => {
@@ -266,7 +279,9 @@ export function createRealtimeCapture(
           { language: session.language },
           {
             listening: () => {
-              if (live === session.id) emit({ type: 'listening', id: session.id });
+              if (live !== session.id) return;
+              flowing = true;
+              emit({ type: 'listening', id: session.id });
             },
             message: (message) => onMessage(session.id, message),
             closed: () => {
@@ -302,9 +317,23 @@ export function createRealtimeCapture(
          server turn detection it is only while speech it has seen start is
          still uncommitted: once everything is committed, the buffer is empty,
          and a commit on an empty buffer is an error that would end a
-         dictation that worked as a failure. */
+         dictation that worked as a failure. Speech the service reports only
+         after the press is left for the service to commit.
+
+         Under server turn detection, nothing reported yet is not proof that
+         nothing was said: a short question can still be on its way. Once
+         audio has flowed, a connection that mutes stays open for it until
+         the transport's settle time closes it. Before audio flowed nothing
+         was heard, and a connection that cannot mute is still sending audio,
+         so either ends here. */
       if (open === null || stopping) return;
       stopping = true;
+      lingering =
+        transport.turnDetection === 'server' &&
+        flowing &&
+        open.mute !== undefined &&
+        pending.size === 0 &&
+        settled.size === 0;
       /* Stop means the microphone is off now, not once the service has caught
          up: anything said after the press is not part of the question. */
       open.mute?.();

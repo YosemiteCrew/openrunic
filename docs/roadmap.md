@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Everything below is counted from this repository at version **0.3.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
+Everything below is counted from this repository at version **0.4.0**, not maintained alongside it. If a capability ships, the table changes on the next commit, because the table is generated from the same file the capability map lives in.
 
 **45 available now. 5 next. 3 later.** 31 FHIR R4 resource types served at the boundary. 2 languages.
 
@@ -104,7 +104,7 @@ These cannot be started inside this repository. Each needs an external body, and
 
 ## Languages
 
-**es**: 1895 of 2675 messages (71%).
+**es**: 1904 of 2694 messages (71%).
 
 | Area      |  en |  es |                      |
 | --------- | --: | --: | -------------------- |
@@ -117,21 +117,21 @@ These cannot be started inside this repository. Each needs an external body, and
 | common    |  33 |  33 | `██████████████████` |
 | downtime  |  14 |  14 | `██████████████████` |
 | encounter |  66 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| inbox     |  69 |  69 | `██████████████████` |
+| inbox     |  72 |  72 | `██████████████████` |
 | insurance |  63 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | marketing | 162 | 162 | `██████████████████` |
 | nav       |  44 |  44 | `██████████████████` |
-| orders    | 151 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| orders    | 150 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | patients  | 135 |   0 | `░░░░░░░░░░░░░░░░░░` |
-| portal    | 359 | 359 | `██████████████████` |
+| portal    | 365 | 365 | `██████████████████` |
 | reports   |  84 |  84 | `██████████████████` |
-| results   |  91 |   0 | `░░░░░░░░░░░░░░░░░░` |
+| results   | 102 |   0 | `░░░░░░░░░░░░░░░░░░` |
 | schedule  | 181 | 181 | `██████████████████` |
 | shell     |  21 |  21 | `██████████████████` |
 
 ## Workspace
 
-27 workspaces, all at 0.3.0.
+27 workspaces, all at 0.4.0.
 
 **apps/** `api`, `@openrunic/e2e`, `portal`, `web`.
 

@@ -31,7 +31,8 @@ vi.mock('@/lib/api/hooks', async (importOriginal) => {
 });
 
 const listTasks = vi.fn();
-vi.mock('@/lib/api/api', () => ({ api: { tasks: { list: listTasks } } }));
+const completeTask = vi.fn();
+vi.mock('@/lib/api/api', () => ({ api: { tasks: { list: listTasks, complete: completeTask } } }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -68,9 +69,46 @@ function unnamed(refetch: () => void): AsyncState<{ userId: string | null }> {
 afterEach(() => {
   vi.unstubAllEnvs();
   listTasks.mockReset();
+  completeTask.mockReset();
 });
 
 describe('the inbox in live mode', () => {
+  /* The rows wait for a name; the writes do not, because the route takes the
+     actor from the credential. So the module-level client a screen writes
+     through carries the API's dispositions from the start, and never the demo's
+     ones that record nothing. */
+  it('writes through the API from the module-level client, before any name', async () => {
+    const { worklist } = await load('live');
+    completeTask.mockResolvedValue({});
+    const task = {
+      id: 'task-1',
+      stream: 'TASKS' as const,
+      patientId: null,
+      summary: 'Call the lab back',
+      detail: null,
+      receivedAt: '2026-02-01T09:00:00.000Z',
+      dueAt: null,
+      assignedTo: 'ME' as const,
+      unread: null,
+      href: null,
+    };
+
+    expect(worklist.inbox.completes(task)).toBe(true);
+    expect(worklist.inbox.completes({ ...task, stream: 'REFILLS' })).toBe(false);
+    expect(worklist.inbox.claim).toBeNull();
+    expect(worklist.inbox.reopen).toBeNull();
+    await worklist.inbox.complete(task);
+    expect(completeTask).toHaveBeenCalledWith('task-1');
+  });
+
+  it('keeps the demo dispositions in mock mode', async () => {
+    const { worklist } = await load('mock');
+
+    expect(worklist.inbox.claim).not.toBeNull();
+    expect(worklist.inbox.reopen).not.toBeNull();
+    expect(worklist.results.notes).toBe(true);
+  });
+
   /* Asserted on the ROWS rather than on the request count. "Nothing was
      fetched" is also what a fixture fallback produces - it reads no route
      either - so a call-count assertion passes on the one outcome this gate

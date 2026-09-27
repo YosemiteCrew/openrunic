@@ -28,25 +28,28 @@ storybook-static
 packages/database/src/generated
 
 # Secrets and local state. .env is the one file that must never enter an image
-# layer: layers are readable by anyone who can pull the image.
+# layer: layers are readable by anyone who can pull the image. Matched at any
+# depth, because a checkout can hold nested working copies with their own .env.
 .env
 .env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 .git
 .github
 .husky
 .vscode
 .idea
 
-# Agent scratch: session state, plugin caches, and the git worktrees the
-# multi-agent tooling checks out under here. Each worktree is a second copy of
-# this repository, so without this line the build context grows by the whole
-# tree per concurrent agent. Nothing in it is an input to any image.
-.claude
-
 # Operational data written next to the repository by the backup scripts.
 backups
+**/backups
 .tmp
+**/.tmp
+
+# Git worktrees checked out inside the repository are separate working copies,
+# not build inputs.
+**/worktrees
 
 # Test, docs and tooling output that no runtime stage reads.
 coverage

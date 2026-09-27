@@ -464,13 +464,19 @@ export const telehealthVisitSpec: CollectionSpec<
   action: 'appointment',
   // No patient column: a visit points at an appointment, which is where the
   // chart is, and duplicating the patient here would give one visit two answers
-  // to whose it is, drifting the first time an appointment moved. The data
-  // layer therefore narrows through that appointment for a patient compartment.
-  // The management routes remain staff-only; the portal only projects an open
-  // room onto the appointment that owns it. This is the structural backstop,
-  // so any patient-compartment read can reach only visits belonging to the
-  // caller's own appointments.
-  compartment: 'appointment',
+  // to whose it is, drifting the first time an appointment moved. So the
+  // compartment follows the appointment instead: a patient-scoped token reads
+  // the visit for its own appointment and no other. That read is what the
+  // portal needs to offer a join; managing a room stays staff work, which
+  // `telehealthRoutes` enforces with `assertStaff` before it reads this table.
+  compartment: {
+    through: {
+      relation: 'appointment',
+      model: 'Appointment',
+      key: 'appointmentId',
+      column: 'patientId',
+    },
+  },
 
   newRow(input: TelehealthVisitCreateInput): Writable<'TelehealthVisit'> {
     return {

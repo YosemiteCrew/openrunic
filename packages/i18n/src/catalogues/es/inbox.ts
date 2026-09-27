@@ -84,9 +84,13 @@ export const inbox: Messages = {
   'inbox.list.assigned': 'Asignado a usted',
   'inbox.list.undo': 'Deshacer',
 
+  'inbox.list.notRecorded': 'No se registró',
   'inbox.empty.streamTitle': 'No hay {stream} en espera',
   'inbox.empty.streamMessage':
     'Nada en este flujo lo necesita. Quite el filtro para ver el resto de la cola.',
+  'inbox.empty.streamPageTitle': 'No hay {stream} en esta página',
+  'inbox.empty.streamPageMessage':
+    'La bandeja tiene más de lo que cabe en esta página. Los que haya entre el resto no aparecen aquí.',
   'inbox.empty.allTitle': 'Bandeja vacía, por ahora',
   'inbox.empty.allMessage':
     'Los nuevos resultados, mensajes, recetas y cofirmas llegan aquí a medida que aparecen.',

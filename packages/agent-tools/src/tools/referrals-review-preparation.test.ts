@@ -89,10 +89,14 @@ function checklistState(
 describe('referrals.reviewPreparation', () => {
   it('reads the referral the caller selected, with the caller credential, and nothing else', async () => {
     const { api } = await review(referral());
+    /* Twice: once to answer from, once to confirm it has not changed since. */
     expect(api.calls.map((call) => call.request)).toEqual([
       { method: 'GET', path: `/bff/v0/referrals/${REFERRAL_ID}` },
+      { method: 'GET', path: `/bff/v0/referrals/${REFERRAL_ID}` },
     ]);
-    expect(api.calls[0]?.context.credential.authorization).toBe('Bearer test-token');
+    for (const call of api.calls) {
+      expect(call.context.credential.authorization).toBe('Bearer test-token');
+    }
   });
 
   it('says a sent referral is sent, not received and not completed', async () => {
@@ -270,6 +274,58 @@ describe('referrals.reviewPreparation', () => {
     expect(result.sourceVersion).toBe('2026-09-12T08:00:00.000Z');
     expect(result.awaiting).toBe('an appointment');
     expect(result.referralId).toBe(REFERRAL_ID);
+  });
+
+  describe('a referral that changes while its report is checked', () => {
+    /** The referral as each read finds it, in order; the report is in the inbox. */
+    function reads(...rows: Record<string, unknown>[]) {
+      const queue = [...rows];
+      const api = recordingApiClient((request) =>
+        request.path.startsWith('/bff/v0/documents/')
+          ? { id: DOCUMENT_ID, patientId: TEST_PATIENT_ID, status: 'INBOX' }
+          : queue.shift()
+      );
+      const context = stubToolContext({
+        api,
+        principal: stubPrincipal({ compartment: { patientId: TEST_PATIENT_ID } }),
+      });
+      return {
+        api,
+        run: () => referralsReviewPreparation.run({ referralId: REFERRAL_ID }, context),
+      };
+    }
+
+    const before = referral({ reportDocumentId: DOCUMENT_ID });
+
+    it('is not described from the read before the change', async () => {
+      const after = referral({
+        reportDocumentId: DOCUMENT_ID,
+        status: 'COMPLETED',
+        updatedAt: '2026-09-12T08:00:00.000Z',
+      });
+      const { api, run } = reads(before, after);
+
+      await expect(run()).rejects.toMatchObject({
+        code: 'AGENT_TOOL_FAILED',
+        toolId: 'referrals.reviewPreparation',
+        message: 'The referral changed while it was being read. Ask again for its current state.',
+      });
+      expect(api.calls.map((call) => call.request.path)).toEqual([
+        `/bff/v0/referrals/${REFERRAL_ID}`,
+        `/bff/v0/documents/${DOCUMENT_ID}`,
+        `/bff/v0/referrals/${REFERRAL_ID}`,
+      ]);
+    });
+
+    it('is described when the second read finds the same version', async () => {
+      const { api, run } = reads(before, before);
+
+      const result = (await run()) as ReferralPreparation;
+
+      expect(result.sourceVersion).toBe('2026-09-01T10:00:00.000Z');
+      expect(checklistState(result, 'specialist-report')).toBe('missing');
+      expect(api.calls).toHaveLength(3);
+    });
   });
 
   it('refuses to read with no chart bound to the turn', async () => {

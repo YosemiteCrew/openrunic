@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { InboxScreen } from '@/app/(app)/inbox/InboxScreen';
@@ -20,10 +20,11 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
+  const base = createWorklistClient();
   return {
     orders: { list: fail },
-    results: { list: fail, analytes: fail },
-    inbox: { list: fail },
+    results: { ...base.results, list: fail, analytes: fail },
+    inbox: { ...base.inbox, list: fail },
   };
 }
 
@@ -83,7 +84,7 @@ describe('InboxScreen', () => {
     expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    expect(within(list()).getAllByRole('listitem')).toHaveLength(before);
+    await waitFor(() => expect(within(list()).getAllByRole('listitem')).toHaveLength(before));
   });
 
   it('claims a team-pool item without leaving the row', async () => {
@@ -203,7 +204,9 @@ describe('InboxScreen, undo', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
 
-    expect(within(list()).getAllByRole('button', { name: 'Assign to me' })).toHaveLength(before);
+    await waitFor(() =>
+      expect(within(list()).getAllByRole('button', { name: 'Assign to me' })).toHaveLength(before)
+    );
     expect(screen.queryByText('Assigned to you')).not.toBeInTheDocument();
   });
 
@@ -261,9 +264,11 @@ describe('InboxScreen, undo', () => {
      absent for a different reason and has a different remedy. */
   it('states the page it is showing and the rows it refused, as two facts', async () => {
     const item = at([...MOCK_INBOX_ITEMS]);
+    const base = createWorklistClient();
     const client = {
-      ...createWorklistClient(),
+      ...base,
       inbox: {
+        ...base.inbox,
         list: () =>
           Promise.resolve({
             data: [item],
@@ -301,6 +306,149 @@ describe('InboxScreen, undo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
 
     // The refill stays approved; only the claim is reversed.
+    await waitFor(() => expect(screen.queryByText('Assigned to you')).not.toBeInTheDocument());
     expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
+  });
+});
+
+/**
+ * A disposition is the client's record, not the screen's.
+ *
+ * The screen used to take a row off the list and say it was done whatever
+ * became of the write, which against the API meant a refill "approved" that
+ * nobody approved. Each case drives what the client can record, or its
+ * refusal, and asserts what the reader is then offered and told.
+ */
+describe('InboxScreen, recording a disposition', () => {
+  const refused = () => Promise.reject(new ApiError('Not allowed.', { kind: 'http', status: 409 }));
+
+  function withInbox(inbox: Partial<WorklistClient['inbox']>): WorklistClient {
+    const base = createWorklistClient();
+    return { ...base, inbox: { ...base.inbox, ...inbox } };
+  }
+
+  it('offers no button for a disposition the client cannot record', async () => {
+    const client = withInbox({ completes: (item) => item.stream === 'TASKS' });
+    render(<InboxScreen client={client} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    expect(
+      within(list()).queryByRole('button', { name: 'Approve refill' })
+    ).not.toBeInTheDocument();
+    expect(within(list()).queryByRole('button', { name: 'Cosign note' })).not.toBeInTheDocument();
+    expect(within(list()).getAllByRole('button', { name: 'Mark done' }).length).toBeGreaterThan(0);
+  });
+
+  it('offers no Assign to me where the client cannot record a claim', async () => {
+    render(<InboxScreen client={withInbox({ claim: null })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    expect(within(list()).queryByRole('button', { name: 'Assign to me' })).not.toBeInTheDocument();
+  });
+
+  it('offers no undo where the client cannot put a row back', async () => {
+    const complete = vi.fn(() => Promise.resolve());
+    render(<InboxScreen client={withInbox({ complete, reopen: null })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Approve refill' })));
+
+    expect(await screen.findByText('Refill approved')).toBeInTheDocument();
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ stream: 'REFILLS' }));
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the row and says so when the disposition is refused', async () => {
+    render(<InboxScreen client={withInbox({ complete: refused })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+    const before = within(list()).getAllByRole('listitem').length;
+
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Approve refill' })));
+
+    expect(await screen.findByText('Not recorded')).toBeInTheDocument();
+    expect(screen.queryByText('Refill approved')).not.toBeInTheDocument();
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(before);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByText('Not recorded')).not.toBeInTheDocument();
+  });
+
+  it('says so when a claim is refused, and leaves the row in the pool', async () => {
+    render(<InboxScreen client={withInbox({ claim: refused })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+    const before = within(list()).getAllByRole('button', { name: 'Assign to me' }).length;
+
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Assign to me' })));
+
+    expect(await screen.findByText('Not recorded')).toBeInTheDocument();
+    expect(within(list()).getAllByRole('button', { name: 'Assign to me' })).toHaveLength(before);
+  });
+
+  it('says so when putting a row back is refused, and leaves it done', async () => {
+    render(<InboxScreen client={withInbox({ reopen: refused })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+    const before = within(list()).getAllByRole('listitem').length;
+
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Approve refill' })));
+    await screen.findByText('Refill approved');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(await screen.findByText('Not recorded')).toBeInTheDocument();
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(before - 1);
+  });
+});
+
+describe('InboxScreen, its own defaults', () => {
+  /* Given neither a client nor an instant, the screen reads the app's own client
+     and the clinic clock. In the demo build those are the fixtures and their
+     instant, so the SLA words match a fixed-instant render exactly. */
+  it('reads the app client and the clinic clock when given neither', async () => {
+    render(<InboxScreen />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    expect(screen.getByText('Due in 40 min')).toBeInTheDocument();
+    expect(screen.getAllByText(/Overdue by/).length).toBe(2);
+  });
+});
+
+/* The streams are filtered in the browser from one page. On a page that is not
+   the whole inbox, a stream with nothing on it has nothing here - which is not
+   the same as nothing waiting, and the empty state says which it is. */
+describe('InboxScreen, a stream on a partial page', () => {
+  function pageOf(total: number): WorklistClient {
+    const base = createWorklistClient();
+    const items = MOCK_INBOX_ITEMS.filter((item) => item.stream !== 'REFILLS');
+    return {
+      ...base,
+      inbox: {
+        ...base.inbox,
+        list: () =>
+          Promise.resolve({
+            data: [...items],
+            page: { page: 1, pageSize: 100, total, totalPages: 1 },
+            refused: 0,
+          }),
+      },
+    };
+  }
+
+  it('says a stream has nothing on this page when the inbox holds more', async () => {
+    render(<InboxScreen client={pageOf(250)} now={MOCK_NOW} />);
+    const filters = await screen.findByRole('group', { name: 'Filter by stream' });
+
+    fireEvent.click(within(filters).getByRole('button', { name: /Refills 0/ }));
+
+    expect(await screen.findByText('No refills on this page')).toBeInTheDocument();
+    expect(screen.queryByText('No refills waiting')).not.toBeInTheDocument();
+  });
+
+  it('says nothing is waiting when the page is the whole inbox', async () => {
+    const whole = MOCK_INBOX_ITEMS.filter((item) => item.stream !== 'REFILLS').length;
+    render(<InboxScreen client={pageOf(whole)} now={MOCK_NOW} />);
+    const filters = await screen.findByRole('group', { name: 'Filter by stream' });
+
+    fireEvent.click(within(filters).getByRole('button', { name: /Refills 0/ }));
+
+    expect(await screen.findByText('No refills waiting')).toBeInTheDocument();
   });
 });

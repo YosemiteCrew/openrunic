@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AppointmentsScreen } from '@/app/appointments/AppointmentsScreen';
 import { emptyApi, fails, never, stubApi } from '@/__tests__/support';
+import { AssistantProvider } from '@/components/assistant';
+import type { AssistantAvailability } from '@/lib/assistant';
 import type { Appointment } from '@/lib/api/types';
 
 describe('AppointmentsScreen', () => {
@@ -329,5 +331,32 @@ describe('AppointmentsScreen', () => {
     expect(
       await screen.findByRole('region', { name: 'Upcoming appointments' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('AppointmentsScreen and the assistant', () => {
+  const enabled: AssistantAvailability = {
+    status: 'enabled',
+    capabilities: {
+      dictation: null,
+      service: {
+        modelId: 'a-model',
+        endpointHost: 'inference.example.invalid',
+        dataLeavesDeployment: false,
+      },
+      capabilities: [{ id: 'visits.list', summary: 'Reads your own appointments.' }],
+    },
+  };
+
+  it('offers to ask the assistant about appointments where one is configured', async () => {
+    render(
+      <AssistantProvider probe={() => Promise.resolve(enabled)}>
+        <AppointmentsScreen api={stubApi()} />
+      </AssistantProvider>
+    );
+
+    expect(
+      await screen.findByRole('link', { name: 'Ask the assistant about your appointments' })
+    ).toHaveAttribute('href', '/assistant?about=visits');
   });
 });

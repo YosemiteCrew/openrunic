@@ -307,6 +307,7 @@ describe('ending a question', () => {
     const { port, seen } = capture(transport);
     port.start(SESSION);
     const on = handlers[0];
+    on?.listening();
 
     /* The service's own turn detection has already cut the question in two. */
     on?.message(started('a'));
@@ -335,12 +336,93 @@ describe('ending a question', () => {
     const { port, seen } = capture(transport);
     port.start(SESSION);
 
+    handlers[0]?.listening();
     handlers[0]?.message(started('a'));
     handlers[0]?.message(committed('a'));
     handlers[0]?.message(completed('a', 'when is my visit'));
     port.stop();
 
     expect(sent).toEqual([]);
+    expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+    expect(closes()).toBe(1);
+  });
+
+  it('keeps a muted connection open when nothing was reported before stop, until it closes', () => {
+    const { transport, handlers, sent, closes, mutes } = wire();
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+    handlers[0]?.listening();
+
+    port.stop();
+
+    expect(mutes()).toBe(1);
+    expect(sent).toEqual([]);
+    expect(seen).toEqual([{ type: 'listening', id: 'session-1' }]);
+    expect(closes()).toBe(0);
+
+    /* The transport's settle time runs out with nothing reported. */
+    handlers[0]?.closed();
+    expect(seen).toEqual([
+      { type: 'listening', id: 'session-1' },
+      { type: 'ended', id: 'session-1' },
+    ]);
+  });
+
+  it('transcribes every stretch the service reports after that stop, and commits none of them', () => {
+    const { transport, handlers, sent, closes } = wire();
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+    const on = handlers[0];
+    on?.listening();
+
+    /* A short question, and stop pressed before the service said it heard it. */
+    port.stop();
+    on?.message(started('a'));
+    on?.message(committed('a'));
+    on?.message(delta('a', 'is it'));
+    on?.message(completed('a', 'is it due'));
+    /* A second stretch, reported behind the first. */
+    on?.message(started('b'));
+    on?.message(committed('b'));
+    on?.message(completed('b', 'this week'));
+
+    expect(sent).toEqual([]);
+    expect(closes()).toBe(0);
+    expect(seen.filter((event) => event.type === 'heard' && event.final)).toEqual([
+      { type: 'heard', id: 'session-1', text: 'is it due', final: true },
+      { type: 'heard', id: 'session-1', text: 'this week', final: true },
+    ]);
+
+    handlers[0]?.closed();
+    expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+  });
+
+  it('ends at once when stopped before any audio flowed', () => {
+    const { transport, handlers, sent, closes } = wire();
+    const { port, seen } = capture(transport);
+    /* An earlier question that did get as far as audio. */
+    port.start({ id: 'session-0', language: 'en' });
+    handlers[0]?.listening();
+    port.start(SESSION);
+
+    port.stop();
+
+    expect(sent).toEqual([]);
+    expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+    expect(closes()).toBe(2);
+  });
+
+  it('under manual turn detection, ends once the item it made settles, after audio flowed', () => {
+    const { transport, handlers, sent, closes } = wire(['en'], 'manual');
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+    handlers[0]?.listening();
+
+    port.stop();
+    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
+    handlers[0]?.message(committed('c'));
+    handlers[0]?.message(completed('c', 'what do I owe'));
+
     expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
     expect(closes()).toBe(1);
   });

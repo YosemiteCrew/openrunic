@@ -1486,6 +1486,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1539,6 +1540,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1585,6 +1587,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.lindqvist,
+    signedBy: null,
     assignedTo: 'TEAM',
     narrative: null,
     analytes: [
@@ -1624,6 +1627,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1664,6 +1668,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1701,6 +1706,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Clinic, in-house',
     orderedBy: PROVIDER_ID.lindqvist,
+    signedBy: null,
     assignedTo: 'TEAM',
     narrative: null,
     analytes: [
@@ -1729,6 +1735,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Birchwood Imaging',
     orderedBy: PROVIDER_ID.lindqvist,
+    signedBy: null,
     assignedTo: 'ME',
     analytes: [],
     narrative:
@@ -1746,6 +1753,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'SIGNED',
     performer: 'Cedar Clinic, in-house',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: PROVIDER_ID.okafor,
     assignedTo: 'ME',
     analytes: [],
     narrative: 'Impression: sinus rhythm at 68 beats per minute. No acute changes.',

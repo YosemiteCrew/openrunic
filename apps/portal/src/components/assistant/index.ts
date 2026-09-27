@@ -13,6 +13,11 @@ export type { AssistantContextValue, AssistantProviderProps } from './AssistantP
 export { AssistantComposer } from './AssistantComposer';
 export type { AssistantComposerProps } from './AssistantComposer';
 
+export { AssistantHelp } from './AssistantHelp';
+export type { AssistantHelpProps } from './AssistantHelp';
+export { helpHref, helpQuestionKey, helpTopicFrom, helpTopicGranted } from './help';
+export type { HelpTopic } from './help';
+
 export { AssistantDictation } from './AssistantDictation';
 export type { AssistantDictationProps } from './AssistantDictation';
 

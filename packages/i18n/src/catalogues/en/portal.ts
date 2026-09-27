@@ -479,6 +479,12 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': 'What did the practice write down about my last visit?',
   'portal.assistant.compose.ask': 'Ask',
   'portal.assistant.compose.stop': 'Stop',
+  'portal.assistant.help.visits.lead': 'A question about your appointments?',
+  'portal.assistant.help.visits.link': 'Ask the assistant about your appointments',
+  'portal.assistant.help.visits.question': 'When is my next appointment, and what is it for?',
+  'portal.assistant.help.bills.lead': 'A question about your bills?',
+  'portal.assistant.help.bills.link': 'Ask the assistant about your bills',
+  'portal.assistant.help.bills.question': 'What is left to pay, and which visits is it for?',
 
   /* Reading the answer aloud. The copy says what is read and what is not sent,
      because a control that starts speaking somebody's balance in a waiting room

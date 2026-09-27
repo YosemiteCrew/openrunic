@@ -73,7 +73,6 @@ export const orders: Messages = {
   'orders.list.patientNotRecorded': 'Not recorded',
   'orders.list.providerNotRecorded': 'Not recorded',
   'orders.list.openResult': 'Open result for {order}',
-  'orders.list.retry': 'Retry {order}',
 
   'orders.list.command.pended': 'Show pended orders',
   'orders.list.command.pendedKeywords': 'unsigned orders, tray',

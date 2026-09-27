@@ -17,7 +17,6 @@ import type { DraftOrder } from '@/components/orders';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
 import {
-  MOCK_NOW,
   patientProblems,
   rankCatalog,
   useOwnCapabilities,
@@ -34,6 +33,7 @@ import type {
   PatientProblem,
   PrincipalCapabilities,
 } from '@/lib/api';
+import { clinicNow } from '@/lib/api/chart';
 import { formatAge, formatDate, formatMrn, formatName } from '@/lib/format';
 import type { Translator } from '@openrunic/i18n';
 
@@ -165,9 +165,12 @@ function SignConfirmModal({
 
 export function NewOrderScreen({
   client,
-  now = MOCK_NOW,
+  now: fixedNow,
 }: Readonly<NewOrderScreenProps>): ReactElement {
   const t = useTranslator();
+  /* The clinic's clock: the fixtures' instant in the demo build, the wall clock
+     against the API, so an age is measured against today there. */
+  const [now] = useState(() => fixedNow ?? clinicNow());
   const patients = usePatients({ active: true, pageSize: 50 }, { client });
   const page = patients.status === 'success' ? patients.data : null;
 

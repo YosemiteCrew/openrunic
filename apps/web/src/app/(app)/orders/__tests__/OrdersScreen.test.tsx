@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrdersScreen } from '@/app/(app)/orders/OrdersScreen';
@@ -17,10 +17,11 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
+  const base = createWorklistClient();
   return {
     orders: { list: fail },
-    results: { list: fail, analytes: fail },
-    inbox: { list: fail },
+    results: { ...base.results, list: fail, analytes: fail },
+    inbox: { ...base.inbox, list: fail },
   };
 }
 
@@ -100,13 +101,14 @@ describe('OrdersScreen', () => {
     expect((await within(table).findAllByText('Ada Okafor, MD')).length).toBeGreaterThan(0);
   });
 
-  it('names an unacknowledged requisition and offers a retry in the row', async () => {
+  /* The age and the state say the requisition has sat unacknowledged. Nothing
+     re-sends one yet, so no button offers to: a control that does nothing when
+     pressed would read as a retry that was tried. */
+  it('names an unacknowledged requisition and offers no retry it cannot send', async () => {
     render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
 
     expect(await screen.findByText(/Unacknowledged 1 d/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /Retry Ankle X-ray, three views/ })
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
   });
 
   it('filters the ledger to one status', async () => {
@@ -208,5 +210,25 @@ describe('OrdersScreen', () => {
 
     expect(await screen.findByText('No connection to the server')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});
+
+/* Without a fixed instant the ledger reads the clinic clock, which in the demo
+   build is the fixtures' own instant and against the API is the wall clock. So
+   a default render here says exactly what a fixed-instant one does, ages
+   included; a screen still defaulting to the fixtures' day would pass this too,
+   which is why the live half is the clock's own test. */
+describe('OrdersScreen, its own clock', () => {
+  it('ages every order against the clinic clock when no instant is fixed', async () => {
+    const fixed = render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByText(/Unacknowledged 1 d/);
+    // The patient names are a second read; the comparison is of the settled page.
+    await screen.findAllByText(/Patientsson, Tess/);
+    const expected = document.body.textContent;
+    fixed.unmount();
+
+    render(<OrdersScreen client={createWorklistClient()} />);
+
+    await waitFor(() => expect(document.body.textContent).toBe(expected));
   });
 });

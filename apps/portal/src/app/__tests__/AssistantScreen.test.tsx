@@ -97,6 +97,8 @@ interface MountOptions {
    * other case on this page is written in.
    */
   readback?: ReadbackPort | null;
+  /** The screen the reader came from. */
+  about?: 'visits' | 'bills' | null;
 }
 
 function mount(options: MountOptions = {}) {
@@ -111,7 +113,11 @@ function mount(options: MountOptions = {}) {
       probe={probe}
       runTurn={scriptedTurns(options.turns ?? [options.events ?? []], options.onRequest)}
     >
-      <AssistantScreen api={options.api ?? stubApi()} readback={options.readback} />
+      <AssistantScreen
+        about={options.about}
+        api={options.api ?? stubApi()}
+        readback={options.readback}
+      />
     </AssistantProvider>
   );
 }
@@ -606,5 +612,52 @@ describe('how the page reads', () => {
         .filter((word) => word !== '');
       expect(words.length, sentence.trim()).toBeLessThanOrEqual(MAX_WORDS_PER_SENTENCE);
     }
+  });
+});
+
+describe('arriving from the screen a question is about', () => {
+  it('writes that screen question into the box and sends nothing until asked', async () => {
+    const asked: TurnRequest[] = [];
+    mount({ availability: ENABLED, about: 'bills', onRequest: (request) => asked.push(request) });
+
+    const box = await screen.findByLabelText('Your question');
+    expect(box).toHaveValue('What is left to pay, and which visits is it for?');
+    expect(asked).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
+    await vi.waitFor(() => {
+      expect(asked).toHaveLength(1);
+    });
+    expect(asked[0]?.message).toBe('What is left to pay, and which visits is it for?');
+  });
+
+  it('suggests the appointments question from the appointments screen', async () => {
+    mount({ availability: ENABLED, about: 'visits' });
+
+    expect(await screen.findByLabelText('Your question')).toHaveValue(
+      'When is my next appointment, and what is it for?'
+    );
+  });
+
+  it('suggests nothing the practice did not grant a way to answer', async () => {
+    mount({
+      availability: {
+        status: 'enabled',
+        capabilities: {
+          ...ENABLED.capabilities,
+          dictation: null,
+          capabilities: [{ id: 'visits.list', summary: 'Reads your own appointments.' }],
+        },
+      } as AssistantAvailability,
+      about: 'bills',
+    });
+
+    expect(await screen.findByLabelText('Your question')).toHaveValue('');
+  });
+
+  it('starts empty when the reader came from nowhere in particular', async () => {
+    mount({ availability: ENABLED });
+
+    expect(await screen.findByLabelText('Your question')).toHaveValue('');
   });
 });

@@ -48,9 +48,15 @@ import type { PortalApi } from '@/lib/api/types';
 import type { AssistantCapabilities } from '@/lib/assistant';
 import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
-import { defaultMintRealtime } from '@/lib/assistant';
-import { chooseCapture, createPlatformReadback } from '@/lib/voice';
-import type { BrowserMedia, CapturePort, ReadbackPort, RealtimeMint } from '@/lib/voice';
+import { defaultMintRealtime, defaultMintReadback } from '@/lib/assistant';
+import { chooseCapture, chooseReadback, createPlatformReadback } from '@/lib/voice';
+import type {
+  BrowserMedia,
+  CapturePort,
+  ReadbackPort,
+  ReadbackMint,
+  RealtimeMint,
+} from '@/lib/voice';
 
 export interface AssistantScreenProps {
   api?: PortalApi;
@@ -60,6 +66,11 @@ export interface AssistantScreenProps {
    * in tests, where jsdom has no synthesiser to drive.
    */
   readback?: ReadbackPort | null;
+  /**
+   * Asks the API for a hosted readback credential. Only used when the API
+   * named a text-to-speech service; injected in tests.
+   */
+  mintReadback?: ReadbackMint;
   /**
    * The microphone a question may be dictated into. Absent means the hosted
    * service the API named, when it named one and this browser can reach it, and
@@ -79,6 +90,7 @@ export interface AssistantScreenProps {
 export function AssistantScreen({
   api = getPortalApi(),
   readback,
+  mintReadback = defaultMintReadback,
   capture,
   mintRealtime = defaultMintRealtime,
   realtimeMedia,
@@ -101,6 +113,7 @@ export function AssistantScreen({
       capabilities={availability.capabilities}
       capture={capture}
       mintRealtime={mintRealtime}
+      mintReadback={mintReadback}
       readback={readback}
       realtimeMedia={realtimeMedia}
     />
@@ -111,6 +124,7 @@ interface ConfiguredAssistantProps {
   api: PortalApi;
   capabilities: AssistantCapabilities;
   readback?: ReadbackPort | null;
+  mintReadback?: ReadbackMint;
   capture?: CapturePort | null;
   mintRealtime: RealtimeMint;
   realtimeMedia?: BrowserMedia | null;
@@ -120,6 +134,7 @@ function ConfiguredAssistant({
   api,
   capabilities,
   readback,
+  mintReadback,
   capture,
   mintRealtime,
   realtimeMedia,
@@ -156,6 +171,7 @@ function ConfiguredAssistant({
             capture={capture}
             chartPatientId={patient.id}
             mintRealtime={mintRealtime}
+            mintReadback={mintReadback}
             realtimeMedia={realtimeMedia}
             readback={readback}
           />
@@ -169,6 +185,7 @@ interface ConversationProps {
   capabilities: AssistantCapabilities;
   chartPatientId: string;
   readback?: ReadbackPort | null;
+  mintReadback?: ReadbackMint;
   capture?: CapturePort | null;
   mintRealtime: RealtimeMint;
   realtimeMedia?: BrowserMedia | null;
@@ -178,6 +195,7 @@ function Conversation({
   capabilities,
   chartPatientId,
   readback,
+  mintReadback,
   capture,
   mintRealtime,
   realtimeMedia,
@@ -195,10 +213,25 @@ function Conversation({
     () => (readback === undefined ? createPlatformReadback() : readback),
     [readback]
   );
+
+  /* The hosted voice, when the API named one and this browser can reach it,
+     otherwise the device's own synthesiser. Mirrors the dictation pattern. */
+  const readbackConfig = capabilities.readback ?? null;
+  const hostedReadback = useMemo(
+    () =>
+      readback === undefined
+        ? chooseReadback(
+            readbackConfig,
+            mintReadback ?? (() => Promise.reject(new Error('no mint')))
+          )
+        : { port: readback, egress: null },
+    [readback, readbackConfig, mintReadback]
+  );
+
   /* The rule runs here, beside the rule about what this portal will show. What
      reaches the voice is a turn id and the string on screen. */
   const speakable = useMemo(() => speakableTurns(state.turns, speakableAnswer), [state.turns]);
-  const voice = useReadback(port, t.locale, speakable, chartPatientId);
+  const voice = useReadback(hostedReadback.port, t.locale, speakable, chartPatientId);
 
   /* Built once, for the same reason the voice is: a new port every render would
      re-ask the browser what it can recognise on every keystroke, and would tear

@@ -25,7 +25,7 @@ export type {
 } from '@openrunic/voice';
 
 export { captureAvailability, createPlatformCapture, platformRecognition } from '@openrunic/voice';
-export { chooseCapture } from '@openrunic/voice';
+export { chooseCapture, chooseReadback } from '@openrunic/voice';
 export type {
   OnDeviceQuery,
   PlatformRecognition,
@@ -38,5 +38,6 @@ export type {
   CaptureUnavailable,
   BrowserMedia,
   DictationEgress,
+  ReadbackMint,
   RealtimeMint,
 } from '@openrunic/voice';

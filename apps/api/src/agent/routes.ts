@@ -77,6 +77,19 @@ const dictationSchema = z.strictObject({
   turnDetection: z.enum(['server', 'manual']),
 });
 
+/**
+ * Present only when hosted readback is configured. It names the same
+ * endpoint and agreement the session route hands out, so a browser can build
+ * its readback adapter - which refuses to exist without both - before it has
+ * asked for any credential, and so a clinic sees where the text would go
+ * before the voice is turned on.
+ */
+const readbackSchema = z.strictObject({
+  endpoint: z.string(),
+  agreement: z.string(),
+  languages: z.array(z.string()),
+});
+
 const toolSummarySchema = z.strictObject({
   id: z.string(),
   tier: z.string(),
@@ -106,6 +119,7 @@ export const agentRouteContracts: RouteContract[] = [
           model: modelIdentitySchema,
           tools: z.array(toolSummarySchema),
           dictation: dictationSchema.optional(),
+          readback: readbackSchema.optional(),
         }),
       },
       ...ERROR_RESPONSES,
@@ -172,6 +186,8 @@ export interface AgentRoutesOptions {
   audit: AuditBridge;
   /** Hosted dictation, when the session route is mounted beside these. Absent otherwise. */
   dictation?: z.infer<typeof dictationSchema>;
+  /** Hosted readback, when the session route is mounted beside these. Absent otherwise. */
+  readback?: z.infer<typeof readbackSchema>;
 }
 
 export function agentRoutes(options: AgentRoutesOptions): Hono<AppEnv> {
@@ -199,6 +215,7 @@ export function agentRoutes(options: AgentRoutesOptions): Hono<AppEnv> {
         approval: tool.approval,
       })),
       ...(options.dictation === undefined ? {} : { dictation: options.dictation }),
+      ...(options.readback === undefined ? {} : { readback: options.readback }),
     });
   });
 

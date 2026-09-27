@@ -1,5 +1,5 @@
-import { readRealtimeCredential } from '@openrunic/voice';
-import type { RealtimeCredential } from '@openrunic/voice';
+import { readReadbackCredential, readRealtimeCredential } from '@openrunic/voice';
+import type { ReadbackCredential, RealtimeCredential } from '@openrunic/voice';
 
 import { BFF_BASE_PATH } from '@/lib/api';
 import type { ApiClientConfig } from '@/lib/api';
@@ -34,6 +34,7 @@ const ABSENT: AgentAvailability = { status: 'absent' };
 const CAPABILITIES_PATH = '/agent/tools';
 const TURNS_PATH = '/agent/turns';
 const REALTIME_PATH = '/agent/realtime/sessions';
+const READBACK_PATH = '/agent/readback/sessions';
 
 function agentUrl(config: ApiClientConfig, path: string): string {
   return `${config.baseUrl}${config.basePath ?? BFF_BASE_PATH}${path}`;
@@ -97,6 +98,32 @@ export async function mintRealtimeSession(
   });
   if (!response.ok) throw new Error('No dictation session was issued.');
   return readRealtimeCredential(await response.json());
+}
+
+/**
+ * Asks the API for a short-lived readback credential.
+ *
+ * Told the language and nothing else: the chart is not named, so the service
+ * that speaks is never told whose record is open. Rejects on anything
+ * other than a whole credential, which the transport reports as a voice
+ * that stopped - the reader uses the device's synthesiser instead.
+ */
+export async function mintReadbackSession(
+  config: ApiClientConfig,
+  language: string,
+  signal: AbortSignal
+): Promise<ReadbackCredential> {
+  const fetchImpl = config.fetchImpl ?? globalThis.fetch;
+  const headers = agentHeaders(config, 'application/json');
+  headers.set('content-type', 'application/json');
+  const response = await fetchImpl(agentUrl(config, READBACK_PATH), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ language }),
+    signal,
+  });
+  if (!response.ok) throw new Error('No readback session was issued.');
+  return readReadbackCredential(await response.json());
 }
 
 export interface AgentTurnRequest {

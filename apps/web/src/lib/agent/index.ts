@@ -4,6 +4,7 @@
  */
 export { chartPatientIdFromPath } from './chart-context';
 export {
+  mintReadbackSession,
   mintRealtimeSession,
   probeAssistant,
   streamAgentTurn,
@@ -19,6 +20,7 @@ export type {
   AgentEvent,
   AgentModelIdentity,
   AgentProposal,
+  AgentReadback,
   AgentSource,
   AgentToolSummary,
   AgentUsage,

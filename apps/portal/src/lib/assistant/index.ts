@@ -8,9 +8,11 @@
  */
 
 export {
+  defaultMintReadback,
   defaultMintRealtime,
   defaultProbe,
   defaultRunTurn,
+  mintReadbackSession,
   mintRealtimeSession,
   probeAssistant,
   streamTurn,

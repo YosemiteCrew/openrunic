@@ -9,6 +9,13 @@ import pkg from '../package.json' with { type: 'json' };
 
 import { agentRouteContracts, agentRoutes } from './agent/routes.js';
 import {
+  loadReadbackSubsystem,
+  readbackRouteContracts,
+  readbackRoutes,
+  type ReadbackSessionMinter,
+  type ReadbackSubsystem,
+} from './agent/readback.js';
+import {
   loadRealtimeSubsystem,
   realtimeRouteContracts,
   realtimeRoutes,
@@ -99,6 +106,15 @@ export interface CreateAppOptions {
    * endpoint and its agreement, so the default is three reasons absent.
    */
   realtime?: { minter: RealtimeSessionMinter; subsystem?: RealtimeSubsystem };
+  /**
+   * Hosted text-to-speech for the assistant's readback.
+   *
+   * The minter is deployer code holding the vendor key; the configuration
+   * defaults to the environment. The session route is mounted only when the
+   * assistant is enabled, a minter is supplied AND the configuration names the
+   * endpoint and its agreement, so the default is three reasons absent.
+   */
+  readback?: { minter: ReadbackSessionMinter; subsystem?: ReadbackSubsystem };
   /**
    * Whether the API can actually serve data right now.
    *
@@ -227,6 +243,20 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
       ? { minter: options.realtime.minter, config: realtimeSubsystem.config }
       : undefined;
 
+  const readbackSubsystem =
+    options.readback === undefined
+      ? undefined
+      : (options.readback.subsystem ?? loadReadbackSubsystem(process.env));
+  if (readbackSubsystem?.status === 'misconfigured') {
+    console.error(`openrunic hosted readback disabled: ${readbackSubsystem.reason}`);
+  }
+  const readback =
+    agent.status === 'enabled' &&
+    options.readback !== undefined &&
+    readbackSubsystem?.status === 'enabled'
+      ? { minter: options.readback.minter, config: readbackSubsystem.config }
+      : undefined;
+
   // Liveness: is this process running. Deliberately checks nothing else, so a
   // restart loop cannot be caused by a dependency being briefly slow.
   app.get('/healthz', (c) => c.json({ status: 'ok', service: 'openrunic-api' }));
@@ -254,6 +284,7 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
         // that answers 404 is worse than an undocumented one.
         ...(agent.status === 'enabled' ? agentRouteContracts : []),
         ...(realtime === undefined ? [] : realtimeRouteContracts),
+        ...(readback === undefined ? [] : readbackRouteContracts),
       ])
     )
   );
@@ -281,11 +312,23 @@ export function createApp(options: CreateAppOptions = {}): Hono<AppEnv> {
                 turnDetection: realtime.config.turnDetection,
               },
             }),
+        ...(readback === undefined
+          ? {}
+          : {
+              readback: {
+                endpoint: readback.config.endpoint,
+                agreement: readback.config.agreement,
+                languages: [...readback.config.languages],
+              },
+            }),
       })
     );
   }
   if (realtime !== undefined) {
     app.route(BFF_BASE_PATH, realtimeRoutes({ ...realtime, now }));
+  }
+  if (readback !== undefined) {
+    app.route(BFF_BASE_PATH, readbackRoutes({ ...readback, now }));
   }
 
   app.notFound(() => {

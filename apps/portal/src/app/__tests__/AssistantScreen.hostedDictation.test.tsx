@@ -174,6 +174,7 @@ describe('the page with a hosted service', () => {
         service: MODEL,
         capabilities: [{ id: 'record.list', summary: 'Reads your own health record.' }],
         dictation: DICTATION,
+        readback: null,
       },
     };
     const rig = media();

@@ -1,6 +1,11 @@
-import type { RealtimeMint } from '@openrunic/voice';
+import type { RealtimeMint, ReadbackMint } from '@openrunic/voice';
 
-import { mintRealtimeSession, probeAssistant, streamAgentTurn } from '@/lib/agent';
+import {
+  mintRealtimeSession,
+  mintReadbackSession,
+  probeAssistant,
+  streamAgentTurn,
+} from '@/lib/agent';
 import type { AgentAvailability, AgentEvent, AgentTurnRequest } from '@/lib/agent';
 import { API_CONFIG, IS_MOCK_MODE } from '@/lib/api';
 
@@ -32,3 +37,7 @@ export const defaultRunTurn: RunAgentTurn = (request) => streamAgentTurn(API_CON
 /** Asks the API for a dictation credential. Only called when the API named a service. */
 export const defaultMintRealtime: RealtimeMint = (language, signal) =>
   mintRealtimeSession(API_CONFIG, language, signal);
+
+/** Asks the API for a readback credential. Only called when the API named a service. */
+export const defaultMintReadback: ReadbackMint = (language, signal) =>
+  mintReadbackSession(API_CONFIG, language, signal);

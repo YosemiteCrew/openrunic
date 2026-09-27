@@ -54,6 +54,7 @@ const ENABLED: AssistantAvailability = {
   status: 'enabled',
   capabilities: {
     dictation: null,
+    readback: null,
     service: {
       modelId: 'a-model',
       endpointHost: 'inference.example.invalid',

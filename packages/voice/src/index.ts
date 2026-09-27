@@ -59,8 +59,26 @@ export type {
   RealtimeMint,
 } from './browser-realtime.js';
 
+export { createBrowserHostedSynthesiser } from './browser-readback.js';
+export type {
+  ReadbackCredential,
+  ReadbackMint,
+  BrowserReadbackOptions,
+} from './browser-readback.js';
+
 export { chooseCapture, readHostedDictation, readRealtimeCredential } from './hosted-dictation.js';
 export type { ChosenCapture, DictationEgress, HostedDictation } from './hosted-dictation.js';
+
+export {
+  chooseReadback,
+  readHostedReadback,
+  readReadbackCredential,
+} from './hosted-readback-config.js';
+export type {
+  ChosenReadback,
+  ReadbackEgress,
+  HostedReadbackConfig,
+} from './hosted-readback-config.js';
 
 export { IDLE, appendDictation, dictationReducer } from './dictation.js';
 export type {

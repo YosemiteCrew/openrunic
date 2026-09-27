@@ -60,6 +60,7 @@ const CAPABILITIES: AgentCapabilities = {
     },
   ],
   dictation: null,
+  readback: null,
 };
 
 const ENABLED: AgentAvailability = { status: 'enabled', capabilities: CAPABILITIES };

@@ -2,13 +2,14 @@
 
 import { formatCount } from '@openrunic/i18n';
 import { IconButton } from '@openrunic/ui';
-import {
-  chooseCapture,
-  createPlatformReadback,
-  speakableTurns,
-  useReadback,
+import { chooseCapture, chooseReadback, speakableTurns, useReadback } from '@openrunic/voice';
+import type {
+  BrowserMedia,
+  CapturePort,
+  ReadbackPort,
+  ReadbackMint,
+  RealtimeMint,
 } from '@openrunic/voice';
-import type { BrowserMedia, CapturePort, ReadbackPort, RealtimeMint } from '@openrunic/voice';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef } from 'react';
 import type { ReactElement } from 'react';
@@ -56,6 +57,11 @@ export interface AssistantPanelProps {
    */
   readback?: ReadbackPort | null;
   /**
+   * Asks the API for a hosted readback credential. Only used when the API
+   * named a text-to-speech service; injected in tests.
+   */
+  mintReadback?: ReadbackMint;
+  /**
    * The microphone a question can be spoken into. Absent means the hosted
    * service the API named, when it named one and this browser can reach it, and
    * otherwise the device's own on-device recogniser, which is nothing at all
@@ -74,6 +80,7 @@ export interface AssistantPanelProps {
 
 export function AssistantPanel({
   readback,
+  mintReadback,
   capture,
   mintRealtime = defaultMintRealtime,
   realtimeMedia,
@@ -89,23 +96,6 @@ export function AssistantPanel({
 
   const onScreen = availability.status === 'enabled' && capabilities !== null && isOpen;
 
-  /* Built once per opening, and deliberately gone while the panel is not on
-     screen. A voice with nothing beside it is the one case this surface must
-     not produce: the rule that makes reading a record aloud safe at all is that
-     the words are on the screen as they are spoken, and a dismissed panel can
-     honour neither half. Handing the hook `null` is how the surface says the
-     voice is not there, which is already the path that stops an utterance and
-     forgets the consent - so closing the panel needs no second mechanism.
-
-     Built through a memo for the ordinary reason as well: a new port every
-     render would resubscribe to the device's voice list on every keystroke, and
-     the effect that speaks would take a new dependency each time and read the
-     last answer again. */
-  const port = useMemo(() => {
-    if (!onScreen) return null;
-    return readback === undefined ? createPlatformReadback() : readback;
-  }, [onScreen, readback]);
-
   /* The microphone needs no gate like the voice's. It is owned by the composer,
      which is not rendered while the panel is closed, and unmounting it is the
      path that already aborts an open session - so a dismissed panel cannot be
@@ -119,6 +109,20 @@ export function AssistantPanel({
     [capture, dictation, mintRealtime, realtimeMedia]
   );
 
+  /* The hosted voice, when the API named one and this browser can reach it,
+     otherwise the device's own synthesiser. Mirrors the dictation pattern. */
+  const readbackConfig = capabilities?.readback ?? null;
+  const hostedReadback = useMemo(
+    () =>
+      readback === undefined
+        ? chooseReadback(
+            readbackConfig,
+            mintReadback ?? (() => Promise.reject(new Error('no mint')))
+          )
+        : { port: readback, egress: null },
+    [readback, readbackConfig, mintReadback]
+  );
+
   /* The rule runs here, beside the rule about what this surface will show. What
      reaches the voice is a turn id and the string on screen, and nothing that
      could be used to ask for another one. */
@@ -129,7 +133,7 @@ export function AssistantPanel({
      scope of a conversation about no chart in particular, which is what a biller
      asking about an authorisation case has. Moving between the two stops the
      voice and asks again, the same as moving between two charts. */
-  const voice = useReadback(port, t.locale, speakable, chartPatientId ?? '');
+  const voice = useReadback(hostedReadback.port, t.locale, speakable, chartPatientId ?? '');
 
   /* Focus goes to the field on open and back to whatever opened the panel on
      close. Both live in one effect so the grab and the restore cannot drift

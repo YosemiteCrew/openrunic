@@ -198,7 +198,7 @@ describe('the panel with a hosted service', () => {
     })();
 
   it('mints on the press, and writes what the service transcribed into the box', async () => {
-    const capabilities: AgentCapabilities = { ...BASE, dictation: DICTATION };
+    const capabilities: AgentCapabilities = { ...BASE, dictation: DICTATION, readback: null };
     const rig = media();
     const mint = vi.fn<RealtimeMint>().mockResolvedValue({
       endpoint: DICTATION.endpoint,

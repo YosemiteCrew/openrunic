@@ -1,5 +1,10 @@
-import { readRealtimeCredential } from '@openrunic/voice';
-import type { RealtimeCredential, RealtimeMint } from '@openrunic/voice';
+import { readRealtimeCredential, readReadbackCredential } from '@openrunic/voice';
+import type {
+  ReadbackCredential,
+  ReadbackMint,
+  RealtimeCredential,
+  RealtimeMint,
+} from '@openrunic/voice';
 import { API_MODE } from '@/lib/api';
 import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 
@@ -58,6 +63,7 @@ const ABSENT: AssistantAvailability = { status: 'absent' };
 const CAPABILITIES_PATH = '/bff/v0/agent/tools';
 const TURNS_PATH = '/bff/v0/agent/turns';
 const REALTIME_PATH = '/bff/v0/agent/realtime/sessions';
+const READBACK_PATH = '/bff/v0/agent/readback/sessions';
 
 function headers(transport: AssistantTransport, accept: string): Record<string, string> {
   const authorization = transport.authorization?.();
@@ -118,6 +124,31 @@ export async function mintRealtimeSession(
   });
   if (!response.ok) throw new Error('No dictation session was issued.');
   return readRealtimeCredential(await response.json());
+}
+
+/**
+ * Asks the API for a short-lived readback credential, through the portal's
+ * own proxy like every other call.
+ *
+ * Told the language and nothing else. The session is bound to the reader's own
+ * record already, so naming it would add nothing, and the service that
+ * speaks is never told whose record it is. Rejects on anything other than
+ * a whole credential, which reads to the reader as a voice that stopped.
+ */
+export async function mintReadbackSession(
+  transport: AssistantTransport,
+  language: string,
+  signal: AbortSignal
+): Promise<ReadbackCredential> {
+  const doFetch = transport.fetchImpl ?? fetch;
+  const response = await doFetch(`${transport.baseUrl}${READBACK_PATH}`, {
+    method: 'POST',
+    headers: { ...headers(transport, 'application/json'), 'content-type': 'application/json' },
+    body: JSON.stringify({ language }),
+    signal,
+  });
+  if (!response.ok) throw new Error('No readback session was issued.');
+  return readReadbackCredential(await response.json());
 }
 
 /**
@@ -221,6 +252,10 @@ export const defaultRunTurn: RunTurn = (request) => streamTurn(DEFAULT_TRANSPORT
 /** Asks for a dictation credential. Only called when the API named a service. */
 export const defaultMintRealtime: RealtimeMint = (language, signal) =>
   mintRealtimeSession(DEFAULT_TRANSPORT, language, signal);
+
+/** Asks for a readback credential. Only called when the API named a service. */
+export const defaultMintReadback: ReadbackMint = (language, signal) =>
+  mintReadbackSession(DEFAULT_TRANSPORT, language, signal);
 
 function safeParse(payload: string): unknown {
   try {

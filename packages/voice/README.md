@@ -77,7 +77,10 @@ nothing in the default configuration sends audio anywhere.
 
 Stop waits for every stretch the service is still transcribing, not the first
 one to settle, and commits only audio the service has not committed itself, as
-the transport's declared `turnDetection` says.
+the transport's declared `turnDetection` says. Under server turn detection, a
+Stop pressed before the service has reported anything keeps a transport that can
+mute open, with the microphone off, until its settle time runs out, and every
+stretch the service reports meanwhile is transcribed.
 
 The contract suite runs the same dictation rules through all three recognisers:
 a push-to-talk double, a streaming double and this adapter over a scripted
